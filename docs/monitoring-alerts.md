@@ -1,7 +1,7 @@
 ---
 title: "Monitoring And Alerts"
 description: "Alert on a Radioso deployment: which signals exist, how to reach them through Prometheus metrics and the ops event feed, and example alert rules that work on any host."
-last_updated: 2026-09-03
+last_updated: 2026-09-22
 ---
 
 # Monitoring And Alerts
@@ -21,6 +21,7 @@ Radioso emits signals through standard interfaces — a Prometheus-compatible me
 | Are documents being indexed | `radioso_document_worker_queue_jobs` | `/metrics` |
 | Are conversation actions being delivered | `radioso_action_dispatch_oldest_pending_age_ms` | `/metrics` |
 | Did someone sign up, did a conversation finish | `account.registered`, `chat.completed` | [ops event feed](ops-event-feed.md) |
+| Is a caller being throttled | `security.rate_limit_enforced` | `audit_events` |
 | What exactly broke, with a stack trace | error events | [ops event feed](ops-event-feed.md), `audit_events` |
 
 The split matters: metrics tell you the platform is unwell, and the ops event feed tells you what happened to a customer. Both are useful, and neither substitutes for the other.
@@ -110,6 +111,23 @@ groups:
 ```
 
 That last one earns its place. While the action outbox is stalled, customer-facing work — a contact request, a notification — sits undelivered and nothing else reports it. There is no error and no failed request; the queue just stops.
+
+## Rate limits
+
+Every throttled surface — sign-in, public chat, the agent channels, MCP, the copilot — shares one counter in Postgres, keyed by a scope and a subject such as an email, a session, or a workspace. A scope carries a limit, a window, and a block period: crossing the limit within the window blocks that subject for the block period and writes a `security.rate_limit_enforced` audit event, which is the signal to alert on if you care about who is being turned away.
+
+Admission weighs two windows. The window that just expired still counts, in proportion to how much of it the running window overlaps: `previous × overlap + current`, where `overlap` falls from 1 to 0 as the running window advances. A caller that spends a whole budget in the last second of one window is therefore still over the limit in the first second of the next, which a plain per-window counter would wave through at twice the intended rate.
+
+Responses carry the budget as headers, so a client can pace itself instead of discovering the limit by being refused:
+
+| Header | On | Meaning |
+|---|---|---|
+| `RateLimit-Limit` | every rate-limited response | attempts the scope allows per window |
+| `RateLimit-Remaining` | every rate-limited response | attempts left before the next one is refused |
+| `RateLimit-Reset` | every rate-limited response | seconds until the window rolls |
+| `Retry-After` | `429` only | seconds to wait before retrying |
+
+A client should honour `Retry-After` on a `429` and back off before `RateLimit-Remaining` reaches zero. The same wait is in the body as `error.details.retryAfterSeconds`, alongside the limit, what remains, and the reset instant, so a client that reads the JSON needs nothing else.
 
 ## Logs
 

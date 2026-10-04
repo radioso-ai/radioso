@@ -7,6 +7,7 @@ import {
   installDashboardApiMocks,
   nowIso,
   seedDashboardStorage,
+  testExecutionFixtureId,
   workspaceId,
   workspaceKey,
 } from "./dashboard-fixtures";
@@ -264,23 +265,28 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   await expect(page.getByTestId("answer-coverage-diagnostics")).toContainText("suppressed");
   await expect(page.getByTestId("answer-coverage-diagnostics")).toContainText("routine-exec-1");
 
-  // The full turn flow opens full-screen from the header Flow button:
-  // inputs → engine → skill path → outcome.
+  // The full turn flow opens full-screen from the header Flow button and reads
+  // top to bottom: the skill choice, the skill that ran, the verdict.
   await page.getByRole("button", { name: "Flow" }).click();
   await expect(page.getByText("Turn flow", { exact: true })).toBeVisible();
-  await expect(page.getByText("Engine", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Retrieval", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Outcome", { exact: true }).first()).toBeVisible();
-  // The retrieval capability path streams out as its own nodes.
-  await expect(page.getByText("Context", { exact: true }).first()).toBeVisible();
+  const flowNode = (id: string) => page.getByTestId(`rf__node-${id}`);
+  await expect(flowNode("spine:selection")).toContainText("Select skill");
+  await expect(flowNode("skill")).toContainText("Retrieval");
+  await expect(flowNode("outcome")).toContainText("Outcome");
+  // The retrieval path folds into its skill node until it is expanded.
+  await expect(flowNode("stage:context")).toHaveCount(0);
+  await flowNode("skill").getByRole("button", { name: /steps/ }).click();
+  await expect(flowNode("stage:context")).toContainText("Context");
 
-  // Selecting the skill node shows the dispatch detail.
-  await page.getByText("Retrieval", { exact: true }).first().click();
-  await expect(page.getByText("Dispatch", { exact: true }).first()).toBeVisible();
+  // Selecting the skill node shows the dispatch detail. A positional click can
+  // land on a neighbouring node, so dispatch on the node element itself.
+  const stageDetail = page.getByTestId("turn-flow-stage-detail");
+  await flowNode("skill").dispatchEvent("click");
+  await expect(stageDetail.getByText("Dispatch", { exact: true }).first()).toBeVisible();
 
-  // Selecting the engine node swaps the detail pane to the selection stage.
-  await page.getByText("Engine", { exact: true }).first().click();
-  await expect(page.getByText("Select skill", { exact: true }).first()).toBeVisible();
+  // Selecting the skill choice swaps the detail pane to the selection stage.
+  await flowNode("spine:selection").dispatchEvent("click");
+  await expect(stageDetail.getByText("Select skill", { exact: true }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Close turn flow" }).click();
   await expect(page.getByText("Turn flow", { exact: true })).toHaveCount(0);
@@ -929,9 +935,13 @@ test("activity drawer continues a conversation in test chat", async ({ page }) =
   await expect(page.getByText("Original answer.", { exact: true })).toBeVisible();
   // Next's route announcer is also role="alert"; the page itself must carry none.
   await expect(testChatAlerts).toHaveCount(0);
-  // The open command is consumed on arrival so refresh and back do not re-open it.
-  await expect(page).toHaveURL(`/w/${workspaceKey}/agents/${defaultAgentId}`);
+  // The opened test's id stays in the URL as route state, so reload lands on the same test.
+  await expect(page).toHaveURL(`/w/${workspaceKey}/agents/${defaultAgentId}?testExecution=${testExecutionFixtureId(1)}`);
   await expect(page.getByText("Continuing a copy of the conversation. The original is untouched.")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("Original answer.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Continuing a copy of the conversation. The original is untouched.")).toBeVisible();
+  await expect(page).toHaveURL(`/w/${workspaceKey}/agents/${defaultAgentId}?testExecution=${testExecutionFixtureId(1)}`);
 
   // The seeded thread carries on from where the real conversation stopped.
   await page.getByPlaceholder("Ask a question...").fill("And one more thing?");

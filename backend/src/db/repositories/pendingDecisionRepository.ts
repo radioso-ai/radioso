@@ -32,7 +32,10 @@ export interface PendingDecisionRecord {
   contentHash: string;
   status: PendingDecisionStatus;
   decision: unknown;
+  /** The organisation the workspace belongs to, shared by every teammate. */
   decidedBy: string | null;
+  /** The teammate who decided; null for a caller that is no teammate, or a user since deleted. */
+  decidedByUserId: string | null;
   decidedAt: Date | null;
   deadline: Date | null;
   createdAt: Date;
@@ -54,15 +57,16 @@ export interface PendingDecisionCreateInput {
   deadline?: Date | null;
 }
 
-export interface PendingDecisionResolveInput {
+interface PendingDecisionResolveInput {
   handle: string;
   status: PendingDecisionStatus;
   decision: unknown;
   decidedBy: string | null;
+  decidedByUserId?: string | null;
   contentHash: string;
 }
 
-export interface PendingDecisionListInput {
+interface PendingDecisionListInput {
   workspaceId: string;
 }
 
@@ -82,6 +86,7 @@ interface PendingDecisionRow {
   status: string;
   decision: unknown;
   decided_by: string | null;
+  decided_by_user_id: string | null;
   decided_at: Date | null;
   deadline: Date | null;
   created_at: Date;
@@ -108,6 +113,7 @@ const pendingDecisionColumns = sql`
   status,
   decision,
   decided_by,
+  decided_by_user_id,
   decided_at,
   deadline,
   created_at,
@@ -133,6 +139,7 @@ const pendingDecisionListColumns = sql`
   pd.status,
   pd.decision,
   pd.decided_by,
+  pd.decided_by_user_id,
   pd.decided_at,
   pd.deadline,
   pd.created_at,
@@ -177,6 +184,7 @@ const mapRecord = (row: PendingDecisionRow): PendingDecisionRecord => ({
   status: row.status as PendingDecisionStatus,
   decision: row.decision,
   decidedBy: row.decided_by,
+  decidedByUserId: row.decided_by_user_id,
   decidedAt: row.decided_at,
   deadline: row.deadline,
   createdAt: row.created_at,
@@ -250,6 +258,7 @@ export class PendingDecisionRepository {
          SET status = ${input.status},
              decision = ${toJsonb(input.decision)},
              decided_by = ${input.decidedBy},
+             decided_by_user_id = ${input.decidedByUserId ?? null},
              decided_at = ${currentTimestamp()},
              updated_at = ${currentTimestamp()}
        WHERE handle = ${input.handle}

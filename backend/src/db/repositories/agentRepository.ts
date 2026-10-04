@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { sql, type Transaction } from "kysely";
 
-import { conflict, notFound } from "../../shared/domain/errors.js";
+import { AppError, conflict, notFound } from "../../shared/domain/errors.js";
 import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
@@ -31,7 +31,7 @@ import { parseDirectiveLifecycle } from "../../modules/directives/public.js";
 import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
 import { currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { DB, Db } from "../../shared/infra/kysely/types.js";
+import type { DB, Db, OwnerCommitHook } from "../../shared/infra/kysely/types.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 import { withAgentDraftMutation } from "./agentDraftMutation.js";
 
@@ -51,6 +51,11 @@ interface AgentRow {
   skill_settings: unknown;
   chat_provider: LlmProviderName | null;
   chat_model: string | null;
+  public_id: string | null;
+  public_description: string;
+  agent_card_enabled: boolean;
+  public_agent_access_enabled: boolean;
+  walk_in_conversations_per_hour: number | null;
   authored_directives: unknown;
   created_at: Date;
   updated_at: Date;
@@ -125,8 +130,11 @@ const isAgentDirectiveNameUniqueViolation = (error: unknown): boolean => {
   );
 };
 
+// Carries a structured marker distinct from a bare `conflict()`: the copilot reviewed-execution
+// path must tell this deliberate refusal apart from an optimistic-concurrency mismatch, and both
+// throw the same AppError code ("conflict") from this repository, so the code alone can't do it.
 const directiveNameConflict = (name: string) =>
-  conflict(`A directive named "${name}" already exists for this agent.`);
+  new AppError(409, "conflict", `A directive named "${name}" already exists for this agent.`, { reason: "duplicate_name" });
 
 /**
  * The agent projection: the agents row plus two correlated subqueries that aggregate the
@@ -210,6 +218,11 @@ const agentColumns = sql`
     ),
     '[]'::json
   ) AS authored_directives,
+  public_id,
+  public_description,
+  agent_card_enabled,
+  public_agent_access_enabled,
+  walk_in_conversations_per_hour,
   created_at,
   updated_at
 `;
@@ -535,6 +548,11 @@ const mapAgent = (
     assistantDefaultLocale: readString(greeting, "assistantDefaultLocale") ?? null,
     proactiveGreetingEnabled: readBoolean(greeting, "proactiveGreetingEnabled"),
     chatModelOverride: chatOverride,
+    publicId: row.public_id,
+    publicDescription: row.public_description,
+    agentCardEnabled: row.agent_card_enabled,
+    publicAgentAccessEnabled: row.public_agent_access_enabled,
+    walkInConversationsPerHour: row.walk_in_conversations_per_hour,
     surfaceSettings: {
       authenticatedChat: {
         enabled: readBoolean(authenticatedChat, "enabled"),
@@ -571,9 +589,29 @@ export interface AgentUpdateOptions {
   expectedUpdatedAt?: Date;
 }
 
+/** The agent owner distinguishes a missing target from the fields that moved under a proposal. */
+export type AgentProposalCasOutcome =
+  | { readonly outcome: "applied"; readonly previous: AgentRecord; readonly agent: AgentRecord }
+  | { readonly outcome: "changed"; readonly fields: readonly string[] }
+  | { readonly outcome: "targetDeleted" };
+
+export type AgentProposalCasGuard =
+  | { readonly expectedFields: ReadonlyArray<{ key: string; value: unknown }>; readonly expectedDefaultAgentId?: string; readonly normalizeLocked?: (current: AgentRecord) => AgentInput; readonly onCommitted?: OwnerCommitHook<{ readonly agentId: string }> }
+  | { readonly expectedUpdatedAt: Date; readonly expectedDefaultAgentId?: string; readonly normalizeLocked?: (current: AgentRecord) => AgentInput; readonly onCommitted?: OwnerCommitHook<{ readonly agentId: string }> };
+
+const proposalFieldValue = (agent: AgentRecord, key: string): unknown => {
+  if (key === "anonymousChatEnabled") return agent.surfaceSettings.anonymousChat.enabled;
+  if (key === "websiteEmbedEnabled") return agent.surfaceSettings.websiteEmbed.enabled;
+  if (key === "websiteEmbedAllowedOrigins") return agent.surfaceSettings.websiteEmbed.allowedOrigins;
+  if (key === "websiteEmbedLauncherLabel") return agent.surfaceSettings.websiteEmbed.launcherLabel;
+  if (key === "websiteEmbedLauncherPosition") return agent.surfaceSettings.websiteEmbed.launcherPosition;
+  return (agent as unknown as Record<string, unknown>)[key];
+};
+
 export interface AgentDirectiveUpdateOptions {
   expectedUpdatedAt?: Date;
   expectedAgentUpdatedAt?: Date;
+  onCommitted?: OwnerCommitHook<AuthoredDirective | { readonly directiveId: string }>;
 }
 
 export interface AgentGreetingUpdateOptions {
@@ -590,8 +628,17 @@ export interface AgentRepositoryPort {
   findDefaultByWorkspaceId(workspaceId: string): Promise<AgentRecord | null>;
   findByAnonymousChatToken(token: string): Promise<AgentRecord | null>;
   findByWebsiteEmbedToken(token: string): Promise<AgentRecord | null>;
+  /** Workspace-free by design: the caller on this path holds a public id and nothing else. */
+  findByPublicId(publicId: string): Promise<AgentRecord | null>;
   listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]>;
   update(agentId: string, workspaceId: string, input: AgentInput, options?: AgentUpdateOptions): Promise<AgentRecord>;
+  /** Locks, compares, normalizes, and writes one agent patch without exposing a read/write race. */
+  applyProposalPatch(
+    agentId: string,
+    workspaceId: string,
+    input: AgentInput,
+    guard: AgentProposalCasGuard,
+  ): Promise<AgentProposalCasOutcome>;
   /** Draft-only: unlike `update`, this never touches the live `agents` row (spec 1150 F3 —
    * Off stays a live kill switch; exact content and its enabled flag live only in the draft/
    * candidate/published snapshot). */
@@ -632,7 +679,12 @@ export class AgentRepository implements AgentRepositoryPort {
           output_modes,
           skill_settings,
           chat_provider,
-          chat_model
+          chat_model,
+          public_id,
+          public_description,
+          agent_card_enabled,
+          public_agent_access_enabled,
+          walk_in_conversations_per_hour
         )
         VALUES (
           ${agentId},
@@ -646,7 +698,12 @@ export class AgentRepository implements AgentRepositoryPort {
           ${toJsonb(toOutputModes(normalized))},
           ${toJsonb(toSkillSettings(normalized))},
           ${normalized.chatModelOverride?.provider ?? null},
-          ${normalized.chatModelOverride?.model ?? null}
+          ${normalized.chatModelOverride?.model ?? null},
+          ${normalized.publicId},
+          ${normalized.publicDescription},
+          ${normalized.agentCardEnabled},
+          ${normalized.publicAgentAccessEnabled},
+          ${normalized.walkInConversationsPerHour}
         )
         RETURNING ${agentColumns}
       `.execute(trx);
@@ -714,6 +771,16 @@ export class AgentRepository implements AgentRepositoryPort {
     return row ? mapAgent(row, this.surfaceExtensions, this.skillSettings) : null;
   }
 
+  async findByPublicId(publicId: string): Promise<AgentRecord | null> {
+    const result = await sql<AgentRow>`
+      SELECT ${agentColumns}
+      FROM agents
+      WHERE public_id = ${publicId}
+    `.execute(this.db);
+    const row = result.rows[0];
+    return row ? mapAgent(row, this.surfaceExtensions, this.skillSettings) : null;
+  }
+
   async listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]> {
     const result = await sql<AgentRow>`
       SELECT ${agentColumns}
@@ -753,6 +820,60 @@ export class AgentRepository implements AgentRepositoryPort {
     });
   }
 
+  async applyProposalPatch(
+    agentId: string,
+    workspaceId: string,
+    input: AgentInput,
+    guard: AgentProposalCasGuard,
+  ): Promise<AgentProposalCasOutcome> {
+    return this.db.transaction().execute(async (trx) => {
+      if (guard.expectedDefaultAgentId) {
+        const workspace = await trx.selectFrom("workspaces")
+          .select(["default_agent_id"])
+          .where("id", "=", workspaceId)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!workspace) return { outcome: "targetDeleted" };
+        if (workspace.default_agent_id !== guard.expectedDefaultAgentId) {
+          return { outcome: "changed", fields: ["target"] };
+        }
+      }
+      const locked = await sql<AgentRow>`
+        SELECT ${agentColumns} FROM agents
+        WHERE id = ${agentId} AND workspace_id = ${workspaceId}
+        FOR UPDATE
+      `.execute(trx);
+      const row = locked.rows[0];
+      if (!row) return { outcome: "targetDeleted" };
+
+      const previous = mapAgent(row, this.surfaceExtensions, this.skillSettings);
+      if ("expectedFields" in guard) {
+        const changed = guard.expectedFields
+          .filter((field) => JSON.stringify(proposalFieldValue(previous, field.key)) !== JSON.stringify(field.value))
+          .map((field) => field.key);
+        if (changed.length > 0) return { outcome: "changed", fields: changed };
+      } else if (previous.updatedAt.getTime() !== guard.expectedUpdatedAt.getTime()) {
+        return { outcome: "changed", fields: ["target"] };
+      }
+
+      const lockedInput = guard.normalizeLocked?.(previous) ?? input;
+      const { authoredDirectives: _authoredDirectives, ...currentAgentInput } = previous;
+      const normalized = validateAgentInput({
+        ...currentAgentInput,
+        ...lockedInput,
+        surfaceSettings: mergeAgentSurfaceSettings(previous.surfaceSettings, lockedInput.surfaceSettings),
+      }, { extensions: this.surfaceExtensions, skillSettings: this.skillSettings });
+      const agent = lockedInput.customInstruction !== undefined
+        ? await withAgentDraftMutation(trx, workspaceId, agentId, async (_draftTrx, snapshot) => ({
+            result: await this.updateLiveAgent(trx, agentId, workspaceId, normalized, previous.updatedAt, lockedInput.sourceScope !== undefined),
+            snapshot: { ...snapshot, customInstruction: normalized.customInstruction },
+          }))
+        : await this.updateLiveAgent(trx, agentId, workspaceId, normalized, previous.updatedAt, lockedInput.sourceScope !== undefined);
+      await guard.onCommitted?.(trx, { agentId });
+      return { outcome: "applied", previous, agent };
+    });
+  }
+
   private async updateLiveAgent(
     trx: Transaction<DB>,
     agentId: string,
@@ -773,6 +894,11 @@ export class AgentRepository implements AgentRepositoryPort {
           skill_settings = ${toJsonb(toSkillSettings(normalized))},
           chat_provider = ${normalized.chatModelOverride?.provider ?? null},
           chat_model = ${normalized.chatModelOverride?.model ?? null},
+          public_id = ${normalized.publicId},
+          public_description = ${normalized.publicDescription},
+          agent_card_enabled = ${normalized.agentCardEnabled},
+          public_agent_access_enabled = ${normalized.publicAgentAccessEnabled},
+          walk_in_conversations_per_hour = ${normalized.walkInConversationsPerHour},
           updated_at = ${currentTimestamp()}
       WHERE id = ${agentId}
         AND workspace_id = ${workspaceId}
@@ -927,6 +1053,7 @@ export class AgentRepository implements AgentRepositoryPort {
           ...snapshot,
           directives: [...snapshot.directives.filter((existing) => existing.id !== saved.id), saved],
         },
+        ...(options.onCommitted ? { onCommitted: (transaction: Db) => options.onCommitted!(transaction, saved) } : {}),
       };
     });
   }
@@ -1029,6 +1156,7 @@ export class AgentRepository implements AgentRepositoryPort {
           ...snapshot,
           directives: [...snapshot.directives.filter((current) => current.id !== saved.id), saved],
         },
+        ...(options.onCommitted ? { onCommitted: (transaction: Db) => options.onCommitted!(transaction, saved) } : {}),
       };
     });
   }
@@ -1062,6 +1190,7 @@ export class AgentRepository implements AgentRepositoryPort {
               ...snapshot,
               directives: snapshot.directives.filter((directive) => directive.id !== directiveId),
             },
+            ...(options.onCommitted ? { onCommitted: (transaction: Db) => options.onCommitted!(transaction, { directiveId }) } : {}),
           }
         : { result: false, unchanged: true };
     });

@@ -92,6 +92,55 @@ describeDb("agent revision publication concurrency", () => {
     expect((await repository.findRevision(workspaceId, numberedAgentId, secondCandidate.id))?.publishedVersion).toBe(2);
   });
 
+  it("refuses to rename a published tool at candidate creation and at publish, while keeping the name passes (AS-8)", async () => {
+    const exposedAgentId = randomUUID();
+    const lineageId = randomUUID();
+    const routine = (id: string, exposure: { enabled: boolean; toolName: string }) => ({
+      id, agentId: exposedAgentId, lineageId, version: 1, name: "Start a return", enabled: true,
+      activation: { triggerDescription: "A customer wants to return an order.", gateRef: null, priority: 0, reentryMode: "once_per_conversation" },
+      slots: [],
+      steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask for the order number.", toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+      transitions: [{ fromStep: "ask", toRef: "done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Done.", ordinal: 0 }],
+      exposure: { ...exposure, description: "Start a return." },
+      createdAt: "2026-09-21T00:00:00.000Z", updatedAt: "2026-09-21T00:00:00.000Z",
+    });
+    const snapshotWith = (routines: unknown[]) => JSON.stringify({ customInstruction: null, directives: [], routines, contextVariableEnablements: [], agentSkills: [] });
+    await database.query("INSERT INTO agents (id,workspace_id,name) VALUES ($1,$2,$3)", [exposedAgentId, workspaceId, "exposed"]);
+    await database.query("INSERT INTO agent_drafts (agent_id,workspace_id,generation,snapshot) VALUES ($1,$2,1,$3::jsonb)", [exposedAgentId, workspaceId, snapshotWith([routine(randomUUID(), { enabled: true, toolName: "start_return" })])]);
+
+    const first = await repository.createCandidate(workspaceId, exposedAgentId, { id: randomUUID(), expectedDraftGeneration: 1 });
+    if (first === "conflict") throw new Error("first candidate conflicted");
+    const published = await repository.publish({ workspaceId, agentId: exposedAgentId, actorAccountId: null, revisionId: first.id, expectedDraftGeneration: 1, expectedPublishedRevisionId: null, idempotencyKey: "expose-v1" });
+    if (typeof published === "string") throw new Error(`first publication failed: ${published}`);
+
+    // A rename of the same lineage is refused where the candidate is frozen...
+    const renamed = await repository.mutateDraft(workspaceId, exposedAgentId, (snapshot) => ({ ...snapshot, routines: [routine(randomUUID(), { enabled: true, toolName: "begin_return" }) as never] }));
+    if (!renamed) throw new Error("draft unavailable");
+    await expect(repository.createCandidate(workspaceId, exposedAgentId, { id: randomUUID(), expectedDraftGeneration: renamed.generation })).rejects.toMatchObject({
+      statusCode: 422,
+      code: "revision_invalid",
+      details: { diagnostics: [expect.objectContaining({ code: "exposure_tool_name_changed" })] },
+    });
+    // ...and again at publish, for a candidate row that reached the table by another path.
+    const smuggledCandidateId = randomUUID();
+    await database.query(
+      "INSERT INTO agent_revisions (id,agent_id,workspace_id,snapshot,source_draft_generation,source_base_published_revision_id) VALUES ($1,$2,$3,$4::jsonb,$5,$6)",
+      [smuggledCandidateId, exposedAgentId, workspaceId, snapshotWith([routine(randomUUID(), { enabled: true, toolName: "begin_return" })]), renamed.generation, first.id],
+    );
+    await expect(repository.publish({ workspaceId, agentId: exposedAgentId, actorAccountId: null, revisionId: smuggledCandidateId, expectedDraftGeneration: renamed.generation, expectedPublishedRevisionId: first.id, idempotencyKey: "expose-rename" })).rejects.toMatchObject({
+      code: "revision_invalid",
+      details: { diagnostics: [expect.objectContaining({ code: "exposure_tool_name_changed" })] },
+    });
+
+    // Switching the exposure off keeps the frozen name and publishes.
+    const withdrawn = await repository.mutateDraft(workspaceId, exposedAgentId, (snapshot) => ({ ...snapshot, routines: [routine(randomUUID(), { enabled: false, toolName: "start_return" }) as never] }));
+    if (!withdrawn) throw new Error("draft unavailable");
+    const second = await repository.createCandidate(workspaceId, exposedAgentId, { id: randomUUID(), expectedDraftGeneration: withdrawn.generation });
+    if (second === "conflict") throw new Error("second candidate conflicted");
+    await expect(repository.publish({ workspaceId, agentId: exposedAgentId, actorAccountId: null, revisionId: second.id, expectedDraftGeneration: withdrawn.generation, expectedPublishedRevisionId: first.id, idempotencyKey: "expose-v2" })).resolves.toMatchObject({ idempotentReplay: false });
+  });
+
   it("recovers the original adapter publication receipt after a later revision supersedes it", async () => {
     const recoveryAgentId = randomUUID();
     const snapshot = JSON.stringify({ customInstruction: "first", directives: [], routines: [], contextVariableEnablements: [] });

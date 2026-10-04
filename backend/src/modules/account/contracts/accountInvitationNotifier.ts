@@ -5,6 +5,8 @@ export interface AccountInvitationNotification {
   acceptancePath: string;
   /** Mailbox of the operator who issued the invitation, when it can be resolved. */
   invitedByEmail: string | null;
+  /** The display name that operator chose, when they have one. */
+  invitedByName: string | null;
   expiresAt: Date;
 }
 

@@ -17,6 +17,10 @@ export const ROUTINE_DEFINITION_LIMITS = {
   destinationRef: 300,
   fieldRef: 200,
   fieldValue: 500,
+  exposureToolName: 63,
+  exposureDescription: 500,
+  operatorNoticeSubject: 200,
+  operatorNoticeIntro: 2000,
 } as const;
 
 // Reentry policy for a completed routine instance within a conversation (issue #746).
@@ -62,6 +66,11 @@ export const routineValidationCodes = [
   "unknown_context_variable",
   "variable_name_collision",
   "node_id_collision",
+  "exposure_tool_name_invalid",
+  "exposure_tool_name_reserved",
+  "exposure_tool_name_duplicate",
+  "exposure_tool_name_changed",
+  "exposure_requires_ungated_activation",
 ] as const;
 
 export const routineIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
@@ -340,18 +349,41 @@ const routineTerminalSharedFields = {
   kind: z.enum(routineTerminalKinds),
 };
 
-const routineTerminalSchemaFor = <TInstruction extends z.ZodTypeAny>(instruction: TInstruction) => z.object({
+/**
+ * What the operators are told when a routine ends on this terminal. Both texts are optional
+ * and may reference `{{slot.<key>}}`; an absent text renders the default for the ending's
+ * kind, so `{}` is a complete notice. Whether an ending notifies at all is
+ * {@link endingNotifiesOperators}, not the presence of text.
+ */
+const routineOperatorNoticeSchemaFor = <TText extends z.ZodTypeAny>(text: (maxLength: number) => TText) => z.object({
+  subject: text(ROUTINE_DEFINITION_LIMITS.operatorNoticeSubject),
+  intro: text(ROUTINE_DEFINITION_LIMITS.operatorNoticeIntro),
+}).strict();
+
+export const routineOperatorNoticeSchema = routineOperatorNoticeSchemaFor(optionalTrimmedText);
+
+const routineOperatorNoticeEditingSchema = routineOperatorNoticeSchemaFor(editingOptionalText);
+
+const routineTerminalSchemaFor = <
+  TInstruction extends z.ZodTypeAny,
+  TOperatorNotice extends z.ZodTypeAny,
+>(instruction: TInstruction, operatorNotice: TOperatorNotice) => z.object({
   ...routineTerminalSharedFields,
   instruction,
+  // Optional with no default: absent means "this ending sends no notice of its own", and a
+  // hand-off notifies regardless (endingNotifiesOperators).
+  operatorNotice: operatorNotice.optional(),
   ordinal: z.number().int().min(0),
 }).strict();
 
 export const routineTerminalSchema = routineTerminalSchemaFor(
   optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.instruction),
+  routineOperatorNoticeSchema,
 );
 
 const routineTerminalEditingSchema = routineTerminalSchemaFor(
   editingOptionalText(ROUTINE_DEFINITION_LIMITS.instruction),
+  routineOperatorNoticeEditingSchema,
 );
 
 const routineCompletionExportFields = {
@@ -381,6 +413,25 @@ export const routineCompletionExportSchema = createRoutineCompletionExportSchema
     });
   }
 });
+
+/**
+ * The grammar of a tool name a calling agent invokes a routine by: a lower-case
+ * identifier of 2–63 characters, as MCP and function-calling catalogs expect. The
+ * validator enforces it (`exposure_tool_name_invalid`), so a draft can hold a
+ * half-typed name and report it as a diagnostic rather than refuse the save.
+ */
+export const routineExposureToolNamePattern = /^[a-z][a-z0-9_]{1,62}$/u;
+
+/**
+ * How a routine is offered to a calling agent as a named tool. `toolName` is frozen once a
+ * published revision carries it (the revision gate enforces `exposure_tool_name_changed`),
+ * so a disabled block keeps its name rather than dropping it.
+ */
+export const routineExposureSchema = z.object({
+  enabled: z.boolean(),
+  toolName: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.exposureToolName),
+  description: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.exposureDescription),
+}).strict();
 
 const routineDefinitionDraftSchema = <
   TName extends z.ZodTypeAny,
@@ -415,6 +466,9 @@ const routineDefinitionDraftSchema = <
   transitions,
   terminals,
   completionExport,
+  // Optional with no default: absent means "not offered as a tool", and the update schema
+  // below can carry an omission forward as-is because no field inside it defaults either.
+  exposure: routineExposureSchema.optional(),
 }).strict();
 
 // Fields added to the persistence draft schema must be classified as strict or
@@ -517,6 +571,27 @@ export const collectSlotKeys = (instruction: string): string[] => {
   return [...keys];
 };
 
+/**
+ * A `{{context.<name>}}` reference inside a step instruction: the step reads a context
+ * variable (the visitor's current page, a host-pushed value) as data. One pattern, shared
+ * by the compiler (which stamps `contextRefs` step metadata), the validator (which checks
+ * the name against the agent's available set), and the authoring document (which shows it
+ * as a chip), so the three cannot disagree on what counts as a reference.
+ */
+export const CONTEXT_REFERENCE_PATTERN = /\{\{\s*context\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
+
+/** Extract the distinct `{{context.<name>}}` references from an instruction, in first-seen order. */
+export const collectContextVariableRefs = (instruction: string): string[] => {
+  const names = new Set<string>();
+  for (const match of instruction.matchAll(CONTEXT_REFERENCE_PATTERN)) {
+    const name = match[1];
+    if (name) {
+      names.add(name);
+    }
+  }
+  return [...names];
+};
+
 /** The minimum a step must expose for slot-collection ownership to be decided. */
 export interface SlotCollectionStep {
   stableStepId: string;
@@ -573,12 +648,25 @@ export const collectedSlotsByStep = (
   return collectedByStep;
 };
 export type RoutineTerminalKind = typeof routineTerminalKinds[number];
+export type RoutineOperatorNotice = z.infer<typeof routineOperatorNoticeSchema>;
+
+/**
+ * Whether a routine ending notifies operators. `kind` decides who owns the conversation
+ * afterwards; the notice is a side effect: a hand-off always notifies, and a completion
+ * notifies only when the author gave it an operator notice. This is the one statement of
+ * the rule; the compiler applies it and every other layer reads its result.
+ */
+export const endingNotifiesOperators = (terminal: {
+  kind: RoutineTerminalKind;
+  operatorNotice?: RoutineOperatorNotice;
+}): boolean => terminal.kind === "handoff" || terminal.operatorNotice !== undefined;
 export type RoutineValidationCode = typeof routineValidationCodes[number];
 export type RoutineCompletionExportTriggerKind = typeof routineCompletionExportTriggerKinds[number];
 export type RoutineInputBinding = z.infer<typeof routineInputBindingSchema>;
 export type RoutineStepMode = z.infer<typeof routineStepModeSchema>;
 export type RoutineStepMetadata = z.infer<typeof routineStepMetadataSchema>;
 export type RoutineCompletionExport = z.infer<typeof routineCompletionExportSchema>;
+export type RoutineExposure = z.infer<typeof routineExposureSchema>;
 export type RoutineDefinitionDraftInput = z.infer<typeof routineDefinitionDraftInputSchema>;
 // Pre-parse authoring shape: what callers may submit before Zod applies defaults
 // (e.g. activation.reentryMode is optional here, required post-parse). Authoring

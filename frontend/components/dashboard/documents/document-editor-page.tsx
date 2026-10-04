@@ -186,8 +186,7 @@ export function DocumentEditorPage({
   const headerActions = (
     <div className="flex flex-wrap items-center gap-2">
       {isFailed ? (
-        <Button type="button" variant="outline" onClick={onRetry} disabled={isSaving || isDeleting || isRetrying}>
-          {isRetrying ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+        <Button type="button" variant="outline" onClick={onRetry} disabled={isSaving || isDeleting} loading={isRetrying} icon={<RefreshCw />}>
           Retry processing
         </Button>
       ) : null}
@@ -206,9 +205,9 @@ export function DocumentEditorPage({
           </Button>
           <Button
             type="submit"
-            disabled={isSaving || !values.title.trim() || !values.content.trim() || Boolean(metadataError)}
+            disabled={!values.title.trim() || !values.content.trim() || Boolean(metadataError)}
+            loading={isSaving} icon={<Save />}
           >
-            {isSaving ? <Spinner className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
             Save document
           </Button>
         </>
@@ -484,10 +483,9 @@ export function DocumentEditorPage({
                           variant="outline"
                           size="sm"
                           onClick={onRunMetadataExtraction}
-                          disabled={Boolean(isRunningMetadataExtraction)}
+                          loading={Boolean(isRunningMetadataExtraction)}
                         >
-                          {isRunningMetadataExtraction ? <Spinner className="mr-2 h-3.5 w-3.5" /> : null}
-                          <span>Run metadata extraction</span>
+                          Run metadata extraction
                         </Button>
                         <p className="text-xs text-muted-foreground">
                           Processes this document again with metadata extraction forced on for that run.
@@ -514,10 +512,10 @@ export function DocumentEditorPage({
                         variant="outline"
                         size="sm"
                         onClick={onSaveMetadata}
-                        disabled={Boolean(isSavingMetadata) || Boolean(metadataError)}
+                        disabled={Boolean(metadataError)}
+                        loading={Boolean(isSavingMetadata)}
                       >
-                        {isSavingMetadata ? <Spinner className="mr-2 h-3.5 w-3.5" /> : null}
-                        <span>Save metadata</span>
+                        Save metadata
                       </Button>
                       <p className="text-xs text-muted-foreground">
                         Tags save on their own. The imported file&apos;s contents stay read-only.

@@ -25,6 +25,7 @@ const createMockReqRes = (
   let responseBody: unknown = undefined;
   let responseStatus = 200;
   let nextError: unknown = undefined;
+  const headers = new Map<string, string>();
   const res = {
     locals,
     status(code: number) {
@@ -33,6 +34,10 @@ const createMockReqRes = (
     },
     json(body: unknown) {
       responseBody = body;
+      return this;
+    },
+    setHeader(name: string, value: string | number) {
+      headers.set(name, String(value));
       return this;
     },
   } as unknown as Response;
@@ -56,6 +61,7 @@ const createMockReqRes = (
     getStatus: () => responseStatus,
     getBody: () => responseBody,
     getError: () => nextError,
+    getHeader: (name: string) => headers.get(name),
     wasNextCalled: () => nextCalled,
   };
 };
@@ -94,7 +100,7 @@ describe("anonymousRateLimiter", () => {
     }
 
     // The next one should be rejected
-    const { req, res, next, getStatus, getBody, wasNextCalled } = createMockReqRes({
+    const { req, res, next, getStatus, getBody, getHeader, wasNextCalled } = createMockReqRes({
       workspaceId: "workspace-1",
       anonymousSessionId: sessionId,
     });
@@ -104,6 +110,8 @@ describe("anonymousRateLimiter", () => {
     expect(getStatus()).toBe(429);
     expect((getBody() as any).code).toBe("rate_limit_exceeded");
     expect((getBody() as any).retryAfterSeconds).toBeGreaterThan(0);
+    expect(Number(getHeader("Retry-After"))).toBeGreaterThan(0);
+    expect(getHeader("RateLimit-Remaining")).toBe("0");
   });
 
   it("handles request sources independently", async () => {

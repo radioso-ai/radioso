@@ -9,6 +9,11 @@ import { PendingDecisionRepository } from "../../../db/repositories/pendingDecis
 import { ClarificationStateRepository } from "../../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import type { TeammateLabelReaderPort } from "../../../modules/auth/contracts/index.js";
+import type {
+  ConversationActivityRecorder,
+  ConversationActivityTimelineReader,
+} from "../../../modules/conversationActivity/contracts/index.js";
 import { AuditEventRepository } from "../../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
@@ -144,26 +149,56 @@ import type { McpConverseRouteDependencies, McpConverseRouteServices } from "../
 import type { ChatTurnPlanHandle } from "../../../modules/chat/services/turnPlanCoordinator.js";
 import { buildInfrastructure } from "./infra.js";
 import { RoutineChatModelGateway } from "../../../modules/chat/services/routines/routineChatModelGateway.js";
+import {
+  createAgentConverseOriginVerifier,
+  createAgentConverseWalkInIssuer,
+  createAgentConverseWalkInObserver,
+} from "../../composition/agentConverseOrigins.js";
+import { createConverseVisitorIdentityVerifier } from "../../composition/converseVisitorIdentity.js";
+import { createConversationUpdatesComposition } from "../../composition/conversationUpdates.js";
 
 
 export const buildMcpConverseServices = (
   dependencies: McpConverseRouteDependencies,
 ): McpConverseRouteServices => {
   const audit = new AgentConverseAudit(dependencies.auditService);
+  const walkInObserver = createAgentConverseWalkInObserver({
+    metrics: dependencies.metricsRegistry,
+    logger: dependencies.logger,
+  });
   const sessionService = new AgentConverseSessionService({
     accessGrantService: dependencies.accessGrantService,
     agentLookup: dependencies.agentRepository,
     sessionMapping: dependencies.agentConverseSessionMappingRepository,
+    originVerifier: createAgentConverseOriginVerifier({
+      accessGrantService: dependencies.accessGrantService,
+      agentRepository: dependencies.agentRepository,
+      audit,
+    }),
+    walkInIssuer: createAgentConverseWalkInIssuer({ agentRepository: dependencies.agentRepository }),
+    walkInObserver,
     publicChatSessionSecret: dependencies.env.PUBLIC_CHAT_SESSION_SECRET,
     audit,
   });
   const converseService = new AgentConverseService({
     assistantChatService: dependencies.assistantChatService,
     conversationRepository: dependencies.conversationRepository,
+    agentToolCatalog: dependencies.agentToolCatalog,
     audit,
+    visitorIdentity: createConverseVisitorIdentityVerifier(dependencies),
     publisher: dependencies.workspaceInvalidationPublisher,
+    metrics: dependencies.metricsRegistry,
+    logger: dependencies.logger,
   });
-  return { audit, sessionService, converseService };
+  const conversationUpdates = createConversationUpdatesComposition(dependencies);
+  return {
+    audit,
+    sessionService,
+    converseService,
+    walkInObserver,
+    conversationUpdateReader: conversationUpdates.reader,
+    conversationUpdateWaiter: conversationUpdates.waiter,
+  };
 };
 
 export const buildChatServices = (input: {
@@ -174,6 +209,8 @@ export const buildChatServices = (input: {
   auditService: AuditService;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepository;
   composition: ApplicationComposition;
+  /** Records the activity of a handoff a turn requests and an approval decided; reads a conversation's timeline. */
+  conversationActivity: { recorder: ConversationActivityRecorder; reads: ConversationActivityTimelineReader };
   conversationOwnershipRepository: ConversationOwnershipRepository;
   conversationRepository: ConversationRepository;
   clusteringEmbeddings: ClusteringEmbeddingPort;
@@ -211,6 +248,7 @@ export const buildChatServices = (input: {
   ingestionSettingsService: IngestionSettingsService;
   routineTriggerEmbeddingService: RoutineTriggerEmbeddingService;
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
+  teammateLabels: TeammateLabelReaderPort;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
   // Retrieval-sense clarification is answer-first: once a candidate set survives
@@ -768,6 +806,7 @@ export const buildChatServices = (input: {
     actionOutbox: pushingActionOutbox,
     assistantTurnPersistence: new PostgresAssistantTurnPersistence(
       input.database.kysely,
+      input.conversationActivity.recorder,
       undefined,
       input.conversationOwnershipRepository,
       actionDrainDispatcher,
@@ -846,6 +885,8 @@ export const buildChatServices = (input: {
     input.conversationOwnershipRepository,
     new AnswerCoverageRepository(input.database.kysely),
     visitorRepository,
+    input.teammateLabels,
+    input.conversationActivity.reads,
   );
   // "Continue in test chat": a private test execution seeded from a live conversation's
   // thread and its current routine/clarification/directive position. Read-only on the source.
@@ -916,6 +957,7 @@ export const buildChatServices = (input: {
   const approvalDecisionService = new ApprovalDecisionService(
     new PendingDecisionRepository(input.database.kysely),
     chatService.asApprovalResumeRunner(),
+    input.conversationActivity.recorder,
     {
       resolveWorkspaceRole: (caller) => input.accountAccessService.resolveWorkspaceRole(caller),
     },
@@ -944,6 +986,9 @@ export const buildChatServices = (input: {
     contactHistoryProvider,
     retrievalAnswerService,
     actionDispatchWorker,
+    // For producers outside the turn that write the outbox in their own transaction (a
+    // conversation transfer and its notice) and push a drain once it commits.
+    actionDrainDispatcher,
     approvalDecisionService,
   };
 };

@@ -1,5 +1,5 @@
 import type { Env } from "../../../app/config/env.js";
-import { conflict, forbidden, unauthorized } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, conflict, forbidden, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService, AccountInvitationService, AuthenticatedPrincipal } from "../../account/public.js";
 import {
   transactionalLifecycleAuditEvent,
@@ -15,9 +15,20 @@ import type {
   OrganizationCreationGuard,
   OrganizationCreationReservation,
 } from "../../../shared/domain/organizationCreationGuard.js";
-import { noopOrganizationCreationGuard } from "../../../shared/domain/organizationCreationGuard.js";
+import {
+  describeOrganizationCreationDenial,
+  noopOrganizationCreationGuard,
+} from "../../../shared/domain/organizationCreationGuard.js";
+import {
+  describeFederatedLoginFailure,
+  failFederatedLoginStage,
+  runFederatedLoginStage,
+  unwrapFederatedLoginFailure,
+  withFederatedLoginFailureDetail,
+  type FederatedLoginFailureLabel,
+} from "./federatedLoginFailure.js";
 import type { WorkspaceService } from "../../workspace/public.js";
-import type { UserRepositoryPort } from "../../../db/repositories/userRepository.js";
+import type { UserRecord, UserRepositoryPort } from "../../../db/repositories/userRepository.js";
 import {
   generateSessionToken,
   hashPassword,
@@ -27,6 +38,11 @@ import {
   sha256,
   verifyPassword,
 } from "../domain/authPrimitives.js";
+import {
+  DISPLAY_NAME_MAX_LENGTH,
+  normalizeDisplayName,
+  type DisplayNameRejection,
+} from "../domain/userDisplayName.js";
 
 export interface AccountRecord {
   id: string;
@@ -50,8 +66,10 @@ export interface SessionRecord {
 
 
 /** A signed-in principal plus the account and workspace the session lands on. */
-export interface AuthenticatedAccountSession {
+interface AuthenticatedAccountSession {
   userId: string;
+  /** The name the person chose, so a sign-in shows it without a second request. */
+  displayName: string | null;
   accountId: string;
   organizationName: string;
   workspaceId: string;
@@ -59,6 +77,45 @@ export interface AuthenticatedAccountSession {
   workspacePublicRouteKey: string;
   sessionCookie: string;
 }
+
+/** The signed-in user's own identity, as they may read and edit it. */
+interface UserProfile {
+  userId: string;
+  email: string;
+  displayName: string | null;
+}
+
+const toUserProfile = (user: UserRecord): UserProfile => ({
+  userId: user.id,
+  email: user.email,
+  displayName: user.displayName,
+});
+
+const displayNameRejectionMessages: Record<DisplayNameRejection, string> = {
+  too_long: `Display name must be at most ${DISPLAY_NAME_MAX_LENGTH} characters`,
+  control_characters: "Display name cannot contain control characters",
+  direction_controls: "Display name cannot contain text-direction control characters",
+  no_visible_characters: "Display name must contain a visible character",
+  email_address: "Display name cannot be an email address",
+};
+
+/** Applies the display-name rules to a person's own input, answering a rejection as a bad request. */
+const requireValidDisplayName = (input: string | null | undefined): string | null => {
+  const result = normalizeDisplayName(input ?? null);
+  if (result.ok) {
+    return result.displayName;
+  }
+  throw badRequest(displayNameRejectionMessages[result.reason]);
+};
+
+/**
+ * The provider's name is a starting point the person can change, not their own
+ * input: one the rules reject leaves them unnamed instead of failing sign-in.
+ */
+const providerDisplayName = (name: string | null): string | null => {
+  const result = normalizeDisplayName(name);
+  return result.ok ? result.displayName : null;
+};
 
 export interface AccountRepositoryPort {
   create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord>;
@@ -117,6 +174,28 @@ interface AuthServiceDependencies {
   personalCredentialLifecycle?: Pick<PersonalCredentialLifecyclePort, "deleteAccount">;
 }
 
+type LoginMembership = Awaited<ReturnType<AccountAccessService["resolveLoginAccount"]>>;
+
+/**
+ * Names a refusal to create the organization a first-time federated sign-in
+ * needs, so a closed signup reads as the policy decision it is instead of as a
+ * provisioning fault. "We will not" and "we could not tell" send an operator to
+ * different places.
+ *
+ * Closed signup is the only refusal a federated first sign-in can meet: no
+ * shipped guard applies a quota to `intent: "signup"`, so a quota reason here
+ * would name a case nothing produces. A guard that starts refusing signups on
+ * a quota needs its own reason, added with the test that reaches it.
+ *
+ * The denial's payload stays out: it can carry another customer's organization
+ * name, and an audit record must not.
+ */
+const federatedSignupRefusal = (error: unknown): FederatedLoginFailureLabel => (
+  describeOrganizationCreationDenial(error)
+    ? { reason: "registration_closed" }
+    : { reason: "account_provisioning_failed" }
+);
+
 export class AuthService {
   constructor(private readonly dependencies: AuthServiceDependencies) {}
 
@@ -150,19 +229,15 @@ export class AuthService {
     email: string;
     password: string;
     organizationName?: string | null;
+    displayName?: string | null;
     requestIp?: string | null;
     requestUserAgent?: string | null;
-  }): Promise<{
-    userId: string;
-    accountId: string;
-    organizationName: string;
-    workspaceId: string;
-    workspaceName: string;
-    workspacePublicRouteKey: string;
+  }): Promise<Omit<AuthenticatedAccountSession, "sessionCookie"> & {
     requiresEmailVerification: boolean;
     sessionCookie?: string;
   }> {
     const email = normalizeEmail(input.email);
+    const displayName = requireValidDisplayName(input.displayName);
     const passwordHash = await hashPassword(input.password);
     let organizationCreationReservation: OrganizationCreationReservation;
     try {
@@ -184,13 +259,22 @@ export class AuthService {
         organizationName,
         email,
         passwordHash,
+        displayName,
         emailVerifiedAt: autoVerifyEmail ? new Date() : null,
       });
       await this.dependencies.onAccountCreated?.({ accountId: core.account.id });
       const sessionCookie = autoVerifyEmail
         ? await this.createSessionCookie(core.userId, core.account.id)
         : undefined;
+      await organizationCreationReservation.commit({ accountId: core.account.id });
+      await this.trackRegistration({
+        accountId: core.account.id,
+        workspaceId: core.workspace.id,
+        requiresEmailVerification: !autoVerifyEmail,
+      });
 
+      // Recorded last, once the attempt can no longer fail, so one signup never
+      // leaves both a success and a failure behind.
       await this.dependencies.auditService.record({
         accountId: core.account.id,
         eventType: "auth.register",
@@ -200,15 +284,10 @@ export class AuthService {
           verificationMode: autoVerifyEmail ? "development_auto_verify" : "email_verification",
         },
       });
-      await organizationCreationReservation.commit({ accountId: core.account.id });
-      await this.trackRegistration({
-        accountId: core.account.id,
-        workspaceId: core.workspace.id,
-        requiresEmailVerification: !autoVerifyEmail,
-      });
 
       return {
         userId: core.userId,
+        displayName,
         accountId: core.account.id,
         organizationName: core.account.name,
         workspaceId: core.workspace.id,
@@ -218,15 +297,13 @@ export class AuthService {
         ...(sessionCookie ? { sessionCookie } : {}),
       };
     } catch (error) {
-      try {
-        await this.recordDuplicateRegistration(email, error);
-        await this.recordOrganizationCreationDenied("auth.register", "registration_closed", null, error);
-        if (core) {
-          await this.rollbackCreatedAccount(core.account.id, core.userId);
-        }
-      } finally {
-        await organizationCreationReservation.release();
-      }
+      const orphaned = await this.unwindFailedProvisioning(
+        organizationCreationReservation,
+        core ? { accountId: core.account.id, userId: core.userId } : null,
+      );
+      await this.recordDuplicateRegistration(email, error);
+      await this.recordOrganizationCreationDenied("auth.register", "registration_closed", null, error);
+      await this.recordProvisioningOrphans("auth.register", { email }, orphaned);
       throw error;
     }
   }
@@ -301,6 +378,7 @@ export class AuthService {
 
       return {
         userId: user.id,
+        displayName: user.displayName,
         accountId: core.account.id,
         organizationName: core.account.name,
         workspaceId: core.workspace.id,
@@ -309,65 +387,73 @@ export class AuthService {
         sessionCookie,
       };
     } catch (error) {
-      try {
-        if (core) {
-          await this.rollbackCreatedAccount(core.account.id);
-        }
-      } finally {
-        await organizationCreationReservation.release();
-      }
+      // The user already existed, so only the account is this attempt's to undo.
+      const orphaned = await this.unwindFailedProvisioning(
+        organizationCreationReservation,
+        core ? { accountId: core.account.id } : null,
+      );
+      await this.recordProvisioningOrphans("account.create", { actorUserId: user.id }, orphaned);
       throw error;
     }
   }
 
   private async recordOrganizationCreationDenied(
-    eventType: "auth.register" | "auth.federated_login" | "account.create",
+    eventType: "auth.register" | "account.create",
     forbiddenReason: "registration_closed" | "additional_organization_not_available",
     userId: string | null,
     error: unknown,
   ): Promise<void> {
-    const candidate = error as { statusCode?: number; code?: string; details?: unknown };
-    const rateLimited = candidate.statusCode === 429 || candidate.code === "rate_limit_exceeded";
-    const forbidden = candidate.statusCode === 403 || candidate.code === "forbidden";
-    if (!rateLimited && !forbidden) {
+    const denial = describeOrganizationCreationDenial(error);
+    if (!denial) {
       return;
     }
 
-    const details = candidate.details as Partial<{
-      limit: number;
-      used: number;
-      periodStart: string;
-      resetAt: string;
-    }> | undefined;
-    const safeRateLimit = rateLimited && details
-      ? {
-          limit: details.limit,
-          used: details.used,
-          periodStart: details.periodStart,
-          resetAt: details.resetAt,
-        }
-      : null;
-
-    await this.dependencies.auditService.record({
-      eventType,
-      eventStatus: "failure",
-      metadata: {
-        ...(userId ? { actorUserId: userId } : {}),
-        reason: rateLimited ? "rate_limited" : forbiddenReason,
-        ...(safeRateLimit ? { rateLimit: safeRateLimit } : {}),
-      },
+    await this.recordAttemptFailure(eventType, {
+      ...(userId ? { actorUserId: userId } : {}),
+      reason: denial.rateLimited ? "rate_limited" : forbiddenReason,
+      ...(denial.rateLimit ? { rateLimit: denial.rateLimit } : {}),
     });
+  }
+
+  /**
+   * Names the rows that outlived a failed signup or organization creation.
+   * Only an orphan earns a record: a failure that cleaned up after itself
+   * leaves an operator nothing to act on, and its error still reaches the
+   * caller.
+   */
+  private async recordProvisioningOrphans(
+    eventType: "auth.register" | "account.create",
+    actor: Record<string, unknown>,
+    orphaned: Record<string, unknown> | undefined,
+  ): Promise<void> {
+    if (!orphaned) {
+      return;
+    }
+
+    await this.recordAttemptFailure(eventType, { ...actor, reason: "account_provisioning_failed", detail: orphaned });
   }
 
   private async recordDuplicateRegistration(email: string, error: unknown): Promise<void> {
     const candidate = error as { statusCode?: number; code?: string };
     if (candidate.statusCode !== 409 && candidate.code !== "conflict") return;
 
-    await this.dependencies.auditService.record({
-      eventType: "auth.register",
-      eventStatus: "failure",
-      metadata: { email },
-    });
+    await this.recordAttemptFailure("auth.register", { email });
+  }
+
+  /**
+   * Writes the failure record of an attempt that has already failed. A sink
+   * that cannot take the record must not replace the error the caller has to
+   * handle -- the database that refused the attempt usually refuses this too.
+   */
+  private async recordAttemptFailure(
+    eventType: "auth.register" | "account.create",
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.dependencies.auditService.record({ eventType, eventStatus: "failure", metadata });
+    } catch {
+      // Deliberately swallowed: see above.
+    }
   }
 
   async login(input: {
@@ -412,6 +498,7 @@ export class AuthService {
 
     return {
       userId: user.id,
+      displayName: user.displayName,
       accountId: membership.accountId,
       organizationName: (await this.dependencies.accountRepository.findById(membership.accountId))?.name
         ?? deriveOrganizationName(email),
@@ -434,92 +521,175 @@ export class AuthService {
    * work address changed in the account they already have. The email links a
    * subject the first time it is seen, and an existing user (verified or not)
    * is marked verified, since the provider has proven control of the mailbox.
+   *
+   * A failed attempt is audited here, once, under the reason of the stage that
+   * failed. This method is the only place that knows why each stage said no;
+   * a caller sees a sign-in that did not complete and nothing more, so leaving
+   * the record to it would trade the reason for a guess.
    */
   async federatedLogin(input: {
     provider: string;
     subject: string;
     email: string;
     emailVerified: boolean;
+    /** The provider's name for the person; only a first sign-in, which creates the user, keeps it. */
+    displayName?: string | null;
   }): Promise<AuthenticatedAccountSession> {
-    const email = normalizeEmail(input.email);
+    const identity = {
+      email: normalizeEmail(input.email),
+      provider: input.provider,
+      subject: input.subject,
+    };
 
-    if (!input.emailVerified) {
+    try {
+      return await this.completeFederatedLogin({
+        ...identity,
+        emailVerified: input.emailVerified,
+        displayName: input.displayName ?? null,
+      });
+    } catch (error) {
+      await this.recordFederatedLoginFailure(identity, error);
+      throw unwrapFederatedLoginFailure(error);
+    }
+  }
+
+  private async recordFederatedLoginFailure(
+    identity: { email: string; provider: string; subject: string },
+    error: unknown,
+  ): Promise<void> {
+    const { reason, detail } = describeFederatedLoginFailure(error);
+    try {
       await this.dependencies.auditService.record({
         eventType: "auth.federated_login",
         eventStatus: "failure",
-        metadata: { email, provider: input.provider, reason: "email_unverified" },
+        metadata: { ...identity, reason, ...(detail ? { detail } : {}) },
       });
-      throw unauthorized("Email not verified by the identity provider");
+    } catch {
+      // A sink that cannot take the record must not replace the sign-in failure
+      // the caller has to handle.
+    }
+  }
+
+  private async completeFederatedLogin(input: {
+    provider: string;
+    subject: string;
+    email: string;
+    emailVerified: boolean;
+    displayName: string | null;
+  }): Promise<AuthenticatedAccountSession> {
+    if (!input.emailVerified) {
+      throw failFederatedLoginStage(
+        { reason: "email_unverified" },
+        unauthorized("Email not verified by the identity provider"),
+      );
     }
 
-    const linked = await this.dependencies.federatedIdentityRepository
-      .findByProviderSubject(input.provider, input.subject);
-    const existing = linked
-      ? await this.dependencies.userRepository.findById(linked.userId)
-      : await this.dependencies.userRepository.findByEmail(email);
+    const match = await runFederatedLoginStage({ reason: "identity_lookup_failed" }, async () => {
+      const linked = await this.dependencies.federatedIdentityRepository
+        .findByProviderSubject(input.provider, input.subject);
+      return {
+        matchedBy: linked ? ("subject" as const) : ("email" as const),
+        user: linked
+          ? await this.dependencies.userRepository.findById(linked.userId)
+          : await this.dependencies.userRepository.findByEmail(input.email),
+      };
+    });
 
-    if (existing) {
-      if (!existing.emailVerifiedAt) {
-        // The account was created by password registration but never verified,
-        // so its password was set by whoever registered it — not necessarily
-        // the mailbox owner. The provider has now proven ownership, so treat
-        // this exactly like a password reset: rotate the (possibly attacker-set)
-        // password to an unusable hash and drop any existing sessions before
-        // verifying and issuing a new one. Without this, a pre-verification
-        // squatter keeps a working password into the now-verified account.
+    const existing = match.user;
+    if (!existing) {
+      return this.provisionFederatedAccount(input);
+    }
+
+    let displayName = existing.displayName;
+    if (!existing.emailVerifiedAt) {
+      // The account was created by password registration but never verified,
+      // so its password was set by whoever registered it — not necessarily
+      // the mailbox owner. The provider has now proven ownership, so treat
+      // this exactly like a password reset: rotate the (possibly attacker-set)
+      // password to an unusable hash and drop any existing sessions before
+      // verifying and issuing a new one. Without this, a pre-verification
+      // squatter keeps a working password into the now-verified account. The
+      // name goes the same way: the registrant chose it, so the provider's
+      // name for the mailbox owner replaces it.
+      await runFederatedLoginStage({ reason: "account_reverification_failed" }, async () => {
         await this.dependencies.userRepository.updatePassword(existing.id, await hashPassword(generateSessionToken()));
         await this.dependencies.sessionRepository.revokeAllForUser(existing.id, new Date());
+        displayName = providerDisplayName(input.displayName);
+        await this.dependencies.userRepository.updateDisplayName(existing.id, displayName);
         await this.dependencies.userRepository.markEmailVerified(existing.id, new Date());
-      }
-
-      // The provider's current address is kept on the link, not written back
-      // onto the user: a reassigned address could already belong to another
-      // user, and rewriting the login email would move an account behind the
-      // owner's back.
-      await this.recordFederatedIdentityLink({
-        userId: existing.id,
-        provider: input.provider,
-        subject: input.subject,
-        email,
       });
-
-      const membership = await this.dependencies.accountAccessService.resolveLoginAccount(existing.id);
-      const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(membership.accountId);
-      const sessionCookie = await this.createSessionCookie(existing.id, membership.accountId);
-
-      await this.dependencies.auditService.record({
-        accountId: membership.accountId,
-        eventType: "auth.federated_login",
-        eventStatus: "success",
-        metadata: {
-          email,
-          provider: input.provider,
-          subject: input.subject,
-          provisioned: false,
-          matchedBy: linked ? "subject" : "email",
-        },
-      });
-
-      return {
-        userId: existing.id,
-        accountId: membership.accountId,
-        organizationName: (await this.dependencies.accountRepository.findById(membership.accountId))?.name
-          ?? deriveOrganizationName(email),
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-        workspacePublicRouteKey: workspace.publicRouteKey,
-        sessionCookie,
-      };
     }
 
-    return this.provisionFederatedAccount({ ...input, email });
+    // The provider's current address is kept on the link, not written back
+    // onto the user: a reassigned address could already belong to another
+    // user, and rewriting the login email would move an account behind the
+    // owner's back.
+    await this.recordFederatedIdentityLink({
+      userId: existing.id,
+      provider: input.provider,
+      subject: input.subject,
+      email: input.email,
+    });
+
+    const membership = await this.resolveFederatedLoginAccount(existing.id);
+    const workspace = await runFederatedLoginStage({ reason: "workspace_unavailable" }, () =>
+      this.dependencies.workspaceService.resolveLoginWorkspace(membership.accountId));
+    const sessionCookie = await runFederatedLoginStage({ reason: "session_write_failed" }, () =>
+      this.createSessionCookie(existing.id, membership.accountId));
+    const account = await runFederatedLoginStage({ reason: "account_lookup_failed" }, () =>
+      this.dependencies.accountRepository.findById(membership.accountId));
+
+    // Recorded last, once the attempt can no longer fail, so one sign-in never
+    // leaves both a success and a failure behind. Nothing that can throw may
+    // follow it.
+    await this.dependencies.auditService.record({
+      accountId: membership.accountId,
+      eventType: "auth.federated_login",
+      eventStatus: "success",
+      metadata: {
+        email: input.email,
+        provider: input.provider,
+        subject: input.subject,
+        provisioned: false,
+        matchedBy: match.matchedBy,
+      },
+    });
+
+    return {
+      userId: existing.id,
+      displayName,
+      accountId: membership.accountId,
+      organizationName: account?.name ?? deriveOrganizationName(input.email),
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      workspacePublicRouteKey: workspace.publicRouteKey,
+      sessionCookie,
+    };
+  }
+
+  /**
+   * `resolveLoginAccount` rejects with a domain error in exactly one case: the
+   * user holds no active membership, which is what a removed or deactivated
+   * member looks like. Anything else escaping it is a fault in the membership
+   * store. An operator asking "why can't this person sign in" needs those two
+   * answers to look different.
+   */
+  private async resolveFederatedLoginAccount(userId: string): Promise<LoginMembership> {
+    try {
+      return await this.dependencies.accountAccessService.resolveLoginAccount(userId);
+    } catch (error) {
+      throw failFederatedLoginStage(
+        { reason: error instanceof AppError ? "no_active_membership" : "membership_lookup_failed" },
+        error,
+      );
+    }
   }
 
   /**
    * Writes the provider link that later sign-ins match on. It sits on the
    * critical path deliberately — skipping it would silently degrade every
    * subsequent login back to email matching — so a failure is named rather than
-   * left to surface as the caller's generic OAuth error.
+   * folded into whatever generic reason the sign-in would otherwise report.
    */
   private async recordFederatedIdentityLink(input: {
     userId: string;
@@ -527,7 +697,7 @@ export class AuthService {
     subject: string;
     email: string;
   }): Promise<void> {
-    try {
+    await runFederatedLoginStage({ reason: "identity_link_write_failed" }, async () => {
       await this.dependencies.federatedIdentityRepository.link({
         userId: input.userId,
         provider: input.provider,
@@ -535,25 +705,14 @@ export class AuthService {
         providerEmail: input.email,
         authenticatedAt: new Date(),
       });
-    } catch (error) {
-      await this.dependencies.auditService.record({
-        eventType: "auth.federated_login",
-        eventStatus: "failure",
-        metadata: {
-          email: input.email,
-          provider: input.provider,
-          subject: input.subject,
-          reason: "identity_link_write_failed",
-        },
-      });
-      throw error;
-    }
+    });
   }
 
   private async provisionFederatedAccount(input: {
     provider: string;
     subject: string;
     email: string;
+    displayName: string | null;
   }): Promise<AuthenticatedAccountSession> {
     // Federated users have no password. Store a random, unusable hash so the
     // NOT NULL column is satisfied; they can adopt password login later via the
@@ -562,67 +721,106 @@ export class AuthService {
     // verified.
     const passwordHash = await hashPassword(generateSessionToken());
     const organizationName = deriveOrganizationName(input.email);
-    let organizationCreationReservation: OrganizationCreationReservation;
-    try {
-      organizationCreationReservation = await (this.dependencies.organizationCreationGuard ?? noopOrganizationCreationGuard)
-        .reserve({ intent: "signup" });
-    } catch (error) {
-      await this.recordOrganizationCreationDenied("auth.federated_login", "registration_closed", null, error);
-      throw error;
-    }
+    const displayName = providerDisplayName(input.displayName);
+    // Unguarded on purpose: neither shipped guard can answer a signup
+    // reservation with anything but a reservation -- OSS refuses only
+    // `intent: "additional"`, and Enterprise returns an inert reservation
+    // before it touches a counter. A guard that later says no here would reach
+    // the top-level catch unnamed, which is what `unexpected_error` reports;
+    // naming it now would mean shipping a reason no code can produce.
+    const organizationCreationReservation = await (this.dependencies.organizationCreationGuard ?? noopOrganizationCreationGuard)
+      .reserve({ intent: "signup" });
 
     let core: OrganizationCoreProvisioningResult | null = null;
     try {
-      core = await (organizationCreationReservation.coreProvisioner ?? this.dependencies.organizationProvisioner)
+      const provisioned = await (organizationCreationReservation.coreProvisioner ?? this.dependencies.organizationProvisioner)
         .provision({
         intent: "new_user",
         organizationName,
         email: input.email,
         passwordHash,
+        displayName,
         emailVerifiedAt: new Date(),
       });
+      core = provisioned;
       await this.recordFederatedIdentityLink({
-        userId: core.userId,
+        userId: provisioned.userId,
         provider: input.provider,
         subject: input.subject,
         email: input.email,
       });
-      await this.dependencies.onAccountCreated?.({ accountId: core.account.id });
-      const sessionCookie = await this.createSessionCookie(core.userId, core.account.id);
+      await this.dependencies.onAccountCreated?.({ accountId: provisioned.account.id });
+      const sessionCookie = await runFederatedLoginStage({ reason: "session_write_failed" }, () =>
+        this.createSessionCookie(provisioned.userId, provisioned.account.id));
+      await organizationCreationReservation.commit({ accountId: provisioned.account.id });
+      await this.trackRegistration({
+        accountId: provisioned.account.id,
+        workspaceId: provisioned.workspace.id,
+        requiresEmailVerification: false,
+      });
 
+      // Recorded last, once the attempt can no longer fail, so one sign-in never
+      // leaves both a success and a failure behind. Nothing that can throw may
+      // follow it -- `trackRegistration` swallows its own faults and runs above.
       await this.dependencies.auditService.record({
-        accountId: core.account.id,
+        accountId: provisioned.account.id,
         eventType: "auth.federated_login",
         eventStatus: "success",
         metadata: { email: input.email, provider: input.provider, subject: input.subject, provisioned: true },
       });
-      await organizationCreationReservation.commit({ accountId: core.account.id });
-      await this.trackRegistration({
-        accountId: core.account.id,
-        workspaceId: core.workspace.id,
-        requiresEmailVerification: false,
-      });
 
       return {
-        userId: core.userId,
-        accountId: core.account.id,
-        organizationName: core.account.name,
-        workspaceId: core.workspace.id,
-        workspaceName: core.workspace.name,
-        workspacePublicRouteKey: core.workspace.publicRouteKey,
+        userId: provisioned.userId,
+        displayName,
+        accountId: provisioned.account.id,
+        organizationName: provisioned.account.name,
+        workspaceId: provisioned.workspace.id,
+        workspaceName: provisioned.workspace.name,
+        workspacePublicRouteKey: provisioned.workspace.publicRouteKey,
         sessionCookie,
       };
     } catch (error) {
-      try {
-        await this.recordOrganizationCreationDenied("auth.federated_login", "registration_closed", null, error);
-        if (core) {
-          await this.rollbackCreatedAccount(core.account.id, core.userId);
-        }
-      } finally {
-        await organizationCreationReservation.release();
-      }
-      throw error;
+      const cleanup = await this.unwindFailedProvisioning(
+        organizationCreationReservation,
+        core ? { accountId: core.account.id, userId: core.userId } : null,
+      );
+      // OSS answers a closed signup from the provisioner rather than the
+      // reservation, so a refusal reaches here and keeps its own name.
+      const named = failFederatedLoginStage(federatedSignupRefusal(error), error);
+      throw cleanup ? withFederatedLoginFailureDetail(named, cleanup) : named;
     }
+  }
+
+  /**
+   * Undoes a signup, first sign-in, or organization creation that failed
+   * partway through provisioning. `created.userId` is set only when the attempt
+   * created the user too; an existing user is never this attempt's to delete.
+   *
+   * Both steps are best-effort. A failed provisioning step and a failed
+   * rollback usually share one cause -- the database that would not take the
+   * write will not take the delete either -- so letting cleanup throw would
+   * hand the caller the delete's error and audit the attempt under a stage
+   * that never ran.
+   *
+   * What outlives the attempt is not silent, though: in OSS a surviving
+   * account is what closes registration for everyone afterwards, and a
+   * surviving user holds its email against a retry, so both are named on the
+   * attempt's own failure record. Releasing a reservation only returns unused
+   * quota, which the next attempt re-reserves, so that one just fails quietly.
+   */
+  private async unwindFailedProvisioning(
+    reservation: OrganizationCreationReservation,
+    created: { accountId: string; userId?: string } | null,
+  ): Promise<Record<string, unknown> | undefined> {
+    const orphaned = created ? await this.rollbackCreatedAccount(created) : undefined;
+
+    try {
+      await reservation.release();
+    } catch {
+      // Deliberately swallowed: see above.
+    }
+
+    return orphaned;
   }
 
   /**
@@ -656,7 +854,47 @@ export class AuthService {
       workspaceId: workspace.id,
       workspaceName: workspace.name,
       workspacePublicRouteKey: workspace.publicRouteKey,
+      displayName: user.displayName,
     };
+  }
+
+  async getProfile(userId: string): Promise<UserProfile> {
+    const user = await this.dependencies.userRepository.findById(userId);
+    if (!user) {
+      throw unauthorized();
+    }
+    return toUserProfile(user);
+  }
+
+  /**
+   * Updates the signed-in user's own profile. The name belongs to the person,
+   * not to one organization, so every organization they are a member of shows
+   * the change and gets its own audit record. The record names the fields that
+   * changed and never their values: a name is personal data, and the audit log
+   * outlives any edit to it.
+   */
+  async updateProfile(input: {
+    userId: string;
+    displayName: string | null;
+  }): Promise<UserProfile> {
+    const displayName = requireValidDisplayName(input.displayName);
+    const user = await this.dependencies.userRepository.findById(input.userId);
+    if (!user) {
+      throw unauthorized();
+    }
+    if (user.displayName === displayName) {
+      return toUserProfile(user);
+    }
+
+    const updated = await this.dependencies.userRepository.updateDisplayName(user.id, displayName);
+    const memberships = await this.dependencies.accountAccessService.listUserMemberships(user.id);
+    await Promise.all(memberships.map((membership) => this.dependencies.auditService.record({
+      accountId: membership.accountId,
+      eventType: "auth.profile_updated",
+      eventStatus: "success",
+      metadata: { actorUserId: user.id, changedFields: ["displayName"] },
+    })));
+    return toUserProfile(updated);
   }
 
   /**
@@ -697,6 +935,8 @@ export class AuthService {
     invitationToken: string;
     email: string;
     password: string;
+    /** Names a user this acceptance creates; an existing user keeps their own. */
+    displayName?: string | null;
   }): Promise<AuthenticatedAccountSession> {
     const email = normalizeEmail(input.email);
     const invitation = await this.dependencies.accountInvitationService.getInvitation(input.invitationToken);
@@ -720,12 +960,14 @@ export class AuthService {
       : await this.dependencies.userRepository.create({
           email,
           passwordHash: await hashPassword(input.password),
+          displayName: requireValidDisplayName(input.displayName),
           emailVerifiedAt: null,
         });
 
     return this.completeInvitationAcceptance({
       invitationToken: input.invitationToken,
       userId: user.id,
+      displayName: user.displayName,
       email,
       createdUserId: existingUser ? null : user.id,
     });
@@ -756,6 +998,7 @@ export class AuthService {
     return this.completeInvitationAcceptance({
       invitationToken: input.invitationToken,
       userId: user.id,
+      displayName: user.displayName,
       email,
       createdUserId: null,
     });
@@ -783,6 +1026,7 @@ export class AuthService {
   private async completeInvitationAcceptance(input: {
     invitationToken: string;
     userId: string;
+    displayName: string | null;
     email: string;
     createdUserId: string | null;
   }): Promise<AuthenticatedAccountSession> {
@@ -812,6 +1056,7 @@ export class AuthService {
 
       return {
         userId: input.userId,
+        displayName: input.displayName,
         accountId,
         organizationName: account?.name ?? deriveOrganizationName(input.email),
         workspaceId: workspace.id,
@@ -837,6 +1082,10 @@ export class AuthService {
       input.targetAccountId,
       input.userId,
     );
+    const user = await this.dependencies.userRepository.findById(input.userId);
+    if (!user) {
+      throw unauthorized();
+    }
     const account = await this.dependencies.accountRepository.findById(membership.accountId);
     const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(
       membership.accountId,
@@ -853,7 +1102,8 @@ export class AuthService {
     });
 
     return {
-      userId: input.userId,
+      userId: user.id,
+      displayName: user.displayName,
       accountId: membership.accountId,
       organizationName: account?.name ?? deriveOrganizationName(account?.email ?? "organization@example.com"),
       workspaceId: workspace.id,
@@ -983,11 +1233,33 @@ export class AuthService {
     return serializeSessionCookie(sessionToken, this.dependencies.env);
   }
 
-  private async rollbackCreatedAccount(accountId: string, createdUserId?: string): Promise<void> {
-    await this.dependencies.accountRepository.deleteById(accountId);
-    if (createdUserId) {
-      await this.dependencies.userRepository.deleteById(createdUserId);
+  /**
+   * Deletes the account an attempt created, then its user if the attempt
+   * created that too, and names whatever survived. The user is deleted only
+   * once its account is gone, so a failed account delete leaves both behind.
+   */
+  private async rollbackCreatedAccount(
+    created: { accountId: string; userId?: string },
+  ): Promise<Record<string, unknown> | undefined> {
+    try {
+      await this.dependencies.accountRepository.deleteById(created.accountId);
+    } catch {
+      return {
+        orphanedAccountId: created.accountId,
+        ...(created.userId ? { orphanedUserId: created.userId } : {}),
+      };
     }
+
+    if (!created.userId) {
+      return undefined;
+    }
+
+    try {
+      await this.dependencies.userRepository.deleteById(created.userId);
+    } catch {
+      return { orphanedUserId: created.userId };
+    }
+    return undefined;
   }
 
   async isRegistrationAvailable(): Promise<boolean> {

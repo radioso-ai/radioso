@@ -270,10 +270,10 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
           <Button
             type="button"
             onClick={startAuthorization}
-            disabled={busyAction === 'authorize' || !workspaceId}
+            disabled={!workspaceId}
+            loading={busyAction === 'authorize'} icon={<ExternalLink />}
             className="md:self-end"
           >
-            {busyAction === 'authorize' ? <Spinner className="mr-2 h-4 w-4" /> : <ExternalLink className="mr-2 h-4 w-4" />}
             Authorize
           </Button>
         </div>
@@ -295,9 +295,9 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
                     variant="outline"
                     size="sm"
                     onClick={() => reauthorize(connection)}
-                    disabled={busyAction === `reauthorize:${connection.id}` || !workspaceId}
+                    disabled={!workspaceId}
+                    loading={busyAction === `reauthorize:${connection.id}`} icon={<RefreshCw />}
                   >
-                    {busyAction === `reauthorize:${connection.id}` ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                     Reauthorize
                   </Button>
                 </div>
@@ -342,9 +342,9 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
             <Button
               type="button"
               onClick={createConnection}
-              disabled={busyAction === 'create' || !workspaceId || !selectedOauthConnectionId || !senderEmail.trim() || !connectionName.trim()}
+              disabled={!workspaceId || !selectedOauthConnectionId || !senderEmail.trim() || !connectionName.trim()}
+              loading={busyAction === 'create'} icon={<Mail />}
             >
-              {busyAction === 'create' ? <Spinner className="mr-2 h-4 w-4" /> : <Mail className="mr-2 h-4 w-4" />}
               Create connection
             </Button>
           </div>
@@ -369,8 +369,7 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
                   <Badge className={statusTone(connection.status)} variant="secondary">
                     {statusLabel(connection.status)}
                   </Badge>
-                  <Button type="button" variant="outline" size="sm" onClick={() => checkHealth(connection)} disabled={busyAction === `health:${connection.id}`}>
-                    {busyAction === `health:${connection.id}` ? <Spinner className="mr-2 h-4 w-4" /> : <Activity className="mr-2 h-4 w-4" />}
+                  <Button type="button" variant="outline" size="sm" onClick={() => checkHealth(connection)} loading={busyAction === `health:${connection.id}`} icon={<Activity />}>
                     Health
                   </Button>
                   <Button
@@ -378,13 +377,11 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
                     variant="outline"
                     size="sm"
                     onClick={() => updateDisabled(connection, connection.status !== 'disabled')}
-                    disabled={busyAction === `disabled:${connection.id}`}
+                    loading={busyAction === `disabled:${connection.id}`} icon={<Power />}
                   >
-                    {busyAction === `disabled:${connection.id}` ? <Spinner className="mr-2 h-4 w-4" /> : <Power className="mr-2 h-4 w-4" />}
                     {connection.status === 'disabled' ? 'Enable' : 'Disable'}
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => deleteConnection(connection)} disabled={busyAction === `delete:${connection.id}`}>
-                    {busyAction === `delete:${connection.id}` ? <Spinner className="mr-2 h-4 w-4" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                  <Button type="button" variant="outline" size="sm" onClick={() => deleteConnection(connection)} loading={busyAction === `delete:${connection.id}`} icon={<Trash2 />}>
                     Delete
                   </Button>
                 </div>

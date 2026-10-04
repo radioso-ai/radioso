@@ -462,7 +462,8 @@ CREATE TABLE public.abuse_control_entries (
     window_started_at timestamp with time zone NOT NULL,
     blocked_until timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    previous_attempt_count integer DEFAULT 0 NOT NULL
 );
 
 
@@ -822,8 +823,11 @@ CREATE TABLE public.agent_test_executions (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     idempotency_key text NOT NULL,
     skill_effects text DEFAULT 'suppressed'::text NOT NULL,
+    seeded_turn_count integer DEFAULT 0 NOT NULL,
+    seeded_first_message text,
     CONSTRAINT agent_test_executions_generation_check CHECK ((generation > 0)),
     CONSTRAINT agent_test_executions_mode_check CHECK ((mode = ANY (ARRAY['single'::text, 'compare'::text]))),
+    CONSTRAINT agent_test_executions_seeded_turn_count_check CHECK ((seeded_turn_count >= 0)),
     CONSTRAINT agent_test_executions_skill_effects_check CHECK ((skill_effects = ANY (ARRAY['suppressed'::text, 'allowed'::text]))),
     CONSTRAINT agent_test_executions_state_check CHECK ((state = ANY (ARRAY['running'::text, 'partial'::text, 'failed'::text, 'completed'::text])))
 );
@@ -849,6 +853,11 @@ CREATE TABLE public.agents (
     skill_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     internal_name text DEFAULT ''::text NOT NULL,
     published_revision_id uuid,
+    public_id text,
+    public_description text DEFAULT ''::text NOT NULL,
+    agent_card_enabled boolean DEFAULT false NOT NULL,
+    public_agent_access_enabled boolean DEFAULT false NOT NULL,
+    walk_in_conversations_per_hour integer,
     CONSTRAINT agents_chat_override_pair CHECK ((((chat_provider IS NULL) AND (chat_model IS NULL)) OR ((chat_provider IS NOT NULL) AND (chat_model IS NOT NULL)))),
     CONSTRAINT agents_chat_provider_check CHECK (((chat_provider IS NULL) OR (chat_provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text])))),
     CONSTRAINT agents_source_scope_mode_check CHECK ((source_scope_mode = ANY (ARRAY['all'::text, 'selected'::text])))
@@ -2014,6 +2023,24 @@ CREATE TABLE public.context_variables (
 
 
 --
+-- Name: conversation_activity; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversation_activity (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    conversation_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    kind text NOT NULL,
+    actor_user_id uuid,
+    subject_user_id uuid,
+    detail jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT conversation_activity_detail_check CHECK ((jsonb_typeof(detail) = 'object'::text)),
+    CONSTRAINT conversation_activity_kind_check CHECK ((kind = ANY (ARRAY['handoff_requested'::text, 'claimed'::text, 'reassigned'::text, 'handed_back'::text, 'approval_decided'::text, 'feedback_resolved'::text, 'feedback_dismissed'::text])))
+);
+
+
+--
 -- Name: conversation_ownership; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2027,7 +2054,8 @@ CREATE TABLE public.conversation_ownership (
     version integer DEFAULT 1 NOT NULL,
     taken_over_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    owner_user_id uuid
 );
 
 
@@ -2067,6 +2095,7 @@ CREATE TABLE public.conversations (
     visitor_id uuid,
     request_context jsonb,
     entry_referrer text,
+    caller_kind text DEFAULT 'human'::text NOT NULL,
     CONSTRAINT conversations_purpose_check CHECK ((purpose = ANY (ARRAY['production'::text, 'operator_test'::text])))
 );
 
@@ -2130,10 +2159,18 @@ CREATE TABLE public.copilot_proposals (
     review_snapshot jsonb,
     expires_at timestamp with time zone,
     execution_invocation_id uuid,
+    confirmation_requirement text,
+    change_effect jsonb,
+    approved_at timestamp with time zone,
+    approved_by_user_id uuid,
+    approval_digest text,
+    CONSTRAINT copilot_proposals_approval_shape_check CHECK ((((approved_at IS NULL) = (approved_by_user_id IS NULL)) AND ((approved_at IS NULL) = (approval_digest IS NULL)) AND ((approved_at IS NULL) OR ((confirmation_requirement = 'signed_in_approval'::text) AND (approval_digest = review_digest))))),
+    CONSTRAINT copilot_proposals_confirmation_requirement_check CHECK ((confirmation_requirement = ANY (ARRAY['conversation'::text, 'signed_in_approval'::text]))),
     CONSTRAINT copilot_proposals_exactly_one_origin_check CHECK (((conversation_id IS NOT NULL) <> (operator_mcp_invocation_id IS NOT NULL))),
     CONSTRAINT copilot_proposals_message_requires_conversation_check CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
+    CONSTRAINT copilot_proposals_reviewed_requirement_check CHECK (((review_digest IS NULL) OR (confirmation_requirement IS NOT NULL))),
     CONSTRAINT copilot_proposals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'dismissed'::text, 'failed'::text, 'stale'::text]))),
-    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text, 'agent_publication'::text, 'agent_greeting'::text])))
+    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'document_operation'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text, 'agent_publication'::text, 'agent_greeting'::text])))
 );
 
 
@@ -2799,6 +2836,9 @@ CREATE TABLE public.operator_mcp_invocations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
     retained_until timestamp with time zone NOT NULL,
+    safe_rejection_details jsonb DEFAULT '[]'::jsonb NOT NULL,
+    budget_kind text DEFAULT 'verification'::text NOT NULL,
+    CONSTRAINT operator_mcp_invocations_budget_kind_check CHECK ((budget_kind = ANY (ARRAY['verification'::text, 'test_chat'::text]))),
     CONSTRAINT operator_mcp_invocations_grant_version_check CHECK ((grant_version > 0)),
     CONSTRAINT operator_mcp_invocations_method_check CHECK ((method = ANY (ARRAY['ping'::text, 'tools/list'::text, 'tools/call'::text]))),
     CONSTRAINT operator_mcp_invocations_shape_check CHECK (((shape IS NULL) OR (shape = ANY (ARRAY['read'::text, 'probe'::text, 'act'::text, 'propose'::text])))),
@@ -2891,7 +2931,8 @@ CREATE TABLE public.pending_decisions (
     decided_at timestamp with time zone,
     deadline timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    decided_by_user_id uuid
 );
 
 
@@ -3063,6 +3104,9 @@ CREATE TABLE public.routine_definition (
     trigger_embedding_hash text,
     activation_coverage_criteria jsonb,
     enabled boolean DEFAULT true NOT NULL,
+    exposure_enabled boolean DEFAULT false NOT NULL,
+    exposure_tool_name text,
+    exposure_description text,
     CONSTRAINT routine_definition_activation_reentry_mode_check CHECK ((activation_reentry_mode = ANY (ARRAY['once_per_conversation'::text, 'always'::text, 'semantic'::text]))),
     CONSTRAINT routine_definition_activation_trigger_description_check CHECK ((NULLIF(btrim(activation_trigger_description), ''::text) IS NOT NULL)),
     CONSTRAINT routine_definition_name_check CHECK ((NULLIF(btrim(name), ''::text) IS NOT NULL)),
@@ -3105,7 +3149,8 @@ CREATE TABLE public.routine_states (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     attempts jsonb DEFAULT '{}'::jsonb NOT NULL,
-    execution_id uuid
+    execution_id uuid,
+    reask_count integer DEFAULT 0 NOT NULL
 );
 
 
@@ -3142,8 +3187,12 @@ CREATE TABLE public.routine_terminal (
     instruction text,
     action_type text,
     ordinal integer NOT NULL,
+    operator_notice_enabled boolean DEFAULT false NOT NULL,
+    operator_notice_subject text,
+    operator_notice_intro text,
     CONSTRAINT routine_terminal_check CHECK ((((kind = 'action'::text) AND (NULLIF(btrim(action_type), ''::text) IS NOT NULL)) OR (kind <> 'action'::text))),
     CONSTRAINT routine_terminal_kind_check CHECK ((kind = ANY (ARRAY['complete'::text, 'handoff'::text]))),
+    CONSTRAINT routine_terminal_operator_notice_text_check CHECK ((operator_notice_enabled OR ((operator_notice_subject IS NULL) AND (operator_notice_intro IS NULL)))),
     CONSTRAINT routine_terminal_ordinal_check CHECK ((ordinal >= 0)),
     CONSTRAINT routine_terminal_stable_step_id_check CHECK ((NULLIF(btrim(stable_step_id), ''::text) IS NOT NULL))
 );
@@ -3431,7 +3480,9 @@ CREATE TABLE public.users (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     email_verified_at timestamp with time zone,
-    disabled_at timestamp with time zone
+    disabled_at timestamp with time zone,
+    display_name text,
+    CONSTRAINT users_display_name_check CHECK (((display_name IS NULL) OR (btrim(display_name) <> ''::text)))
 );
 
 
@@ -4827,6 +4878,14 @@ ALTER TABLE ONLY public.context_variables
 
 
 --
+-- Name: conversation_activity conversation_activity_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_activity
+    ADD CONSTRAINT conversation_activity_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: conversation_ownership conversation_ownership_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5742,6 +5801,13 @@ CREATE UNIQUE INDEX agent_test_executions_idempotency_key_key ON public.agent_te
 
 
 --
+-- Name: agents_public_id_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agents_public_id_key ON public.agents USING btree (public_id) WHERE (public_id IS NOT NULL);
+
+
+--
 -- Name: answer_coverage_assessments_workspace_conversation_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6635,6 +6701,20 @@ CREATE INDEX chunks_p9_workspace_id_idx ON public.chunks_p9 USING btree (workspa
 --
 
 CREATE INDEX clarification_states_pending_idx ON public.clarification_states USING btree (session_id) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: conversation_activity_conversation_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_activity_conversation_created_idx ON public.conversation_activity USING btree (conversation_id, created_at);
+
+
+--
+-- Name: conversation_activity_workspace_closed_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_activity_workspace_closed_idx ON public.conversation_activity USING btree (workspace_id, created_at DESC) WHERE (kind = ANY (ARRAY['handed_back'::text, 'approval_decided'::text, 'feedback_resolved'::text, 'feedback_dismissed'::text]));
 
 
 --
@@ -9797,11 +9877,43 @@ ALTER TABLE ONLY public.context_variable_values
 
 
 --
+-- Name: conversation_activity conversation_activity_actor_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_activity
+    ADD CONSTRAINT conversation_activity_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: conversation_activity conversation_activity_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_activity
+    ADD CONSTRAINT conversation_activity_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: conversation_activity conversation_activity_subject_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_activity
+    ADD CONSTRAINT conversation_activity_subject_user_id_fkey FOREIGN KEY (subject_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: conversation_ownership conversation_ownership_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.conversation_ownership
     ADD CONSTRAINT conversation_ownership_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: conversation_ownership conversation_ownership_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_ownership
+    ADD CONSTRAINT conversation_ownership_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -10522,6 +10634,14 @@ ALTER TABLE ONLY public.operator_mcp_refresh_lineages
 
 ALTER TABLE ONLY public.password_reset_tokens
     ADD CONSTRAINT password_reset_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pending_decisions pending_decisions_decided_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_decisions
+    ADD CONSTRAINT pending_decisions_decided_by_user_id_fkey FOREIGN KEY (decided_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --

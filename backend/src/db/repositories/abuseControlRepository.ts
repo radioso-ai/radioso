@@ -12,6 +12,7 @@ interface AbuseControlEntryRow {
   scope: string;
   subject_key: string;
   attempt_count: number;
+  previous_attempt_count: number;
   window_started_at: Date;
   blocked_until: Date | null;
   created_at: Date;
@@ -22,6 +23,7 @@ const abuseControlColumns = [
   "scope",
   "subject_key",
   "attempt_count",
+  "previous_attempt_count",
   "window_started_at",
   "blocked_until",
   "created_at",
@@ -32,6 +34,7 @@ const mapEntry = (row: AbuseControlEntryRow): AbuseControlEntry => ({
   scope: row.scope,
   subjectKey: row.subject_key,
   attemptCount: row.attempt_count,
+  previousAttemptCount: row.previous_attempt_count,
   windowStartedAt: new Date(row.window_started_at),
   blockedUntil: row.blocked_until ? new Date(row.blocked_until) : null,
   createdAt: new Date(row.created_at),
@@ -98,6 +101,7 @@ export class AbuseControlRepository implements AbuseControlRepositoryPort {
     return {
       entry,
       blocked: Boolean(entry.blockedUntil && entry.blockedUntil.getTime() > input.now.getTime()),
+      weightedAttemptCount: Number(row.weighted_attempt_count),
     };
   }
 

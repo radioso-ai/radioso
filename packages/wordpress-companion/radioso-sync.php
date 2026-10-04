@@ -20,6 +20,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Agent discovery: the site-level `.well-known` paths a visiting AI agent looks for.
+// Its own file, its own settings screen; this one syncs content and nothing else.
+require_once __DIR__ . '/radioso-agent-card.php';
+
 const RADIOSO_OPT_WEBHOOK_URL     = 'radioso_sync_webhook_url';
 const RADIOSO_OPT_SHARED_SECRET   = 'radioso_sync_shared_secret';
 const RADIOSO_OPT_POST_TYPES      = 'radioso_sync_post_types';

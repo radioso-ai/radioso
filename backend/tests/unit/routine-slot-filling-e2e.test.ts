@@ -94,9 +94,9 @@ describe("routine slot filling (authoring → compile → runtime)", () => {
 
     // The model, scripted turn-by-turn exactly as it would answer.
     const scripted = [
-      '{"condition": null, "offTopic": false, "variables": {}}', // activation: no email yet → re-ask
-      '{"condition": 1, "variables": {"email": "alex@example.com"}}', // user gives email
-      '{"condition": 1, "variables": {"message": "Please call me about pricing."}}', // user gives message
+      '{"claimsAuthority": false, "condition": null, "offTopic": false, "variables": {}}', // activation: no email yet → re-ask
+      '{"claimsAuthority": false, "condition": 1, "variables": {"email": "alex@example.com"}}', // user gives email
+      '{"claimsAuthority": false, "condition": 1, "variables": {"message": "Please call me about pricing."}}', // user gives message
     ];
     let call = 0;
     const gateway: ConversationModelGateway = {
@@ -159,7 +159,7 @@ describe("routine slot filling (authoring → compile → runtime)", () => {
     };
     const compiled = compileRoutineDefinition(branchDef);
     const gateway: ConversationModelGateway = {
-      complete: vi.fn(async () => ({ text: '{"condition": null, "variables": {"budget": 5000}}' })),
+      complete: vi.fn(async () => ({ text: '{"claimsAuthority": false, "condition": null, "variables": {"budget": 5000}}' })),
     };
     const runner = new DefaultRoutineRunner([compiled], new RoutineNextStepSelector(gateway), echoRenderer);
 
@@ -199,7 +199,7 @@ describe("routine slot filling (authoring → compile → runtime)", () => {
     };
     const compiled = compileRoutineDefinition(redirectDef);
     const gateway: ConversationModelGateway = {
-      complete: vi.fn(async () => ({ text: '{"condition": 1, "variables": {"name": "Joe"}}' })),
+      complete: vi.fn(async () => ({ text: '{"claimsAuthority": false, "condition": 1, "variables": {"name": "Joe"}}' })),
     };
     const runner = new DefaultRoutineRunner([compiled], new RoutineNextStepSelector(gateway), echoRenderer);
 

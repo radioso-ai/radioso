@@ -6,9 +6,11 @@ import type {
   QualityTriageRecord,
   QualityTriageState,
 } from '@/lib/api'
+import type { RecentlyClosedInboxItemsResponse } from '@/lib/api-types'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import { formatApprovalCreatedAt } from '@/lib/needs-attention-format'
+import { conversationOwner, type ConversationOwner } from '@/lib/operator-actions'
 
 export type HumanOwnedConversationSummary = ChatConversationSummary & {
   ownership: ConversationOwnership
@@ -26,7 +28,7 @@ export type EscalationType =
 
 export type EscalationSeverity = 'critical' | 'feedback'
 
-export const ESCALATION_SEVERITY: Record<EscalationType, EscalationSeverity> = {
+const ESCALATION_SEVERITY: Record<EscalationType, EscalationSeverity> = {
   approval: 'critical',
   handoff: 'critical',
   negative_feedback: 'feedback',
@@ -75,12 +77,11 @@ export interface InboxItem {
    */
   lastMessageAt?: string | null
   /**
-   * Conversation ownership's claimant, present only for handoffs (the only item
-   * type with a human "taken by" concept). `undefined` for approvals and feedback,
-   * `null` for an unclaimed handoff.
+   * The teammate holding a handoff (the only item type with a human "taken by"
+   * concept). `undefined` for approvals and feedback, `null` for an unclaimed
+   * handoff.
    */
-  takenByAccountId?: string | null
-  takenByDisplayName?: string | null
+  takenBy?: ConversationOwner | null
   /**
    * Present only for handoffs, where the already-loaded human-owned conversation
    * summary carries it. Approvals and feedback have no loaded conversation
@@ -99,7 +100,7 @@ const byTimestampAsc = (left: string, right: string): number =>
 const feedbackActivityTimestamp = (turn: LowQualityTurn): string =>
   turn.feedback.latestDownUpdatedAt ?? turn.createdAt
 
-export type WaitingTone = 'default' | 'amber' | 'destructive'
+type WaitingTone = 'default' | 'amber' | 'destructive'
 
 export const formatInboxDuration = (elapsedMs: number): string => {
   const totalMinutes = Number.isFinite(elapsedMs) ? Math.max(0, Math.floor(elapsedMs / 60_000)) : 0
@@ -139,7 +140,7 @@ const shouldReplaceQualityTurn = (
 
 export const QUALITY_INBOX_ITEM_LIMIT = 25
 
-export interface InboxModel {
+interface InboxModel {
   items: InboxItem[]
 }
 
@@ -266,34 +267,34 @@ export interface HandoffCandidateSource {
  * waiting-time presentation, Done semantics — without a second mapping to
  * drift from this one.
  *
- * `ownership` is optional: a human-owned conversation carries the full
- * record (claimed-by, waiting-since, taken-over-at), which populates the
- * corresponding fields below. A live ai-owned conversation the operator
- * hasn't claimed yet (still "in progress", not yet a handoff) has no
- * ownership record at all — those fields simply stay unset rather than
- * guessing, and the composer's own claim-on-send flow (see
- * `OperatorComposer`) is what creates the record once the operator sends.
+ * Only a human-owned `ownership` record makes it a handoff: it carries the
+ * claimed-by, waiting-since, and taken-over-at that populate the fields
+ * below. A live conversation with the agent — no record yet, or an AI-owned
+ * one left by a hand-back — is "in progress", not yet a handoff: those
+ * fields simply stay unset rather than guessing, and the composer's own
+ * claim-on-send flow (see `OperatorComposer`) is what claims it once the
+ * operator sends.
  */
-export const toHandoffInboxItem = (conversation: HandoffCandidateSource): InboxItem => ({
-  key: conversation.ownership
-    ? `handoff:${conversation.id}:${conversation.ownership.version}`
-    : `live:${conversation.id}`,
-  conversationId: conversation.id,
-  type: 'handoff',
-  severity: ESCALATION_SEVERITY.handoff,
-  title: resolveConversationDisplayTitle(conversation),
-  detail: conversation.ownership ? ownershipLabel(conversation.ownership) : 'In progress',
-  timestamp: conversation.updatedAt,
-  escalatedAt: conversation.ownership?.updatedAt,
-  takenOverAt: conversation.ownership?.takenOverAt ?? null,
-  agentId: conversation.agentId,
-  agentName: conversation.agentName,
-  agentInternalName: conversation.agentInternalName,
-  lastMessageAt: conversation.updatedAt,
-  takenByAccountId: conversation.ownership?.ownerAccountId,
-  takenByDisplayName: conversation.ownership?.ownerDisplayName,
-  anonymousSessionId: conversation.anonymousSessionId,
-})
+export const toHandoffInboxItem = (conversation: HandoffCandidateSource): InboxItem => {
+  const handoff = conversation.ownership?.state === 'human_owned' ? conversation.ownership : undefined
+  return {
+    key: handoff ? `handoff:${conversation.id}:${handoff.version}` : `live:${conversation.id}`,
+    conversationId: conversation.id,
+    type: 'handoff',
+    severity: ESCALATION_SEVERITY.handoff,
+    title: resolveConversationDisplayTitle(conversation),
+    detail: handoff ? ownershipLabel(handoff) : 'In progress',
+    timestamp: conversation.updatedAt,
+    escalatedAt: handoff?.updatedAt,
+    takenOverAt: handoff?.takenOverAt ?? null,
+    agentId: conversation.agentId,
+    agentName: conversation.agentName,
+    agentInternalName: conversation.agentInternalName,
+    lastMessageAt: conversation.updatedAt,
+    takenBy: handoff ? conversationOwner(handoff) : undefined,
+    anonymousSessionId: conversation.anonymousSessionId,
+  }
+}
 
 /**
  * The All lens's actionable/read-only split for a selected conversation: any
@@ -360,9 +361,6 @@ export const findRefreshedInboxItem = (
     : candidate.conversationId === current.conversationId && candidate.type === current.type
 ))
 
-/** Page size used when loading the human-owned conversations shown in the inbox. */
-export const HUMAN_OWNED_CONVERSATION_PAGE_SIZE = 50
-
 export const selectHumanOwnedConversations = (
   summaries: ChatConversationSummary[],
 ): HumanOwnedConversationSummary[] =>
@@ -416,7 +414,7 @@ export const countNewInboxItems = (
   return count
 }
 
-export interface InboxWaitingPresentation {
+interface InboxWaitingPresentation {
   label: string
   tone: WaitingTone
 }
@@ -439,16 +437,17 @@ export const inboxWaitingPresentation = (item: InboxItem, now: Date): InboxWaiti
 }
 
 export const ownershipLabel = (ownership: ConversationOwnership): string => {
-  if (ownership.ownerAccountId === null) {
+  const owner = conversationOwner(ownership)
+  if (!owner) {
     return 'Awaiting a human'
   }
 
-  return `Handled by ${ownership.ownerDisplayName?.trim() || 'a teammate'}`
+  return `Handled by ${owner.label ?? 'a teammate'}`
 }
 
 // ── Queue filters (FR-017) ──────────────────────────────────────────────────
 
-/** `'anyone' | 'unclaimed' | 'me'`, or a specific operator's account id. */
+/** `'anyone' | 'unclaimed' | 'me'`, or a specific owner's user id (see `ConversationOwner`). */
 export type TakenByFilter = 'anyone' | 'unclaimed' | 'me' | (string & {})
 
 export const TAKEN_BY_ANYONE: TakenByFilter = 'anyone'
@@ -482,35 +481,35 @@ export const matchesInboxSearch = (item: InboxItem, query: string): boolean => {
 const matchesTakenBy = (
   item: InboxItem,
   filter: TakenByFilter,
-  currentAccountId: string | null,
+  currentUserId: string | null,
 ): boolean => {
   if (filter === TAKEN_BY_ANYONE) {
     return true
   }
   // Only conversation ownership carries a "taken by" signal today (see InboxItem).
   // Approvals and feedback have no human claimant, so they match only 'anyone'.
-  if (item.takenByAccountId === undefined) {
+  if (item.takenBy === undefined) {
     return false
   }
   if (filter === TAKEN_BY_UNCLAIMED) {
-    return item.takenByAccountId === null
+    return item.takenBy === null
   }
-  if (filter === TAKEN_BY_ME) {
-    return item.takenByAccountId !== null && item.takenByAccountId === currentAccountId
+  if (item.takenBy === null) {
+    return false
   }
-  return item.takenByAccountId === filter
+  return item.takenBy.userId === (filter === TAKEN_BY_ME ? currentUserId : filter)
 }
 
 /** Applies the queue's search/type/agent/taken-by filters together, preserving item order. */
 export const filterInboxItems = (
   items: readonly InboxItem[],
   filters: InboxFilters,
-  context: { currentAccountId: string | null },
+  context: { currentUserId: string | null },
 ): InboxItem[] => items.filter((item) =>
   (filters.type === 'all' || item.type === filters.type)
   && (filters.agentId === 'all' || item.agentId === filters.agentId)
   && matchesInboxSearch(item, filters.search)
-  && matchesTakenBy(item, filters.takenBy, context.currentAccountId))
+  && matchesTakenBy(item, filters.takenBy, context.currentUserId))
 
 /** Per-type open counts for the Type filter's option labels (e.g. "Handoffs (2)"). */
 export const countInboxItemsByType = (
@@ -551,59 +550,64 @@ export const listInboxAgents = (items: readonly InboxItem[]): InboxAgentOption[]
 }
 
 export interface InboxOperatorOption {
-  accountId: string
-  displayName: string
+  userId: string
+  label: string
 }
 
-/** Distinct operators who have taken an open item, for the "Taken by" filter's operator options. */
-export const listTakenByOperators = (items: readonly InboxItem[]): InboxOperatorOption[] => {
-  const byId = new Map<string, InboxOperatorOption>()
+/**
+ * Distinct teammates who have taken an open item, for the "Taken by" filter's per-person options.
+ * The current user is excluded — they already have their own "Me" option, so listing them again
+ * by name would offer the same filter twice.
+ */
+export const listTakenByOperators = (
+  items: readonly InboxItem[],
+  currentUserId: string | null,
+): InboxOperatorOption[] => {
+  const byUserId = new Map<string, InboxOperatorOption>()
   for (const item of items) {
-    if (!item.takenByAccountId || byId.has(item.takenByAccountId)) {
+    if (!item.takenBy || item.takenBy.userId === currentUserId || byUserId.has(item.takenBy.userId)) {
       continue
     }
-    byId.set(item.takenByAccountId, {
-      accountId: item.takenByAccountId,
-      displayName: item.takenByDisplayName?.trim() || 'A teammate',
-    })
+    byUserId.set(item.takenBy.userId, { userId: item.takenBy.userId, label: item.takenBy.label ?? 'A teammate' })
   }
-  return [...byId.values()]
+  return [...byUserId.values()]
 }
 
 // ── Recently closed (FR-014 / User Story 2) ─────────────────────────────────
+
+type ApiRecentlyClosedInboxItem = RecentlyClosedInboxItemsResponse['items'][number]
 
 export interface RecentlyClosedInboxItem {
   key: string
   conversationId: string
   title: string
-  state: 'resolved' | 'dismissed'
+  itemKind: ApiRecentlyClosedInboxItem['itemKind']
+  outcome: ApiRecentlyClosedInboxItem['outcome']
   closedAt: string
+  closedBy: ApiRecentlyClosedInboxItem['closedBy']
+  /** The option chosen, for an approval. */
+  decisionLabel: string | null
 }
 
-const feedbackClosedAt = (turn: LowQualityTurn): string =>
-  turn.triage.updatedAt ?? turn.triage.closedAt ?? turn.createdAt
-
-export const RECENTLY_CLOSED_FEEDBACK_LIMIT = 10
+export const RECENTLY_CLOSED_LIMIT = 10
 
 /**
- * Feedback items already resolved or dismissed, newest closure first. Handoff and
- * approval items have no durable closure record in this frontend-only slice (that
- * is backend work for a later slice, per spec 1116's architecture constraints), so
- * the recently-closed strip is feedback-only for now rather than inventing one.
+ * The workspace's recently closed Inbox items — handoffs handed back, approvals decided, negative
+ * feedback resolved or dismissed — as the strip shows them, newest closure first as the backend
+ * orders them. Each is titled like the conversation's queue row.
  */
-export const buildRecentlyClosedFeedbackItems = (
-  turns: readonly LowQualityTurn[],
-): RecentlyClosedInboxItem[] => turns
-  .filter((turn) => turn.triage.state === 'resolved' || turn.triage.state === 'dismissed')
-  .map((turn) => ({
-    key: `quality:${turn.assistantMessageId}`,
-    conversationId: turn.conversationId,
-    title: turn.question || 'Low-quality answer',
-    state: turn.triage.state as 'resolved' | 'dismissed',
-    closedAt: feedbackClosedAt(turn),
-  }))
-  .sort((left, right) => byTimestampDesc(left.closedAt, right.closedAt))
-  .slice(0, RECENTLY_CLOSED_FEEDBACK_LIMIT)
+export const buildRecentlyClosedItems = (
+  items: readonly ApiRecentlyClosedInboxItem[],
+): RecentlyClosedInboxItem[] => items.map((item) => ({
+  key: `closed:${item.id}`,
+  conversationId: item.conversationId,
+  title: resolveConversationDisplayTitle(item),
+  itemKind: item.itemKind,
+  outcome: item.outcome,
+  closedAt: item.closedAt,
+  closedBy: item.closedBy,
+  decisionLabel: item.decision?.label ?? null,
+}))
 
 // ── Empty-queue confidence summary (FR-014) ─────────────────────────────────
 
@@ -612,7 +616,7 @@ export const withinLastDays = (createdAt: string, days: number, now: Date): bool
   return !Number.isNaN(created) && now.getTime() - created <= days * 24 * 60 * 60 * 1000
 }
 
-export interface AgentHandledCount {
+interface AgentHandledCount {
   agentId: string
   agentName: string | null
   agentInternalName: string | null
@@ -649,7 +653,7 @@ export const countAiHandledConversationsByAgent = (
   return [...byAgent.values()].sort((left, right) => right.count - left.count)
 }
 
-export interface AiHandledSummary {
+interface AiHandledSummary {
   /** Total AI-handled conversations across every agent in the window. */
   totalCount: number
   /** Distinct agents that handled at least one — drives "agent" vs "agents" copy. */

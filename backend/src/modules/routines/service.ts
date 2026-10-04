@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+import { badRequest, conflict, notFound, type AppError } from "../../shared/domain/errors.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import type { AuditEventInput, AuditPort } from "../audit/contracts/index.js";
@@ -61,6 +61,7 @@ interface RoutineDefinitionServiceOptions {
   };
   repository: RoutineDefinitionRepositoryPort;
   actionCapabilities?: ActionCapabilityMap;
+  hostQueuedActionTypes?: ReadonlySet<string>;
   capabilityPolicy?: CapabilityPolicy;
   webhookDestinations?: {
     existsByIdAndWorkspace(workspaceId: string, destinationId: string): Promise<boolean>;
@@ -184,6 +185,21 @@ const isRoutineDefinitionNameVersionConstraintError = (error: unknown): boolean 
     );
 };
 
+/**
+ * The domain `conflict` for a raw repository write conflict (name/version unique violation, update
+ * CAS miss), or undefined. Exported for callers that write through the repository inside their own
+ * transaction, such as the copilot's atomic MCP apply port.
+ */
+export const translateRoutineDefinitionWriteConflict = (error: unknown): AppError | undefined => {
+  if (isRoutineDefinitionNameVersionConstraintError(error)) {
+    return conflict("A routine definition with this name and version already exists for this agent");
+  }
+  if (error instanceof Error && error.message.startsWith("routine_definition_update_conflict:")) {
+    return conflict("Routine changed while it was being edited — reload it and try again");
+  }
+  return undefined;
+};
+
 export class RoutineDefinitionService {
   private readonly capabilityPolicy: CapabilityPolicy;
 
@@ -223,10 +239,7 @@ export class RoutineDefinitionService {
     try {
       saved = await this.options.repository.createDraftWithAgentDraft(workspaceId, agentId, draft);
     } catch (error) {
-      if (isRoutineDefinitionNameVersionConstraintError(error)) {
-        throw conflict("A routine definition with this name and version already exists for this agent");
-      }
-      throw this.completionExportDestinationError(error, draft) ?? error;
+      throw translateRoutineDefinitionWriteConflict(error) ?? this.completionExportDestinationError(error, draft) ?? error;
     }
     return this.savedRoutine(workspaceId, agentId, "routine_definition.create", saved);
   }
@@ -266,20 +279,38 @@ export class RoutineDefinitionService {
     try {
       saved = await this.options.repository.updateDraftWithAgentDraft(workspaceId, agentId, id, draft, options);
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith("routine_definition_update_conflict:")) {
-        throw conflict("Routine changed while it was being edited — reload it and try again");
-      }
       // Every canonical routine is now permanently pinned at version 1 (the routine lifecycle
       // collapse), so renaming one routine to collide with another's name is the common case a
       // rename can hit, not the rare cross-lineage edge case it was under the old branching-
       // version model. createDraft already reports this collision as a friendly 409; do the same
       // here instead of letting the raw unique-violation escape as a 500.
-      if (isRoutineDefinitionNameVersionConstraintError(error)) {
-        throw conflict("A routine definition with this name and version already exists for this agent");
-      }
-      throw this.completionExportDestinationError(error, draft) ?? error;
+      throw translateRoutineDefinitionWriteConflict(error) ?? this.completionExportDestinationError(error, draft) ?? error;
     }
     return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved);
+  }
+
+  /**
+   * Applies a copilot-reviewed routine edit. Unlike the REST enable toggle, this authoring
+   * boundary refuses to put an invalid parked routine back into service. The effective draft is
+   * resolved before validation so omitted fields retain their stored values.
+   */
+  async updateDraftForCopilotProposal(
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    input: RoutineDefinitionDraftAuthoringInput,
+    options: RoutineDefinitionWriteGuard = {},
+  ): Promise<RoutineDefinitionSaveResult> {
+    await this.requireAgent(workspaceId, agentId);
+    const existing = await this.options.repository.findById(agentId, id);
+    const draft = this.validateInput(existing ? mergeDraftInputWithExisting(existing, input) : input);
+    if (!existing?.enabled && draft.enabled) {
+      const validation = await this.validateForDraftMutation(workspaceId, agentId, draft);
+      if (!validation.ok) {
+        throw badRequest("The enabled routine cannot be served. Use validate_routine to correct it before enabling it.");
+      }
+    }
+    return this.updateDraft(workspaceId, agentId, id, draft, options);
   }
 
   /**
@@ -320,6 +351,21 @@ export class RoutineDefinitionService {
       ? await this.requireRoutine(agentId, target.id)
       : draftDefinitionFromInput(agentId, this.validateInput(target.input));
     return this.validateForServing(workspaceId, routine);
+  }
+
+  /**
+   * Validates an authored draft only when that draft would enter service. Keeping this lifecycle
+   * rule with the routine owner lets every authoring surface park a broken routine without
+   * copying the enabled-only release policy from the agent-revision gate.
+   */
+  async validateForDraftMutation(
+    workspaceId: string,
+    agentId: string,
+    input: RoutineDefinitionDraftAuthoringInput,
+  ): Promise<RoutineValidationResult> {
+    await this.requireAgent(workspaceId, agentId);
+    const routine = draftDefinitionFromInput(agentId, this.validateInput(input));
+    return routine.enabled ? this.validateForServing(workspaceId, routine) : { ok: true, diagnostics: [] };
   }
 
   async deleteDraft(workspaceId: string, agentId: string, id: string, options: RoutineDefinitionWriteGuard = {}): Promise<void> {
@@ -497,11 +543,15 @@ export class RoutineDefinitionService {
         workspaceId,
         eventType,
         eventStatus: "success",
+        // The tool name is operator-authored configuration a support engineer needs to
+        // correlate a calling agent's catalog with; the description is prose and stays out.
         metadata: {
           agentId,
           routineId: routine.id,
           lineageId: routine.lineageId,
           enabled: routine.enabled,
+          exposureEnabled: routine.exposure?.enabled ?? false,
+          exposureToolName: routine.exposure?.toolName ?? null,
         },
       });
     } catch (error) {
@@ -527,10 +577,13 @@ export class RoutineDefinitionService {
         continue;
       }
       if (!this.options.actionCapabilities.has(step.actionType)) {
+        const hostQueuedMessage = this.options.hostQueuedActionTypes?.has(step.actionType)
+          ? ` Radioso queues this type itself for a routine's endings and approval steps; remove the action step, and to notify the team set the notice on the routine's ending.`
+          : "";
         diagnostics.push({
           code: "unregistered_action_type",
           location: `step:${step.stableStepId}`,
-          message: `unregistered action type: action step "${step.stableStepId}" references "${step.actionType}", but no action handler is registered for that type.`,
+          message: `unregistered action type: action step "${step.stableStepId}" references "${step.actionType}", but no action an author may write as an action step is registered under that type.${hostQueuedMessage}`,
         });
         continue;
       }

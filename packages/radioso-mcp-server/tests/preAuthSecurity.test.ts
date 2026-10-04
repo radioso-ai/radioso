@@ -36,7 +36,7 @@ describe("standalone MCP pre-authentication controls", () => {
     const exchange = vi.fn();
     const server = createHttpServer({
       authService: createAuthService({
-        converseApi: { ask: vi.fn(), exchange, validate: vi.fn(), recordUse: vi.fn() },
+        converseApi: { ask: vi.fn(), exchange, validate: vi.fn(), recordUse: vi.fn(), tools: vi.fn() },
         sessionStore: createInMemorySessionStore(),
       }),
       config,
@@ -57,14 +57,14 @@ describe("standalone MCP pre-authentication controls", () => {
     expect(exchange).not.toHaveBeenCalled();
   });
 
-  it("keeps hosted clients distinct using only the trusted forwarding suffix", async () => {
+  it("keeps hosted clients distinct using only the entry Cloud Run appended", async () => {
     const consume = vi.fn().mockReturnValue(false);
     const server = createHttpServer({
       authService: createAuthService({
-        converseApi: { ask: vi.fn(), exchange: vi.fn(), validate: vi.fn(), recordUse: vi.fn() },
+        converseApi: { ask: vi.fn(), exchange: vi.fn(), validate: vi.fn(), recordUse: vi.fn(), tools: vi.fn() },
         sessionStore: createInMemorySessionStore(),
       }),
-      config: { ...config, trustedProxyHops: 2 },
+      config: { ...config, trustedProxyHops: 1 },
       preAuthSourceBudget: { consume },
     });
     servers.push(server);
@@ -81,8 +81,9 @@ describe("standalone MCP pre-authentication controls", () => {
       method: "POST",
     });
 
-    await call("198.51.100.99, 203.0.113.7, 35.191.0.1");
-    await call("192.0.2.44, 203.0.113.8, 35.191.0.1");
+    // Cloud Run appends the connecting peer after whatever the caller sent.
+    await call("198.51.100.99, 203.0.113.7");
+    await call("198.51.100.99, 203.0.113.8");
 
     const sourceDigests = consume.mock.calls.map(([input]) => (input as { sourceDigest: string }).sourceDigest);
     expect(new Set(sourceDigests).size).toBe(2);
@@ -91,7 +92,7 @@ describe("standalone MCP pre-authentication controls", () => {
 
   it("rejects oversized bearer and client metadata before auth or server allocation", async () => {
     const verifyBearerToken = vi.fn();
-    const serverManager = { evict: vi.fn(), getOrCreate: vi.fn() };
+    const serverManager = { handleRequest: vi.fn() };
     const handler = createMcpRequestHandler({ config, serverManager, verifyBearerToken });
 
     const oversizedBearer = await handler(new Request("http://localhost/mcp", {
@@ -124,7 +125,7 @@ describe("standalone MCP pre-authentication controls", () => {
     expect(invalidClient.response.status).toBe(400);
     expect(invalidBatchClient.response.status).toBe(400);
     expect(verifyBearerToken).not.toHaveBeenCalled();
-    expect(serverManager.getOrCreate).not.toHaveBeenCalled();
+    expect(serverManager.handleRequest).not.toHaveBeenCalled();
   });
 
   it("does not record a cold-cache credential when its first MCP request is unsupported", async () => {
@@ -148,6 +149,7 @@ describe("standalone MCP pre-authentication controls", () => {
             permissions: [],
           }),
           recordUse,
+          tools: vi.fn().mockResolvedValue({ agent: { name: "Agent", description: null }, tools: [] }),
         },
         sessionStore: createInMemorySessionStore(),
       }),

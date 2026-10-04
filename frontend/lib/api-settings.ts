@@ -267,6 +267,12 @@ export const agentsApi = {
     }, { withSession: true })
   },
 
+  async rotateAgentPublicId(agentId: string): Promise<AgentSettings> {
+    return request<AgentSettings>(`/agents/${agentId}/public-id/rotate`, {
+      method: 'POST',
+    }, { withSession: true })
+  },
+
   async setDefaultAgent(agentId: string): Promise<AgentSettings> {
     return request<AgentSettings>(`/agents/${agentId}/default`, {
       method: 'POST',

@@ -7,6 +7,7 @@ interface SlackBlockKitMessage {
 
 export const OWNERSHIP_REPLY_BLOCK_ID = "ownership_reply_message";
 export const OWNERSHIP_REPLY_ACTION_ID = "ownership_reply_text";
+export const OWNERSHIP_CONTEXT_BLOCK_ID = "ownership_context";
 
 const SECTION_TEXT_LIMIT = 3_000;
 const BUTTON_LABEL_LIMIT = 75;
@@ -36,8 +37,9 @@ const plainText = (text: string): Record<string, unknown> => ({
   emoji: true,
 });
 
-const mrkdwnSection = (text: string): Record<string, unknown> => ({
+const mrkdwnSection = (text: string, blockId?: string): Record<string, unknown> => ({
   type: "section",
+  ...(blockId ? { block_id: blockId } : {}),
   text: {
     type: "mrkdwn",
     text: clampSectionText(text),
@@ -62,13 +64,26 @@ const mrkdwnContext = (text: string): Record<string, unknown> => ({
   elements: [{ type: "mrkdwn", text }],
 });
 
-/** Slack mrkdwn reserves `&`, `<`, `>`; the permalink's query string carries `&`. */
-const escapeMrkdwn = (text: string): string =>
+/**
+ * Slack mrkdwn reserves `&`, `<`, `>`; the permalink's query string carries `&`. Escaped, text
+ * shows literally: `<!channel>` mentions no one and `<url|label>` links nowhere.
+ */
+export const escapeMrkdwn = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 /** Null when there is no link: a post without one beats a post with a link that does not route. */
 const dashboardLinkMrkdwn = (dashboardUrl: string | null): string | null =>
   dashboardUrl ? `<${escapeMrkdwn(dashboardUrl)}|Open in dashboard>` : null;
+
+/**
+ * The private notice for a teammate whose action was refused because someone else holds the
+ * conversation. Reassigning it happens only in the dashboard, so the notice links there when a
+ * link resolves. The label is a teammate label and can be an email: post it ephemerally only.
+ */
+export const heldByTeammateNotice = (input: { ownerLabel: string | null; dashboardUrl?: string | null }): string => {
+  const notice = `${escapeMrkdwn(input.ownerLabel ?? "A teammate")} is handling this.`;
+  return input.dashboardUrl ? `${notice} <${escapeMrkdwn(input.dashboardUrl)}|Reassign in dashboard>` : notice;
+};
 
 const encodeOwnershipValue = (input: Record<string, string | number>): string => {
   const value = JSON.stringify(input);
@@ -149,13 +164,14 @@ export const buildOwnershipMessage = (input: {
   const contextText = input.contextText.trim() || input.conversationId;
   const dashboardLink = dashboardLinkMrkdwn(input.dashboardUrl);
   if (input.state === "human_owned") {
-    const ownerName = input.ownerName?.trim() || "Operator";
+    // The owner's name is teammate-chosen text: escaped, it cannot mention the channel or forge a link.
+    const ownerName = escapeMrkdwn(input.ownerName?.trim() || "a teammate");
     const version = input.version ?? 0;
     const status = `Handled by ${ownerName}`;
     return {
       text: status,
       blocks: [
-        mrkdwnSection(contextText),
+        mrkdwnSection(contextText, OWNERSHIP_CONTEXT_BLOCK_ID),
         mrkdwnSection(status),
         {
           type: "actions",
@@ -189,7 +205,7 @@ export const buildOwnershipMessage = (input: {
   return {
     text: clampSectionText(contextText),
     blocks: [
-      mrkdwnSection(contextText),
+      mrkdwnSection(contextText, OWNERSHIP_CONTEXT_BLOCK_ID),
       ...(dashboardLink ? [mrkdwnContext(dashboardLink)] : []),
       {
         type: "actions",

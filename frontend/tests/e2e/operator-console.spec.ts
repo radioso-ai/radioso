@@ -9,10 +9,12 @@ test.skip(process.env.RADIOSO_EDITION !== "enterprise", "Operator console routes
 type TierProfile = {
   key: string;
   displayName: string;
-  monthlyAnswerLimit: number;
+  monthlyAnswerLimit: number | null;
   storedDocumentLimit: number;
   storedIndexedByteLimit: number;
   monthlyIndexedByteLimit: number | null;
+  monthlyConversationLimit: number | null;
+  repliesPerConversation: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -33,6 +35,35 @@ const starterProfile: TierProfile = {
   storedDocumentLimit: 20,
   storedIndexedByteLimit: 1024 * 1024 * 1024,
   monthlyIndexedByteLimit: 2 * 1024 * 1024 * 1024,
+  monthlyConversationLimit: null,
+  repliesPerConversation: 10,
+  createdAt: "2026-06-01T00:00:00.000Z",
+  updatedAt: "2026-06-01T00:00:00.000Z",
+};
+
+/** A catalog plan: it bills conversations and leaves the answer cap dormant. */
+const cometProfile: TierProfile = {
+  key: "comet",
+  displayName: "Comet",
+  monthlyAnswerLimit: null,
+  storedDocumentLimit: 2000,
+  storedIndexedByteLimit: 10 * 1024 * 1024,
+  monthlyIndexedByteLimit: 20 * 1024 * 1024,
+  monthlyConversationLimit: 50,
+  repliesPerConversation: 10,
+  createdAt: "2026-06-01T00:00:00.000Z",
+  updatedAt: "2026-06-01T00:00:00.000Z",
+};
+
+const planetProfile: TierProfile = {
+  key: "planet",
+  displayName: "Planet",
+  monthlyAnswerLimit: null,
+  storedDocumentLimit: 50000,
+  storedIndexedByteLimit: 100 * 1024 * 1024,
+  monthlyIndexedByteLimit: 200 * 1024 * 1024,
+  monthlyConversationLimit: 5000,
+  repliesPerConversation: 10,
   createdAt: "2026-06-01T00:00:00.000Z",
   updatedAt: "2026-06-01T00:00:00.000Z",
 };
@@ -44,6 +75,8 @@ const growthProfile: TierProfile = {
   storedDocumentLimit: 200,
   storedIndexedByteLimit: 10 * 1024 * 1024 * 1024,
   monthlyIndexedByteLimit: null,
+  monthlyConversationLimit: null,
+  repliesPerConversation: 10,
   createdAt: "2026-06-01T00:00:00.000Z",
   updatedAt: "2026-06-01T00:00:00.000Z",
 };
@@ -56,8 +89,19 @@ const usage = (profile: TierProfile = starterProfile) => ({
     periodStart: "2026-06-01",
     resetAt: "2026-07-01T00:00:00.000Z",
     used: 7,
-    limit: profile.monthlyAnswerLimit,
+    // A conversation-metered tier leaves this cap dormant, as the backend does.
+    limit: profile.monthlyConversationLimit === null ? profile.monthlyAnswerLimit : null,
   },
+  monthlyConversations: profile.monthlyConversationLimit === null
+    ? null
+    : {
+      periodStart: "2026-06-01",
+      resetAt: "2026-07-01T00:00:00.000Z",
+      used: 62,
+      limit: profile.monthlyConversationLimit,
+      credits: 0,
+      byKind: { conversation: 60, copilot: 2, test_run: 0, pulse_report: 0 },
+    },
   storedDocuments: { used: 3, limit: profile.storedDocumentLimit },
   storedIndexedBytes: { used: 1024 * 1024, limit: profile.storedIndexedByteLimit },
   monthlyIndexedBytes: {
@@ -76,10 +120,14 @@ const json = async (route: Route, body: unknown, status = 200) => {
   });
 };
 
-const installOperatorConsoleMocks = async (page: Page, role: StaffRole = "owner") => {
+const installOperatorConsoleMocks = async (
+  page: Page,
+  role: StaffRole = "owner",
+  startingProfile: TierProfile = starterProfile,
+) => {
   const requestLog: string[] = [];
-  let currentUsage = usage();
-  let tiers = [starterProfile, growthProfile];
+  let currentUsage = usage(startingProfile);
+  let tiers = [starterProfile, growthProfile, cometProfile, planetProfile];
   let staff: StaffFixture[] = [
     {
       id: "11111111-1111-4111-8111-111111111111",
@@ -122,6 +170,12 @@ const installOperatorConsoleMocks = async (page: Page, role: StaffRole = "owner"
               used: currentUsage.monthlyAnswers.used,
               limit: currentUsage.monthlyAnswers.limit,
             },
+            monthlyConversations: currentUsage.monthlyConversations
+              ? {
+                used: currentUsage.monthlyConversations.used,
+                limit: currentUsage.monthlyConversations.limit,
+              }
+              : null,
           },
         ],
         pageInfo: { limit: 25, offset: Number(url.searchParams.get("offset") ?? 0), nextOffset: null, hasMore: false, total: 1 },
@@ -203,6 +257,25 @@ test("staff can sign in and review the organization directory and detail usage",
   await expect(page.getByText("Monthly answers")).toBeVisible();
   await expect(page.getByText("Stored indexed bytes")).toBeVisible();
   await expect(page.getByText("Current: Starter")).toBeVisible();
+});
+
+test("the directory reads the conversation meter for a catalog tier", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "billing_write", cometProfile);
+
+  await page.goto("/operator/organizations");
+
+  const row = page.getByRole("row").filter({ hasText: "Alpha Research" });
+  await expect(row).toContainText("Comet");
+  await expect(row).toContainText("62 / 50 conv");
+});
+
+test("the tier preview warns when a catalog tier caps conversations below current usage", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "billing_write", planetProfile);
+
+  await page.goto(`/operator/organizations/${accountId}`);
+  await page.getByLabel("Target tier").selectOption("comet");
+
+  await expect(page.getByText(/selected tier is below current usage for Monthly conversations/)).toBeVisible();
 });
 
 test("billing staff can change an organization's tier", async ({ page }) => {

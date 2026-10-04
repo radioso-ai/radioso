@@ -32,6 +32,7 @@ import {
   type ContactHistoryDetail,
   type DocumentSearchResponse,
 } from '@/lib/api'
+import { useConversationActivity } from '@/hooks/use-conversation-activity'
 import { useConversationTail } from '@/hooks/use-conversation-tail'
 import {
   formatConversationChannelContextDetails,
@@ -290,6 +291,12 @@ export function ConversationDrawer({
   const [flowOpen, setFlowOpen] = useState(false)
 
   const renderedConversationMessages = effectiveConversationMessages
+  // Held across renders so the thread re-places its events only when a read brings new ones.
+  const conversationActivity = useConversationActivity({
+    conversationId: selectedChatConversationId,
+    detail: conversationDetail?.activity,
+    poll: conversationTail.activity,
+  })
 
   // Mark which turns a routine drove so the conversation thread can band the
   // routine's span (start chip, paused/ended marker). The signal lives on each
@@ -519,6 +526,9 @@ export function ConversationDrawer({
                     conversationId={selectedItem?.kind === 'chat' ? selectedItem.id : undefined}
                     evalCaptureEnabled={selectedItem?.kind === 'chat'}
                     analyticsSurface="history"
+                    audience="operator"
+                    activity={conversationActivity}
+                    hasOlderMessages={conversationDetail.hasOlderMessages}
                     skillCatalog={skillCatalog}
                     routineMarkers={namedRoutineMarkers}
                   />

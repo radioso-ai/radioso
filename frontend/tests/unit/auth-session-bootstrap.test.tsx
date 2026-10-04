@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { act } from 'react'
+import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -38,14 +38,21 @@ beforeAll(() => {
 
 // Renders as plain DOM attributes so assertions can read bootstrap state without a testing
 // library, matching this repo's manual createRoot/act component-test convention.
-function AuthProbe() {
-  const { user, isAuthenticated, isBootstrapping } = useAuth()
+type AuthActions = Pick<ReturnType<typeof useAuth>, 'login' | 'setDisplayName'>
+
+function AuthProbe({ actionsRef }: { actionsRef?: { current: AuthActions | null } }) {
+  const { user, isAuthenticated, isBootstrapping, login, setDisplayName } = useAuth()
+  useEffect(() => {
+    if (actionsRef) actionsRef.current = { login, setDisplayName }
+  }, [actionsRef, login, setDisplayName])
   return (
     <div
       data-testid="auth-probe"
       data-bootstrapping={String(isBootstrapping)}
       data-authenticated={String(isAuthenticated)}
       data-email={user?.email ?? ''}
+      data-account-id={user?.accountId ?? ''}
+      data-display-name={user?.displayName ?? ''}
     />
   )
 }
@@ -167,6 +174,7 @@ describe('AuthProvider bootstrap effect', () => {
     workspacePublicRouteKey: 'session-org-key',
     requiresEmailVerification: false,
     email: 'recovered@example.com',
+    displayName: 'Recovered Name',
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- querySelector returns Element; the assertion is what gives callers `.dataset`.
@@ -193,6 +201,7 @@ describe('AuthProvider bootstrap effect', () => {
       userId: 'stored-user-1',
       accountId: 'stored-account-1',
       email: 'stored@example.com',
+      displayName: null,
     }))
 
     await act(async () => {
@@ -207,6 +216,139 @@ describe('AuthProvider bootstrap effect', () => {
     expect(probe()?.dataset.authenticated).toBe('true')
     expect(probe()?.dataset.email).toBe('stored@example.com')
     expect(apiMocks.getCurrentSession).not.toHaveBeenCalled()
+  })
+
+  it('learns the display name of a stored user that does not carry one yet', async () => {
+    window.localStorage.setItem('radioso.authUser', JSON.stringify({
+      userId: sessionFixture.userId,
+      accountId: sessionFixture.accountId,
+      email: sessionFixture.email,
+    }))
+    apiMocks.getCurrentSession.mockResolvedValueOnce(sessionFixture)
+
+    await act(async () => {
+      root.render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>,
+      )
+    })
+
+    expect(apiMocks.getCurrentSession).toHaveBeenCalledOnce()
+    expect(probe()?.dataset.authenticated).toBe('true')
+    expect(probe()?.dataset.displayName).toBe('Recovered Name')
+    expect(JSON.parse(window.localStorage.getItem('radioso.authUser') ?? 'null')).toMatchObject({
+      displayName: 'Recovered Name',
+    })
+  })
+
+  const renderWithActions = async () => {
+    const actionsRef: { current: AuthActions | null } = { current: null }
+    await act(async () => {
+      root.render(
+        <AuthProvider>
+          <AuthProbe actionsRef={actionsRef} />
+        </AuthProvider>,
+      )
+    })
+    return actionsRef
+  }
+
+  const authUserWrites = (setItem: { mock: { calls: unknown[][] } }) =>
+    setItem.mock.calls.filter(([key]) => key === 'radioso.authUser')
+
+  it('takes the display name from the sign-in response and stores the user once', async () => {
+    window.localStorage.setItem('radioso.authUser', JSON.stringify({
+      userId: 'user-1',
+      accountId: 'account-1',
+      email: 'ada@example.com',
+      displayName: 'Ada Lovelace',
+    }))
+    const actionsRef = await renderWithActions()
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+
+    await act(async () => {
+      await actionsRef.current?.login({
+        email: 'ada@example.com',
+        userId: 'user-1',
+        accountId: 'account-2',
+        organizationName: 'Second Org',
+        displayName: 'Ada King',
+      })
+    })
+
+    expect(probe()?.dataset.accountId).toBe('account-2')
+    expect(probe()?.dataset.displayName).toBe('Ada King')
+    expect(apiMocks.getCurrentSession).not.toHaveBeenCalled()
+    expect(authUserWrites(setItem)).toHaveLength(1)
+    expect(JSON.parse(window.localStorage.getItem('radioso.authUser') ?? 'null')).toMatchObject({
+      accountId: 'account-2',
+      displayName: 'Ada King',
+    })
+    setItem.mockRestore()
+  })
+
+  it('shows a different user signing in without a name as unnamed, without asking the session', async () => {
+    window.localStorage.setItem('radioso.authUser', JSON.stringify({
+      userId: 'user-1',
+      accountId: 'account-1',
+      email: 'ada@example.com',
+      displayName: 'Ada Lovelace',
+    }))
+    const actionsRef = await renderWithActions()
+
+    await act(async () => {
+      await actionsRef.current?.login({
+        email: 'grace@example.com',
+        userId: 'user-2',
+        accountId: 'account-3',
+        organizationName: 'Other Org',
+        displayName: null,
+      })
+    })
+
+    expect(probe()?.dataset.email).toBe('grace@example.com')
+    expect(probe()?.dataset.displayName).toBe('')
+    expect(apiMocks.getCurrentSession).not.toHaveBeenCalled()
+    expect(JSON.parse(window.localStorage.getItem('radioso.authUser') ?? 'null')).toMatchObject({
+      userId: 'user-2',
+      displayName: null,
+    })
+  })
+
+  it('stores a renamed profile', async () => {
+    window.localStorage.setItem('radioso.authUser', JSON.stringify({
+      userId: 'user-1',
+      accountId: 'account-1',
+      email: 'ada@example.com',
+      displayName: 'Ada Lovelace',
+    }))
+    const actionsRef = await renderWithActions()
+
+    await act(async () => {
+      actionsRef.current?.setDisplayName('Countess Lovelace')
+    })
+
+    expect(probe()?.dataset.displayName).toBe('Countess Lovelace')
+    expect(JSON.parse(window.localStorage.getItem('radioso.authUser') ?? 'null')).toMatchObject({
+      displayName: 'Countess Lovelace',
+    })
+  })
+
+  it('does not write a stored user back on load', async () => {
+    window.localStorage.setItem('radioso.authUser', JSON.stringify({
+      userId: 'user-1',
+      accountId: 'account-1',
+      email: 'ada@example.com',
+      displayName: 'Ada Lovelace',
+    }))
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+
+    await renderWithActions()
+
+    expect(probe()?.dataset.authenticated).toBe('true')
+    expect(authUserWrites(setItem)).toEqual([])
+    setItem.mockRestore()
   })
 
   it('recovers a live session when local storage is empty and persists it', async () => {
@@ -229,13 +371,16 @@ describe('AuthProvider bootstrap effect', () => {
       userId: sessionFixture.userId,
       accountId: sessionFixture.accountId,
       email: sessionFixture.email,
+      displayName: sessionFixture.displayName,
       organizationName: sessionFixture.organizationName,
     })
     expect(window.localStorage.getItem('radioso.lastAccountId')).toBe(sessionFixture.accountId)
     // Seeded via `seedWorkspaceSession`, the real implementation from `@/lib/api` — this is the
     // step that used to be missing, which is why a provider OAuth return looked signed out.
-    expect(window.localStorage.getItem('radioso.activeWorkspaceId')).toBe(sessionFixture.workspaceId)
-    expect(window.localStorage.getItem('radioso.activeWorkspacePublicRouteKey')).toBe(sessionFixture.workspacePublicRouteKey)
+    expect(JSON.parse(window.localStorage.getItem('radioso.activeWorkspaceSelection') ?? 'null')).toEqual({
+      workspaceId: sessionFixture.workspaceId,
+      workspacePublicRouteKey: sessionFixture.workspacePublicRouteKey,
+    })
   })
 
   it('stays signed out when local storage is empty and there is no live session', async () => {

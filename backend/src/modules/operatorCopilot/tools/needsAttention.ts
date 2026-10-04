@@ -35,7 +35,7 @@ const entityNameSchema = z.string().trim().min(1).max(160);
  */
 const NEEDS_ATTENTION_KINDS = ["approval", "handoff", "negative_feedback"] as const;
 
-export type CopilotNeedsAttentionKind = (typeof NEEDS_ATTENTION_KINDS)[number];
+type CopilotNeedsAttentionKind = (typeof NEEDS_ATTENTION_KINDS)[number];
 
 type NeedsAttentionSourceId = "approvals" | "handoffs" | "quality";
 
@@ -287,8 +287,9 @@ const readHandoffQueue = async (
         since: escalatedAt(conversation),
         agentId: conversation.agentId,
         conversationId: conversation.id,
-        ownerDisplayName: conversation.ownership?.takenOverAt ? conversation.ownership.ownerDisplayName : null,
-        takenOverAt: conversation.ownership?.takenOverAt ?? null,
+        // A handoff that names no teammate is waiting, whatever label or claim time its row kept.
+        ownerDisplayName: conversation.ownership?.ownerUserId ? conversation.ownership.ownerDisplayName : null,
+        takenOverAt: conversation.ownership?.ownerUserId ? conversation.ownership.takenOverAt : null,
         subject: { type: "conversation", id: conversation.id },
       })),
   };

@@ -6,9 +6,10 @@ import type {
   WorkbenchReplayRunner,
 } from "../src/modules/chat/services/workbenchReplayRunner.js";
 import type { EvalRunObservedOutput } from "../src/modules/eval/domain/types.js";
-import type {
-  ConversationQualityCase,
-  ConversationQualityRunnerPort,
+import {
+  conversationQualityCaseTurnText,
+  type ConversationQualityCase,
+  type ConversationQualityRunnerPort,
 } from "../src/modules/eval/suite/index.js";
 
 /**
@@ -38,9 +39,10 @@ export interface ReplayContext {
 
 /**
  * Turns a committed case into the runner's input: prior turns become replayed history
- * records and any seeded routine position is passed through so the agent resumes
- * mid-routine. The ephemeral conversation id is injected by the runner, so the history
- * records only need a stable placeholder.
+ * records, any seeded routine position is passed through so the agent resumes
+ * mid-routine, and a routine invocation rides beside its rendered text so the turn
+ * admits the named routine directly. The ephemeral conversation id is injected by the
+ * runner, so the history records only need a stable placeholder.
  */
 export const buildReplayInput = (
   evalCase: ConversationQualityCase,
@@ -62,7 +64,8 @@ export const buildReplayInput = (
     sourceAgentId: context.agentId,
     baselineAgentConfig: context.baselineAgentConfig,
     agentConfigOverride: evalCase.agentConfigOverride,
-    query: evalCase.query,
+    query: conversationQualityCaseTurnText(evalCase),
+    routineInvocation: evalCase.routineInvocation ?? null,
     history,
     pageContext: evalCase.pageContext,
     clientContextCapabilities: evalCase.clientContextCapabilities,

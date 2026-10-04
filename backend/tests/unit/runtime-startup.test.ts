@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../../src/app/config/env.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import { buildDependencies } from "../../src/app/server/dependencies.js";
+import { PostgresAssistantTurnPersistence } from "../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
+import { ChatTurnLifecycle } from "../../src/modules/chat/services/chatTurnLifecycle.js";
 import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { startApiRuntime } from "../../src/runtime/startApiRuntime.js";
 import { startWorkerTaskRuntime } from "../../src/runtime/startWorkerTaskRuntime.js";
@@ -17,7 +19,6 @@ import type { ConnectorPlugin } from "@radioso/connector-api";
 const createEnv = (): Env => ({
   NODE_ENV: "test",
   PORT: 8088,
-  TRUST_PROXY_HOPS: 0,
   OBSERVABILITY_ENABLED: true,
   OBSERVABILITY_SERVICE_NAME: "radioso-api",
   OBSERVABILITY_ENVIRONMENT: "test",
@@ -516,6 +517,23 @@ describe("runtime startup", () => {
     });
 
     await dependencies.connectorDb.close();
+  });
+
+  // The chat turn lifecycle keeps a no-transaction fallback for tests and non-DB hosts. It requests
+  // a handoff but records no `handoff_requested` activity, because that event commits only inside
+  // the handoff's transaction. This pins that production never takes it: every built chat service
+  // persists its turns through the Postgres turn persistence.
+  it("persists chat turns transactionally, so a live handoff always records its activity", async () => {
+    const dependencies = buildDependencies(createEnv());
+    try {
+      const lifecycle: unknown = Reflect.get(dependencies.chatService, "chatTurnLifecycle");
+      expect(lifecycle).toBeInstanceOf(ChatTurnLifecycle);
+      expect(Reflect.get(lifecycle as ChatTurnLifecycle, "assistantTurnPersistence")).toBeInstanceOf(
+        PostgresAssistantTurnPersistence,
+      );
+    } finally {
+      await dependencies.connectorDb.close();
+    }
   });
 
   describe("worker runtime parity guard", () => {

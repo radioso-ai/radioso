@@ -87,6 +87,14 @@ const nextConfig = {
         source: "/api/v1/operator-mcp/oauth/:path*",
         destination: "/backend/api/v1/operator-mcp/oauth/:path*",
       },
+      // Google login (EE) redirects the browser back to
+      // <APP_BASE_URL>/api/v1/ee/auth/google/callback. The OAuth state cookie
+      // and the session cookie are both host-only, so the callback has to land
+      // on the dashboard origin; this carries it to the backend from there.
+      {
+        source: "/api/v1/ee/auth/google/:path*",
+        destination: "/backend/api/v1/ee/auth/google/:path*",
+      },
       {
         source: "/:path*",
         has: [{ type: "host", value: "platform.radioso.dev" }],
@@ -110,6 +118,18 @@ const nextConfig = {
       },
       {
         source: "/oauth/operator-mcp/consent",
+        headers: [
+          { key: "Content-Security-Policy", value: buildCspDirectives({ frameAncestors: "frame-ancestors 'none'" }) },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "no-store" },
+          { key: "X-Frame-Options", value: "DENY" },
+        ],
+      },
+      {
+        // The reviewed-operation approval page records a signed-in approval decision, the same
+        // kind of consequential, single-use action as the OAuth consent screen above, so it gets
+        // the same anti-framing and no-cache treatment.
+        source: "/oauth/operator-mcp/proposal/:proposalId",
         headers: [
           { key: "Content-Security-Policy", value: buildCspDirectives({ frameAncestors: "frame-ancestors 'none'" }) },
           { key: "Referrer-Policy", value: "no-referrer" },

@@ -191,6 +191,7 @@ describe("retrieval search contract", () => {
         if (permission === "workspace.agents.read") {
           throw forbidden("You do not have permission to perform this action");
         }
+        return null;
       });
 
     await request(app)

@@ -10,13 +10,16 @@ import {
   createDefaultWebsiteCrawlJobDispatcher,
 } from "../../src/app/composition/defaultComposition.js";
 import {
+  APPROVAL_REQUEST_ACTION_TYPE,
   CONTACT_SEND_ACTION_TYPE,
   DefaultTurnSelectionStrategy,
   HANDOFF_NOTIFY_ACTION_TYPE,
+  COMPLETION_NOTIFY_ACTION_TYPE,
   NoopActionDrainDispatcher,
   WEBHOOK_SEND_ACTION_TYPE,
 } from "../../src/modules/chat/composition.js";
 import { CloudTasksActionDrainDispatcher } from "../../src/modules/chat/infra/cloudTasksActionDrainDispatcher.js";
+import { CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE } from "../../src/modules/handoff/public.js";
 import type { OrganizationCreationGuard } from "../../src/shared/domain/organizationCreationGuard.js";
 import type { ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
 import type { DirectiveMatcherPort } from "../../src/modules/directives/public.js";
@@ -72,6 +75,7 @@ describe("default application composition", () => {
       "radioso-audience-pulse",
       "radioso-contact-routine",
       "radioso-webhook-send",
+      "radioso-conversation-transfer-notice",
       "radioso-oss-organization-creation",
       "radioso-customer-email",
       "radioso-slack",
@@ -92,12 +96,41 @@ describe("default application composition", () => {
     expect(composition.actionCapabilityMap.requiredCapabilitiesFor(CONTACT_SEND_ACTION_TYPE)).toEqual([
       capabilityNames.humanContact.request,
     ]);
-    expect(composition.actionCapabilityMap.has(HANDOFF_NOTIFY_ACTION_TYPE)).toBe(true);
-    expect(composition.actionCapabilityMap.requiredCapabilitiesFor(HANDOFF_NOTIFY_ACTION_TYPE)).toEqual([
-      capabilityNames.humanContact.request,
-    ]);
+    // A routine ending's and an approval step's operator notices are queued with the turn.
+    for (const noticeType of [HANDOFF_NOTIFY_ACTION_TYPE, COMPLETION_NOTIFY_ACTION_TYPE, APPROVAL_REQUEST_ACTION_TYPE]) {
+      expect(composition.actionCapabilityMap.has(noticeType)).toBe(true);
+      expect(composition.actionCapabilityMap.requiredCapabilitiesFor(noticeType)).toEqual([
+        capabilityNames.humanContact.request,
+      ]);
+    }
     expect(composition.actionCapabilityMap.has(WEBHOOK_SEND_ACTION_TYPE)).toBe(true);
     expect(composition.actionCapabilityMap.requiredCapabilitiesFor(WEBHOOK_SEND_ACTION_TYPE)).toEqual([]);
+    expect(composition.actionCapabilityMap.has("slack.post")).toBe(true);
+    expect(composition.actionCapabilityMap.has(CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE)).toBe(false);
+    // The worker dispatches every registered action, including host-only notices.
+    expect(composition.actionHandlerRegistrations.map((registration) => registration.type)).toEqual(
+      expect.arrayContaining([
+        HANDOFF_NOTIFY_ACTION_TYPE,
+        COMPLETION_NOTIFY_ACTION_TYPE,
+        APPROVAL_REQUEST_ACTION_TYPE,
+        CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
+      ]),
+    );
+    const authorableTypes = [CONTACT_SEND_ACTION_TYPE, WEBHOOK_SEND_ACTION_TYPE, "slack.post"];
+    expect(composition.routineActionHandlerRegistrations.map((registration) => registration.type).sort())
+      .toEqual(authorableTypes.sort());
+    for (const hostOnlyType of [
+      HANDOFF_NOTIFY_ACTION_TYPE,
+      COMPLETION_NOTIFY_ACTION_TYPE,
+      APPROVAL_REQUEST_ACTION_TYPE,
+      CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
+    ]) {
+      expect(composition.routineActionCapabilityMap.has(hostOnlyType)).toBe(false);
+    }
+    // Every registration says where it is queued from; nothing is admitted by default.
+    expect(composition.actionHandlerRegistrations.every((registration) =>
+      ["routine_action_step", "chat_turn", "outside_turn"].includes(registration.queuedFrom),
+    )).toBe(true);
     expect(composition.organizationCreationGuardRegistration).toBeTypeOf("function");
     expect(composition.oauthProviders).toEqual([]);
   });
@@ -227,6 +260,7 @@ describe("default application composition", () => {
       "radioso-audience-pulse",
       "radioso-contact-routine",
       "radioso-webhook-send",
+      "radioso-conversation-transfer-notice",
       "radioso-oss-organization-creation",
       "radioso-customer-email",
       "radioso-slack",

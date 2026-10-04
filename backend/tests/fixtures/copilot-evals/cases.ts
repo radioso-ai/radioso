@@ -317,6 +317,32 @@ export const copilotEvalCases: CopilotEvalCase[] = [
     ],
   },
   {
+    id: "directive-proposal-with-exact-fields",
+    name: "An operator can draft an exact directive without coach rewriting",
+    description: "Guards the structured proposal shape for formatting rules and built-in replacements.",
+    tags: ["proposal_quality", "tool_arguments"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("agent", { agentId: COPILOT_EVAL_AGENT_ID }),
+    message: "Draft an exact quote-first directive that replaces organization voice.",
+    plan: [{
+      tool: "propose_directive",
+      input: {
+        agentId: COPILOT_EVAL_AGENT_ID,
+        name: "quote-primary-source",
+        condition: { kind: "always" },
+        action: "Start with a blockquote, then write `PS § 12 lg 1`, then **Decision**.",
+        priority: 85,
+        excludes: ["represent-organization"],
+      },
+    }],
+    finalMessage: "I drafted the exact directive for review.",
+    assertions: [
+      { type: "tool_called", tool: "propose_directive" },
+      { type: "proposal_drafted", targetType: "directive" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
     id: "directive-disable-proposal",
     name: "A misfiring directive is disabled instead of deleted",
     description: "Tool selection: stopping a directive from firing keeps its authored text available for later re-enablement.",
@@ -376,6 +402,37 @@ export const copilotEvalCases: CopilotEvalCase[] = [
       { type: "proposal_drafted", targetType: "routine" },
       // Rewording a step is not drafting a new routine. Reaching for propose_routine here would
       // replace the whole graph and orphan every directive scoped to a step.
+      { type: "tool_not_called", tool: "propose_routine" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
+    id: "routine-exposure-proposal",
+    name: "\"Let agents start returns directly\" becomes a tool exposure, not a wording edit",
+    description: "Tool selection among the routine write tools: offering a routine to calling AI agents as a named tool goes to propose_routine_exposure, never to a wording edit or a redraft (spec 1290 AS-10).",
+    tags: ["tool_selection", "proposal_quality"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("agent", { agentId: COPILOT_EVAL_AGENT_ID }),
+    message: "Let AI agents start the Order status routine directly, as a tool they can call.",
+    requires: ["routine"],
+    plan: [
+      { tool: "routine_definition", input: { agentId: COPILOT_EVAL_AGENT_ID, routineId: COPILOT_EVAL_ROUTINE_ID } },
+      {
+        tool: "propose_routine_exposure",
+        input: {
+          agentId: COPILOT_EVAL_AGENT_ID,
+          routineId: COPILOT_EVAL_ROUTINE_ID,
+          enabled: true,
+          toolName: "order_status",
+          description: "Look up the status of an order by its order number.",
+        },
+      },
+    ],
+    finalMessage: "I drafted a tool exposure for the Order status routine, named order_status, for you to review.",
+    assertions: [
+      { type: "tool_call_order", tools: ["routine_definition", "propose_routine_exposure"] },
+      { type: "proposal_drafted", targetType: "routine" },
+      { type: "tool_not_called", tool: "propose_routine_edit" },
       { type: "tool_not_called", tool: "propose_routine" },
       { type: "turn_outcome", outcome: "completed" },
     ],

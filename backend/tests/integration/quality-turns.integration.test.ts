@@ -7,6 +7,7 @@ import { Database } from "../../src/shared/infra/database.js";
 import { EvalMessageCaseRepository } from "../../src/modules/eval/services/evalMessageCaseRepository.js";
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
+import { unrecordedConversationActivity } from "../support/fakes.js";
 import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -111,7 +112,7 @@ describeIfDatabase("quality turns integration", () => {
       [randomUUID(), workspaceId, groundedConversationId, groundedAssistantMessageId],
     );
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
     const page = await service.listLowQualityTurns(workspaceId, { limit: 25 });
 
     const ids = page.items.map((item) => item.assistantMessageId);
@@ -228,7 +229,7 @@ describeIfDatabase("quality turns integration", () => {
       [rayProbeMessageId, rayProbeConversationId, workspaceId, "2026-05-24T09:00:04.000Z"],
     );
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
     const page = await service.listLowQualityTurns(workspaceId, { limit: 25 });
 
     const ids = page.items.map((item) => item.assistantMessageId);
@@ -297,7 +298,7 @@ describeIfDatabase("quality turns integration", () => {
       ],
     );
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
     const page = await service.listLowQualityTurns(workspaceA, {
       limit: 25,
       actions: [{ skillName: "retrieval.answer", outcome: "no_context" }],
@@ -348,7 +349,7 @@ describeIfDatabase("quality turns integration", () => {
       ],
     );
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
 
     const initial = await service.listLowQualityTurns(workspaceId, { limit: 25 });
     const openTurn = initial.items.find((item) => item.assistantMessageId === openMessageId);
@@ -440,7 +441,7 @@ describeIfDatabase("quality turns integration", () => {
       ],
     );
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
 
     const all = await service.listLowQualityTurns(workspaceId, { limit: 25 });
     const slow = all.items.find((item) => item.assistantMessageId === slowMessageId);
@@ -506,7 +507,7 @@ describeIfDatabase("quality turns integration", () => {
       ],
     );
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
 
     const all = await service.listLowQualityTurns(workspaceId, { limit: 25 });
     const legacy = all.items.find((item) => item.assistantMessageId === legacyMessageId);
@@ -575,7 +576,7 @@ describeIfDatabase("quality turns integration", () => {
       ],
     );
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
 
     const all = await service.listLowQualityTurns(workspaceId, { limit: 25 });
     expect(all.items.find((item) => item.assistantMessageId === messageId)?.totalLatencyMs).toBe(
@@ -667,7 +668,7 @@ describeIfDatabase("quality turns integration", () => {
       ],
     );
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
 
     const union = await service.listLowQualityTurns(workspaceId, {
       limit: 25,
@@ -769,7 +770,7 @@ describeIfDatabase("quality turns integration", () => {
       );
     }
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
     const page = await service.listLowQualityTurns(workspaceId, {
       feedbackValues: ["down"],
       sort: "negative_feedback_updated_at",
@@ -818,7 +819,7 @@ describeIfDatabase("quality turns integration", () => {
       [randomUUID(), workspaceId, conversationId, messageId, "2026-05-03T00:00:00.000Z"],
     );
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
     const defaultList = await service.listLowQualityTurns(workspaceId, { limit: 25 });
     expect(defaultList.items.find((item) => item.assistantMessageId === messageId)?.triage).toEqual({
       state: "open",
@@ -916,7 +917,7 @@ describeIfDatabase("quality turns integration", () => {
       [workspaceId, accountId, "No Turn WS", `nt-${workspaceId.slice(0, 8)}`],
     );
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
     const result = await service.setTriageState(workspaceId, {
       assistantMessageId: randomUUID(),
       state: "acknowledged",
@@ -954,7 +955,7 @@ describeIfDatabase("quality turns integration", () => {
          ($4, $5, $6, 'assistant', 'unknown', 'assistant.chat', 'conversational', 'completed', NULL, NULL, NULL, NULL, NULL, '2026-06-01T00:00:04Z')`,
       [...ids, conversationId, workspaceId],
     );
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
 
     const verdictPage = await service.listLowQualityTurns(workspaceId, {
       groundingVerdicts: ["degraded", "no_support", "degraded"],
@@ -1054,7 +1055,7 @@ describeIfDatabase("quality turns integration", () => {
     let verificationBatchCalls = 0;
     const service = new QualityTurnsService(
       database.kysely,
-      stubOutcomeCatalog(),
+      stubOutcomeCatalog(), unrecordedConversationActivity,
       undefined,
       {
         getByAssistantMessageIds: async (requestedWorkspaceId, assistantMessageIds) => {

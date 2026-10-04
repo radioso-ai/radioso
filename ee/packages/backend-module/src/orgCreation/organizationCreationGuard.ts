@@ -1,6 +1,7 @@
 import { sql } from "kysely";
 
 import { createEeKysely, type EeDb } from "../db/eeSchema.js";
+import { currentPeriodStart, nextPeriodStart } from "../usageLimits/period.js";
 import type {
   OrganizationCreationGuard,
   OrganizationCreationRequest,
@@ -9,16 +10,6 @@ import type {
 } from "../radiosoModuleTypes.js";
 
 const DEFAULT_MONTHLY_LIMIT = 10;
-
-const toIsoDate = (date: Date): string => date.toISOString().slice(0, 10);
-
-const currentPeriodStart = (date = new Date()): string =>
-  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
-
-const nextPeriodStart = (periodStart: string): string => {
-  const [year, month] = periodStart.split("-").map((part) => Number(part));
-  return new Date(Date.UTC(year, month, 1)).toISOString();
-};
 
 const toNullableNumber = (value: unknown): number | null => {
   if (value === null || value === undefined) {
@@ -37,14 +28,14 @@ const toNullableNumber = (value: unknown): number | null => {
   return null;
 };
 
-export interface OrganizationCreationOverride {
+interface OrganizationCreationOverride {
   userId: string;
   monthlyLimit: number | null;
   unlimited: boolean;
   updatedAt: string;
 }
 
-export interface OrganizationCreationLimitDetails {
+interface OrganizationCreationLimitDetails {
   limit: number;
   used: number;
   periodStart: string;
@@ -225,10 +216,4 @@ class EnterpriseOrganizationCreationReservation implements OrganizationCreationR
 const noopReservation: OrganizationCreationReservation = {
   async commit() {},
   async release() {},
-};
-
-export const orgCreationPeriodForTest = {
-  currentPeriodStart,
-  nextPeriodStart,
-  toIsoDate,
 };

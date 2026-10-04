@@ -1,4 +1,5 @@
-import type { Routine, RoutineGuard, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
+import type { Routine, RoutineGuard, RoutineOperatorNoticeTemplate, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
+import { collectContextVariableRefs, endingNotifiesOperators } from "@radioso/routine-definition";
 
 import type { RoutineDefinition, RoutineStepMetadata } from "./domain.js";
 import { collectSlotKeys, collectedSlotsByStep } from "./slotCollection.js";
@@ -84,6 +85,15 @@ const authoredMetadata = (metadata: RoutineStepMetadata): Record<string, unknown
   return authorMetadata;
 };
 
+// The template the engine reports for an ending that notifies operators. Compiled at load from
+// the stored definition, so a hand-off authored before notices existed gets the default notice.
+const operatorNoticeTemplate = (
+  notice: RoutineDefinition["terminals"][number]["operatorNotice"],
+): RoutineOperatorNoticeTemplate => ({
+  ...(notice?.subject ? { subject: notice.subject } : {}),
+  ...(notice?.intro ? { intro: notice.intro } : {}),
+});
+
 export const compileRoutineDefinition = (definition: RoutineDefinition): Routine => {
   const validation = validateRoutineDefinition(definition);
   if (!validation.ok) {
@@ -118,6 +128,18 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
   const slotsCollectedByStep = collectedSlotsByStep(definition);
   const collectedSlotsForStep = (step: RoutineDefinition["steps"][number]): string[] =>
     slotsCollectedByStep.get(step.stableStepId) ?? [];
+  // What a step reads and collects, stamped as metadata so runtime gates (the page-read
+  // decision reads `contextRefs`) and the runner (`collectsSlots`) never re-parse
+  // instructions. Keys are present only when non-empty, so a plain step's metadata shape
+  // is unchanged.
+  const referenceMetadata = (step: RoutineDefinition["steps"][number]): Record<string, string[]> => {
+    const collectsSlots = collectedSlotsForStep(step);
+    const contextRefs = collectContextVariableRefs(step.instruction);
+    return {
+      ...(collectsSlots.length > 0 ? { collectsSlots } : {}),
+      ...(contextRefs.length > 0 ? { contextRefs } : {}),
+    };
+  };
   const autoGatedStepIds = new Set(
     [...slotsCollectedByStep.keys()].filter((stepId) => {
       const outgoing = definition.transitions.filter((transition) => transition.fromStep === stepId);
@@ -125,9 +147,15 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
     }),
   );
   // Slot-aware condition for the promoted edge, mirroring authored llm guardText so the
-  // selector can judge "did the user answer?" by meaning (no keyword matching).
-  const autoGateCondition = (collected: string[]): string =>
-    `The user provided ${collected.map((slot) => `{{slot.${slot}}}`).join(" and ")}.`;
+  // selector can judge "did the user answer?" by meaning (no keyword matching). It names
+  // the step's required slots — an optional slot never holds a step (#1371) — and falls
+  // back to every collected slot when the step collects only optional ones.
+  const requiredSlotKeys = new Set(definition.slots.filter((slot) => slot.required).map((slot) => slot.key));
+  const autoGateCondition = (collected: string[]): string => {
+    const required = collected.filter((slot) => requiredSlotKeys.has(slot));
+    const gating = required.length > 0 ? required : collected;
+    return `The user provided ${gating.map((slot) => `{{slot.${slot}}}`).join(" and ")}.`;
+  };
 
   const slots: RoutineSlotSchema[] = [...definition.slots]
     .sort((left, right) => left.ordinal - right.ordinal)
@@ -141,8 +169,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
     }));
   const steps: RoutineStep[] = [
     ...sortedSteps.map((step): RoutineStep => {
-      const collectsSlots = collectedSlotsForStep(step);
-      const authorMetadata = authoredMetadata(step.metadata);
+      const metadata = { ...authoredMetadata(step.metadata), authoredKind: step.kind, ...referenceMetadata(step) };
       if (step.kind === "approval") {
         return {
           id: step.stableStepId,
@@ -156,9 +183,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
               ...(option.description ? { description: option.description } : {}),
             })),
           },
-          metadata: Object.keys(authorMetadata).length > 0
-            ? { ...authorMetadata, authoredKind: step.kind }
-            : { authoredKind: step.kind },
+          metadata,
         };
       }
       if (step.kind === "tool") {
@@ -168,11 +193,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
           skillName: step.toolRef ?? undefined,
           action: step.instruction,
           ...typedStepMetadata(step.metadata),
-          metadata: {
-            ...authorMetadata,
-            authoredKind: step.kind,
-            ...(collectsSlots.length > 0 ? { collectsSlots } : {}),
-          },
+          metadata,
         };
       }
       if (step.kind === "action") {
@@ -180,18 +201,14 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
           id: step.stableStepId,
           kind: "action",
           actionType: step.actionType ?? undefined,
-          metadata: Object.keys(authorMetadata).length > 0
-            ? { ...authorMetadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
-            : { authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) },
+          metadata,
         };
       }
       return {
         id: step.stableStepId,
         kind: "chat",
         action: step.instruction,
-        metadata: Object.keys(authorMetadata).length > 0
-          ? { ...authorMetadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
-          : { authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) },
+        metadata,
       };
     }),
     ...sortedTerminals.map((terminal): RoutineStep => {
@@ -199,7 +216,10 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
         id: terminal.stableStepId,
         kind: "terminal",
         action: terminal.instruction ?? undefined,
-        metadata: { terminalKind: terminal.kind },
+        metadata: {
+          terminalKind: terminal.kind,
+          ...(endingNotifiesOperators(terminal) ? { operatorNotice: operatorNoticeTemplate(terminal.operatorNotice) } : {}),
+        },
       };
     }),
   ];
@@ -250,9 +270,15 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
     metadata: {
       definitionId: definition.id,
       agentId: definition.agentId,
+      lineageId: definition.lineageId,
       name: definition.name,
       version: definition.version,
       slotSchema: slots,
+      // Only a switched-on exposure names a tool: a direct invocation resolves against
+      // this, so a disabled block must not make the routine reachable by name.
+      ...(definition.exposure?.enabled && definition.exposure.toolName.length > 0
+        ? { exposure: { toolName: definition.exposure.toolName } }
+        : {}),
     },
   };
 };

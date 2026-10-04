@@ -11,11 +11,22 @@ interface RoutineStateRow {
   path: string[] | null;
   variables: Record<string, unknown> | null;
   attempts: Record<string, unknown> | null;
+  reask_count: number;
   status: string;
   expires_at: Date | null;
 }
 
-const routineStateColumns = ["session_id", "routine_id", "execution_id", "path", "variables", "attempts", "status", "expires_at"] as const;
+const routineStateColumns = [
+  "session_id",
+  "routine_id",
+  "execution_id",
+  "path",
+  "variables",
+  "attempts",
+  "reask_count",
+  "status",
+  "expires_at",
+] as const;
 
 const mapAttempts = (value: Record<string, unknown> | null): Record<string, number> | undefined => {
   if (!value) {
@@ -36,6 +47,7 @@ const mapState = (row: RoutineStateRow): RoutineState => {
     path: row.path ?? [],
     variables: row.variables ?? {},
     ...(attempts ? { attempts } : {}),
+    ...(row.reask_count > 0 ? { reaskCount: row.reask_count } : {}),
     status: (row.status as RoutineState["status"]) ?? "active",
   };
 };
@@ -101,6 +113,7 @@ export class RoutineStateRepository implements ConversationRoutineStore {
         path: state.path,
         variables: toJsonb(state.variables),
         attempts: toJsonb(state.attempts ?? {}),
+        reask_count: state.reaskCount ?? 0,
         status: state.status,
         expires_at: expiresAt,
         updated_at: currentTimestamp(),
@@ -112,6 +125,7 @@ export class RoutineStateRepository implements ConversationRoutineStore {
           path: eb.ref("excluded.path"),
           variables: eb.ref("excluded.variables"),
           attempts: eb.ref("excluded.attempts"),
+          reask_count: eb.ref("excluded.reask_count"),
           status: eb.ref("excluded.status"),
           expires_at: eb.ref("excluded.expires_at"),
           updated_at: currentTimestamp(),

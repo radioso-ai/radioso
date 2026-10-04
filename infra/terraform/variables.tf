@@ -441,6 +441,34 @@ variable "slack_signing_secret" {
   default     = null
 }
 
+variable "google_login_client_id" {
+  description = "Optional Google OAuth web client ID for Enterprise 'Sign in with Google'. The login page shows the Google button only when both client credentials are set."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "google_login_client_secret" {
+  description = "Optional Google OAuth web client secret for Enterprise 'Sign in with Google'."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "stripe_secret_key" {
+  description = "Optional Stripe secret API key for Enterprise billing. Billing stays unconfigured until both Stripe credentials are set."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "stripe_webhook_secret" {
+  description = "Optional Stripe webhook signing secret for Enterprise billing."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 # --- Backend env vars (non-secret) ---
 
 variable "product_analytics_sinks" {

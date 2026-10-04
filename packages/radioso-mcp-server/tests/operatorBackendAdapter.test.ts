@@ -38,7 +38,7 @@ describe("operator backend adapter", () => {
   });
 
   it("preserves safe backend application errors without leaking response bodies", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ code: "operation_required", message: "contains customer data" }), { status: 400 }));
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ code: "operation_conflict", message: "contains customer data" }), { status: 400 }));
 
     await expect(createOperatorBackendAdapter({
       baseUrl: "https://app.example",
@@ -50,7 +50,41 @@ describe("operator backend adapter", () => {
       name: "workspace_settings",
       arguments: {},
       bodyDigest: sha256Digest("{}"),
-    })).rejects.toMatchObject({ code: "operation_required", status: 400 });
+    })).rejects.toMatchObject({ code: "operation_conflict", status: 400, details: undefined });
+  });
+
+  it("forwards the backend's rejected argument paths, bounded, and nothing else from the body", async () => {
+    const body = { code: "invalid_arguments", message: "invalid_arguments", details: ["kind: invalid_enum_value", { leaked: true }, "x".repeat(400)] };
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(body), { status: 400 }));
+
+    await expect(createOperatorBackendAdapter({
+      baseUrl: "https://app.example",
+      fetchImpl,
+      internalSecret: "adapter-secret-key-12345678901234567890",
+      requestTimeoutMs: 1_000,
+    }).invoke({
+      proof,
+      name: "prepare_routine_structure",
+      arguments: {},
+      bodyDigest: sha256Digest("{}"),
+    })).rejects.toMatchObject({ code: "invalid_arguments", status: 400, details: ["kind: invalid_enum_value", "x".repeat(300)] });
+  });
+
+  it("forwards structured routine diagnostics while continuing to accept legacy string details", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: "invalid_arguments", details: [{ routineId: id, routineName: "Escalate", code: "node_id_collision", location: "nodes[0].id", message: "Duplicate node" }, "legacy detail"],
+    }), { status: 400 }));
+    await expect(createOperatorBackendAdapter({ baseUrl: "https://app.example", fetchImpl, internalSecret: "adapter-secret-key-12345678901234567890", requestTimeoutMs: 1_000 }).invoke({ proof, name: "prepare_routine_structure", arguments: {}, bodyDigest: sha256Digest("{}") }))
+      .rejects.toMatchObject({ details: [{ routineId: id, routineName: "Escalate", code: "node_id_collision", location: "nodes[0].id", message: "Duplicate node" }, "legacy detail"] });
+  });
+
+  it("keeps a canonical legacy detail for an origin/main edge during backend-first rollout", async () => {
+    const body = { code: "invalid_arguments", details: [{ routineId: id, code: "node_id_collision", location: "nodes[0].id", message: "A step identifier is reused." }, "The requested revision cannot be served. Use the diagnostic code and location to correct it."] };
+    // Exact origin/main parsing: objects are ignored and bounded strings survive.
+    const originMainDetails = (payload: object) => ("details" in payload && Array.isArray(payload.details)
+      ? payload.details.filter((entry): entry is string => typeof entry === "string").slice(0, 12).map((entry) => entry.slice(0, 300))
+      : []);
+    expect(originMainDetails(body)).toEqual(["The requested revision cannot be served. Use the diagnostic code and location to correct it."]);
   });
 
   it("preserves an unknown tool as a safe client error", async () => {
@@ -86,6 +120,43 @@ describe("operator backend adapter", () => {
       arguments: {},
       bodyDigest: sha256Digest("{}"),
     })).rejects.toMatchObject({ code: "budget_exhausted", status: 429 });
+  });
+
+  it("carries the backend's retry timing through a budget-exhausted error", async () => {
+    const resetAt = "2026-09-30T00:01:00.000Z";
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: "budget_exhausted", message: "limit", retryAfterSeconds: 42, resetAt,
+    }), { status: 429 }));
+
+    await expect(createOperatorBackendAdapter({
+      baseUrl: "https://app.example",
+      fetchImpl,
+      internalSecret: "adapter-secret-key-12345678901234567890",
+      requestTimeoutMs: 1_000,
+    }).invoke({
+      proof,
+      name: "workspace_settings",
+      arguments: {},
+      bodyDigest: sha256Digest("{}"),
+    })).rejects.toMatchObject({ code: "budget_exhausted", status: 429, retryAfterSeconds: 42, resetAt });
+  });
+
+  it("drops an unusable retry timing rather than forwarding it", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: "budget_exhausted", message: "limit", retryAfterSeconds: -5, resetAt: "not-a-date",
+    }), { status: 429 }));
+
+    await expect(createOperatorBackendAdapter({
+      baseUrl: "https://app.example",
+      fetchImpl,
+      internalSecret: "adapter-secret-key-12345678901234567890",
+      requestTimeoutMs: 1_000,
+    }).invoke({
+      proof,
+      name: "workspace_settings",
+      arguments: {},
+      bodyDigest: sha256Digest("{}"),
+    })).rejects.toMatchObject({ code: "budget_exhausted", status: 429, retryAfterSeconds: undefined, resetAt: undefined });
   });
 
   it("carries the canonical call digest through the signed invocation request", async () => {

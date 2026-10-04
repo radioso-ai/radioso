@@ -24,12 +24,13 @@ const makeSession = (sessionId: string, conversationId: string): AccessSessionRe
 });
 
 const postMcpRequest = async (
-  handle: Awaited<ReturnType<ReturnType<typeof createSessionMcpServerManager>["getOrCreate"]>>,
+  manager: ReturnType<typeof createSessionMcpServerManager>,
   body: Record<string, unknown>,
   session: AccessSessionRecord,
   accessToken: string,
 ): Promise<Record<string, unknown>> => {
-  const response = await handle.transport.handleRequest(
+  const response = await manager.handleRequest(
+    session,
     new Request("http://radioso.test/mcp", {
       body: JSON.stringify(body),
       headers: {
@@ -47,7 +48,7 @@ const postMcpRequest = async (
 };
 
 describe("session MCP server audit correlation", () => {
-  it("uses each request's conversation when the ask_agent server is cached", async () => {
+  it("correlates each tool execution with the conversation of the session that sent it", async () => {
     const firstSession = makeSession("session-first", "conversation-first");
     const secondSession = makeSession("session-second", "conversation-second");
     const { events, sink } = createInMemoryAuditSink();
@@ -65,12 +66,7 @@ describe("session MCP server audit correlation", () => {
         auditLogger: createAuditLogger([sink]),
         config,
       });
-      const firstHandle = await manager.getOrCreate(firstSession);
-      const secondHandle = await manager.getOrCreate(secondSession);
-
-      expect(secondHandle).toBe(firstHandle);
-
-      await postMcpRequest(firstHandle, {
+      await postMcpRequest(manager, {
         id: "initialize",
         jsonrpc: "2.0",
         method: "initialize",
@@ -80,13 +76,13 @@ describe("session MCP server audit correlation", () => {
           protocolVersion: "2025-06-18",
         },
       }, firstSession, "access-first");
-      await postMcpRequest(firstHandle, {
+      await postMcpRequest(manager, {
         id: "ask-first",
         jsonrpc: "2.0",
         method: "tools/call",
         params: { arguments: { message: "first" }, name: "ask_agent" },
       }, firstSession, "access-first");
-      await postMcpRequest(secondHandle, {
+      await postMcpRequest(manager, {
         id: "ask-second",
         jsonrpc: "2.0",
         method: "tools/call",

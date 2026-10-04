@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { PoolClient, QueryResultRow } from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import {
   PendingDecisionRepository,
@@ -12,6 +12,7 @@ import {
   ApprovalDecisionServiceError,
   type ResumeRunner,
 } from "../../../src/modules/approvals/public.js";
+import type { ConversationActivityRecorder } from "../../../src/modules/conversationActivity/contracts/index.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { applyTestMigration } from "../../support/databaseMigrations.js";
@@ -93,6 +94,8 @@ const createClientBackedDatabase = (client: PoolClient): Database => {
 };
 
 const operatorId = randomUUID();
+// The teammate behind the operator's organisation: a real user, since the decision names them.
+const deciderUserId = randomUUID();
 const workspaceId = randomUUID();
 const conversationId = randomUUID();
 
@@ -139,16 +142,27 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     await client.query(`SET search_path TO ${schema}, public`);
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "104_pending_decisions.sql");
+    await applyTestMigration(database, "205_conversation_activity.sql");
+    await database.execute(
+      `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')`,
+      [deciderUserId, `decider-${deciderUserId}@example.com`],
+    );
     repository = new PendingDecisionRepository(database.kysely);
   });
 
+  // Whether the activity table records the decision is covered with real conversations elsewhere;
+  // here the decision's own resolve and resume are under test.
+  let activity: { record: Mock<ConversationActivityRecorder["record"]> };
+
   beforeEach(async () => {
     await database.execute("TRUNCATE pending_decisions");
+    activity = { record: vi.fn<ConversationActivityRecorder["record"]>(async () => undefined) };
   });
 
   afterAll(async () => {
     if (client) {
       await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => undefined);
+      await client.query(`DELETE FROM public.users WHERE id = $1`, [deciderUserId]).catch(() => undefined);
       client.release();
     }
     if (backingDatabase) {
@@ -171,7 +185,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
   it("lists only this workspace's pending decisions newest first through the service", async () => {
     const workspaceId = randomUUID();
     const otherWorkspaceId = randomUUID();
-    const service = new ApprovalDecisionService(repository, okRunner());
+    const service = new ApprovalDecisionService(repository, okRunner(), activity);
     const older = await repository.create(decisionInput({
       workspaceId,
       conversationId: randomUUID(),
@@ -211,7 +225,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     const input = decisionInput();
     await repository.create(input);
     const runner = okRunner();
-    const service = new ApprovalDecisionService(repository, runner);
+    const service = new ApprovalDecisionService(repository, runner, activity);
 
     const result = await service.resolve({
       agentId: input.agentId,
@@ -243,7 +257,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     const input = decisionInput();
     await repository.create(input);
     const runner = okRunner();
-    const service = new ApprovalDecisionService(repository, runner);
+    const service = new ApprovalDecisionService(repository, runner, activity);
 
     const result = await service.resolve({
       agentId: input.agentId,
@@ -271,7 +285,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     });
     await repository.create(input);
     const runner = okRunner();
-    const service = new ApprovalDecisionService(repository, runner);
+    const service = new ApprovalDecisionService(repository, runner, activity);
 
     const result = await service.resolve({
       agentId: input.agentId,
@@ -290,7 +304,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     const input = decisionInput();
     await repository.create(input);
     const runner = okRunner();
-    const service = new ApprovalDecisionService(repository, runner);
+    const service = new ApprovalDecisionService(repository, runner, activity);
 
     await expect(service.resolve({
       agentId: input.agentId,
@@ -308,7 +322,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     const input = decisionInput();
     await repository.create(input);
     const runner = okRunner();
-    const service = new ApprovalDecisionService(repository, runner);
+    const service = new ApprovalDecisionService(repository, runner, activity);
 
     await expect(service.resolve({
       agentId: input.agentId,
@@ -325,7 +339,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     const input = decisionInput();
     await repository.create(input);
     const runner = okRunner();
-    const service = new ApprovalDecisionService(repository, runner);
+    const service = new ApprovalDecisionService(repository, runner, activity);
 
     await expect(service.resolve({
       agentId: input.agentId,
@@ -341,7 +355,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
   it("treats an agent mismatch as not found", async () => {
     const input = decisionInput();
     await repository.create(input);
-    const service = new ApprovalDecisionService(repository, okRunner());
+    const service = new ApprovalDecisionService(repository, okRunner(), activity);
 
     await expect(service.resolve({
       agentId: randomUUID(),
@@ -362,7 +376,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
         throw new Error("resume boom");
       }),
     };
-    const failingService = new ApprovalDecisionService(repository, failing);
+    const failingService = new ApprovalDecisionService(repository, failing, activity);
 
     await expect(failingService.resolve({
       agentId: input.agentId,
@@ -377,7 +391,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
 
     // A retry with a working runner resumes and flips the row (human never re-prompted twice).
     const runner = okRunner();
-    const service = new ApprovalDecisionService(repository, runner);
+    const service = new ApprovalDecisionService(repository, runner, activity);
     const result = await service.resolve({
       agentId: input.agentId,
       handle: input.handle,
@@ -389,5 +403,51 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     expect(result.resumed).toBe(true);
     expect(runner.resume).toHaveBeenCalledTimes(1);
     expect(await statusOf(input.handle)).toBe("resolved");
+  });
+
+  it("records the teammate who decided, beside the organisation, and the decision in the same transaction", async () => {
+    const input = decisionInput();
+    await repository.create(input);
+    const service = new ApprovalDecisionService(repository, okRunner(), activity);
+
+    await service.resolve({
+      agentId: input.agentId,
+      handle: input.handle,
+      optionId: "reject",
+      contentHash: input.contentHash,
+      caller: { accountId: operatorId, workspaceId, userId: deciderUserId },
+    });
+
+    const row = await database.queryOne<{ decided_by: string; decided_by_user_id: string }>(
+      `SELECT decided_by, decided_by_user_id FROM pending_decisions WHERE handle = $1`,
+      [input.handle],
+    );
+    expect(row).toEqual({ decided_by: operatorId, decided_by_user_id: deciderUserId });
+    expect(activity.record).toHaveBeenCalledWith(expect.anything(), {
+      kind: "approval_decided",
+      conversationId,
+      workspaceId,
+      actorUserId: deciderUserId,
+      detail: { handle: input.handle, decision: { optionId: "reject", label: "Reject" } },
+    });
+  });
+
+  it("leaves the decision pending, and resumes nothing, when its activity cannot be recorded", async () => {
+    const input = decisionInput();
+    await repository.create(input);
+    const runner = okRunner();
+    const failingActivity = { record: vi.fn(async () => { throw new Error("activity unavailable"); }) };
+    const service = new ApprovalDecisionService(repository, runner, failingActivity);
+
+    await expect(service.resolve({
+      agentId: input.agentId,
+      handle: input.handle,
+      optionId: "approve",
+      contentHash: input.contentHash,
+      caller: { accountId: operatorId, workspaceId, userId: deciderUserId },
+    })).rejects.toThrow("activity unavailable");
+
+    expect(await statusOf(input.handle)).toBe("pending");
+    expect(runner.resume).not.toHaveBeenCalled();
   });
 });

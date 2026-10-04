@@ -6,6 +6,8 @@ import { requireWorkspaceSession } from "../../app/http/middleware/requireWorksp
 import type { WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
 import { requireSession } from "../../app/http/middleware/requireSession.js";
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
+import { requireApiAccessCsrf } from "../../app/http/middleware/requireApiAccessCsrf.js";
+import { requireJsonContentType } from "../../app/http/middleware/requireJsonContentType.js";
 import { createRateLimitMiddleware, type RateLimitAbuseControlPort, type RateLimitAuditPort } from "../../app/http/middleware/rateLimit.js";
 import { validateBody } from "../../app/http/middleware/validate.js";
 import { forbidden, notFound } from "../../shared/domain/errors.js";
@@ -16,6 +18,7 @@ import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage
 import type { AccountPermission } from "../account/public.js";
 import type { OperatorCopilotService } from "./public.js";
 import { hasAllCopilotToolPermissions } from "./catalog.js";
+import { presentReviewedOperationSnapshot, reviewCodeFor } from "./reviewedOperation.js";
 
 /**
  * These routes are the dashboard panel and nothing else — they reject bearer auth and require a
@@ -25,6 +28,8 @@ const DASHBOARD_SURFACE = "dashboard" as const;
 
 const conversationParamsSchema = z.object({ conversationId: z.string().uuid() });
 const proposalParamsSchema = z.object({ proposalId: z.string().uuid() });
+const approveProposalSchema = z.object({ reviewDigest: z.string().min(1).max(200) }).strict();
+const dismissProposalSchema = z.object({ reason: z.literal("declined").optional() }).strict();
 /**
  * The permissions this module knows a turn needs beyond what the assembled catalog declares:
  * `workspace_triage` gates individual digest sections on permissions no descriptor requires, and a
@@ -82,13 +87,21 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
     try {
       const { proposalId } = proposalParamsSchema.parse(req.params);
       const { accountId, userId } = res.locals as { accountId: string; userId: string };
-      const workspaceId = await dependencies.operatorCopilotService.resolveProposalWorkspace({
+      const resolved = await dependencies.operatorCopilotService.resolveProposalWorkspaceForSession({
         accountId,
         operatorUserId: userId,
         proposalId,
       });
-      if (!workspaceId) throw notFound("Copilot proposal not found");
-      res.locals.workspaceId = workspaceId;
+      if (!resolved) throw notFound("Copilot proposal not found");
+      if (resolved.kind === "other_account") {
+        res.status(409).json({ error: {
+          code: "proposal_account_mismatch",
+          message: "This proposal belongs to another account.",
+          details: { accountId: resolved.accountId, accountName: resolved.accountName, workspaceId: resolved.workspaceId },
+        } });
+        return;
+      }
+      res.locals.workspaceId = resolved.workspaceId;
       next();
     } catch (error) { next(error); }
   };
@@ -96,12 +109,15 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
   // A proposal handoff opens outside the workspace dashboard shell. Resolve its workspace from
   // the authenticated operator and stored proposal before checking workspace permission; browser
   // state is neither authority nor a reliable locator for a fresh or differently scoped session.
-  router.get("/proposals/:proposalId", proposalSession, proposalWorkspace, agentRead, async (req, res, next) => {
+  router.get("/proposals/:proposalId", proposalSession, proposalWorkspace, async (req, res, next) => {
     try {
-      const { workspaceId, userId } = sessionLocals(res);
+      const { workspaceId, accountId, userId } = sessionLocals(res);
       const { proposalId } = proposalParamsSchema.parse(req.params);
-      const result = await dependencies.operatorCopilotService.getProposal({ workspaceId, operatorUserId: userId, proposalId });
+      const result = await dependencies.operatorCopilotService.getProposal({ workspaceId, accountId, operatorUserId: userId, proposalId });
       if (!result) throw notFound("Copilot proposal not found");
+      const client = result.proposal.reviewDigest
+        ? await dependencies.operatorCopilotService.describeReviewedProposalClient({ workspaceId, operatorUserId: userId, proposal: result.proposal })
+        : null;
       res.status(200).json({
         id: result.proposal.id,
         workspaceId,
@@ -116,8 +132,27 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
         appliedRef: result.proposal.appliedRef,
         evidence: result.proposal.evidence ? summarizeProposalEvidence(result.proposal.evidence) : undefined,
         evidenceCases: result.proposal.evidence?.cases ?? null,
+        reviewedOperation: result.proposal.reviewDigest && result.proposal.confirmationRequirement && result.proposal.changeEffect ? {
+          requirement: result.proposal.confirmationRequirement,
+          effect: result.proposal.changeEffect,
+          reviewDigest: result.proposal.reviewDigest,
+          reviewCode: reviewCodeFor(result.proposal.reviewDigest),
+          expiresAt: result.proposal.expiresAt?.toISOString() ?? null,
+          approvedAt: result.proposal.approvedAt?.toISOString() ?? null,
+          clientName: client?.clientName ?? null,
+          review: presentReviewedOperationSnapshot(result.proposal.reviewSnapshot)?.visible ?? result.proposal.reviewSnapshot,
+        } : null,
       });
-    } catch (error) { next(error); }
+    } catch (error) { if (error instanceof CopilotAuthorizationError) { next(notFound("Copilot proposal not found")); return; } next(error); }
+  });
+  router.post("/proposals/:proposalId/approve", proposalSession, sessionOnly, proposalWorkspace, requireApiAccessCsrf, requireJsonContentType, validateBody(approveProposalSchema), async (req, res, next) => {
+    try {
+      const { workspaceId, accountId, userId } = sessionLocals(res);
+      const { proposalId } = proposalParamsSchema.parse(req.params);
+      const result = await dependencies.operatorCopilotService.approveReviewedProposal({ workspaceId, accountId, operatorUserId: userId, proposalId, reviewDigest: req.body.reviewDigest });
+      if (result.status === "not_found") throw notFound("Copilot proposal not found");
+      res.status(200).json(result);
+    } catch (error) { if (error instanceof CopilotAuthorizationError) { next(notFound("Copilot proposal not found")); return; } next(error); }
   });
   router.use(workspaceSession, sessionOnly, agentRead);
 
@@ -148,11 +183,16 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
       next(error);
     }
   });
-  router.post("/proposals/:proposalId/dismiss", async (req, res, next) => {
+  // Decline on the standalone approval page reuses this route (Finding: it must carry the same
+  // CSRF/JSON-only protections as Approve, since both are cookie-session POSTs a forged cross-site
+  // form could otherwise replay). Every frontend caller — the dashboard proposal card and the
+  // approval page's Decline button — sends the CSRF header and a JSON body.
+  router.post("/proposals/:proposalId/dismiss", requireApiAccessCsrf, requireJsonContentType, async (req, res, next) => {
     try {
       const { workspaceId, accountId, userId } = sessionLocals(res);
       const { proposalId } = proposalParamsSchema.parse(req.params);
-      res.status(200).json(await dependencies.operatorCopilotService.dismissProposal({ workspaceId, accountId, operatorUserId: userId, surface: DASHBOARD_SURFACE, proposalId }));
+      const reason = req.body === undefined ? undefined : dismissProposalSchema.parse(req.body).reason;
+      res.status(200).json(await dependencies.operatorCopilotService.dismissProposal({ workspaceId, accountId, operatorUserId: userId, surface: DASHBOARD_SURFACE, proposalId, reason }));
     } catch (error) {
       if (error instanceof CopilotConflictError) { res.status(409).json({ code: "conflict" }); return; }
       if (error instanceof CopilotNotFoundError) { next(notFound("Copilot proposal not found")); return; }
@@ -234,7 +274,7 @@ const applyableProposalTargets = async (
   };
   const targets: CopilotProposalTargetType[] = [];
   for (const targetType of copilotProposalTargetTypes) {
-    const permissions = copilotProposalPermissions[targetType];
+    const permissions = copilotProposalPermissions[targetType].manage;
     const allowed = await Promise.all(permissions.map((permission) => holds(permission)));
     if (allowed.every(Boolean)) targets.push(targetType);
   }

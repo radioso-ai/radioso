@@ -132,9 +132,33 @@ const extractVariableHints = (
   return [...new Set(hints)];
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+// The prompt uses null for an ending without a notice, while the authoring contract represents
+// that state by omitting operatorNotice. Normalize only this response shorthand before validation.
+const normalizeDraftResponse = (value: unknown): unknown => {
+  if (!isRecord(value) || !isRecord(value.draft) || !Array.isArray(value.draft.terminals)) {
+    return value;
+  }
+  return {
+    ...value,
+    draft: {
+      ...value.draft,
+      terminals: value.draft.terminals.map((terminal) => {
+        if (!isRecord(terminal) || terminal.operatorNotice !== null) {
+          return terminal;
+        }
+        const { operatorNotice: _operatorNotice, ...withoutOperatorNotice } = terminal;
+        return withoutOperatorNotice;
+      }),
+    },
+  };
+};
+
 const parseDraft = (raw: string, variableHints: string[] = []): RoutineDefinitionDraftInput | null => {
   try {
-    const parsed = JSON.parse(cleanJsonCompletion(raw)) as unknown;
+    const parsed = normalizeDraftResponse(JSON.parse(cleanJsonCompletion(raw)) as unknown);
     const container = z.object({ draft: routineDefinitionDraftInputSchema }).strict().safeParse(parsed);
     if (!container.success) {
       return null;
@@ -162,7 +186,11 @@ const normalizeSlotReferencesInText = (text: string | null, slotKeys: Set<string
 const draftTextFields = (draft: RoutineDefinitionDraftInput): string[] => [
   ...draft.steps.map((step) => step.instruction),
   ...draft.transitions.flatMap((transition) => [transition.guardText].filter((value): value is string => Boolean(value))),
-  ...draft.terminals.flatMap((terminal) => [terminal.instruction].filter((value): value is string => Boolean(value))),
+  ...draft.terminals.flatMap((terminal) => [
+    terminal.instruction,
+    terminal.operatorNotice?.subject,
+    terminal.operatorNotice?.intro,
+  ].filter((value): value is string => Boolean(value))),
 ];
 
 const hintedSlotKeysUsedInDraft = (
@@ -212,6 +240,12 @@ const normalizeDraftSlotReferences = (
     terminals: draft.terminals.map((terminal) => ({
       ...terminal,
       instruction: normalizeSlotReferencesInText(terminal.instruction, slotKeys),
+      ...(terminal.operatorNotice ? {
+        operatorNotice: {
+          subject: normalizeSlotReferencesInText(terminal.operatorNotice.subject, slotKeys),
+          intro: normalizeSlotReferencesInText(terminal.operatorNotice.intro, slotKeys),
+        },
+      } : {}),
     })),
   };
 };

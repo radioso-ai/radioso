@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import { copilotNeverList } from "../../../src/modules/operatorCopilot/neverList.js";
 import { ReplyDraftProbeService } from "../../../src/modules/operatorCopilot/services/replyDraftProbeService.js";
 import { createReplyDraftCopilotTools } from "../../../src/modules/operatorCopilot/tools/replyDraft.js";
@@ -92,7 +93,7 @@ describe("ReplyDraftProbeService", () => {
   }) => ({
     chatReplyDraft,
     usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => undefined), release: vi.fn(async () => undefined) })) },
-    abuseControl: { enforce: vi.fn(async () => undefined) },
+    abuseControl: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
     audit: { record: vi.fn(async () => undefined) },
     abusePolicy: { limit: 5, windowMs: 60_000 },
   });

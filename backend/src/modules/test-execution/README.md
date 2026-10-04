@@ -5,6 +5,14 @@ revisions. It validates selected context-variable sample values, creates single
 or comparison executions, fences turns and retries, and keeps failed sides
 independently retryable.
 
+Only a running turn blocks the next message (`test_turn_in_progress`, 409). A
+turn whose side failed is settled: the next message starts a new turn, and the
+failed side is retryable only while it is still the latest turn on that side.
+Retaining a comparison side copies its attempts and their turns into the new
+execution, so a failed turn a later message superseded still reads as failed. A
+runner failure is logged with its error type and code and the execution, side,
+turn, and attempt ids, never its message text.
+
 Start at `testExecution.ts`. The HTTP routes are mounted under the agent routes
 in `app/http/routes/testExecutionRoutes.ts`; the trusted runner adapter is
 `chat/services/trustedTestExecutionRunnerAdapter.ts`. Revision selection belongs
@@ -20,8 +28,52 @@ missing, other-workspace, or other-agent conversation is one `null`, presented a
 404. A comparison cannot be seeded.
 
 `public.ts` exposes the narrow private-test evidence shape Eval may consume to
-capture an immutable test-turn snapshot. It must not expose conversation ids,
-continuations, or turn traces.
+capture an immutable test-turn snapshot. That Eval shape must not carry
+conversation ids, continuations, or turn traces.
+
+`testExecutionTurns.ts` is the turn read model. It pairs each user message with
+its answer, keeps a greeting as a turn with no user message, and takes an
+unanswered turn's state and failure code from its highest-fenced attempt.
+`TestExecutionService.transcript` reads an execution as those turns per side,
+and `turn` reads one of them. `send` runs one turn without the stream and
+returns the settled outcome of its own attempt. When that attempt went stale or
+its outcome could not be saved, the turn reads `failed` with the event's code
+(`stale_attempt`, `persistence_failed`), even though the store may still show
+another attempt running it.
+`summaries` returns a list page with each execution's turn count and opening
+message, read by `summarizeTurns` from what the seed copied in (recorded at
+`start` as `seeded_turn_count` and `seeded_first_message`) plus the turns the
+operator sent (`agent_test_execution_turns`), never from side histories; a
+greeting is not a turn. The store returns the opening message cut to
+`TEST_EXECUTION_LABEL_CHARS + 1` characters, and `summaries` finishes it with
+`testExecutionLabel`, clipped on a character boundary with an ellipsis, so every
+surface shows the same label. A detail (`TestExecutionService.detail`, the
+`GET /agents/:agentId/test-executions/:executionId` read) carries the same
+`seeded_turn_count` as `seededTurnCount`, read straight off `TestExecution`
+rather than re-derived: Test Chat uses it to decide whether a reopened test is
+a copy of a real conversation.
+These reads leave out continuations, conversation ids, and frozen sample values.
+
+`start` without `revisionIds` runs a single test on the agent's default
+revision: a fresh candidate of the saved draft, or the published revision when
+the draft matches it. The rule is `AgentRevisionService.resolveDefaultTestRevision`,
+reached through `TestExecutionDefaultRevisionPort` and wired in composition. It
+is a separate port from the revision reader because choosing can freeze a
+candidate, which is a write.
+
+Operator Copilot reads and drives Test Chat through `summaries`, `transcript`,
+`turn`, `start`, and `send`, from
+`operatorCopilot/services/testChatService.ts`, which adds its spend guard,
+output bounds, and surface policy. `transcript`, `turn`, and `send` take an
+optional `agentId`, since a caller can have a session id but no agent id yet
+(an operator MCP client continuing a Test Chat session by `testExecutionId`):
+`TestExecutionService` resolves and verifies it internally, through the
+repository's `findAgentId` (workspace-scoped; an id this workspace does not
+own answers `null`, so the call fails not-found). A supplied `agentId` is used
+as-is and verified by the same per-field scope every read and write already
+has, so a mismatched one fails not-found the same way. `findAgentId` is a
+repository port, called only from inside this service; the copilot never
+calls it directly. This module knows nothing about the copilot.
 
 Test histories and sample values are never public channel inputs. A published
 revision does not make a private test conversation resumable by a visitor.
@@ -29,4 +81,4 @@ revision does not make a private test conversation resumable by a visitor.
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/test-execution-service.test.ts tests/unit/trusted-test-execution-runner-adapter.test.ts tests/unit/conversation-test-execution-seed-source.test.ts tests/unit/test-execution-request-schema.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/test-execution-routes.integration.test.ts tests/integration/conversation-test-execution-seed-source.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/integration/test-execution-repository.integration.test.ts tests/integration/test-execution-routes.integration.test.ts tests/integration/conversation-test-execution-seed-source.integration.test.ts --no-file-parallelism`

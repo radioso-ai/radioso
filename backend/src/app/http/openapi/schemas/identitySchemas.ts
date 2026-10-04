@@ -7,6 +7,7 @@ import {
   loginSchema,
   passwordResetConfirmSchema,
   passwordResetRequestSchema,
+  profileUpdateSchema,
   registerSchema,
 } from "../../routes/authRoutes.js";
 import {
@@ -33,10 +34,15 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     "RegistrationAvailabilityResponse",
     z.object({ available: z.boolean() }),
   );
+  const displayNameSchema = z.string().nullable().openapi({
+    description: "The name the person chose for themselves, or null when they have not set one.",
+  });
+
   const RegisterResponseSchema = registry.register(
     "RegisterResponse",
     z.object({
       userId: z.string().uuid(),
+      displayName: displayNameSchema,
       accountId: z.string().uuid(),
       organizationName: z.string(),
       workspaceId: z.string().uuid(),
@@ -50,6 +56,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     "LoginResponse",
     z.object({
       userId: z.string().uuid(),
+      displayName: displayNameSchema,
       accountId: z.string().uuid(),
       organizationName: z.string(),
       workspaceId: z.string().uuid(),
@@ -76,6 +83,15 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     "SessionResponse",
     LoginResponseSchema.extend({
       email: z.string().email(),
+    }),
+  );
+
+  const UserProfileSchema = registry.register(
+    "UserProfile",
+    z.object({
+      userId: z.string().uuid(),
+      email: z.string().email(),
+      displayName: displayNameSchema,
     }),
   );
 
@@ -143,6 +159,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
   const EmailVerificationVerifyRequestSchema = registry.register("EmailVerificationVerifyRequest", emailVerificationVerifySchema);
   const EmailVerificationResendRequestSchema = registry.register("EmailVerificationResendRequest", emailVerificationResendSchema);
   const InvitationAcceptRequestSchema = registry.register("InvitationAcceptRequest", invitationAcceptSchema);
+  const UserProfileUpdateRequestSchema = registry.register("UserProfileUpdateRequest", profileUpdateSchema);
   const AccountInvitationCreateRequestSchema = registry.register("AccountInvitationCreateRequest", createAccountInvitationSchema);
   const AccountMembershipRoleUpdateRequestSchema = registry.register("AccountMembershipRoleUpdateRequest", updateMembershipRoleSchema);
   const WorkspaceGrantRequestSchema = registry.register("WorkspaceGrantRequest", workspaceGrantSchema);
@@ -155,6 +172,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
       membershipId: z.string().uuid(),
       userId: z.string().uuid(),
       email: z.string().email(),
+      displayName: displayNameSchema,
       role: z.enum(["owner", "admin", "member"]),
       status: z.literal("active"),
       createdAt: z.string().datetime(),
@@ -252,6 +270,8 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     AcceptedResponseSchema,
     PasswordResetConfirmResponseSchema,
     SessionResponseSchema,
+    UserProfileSchema,
+    UserProfileUpdateRequestSchema,
     EmailVerificationVerifyResponseSchema,
     WorkspaceSchema,
     WorkspaceRouteResolutionResponseSchema,

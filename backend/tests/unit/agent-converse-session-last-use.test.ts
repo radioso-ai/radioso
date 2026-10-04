@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AccessGrant } from "../../src/modules/accessGrants/domain.js";
+import { createAgentConverseOriginVerifier } from "../../src/app/composition/agentConverseOrigins.js";
 import { AgentConverseSessionService } from "../../src/modules/settings/services/agentConverseSessionService.js";
 
 const grant: AccessGrant = {
@@ -29,13 +30,20 @@ describe("AgentConverseSessionService last-use boundary", () => {
       accessGrantService: {
         resolvePublicLaunchGrant: vi.fn().mockResolvedValue(null),
         resolveConverseGrant: vi.fn().mockResolvedValue(grant),
-        findGrantById: vi.fn().mockResolvedValue(grant),
         evaluate: vi.fn().mockReturnValue({ allowed: true }),
         touchGrant,
         recordAuthFailure: vi.fn(),
       },
       agentLookup: { findByIdAndWorkspaceId: vi.fn().mockResolvedValue({ id: grant.agentId, name: "Agent" }) },
       sessionMapping: { resolvePublicSessionId: vi.fn().mockResolvedValue("44444444-4444-4444-8444-444444444444") },
+      originVerifier: createAgentConverseOriginVerifier({
+        accessGrantService: {
+          findGrantById: vi.fn().mockResolvedValue(grant),
+          evaluate: vi.fn().mockReturnValue({ allowed: true }),
+          recordAuthFailure: vi.fn(),
+        },
+        agentRepository: { findByPublicId: vi.fn().mockResolvedValue(null) },
+      }),
       publicChatSessionSecret: "0123456789abcdef0123456789abcdef",
     });
 
@@ -55,13 +63,13 @@ describe("AgentConverseSessionService last-use boundary", () => {
       accessGrantService: {
         resolvePublicLaunchGrant: vi.fn().mockResolvedValue(null),
         resolveConverseGrant: vi.fn().mockResolvedValue(grant),
-        findGrantById: vi.fn(),
         evaluate: vi.fn().mockReturnValue({ allowed: true }),
         touchGrant,
         recordAuthFailure: vi.fn(),
       },
       agentLookup: { findByIdAndWorkspaceId: vi.fn().mockResolvedValue({ id: grant.agentId, name: "Agent" }) },
       sessionMapping: { resolvePublicSessionId: vi.fn().mockResolvedValue("44444444-4444-4444-8444-444444444444") },
+      originVerifier: { revalidate: vi.fn().mockResolvedValue({ ok: true }) },
       publicChatSessionSecret: "0123456789abcdef0123456789abcdef",
       audit: {
         recordExchangeDenied: vi.fn(),
@@ -79,7 +87,6 @@ describe("AgentConverseSessionService last-use boundary", () => {
     const accessGrantService = {
       resolvePublicLaunchGrant: vi.fn(),
       resolveConverseGrant: vi.fn(),
-      findGrantById: vi.fn(),
       evaluate: vi.fn(),
       touchGrant: vi.fn().mockRejectedValue(asynchronousFailure),
       recordAuthFailure: vi.fn(),
@@ -88,15 +95,38 @@ describe("AgentConverseSessionService last-use boundary", () => {
       accessGrantService,
       agentLookup: { findByIdAndWorkspaceId: vi.fn() },
       sessionMapping: { resolvePublicSessionId: vi.fn() },
+      originVerifier: { revalidate: vi.fn().mockResolvedValue({ ok: true }) },
       publicChatSessionSecret: "0123456789abcdef0123456789abcdef",
     });
 
-    expect(() => service.recordSuccessfulUse({ grantId: grant.id })).not.toThrow();
+    const grantOrigin = { origin: { kind: "grant", grantId: grant.id, grantVersion: "v1" } } as const;
+    expect(() => service.recordSuccessfulUse(grantOrigin)).not.toThrow();
     await new Promise((resolve) => setImmediate(resolve));
 
     accessGrantService.touchGrant.mockImplementationOnce(() => {
       throw new Error("sync persistence failed");
     });
-    expect(() => service.recordSuccessfulUse({ grantId: grant.id })).not.toThrow();
+    expect(() => service.recordSuccessfulUse(grantOrigin)).not.toThrow();
+  });
+
+  it("does not touch a grant for a walk-in session", () => {
+    const touchGrant = vi.fn();
+    const service = new AgentConverseSessionService({
+      accessGrantService: {
+        resolvePublicLaunchGrant: vi.fn(),
+        resolveConverseGrant: vi.fn(),
+        evaluate: vi.fn(),
+        touchGrant,
+        recordAuthFailure: vi.fn(),
+      },
+      agentLookup: { findByIdAndWorkspaceId: vi.fn() },
+      sessionMapping: { resolvePublicSessionId: vi.fn() },
+      originVerifier: { revalidate: vi.fn().mockResolvedValue({ ok: true }) },
+      publicChatSessionSecret: "0123456789abcdef0123456789abcdef",
+    });
+
+    service.recordSuccessfulUse({ origin: { kind: "walk_in", publicId: "ag_0123456789abcdefghijkl" } });
+
+    expect(touchGrant).not.toHaveBeenCalled();
   });
 });

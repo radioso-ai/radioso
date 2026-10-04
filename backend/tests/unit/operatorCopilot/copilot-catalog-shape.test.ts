@@ -138,6 +138,47 @@ describe("copilot catalog contributions through the real factory", () => {
     })).toThrow("weakens permission parity");
   });
 
+  it("refuses a contributed tool it would advertise over MCP with a schema no client can read", () => {
+    // `tools/list` is all-or-nothing, so an MCP-eligible contribution with a non-object schema
+    // would hide every first-party tool with it rather than only itself.
+    expect(() => assemble({
+      moduleId: "extension",
+      descriptors: [contributedDescriptor({
+        inputSchema: z.union([z.object({ kind: z.literal("a") }), z.string()]),
+        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "none", idempotent: true, operationIdentity: "client" } },
+      })],
+      operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
+    })).toThrow("extension_usage");
+  });
+
+  it.each([
+    ["a proposal", "proposal", true, { reconcileMcpInvocation: vi.fn() }],
+    ["an act without a replay reconciliation", "act", true, {}],
+    ["a non-idempotent act", "act", false, { reconcileMcpInvocation: vi.fn() }],
+  ] as const)("refuses a contributed tool that keys its replay by its input as %s", (_label, effect, idempotent, reconciliation) => {
+    // An input-derived key makes every identical call a replay of the first. Only an idempotent act
+    // that reconciles from its first attempt's receipt can answer that replay with a real result.
+    expect(() => assemble({
+      moduleId: "extension",
+      descriptors: [contributedDescriptor({
+        ...reconciliation,
+        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:act", retry: { effect, idempotent, operationIdentity: "input" } },
+      })],
+      operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
+    })).toThrow("extension_usage");
+  });
+
+  it("assembles a contributed act that keys its replay by its input and reconciles it", () => {
+    expect(() => assemble({
+      moduleId: "extension",
+      descriptors: [contributedDescriptor({
+        reconcileMcpInvocation: vi.fn(),
+        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:act", retry: { effect: "act", idempotent: true, operationIdentity: "input" } },
+      })],
+      operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
+    })).not.toThrow();
+  });
+
   it("leaves the first-party provenance registry a bijection when a contribution is present", () => {
     // Running the registry check over the merged catalog would report every contributed descriptor
     // as ungoverned, which is the failure that would push EE identities into a first-party map.
@@ -213,6 +254,7 @@ describe("copilot catalog wiring", () => {
       .filter((descriptor) => descriptor.contributingModule === "documents")
       .map(({ name, shape, requiredPermissions }) => ({ name, shape, requiredPermissions }))).toEqual([
       { name: "document_search", shape: "read", requiredPermissions: ["workspace.documents.read"] },
+      { name: "list_documents", shape: "read", requiredPermissions: ["workspace.documents.read"] },
       { name: "document_status", shape: "read", requiredPermissions: ["workspace.documents.read"] },
       { name: "document_chunks", shape: "read", requiredPermissions: ["workspace.documents.read"] },
       { name: "reprocess_document", shape: "act", requiredPermissions: ["workspace.documents.manage"] },
@@ -220,6 +262,9 @@ describe("copilot catalog wiring", () => {
       { name: "propose_document", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
       { name: "propose_document_retrieval", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
       { name: "propose_document_removal", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "prepare_document_import", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "prepare_document_removal", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "prepare_document_reprocess", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
     ]);
   });
 
@@ -372,6 +417,8 @@ describe("verification cost declarations", () => {
     test_agent_turn: { input: {}, expected: 1 },
     replay_eval_case: { input: {}, expected: 1 },
     retrieval_probe: { input: {}, expected: 1 },
+    // One Test Chat turn per call, charged like any other agent turn Ray runs.
+    send_test_chat_message: { input: {}, expected: 1 },
     // One ephemeral turn over the live conversation, whatever its length.
     draft_reply: { input: {}, expected: 1 },
     // One completion over the crawled pages, whatever the site's size.
@@ -394,6 +441,46 @@ describe("verification cost declarations", () => {
 
     for (const descriptor of free) {
       expect(descriptor.verificationCost({}), `${descriptor.name} charges a budget it does not spend`).toBe(0);
+    }
+  });
+});
+
+describe("reviewed operations stay MCP-only", () => {
+  // A reviewed proposal is bound to an MCP execution receipt (execute_reviewed_proposal claims it
+  // by grant/client/digest). Ray's dashboard surface has no such receipt, so a reviewed descriptor
+  // resolving there would let Ray create a proposal only an MCP client could ever complete. Every
+  // `prepare_*` descriptor's output schema carries `reviewDigest`, and so does
+  // `reviewed_proposal_outcome`'s; `execute_reviewed_proposal` and `cancel_reviewed_proposal` are
+  // named explicitly because they consume or retire a digest rather than minting one.
+  const GENERIC_REVIEWED_TOOLS = ["execute_reviewed_proposal", "reviewed_proposal_outcome", "cancel_reviewed_proposal"];
+  const outputsAReviewDigest = (descriptor: { outputSchema: unknown }): boolean => {
+    const shape = (descriptor.outputSchema as { shape?: Record<string, unknown> } | null)?.shape;
+    return shape !== undefined && "reviewDigest" in shape;
+  };
+
+  it("keeps every reviewed-preparation and generic reviewed tool unresolvable on the dashboard surface", () => {
+    const reviewed = realCatalog().filter((descriptor) => outputsAReviewDigest(descriptor) || GENERIC_REVIEWED_TOOLS.includes(descriptor.name));
+    // A regression on this list itself: if nothing matches, the shape-based detection broke and
+    // the assertion below would vacuously pass.
+    expect(reviewed.map((descriptor) => descriptor.name).sort()).toEqual([
+      "cancel_reviewed_proposal",
+      "execute_reviewed_proposal",
+      "prepare_agent_publication",
+      "prepare_agent_settings",
+      "prepare_directive",
+      "prepare_document_import",
+      "prepare_document_removal",
+      "prepare_document_reprocess",
+      "prepare_ingestion_settings",
+      "prepare_retrieval_settings",
+      "prepare_routine_structure",
+      "reviewed_proposal_outcome",
+    ]);
+
+    const dashboardVisible = reviewed.filter((descriptor) => !descriptor.surfaces || descriptor.surfaces.includes("dashboard"));
+    expect(dashboardVisible.map((descriptor) => descriptor.name)).toEqual([]);
+    for (const descriptor of reviewed) {
+      expect(descriptor.surfaces, `${descriptor.name} must declare surfaces: ["mcp"]`).toEqual(["mcp"]);
     }
   });
 });

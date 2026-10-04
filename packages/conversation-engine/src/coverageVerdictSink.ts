@@ -185,6 +185,10 @@ export const createCoverageVerdictSink = (deps: CoverageVerdictSinkDeps): Covera
               ...(activator.reentryGate ? { routineReentryGate: activator.reentryGate } : {}),
               turnContext: assessedComposeTurn,
               inputEventAlreadyAppended: true,
+              // A routine started after the evidence never left the visitor partway through
+              // a step, so this pass reports no yield: the host's sink hears only the
+              // pre-evidence pass, whose pending step the turn's answer leads back to.
+              routineYieldSink: undefined,
             });
           } catch (error) {
             evaluationFailed = true;

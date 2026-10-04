@@ -173,7 +173,7 @@ export const createAgentProposalCopilotTools = (
     uiLabel: "Drafting an agent",
     contributingModule: "agentWizard",
     dashboardSubject: { type: "proposal" },
-    requiredPermissions: [...MANAGE_AGENTS] as unknown as CopilotToolDescriptor["requiredPermissions"],
+    requiredPermissions: [...MANAGE_AGENTS],
     createTool: (context) => ({
       ...shared,
       invoke: async (rawChange) => {

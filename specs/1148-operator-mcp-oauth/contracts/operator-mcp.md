@@ -20,8 +20,8 @@
   `MCP-Protocol-Version` and `Mcp-Method` before an unrestricted body is parsed.
   The header values must match the JSON-RPC method and the protocol version in
   `params._meta`; `tools/call` also mirrors `params.name` in `Mcp-Name` before
-  parsing bounded arguments and a stable operation identity for stateful
-  descriptors.
+  parsing bounded arguments and an optional client operation identity
+  (`params.operationId`).
 - Every request carries client capabilities in `params._meta` and may carry
   client identity there. `server/discover` reports the supported version,
   server identity, and tool capability without requiring an initialization

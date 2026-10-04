@@ -7,6 +7,14 @@ import type {
   AssistantChatStreamEvent,
 } from "../types/assistantApi.js";
 import { AssistantRouteService } from "./assistantRouteService.js";
+import { renderRoutineInvocation } from "../../routines/public.js";
+
+/**
+ * The text a turn runs on: the message, or a tool call rendered as the text a
+ * person would have typed so the LLM-visible history matches chat.
+ */
+const queryFor = (input: Pick<AssistantChatRequest, "message" | "routineInvocation">): string | undefined =>
+  input.routineInvocation ? renderRoutineInvocation(input.routineInvocation) : input.message?.trim();
 
 export class AssistantChatService {
   constructor(
@@ -37,7 +45,7 @@ export class AssistantChatService {
         : null;
     }
 
-    const query = input.message?.trim();
+    const query = queryFor(input);
     if (!query) {
       throw badRequest("message is required unless startConversation is true");
     }
@@ -61,6 +69,7 @@ export class AssistantChatService {
       entryReferrer: input.entryReferrer,
       visitorKey: input.visitorKey,
       previewRoutineIds: input.previewRoutineIds,
+      routineInvocation: input.routineInvocation,
       sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
       channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
       chatSessionId,
@@ -72,7 +81,7 @@ export class AssistantChatService {
 
   streamAnswer(input: AssistantChatRequest): AsyncIterable<AssistantChatStreamEvent> {
     const chatSessionId = input.chatSessionId ?? input.anonymousSessionId;
-    const query = input.message?.trim();
+    const query = queryFor(input);
     if (!query) {
       throw badRequest("message is required for streaming assistant chat");
     }
@@ -96,6 +105,7 @@ export class AssistantChatService {
       entryReferrer: input.entryReferrer,
       visitorKey: input.visitorKey,
       previewRoutineIds: input.previewRoutineIds,
+      routineInvocation: input.routineInvocation,
       sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
       channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
       chatSessionId,

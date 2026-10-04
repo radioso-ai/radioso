@@ -10,6 +10,7 @@ import {
   toPreparedStagedContext,
 } from "../../src/modules/chat/services/conversationContractMappers.js";
 import type { ActivityTrace, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
+import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const message = (overrides: Partial<MessageRecord> = {}): MessageRecord => ({
   id: "msg_1",
@@ -23,6 +24,7 @@ const message = (overrides: Partial<MessageRecord> = {}): MessageRecord => ({
 });
 
 const agent = (overrides: Partial<AgentRecord> = {}): AgentRecord => ({
+  ...unpublishedAgentPublicIdentity(),
   id: "agent_1",
   workspaceId: "workspace_1",
   name: "Support",

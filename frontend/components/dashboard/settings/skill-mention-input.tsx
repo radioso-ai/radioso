@@ -288,7 +288,8 @@ export function SkillMentionInput({
   // owns both from then on.
   const seedRef = useRef({ value, recognizedSkillNames })
   const catalog = useMemo(
-    () => ({ agentId: '', skills: skills.map(mentionDescriptor), isLoading: isSkillsLoading, error: skillLoadError }),
+    // A skill-mention surface binds skills only; it offers no visitor context to read.
+    () => ({ agentId: '', skills: skills.map(mentionDescriptor), contextVariables: [], isLoading: isSkillsLoading, error: skillLoadError }),
     [isSkillsLoading, skillLoadError, skills],
   )
 

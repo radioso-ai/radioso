@@ -3,6 +3,12 @@ import { z } from "zod";
 import { MAX_COPILOT_PROPOSAL_SUMMARY } from "../contracts.js";
 
 import { websiteEmbedLauncherPositions } from "../../settings/public.js";
+import type {
+  PlatformSettingsFieldProposalApplyInput,
+  PlatformSettingsFieldProposalApplyOutcome,
+  PlatformSettingsFieldProposalPreparation,
+  PlatformSettingsProposalPatch,
+} from "../../settings/contracts/services.js";
 
 /**
  * The workspace-settings fields a proposal may carry: the assistant's own wording, and the public
@@ -31,12 +37,6 @@ const copilotWorkspaceSettingFields = {
  * of these is a different kind of decision from a card proposing a greeting, and an operator must
  * not have to infer the difference from the summary's prose — see `changesReach` below.
  */
-export const copilotWorkspaceSettingReachFields = [
-  "anonymousChatEnabled",
-  "websiteEmbedEnabled",
-  "websiteEmbedAllowedOrigins",
-] as const;
-
 export const copilotWorkspaceSettingChangeSchema = z.object({
   assistantName: copilotWorkspaceSettingFields.assistantName.optional(),
   greetingInstruction: copilotWorkspaceSettingFields.greetingInstruction.optional(),
@@ -84,41 +84,16 @@ export const copilotWorkspaceSettingPayloadSchema = z.object({
 }).strict();
 
 /** Workspace settings are one surface per workspace, and the workspace is already the call's scope. */
-export const copilotWorkspaceSettingTargetRefSchema = z.object({}).strict();
+export const copilotWorkspaceSettingTargetRefSchema = z.object({
+  /** Exact draft-time values for fields this proposal changes; absent on timestamp-era cards. */
+  expectedFields: z.record(z.unknown()).optional(),
+}).strict();
 
-export type CopilotWorkspaceSettingChange = z.infer<typeof copilotWorkspaceSettingChangeSchema>;
 export type CopilotWorkspaceSettingPayload = z.infer<typeof copilotWorkspaceSettingPayloadSchema>;
 
-/**
- * The settings as the copilot may read them. Narrower than the settings resource the dashboard
- * reads: the anonymous-chat and embed tokens are secret material and are absent from the port, so
- * no adapter written against it can put one in a model context.
- */
-export interface CopilotWorkspaceSettingSnapshot {
-  readonly assistantName: string;
-  readonly greetingInstruction: string;
-  readonly assistantDefaultLocale: string | null;
-  readonly proactiveGreetingEnabled: boolean;
-  readonly suggestedQuestionsEnabled: boolean;
-  readonly customInstruction: string;
-  readonly anonymousChatEnabled: boolean;
-  readonly websiteEmbedEnabled: boolean;
-  readonly websiteEmbedAllowedOrigins: ReadonlyArray<string>;
-  readonly websiteEmbedLauncherLabel: string;
-  readonly websiteEmbedLauncherPosition: string;
-  readonly updatedAt: Date;
-}
-
 export interface CopilotWorkspaceSettingPort {
-  getForWorkspace(workspaceId: string): Promise<CopilotWorkspaceSettingSnapshot>;
-  /**
-   * `expectedUpdatedAt` carries the version the card was drafted against into the write's own
-   * predicate, so a surface edited since the draft is refused rather than replaced wholesale by
-   * the values this payload has been holding.
-   */
-  updateForWorkspace(
-    workspaceId: string,
-    input: CopilotWorkspaceSettingPayload,
-    options?: { expectedUpdatedAt?: Date },
-  ): Promise<unknown>;
+  prepareFieldProposal(workspaceId: string, patch: PlatformSettingsProposalPatch): Promise<PlatformSettingsFieldProposalPreparation>;
+  readFieldProposalVersion(workspaceId: string, expected?: PlatformSettingsProposalPatch): Promise<string>;
+  readFieldProposalDisplay(workspaceId: string): Promise<Record<string, unknown>>;
+  applyFieldProposal(workspaceId: string, prepared: PlatformSettingsFieldProposalApplyInput): Promise<PlatformSettingsFieldProposalApplyOutcome>;
 }

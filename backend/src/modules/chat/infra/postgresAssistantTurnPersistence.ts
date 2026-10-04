@@ -7,6 +7,7 @@ import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineSt
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
+import type { ConversationActivityRecorder } from "../../conversationActivity/contracts/index.js";
 import { toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import {
@@ -101,7 +102,7 @@ const saveRoutineState = async (
 ): Promise<void> => {
   const expiresAt = state.status === "suspended" ? null : new Date(Date.now() + ttlMs).toISOString();
   await sql`
-    INSERT INTO routine_states (session_id, routine_id, execution_id, path, variables, attempts, status, expires_at, updated_at)
+    INSERT INTO routine_states (session_id, routine_id, execution_id, path, variables, attempts, reask_count, status, expires_at, updated_at)
     VALUES (
       ${state.sessionId},
       ${state.routineId},
@@ -109,6 +110,7 @@ const saveRoutineState = async (
       ${sql.val(state.path)}::text[],
       ${toJsonb(state.variables)},
       ${toJsonb(state.attempts ?? {})},
+      ${state.reaskCount ?? 0},
       ${state.status},
       ${expiresAt},
       now()
@@ -119,6 +121,7 @@ const saveRoutineState = async (
       path = EXCLUDED.path,
       variables = EXCLUDED.variables,
       attempts = EXCLUDED.attempts,
+      reask_count = EXCLUDED.reask_count,
       status = EXCLUDED.status,
       expires_at = EXCLUDED.expires_at,
       updated_at = now()
@@ -258,6 +261,8 @@ const insertAuditEvent = async (
 export class PostgresAssistantTurnPersistence implements AssistantTurnPersistencePort {
   constructor(
     private readonly db: Db,
+    // Records the handoff a turn requests in the turn's own transaction.
+    private readonly conversationActivity: ConversationActivityRecorder,
     private readonly routineStateTtlMs: number = DEFAULT_ROUTINE_STATE_TTL_MS,
     private readonly conversationOwnershipRepository = new ConversationOwnershipRepository(db),
     // Optional: when wired, a turn that enqueued routine actions (contact.send,
@@ -322,6 +327,16 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       const message = result.rows[0];
       if (!message) {
         throw new Error("Expected inserted assistant message");
+      }
+      // Recorded after the reply that announced it, so the handoff dates after that reply.
+      if (input.ownershipHandoff && ownershipResult?.changed) {
+        await this.conversationActivity.record(db, {
+          kind: "handoff_requested",
+          conversationId: input.conversationId,
+          workspaceId: input.workspaceId,
+          actorUserId: null,
+          detail: { reason: input.ownershipHandoff.reason },
+        });
       }
 
       if (input.answerCoverageRequestMessageId) {

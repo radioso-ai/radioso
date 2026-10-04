@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import { CrawlPolicyFields } from '@/components/dashboard/documents/crawl-policy-fields'
 
 export function DocumentCrawlDialog({
@@ -107,9 +106,8 @@ export function DocumentCrawlDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isCrawling}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isCrawling || trimmedUrl.length === 0}>
-              {isCrawling ? <Spinner className="mr-2" /> : null}
-              <span>Start Crawl</span>
+            <Button type="submit" disabled={trimmedUrl.length === 0} loading={isCrawling}>
+              Start Crawl
             </Button>
           </div>
         </form>

@@ -32,4 +32,26 @@ describe("redis session secrets are encrypted at rest", () => {
     expect(deserializeSession(stored, signingSecret).conversationId).toBe("conversation-1");
   });
 
+  it("round-trips the session's tool catalog and leaves it absent on a record that has none", () => {
+    const toolCatalog = {
+      key: "0123456789abcdef",
+      tools: [{
+        toolName: "start_return",
+        description: "Start a return for an order.",
+        inputSchema: {
+          type: "object" as const,
+          properties: { orderId: { type: "string" as const } },
+          required: ["orderId"],
+          additionalProperties: false as const,
+        },
+        routineLineageId: "lineage-start-return",
+      }],
+    };
+    const stored = serializeSession(baseSession({ toolCatalog }), signingSecret);
+    expect(deserializeSession(stored, signingSecret).toolCatalog).toEqual(toolCatalog);
+
+    const legacy = serializeSession(baseSession({}), signingSecret);
+    expect(deserializeSession(legacy, signingSecret).toolCatalog).toBeUndefined();
+    expect(JSON.parse(legacy)).not.toHaveProperty("toolCatalog");
+  });
 });

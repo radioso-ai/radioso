@@ -20,13 +20,19 @@ const documentSearchUnreviewedMetadataFilter = deferred(
 const agentSettingGenericKeyValue = permanent(
   "propose_agent_setting changes one agent setting at a time through a generic settingKey/value pair rather than one schema field per settable property. settingKey is validated against agentInputFieldSchemas (modules/agents/agentInputSchema.ts), which covers every one of updateAgent's fields, so each is reachable by name through value rather than through a same-named top-level input field.",
 );
+const reviewedAgentSettingsPatch = permanent(
+  "Carried under the owner-approved `patch` object. The agent service validates and normalizes the named fields together before it persists a digest-bound review.",
+);
+const reviewedAgentSettingsDedicatedOwnerFlow = permanent(
+  "This setting belongs to a dedicated owner flow: retrieval-scoped settings use prepare_retrieval_settings, surface settings use propose_workspace_setting, and model or skill configuration stays outside this reviewed agent-settings surface.",
+);
 
 const contextVariableEnablementNesting = permanent(
   "Carried nested one level down, under the `enablement` object, using these exact field names (proposalInputSchema in tools/contextVariables.ts) — not a capability gap, just not a top-level match.",
 );
 
-const directiveIntentDrafted = permanent(
-  "propose_directive takes a free-text `intent`; directiveAdapter.draft() (proposalAdapters.ts) synthesizes the full structured directive from it server-side. Ray never supplies these fields directly, by design — the same intent-to-structured-draft pattern propose_routine and propose_agent use.",
+const directiveFieldsStayOwnerAuthored = permanent(
+  "propose_directive carries name, condition, action, priority, and excludes directly when an operator needs exact directive text, ordering, or replacements; its agent-owned authoring service fills omitted fields from `intent` when needed. The remaining directive fields stay owner-authored rather than expanding this proposal schema into a full directive editor.",
 );
 const directiveEnablementLeavesFieldsAlone = permanent(
   "propose_directive_enablement only flips `enabled` on an already-authored directive. Its structured fields (name, condition, action, ...) are untouched by this call and stay whatever the stored directive already has, so they have no place on this input.",
@@ -56,8 +62,17 @@ const routineCannotReworkBranching = deferred(
 const routineEditCompletionExportUnreachable = deferred(
   "Editing an existing routine's completion-export destination has no field on this patch. Wiring a routine's completion to an operator's webhook destination waits on the same Wave 5 webhook-destination review as creating or changing the destination itself (catalogCoverage's webhookDestinationConfiguration).",
 );
+const routineExposureCarriedFlat = permanent(
+  "Carried flat as `enabled`, `toolName`, and `description` — the three fields of the exposure block — rather than as a nested `exposure` object, because the tool transport renders a nested input object as the bare word \"object\" (routineExposureInputSchema in tools/routines.ts). `enabled` on this tool is the exposure's own switch, not the routine's; the routine's stays as stored.",
+);
+const routineExposureLeavesFieldsAlone = permanent(
+  "propose_routine_exposure changes only the exposure block of an already-authored routine. Its wording, trigger, fields, steps, endings, branches, and completion export stay whatever the stored routine already has — the same one-concern shape propose_directive_enablement takes toward a directive.",
+);
 const routineStructuralPreparationNesting = permanent(
   "Carried nested: each of these is set either as an `operations[]` entry (set_enabled, insert/replace/remove_step, insert/replace/remove_slot, insert/replace/remove_terminal, insert/replace/remove_transition) or, for a brand-new routine, nested under `draft` — never as a same-named top-level field.",
+);
+const routineStructuralPreparationExposureViaOwnTool = permanent(
+  "Reachable nested under `draft.exposure` when creating a routine; for an existing routine, exposure is one concern with its own reviewed card, propose_routine_exposure, rather than an `operations[]` entry here.",
 );
 const routineStructuralPreparationCompletionExportUnreachable = deferred(
   "Reachable only when creating a routine, nested under `draft.completionExport`; no `operations[]` entry updates an existing routine's completion-export destination, so editing one waits on the same Wave 5 webhook-destination review as propose_routine_edit's gap.",
@@ -99,6 +114,28 @@ const publicationFenceIsReadFresh = permanent(
   "prepare_agent_publication reads the agent's current draft generation itself immediately before creating the candidate and supplies it as the optimistic-concurrency fence. Asking Ray to track and resupply its own expectedDraftGeneration would only reproduce a value it could already get stale.",
 );
 
+const testChatDraftFenceIsReadFresh = permanent(
+  "send_test_chat_message reads the agent's draft generation itself immediately before it creates the candidate and starts the session, and supplies it as both fences, the same way prepare_agent_publication does. A caller resupplying its own copy could only hand back a staler value.",
+);
+const testChatRunsOneRevision = permanent(
+  "Carried as the singular `revisionId`: every session send_test_chat_message starts runs one revision, so the one-element `revisionIds` array is built from it.",
+);
+const testChatComparisonUnreachable = deferred(
+  "send_test_chat_message starts and continues single-revision sessions only. A comparison (`mode: \"compare\"`, two revisions answering one message) is readable through test_chat_transcript but starts and continues in the dashboard until comparison has a reviewed transport shape.",
+);
+const testChatSampleValuesUnreachable = deferred(
+  "send_test_chat_message starts a session without context-variable sample values. Supplying `testValues` waits on a review of how an operator-supplied, possibly sensitive sample value travels through a model-facing tool.",
+);
+const testChatSeedUnreachable = deferred(
+  "Starting a session from an existing conversation's thread (`seedConversationId`) stays in the dashboard's Continue in Test Chat until that handoff has its own reviewed tool shape.",
+);
+const testChatMintsItsOwnIdentities = permanent(
+  "send_test_chat_message mints the start's idempotency key and each turn's `turnId`/`attemptId` itself, and reads the session's current `executionGeneration` before sending. A caller's retry identity is the transport's operation id, not these owner fences.",
+);
+const testChatSkillEffectsAlwaysSuppressed = permanent(
+  "send_test_chat_message always runs with skill effects suppressed: letting a skill act outward would make a probe an act. It also refuses to continue a session that was started with effects allowed, which continues only in the dashboard.",
+);
+
 const retrievalSettingsOnlyPatchesTheDefaultSkill = permanent(
   "prepare_retrieval_settings only ever patches the agent's one default retrieval skill through a typed retrieval-specific `patch`. The generic target/config/replaceConfig/invocationMode/enabled surface belongs to the general skill editor (propose_skill_config), not this narrower tool.",
 );
@@ -136,6 +173,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
       "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss",
       "contactRequestDelivery", "theme", "branding", "retrievalEnabled", "sourceScope", "greetingInstruction",
       "assistantDefaultLocale", "proactiveGreetingEnabled", "chatModelOverride", "skillSettings", "surfaceSettings",
+      "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour",
     ], agentSettingGenericKeyValue),
   },
   propose_context_variable: {
@@ -143,9 +181,12 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
   },
   propose_directive: {
     ...fields([
-      "name", "condition", "action", "priority", "requiredCapabilities", "dependsOn", "excludes", "surfaces",
+      "requiredCapabilities", "dependsOn", "surfaces",
       "tags", "description", "binding", "lifecycle", "coverageCriteria", "enabled", "metadata",
-    ], directiveIntentDrafted),
+    ], directiveFieldsStayOwnerAuthored),
+  },
+  prepare_directive: {
+    ...fields(["requiredCapabilities", "dependsOn", "surfaces", "tags", "description", "binding", "lifecycle", "coverageCriteria", "metadata"], directiveFieldsStayOwnerAuthored),
   },
   propose_directive_enablement: {
     ...fields([
@@ -160,15 +201,20 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ...fields(["assistant", "channels"], workspaceSettingFlattensGroups),
   },
   propose_routine: {
-    ...fields(["name", "enabled", "activation", "slots", "steps", "transitions", "terminals", "completionExport"], routineIntentDrafted),
+    ...fields(["name", "enabled", "activation", "slots", "steps", "transitions", "terminals", "completionExport", "exposure"], routineIntentDrafted),
   },
   propose_routine_edit: {
-    ...fields(["name", "enabled", "activation", "slots", "steps", "terminals"], routineEditFieldPatchNesting),
+    ...fields(["name", "enabled", "activation", "slots", "steps", "terminals", "exposure"], routineEditFieldPatchNesting),
     ...fields(["transitions"], routineCannotReworkBranching),
     ...fields(["completionExport"], routineEditCompletionExportUnreachable),
   },
+  propose_routine_exposure: {
+    ...fields(["exposure"], routineExposureCarriedFlat),
+    ...fields(["name", "activation", "slots", "steps", "transitions", "terminals", "completionExport"], routineExposureLeavesFieldsAlone),
+  },
   prepare_routine_structure: {
     ...fields(["name", "enabled", "activation", "slots", "steps", "terminals", "transitions"], routineStructuralPreparationNesting),
+    ...fields(["exposure"], routineStructuralPreparationExposureViaOwnTool),
     ...fields(["completionExport"], routineStructuralPreparationCompletionExportUnreachable),
   },
   propose_skill_config: {
@@ -200,6 +246,22 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
   prepare_retrieval_settings: {
     ...fields(["target", "config", "replaceConfig", "invocationMode", "enabled"], retrievalSettingsOnlyPatchesTheDefaultSkill),
   },
+  prepare_ingestion_settings: {
+    ...fields(["embeddingModel"], ingestionEmbeddingModelNeverList),
+  },
+  prepare_agent_settings: {
+    ...fields(["name", "internalName", "customInstruction", "assistantLinkUtmEnabled", "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss", "contactRequestDelivery", "theme", "branding", "greetingInstruction", "assistantDefaultLocale", "proactiveGreetingEnabled", "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour"], reviewedAgentSettingsPatch),
+    ...fields(["suggestedQuestionsEnabled", "retrievalEnabled", "sourceScope", "chatModelOverride", "skillSettings", "surfaceSettings"], reviewedAgentSettingsDedicatedOwnerFlow),
+  },
+  send_test_chat_message: {
+    ...fields(["expectedDraftGeneration"], testChatDraftFenceIsReadFresh),
+    ...fields(["revisionIds"], testChatRunsOneRevision),
+    ...fields(["mode"], testChatComparisonUnreachable),
+    ...fields(["testValues"], testChatSampleValuesUnreachable),
+    ...fields(["seedConversationId"], testChatSeedUnreachable),
+    ...fields(["idempotencyKey", "executionGeneration", "turnId", "attemptId"], testChatMintsItsOwnIdentities),
+    ...fields(["skillEffects"], testChatSkillEffectsAlwaysSuppressed),
+  },
 };
 
 // Ratchet: this may only ever decrease as tools land a real field or a nested one moves flat.
@@ -211,4 +273,8 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
 // The first scan also surfaced a tenth gap that was not a tool gap at all: the OpenAPI
 // `getDocument` (GET) operation declared a `DocumentReprocessRequest` body it never read. The
 // contract was corrected instead of the gap being recorded.
-export const maxDeferredFieldParityExclusions = 8;
+//   8 -> 11  send_test_chat_message moved startAgentTestExecution off the catalog-coverage deferred
+//            list, where the whole operation had been uncovered. Its three unreached fields
+//            (mode, testValues, seedConversationId) are the part of that deferral still open, now
+//            recorded field by field rather than retired with the operation.
+export const maxDeferredFieldParityExclusions = 11;

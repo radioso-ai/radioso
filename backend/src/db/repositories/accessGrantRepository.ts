@@ -115,10 +115,17 @@ export class AccessGrantRepository implements AccessGrantRepositoryPort {
     cursor?: { createdAt: string; id: string };
   } = {}): Promise<{ grants: AccessGrant[]; nextCursor: { createdAt: string; id: string } | null }> {
     const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
+    // The inventory answers "what can reach this agent right now", so retired credentials
+    // never appear. `disabled` (enabled = false) is restorable, not retired, and stays.
     let query = this.db
       .selectFrom("agent_access_grants")
       .select([...grantColumns, sql<string>`created_at::text`.as("created_at_text")])
-      .where("agent_id", "=", agentId);
+      .where("agent_id", "=", agentId)
+      .where("revoked_at", "is", null)
+      .where((eb) => eb.or([
+        eb("expires_at", "is", null),
+        eb("expires_at", ">", sql<Date>`now()`),
+      ]));
     if (params.workspaceId) query = query.where("workspace_id", "=", params.workspaceId);
     if (params.principalKind) query = query.where("principal_kind", "=", params.principalKind);
     if (params.channel) {

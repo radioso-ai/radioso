@@ -119,6 +119,7 @@ describeIfDatabase("PendingDecisionRepository transaction helper", () => {
     await client.query(`SET search_path TO ${schema}, public`);
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "104_pending_decisions.sql");
+    await applyTestMigration(database, "205_conversation_activity.sql");
     repository = new PendingDecisionRepository(database.kysely);
   });
 

@@ -60,6 +60,100 @@ describeDb("test execution repository", () => {
     await expect(repository.listAttempts({ workspaceId: randomUUID(), agentId, executionId })).resolves.toEqual([]);
   });
 
+  it("resolves an execution's agent id by workspace alone, and reads a cross-workspace id as absent", async () => {
+    const executionId = randomUUID();
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [{ id: randomUUID(), executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
+
+    await expect(repository.findAgentId({ workspaceId, executionId })).resolves.toBe(agentId);
+    await expect(repository.findAgentId({ workspaceId: randomUUID(), executionId })).resolves.toBeNull();
+    await expect(repository.findAgentId({ workspaceId, executionId: randomUUID() })).resolves.toBeNull();
+  });
+
+  it("resolves the owning agent for a Test Chat call scoped only by testExecutionId, verifies a supplied one, and rejects a mismatch or a cross-workspace id", async () => {
+    const service = new TestExecutionService({
+      revisions: repository,
+      contextCatalog: new ContextVariableRepository(database.kysely),
+      repository,
+      runner: { run: async () => ({ answer: "answer", messageId: randomUUID(), continuation: null }) },
+      usageLimitPolicy: new NoopUsageLimitPolicy(),
+      createId: randomUUID,
+    });
+    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [revisionId], testValues: [], skillEffects: "suppressed", idempotencyKey: randomUUID() });
+
+    // No agentId at all -- an operator MCP client continuing a session by id alone -- resolves it
+    // from the execution itself.
+    await expect(service.transcript({ workspaceId, executionId: execution.id })).resolves.toMatchObject({ id: execution.id });
+    // The caller's own agentId, when it matches, is used as-is: no extra resolution read.
+    await expect(service.transcript({ workspaceId, agentId, executionId: execution.id })).resolves.toMatchObject({ id: execution.id });
+    // A mismatched explicit agentId is rejected exactly like any other wrong id.
+    await expect(service.transcript({ workspaceId, agentId: randomUUID(), executionId: execution.id })).rejects.toMatchObject({ statusCode: 404 });
+    // A testExecutionId this workspace does not own resolves to nothing.
+    await expect(service.transcript({ workspaceId: randomUUID(), executionId: execution.id })).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("rejects send with another agent's id against this execution as not found, and creates no turn or attempt row", async () => {
+    const otherAgentId = randomUUID();
+    await database.query("INSERT INTO agents (id,workspace_id,name) VALUES ($1,$2,$3)", [otherAgentId, workspaceId, "other-agent"]);
+    const service = new TestExecutionService({
+      revisions: repository,
+      contextCatalog: new ContextVariableRepository(database.kysely),
+      repository,
+      runner: { run: async () => ({ answer: "answer", messageId: randomUUID(), continuation: null }) },
+      usageLimitPolicy: new NoopUsageLimitPolicy(),
+      createId: randomUUID,
+    });
+    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [revisionId], testValues: [], skillEffects: "suppressed", idempotencyKey: randomUUID() });
+    const turnId = randomUUID();
+
+    // A real agent's own id, but not the one this execution belongs to: rejected exactly like a
+    // testExecutionId this workspace does not own, before any claim is attempted.
+    await expect(service.send({ workspaceId, agentId: otherAgentId, accountId: null, executionId: execution.id, message: "hello", generation: execution.generation, turnId, attemptId: randomUUID() }))
+      .rejects.toMatchObject({ statusCode: 404 });
+
+    expect(await database.query("SELECT 1 FROM agent_test_execution_turns WHERE execution_id = $1 AND turn_id = $2", [execution.id, turnId])).toEqual([]);
+    expect(await database.query("SELECT 1 FROM agent_test_execution_attempts WHERE execution_id = $1 AND turn_id = $2", [execution.id, turnId])).toEqual([]);
+  });
+
+  it("summarizes each listed execution from its sent turns and what its seed copied in, never from its transcript", async () => {
+    const executionId = randomUUID(), seededId = randomUUID(), longId = randomUUID();
+    const entry = (role: "user" | "assistant", content: string, at: number) => ({ turnId: randomUUID(), attemptId: randomUUID(), role, content, createdAt: new Date(at) });
+    const side = (id: string, history: ReturnType<typeof entry>[], revision = frozenRevision()) => ({ id: randomUUID(), executionId: id, revision, conversationId: randomUUID(), state: "ready" as const, retryable: false, continuation: null, history });
+    const sentTurn = (id: string, message: string, at: string) =>
+      database.query("INSERT INTO agent_test_execution_turns (execution_id, turn_id, message, input_fingerprint, state, created_at) VALUES ($1, $2, $3, 'fingerprint', 'completed', $4)", [id, randomUUID(), message, at]);
+    // A comparison: two sent turns answered on both sides, after a greeting.
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [
+      side(executionId, [entry("assistant", "Hi!", 1), entry("user", "first question", 2), entry("assistant", "answer", 3), entry("user", "second question", 4)]),
+      side(executionId, [entry("assistant", "Hi!", 1), entry("user", "first question", 2)], frozenRevision(secondRevisionId)),
+    ] });
+    await sentTurn(executionId, "second question", "2026-09-08T10:02:00.000Z");
+    await sentTurn(executionId, "first question", "2026-09-08T10:01:00.000Z");
+    // A whitespace-only message counts as sent but never labels the test.
+    await sentTurn(executionId, "   ", "2026-09-08T10:00:00.000Z");
+    // A copy of a real conversation: what it copied in is recorded at start, and the operator then sends one message.
+    await repository.create({ id: seededId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: seededId, seededSummary: { turnCount: 2, firstMessage: "a customer's question" }, sides: [
+      side(seededId, [entry("user", "a customer's question", 1), entry("assistant", "a reply", 2), entry("user", "a follow-up", 3)]),
+    ] });
+    await sentTurn(seededId, "the operator's question", "2026-09-08T10:04:00.000Z");
+    // A long opening message is read only far enough to label the row and show that it was clipped.
+    await repository.create({ id: longId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: longId, sides: [side(longId, [])] });
+    await sentTurn(longId, "y".repeat(20_000), "2026-09-08T10:03:00.000Z");
+
+    const emptyId = randomUUID();
+    await repository.create({ id: emptyId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: emptyId, sides: [side(emptyId, [entry("assistant", "Hi!", 1)])] });
+
+    const summaries = await repository.summarizeTurns({ workspaceId, agentId, executionIds: [executionId, seededId, longId, emptyId], firstMessageChars: 201 });
+
+    expect(summaries.get(executionId)).toEqual({ turnCount: 3, firstMessage: "first question" });
+    expect(summaries.get(seededId)).toEqual({ turnCount: 3, firstMessage: "a customer's question" });
+    expect(summaries.get(longId)).toEqual({ turnCount: 1, firstMessage: "y".repeat(201) });
+    expect(summaries.get(emptyId)).toEqual({ turnCount: 0, firstMessage: null });
+    await expect(repository.summarizeTurns({ workspaceId: randomUUID(), agentId, executionIds: [executionId], firstMessageChars: 201 })).resolves.toEqual(new Map());
+
+    // The seeded count on `find` is the same column `summarizeTurns` reads, so the two never disagree.
+    await expect(repository.find({ workspaceId, agentId, executionId: seededId })).resolves.toMatchObject({ seededTurnCount: 2 });
+    await expect(repository.find({ workspaceId, agentId, executionId })).resolves.toMatchObject({ seededTurnCount: 0 });
+  });
+
   it("claims all comparison sides atomically and serializes simultaneous completions", async () => {
     const executionId = randomUUID(), leftId = randomUUID(), rightId = randomUUID(), turnId = randomUUID(), attemptId = randomUUID();
     await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [
@@ -204,5 +298,103 @@ describeDb("test execution repository", () => {
     expect(afterRetry?.state).toBe(beforeRetry?.state);
     await expect(service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "different input", generation: execution.generation, turnId, attemptId: randomUUID() })).rejects.toMatchObject({ code: "conflict" });
     await expect(service.retry({ workspaceId, agentId, accountId: null, executionId: execution.id, sideId: execution.sides[0].id, generation: execution.generation, turnId: randomUUID(), attemptId: randomUUID() })).rejects.toMatchObject({ code: "conflict" });
+  });
+
+  // #1362: a turn that failed used to leave the execution partial, and every later message
+  // was refused as a turn conflict — a session whose failure repeats on retry was dead.
+  it("answers the next message after a failed turn instead of locking the session", async () => {
+    let runnerCalls = 0;
+    const service = new TestExecutionService({
+      revisions: repository,
+      contextCatalog: new ContextVariableRepository(database.kysely),
+      repository,
+      runner: {
+        run: async () => {
+          runnerCalls += 1;
+          if (runnerCalls === 1) throw new Error("runner failed");
+          return { answer: "second answer", messageId: randomUUID(), continuation: null };
+        },
+      },
+      usageLimitPolicy: new NoopUsageLimitPolicy(),
+      createId: randomUUID,
+    });
+    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [revisionId], testValues: [], skillEffects: "suppressed", idempotencyKey: randomUUID() });
+    const failedTurnId = randomUUID();
+
+    const failed = await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "How do I contact a human?", generation: execution.generation, turnId: failedTurnId, attemptId: randomUUID() });
+    const next = await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "guest@example.com", generation: execution.generation, turnId: randomUUID(), attemptId: randomUUID() });
+
+    expect(failed).toEqual(expect.arrayContaining([expect.objectContaining({ type: "side_failed", code: "runner_failed" })]));
+    expect(next).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "message_delta", delta: "second answer" }),
+      expect.objectContaining({ type: "execution_completed" }),
+    ]));
+    // The failed turn is superseded: retrying it after a later turn would answer out of order.
+    await expect(service.retry({ workspaceId, agentId, accountId: null, executionId: execution.id, sideId: execution.sides[0].id, generation: execution.generation, turnId: failedTurnId, attemptId: randomUUID() }))
+      .rejects.toMatchObject({ statusCode: 409 });
+    expect(runnerCalls).toBe(2);
+  });
+
+  // #1362 review: a comparison side whose failed turn a later message superseded is settled, so
+  // it can be retained. The retained execution must keep that failure, not just the history.
+  it("retains a comparison side with its attempts, so a superseded failed turn still reads as failed", async () => {
+    const executionId = randomUUID(), leftId = randomUUID(), rightId = randomUUID(), failedTurn = randomUUID(), nextTurn = randomUUID();
+    const failedAttempt = randomUUID(), nextAttempt = randomUUID();
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [
+      { id: leftId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null },
+      { id: rightId, executionId, revision: frozenRevision(secondRevisionId), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null },
+    ] });
+    const claim = async (turnId: string, attemptId: string, message: string) => {
+      const claimed = await repository.claimTurn({ workspaceId, agentId, executionId, sideIds: [leftId, rightId], generation: 1, turnId, attemptId, message, inputFingerprint: message, now: new Date(1_000), leaseMs: 30_000, retry: false });
+      if (typeof claimed === "string") throw new Error(claimed);
+      return (sideId: string) => claimed.claims.find((item) => item.sideId === sideId)!.attempt.fence;
+    };
+    const fenceOf = await claim(failedTurn, failedAttempt, "How do I contact a human?");
+    await repository.fail({ workspaceId, agentId, executionId, sideId: leftId, turnId: failedTurn, attemptId: failedAttempt, fence: fenceOf(leftId), code: "runner_failed", now: new Date(1_100) });
+    await repository.complete({ workspaceId, agentId, executionId, sideId: rightId, turnId: failedTurn, attemptId: failedAttempt, fence: fenceOf(rightId), result: { answer: "right first", messageId: randomUUID(), continuation: null }, now: new Date(1_100) });
+    const nextFenceOf = await claim(nextTurn, nextAttempt, "guest@example.com");
+    for (const sideId of [leftId, rightId]) {
+      await repository.complete({ workspaceId, agentId, executionId, sideId, turnId: nextTurn, attemptId: nextAttempt, fence: nextFenceOf(sideId), result: { answer: `${sideId} next`, messageId: randomUUID(), continuation: null }, now: new Date(1_200) });
+    }
+
+    const retained = await repository.retainSide({ workspaceId, agentId, executionId, sideId: leftId, retainedExecutionId: randomUUID(), retainedSideId: randomUUID(), retainedConversationId: randomUUID() });
+    if (typeof retained === "string") throw new Error(retained);
+    const retainedSideId = retained.sides[0].id;
+
+    await expect(repository.listAttempts({ workspaceId, agentId, executionId: retained.id })).resolves.toEqual([
+      expect.objectContaining({ sideId: retainedSideId, turnId: failedTurn, attemptId: failedAttempt, state: "failed", failureCode: "runner_failed" }),
+      expect.objectContaining({ sideId: retainedSideId, turnId: nextTurn, attemptId: nextAttempt, state: "completed" }),
+    ]);
+    const service = new TestExecutionService({ revisions: repository, contextCatalog: new ContextVariableRepository(database.kysely), repository, runner: { run: async () => ({ answer: "retained answer", messageId: randomUUID(), continuation: null }) }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: randomUUID });
+    const transcript = await service.transcript({ workspaceId, agentId, executionId: retained.id });
+    expect(transcript.sides[0]?.turns).toEqual([
+      expect.objectContaining({ turnId: failedTurn, state: "failed", failureCode: "runner_failed", answer: null }),
+      expect.objectContaining({ turnId: nextTurn, state: "completed" }),
+    ]);
+    // The source comparison keeps its own evidence, and the retained thread takes the next message.
+    await expect(repository.listAttempts({ workspaceId, agentId, executionId })).resolves.toHaveLength(4);
+    const next = await service.message({ workspaceId, agentId, accountId: null, executionId: retained.id, message: "Please call me back.", generation: retained.generation, turnId: randomUUID(), attemptId: randomUUID() });
+    expect(next).toEqual(expect.arrayContaining([expect.objectContaining({ type: "execution_completed" })]));
+  });
+
+  it("refuses a new turn only while one is running, and retries only the latest failed turn", async () => {
+    const executionId = randomUUID(), sideId = randomUUID(), firstTurn = randomUUID(), secondTurn = randomUUID();
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [{ id: sideId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
+    const claim = (turnId: string, message: string, retry = false, attemptId = randomUUID()) =>
+      repository.claimTurn({ workspaceId, agentId, executionId, sideIds: [sideId], generation: 1, turnId, attemptId, message, inputFingerprint: message, now: new Date(1_000), leaseMs: 30_000, retry });
+    const failClaim = async (turnId: string, claimed: Awaited<ReturnType<typeof claim>>) => {
+      if (typeof claimed === "string") throw new Error(claimed);
+      await repository.fail({ workspaceId, agentId, executionId, sideId, turnId, attemptId: claimed.claims[0].attempt.attemptId, fence: claimed.claims[0].attempt.fence, code: "runner_failed", now: new Date(1_100) });
+    };
+
+    await failClaim(firstTurn, await claim(firstTurn, "first"));
+    const second = await claim(secondTurn, "second");
+    expect(typeof second).not.toBe("string");
+    await expect(claim(randomUUID(), "third")).resolves.toBe("turn_in_progress");
+    await failClaim(secondTurn, second);
+
+    await expect(claim(firstTurn, "first", true)).resolves.toBe("retry_invalid");
+    const retried = await claim(secondTurn, "second", true);
+    expect(typeof retried === "string" ? retried : retried.claims[0]?.attempt.turnId).toBe(secondTurn);
   });
 });

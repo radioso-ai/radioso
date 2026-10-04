@@ -121,6 +121,9 @@ describe("API principal route policy inventory", () => {
       "GET /api/v1/account/users",
       "GET /api/v1/account/usage-trends",
       "GET /api/v1/quality/audience-pulse",
+      "GET /api/v1/auth/profile",
+      "PATCH /api/v1/auth/profile",
+      "GET /api/v1/conversations/operators",
     ]));
   });
 

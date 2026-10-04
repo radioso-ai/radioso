@@ -1,5 +1,7 @@
 import { createMcpSourceProof, MCP_SOURCE_PROOF_HEADERS } from "@radioso/mcp-source-proof";
 
+import type { components, operations } from "./generated/openapiTypes.js";
+
 export class RadiosoApiError extends Error {
   constructor(
     message: string,
@@ -12,46 +14,41 @@ export class RadiosoApiError extends Error {
   }
 }
 
-export interface ConverseSessionExchangeRequest {
-  launchToken: string;
-  client?: {
-    name?: string;
-    version?: string;
-  };
-}
+// The backend OpenAPI contract is the only source of these shapes; this package
+// never imports backend modules. Regenerate with `pnpm run sync:openapi`.
+export type ConverseSessionExchangeRequest =
+  operations["createMcpConverseSession"]["requestBody"]["content"]["application/json"];
 
-export interface ConverseSessionExchangeResponse {
-  sessionToken: string;
-  expiresAt: string;
-  resumeToken?: string;
-  agent: {
-    id: string;
-    name: string;
-  };
-  conversationId: string;
-}
+export type ConverseSessionExchangeResponse =
+  operations["createMcpConverseSession"]["responses"][201]["content"]["application/json"];
 
-export interface ConverseSessionValidateResponse {
-  valid: true;
-  workspaceId: string;
-  agentId: string;
-  conversationId: string;
-  permissions: string[];
-}
+export type ConverseSessionValidateResponse =
+  operations["validateMcpConverseSession"]["responses"][200]["content"]["application/json"];
 
-export interface ConverseAskResponse {
-  conversationId: string;
-  answer: {
-    text: string;
-    citations?: unknown[];
-  };
-  traceId?: string;
-}
+/** One turn: a `message`, or a `routine` invocation of a tool from the session's catalog. */
+export type ConverseAskRequest =
+  operations["askMcpConverseAgent"]["requestBody"]["content"]["application/json"];
+
+/** The agent reply envelope core plus `answer.{text,citations}`; forwarded verbatim as structuredContent. */
+export type ConverseAskResponse = components["schemas"]["McpConverseAskResponse"];
+
+/** The bound agent's exposed routines as tools, read once per session. */
+export type ConverseToolsResponse = components["schemas"]["McpConverseToolsResponse"];
+
+/** What this session's conversation has seen since a cursor, plus who owns it now. */
+export type ConverseMessagesResponse = components["schemas"]["ConverseMessagesResponse"];
+
+/** An opaque resume cursor and an optional long-poll deadline. */
+export type ConverseMessagesQuery = NonNullable<operations["getMcpConverseMessages"]["parameters"]["query"]>;
+
+export type AgentToolDescriptor = components["schemas"]["AgentToolDescriptor"];
 
 export interface ConverseApiAdapter {
   exchange(body: ConverseSessionExchangeRequest, context?: ConverseSourceContext): Promise<ConverseSessionExchangeResponse>;
   validate(sessionToken: string, context?: ConverseSourceContext): Promise<ConverseSessionValidateResponse>;
-  ask(sessionToken: string, body: { message: string }, context?: ConverseSourceContext): Promise<ConverseAskResponse>;
+  tools(sessionToken: string, context?: ConverseSourceContext): Promise<ConverseToolsResponse>;
+  messages(sessionToken: string, query: ConverseMessagesQuery, context?: ConverseSourceContext): Promise<ConverseMessagesResponse>;
+  ask(sessionToken: string, body: ConverseAskRequest, context?: ConverseSourceContext): Promise<ConverseAskResponse>;
   recordUse(sessionToken: string, context?: ConverseSourceContext): Promise<void>;
 }
 
@@ -96,9 +93,15 @@ export const createConverseApiAdapter = (
     };
   };
 
-  const request = async <TResult>(path: string, init: RequestInit): Promise<TResult> => {
+  const request = async <TResult>(
+    path: string,
+    init: RequestInit,
+    // A long poll is a deliberate wait, not a slow backend, so the caller's requested
+    // deadline is added to the transport timeout rather than racing it.
+    timeoutMs: number = config.requestTimeoutMs,
+  ): Promise<TResult> => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
     try {
       response = await fetchImpl(`${config.baseUrl}${path}`, {
@@ -112,7 +115,7 @@ export const createConverseApiAdapter = (
       });
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        throw new RadiosoApiError(`Radioso request timed out after ${config.requestTimeoutMs}ms`, 504, "upstream_timeout");
+        throw new RadiosoApiError(`Radioso request timed out after ${timeoutMs}ms`, 504, "upstream_timeout");
       }
       throw error;
     } finally {
@@ -148,6 +151,32 @@ export const createConverseApiAdapter = (
         headers: sourceProofHeaders(path, "POST", context),
         body: JSON.stringify({ sessionToken }),
       });
+    },
+    tools: (sessionToken, context) => {
+      const path = "/api/v1/mcp/converse/tools";
+      return request(path, {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          ...sourceProofHeaders(path, "GET", context),
+        },
+      });
+    },
+    messages: (sessionToken, query, context) => {
+      const path = "/api/v1/mcp/converse/messages";
+      const search = new URLSearchParams();
+      if (query.cursor) search.set("cursor", query.cursor);
+      if (typeof query.waitMs === "number") search.set("waitMs", String(query.waitMs));
+      const suffix = search.size > 0 ? `?${search.toString()}` : "";
+      return request(`${path}${suffix}`, {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          // The source proof signs the route, not its query, so a long poll and a
+          // catch-up read present the same proof.
+          ...sourceProofHeaders(path, "GET", context),
+        },
+      }, config.requestTimeoutMs + (query.waitMs ?? 0));
     },
     ask: (sessionToken, body, context) => {
       const path = "/api/v1/mcp/converse/ask";

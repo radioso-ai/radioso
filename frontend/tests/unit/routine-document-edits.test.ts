@@ -19,6 +19,7 @@ import {
   renameSlot,
   renameStep,
   replaceInstruction,
+  setEndingNotice,
   slotReferences,
   targetBranchAtStep,
   updateApproval,
@@ -26,6 +27,7 @@ import {
   updateBranch,
   updateBranchGuard,
   updateEnding,
+  updateExposure,
   updateSlot,
   updateStep,
 } from '@/lib/routine-document-edits'
@@ -510,5 +512,63 @@ describe('approval decision edges', () => {
     const guards = reconciled.steps.find((step) => step.stableStepId === approvalId)!.branches.map((branch) => branch.guard.kind)
     expect(guards.filter((kind) => kind === 'llm')).toHaveLength(1)
     expect(guards.filter((kind) => kind === 'field')).toHaveLength(2)
+  })
+})
+
+describe('tool exposure', () => {
+  it('turns exposure on with an empty name to fill in, keeps the name when turned off, and saves the block as authored', () => {
+    const doc = source()
+    expect(doc.exposure).toBeUndefined()
+
+    const enabled = updateExposure(doc, { enabled: true })
+    expect(enabled.exposure).toEqual({ enabled: true, toolName: '', description: '' })
+    // The source document is never mutated: the editor keeps immutable snapshots for undo.
+    expect(doc.exposure).toBeUndefined()
+
+    const named = updateExposure(enabled, { toolName: 'account_recovery', description: 'Recover access to an account.' })
+    expect(draftFromBlockDoc(named).exposure).toEqual({ enabled: true, toolName: 'account_recovery', description: 'Recover access to an account.' })
+
+    // A published tool name is frozen, so switching exposure off keeps the name rather than
+    // clearing the block; the validator treats a disabled block as inert.
+    const off = updateExposure(named, { enabled: false })
+    expect(off.exposure).toEqual({ enabled: false, toolName: 'account_recovery', description: 'Recover access to an account.' })
+    expect(draftFromBlockDoc(off).exposure).toEqual(off.exposure)
+  })
+
+  it('reads an exposed routine back into the document', () => {
+    const exposure = { enabled: true, toolName: 'account_recovery', description: 'Recover access to an account.' }
+    const result = routineToBlockDoc({ ...draftFromBlockDoc(source()), exposure })
+    if (!result.ok) throw new Error('expected the document to project')
+    expect(result.doc.exposure).toEqual(exposure)
+  })
+})
+
+describe('ending operator notices', () => {
+  const branchedToComplete = () => referenceEnding(addBranch(source(), 'ask_email'), 'ask_email', 0, 'complete')
+
+  it('turns a notice on and off on every copy of the ending, and saves it as authored', () => {
+    const doc = branchedToComplete()
+
+    const on = setEndingNotice(doc, 'complete', { subject: 'Recovery: {{slot.email}}', intro: null })
+    const branchEnding = on.steps[0].branches[0].target
+    expect(branchEnding.kind === 'ending' ? branchEnding.ending?.operatorNotice : undefined).toEqual({ subject: 'Recovery: {{slot.email}}', intro: null })
+    expect(draftFromBlockDoc(on).terminals.find((terminal) => terminal.stableStepId === 'complete')?.operatorNotice)
+      .toEqual({ subject: 'Recovery: {{slot.email}}', intro: null })
+    // The source document is never mutated: the editor keeps immutable snapshots for undo.
+    expect(JSON.stringify(doc)).not.toContain('operatorNotice')
+
+    const off = setEndingNotice(on, 'complete', null)
+    expect(JSON.stringify(off)).not.toContain('operatorNotice')
+    expect(draftFromBlockDoc(off).terminals.find((terminal) => terminal.stableStepId === 'complete')).not.toHaveProperty('operatorNotice')
+  })
+
+  it('follows a slot rename into notice text and counts notice text as a reference', () => {
+    const withNotice = setEndingNotice(branchedToComplete(), 'complete', { subject: 'Recovery: {{slot.email}}', intro: 'Reply to {{ slot.email }} today.' })
+
+    const renamed = renameSlot(withNotice, 'email', 'Customer email')
+
+    const notice = draftFromBlockDoc(renamed).terminals.find((terminal) => terminal.stableStepId === 'complete')?.operatorNotice
+    expect(notice).toEqual({ subject: 'Recovery: {{slot.customer_email}}', intro: 'Reply to {{slot.customer_email}} today.' })
+    expect(slotReferences(renamed, 'customer_email')).toContain('notice in complete')
   })
 })

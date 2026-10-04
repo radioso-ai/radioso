@@ -3,7 +3,10 @@ import type { OperatorMcpScope } from "@radioso/operator-mcp-contract";
 
 import type { AccountPermission } from "../account/public.js";
 import type { AgentTool } from "../../shared/agent-runtime/index.js";
-import type { OperatorMcpInvocationRecord } from "./mcpContracts.js";
+import type { OperatorMcpBudgetKind, OperatorMcpInvocationRecord } from "./mcpContracts.js";
+import type { OwnerCommitHook } from "../../shared/infra/kysely/types.js";
+import type { ReviewedChangeEffect } from "../../shared/domain/reviewedChangeEffect.js";
+import type { ReviewedConfirmationRequirement } from "./reviewedOperation.js";
 
 /**
  * The single runtime list of page-context entity types a dashboard surface may report to the
@@ -66,6 +69,13 @@ export interface CopilotToolInvocationContext {
   /** Receipt bindings carried only by the authenticated Operator MCP transport. */
   readonly operatorMcpGrantId?: string;
   readonly operatorMcpClientId?: string;
+  /**
+   * Set only for an accepted 2026-07-28 MRTR retry of the `radioso_approval` URL-mode elicitation
+   * (design §6 flow B). A reviewed-execution descriptor may poll for this many milliseconds before
+   * answering, so "open URL -> approve" usually resolves without a second elicitation round trip.
+   * Absent on every other call, including one from an edge that predates this field.
+   */
+  readonly awaitApprovalMs?: number;
   readonly pageContext: CopilotPageContext;
 }
 
@@ -145,7 +155,7 @@ export const withCopilotActor = (
  * tool-output zod enums) must derive from this array rather than repeating its own OR-chain or
  * literal enum, so adding a target type cannot silently miss one of those sites again.
  */
-export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings", "website_crawl", "workspace_setting", "agent_publication", "agent_greeting"] as const;
+export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "document_operation", "ingestion_settings", "website_crawl", "workspace_setting", "agent_publication", "agent_greeting"] as const;
 export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
 /**
  * The permission an operator needs to apply a proposal, by what it changes. Applying is a write to
@@ -156,19 +166,23 @@ export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[numb
  * omission.
  */
 export const copilotProposalPermissions = {
-  directive: ["workspace.agents.manage"],
-  agent: ["workspace.agents.manage"],
-  agent_setting: ["workspace.agents.manage"],
-  routine: ["workspace.agents.manage"],
-  agent_skill: ["workspace.agents.manage"],
-  context_variable: ["workspace.agents.manage"],
-  document: ["workspace.documents.manage"],
-  ingestion_settings: ["workspace.settings.manage"],
-  website_crawl: ["workspace.documents.manage"],
-  workspace_setting: ["workspace.settings.manage"],
-  agent_publication: ["workspace.agents.manage"],
-  agent_greeting: ["workspace.agents.manage"],
-} as const satisfies Record<CopilotProposalTargetType, readonly [AccountPermission, ...AccountPermission[]]>;
+  directive: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  agent: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  agent_setting: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  routine: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  agent_skill: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  context_variable: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  document: { read: ["workspace.documents.read"], manage: ["workspace.documents.manage"] },
+  document_operation: { read: ["workspace.documents.read"], manage: ["workspace.documents.manage"] },
+  ingestion_settings: { read: ["workspace.settings.read"], manage: ["workspace.settings.manage"] },
+  website_crawl: { read: ["workspace.documents.read"], manage: ["workspace.documents.manage"] },
+  workspace_setting: { read: ["workspace.settings.read"], manage: ["workspace.settings.manage"] },
+  agent_publication: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  agent_greeting: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+} as const satisfies Record<CopilotProposalTargetType, {
+  readonly read: readonly [AccountPermission, ...AccountPermission[]];
+  readonly manage: readonly [AccountPermission, ...AccountPermission[]];
+}>;
 
 /**
  * How long the sentence a proposal card states may be. Enforced on the composed sentence rather than
@@ -201,6 +215,11 @@ export interface CopilotProposal {
   readonly reviewDigest: string | null;
   readonly reviewSnapshot: unknown;
   readonly expiresAt: Date | null;
+  readonly confirmationRequirement?: ReviewedConfirmationRequirement | null;
+  readonly changeEffect?: ReviewedChangeEffect | null;
+  readonly approvedAt?: Date | null;
+  readonly approvedByUserId?: string | null;
+  readonly approvalDigest?: string | null;
   readonly executionInvocationId: string | null;
   readonly status: CopilotProposalStatus;
   readonly reason?: string | null;
@@ -211,16 +230,29 @@ export interface CopilotProposal {
 
 type CopilotProposalDraftFields = Omit<
   CopilotProposal,
-  "id" | "origin" | "conversationId" | "operatorMcpInvocationId" | "executionInvocationId" | "messageId" | "reviewDigest" | "reviewSnapshot" | "expiresAt" | "status" | "appliedRef" | "createdAt" | "updatedAt"
+  "id" | "origin" | "conversationId" | "operatorMcpInvocationId" | "executionInvocationId" | "messageId" | "reviewDigest" | "reviewSnapshot" | "expiresAt" | "confirmationRequirement" | "changeEffect" | "approvedAt" | "approvedByUserId" | "approvalDigest" | "status" | "appliedRef" | "createdAt" | "updatedAt"
 >;
 
-export type CopilotProposalDraft = CopilotProposalDraftFields & {
-  readonly reviewDigest?: string;
-  readonly reviewSnapshot?: unknown;
-  readonly expiresAt?: Date;
-} & (
+type CopilotProposalOriginDraft = (
   | { readonly origin: CopilotProposalOrigin; readonly conversationId?: never }
   | { readonly origin?: never; readonly conversationId: string }
+);
+
+export type CopilotProposalDraft = CopilotProposalDraftFields & CopilotProposalOriginDraft & (
+  | {
+      readonly reviewDigest: string;
+      readonly reviewSnapshot: unknown;
+      readonly expiresAt: Date;
+      readonly confirmationRequirement: ReviewedConfirmationRequirement;
+      readonly changeEffect: ReviewedChangeEffect;
+    }
+  | {
+      readonly reviewDigest?: never;
+      readonly reviewSnapshot?: never;
+      readonly expiresAt?: never;
+      readonly confirmationRequirement?: never;
+      readonly changeEffect?: never;
+    }
 );
 
 export interface CopilotProposalCard {
@@ -263,6 +295,8 @@ export interface CopilotProposalAdapter {
    * addresses an existing row ignore it.
    */
   readVersionToken(workspaceId: string, targetRef: unknown, payload?: unknown): Promise<string>;
+  /** A target-owned, safe identifier projection for external proposal read-back. */
+  proposalDetailTargetRef?(targetRef: unknown): Record<string, string | boolean | null>;
   preview(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetLabel: string; current: unknown; proposed: unknown }>;
   applyIfVersionMatches(workspaceId: string, targetRef: unknown, payload: unknown, versionToken: string, context?: CopilotProposalApplyContext): Promise<
     /**
@@ -272,7 +306,8 @@ export interface CopilotProposalAdapter {
      * "applied" when one of the later steps failed trades one wrong card for another.
      */
     | { outcome: "applied"; appliedRef: unknown; reason?: string }
-    | { outcome: "stale" }
+    /** `reason` identifies the target field that moved, never its (potentially long) value. */
+    | { outcome: "stale"; reason?: string }
     | { outcome: "failed"; reason: string }
   >;
   /**
@@ -319,6 +354,18 @@ export interface CopilotProposalApplyContext {
   readonly operatorUserId?: string;
 }
 
+/** Composition supplies receipt settlement; owners receive only its transaction callback. */
+export interface CopilotReviewedReceiptPort {
+  commitHook<TCommitted>(input: {
+    readonly proposalId: string;
+    readonly executionInvocationId: string;
+    readonly workspaceId: string;
+    readonly operatorUserId: string;
+    readonly claimedAt: Date;
+    readonly toAppliedRef: (committed: TCommitted) => unknown;
+  }): OwnerCommitHook<TCommitted>;
+}
+
 /**
  * An owner answers an interrupted MCP apply from its own durable effect record. `unknown` is
  * deliberately terminal: reapplying after a lost response is only safe when the owner can prove
@@ -331,7 +378,7 @@ export type CopilotMcpInterruptedApplyReconciliation =
 
 export interface CopilotDirectiveProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "directive";
-  draft(workspaceId: string, targetRef: unknown, intent: string): Promise<{ payload: unknown; targetLabel: string; summary: string }>;
+  draft(workspaceId: string, targetRef: unknown, input: unknown): Promise<{ payload: unknown; targetLabel: string; summary: string; versionToken: string }>;
 }
 
 export interface CopilotRoutineProposalDraft {
@@ -454,6 +501,10 @@ export interface CopilotAgentPublicationProposalAdapter extends CopilotProposalA
   validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
 }
 
+export interface CopilotDocumentOperationProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "document_operation";
+}
+
 /**
  * Every adapter a tool factory may be handed, discriminated by `targetType`. One declaration so a
  * new target type reaches every proposal tool at once instead of being added to each one by hand.
@@ -466,6 +517,7 @@ export type CopilotAnyProposalAdapter =
   | CopilotAgentSkillProposalAdapter
   | CopilotContextVariableProposalAdapter
   | CopilotDocumentProposalAdapter
+  | CopilotDocumentOperationProposalAdapter
   | CopilotIngestionSettingsProposalAdapter
   | CopilotWebsiteCrawlProposalAdapter
   | CopilotWorkspaceSettingProposalAdapter
@@ -475,7 +527,7 @@ export type CopilotAnyProposalAdapter =
 export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAdapter>;
 
 export type CopilotMcpInvocationReconciliation<TOutput> =
-  | { readonly status: "recovered"; readonly output: TOutput }
+  | { readonly status: "recovered" | "unconfirmed"; readonly output: TOutput }
   | { readonly status: "in_progress" | "retry_prepare" | "conflict" };
 
 /** Narrow persistence boundary used only by descriptor-owned MCP proposal recovery. */
@@ -516,12 +568,24 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
    * {@link describeEntity} does.
    */
   verificationCost(input: TInput): number;
+  /**
+   * Which operator MCP per-minute ceiling {@link verificationCost} is charged against. Omitted
+   * means the shared `verification` budget every other probe or propose descriptor draws from.
+   * Test Chat's `send_test_chat_message` is the one exception: its turns are private, suppress
+   * skill effects, and are already metered as answers against the plan quota, so it draws from
+   * its own, larger `test_chat` ceiling instead of stalling a normal multi-turn routine test
+   * against the same six-per-minute budget every read/probe tool shares. Has no effect outside
+   * the operator MCP surface -- Ray's own per-turn probe budget still meters every descriptor
+   * the same way, by {@link verificationCost} alone.
+   */
+  readonly operatorMcpBudgetKind?: OperatorMcpBudgetKind;
   readonly uiLabel: string;
   readonly description: string;
   readonly inputSchema: ZodType<TInput>;
   readonly outputSchema: ZodType<TOutput>;
   /** Every permission is required; descriptors use all-of semantics. */
-  readonly requiredPermissions: readonly [AccountPermission, ...AccountPermission[]];
+  /** Empty only for descriptors whose stored target determines the permission at invocation: proposal_detail and the generic reviewed-flow tools. */
+  readonly requiredPermissions: readonly AccountPermission[];
   /**
    * Production catalog assembly attaches a reviewed declaration here. Factories
    * intentionally stay unaware of the HTTP registry and owner-port registry.
@@ -530,6 +594,8 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly contributingModule: string;
   /** Reviewed transport disposition attached during production catalog assembly. */
   readonly mcpDisposition?: CopilotMcpDisposition;
+  /** Omitted means every copilot surface; reviewed receipts are MCP-only. */
+  readonly surfaces?: readonly CopilotSurface[];
   /** Default dashboard handoff for this tool's collection or owning subject. */
   readonly dashboardSubject: CopilotEntityReference;
   createTool(context: CopilotToolInvocationContext): AgentTool<TInput, TOutput>;
@@ -538,7 +604,14 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   describeOutputEntity?(output: TOutput): CopilotEntityReference | null;
   /** Optional last-mile sanitizer for the successful result after its dashboard link is attached. */
   finalizeEnrichedOutput?(output: Record<string, unknown>): Record<string, unknown>;
-  /** Reconstructs a proposal result after the proposal committed but its invocation outcome did not. */
+  /**
+   * Answers a replay of an earlier invocation from the durable state that invocation left, such as
+   * a committed proposal or a reviewed execution's receipt, or by repeating an owner call that is
+   * safe to repeat. `recovered` settles the earlier invocation, so it carries only a durable
+   * outcome. `unconfirmed` answers the retry with an outcome the owner could not confirm and leaves
+   * the earlier invocation unsettled. `in_progress` defers the retry while the earlier attempt may
+   * still be running.
+   */
   reconcileMcpInvocation?(input: {
     readonly invocation: OperatorMcpInvocationRecord;
     /** The fresh request's schema-validated arguments. Their digest was matched to `invocation`. */
@@ -546,6 +619,8 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
     readonly context: CopilotToolInvocationContext;
     readonly staleBefore: Date;
     readonly now: Date;
+    /** The retry's own execution deadline; a descriptor that waits on `context.awaitApprovalMs` bounds it by this too. */
+    readonly signal?: AbortSignal;
   }): Promise<CopilotMcpInvocationReconciliation<TOutput>>;
 }
 
@@ -557,7 +632,18 @@ export type CopilotMcpDisposition =
       readonly retry: {
         readonly effect: "none" | "proposal" | "act";
         readonly idempotent: boolean;
-        readonly requiresOperationId: boolean;
+        /**
+         * Where a call's replay key comes from (see `replayKeyFor` in `operatorMcpDisposition.ts`,
+         * the single place that turns this into the key `mcpApplicationService` prepares under).
+         * `client`: only an operation id the MCP client sends keys the call; without one the call
+         * runs unkeyed. `input`: the call is always keyed by its input digest, even when the client
+         * also sends an operation id -- that id is ignored, never merged with or preferred over the
+         * digest. Reserved for an act whose owner binds the first attempt's receipt and can only
+         * recover through it, so one logical retry must never be allowed to split across two
+         * receipts by arriving with and without a client id; a call its owner already answers
+         * idempotently gains nothing from it.
+         */
+        readonly operationIdentity: "client" | "input";
       };
     }
   | {
@@ -578,6 +664,12 @@ export interface CopilotCapabilityProvenance {
   readonly backingOperationIds?: readonly [string, ...string[]];
   readonly applicationPrimitiveIds?: readonly [string, ...string[]];
   readonly rayOnly?: CopilotRayOnlyDisposition;
+  /**
+   * The stored target determines the permission. The descriptor starts without a static
+   * permission so a document-only reader is not incorrectly gated on agent read; its owner
+   * checks the target's policy before projecting anything.
+   */
+  readonly targetAwareAuthorization?: true;
 }
 
 /**

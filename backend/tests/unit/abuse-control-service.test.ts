@@ -16,8 +16,7 @@ describe("AbuseControlService", () => {
       now,
     });
 
-    expect(first.enforced).toBe(false);
-    expect(first.entry.attemptCount).toBe(1);
+    expect(first.remaining).toBe(0);
 
     await expect(
       service.enforce({
@@ -55,7 +54,7 @@ describe("AbuseControlService", () => {
       now: new Date("2026-03-30T10:02:00.000Z"),
     });
 
-    expect(resetAttempt.entry.attemptCount).toBe(1);
+    expect(resetAttempt.remaining).toBe(0);
 
     const failingService = new AbuseControlService({
       find: async () => {
@@ -81,6 +80,61 @@ describe("AbuseControlService", () => {
     ).rejects.toMatchObject({
       statusCode: 503,
       code: "service_unavailable",
+    });
+  });
+
+  it("counts the expiring window against a burst that straddles the window boundary", async () => {
+    const service = new AbuseControlService(new InMemoryAbuseControlRepository());
+    const policy = { scope: "public.chat.session", subjectKey: "visitor:one", limit: 5, windowMs: 60_000 };
+
+    await service.enforce({ ...policy, now: new Date("2026-03-30T10:00:00.000Z") });
+    for (const offsetMs of [59_000, 59_100, 59_200, 59_300]) {
+      await service.enforce({ ...policy, now: new Date(new Date("2026-03-30T10:00:00.000Z").getTime() + offsetMs) });
+    }
+
+    await expect(
+      service.enforce({ ...policy, now: new Date("2026-03-30T10:01:01.000Z") }),
+    ).rejects.toMatchObject({
+      statusCode: 429,
+      code: "rate_limit_exceeded",
+      details: expect.objectContaining({ retryAfterSeconds: expect.any(Number) }),
+    });
+  });
+
+  it("reports the budget left and when it refills on the admitted path", async () => {
+    const service = new AbuseControlService(new InMemoryAbuseControlRepository());
+    const now = new Date("2026-03-30T10:00:00.000Z");
+
+    const decision = await service.enforce({
+      scope: "auth.login",
+      subjectKey: "decision@example.com",
+      limit: 5,
+      windowMs: 60_000,
+      now,
+    });
+
+    expect(decision).toEqual({
+      limit: 5,
+      remaining: 4,
+      resetAtMs: now.getTime() + 60_000,
+    });
+  });
+
+  it("reports the retry hint and an exhausted budget on the blocked path", async () => {
+    const service = new AbuseControlService(new InMemoryAbuseControlRepository());
+    const policy = { scope: "auth.login", subjectKey: "blocked@example.com", limit: 1, windowMs: 60_000, blockMs: 30_000 };
+    const now = new Date("2026-03-30T10:00:00.000Z");
+
+    await service.enforce({ ...policy, now });
+
+    await expect(service.enforce({ ...policy, now })).rejects.toMatchObject({
+      statusCode: 429,
+      details: {
+        limit: 1,
+        remaining: 0,
+        resetAtMs: now.getTime() + 30_000,
+        retryAfterSeconds: 30,
+      },
     });
   });
 

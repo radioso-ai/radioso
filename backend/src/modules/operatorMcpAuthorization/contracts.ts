@@ -209,6 +209,15 @@ export interface OperatorMcpGrantRepositoryPort {
   revokeGrant(input: { grantId: string; reason: string; now: Date }): Promise<boolean>;
 }
 
+export interface OperatorMcpBoundGrantClientDescriptionPort {
+  /**
+   * Describes the client and grant bound to an admitted MCP invocation. Consumers deliberately
+   * receive no grant *state* (active, revoked, expiry): this port is for attribution, consent
+   * presentation, and audit metadata, not authorization. `grantId` is an identifier, not state.
+   */
+  describeBoundGrantClient(input: { workspaceId: string; operatorUserId: string; invocationId: string }): Promise<{ clientId: string; clientName: string; grantId: string } | null>;
+}
+
 export interface PersistedOperatorMcpClient {
   recordId: string;
   clientId: string;

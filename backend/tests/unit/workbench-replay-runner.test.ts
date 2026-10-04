@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DefaultConversationEngine } from "@radioso/conversation-engine";
+import { DefaultConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
+import { RoutineStepRenderer } from "@radioso/conversation-defaults";
 import type {
   AnswerCoverageAssessment,
   AttemptRoutineInput,
   ConversationEngine,
   ProcessTurnInput,
   ProcessTurnResult,
+  Routine,
 } from "@radioso/conversation-contract";
+import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
 import { WorkbenchReplayRunner } from "../../src/modules/chat/services/workbenchReplayRunner.js";
@@ -30,6 +33,18 @@ import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capability
 import type { ResponseLanguageDetectorInput } from "../../src/shared/services/responseLanguageDetector.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import { createAuditService } from "../support/fakes.js";
+import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import type { ChatRoutineTurnReporter } from "../../src/modules/chat/contracts/routineTurnState.js";
+import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
+import type { RoutineRegistration } from "@radioso/conversation-defaults";
+import {
+  ApplicationModuleCoordinator,
+  createApplicationExtensionRegistry,
+} from "../../src/app/composition/applicationModule.js";
+import { createContactRoutineApplicationModule } from "../../src/app/composition/builtIn/contactRoutineModule.js";
+import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
+import { contactRoutineDefinition } from "../../src/modules/chat/services/routines/contactRoutine.js";
+import { createRoutineTurnProvider } from "../../src/modules/routines/turnProvider.js";
 
 const emptyTrace = () => {
   const now = new Date().toISOString();
@@ -57,7 +72,51 @@ const presenterStub = (): ChatAnswerPresenter => {
   } as unknown as ChatAnswerPresenter;
 };
 
+// The tail of the #1354 incident routine: a recap step whose default edge lands on a
+// handoff ending authored in English, run through the real engine, runner, and renderer.
+const ENGLISH_HANDOFF_ENDING = "Reception will confirm availability and price by email.";
+const ITALIAN_CORRECTION = "No aspetta, arrivo il 15 novembre, non il 14.";
+const bookingRoutine: Routine = {
+  id: "book_accommodation",
+  rootStepId: "recap",
+  steps: [
+    { id: "recap", kind: "chat", action: "Read the request back and ask them to confirm it." },
+    { id: "handoff", kind: "terminal", action: ENGLISH_HANDOFF_ENDING, metadata: { terminalKind: "handoff" } },
+  ],
+  transitions: [{ from: "recap", to: "handoff", condition: "The request was read back.", guard: { kind: "default" } }],
+};
+const handoffRoutineProvider = (): ChatRoutineProvider => ({
+  async forTurn({ modelGateway, responseLanguage }) {
+    return {
+      routines: [bookingRoutine],
+      activator: { activate: async () => null },
+      runner: new DefaultRoutineRunner(
+        [bookingRoutine],
+        {
+          select: async () => {
+            throw new Error("a default edge must not consult the selector");
+          },
+        },
+        new RoutineStepRenderer(modelGateway, { responseLanguage }),
+      ),
+    };
+  },
+});
+const recordingChatGateway = (answer: string) => {
+  const calls: ChatGatewayInput[] = [];
+  return {
+    calls,
+    gateway: {
+      answer: vi.fn(async (input: ChatGatewayInput) => {
+        calls.push(input);
+        return answer;
+      }),
+    },
+  };
+};
+
 const agent = (): ConversationAgent => ({
+  ...unpublishedAgentPublicIdentity(),
   id: "agent-1",
   workspaceId: "ws-1",
   name: "Support",
@@ -1240,6 +1299,241 @@ describe("WorkbenchReplayRunner", () => {
     expect(result.handoff).toEqual({ routineId: "contact", stepId: "handoff" });
   });
 
+  const slotValuesFakeEngine = (): ConversationEngine => ({
+    async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+      await input.routineStore!.save({
+        sessionId: input.sessionId,
+        routineId: "contact",
+        path: ["done"],
+        variables: {},
+        status: "completed",
+      });
+      return {
+        response: { answer: "All set." },
+        trace: emptyTrace(),
+        decision: { reason: "routine_completed" },
+      } as unknown as ProcessTurnResult;
+    },
+    async processTurn(): Promise<ProcessTurnResult> {
+      throw new Error("grounding must not run when a routine claims the turn");
+    },
+  } as unknown as ConversationEngine);
+
+  it("requests routine slot values from the provider only when the caller (Test Chat) opts in", async () => {
+    const forTurn = vi.fn(async () => ({ activator: {} as never, runner: {} as never }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: slotValuesFakeEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: { forTurn },
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please help me",
+      history: [],
+      includeSlotValues: true,
+    });
+
+    expect(forTurn).toHaveBeenCalledWith(expect.objectContaining({ includeSlotValues: true }));
+  });
+
+  it("never requests routine slot values when the caller does not opt in — the eval replay default", async () => {
+    const forTurn = vi.fn(async () => ({ activator: {} as never, runner: {} as never }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: slotValuesFakeEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: { forTurn },
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    // No `includeSlotValues` on the input — the shape every eval replay call uses today.
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please help me",
+      history: [],
+    });
+
+    expect(forTurn).toHaveBeenCalledWith(expect.objectContaining({ includeSlotValues: false }));
+  });
+
+  it.each([
+    ["with the operator notice it reports", true],
+    ["for a hand-off reported without an operator notice", false],
+  ])("carries a hand-off preview matching the real notification builder, without dispatching it (%s)", async (_label, reportsNotice) => {
+    const fakeEngine = {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        await input.routineStore!.save({
+          sessionId: input.sessionId,
+          routineId: "contact",
+          path: ["handoff"],
+          variables: {},
+          status: "active",
+        });
+        return {
+          response: { answer: "A teammate will follow up." },
+          trace: emptyTrace(),
+          decision: { reason: "routine_completed" },
+          handoff: {
+            routineId: "contact",
+            stepId: "handoff",
+            collected: { program: "A stay at Ananda", guests: 2 },
+          },
+          ...(reportsNotice
+            ? {
+                operatorNotice: {
+                  routineId: "contact",
+                  stepId: "handoff",
+                  terminalKind: "handoff",
+                  collected: { program: "A stay at Ananda", guests: 2 },
+                },
+              }
+            : {}),
+        } as unknown as ProcessTurnResult;
+      },
+      async processTurn(): Promise<ProcessTurnResult> {
+        throw new Error("grounding must not run when a routine claims the turn");
+      },
+    } as unknown as ConversationEngine;
+
+    const describeRoutineName = vi.fn(() => "Book accommodation");
+    const reporter: ChatRoutineTurnReporter = {
+      describe: () => null,
+      describeDeclined: () => null,
+      describeInvocation: () => null,
+      describeRoutineName,
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: {
+        async forTurn() {
+          return { activator: {} as never, runner: {} as never, reporter };
+        },
+      },
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please book Ananda for me",
+      history: [],
+    });
+
+    expect(result.handoff).toEqual({
+      routineId: "contact",
+      stepId: "handoff",
+      collected: { program: "A stay at Ananda", guests: 2 },
+    });
+    // No actual delivery happens for a replayed turn — only the preview the trace carries.
+    expect(result.actions ?? []).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "handoff.notify" }),
+    ]));
+    expect(describeRoutineName).toHaveBeenCalledWith("contact");
+    expect(result.turnTrace?.handoffPreview).toMatchObject({
+      kind: "handoff",
+      subject: "Book accommodation: needs a human",
+      lines: expect.arrayContaining([
+        "A conversation needs a human operator.",
+      ]),
+    });
+    expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("A stay at Ananda");
+  });
+
+  it("previews a completion notice with its authored subject and intro, and hands nothing off", async () => {
+    const fakeEngine = {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        await input.routineStore!.save({
+          sessionId: input.sessionId,
+          routineId: "booking",
+          path: ["done"],
+          variables: {},
+          status: "completed",
+        });
+        return {
+          response: { answer: "Your request is in. Is there anything else I can help you with?" },
+          trace: emptyTrace(),
+          decision: { reason: "routine_completed" },
+          operatorNotice: {
+            routineId: "booking",
+            stepId: "done",
+            terminalKind: "complete",
+            collected: { name: "Ada Lovelace", guests: 2 },
+            subject: "New booking: {{slot.name}}",
+            intro: "Confirm {{slot.guests}} guests with {{slot.name}}.",
+          },
+        } as unknown as ProcessTurnResult;
+      },
+      async processTurn(): Promise<ProcessTurnResult> {
+        throw new Error("grounding must not run when a routine claims the turn");
+      },
+    } as unknown as ConversationEngine;
+    const reporter: ChatRoutineTurnReporter = {
+      describe: () => null,
+      describeDeclined: () => null,
+      describeInvocation: () => null,
+      describeRoutineName: () => "Book accommodation",
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: {
+        async forTurn() {
+          return { activator: {} as never, runner: {} as never, reporter };
+        },
+      },
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please book Ananda for me",
+      history: [],
+    });
+
+    expect(result.handoff).toBeUndefined();
+    expect(result.actions ?? []).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "completion.notify" }),
+    ]));
+    expect(result.turnTrace?.handoffPreview).toMatchObject({
+      kind: "completion",
+      subject: "New booking: Ada Lovelace",
+      lines: expect.arrayContaining([
+        "A visitor completed a request in chat.",
+        "Confirm 2 guests with Ada Lovelace.",
+        "  Name: Ada Lovelace",
+      ]),
+    });
+  });
+
   it("wires the coverage routine port into a replayed turn's reported coverage verdict", async () => {
     const coverageActivator = {
       evaluateCandidates: vi.fn(() => []),
@@ -1410,6 +1704,85 @@ describe("WorkbenchReplayRunner", () => {
     expect(seen!.sessionId).toBeTruthy();
   });
 
+  // #1354: an active routine bypasses fused planning, so Test Chat takes the turn's
+  // language from the staged detector — the same schedule live chat runs.
+  it("renders an English handoff ending in the language Test Chat detected for the visitor", async () => {
+    const { calls, gateway } = recordingChatGateway("La reception confermerà disponibilità e prezzo via email.");
+    const detect = vi.fn(async (_input: ResponseLanguageDetectorInput) => ({ responseLanguage: "Italian" }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      responseLanguageDetector: { detect },
+      routineProvider: handoffRoutineProvider(),
+      chatGateway: gateway,
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: ITALIAN_CORRECTION,
+      history: [],
+      routineStartState: { routineId: "book_accommodation", path: ["recap"], variables: {}, status: "active" },
+    });
+
+    expect(detect).toHaveBeenCalledWith(expect.objectContaining({ query: ITALIAN_CORRECTION }));
+    expect(calls).toHaveLength(1);
+    expect(calls[0].systemPrompt)
+      .toContain(`Write one short message in Italian that preserves this meaning:\n${ENGLISH_HANDOFF_ENDING}`);
+    expect(result.answer).toBe("La reception confermerà disponibilità e prezzo via email.");
+    expect(result.handoff).toEqual(expect.objectContaining({ routineId: "book_accommodation", stepId: "handoff" }));
+  });
+
+  it("logs a failed Test Chat language detection and renders the handoff from the visitor's message", async () => {
+    const { calls, gateway } = recordingChatGateway("La reception confermerà disponibilità e prezzo via email.");
+    const logger = { warn: vi.fn() };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      responseLanguageDetector: {
+        detect: vi.fn(async () => {
+          throw new Error("rate limited");
+        }),
+      },
+      routineProvider: handoffRoutineProvider(),
+      chatGateway: gateway,
+      chatAnswerPresenter: presenterStub(),
+      logger,
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: ITALIAN_CORRECTION,
+      history: [],
+      routineStartState: { routineId: "book_accommodation", path: ["recap"], variables: {}, status: "active" },
+    });
+
+    expect(calls[0].systemPrompt).toContain("Write one short message in the user's language");
+    expect(calls[0].prompt).toContain(`Latest user message for language detection only:\n${ITALIAN_CORRECTION}`);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "ws-1",
+        reasonCode: "response_language_unresolved",
+        unresolvedReason: "detector_failed",
+        errorType: "Error",
+      }),
+      expect.any(String),
+    );
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("aspetta");
+  });
+
   it("exports an advanced routine continuation and imports it into the next private turn", async () => {
     const seenSessionIds: string[] = [];
     const fakeEngine = {
@@ -1519,5 +1892,107 @@ describe("WorkbenchReplayRunner", () => {
     });
 
     expect(result.answer).toContain("Answer from the operator baseline.");
+  });
+});
+
+// #1362: a Test Chat turn runs on a pinned candidate revision, and the built-in contact
+// routine is never part of any revision. Turn 1 starts it; turn 2 resumes it by id, which
+// must resolve to the built-in registration rather than fail the revision snapshot lookup.
+describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Chat turns", () => {
+  const candidateRevision: AgentRevision = {
+    id: "44444444-4444-4444-8444-444444444444",
+    snapshot: { customInstruction: "Answer from the operator baseline.", directives: [], routines: [], contextVariableEnablements: [] },
+    sourceDraftGeneration: 3,
+    sourceBasePublishedRevisionId: null,
+    createdAt: new Date(0),
+    publishedAt: null,
+    publishedVersion: null,
+  };
+
+  const builtInRegistrations = (): RoutineRegistration[] => {
+    const registry = createApplicationExtensionRegistry();
+    new ApplicationModuleCoordinator({ logger: { error: () => {} }, registry }).apply([
+      createContactRoutineApplicationModule(),
+    ]);
+    return registry.routineRegistrations;
+  };
+
+  const realRoutineProvider = (): ChatRoutineProvider => createRoutineTurnProvider({
+    agentSkillRepository: { listByAgent: vi.fn(async () => []) },
+    capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    clusteringEmbeddings: {
+      embedForClustering: vi.fn(async ({ texts }: { texts: string[] }) => ({ vectors: texts.map(() => [1, 0]) })),
+    } as never,
+    embeddingModelForWorkspace: vi.fn(async () => "test-embedding"),
+    logger: { debug: vi.fn(), warn: vi.fn() },
+    publishedRoutineSource: createPublishedRoutineRegistrationSource({
+      listActiveByAgent: vi.fn(async () => []),
+      listVersionsByAgent: vi.fn(async () => []),
+      findPinnedById: vi.fn(async () => null),
+      findById: vi.fn(async () => null),
+    }, { revisionReader: { findRevision: vi.fn(async () => candidateRevision) } }),
+    routineDefinitionRepository: {
+      searchActivationTriggerEmbeddings: vi.fn(async () => ({ matches: [], noVectorRoutineIds: [] })),
+    },
+    routineInvocableSkillNames: { listByKindForAgent: vi.fn(async () => ({ webhook: [], customer_email: [], slack: [] })) } as never,
+    routineRegistrations: builtInRegistrations(),
+    routineTriggerEmbeddingService: { persistPublished: vi.fn() },
+    skillExecutorRegistry: {} as never,
+    turnPlanAdapters: {
+      activator: ({ fallback }) => fallback,
+      reentryGate: ({ fallback }) => fallback,
+      slotCorrection: ({ fallback }) => fallback,
+    },
+  });
+
+  // Answers each model call by the prompt it carries: the ranked activation picks the
+  // contact routine, the step selector advances once an email arrives, and every
+  // rendered step reply echoes the step it renders.
+  const scriptedGateway = () => ({
+    answer: vi.fn(async (input: ChatGatewayInput) => {
+      const systemPrompt = input.systemPrompt ?? "";
+      if (systemPrompt.includes("Rank whether the latest user message wants to start any registered routine")) {
+        return JSON.stringify({ matches: [{ routineId: contactRoutineDefinition.id, confidence: 0.95, variables: {} }] });
+      }
+      if (systemPrompt.includes("You are guiding a user through a structured, multi-step routine")) {
+        return input.query.includes("@")
+          ? JSON.stringify({ claimsAuthority: false, condition: 2, offTopic: false, variables: { email: input.query } })
+          : JSON.stringify({ claimsAuthority: false, condition: null, offTopic: false, variables: {} });
+      }
+      if (systemPrompt.includes("email address where they can be reached")) return "Which email can someone reach you at?";
+      if (systemPrompt.includes("message they would like to send")) return "What would you like to tell them?";
+      return "unexpected model call";
+    }),
+  });
+
+  it("starts the contact routine on the first message and completes the second turn that resumes it", async () => {
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: realRoutineProvider(),
+      chatGateway: scriptedGateway(),
+      chatAnswerPresenter: presenterStub(),
+    });
+    const turn = { workspaceId: "ws-1", executionMode: "safe_test" as const, sourceAgentId: "agent-1", conversationId: "private-side-1", baselineAgentConfig: projectInternalAgentConfig(agent()), candidateRevision, history: [] };
+
+    const first = await runner.run({ ...turn, query: "How do I contact a human?" });
+    const second = await runner.run({
+      ...turn,
+      query: "guest@example.com",
+      routineStartState: first.continuation!.routineState,
+    });
+
+    expect(first.answer).toBe("Which email can someone reach you at?");
+    expect(first.continuation?.routineState).toMatchObject({ routineId: contactRoutineDefinition.id, status: "active" });
+    expect(second.answer).toBe("What would you like to tell them?");
+    expect(second.continuation?.routineState).toMatchObject({
+      routineId: contactRoutineDefinition.id,
+      path: expect.arrayContaining(["ask_message"]),
+      variables: { email: "guest@example.com" },
+      status: "active",
+    });
   });
 });

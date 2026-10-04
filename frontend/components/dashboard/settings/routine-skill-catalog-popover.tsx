@@ -20,34 +20,47 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { contextVariablesApi } from '@/lib/api-context-variables'
 import { routineSkillCatalogApi, type SkillAuthoringDescriptor, type SkillAuthoringInput } from '@/lib/api-routine-skill-catalog'
+import { routineContextVariablesFromEnablements, type RoutineEditorContextVariable } from '@/lib/routine-context-variables'
 import type { RoutineInputBinding, RoutineSkillBindingState, RoutineStepMode } from '@/lib/routine-prose'
 
+// What the agent can reach from a routine: the skills a tool step may call and the context
+// variables a step instruction may read. One provider, because both are per-agent catalogs
+// the same editor surfaces consult.
 type RoutineSkillCatalogState = {
   agentId: string
   skills: SkillAuthoringDescriptor[]
+  contextVariables: RoutineEditorContextVariable[]
   isLoading: boolean
   error: string | null
 }
 
+const NO_CONTEXT_VARIABLES = routineContextVariablesFromEnablements([])
+
 export const RoutineSkillCatalogContext = createContext<RoutineSkillCatalogState>({
   agentId: '',
   skills: [],
+  contextVariables: NO_CONTEXT_VARIABLES,
   isLoading: false,
   error: null,
 })
 
 export function RoutineSkillCatalogProvider({ agentId, children }: { agentId: string; children: ReactNode }) {
-  const [state, setState] = useState<RoutineSkillCatalogState>({ agentId: '', skills: [], isLoading: true, error: null })
+  const [state, setState] = useState<RoutineSkillCatalogState>({ agentId: '', skills: [], contextVariables: NO_CONTEXT_VARIABLES, isLoading: true, error: null })
 
   useEffect(() => {
     let cancelled = false
-    routineSkillCatalogApi.listRoutineSkillCatalog(agentId)
-      .then((skills) => {
-        if (!cancelled) setState({ agentId, skills, isLoading: false, error: null })
+    // The built-ins are always offered; a failed enablement read only narrows the list to them.
+    const contextVariables = contextVariablesApi.listAgentEnablements(agentId)
+      .then((response) => routineContextVariablesFromEnablements(response.enablements))
+      .catch(() => NO_CONTEXT_VARIABLES)
+    Promise.all([routineSkillCatalogApi.listRoutineSkillCatalog(agentId), contextVariables])
+      .then(([skills, loadedContextVariables]) => {
+        if (!cancelled) setState({ agentId, skills, contextVariables: loadedContextVariables, isLoading: false, error: null })
       })
       .catch(() => {
-        if (!cancelled) setState({ agentId, skills: [], isLoading: false, error: 'Could not load the skill catalog.' })
+        if (!cancelled) setState({ agentId, skills: [], contextVariables: NO_CONTEXT_VARIABLES, isLoading: false, error: 'Could not load the skill catalog.' })
       })
     return () => {
       cancelled = true
@@ -59,7 +72,7 @@ export function RoutineSkillCatalogProvider({ agentId, children }: { agentId: st
   // value object re-renders every chip on every render (Playwright saw elements
   // "not stable"), so the identity must only change when the state does.
   const value = useMemo(
-    () => (state.agentId === agentId ? state : { agentId, skills: [], isLoading: true, error: null }),
+    () => (state.agentId === agentId ? state : { agentId, skills: [], contextVariables: NO_CONTEXT_VARIABLES, isLoading: true, error: null }),
     [state, agentId],
   )
 

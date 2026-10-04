@@ -1,6 +1,7 @@
 'use client'
 
 import NextLink from 'next/link'
+import { useState } from 'react'
 import {
   BellRing,
   Cable,
@@ -25,6 +26,7 @@ import type { AgentSkillCapabilityId, SkillCapabilityDescriptor } from '@/lib/ap
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { cn } from '@/lib/utils'
 import { formatCapabilityLabel } from './skill-form-model'
+import { McpServersPanel } from './McpServersPanel'
 
 const capabilityIcons: Record<AgentSkillCapabilityId, { icon: LucideIcon; tone: string }> = {
   retrieve: {
@@ -83,11 +85,9 @@ const DEFAULT_DESCRIPTION =
 
 // Where each connection-backed capability's setup lives, so the "Needs connection" affordance can
 // jump straight there instead of leaving the operator to hunt for it.
-const connectionHref = (accountId: string | null, agentId: string, capabilityId: AgentSkillCapabilityId): string | null => {
+const connectionHref = (accountId: string | null, capabilityId: AgentSkillCapabilityId): string | null => {
   if (!accountId) return null
   switch (capabilityId) {
-    case 'mcp_tool':
-      return buildDashboardHref(accountId, { section: 'agents', agentId, agentTab: 'channels', anchor: 'mcp-channel' })
     case 'email':
       return buildDashboardHref(accountId, { section: 'settings', settingsTab: 'workspace', anchor: 'customer-email' })
     case 'webhook_call':
@@ -106,6 +106,7 @@ export function CapabilityPicker({
   description = DEFAULT_DESCRIPTION,
   onOpenChange,
   onSelect,
+  onConnectionsChanged,
 }: {
   open: boolean
   agentId: string
@@ -113,62 +114,73 @@ export function CapabilityPicker({
   description?: string
   onOpenChange: (open: boolean) => void
   onSelect: (capabilityId: AgentSkillCapabilityId) => void
+  onConnectionsChanged?: () => void
 }) {
+  const [serversOpen, setServersOpen] = useState(false)
   const accountId = useOptionalAuth()?.user?.accountId ?? null
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Add new skill</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {capabilities.map((capability) => {
-            const enabled = capability.available
-            const icon = capabilityIcons[capability.id] ?? defaultCapabilityIcon
-            const CapabilityIcon = icon.icon
-            const cardClassName = cn(
-              'flex aspect-square min-h-36 flex-col justify-between rounded-md border p-4 text-left transition-colors',
-              enabled
-                ? 'border-border bg-background hover:border-primary/60 hover:bg-muted/30'
-                : 'cursor-not-allowed border-border/70 bg-muted/20 text-muted-foreground opacity-70',
-            )
-            const connectionUrl = enabled ? null : connectionHref(accountId, agentId, capability.id)
-            const cardBody = (
-              <>
-                <span
-                  className="space-y-3"
-                  {...(!enabled ? { role: 'button', 'aria-disabled': 'true', tabIndex: -1 } : {})}
-                >
-                  <span className={cn(
-                    'inline-flex h-9 w-9 items-center justify-center rounded-md border',
-                    enabled ? icon.tone : 'border-border bg-background text-muted-foreground',
-                  )}>
-                    <CapabilityIcon className="h-4 w-4" />
+    <>
+      <Dialog open={open && !serversOpen} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Add new skill</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {capabilities.map((capability) => {
+              const enabled = capability.available
+              const icon = capabilityIcons[capability.id] ?? defaultCapabilityIcon
+              const CapabilityIcon = icon.icon
+              const cardClassName = cn(
+                'flex aspect-square min-h-36 flex-col justify-between rounded-md border p-4 text-left transition-colors',
+                enabled
+                  ? 'border-border bg-background hover:border-primary/60 hover:bg-muted/30'
+                  : 'cursor-not-allowed border-border/70 bg-muted/20 text-muted-foreground opacity-70',
+              )
+              const connectionUrl = enabled ? null : connectionHref(accountId, capability.id)
+              const cardBody = (
+                <>
+                  <span
+                    className="space-y-3"
+                    {...(!enabled ? { role: 'button', 'aria-disabled': 'true', tabIndex: -1 } : {})}
+                  >
+                    <span className={cn(
+                      'inline-flex h-9 w-9 items-center justify-center rounded-md border',
+                      enabled ? icon.tone : 'border-border bg-background text-muted-foreground',
+                    )}>
+                      <CapabilityIcon className="h-4 w-4" />
+                    </span>
+                    <span className="block">
+                      <span className="block text-sm font-medium text-foreground">{formatCapabilityLabel(capability.id)}</span>
+                      <span className="mt-1 block text-xs text-muted-foreground">{capabilityDescription(capability)}</span>
+                    </span>
                   </span>
-                  <span className="block">
-                    <span className="block text-sm font-medium text-foreground">{formatCapabilityLabel(capability.id)}</span>
-                    <span className="mt-1 block text-xs text-muted-foreground">{capabilityDescription(capability)}</span>
-                  </span>
-                </span>
-                {!enabled ? (
-                  <span className="mt-3 flex items-center justify-between gap-2 text-xs">
-                    <Badge variant="outline" className="text-muted-foreground">{unavailableReasonLabel(capability)}</Badge>
-                    {(capability.requiresTarget ?? true) ? (
-                      connectionUrl ? (
-                        <NextLink
-                          href={connectionUrl}
-                          onClick={(event) => event.stopPropagation()}
-                          className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                        >
-                          Connections
-                        </NextLink>
-                      ) : (
-                        <span className="text-muted-foreground">Connections</span>
-                      )
-                    ) : null}
-                  </span>
-                ) : null}
+                  {!enabled ? (
+                    <span className="mt-3 flex items-center justify-between gap-2 text-xs">
+                      <Badge variant="outline" className="text-muted-foreground">{unavailableReasonLabel(capability)}</Badge>
+                      {(capability.requiresTarget ?? true) ? (
+                        capability.id === 'mcp_tool' ? (
+                          <button
+                            type="button"
+                            onClick={() => setServersOpen(true)}
+                            className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                          >
+                            Manage MCP connections
+                          </button>
+                        ) : connectionUrl ? (
+                          <NextLink
+                            href={connectionUrl}
+                            onClick={(event) => event.stopPropagation()}
+                            className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                          >
+                            Connections
+                          </NextLink>
+                        ) : (
+                          <span className="text-muted-foreground">Connections</span>
+                        )
+                      ) : null}
+                    </span>
+                  ) : null}
               </>
             )
 
@@ -194,5 +206,14 @@ export function CapabilityPicker({
         </div>
       </DialogContent>
     </Dialog>
+    <McpServersPanel
+      agentId={agentId}
+      open={open && serversOpen}
+      onOpenChange={(nextOpen) => {
+        setServersOpen(nextOpen)
+        if (!nextOpen) onConnectionsChanged?.()
+      }}
+    />
+    </>
   )
 }

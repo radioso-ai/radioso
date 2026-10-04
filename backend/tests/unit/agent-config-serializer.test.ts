@@ -12,8 +12,10 @@ import {
   serializeAgentConfig,
 } from "../../src/modules/agents/agentConfig.js";
 import { retrieveSkillConfigSchema, type RetrieveSkillConfig } from "../../src/modules/retrieval/public.js";
+import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const fullyConfiguredAgent = (): ConversationAgent => ({
+  ...unpublishedAgentPublicIdentity(),
   id: "agent-1",
   workspaceId: "workspace-1",
   name: "Support Bot",

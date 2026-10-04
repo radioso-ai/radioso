@@ -2,8 +2,9 @@ import { z } from "zod";
 
 import type { AgentRevisionService } from "../agents/public.js";
 import type { CopilotAgentPublicationProposalAdapter, CopilotProposalApplyContext } from "./contracts.js";
+import { isOwnerRefusal } from "./proposalVersioning.js";
 
-export type AgentPublicationRevisionPort = Pick<AgentRevisionService, "state" | "createCandidate" | "detail" | "describeCandidateRelease" | "readCandidateReleaseChange" | "publish">;
+export type AgentPublicationRevisionPort = Pick<AgentRevisionService, "state" | "createCandidate" | "detail" | "describeCandidateRelease" | "describeCandidatePublicationReview" | "readCandidateReleaseChange" | "publish">;
 
 const targetSchema = z.object({ agentId: z.string().uuid(), candidateRevisionId: z.string().uuid() }).strict();
 const payloadSchema = z.object({ expectedDraftGeneration: z.number().int().nonnegative(), expectedPublishedRevisionId: z.string().uuid().nullable() }).strict();
@@ -24,6 +25,10 @@ const currentVersionToken = async (revisions: AgentPublicationRevisionPort, work
 /** Candidate preparation stays in the MCP tool; this adapter owns one standard apply path. */
 export const createAgentPublicationProposalAdapter = (deps: { revisions: AgentPublicationRevisionPort }): CopilotAgentPublicationProposalAdapter => ({
   targetType: "agent_publication",
+  proposalDetailTargetRef: (rawTargetRef) => {
+    const targetRef = targetSchema.parse(rawTargetRef);
+    return { agentId: targetRef.agentId, candidateRevisionId: targetRef.candidateRevisionId };
+  },
 
   async validatePayload(workspaceId, rawTargetRef, rawPayload) {
     const targetRef = targetSchema.parse(rawTargetRef);
@@ -65,6 +70,10 @@ export const createAgentPublicationProposalAdapter = (deps: { revisions: AgentPu
       return { outcome: "applied" as const, appliedRef: { publicationId: result.publicationId, revisionId: result.revisionId, publishedAt: result.publishedAt } };
     } catch (error) {
       if (error && typeof error === "object" && (error as { statusCode?: unknown }).statusCode === 409) return { outcome: "stale" as const };
+      // `publish` throws only from its pre-write servability recheck (before `repository.publish`
+      // runs at all) or from inside `repository.publish`'s own transaction, which rolls back
+      // whatever it touched - so a non-stale owner refusal here proves nothing was published.
+      if (isOwnerRefusal(error)) return { outcome: "failed" as const, reason: error.message };
       // The generic reviewed executor keeps its receipt claimed and reports an uncertain
       // outcome for an MCP failure here. It must not certify failure when the owner may have
       // committed the publication just before its response was lost.
@@ -89,7 +98,10 @@ export const createAgentPublicationProposalAdapter = (deps: { revisions: AgentPu
       return { outcome: "applied" as const, appliedRef: { publicationId: result.publicationId, revisionId: result.revisionId, publishedAt: result.publishedAt } };
     } catch (error) {
       if (error && typeof error === "object" && (error as { statusCode?: unknown }).statusCode === 409) return { outcome: "not_applied" as const };
-      return { outcome: "unknown" as const, reason: "The publication owner did not confirm whether the prior execution completed." };
+      // A refusal cannot prove not_applied here: `publish` is fenced by draft generation and the
+      // idempotency key, not by this apply claim, so an earlier attempt that already passed the
+      // servability recheck can still commit. Rethrow; the executor logs it and answers uncertain.
+      throw error;
     }
   },
 });

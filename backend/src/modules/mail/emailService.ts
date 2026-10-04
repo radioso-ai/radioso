@@ -8,7 +8,8 @@ import { ResendEmailDriver } from "./adapters/resendDriver.js";
 export type EmailKind =
   | "email_verification"
   | "password_reset"
-  | "account_invitation";
+  | "account_invitation"
+  | "conversation_transfer";
 
 export interface EmailMessage {
   to: string;

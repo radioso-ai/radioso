@@ -1,12 +1,18 @@
 import type { Page, Route } from "@playwright/test";
-import type { components } from "../../../typescript-sdk/src/generated/types";
+import type { components, operations } from "../../../typescript-sdk/src/generated/types";
 import type { SkillAuthoringDescriptor } from "@/lib/api-routine-skill-catalog";
 
 type ApiSchemas = components["schemas"];
+type TransferRequestFixture = operations["transferConversationOwnership"]["requestBody"]["content"]["application/json"];
+
+/** Test execution ids are UUIDs, as the backend mints them; a dashboard link drops anything else. */
+export const testExecutionFixtureId = (generation: number) => `00000000-0000-4000-8000-${String(generation).padStart(12, "0")}`;
 
 export const workspaceId = "workspace-1";
 export const workspaceKey = "workspace-key";
 export const accountId = "account-1";
+/** The signed-in teammate `seedDashboardStorage` seeds. */
+export const currentUserId = "user-1";
 export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
 const defaultCandidateRevisionId = "11111111-1111-4111-8111-111111111111";
 export const defaultPublishedRevisionId = "22222222-2222-4222-8222-222222222222";
@@ -439,6 +445,11 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   name: settings.assistant.assistantName,
   internalName: "",
   isDefault: true,
+  publicId: null,
+  publicDescription: "",
+  agentCardEnabled: false,
+  publicAgentAccessEnabled: false,
+  walkInConversationsPerHour: null,
   customInstruction: settings.assistant.customInstruction,
   suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
   assistantLinkUtmEnabled: true,
@@ -534,6 +545,14 @@ const validateRoutineFixture = (routine: RoutineDraftFixture | RoutineFixture): 
       message: `missing terminal: no terminal is reachable from the first step.`,
     });
   }
+  // Mirrors the backend validator's tool-name grammar (routineExposureToolNamePattern).
+  if (routine.exposure?.enabled && !/^[a-z][a-z0-9_]{1,62}$/u.test(routine.exposure.toolName)) {
+    diagnostics.push({
+      code: "exposure_tool_name_invalid",
+      location: "exposure.toolName",
+      message: `invalid tool name: "${routine.exposure.toolName}" must be 2-63 characters of lower-case letters, digits, and underscores, starting with a letter.`,
+    });
+  }
   return { ok: diagnostics.length === 0, diagnostics };
 };
 
@@ -558,11 +577,11 @@ const buildDefaultChannelsLifecycle = (settings: PlatformSettingsFixture): Chann
 });
 
 export const seedDashboardStorage = async (page: Page) => {
-  await page.addInitScript(({ accountIdValue, workspaceIdValue, workspaceKeyValue }) => {
+  await page.addInitScript(({ accountIdValue, userIdValue, workspaceIdValue, workspaceKeyValue }) => {
     window.localStorage.setItem(
       "radioso.authUser",
       JSON.stringify({
-        userId: "user-1",
+        userId: userIdValue,
         accountId: accountIdValue,
         email: "operator@example.com",
       }),
@@ -572,6 +591,7 @@ export const seedDashboardStorage = async (page: Page) => {
     window.localStorage.setItem("radioso.activeWorkspacePublicRouteKey", workspaceKeyValue);
   }, {
     accountIdValue: accountId,
+    userIdValue: currentUserId,
     workspaceIdValue: workspaceId,
     workspaceKeyValue: workspaceKey,
   });
@@ -971,6 +991,14 @@ export const installDashboardApiMocks = async (
     conversationTailResponses?: ApiSchemas["ChatConversationTail"][];
     takeOverConversationResponse?: ApiSchemas["ConversationOwnershipResponse"];
     handBackConversationResponse?: ApiSchemas["ConversationOwnershipResponse"];
+    /** GET /conversations/operators: the teammates a conversation can be handed to. */
+    conversationOperators?: ApiSchemas["ConversationOperator"][];
+    /** Every `POST /conversations/:id/transfer` body, in order. */
+    transferRequests?: TransferRequestFixture[];
+    /** Transfer targets the backend no longer accepts: a transfer to one returns 404. */
+    ineligibleTransferTargets?: string[];
+    /** GET /conversations/recently-closed, newest first; a hand-back adds its conversation to the front. */
+    recentlyClosed?: ApiSchemas["RecentlyClosedInboxItem"][];
     humanReplyResponse?: ApiSchemas["HumanReplyMessageResponse"];
     resolveDecisionResponse?: unknown;
     agentUpdates?: unknown[];
@@ -1037,6 +1065,11 @@ export const installDashboardApiMocks = async (
   let documentTypeCatalog = options.documentTypeCatalog ?? baseDocumentTypeCatalog();
   const documentTypeCatalogUpdates = options.documentTypeCatalogUpdates;
   let documentTypeCatalogStaleRevisionPending = options.documentTypeCatalogStaleRevision ?? false;
+  let agentPublicIdCounter = 0;
+  const nextAgentPublicId = (): string => {
+    agentPublicIdCounter += 1;
+    return `ag_${String(agentPublicIdCounter).padStart(22, "m")}`;
+  };
   let agentSettings = buildDefaultAgentSettings(platformSettings);
   let agentRevisionState = baseAgentRevisionState();
   let nextTestExecutionIndex = 1;
@@ -1213,6 +1246,34 @@ export const installDashboardApiMocks = async (
   }
   let pendingDecisions = options.pendingDecisions ?? [];
   const conversationTailResponses = [...(options.conversationTailResponses ?? [])];
+  // Conversation activity the ownership mocks record, as the backend would: each transfer and
+  // hand-back adds an event to its conversation's detail, and a hand-back closes the handoff.
+  const recentlyClosed: ApiSchemas["RecentlyClosedInboxItem"][] = [...(options.recentlyClosed ?? [])];
+  let activitySequence = 0;
+  const teammate = (userId: string) => ({
+    userId,
+    label: (options.conversationOperators ?? []).find((operator) => operator.userId === userId)?.label ?? "Test Operator",
+  });
+  const activityOf = (detail: unknown): ApiSchemas["ConversationActivityEntry"][] =>
+    detail && typeof detail === "object" && Array.isArray((detail as { activity?: unknown }).activity)
+      ? (detail as { activity: ApiSchemas["ConversationActivityEntry"][] }).activity
+      : [];
+  const activityEntry = (
+    entry: Pick<ApiSchemas["ConversationActivityEntry"], "kind" | "actor"> & Partial<ApiSchemas["ConversationActivityEntry"]>,
+  ): ApiSchemas["ConversationActivityEntry"] => {
+    activitySequence += 1;
+    return {
+      id: `00000000-0000-4000-8000-${String(activitySequence).padStart(12, "0")}`,
+      createdAt: new Date(Date.parse(nowIso) + activitySequence * 1000).toISOString(),
+      subject: null,
+      from: null,
+      handoffReason: null,
+      decision: null,
+      resolution: null,
+      assistantMessageId: null,
+      ...entry,
+    };
+  };
   let humanReplyCreated = false;
   const documentSources = options.documentSources ?? emptyDocumentSources;
   const historyItems = options.historyItems ?? {
@@ -1525,6 +1586,7 @@ export const installDashboardApiMocks = async (
         messages: [],
         cursor: null,
         ownership: (activeConversationDetail as { ownership?: unknown } | undefined)?.ownership,
+        activity: (activeConversationDetail as { activity?: unknown } | undefined)?.activity,
       });
       return;
     }
@@ -1574,6 +1636,7 @@ export const installDashboardApiMocks = async (
           workspaceId,
           state: "human_owned",
           ownerAccountId: accountId,
+          ownerUserId: currentUserId,
           ownerDisplayName: "Test Operator",
           reason: null,
           version: 2,
@@ -1606,6 +1669,58 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    if (request.method() === "GET" && path === "/conversations/operators") {
+      await json(route, { operators: options.conversationOperators ?? [] });
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/conversations/recently-closed") {
+      await json(route, { items: recentlyClosed });
+      return;
+    }
+
+    if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/transfer")) {
+      const conversationId = path.replace("/conversations/", "").replace("/transfer", "");
+      const body = request.postDataJSON() as TransferRequestFixture;
+      options.transferRequests?.push(body);
+      if (options.ineligibleTransferTargets?.includes(body.toUserId)) {
+        await json(route, { error: { code: "transfer_target_unavailable", message: "Transfer target not found" } }, 404);
+        return;
+      }
+      const target = (options.conversationOperators ?? []).find((operator) => operator.userId === body.toUserId);
+      const activeConversationDetail = conversationDetails.get(conversationId) ?? conversationDetail;
+      const currentOwnership = activeConversationDetail && typeof activeConversationDetail === "object"
+        ? (activeConversationDetail as { ownership?: ApiSchemas["ConversationOwnership"] }).ownership
+        : undefined;
+      const ownership: ApiSchemas["ConversationOwnership"] = {
+        conversationId,
+        workspaceId,
+        state: "human_owned",
+        ownerAccountId: accountId,
+        ownerUserId: body.toUserId,
+        ownerDisplayName: target?.label ?? null,
+        reason: currentOwnership?.reason ?? null,
+        version: body.expectedVersion + 1,
+        takenOverAt: currentOwnership?.takenOverAt ?? nowIso,
+        createdAt: currentOwnership?.createdAt ?? nowIso,
+        updatedAt: nowIso,
+      };
+      const activity = [...activityOf(activeConversationDetail), activityEntry({
+        kind: "reassigned",
+        actor: teammate(currentUserId),
+        subject: teammate(body.toUserId),
+        from: currentOwnership?.ownerUserId ? teammate(currentOwnership.ownerUserId) : null,
+      })];
+      if (conversationDetail && typeof conversationDetail === "object") {
+        conversationDetail = { ...conversationDetail, ownership, activity };
+      }
+      if (conversationDetails.has(conversationId)) {
+        conversationDetails.set(conversationId, { ...(conversationDetails.get(conversationId) as object), ownership, activity });
+      }
+      await json(route, { ownership });
+      return;
+    }
+
     if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/handback")) {
       const conversationId = path.replace("/conversations/", "").replace("/handback", "");
       const response = options.handBackConversationResponse ?? {
@@ -1614,6 +1729,7 @@ export const installDashboardApiMocks = async (
           workspaceId,
           state: "ai_owned",
           ownerAccountId: null,
+          ownerUserId: null,
           ownerDisplayName: null,
           reason: null,
           version: 3,
@@ -1622,19 +1738,37 @@ export const installDashboardApiMocks = async (
           updatedAt: nowIso,
         },
       };
+      const handedBack = activityEntry({ kind: "handed_back", actor: teammate(currentUserId) });
+      const activeConversationDetail = conversationDetails.get(conversationId);
+      const activity = [...activityOf(activeConversationDetail ?? conversationDetail), handedBack];
       if (conversationDetail && typeof conversationDetail === "object") {
         conversationDetail = {
           ...conversationDetail,
           ownership: response.ownership,
+          activity,
         };
       }
-      const activeConversationDetail = conversationDetails.get(conversationId);
       if (activeConversationDetail && typeof activeConversationDetail === "object") {
         conversationDetails.set(conversationId, {
           ...activeConversationDetail,
           ownership: response.ownership,
+          activity,
         });
       }
+      const closed = (activeConversationDetail ?? conversationDetail) as { title?: string | null; messages?: Array<{ content?: string }> } | undefined;
+      recentlyClosed.unshift({
+        id: handedBack.id,
+        conversationId,
+        itemKind: "handoff",
+        outcome: "handed_back",
+        closedAt: handedBack.createdAt,
+        closedBy: handedBack.actor,
+        decision: null,
+        resolution: null,
+        assistantMessageId: null,
+        title: closed?.title ?? null,
+        preview: closed?.messages?.[0]?.content ?? null,
+      });
       await json(route, response);
       return;
     }
@@ -1944,10 +2078,12 @@ export const installDashboardApiMocks = async (
         createdAt: message.createdAt,
       }));
       const execution = {
-        id: `execution-${generation}`,
+        id: testExecutionFixtureId(generation),
         generation,
         mode: body.mode ?? "single",
         skillEffects: body.skillEffects ?? "suppressed",
+        // What the seed copied in, the way the backend's `seeded_turn_count` does: user messages only.
+        seededTurnCount: seededHistory.filter((entry) => entry.role === "user").length,
         sides: (body.revisionIds?.length ? body.revisionIds : [defaultCandidateRevisionId]).map((revisionId, index) => ({
           id: `side-${generation}-${index}`,
           revision: revisionId === defaultPublishedRevisionId ? defaultPublishedRevision : defaultCandidateRevision,
@@ -1991,8 +2127,8 @@ export const installDashboardApiMocks = async (
         status: 200,
         contentType: "text/event-stream",
         body: [
-          { type: "message_delta", executionId: `execution-${generation}`, generation, sideId: `side-${generation}-0`, delta: answer, turnId, attemptId },
-          { type: "side_completed", executionId: `execution-${generation}`, generation, sideId: `side-${generation}-0`, messageId: `message-${generation}`, turnId, attemptId },
+          { type: "message_delta", executionId: testExecutionFixtureId(generation), generation, sideId: `side-${generation}-0`, delta: answer, turnId, attemptId },
+          { type: "side_completed", executionId: testExecutionFixtureId(generation), generation, sideId: `side-${generation}-0`, messageId: `message-${generation}`, turnId, attemptId },
         ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
       });
       return;
@@ -2032,9 +2168,24 @@ export const installDashboardApiMocks = async (
           },
           updatedAt: nowIso,
         };
+        // Mirrors the backend minting a public id on the write that first makes the agent
+        // reachable (modules/agents/services/agentPublicIdentity.ts).
+        if (!agentSettings.publicId && (agentSettings.agentCardEnabled || agentSettings.publicAgentAccessEnabled)) {
+          agentSettings = { ...agentSettings, publicId: nextAgentPublicId() };
+        }
         await json(route, agentSettings);
         return;
       }
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/public-id/rotate`) {
+      if (!agentSettings.publicId) {
+        await json(route, { error: { code: "bad_request", message: "This agent has no public id yet" } }, 400);
+        return;
+      }
+      agentSettings = { ...agentSettings, publicId: nextAgentPublicId(), updatedAt: nowIso };
+      await json(route, agentSettings);
+      return;
     }
 
     if (path === `/agents/${defaultAgentId}/skill-capabilities` && request.method() === "GET") {

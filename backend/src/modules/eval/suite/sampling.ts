@@ -1,12 +1,12 @@
 import type { EvalLlmJudgePort } from "../services/evalJudge.js";
 import type { EvalRunObservedOutput, EvalRunStatus } from "../domain/types.js";
 import type { CaseOutcome } from "./baseline.js";
-import type { ConversationQualityCase } from "./caseSchema.js";
+import { conversationQualityCaseTurnText, type ConversationQualityCase } from "./caseSchema.js";
 import type { CaseReport } from "./report.js";
 import type { ConversationQualityRunnerPort } from "./runnerPort.js";
 import { scoreObservedOutput, type SuiteAssertionVerdict } from "./scoring.js";
 
-export interface RunSampledOptions {
+interface RunSampledOptions {
   workspaceId: string;
   /** Grader for `llm_judge` assertions; omit to run the deterministic layer only. */
   judge?: EvalLlmJudgePort;
@@ -32,7 +32,7 @@ export interface SampleScore<TVerdict = SuiteAssertionVerdict> {
   verdicts: TVerdict[];
 }
 
-export interface SampleReduction<TVerdict = SuiteAssertionVerdict> {
+interface SampleReduction<TVerdict = SuiteAssertionVerdict> {
   status: EvalRunStatus;
   passCount: number;
   /** Fraction of *scored* (non-`recorded`) samples that passed, in [0, 1]. */
@@ -99,7 +99,7 @@ export const reduceSamples = <TVerdict>(
   };
 };
 
-export interface SampledSuiteResult {
+interface SampledSuiteResult {
   reports: CaseReport[];
   outcomes: CaseOutcome[];
 }
@@ -133,7 +133,7 @@ export const runConversationQualitySuiteSampled = async (
       }
       const score = await scoreObservedOutput(evalCase.assertions, output, {
         workspaceId: options.workspaceId,
-        question: evalCase.query,
+        question: conversationQualityCaseTurnText(evalCase),
         runId: `${options.runIdPrefix ?? "cq"}:${evalCase.id}:${index}`,
         judge: options.judge,
       });

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import {
+  accountId,
   installDashboardApiMocks,
   seedDashboardStorage,
   workspaceKey,
@@ -10,9 +11,15 @@ const installAuthMocks = async (
   page: Page,
   available: boolean,
   beforeRegistrationResponse?: () => Promise<void>,
+  otherPaths: 'not_found' | 'fallback' = 'not_found',
 ) => {
   await page.route('**/backend/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace(/^\/backend\/api\/v1/, '')
+    const isAuthProbe = path === '/auth/registration' || path === '/ee/auth/google/status'
+    if (!isAuthProbe && otherPaths === 'fallback') {
+      await route.fallback()
+      return
+    }
     if (path === '/auth/registration') {
       await beforeRegistrationResponse?.()
     }
@@ -23,7 +30,7 @@ const installAuthMocks = async (
         : { error: { code: 'not_found', message: 'Not found' } }
 
     await route.fulfill({
-      status: path === '/auth/registration' || path === '/ee/auth/google/status' ? 200 : 404,
+      status: isAuthProbe ? 200 : 404,
       contentType: 'application/json',
       body: JSON.stringify(body),
     })
@@ -35,26 +42,34 @@ test('offers first-user registration when the server reports it available', asyn
 
   await page.goto('/')
 
-  await page.getByRole('button', { name: 'Register' }).click()
-  await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
-  await expect(page.getByText('Agents that answer, act, and hand off — inside the rules you set.', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Create an account' }).click()
+  await expect(page.getByRole('heading', { name: 'Step into the light' })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'radioso' })).toBeVisible()
 })
 
 test('enters the workspace directly after a development auto-verified registration', async ({ page }) => {
+  let registerBody: unknown = null
+  let sessionLookupsAfterSignIn = 0
   await page.route('**/backend/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace(/^\/backend\/api\/v1/, '')
     const method = route.request().method()
+
+    if (path === '/auth/session' && registerBody !== null) {
+      sessionLookupsAfterSignIn += 1
+    }
 
     if (path === '/auth/registration') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: true }) })
       return
     }
     if (path === '/auth/register' && method === 'POST') {
+      registerBody = route.request().postDataJSON()
       await route.fulfill({
         status: 201,
         contentType: 'application/json',
         body: JSON.stringify({
           userId: '11111111-1111-4111-8111-111111111111',
+          displayName: 'Local Dev',
           accountId: '22222222-2222-4222-8222-222222222222',
           organizationName: 'Local Dev Organization',
           workspaceId: '33333333-3333-4333-8333-333333333333',
@@ -99,14 +114,20 @@ test('enters the workspace directly after a development auto-verified registrati
   })
 
   await page.goto('/')
-  await page.getByRole('button', { name: 'Register' }).click()
+  await page.getByRole('button', { name: 'Create an account' }).click()
+  await page.getByLabel('Your name (optional)').fill('Local Dev')
   await page.getByLabel('Email').fill('local-dev@example.com')
   await page.getByLabel('Password', { exact: true }).fill('verysecurepassword')
   await page.getByLabel('Confirm Password').fill('verysecurepassword')
   await page.getByRole('button', { name: 'Create Account' }).click()
 
-  await expect(page.getByRole('heading', { name: 'Verify your email' })).toHaveCount(0)
+  await expect.poll(() => registerBody).toMatchObject({ email: 'local-dev@example.com', displayName: 'Local Dev' })
+  await expect(page.getByRole('heading', { name: 'Check your inbox' })).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => localStorage.getItem('radioso.authUser'))).toContain('local-dev@example.com')
+  // The registration response names the person, so the name is there without asking the session.
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('radioso.authUser') ?? '{}').displayName))
+    .toBe('Local Dev')
+  expect(sessionLookupsAfterSignIn).toBe(0)
 })
 
 test('shows invitation guidance without flashing registration when registration is closed', async ({ page }) => {
@@ -126,11 +147,11 @@ test('shows invitation guidance without flashing registration when registration 
   await page.goto('/')
   await registrationRequested
 
-  await expect(page.getByRole('button', { name: 'Register' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Create an account' })).toHaveCount(0)
   releaseRegistrationResponse()
 
   await expect(page.getByText('Registration is invitation-only. Ask an organization administrator for an invitation.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Register' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Create an account' })).toHaveCount(0)
 })
 
 test('recovers registration availability after a transient startup failure without flashing signup', async ({ page }) => {
@@ -167,12 +188,12 @@ test('recovers registration availability after a transient startup failure witho
 
   await page.goto('/')
 
-  await expect(page.getByRole('button', { name: 'Register' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Create an account' })).toHaveCount(0)
   await expect(page.getByText('Unable to check registration availability.')).toBeVisible()
   backendReady = true
   await page.getByRole('button', { name: 'Retry registration check' }).click()
 
-  await expect(page.getByRole('button', { name: 'Register' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Create an account' })).toBeVisible()
   expect(attempts).toBeGreaterThanOrEqual(2)
 })
 
@@ -213,4 +234,60 @@ test('keeps workspace creation while hiding additional organization creation in 
   await dialog.getByPlaceholder('Workspace name').fill('Research')
   await dialog.getByRole('button', { name: 'Create', exact: true }).click()
   await expect.poll(() => createdWorkspaceName).toBe('Research')
+})
+
+test('lands on the sign-in page, not /login, after an owner deletes the organization', async ({ page }) => {
+  let deleteAccountCalled = false
+
+  await seedDashboardStorage(page)
+  await installDashboardApiMocks(page)
+
+  // The fixture's GET /account/accounts reports role "admin"; the delete-organization
+  // action requires "owner", so override it to exercise the button.
+  await page.route('**/backend/api/v1/account/accounts', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback()
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        accounts: [
+          {
+            accountId,
+            organizationName: 'Radioso Test',
+            role: 'owner',
+            status: 'active',
+          },
+        ],
+      }),
+    })
+  })
+
+  await page.route('**/backend/api/v1/account', async (route) => {
+    if (route.request().method() !== 'DELETE') {
+      await route.fallback()
+      return
+    }
+    deleteAccountCalled = true
+    await route.fulfill({ status: 204, contentType: 'application/json', body: '' })
+  })
+
+  // Once signed out, '/' renders the auth page, which probes registration on mount.
+  await installAuthMocks(page, false, undefined, 'fallback')
+
+  await page.goto(`/w/${workspaceKey}/settings`)
+
+  await page.getByRole('button', { name: 'Delete organization' }).click()
+
+  const deleteDialog = page.getByRole('dialog')
+  await expect(deleteDialog.getByRole('heading', { name: 'Delete organization' })).toBeVisible()
+  await deleteDialog.getByLabel('Type Radioso Test to confirm').fill('Radioso Test')
+  await deleteDialog.getByRole('button', { name: 'Delete organization' }).click()
+
+  await expect.poll(() => deleteAccountCalled).toBe(true)
+  await expect.poll(() => new URL(page.url()).pathname).toBe('/')
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('radioso.authUser'))).toBeNull()
 })

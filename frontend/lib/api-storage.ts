@@ -2,6 +2,7 @@ const LEGACY_API_TOKEN_STORAGE_KEY = "radioso.apiToken";
 const LEGACY_WORKSPACE_TOKENS_STORAGE_KEY = "radioso.workspaceTokens";
 const ACTIVE_WORKSPACE_STORAGE_KEY = "radioso.activeWorkspaceId";
 const ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY = "radioso.activeWorkspacePublicRouteKey";
+const REMEMBERED_ACTIVE_WORKSPACE_SELECTION_STORAGE_KEY = "radioso.activeWorkspaceSelection";
 const PENDING_ACCOUNT_SWITCH_STORAGE_KEY = 'radioso.pendingAccountSwitchId'
 const ANONYMOUS_SESSION_HEADER = 'X-Radioso-Anonymous-Session'
 const ANONYMOUS_SESSION_STORAGE_PREFIX = 'radioso.anonymousSession.'
@@ -11,7 +12,7 @@ const PUBLIC_SESSION_RESUME_STORAGE_PREFIX = 'radioso.publicSessionResume.'
 const PUBLIC_SESSION_EFFECTIVE_TOKEN_STORAGE_PREFIX = 'radioso.publicSessionEffectiveToken.'
 const EMBED_BOOTSTRAP_STORAGE_PREFIX = 'radioso.embedBootstrap.'
 
-export interface StoredEmbedBootstrapSession {
+interface StoredEmbedBootstrapSession {
   workspaceName?: string
   publicChatToken: string
   publicSessionId: string
@@ -21,47 +22,136 @@ export interface StoredEmbedBootstrapSession {
   resumeExpiresAt: string
 }
 
-export interface StoredPublicSessionToken {
+interface StoredPublicSessionToken {
   token: string
   expiresAt: string
 }
 
-export interface StoredPublicSessionResumeToken {
+interface StoredPublicSessionResumeToken {
   token: string
   expiresAt: string
 }
 
-export const activateWorkspaceSession = (workspaceId: string, workspacePublicRouteKey?: string): boolean => {
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
-    if (workspacePublicRouteKey) {
-      window.localStorage.setItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY, workspacePublicRouteKey);
-    } else {
-      window.localStorage.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
-    }
+interface StoredActiveWorkspaceSelection {
+  workspaceId: string
+  workspacePublicRouteKey: string | null
+}
+
+const storeActiveWorkspace = (storage: Storage, workspaceId: string, workspacePublicRouteKey?: string | null) => {
+  storage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
+  if (workspacePublicRouteKey) {
+    storage.setItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY, workspacePublicRouteKey);
+  } else {
+    storage.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
   }
-  return true;
 };
+
+const storeRememberedActiveWorkspace = (
+  storage: Storage,
+  workspaceId: string,
+  workspacePublicRouteKey?: string | null,
+) => {
+  storage.setItem(REMEMBERED_ACTIVE_WORKSPACE_SELECTION_STORAGE_KEY, JSON.stringify({
+    workspaceId,
+    workspacePublicRouteKey: workspacePublicRouteKey ?? null,
+  } satisfies StoredActiveWorkspaceSelection));
+};
+
+const canWriteToStorage = (storage: Storage) => typeof storage.setItem === 'function'
+
+const readRememberedActiveWorkspace = (storage: Storage): StoredActiveWorkspaceSelection | null => {
+  const rawSelection = storage.getItem(REMEMBERED_ACTIVE_WORKSPACE_SELECTION_STORAGE_KEY)
+  if (!rawSelection) {
+    return null
+  }
+
+  try {
+    const selection = JSON.parse(rawSelection) as Partial<StoredActiveWorkspaceSelection>
+    if (!selection.workspaceId || typeof selection.workspaceId !== 'string') {
+      return null
+    }
+
+    return {
+      workspaceId: selection.workspaceId,
+      workspacePublicRouteKey: typeof selection.workspacePublicRouteKey === 'string'
+        ? selection.workspacePublicRouteKey
+        : null,
+    }
+  } catch {
+    return null
+  }
+}
+
+const readLegacyRememberedActiveWorkspace = (storage: Storage): StoredActiveWorkspaceSelection | null => {
+  const workspaceId = storage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY)
+  if (!workspaceId) {
+    return null
+  }
+
+  return {
+    workspaceId,
+    workspacePublicRouteKey: storage.getItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY),
+  }
+}
 
 export const seedWorkspaceSession = (workspaceId: string, workspacePublicRouteKey?: string) => {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
-    if (workspacePublicRouteKey) {
-      window.localStorage.setItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY, workspacePublicRouteKey);
-    } else {
-      window.localStorage.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
+    if (window.sessionStorage) {
+      storeActiveWorkspace(window.sessionStorage, workspaceId, workspacePublicRouteKey);
+    }
+    // Remember a default for fresh tabs; active tabs keep their own selection.
+    storeRememberedActiveWorkspace(window.localStorage, workspaceId, workspacePublicRouteKey);
+  }
+};
+
+export const activateWorkspaceSession = (workspaceId: string, workspacePublicRouteKey?: string): boolean => {
+  seedWorkspaceSession(workspaceId, workspacePublicRouteKey);
+  return true;
+};
+
+const getActiveWorkspaceSelection = (): StoredActiveWorkspaceSelection | null => {
+  const sessionStorage = window.sessionStorage
+  const activeWorkspaceId = sessionStorage?.getItem(ACTIVE_WORKSPACE_STORAGE_KEY)
+  if (activeWorkspaceId) {
+    return {
+      workspaceId: activeWorkspaceId,
+      workspacePublicRouteKey: sessionStorage?.getItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY) ?? null,
     }
   }
+
+  const serializedSelection = readRememberedActiveWorkspace(window.localStorage)
+  const rememberedSelection = serializedSelection
+    ?? readLegacyRememberedActiveWorkspace(window.localStorage)
+  if (!rememberedSelection) {
+    return null
+  }
+
+  if (!serializedSelection && canWriteToStorage(window.localStorage)) {
+    storeRememberedActiveWorkspace(
+      window.localStorage,
+      rememberedSelection.workspaceId,
+      rememberedSelection.workspacePublicRouteKey,
+    )
+  }
+  if (sessionStorage) {
+    storeActiveWorkspace(
+      sessionStorage,
+      rememberedSelection.workspaceId,
+      rememberedSelection.workspacePublicRouteKey,
+    )
+  }
+
+  return rememberedSelection
 };
 
 export const getStoredActiveWorkspaceId = (): string | null => {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+  return getActiveWorkspaceSelection()?.workspaceId ?? null;
 };
 
 export const getStoredActiveWorkspacePublicRouteKey = (): string | null => {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
+  return getActiveWorkspaceSelection()?.workspacePublicRouteKey ?? null;
 };
 
 export const setPendingAccountSwitchId = (accountId: string | null) => {
@@ -86,14 +176,24 @@ export const clearWorkspaceStorage = () => {
   window.localStorage.removeItem(LEGACY_WORKSPACE_TOKENS_STORAGE_KEY);
   window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
   window.localStorage.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
+  window.localStorage.removeItem(REMEMBERED_ACTIVE_WORKSPACE_SELECTION_STORAGE_KEY);
+  window.sessionStorage?.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+  window.sessionStorage?.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
   window.sessionStorage?.removeItem(PENDING_ACCOUNT_SWITCH_STORAGE_KEY)
 };
 
 export const removeWorkspaceSession = (workspaceId: string) => {
   if (typeof window === "undefined") return;
-  if (getStoredActiveWorkspaceId() === workspaceId) {
+  if (window.sessionStorage?.getItem(ACTIVE_WORKSPACE_STORAGE_KEY) === workspaceId) {
+    window.sessionStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+    window.sessionStorage.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
+  }
+  if (window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY) === workspaceId) {
     window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
     window.localStorage.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
+  }
+  if (readRememberedActiveWorkspace(window.localStorage)?.workspaceId === workspaceId) {
+    window.localStorage.removeItem(REMEMBERED_ACTIVE_WORKSPACE_SELECTION_STORAGE_KEY);
   }
   // Remove pre-1117 values if an older dashboard left them behind; they are
   // never read or written by the session transport.

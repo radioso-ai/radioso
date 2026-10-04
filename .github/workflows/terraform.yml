@@ -67,6 +67,10 @@ jobs:
       TF_VAR_slack_oauth_client_id: ${{ secrets.SLACK_OAUTH_CLIENT_ID }}
       TF_VAR_slack_oauth_client_secret: ${{ secrets.SLACK_OAUTH_CLIENT_SECRET }}
       TF_VAR_slack_signing_secret: ${{ secrets.SLACK_SIGNING_SECRET }}
+      TF_VAR_google_login_client_id: ${{ secrets.GOOGLE_LOGIN_CLIENT_ID }}
+      TF_VAR_google_login_client_secret: ${{ secrets.GOOGLE_LOGIN_CLIENT_SECRET }}
+      TF_VAR_stripe_secret_key: ${{ secrets.STRIPE_SECRET_KEY }}
+      TF_VAR_stripe_webhook_secret: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
       TF_VAR_ee_usage_admin_token: ${{ secrets.EE_USAGE_ADMIN_TOKEN }}
 
     steps:
@@ -90,6 +94,42 @@ jobs:
               exit 1
             fi
           done
+
+          # The backend turns "Sign in with Google" on only when both credentials
+          # resolve, so half a pair plans clean, applies clean, and leaves the
+          # login page exactly as it was. Stop the run instead. Terraform reads a
+          # whitespace-only value as unset, so the emptiness test has to strip
+          # whitespace the same way -- a secret pasted with a stray space is half
+          # a pair. Only the test is stripped; Terraform still gets the value.
+          GOOGLE_LOGIN_CLIENT_ID_SET="${TF_VAR_google_login_client_id//[[:space:]]/}"
+          GOOGLE_LOGIN_CLIENT_SECRET_SET="${TF_VAR_google_login_client_secret//[[:space:]]/}"
+          if [ -n "${GOOGLE_LOGIN_CLIENT_ID_SET}${GOOGLE_LOGIN_CLIENT_SECRET_SET}" ]; then
+            if [ -z "${GOOGLE_LOGIN_CLIENT_ID_SET}" ]; then
+              echo "Missing required GitHub environment value: GOOGLE_LOGIN_CLIENT_ID because GOOGLE_LOGIN_CLIENT_SECRET is set" >&2
+              exit 1
+            fi
+            if [ -z "${GOOGLE_LOGIN_CLIENT_SECRET_SET}" ]; then
+              echo "Missing required GitHub environment value: GOOGLE_LOGIN_CLIENT_SECRET because GOOGLE_LOGIN_CLIENT_ID is set" >&2
+              exit 1
+            fi
+          fi
+
+          # Enterprise billing degrades to {configured:false} until both Stripe
+          # credentials resolve, so half a pair plans clean, applies clean, and
+          # leaves billing exactly as it was. Stop the run instead, the same way
+          # the Google login pair is enforced above.
+          STRIPE_SECRET_KEY_SET="${TF_VAR_stripe_secret_key//[[:space:]]/}"
+          STRIPE_WEBHOOK_SECRET_SET="${TF_VAR_stripe_webhook_secret//[[:space:]]/}"
+          if [ -n "${STRIPE_SECRET_KEY_SET}${STRIPE_WEBHOOK_SECRET_SET}" ]; then
+            if [ -z "${STRIPE_SECRET_KEY_SET}" ]; then
+              echo "Missing required GitHub environment value: STRIPE_SECRET_KEY because STRIPE_WEBHOOK_SECRET is set" >&2
+              exit 1
+            fi
+            if [ -z "${STRIPE_WEBHOOK_SECRET_SET}" ]; then
+              echo "Missing required GitHub environment value: STRIPE_WEBHOOK_SECRET because STRIPE_SECRET_KEY is set" >&2
+              exit 1
+            fi
+          fi
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 

@@ -19,6 +19,7 @@ import {
   buildDashboardHref,
   type DashboardRouteState,
 } from '@/lib/dashboard-routes'
+import type { TestChatNavigation, TestChatRoute } from '@/lib/test-chat-open-route'
 import { agentSectionFromRoute, agentSectionRoute, type AgentSectionId } from '@/lib/dashboard-areas'
 import { agentsApi, type AgentSettings } from '@/lib/api'
 import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
@@ -204,6 +205,8 @@ function AgentSettingsDashboardPage({
   )
 }
 
+/** history.state key marking a Conversation history entry pushed over the Test Chat entry. */
+const TEST_CHAT_HISTORY_OVER_CHAT = 'radiosoTestChatHistoryOverChat'
 export function AgentView({
   accountId,
   routeState,
@@ -326,16 +329,6 @@ export function AgentView({
     }))
   }, [accountId, agentsError, isAgentsLoading, routeState, router, selectedAgentId])
 
-  // The execution id in the URL is a one-shot open command from "Continue in
-  // test chat"; dropping it once adopted keeps refresh and back from re-opening it.
-  const consumeOpenExecutionRoute = useCallback(() => {
-    router.replace(buildDashboardHref(accountId, {
-      ...routeState,
-      section: 'agents',
-      agentTestExecutionId: undefined,
-    }))
-  }, [accountId, routeState, router])
-
   const saveStateAccessory = <SaveStateIndicator saveState={saveState} />
   const handleSaveStateChange = useCallback((next: AgentPageSaveState) => {
     setSaveState(next)
@@ -357,6 +350,51 @@ export function AgentView({
     agentSectionRoute('changes'),
   )
   const evalsHref = buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: undefined })
+  // The share link for one saved test: anyone in this workspace who can manage agents can open it.
+  const testExecutionHref = useCallback((executionId: string) => buildDashboardHref(accountId, {
+    ...routeState,
+    ...agentSectionRoute('chat'),
+    section: 'agents',
+    agentId: selectedAgentId,
+    agentRoutineId: undefined,
+    anchor: undefined,
+    agentTestExecutionId: executionId,
+  }), [accountId, routeState, selectedAgentId])
+  const testChatRoute: TestChatRoute = routeState.agentTestChatView === 'history'
+    ? { view: 'history' }
+    : { view: 'chat', executionId: routeState.agentTestExecutionId }
+  // Test Chat knows what is loaded, not browser-history mechanics; this is the one place that
+  // turns a navigation decision into a shallow history entry, with no server round trip.
+  const navigateTestChat = useCallback((next: TestChatRoute, how: TestChatNavigation) => {
+    const href = buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'agents',
+      agentId: selectedAgentId,
+      agentRoutineId: undefined,
+      anchor: undefined,
+      agentTestChatView: next.view === 'history' ? 'history' : undefined,
+      agentTestExecutionId: next.view === 'chat' ? next.executionId : undefined,
+    })
+    if (how === 'push') {
+      // Marks a history entry as pushed over the chat, so leaving it can step back; the marker
+      // travels with the entry through Back and Forward, which a component-wide flag could not follow.
+      window.history.pushState(next.view === 'history' ? { [TEST_CHAT_HISTORY_OVER_CHAT]: true } : null, '', href)
+      return
+    }
+    if (how === 'return' && (window.history.state as Record<string, unknown> | null)?.[TEST_CHAT_HISTORY_OVER_CHAT] === true) {
+      window.history.back()
+      return
+    }
+    if (how === 'replace') {
+      // A replace rewrites the entry this render describes. Next applies a native push or Back to
+      // the route a render later, so a write decided before it would land on the operator's new
+      // entry; skip it, and Test Chat reconciles against the new route when it renders.
+      const live = new URLSearchParams(window.location.search)
+      const liveView = live.get('view') === 'history' ? 'history' : undefined
+      if (liveView !== routeState.agentTestChatView || (live.get('testExecution') ?? undefined) !== routeState.agentTestExecutionId) return
+    }
+    window.history.replaceState(null, '', href)
+  }, [accountId, routeState, selectedAgentId])
 
   const agentUnavailableContent = agentSelectionPending ? (
     <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
@@ -482,8 +520,9 @@ export function AgentView({
             agentVersionsHref={agentVersionsHref}
             actionsContainer={testActionsContainer}
             titleContainer={testTitleContainer}
-            openExecutionId={routeState.agentTestExecutionId}
-            onOpenExecutionConsumed={consumeOpenExecutionRoute}
+            route={testChatRoute}
+            onNavigate={navigateTestChat}
+            testExecutionHref={testExecutionHref}
           />
         </DashboardPage>
       ) : null}

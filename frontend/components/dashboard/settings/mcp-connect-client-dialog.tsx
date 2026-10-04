@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import {
   DEFAULT_MCP_CLIENT_ID,
   MCP_CLIENT_SETUPS,
@@ -106,8 +105,7 @@ export function McpConnectClientDialog({
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={submitDisabled}>
-              {isSubmitting ? <Spinner className="mr-2 h-4 w-4" /> : <Plus className="mr-2 h-4 w-4" />}
+            <Button type="submit" disabled={submitDisabled} loading={isSubmitting} icon={<Plus />}>
               Create credential &amp; get config
             </Button>
           </DialogFooter>

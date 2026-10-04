@@ -110,7 +110,7 @@ export class ServiceAccountService {
 
   async listCredentials(input: { accountId: string; workspaceId: string; actorUserId: string; serviceAccountId: string; limit?: number; page?: number }) {
     const account = await this.get(input);
-    const query = { workspaceId: input.workspaceId, serviceAccountId: input.serviceAccountId, kind: "service" as const };
+    const query = { workspaceId: input.workspaceId, serviceAccountId: input.serviceAccountId, kind: "service" as const, now: this.now() };
     const [items, total] = await Promise.all([
       this.input.repository.listCredentials({ ...query, page: input.page, limit: Math.min(input.limit ?? MACHINE_ACCESS_LIMITS.defaultPageSize, MACHINE_ACCESS_LIMITS.maxPageSize) }),
       this.input.repository.countCredentials(query),

@@ -30,6 +30,7 @@ describe("remote MCP HTTP error boundary", () => {
         exchange: vi.fn(),
         validate: vi.fn(),
         recordUse: vi.fn(),
+        tools: vi.fn(),
       },
       sessionStore: createInMemorySessionStore(),
     });

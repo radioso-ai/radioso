@@ -122,6 +122,7 @@ export class PasswordResetService {
     preferredWorkspaceId?: string | null;
   }): Promise<{
     userId: string;
+    displayName: string | null;
     accountId: string;
     email: string;
     organizationName: string;
@@ -160,6 +161,12 @@ export class PasswordResetService {
     // These repository ports do not share a transaction boundary. Consume the one-time
     // token before mutating account state so a retry cannot replay the same reset link.
     await this.dependencies.userRepository.updatePassword(user.id, passwordHash);
+    // A name chosen before the address was verified came from whoever registered it,
+    // not necessarily the mailbox owner now reclaiming the account.
+    const displayName = user.emailVerifiedAt ? user.displayName : null;
+    if (displayName !== user.displayName) {
+      await this.dependencies.userRepository.updateDisplayName(user.id, displayName);
+    }
     // Reset possession proves control of the mailbox, so a successful reset also verifies the email.
     await this.dependencies.userRepository.markEmailVerified(user.id, now);
     await this.dependencies.passwordResetTokenRepository.markAllActiveUsedForUser(user.id, now);
@@ -198,6 +205,7 @@ export class PasswordResetService {
 
     return {
       userId: user.id,
+      displayName,
       accountId: membership.accountId,
       email: user.email,
       organizationName: account?.name ?? deriveOrganizationName(user.email),

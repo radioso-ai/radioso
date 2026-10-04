@@ -21,6 +21,13 @@
 # Opt-in: set `frontend_cdn_domain` (e.g. "radioso.ai") to enable. Empty (the
 # default) creates nothing, so existing environments are unaffected.
 #
+# Client addresses: the load balancer adds a hop to the X-Forwarded-For chain
+# the frontend receives and signs for the backend. The backend's one
+# `RADIOSO_TRUSTED_PROXY_HOPS` (compute.tf) also serves direct callers, so it
+# cannot count both ingresses: relayed visitors resolve to the load balancer's
+# address and share one rate-limit budget. That fails closed; no caller can
+# pick its own bucket.
+#
 # Manual DNS cutover after `apply`:
 #   1. Point the domain's A record at the `frontend_cdn_ip` output.
 #   2. Remove any existing Cloud Run domain mapping for the same host first.

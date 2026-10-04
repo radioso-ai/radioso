@@ -12,10 +12,8 @@ export { AssistantHistoryService } from "./services/assistantHistoryService.js";
 export { ChatBootstrapService } from "./services/chatBootstrapService.js";
 export { RevisionGreetingStarterPromptReader } from "./services/agentStarterPromptReader.js";
 export type { AgentStarterPromptReader } from "./contracts/index.js";
-export {
-  ChatService,
-  type ChatRoutineProvider,
-} from "./services/chatService.js";
+export { ChatService } from "./services/chatService.js";
+export type { ChatRoutineProvider } from "./contracts/routineProvider.js";
 export { ChatTurnAssemblyFactory } from "./services/chatTurnAssembly.js";
 export type { PreparedSession } from "./services/chatSessionPreparer.js";
 export type {
@@ -49,7 +47,9 @@ export {
   FetchContactWebhookHttpClient,
   WorkspaceOwnerContactRecipientResolver,
 } from "./services/actions/contactSendActionHandler.js";
-export { HandoffNotifyActionHandler } from "./services/actions/handoffNotifyActionHandler.js";
+export { RoutineEndingNotifyActionHandler } from "./services/actions/routineEndingNotifyActionHandler.js";
+export { RepositoryRoutineEndingNotificationSubjectResolver } from "./services/actions/routineEndingNotificationSubjectResolver.js";
+export { ROUTINE_ENDING_NOTICE_ACTIONS } from "./services/operatorNoticeAction.js";
 export { EmailWebhookOperatorNotificationSink } from "./services/actions/emailWebhookSink.js";
 export {
   ApprovalRequestActionHandler,
@@ -65,6 +65,7 @@ export {
   contactRoutineDefinition,
   CONTACT_SEND_ACTION_TYPE,
   HANDOFF_NOTIFY_ACTION_TYPE,
+  COMPLETION_NOTIFY_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
 } from "./services/routines/contactRoutine.js";
@@ -127,6 +128,8 @@ export {
   InMemoryPublicConversationEventBus,
   type PublicConversationEventBus,
 } from "./services/publicConversationEventBus.js";
+export { createConversationUpdateReader } from "./services/conversationUpdateReader.js";
+export { createConversationUpdateWaiter } from "./services/conversationUpdateWaiter.js";
 export {
   NoopAnswerFeedbackHistoryProvider,
   type AnswerFeedbackHistoryProviderPort,

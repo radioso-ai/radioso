@@ -13,13 +13,29 @@ export const APPROVAL_REQUEST_ACTION_TYPE = "approval.request";
 const asString = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 
+/** Narrow conversation lookup for the approval's agent (a `ConversationRepository` satisfies it). */
+interface ApprovalRequestConversationLookup {
+  findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<{ agentId: string | null } | null>;
+}
+
 export class ApprovalRequestActionHandler implements ActionHandler {
-  constructor(private readonly dispatcher: Pick<OperatorNotificationDispatcher, "dispatch">) {}
+  constructor(
+    private readonly dispatcher: Pick<OperatorNotificationDispatcher, "dispatch">,
+    private readonly conversations: ApprovalRequestConversationLookup,
+  ) {}
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
-    const conversationId = asString(input.payload.conversationId) ?? input.context.conversationId ?? "unknown";
-    const workspaceId = asString(input.payload.workspaceId) ?? input.context.workspaceId ?? "unknown";
-    const agentId = asString(input.payload.agentId) ?? "unknown";
+    // The queued row is the trusted source for its workspace and conversation, and that
+    // conversation for its agent. Payload copies of these ids are ignored: a payload can carry
+    // visitor-filled variables under any key.
+    const contextWorkspaceId = input.context.workspaceId;
+    const contextConversationId = input.context.conversationId;
+    const conversation = contextWorkspaceId && contextConversationId
+      ? await this.conversations.findByIdAndWorkspaceId(contextConversationId, contextWorkspaceId)
+      : null;
+    const conversationId = contextConversationId ?? "unknown";
+    const workspaceId = contextWorkspaceId ?? "unknown";
+    const agentId = conversation?.agentId ?? "unknown";
     const handle = asString(input.payload.handle) ?? "unknown";
     await this.dispatcher.dispatch({
       kind: "approval",

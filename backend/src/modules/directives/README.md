@@ -82,7 +82,10 @@ rules aimed at it inside its own prompt block while the answer body reads its
 own. An empty scope means the answering voice. Ordering and line format live in
 `@radioso/conversation-defaults`, shared with the clarifier;
 `shared/infra/prompts/steeringPromptRenderer.ts` is the host adapter that
-supplies each surface's framing from `backend/prompts/`.
+supplies each surface's framing from `backend/prompts/`. When the steering
+carries a routine step's rule (a retrieval-fed routine step composing a grounded
+answer), the adapter renders that rule as the controlling instruction and the
+directives as subordinate guidance, as the routine step renderer does (#1351).
 
 ## Read First
 

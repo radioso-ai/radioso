@@ -161,6 +161,55 @@ describe("operator MCP stateless request handler", () => {
     }));
   });
 
+  it("gives a 2025-06-18 client the same refusal code and rejected paths as a self-describing one", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
+        throw new OperatorBackendAdapterError("Operator request was rejected.", 400, "invalid_arguments", undefined, ["kind: invalid_enum_value"]);
+      }),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(standardRequest(
+      { id: 3, method: "tools/call", params: { arguments: {}, name: "prepare_routine_structure" } },
+      "2025-06-18",
+    ));
+
+    // A JSON-RPC error is a complete response. Rewriting it as an internal error would leave every
+    // standard client — which is to say most of them — unable to correct a rejected call.
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: -32602, data: ["kind: invalid_enum_value"], message: "invalid_arguments" },
+      id: 3,
+      jsonrpc: "2.0",
+    });
+  });
+
+  it("shows a 2025-06-18 client isError for a replay the backend cannot answer with a result, without leaking its outcome code", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => ({
+        content: [{ type: "text", text: "An earlier attempt at this call is still running. Retry the same call in a moment." }],
+        isError: true,
+        safeOutcomeCode: "in_progress",
+      })),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(standardRequest(
+      { id: 4, method: "tools/call", params: { arguments: {}, name: "retrieval_probe" } },
+      "2025-06-18",
+    ));
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as { result?: Record<string, unknown> };
+    expect(body.result?.isError).toBe(true);
+    expect(body.result?.content).toEqual([{ type: "text", text: expect.stringContaining("still running") }]);
+    // The legacy envelope has no field for a backend outcome code; a 2025-06-18 client tells
+    // in-progress from any other tool error only by `isError` and its own message, never a code.
+    expect(body.result).not.toHaveProperty("safeOutcomeCode");
+  });
+
   it("dispatches a self-describing 2026-07-28 ping without initialization or session state", async () => {
     const handler = createOperatorMcpRequestHandler(dependencies);
     const response = await handler(operatorRequest({ id: "1", jsonrpc: "2.0", method: "ping" }));
@@ -321,6 +370,26 @@ describe("operator MCP stateless request handler", () => {
     expect(dependencies.admit.mock.calls.length).toBe(before);
   });
 
+  it("names the request field a rejected envelope got wrong before admission", async () => {
+    const response = await createOperatorMcpRequestHandler(dependencies)(operatorRequest({
+      id: "no-capabilities",
+      jsonrpc: "2.0",
+      method: "ping",
+      params: { _meta: { "io.modelcontextprotocol/protocolVersion": "2026-07-28" } },
+    }));
+
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: -32600,
+        data: ["params._meta.io.modelcontextprotocol/clientCapabilities: invalid_type"],
+        message: "Invalid Request",
+      },
+      id: "no-capabilities",
+      jsonrpc: "2.0",
+    });
+    expect(dependencies.admit).not.toHaveBeenCalled();
+  });
+
   it("returns safe 401/403 challenges and rejects oversized calls", async () => {
     const handler = createOperatorMcpRequestHandler({
       ...dependencies,
@@ -353,7 +422,7 @@ describe("operator MCP stateless request handler", () => {
     const handler = createOperatorMcpRequestHandler({
       ...dependencies,
       call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
-        throw new OperatorBackendAdapterError("Operator request was rejected.", 400, "operation_required");
+        throw new OperatorBackendAdapterError("Operator request was rejected.", 400, "operation_conflict");
       }),
     });
     dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
@@ -366,7 +435,61 @@ describe("operator MCP stateless request handler", () => {
     }));
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ error: { code: -32602, message: "operation_required" } });
+    await expect(response.json()).resolves.toMatchObject({ error: { code: -32602, message: "operation_conflict" } });
+  });
+
+  // #1361/#1365: sending while the session's previous test turn is still running is retryable,
+  // not a caller mistake, so the backend maps it to operation_conflict rather than
+  // invalid_arguments; this covers the same edge translation for that named scenario.
+  it("tells a client sending into a running test turn to retry, not to change its input", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
+        throw new OperatorBackendAdapterError("Operator request was rejected.", 400, "operation_conflict", undefined, ["Another test turn is still running. Send the next message after it settles."]);
+      }),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(operatorRequest({
+      id: "test-turn-in-progress",
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "send_test_chat_message" },
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: -32602, message: "operation_conflict", data: ["Another test turn is still running. Send the next message after it settles."] },
+    });
+  });
+
+  it("carries the rejected argument paths back to the caller as JSON-RPC error data", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
+        throw new OperatorBackendAdapterError("Operator request was rejected.", 400, "invalid_arguments", undefined, ["kind: invalid_enum_value", "operations: invalid_type"]);
+      }),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(operatorRequest({
+      id: "validation-detail",
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "prepare_routine_structure" },
+    }));
+
+    // Without this the caller reads the bare code and has to spend a turn guessing which field.
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: -32602, message: "invalid_arguments", data: ["kind: invalid_enum_value", "operations: invalid_type"] },
+    });
+  });
+
+  it("carries structured routine diagnostics back to the caller", async () => {
+    const handler = createOperatorMcpRequestHandler({ ...dependencies, call: vi.fn(async () => { throw new OperatorBackendAdapterError("rejected", 400, "invalid_arguments", undefined, [{ routineId: "11111111-1111-4111-8111-111111111111", routineName: "Escalate", code: "node_id_collision", location: "nodes[0].id", message: "Duplicate node" }]); }) });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+    const response = await handler(operatorRequest({ id: "structured-validation-detail", jsonrpc: "2.0", method: "tools/call", params: { name: "prepare_routine_structure" } }));
+    await expect(response.json()).resolves.toMatchObject({ error: { code: -32602, data: [{ routineName: "Escalate", code: "node_id_collision", location: "nodes[0].id" }] } });
   });
 
   it("returns a tool removed after admission as a safe invalid-params response", async () => {
@@ -427,6 +550,32 @@ describe("operator MCP stateless request handler", () => {
     }));
 
     expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBeNull();
     await expect(response.json()).resolves.toEqual({ error: "budget_exhausted" });
+  });
+
+  it("carries the backend's retry timing on a budget-exhausted response", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
+        throw new OperatorBackendAdapterError("Operator request was throttled.", 429, "budget_exhausted", undefined, undefined, 42, "2026-09-30T00:01:00.000Z");
+      }),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(operatorRequest({
+      id: "budget-with-retry",
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "workspace_settings" },
+    }));
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("42");
+    await expect(response.json()).resolves.toEqual({
+      error: "budget_exhausted",
+      retryAfterSeconds: 42,
+      resetAt: "2026-09-30T00:01:00.000Z",
+    });
   });
 });

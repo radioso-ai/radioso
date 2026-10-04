@@ -1,19 +1,19 @@
 import type { EvalLlmJudgePort } from "../services/evalJudge.js";
 import type { EvalRunObservedOutput } from "../domain/types.js";
 import type { CaseOutcome } from "./baseline.js";
-import type { ConversationQualityCase } from "./caseSchema.js";
+import { conversationQualityCaseTurnText, type ConversationQualityCase } from "./caseSchema.js";
 import type { CaseReport } from "./report.js";
 import type { ConversationQualityRunnerPort } from "./runnerPort.js";
 import { scoreObservedOutput } from "./scoring.js";
 
-export interface RunSuiteOptions {
+interface RunSuiteOptions {
   workspaceId: string;
   /** Grader for `llm_judge` assertions; omit to run the deterministic layer only. */
   judge?: EvalLlmJudgePort;
   runIdPrefix?: string;
 }
 
-export interface SuiteRunResult {
+interface SuiteRunResult {
   reports: CaseReport[];
   outcomes: CaseOutcome[];
 }
@@ -44,7 +44,7 @@ export const runConversationQualitySuite = async (
 
     const score = await scoreObservedOutput(evalCase.assertions, output, {
       workspaceId: options.workspaceId,
-      question: evalCase.query,
+      question: conversationQualityCaseTurnText(evalCase),
       runId: `${options.runIdPrefix ?? "cq"}:${evalCase.id}`,
       judge: options.judge,
     });

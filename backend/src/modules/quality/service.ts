@@ -7,6 +7,7 @@ import {
 import { systemClock, type Clock } from "../../shared/domain/clock.js";
 import { normalizeNullableText } from "../../shared/domain/nullableText.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type { ConversationActivityRecorder } from "../conversationActivity/contracts/index.js";
 import type {
   ListLowQualityTurnsInput,
   LowQualityTurn,
@@ -132,6 +133,8 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
   constructor(
     private readonly db: Db,
     private readonly outcomeCatalog: QualityOutcomeCatalogPort,
+    // Records who resolved or dismissed feedback, in the transaction that closes it.
+    private readonly conversationActivity: ConversationActivityRecorder,
     private readonly clock: Clock = systemClock,
     private readonly verificationSource?: QualityVerificationSourcePort,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
@@ -537,7 +540,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       resolution: input.resolution,
       legacyReason: input.legacyReason,
     });
-    const result = await new QualityTriageStore(this.db).transition(workspaceId, {
+    const result = await new QualityTriageStore(this.db, this.conversationActivity).transition(workspaceId, {
       assistantMessageId: input.assistantMessageId,
       ...update,
       updatedBy: input.updatedBy ?? null,

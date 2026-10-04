@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import { createRetrievalProbeCopilotTools } from "../../../src/modules/operatorCopilot/tools/retrievalProbe.js";
 import type { CopilotRetrievalProbePort } from "../../../src/modules/operatorCopilot/contracts/retrievalProbe.js";
 import { RetrievalProbeService } from "../../../src/modules/operatorCopilot/services/retrievalProbeService.js";
@@ -115,7 +116,7 @@ describe("retrieval_probe descriptor", () => {
 
 describe("RetrievalProbeService", () => {
   const guard = () => ({
-    abuseControl: { enforce: vi.fn(async () => {}) },
+    abuseControl: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
     audit: { record: vi.fn(async () => {}) },
     abusePolicy: { limit: 10, windowMs: 60_000 },
   });

@@ -98,9 +98,8 @@ export function CredentialIssuedDialog({
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
         <DialogFooter>
           {onDiscard ? (
-            <Button type="button" variant="ghost" disabled={isDiscarding} onClick={() => void discard()}>
-              {isDiscarding ? <Spinner className="mr-2 h-4 w-4" /> : null}
-              <span>{discardLabel}</span>
+            <Button type="button" variant="ghost" loading={isDiscarding} onClick={() => void discard()}>
+              {discardLabel}
             </Button>
           ) : null}
           <Button type="button" onClick={onDone} disabled={!acknowledged || isDiscarding}>Done</Button>

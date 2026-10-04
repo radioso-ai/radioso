@@ -1,19 +1,35 @@
 import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
-// Type-only imports keep these module-owned services out of the route's runtime dependency graph;
-// the instances are built in app composition (mcpConverseModule) and injected.
-import type { AgentConverseAudit, AgentConverseService } from "../../../modules/chat/contracts/index.js";
-import type { AgentConverseSessionPort } from "../../../modules/settings/contracts/agentConverseSession.js";
+// The services are type-only imports: their instances are built in app composition
+// (mcpConverseModule) and injected.
+import type {
+  AgentConverseAudit,
+  AgentConverseService,
+  ConversationUpdateReader,
+  ConversationUpdateWaiter,
+} from "../../../modules/chat/contracts/index.js";
+import type {
+  AgentConverseSessionPort,
+  AgentConverseWalkInObserver,
+} from "../../../modules/settings/contracts/agentConverseSession.js";
 import { requirePublicChatPermission } from "../middleware/requirePermission.js";
 import { requireMcpConverseSession, type McpConverseLocals } from "../middleware/requireMcpConverseSession.js";
 import { agentChannelChatRateLimiters } from "../middleware/agentChannelRateLimiter.js";
-import { createMcpConverseSourceRateLimiter, createMcpConverseTokenRateLimiter } from "../middleware/mcpConverseSessionRateLimiter.js";
-import { validateBody } from "../middleware/validate.js";
+import {
+  createMcpConverseMessagesRateLimiter,
+  createMcpConverseMessagesSourceRateLimiter,
+  createMcpConverseSourceRateLimiter,
+  createMcpConverseTokenRateLimiter,
+} from "../middleware/mcpConverseSessionRateLimiter.js";
+import { createMcpConverseWalkInRateLimiter, type McpConverseWalkInLocals } from "../middleware/mcpConverseWalkInRateLimiter.js";
+import { validateBody, validateQuery } from "../middleware/validate.js";
 import { onSuccessfulHttpResponse } from "../middleware/httpResponseCompletion.js";
 import { requireValidMcpSourceProof } from "../middleware/preAuthSourceRateLimiter.js";
+import { createMcpConverseMessagesHandler } from "./mcpConverseMessagesRoute.js";
 import {
   mcpConverseAskRequestSchema,
+  mcpConverseMessagesQuerySchema,
   mcpConverseSessionRequestSchema,
   mcpConverseSessionValidateRequestSchema,
 } from "../schemas/mcpConverseSchemas.js";
@@ -26,17 +42,25 @@ export type McpConverseRouteDependencies = Pick<
   | "agentConverseSessionMappingRepository"
   | "assistantChatService"
   | "auditService"
+  | "chatHistoryService"
   | "conversationRepository"
+  | "publicConversationEventBus"
   | "env"
   | "metricsRegistry"
   | "workspaceInvalidationPublisher"
   | "abuseControlService"
+  | "agentToolCatalog"
+  | "identityNonceRepository"
+  | "logger"
 >;
 
 export interface McpConverseRouteServices {
   audit: AgentConverseAudit;
   sessionService: AgentConverseSessionPort;
   converseService: AgentConverseService;
+  walkInObserver: AgentConverseWalkInObserver;
+  conversationUpdateReader: ConversationUpdateReader;
+  conversationUpdateWaiter: ConversationUpdateWaiter;
 }
 
 export const createMcpConverseRoutes = (
@@ -48,15 +72,24 @@ export const createMcpConverseRoutes = (
   const rateLimitMcpAsk = agentChannelChatRateLimiters(dependencies, "mcp");
   const rateLimitMcpSource = createMcpConverseSourceRateLimiter(dependencies);
   const rateLimitMcpToken = createMcpConverseTokenRateLimiter(dependencies);
+  const rateLimitMcpWalkIn = createMcpConverseWalkInRateLimiter(dependencies, services.walkInObserver);
+  const rateLimitMcpMessages = createMcpConverseMessagesRateLimiter(dependencies);
+  const rateLimitMcpMessagesSource = createMcpConverseMessagesSourceRateLimiter(dependencies);
 
   router.post(
     "/session",
     rateLimitMcpSource,
     validateBody(mcpConverseSessionRequestSchema),
+    rateLimitMcpWalkIn,
     rateLimitMcpToken,
     async (req, res, next) => {
       try {
-        const session = await sessionService.exchange(req.body);
+        const { mcpConverseSourceDigest } = res.locals as typeof res.locals & Partial<McpConverseWalkInLocals>;
+        const session = await sessionService.exchange(
+          req.body.publicId
+            ? { publicId: req.body.publicId, client: req.body.client, sourceDigest: mcpConverseSourceDigest }
+            : { launchToken: req.body.launchToken, client: req.body.client },
+        );
         res.status(201).json({
           sessionToken: session.sessionToken,
           expiresAt: session.expiresAt,
@@ -105,6 +138,43 @@ export const createMcpConverseRoutes = (
     },
   );
 
+  router.get(
+    "/tools",
+    rateLimitMcpSource,
+    requireMcpConverseSession(sessionService),
+    async (_req, res, next) => {
+      try {
+        const { mcpConversePrincipal } = res.locals as typeof res.locals & McpConverseLocals;
+        const catalog = await dependencies.agentToolCatalog.load({
+          workspaceId: mcpConversePrincipal.workspaceId,
+          agentId: mcpConversePrincipal.agentId,
+        });
+        onSuccessfulHttpResponse(res, () => sessionService.recordSuccessfulUse(mcpConversePrincipal));
+        res.status(200).json(catalog);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  // Resumption: the caller that cannot sit in a chat comes back for what happened
+  // since its cursor, optionally parking until something does.
+  router.get(
+    "/messages",
+    rateLimitMcpMessagesSource,
+    validateQuery(mcpConverseMessagesQuerySchema),
+    requireMcpConverseSession(sessionService),
+    rateLimitMcpMessages,
+    requirePublicChatPermission(dependencies, "public_chat.history.read.own"),
+    createMcpConverseMessagesHandler({
+      conversationUpdateReader: services.conversationUpdateReader,
+      conversationUpdateWaiter: services.conversationUpdateWaiter,
+      conversations: dependencies.conversationRepository,
+      sessionService,
+      metrics: dependencies.metricsRegistry,
+    }),
+  );
+
   router.post(
     "/ask",
     rateLimitMcpSource,
@@ -115,6 +185,8 @@ export const createMcpConverseRoutes = (
     async (req, res, next) => {
       try {
         const { mcpConversePrincipal } = res.locals as typeof res.locals & McpConverseLocals;
+        // The converse service binds the session's conversation and validates a tool
+        // call against the release it is pinned to before any turn state is written.
         const result = await converseService.askAgent(mcpConversePrincipal, req.body);
         onSuccessfulHttpResponse(res, () => sessionService.recordSuccessfulUse(mcpConversePrincipal));
         res.status(200).json(result);

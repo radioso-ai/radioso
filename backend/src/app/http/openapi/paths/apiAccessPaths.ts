@@ -100,7 +100,7 @@ export const registerApiAccessPaths = (
 
   registry.registerPath({
     method: "get", path: "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens",
-    tags: ["API Access"], summary: "List personal-token metadata", operationId: "listPersonalApiTokens", security: session,
+    tags: ["API Access"], summary: "List live personal-token metadata", operationId: "listPersonalApiTokens", security: session,
     request: { params: workspaceParams, query: pageQuery.extend({ view: z.enum(["mine", "workspace"]).optional() }) },
     responses: { 200: { description: "Safe personal-token metadata", content: { "application/json": { schema: paged(credential) } } }, ...errors },
   });
@@ -131,7 +131,7 @@ export const registerApiAccessPaths = (
 
   registry.registerPath({
     method: "get", path: "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts",
-    tags: ["API Access"], summary: "List workspace service accounts", operationId: "listServiceAccounts", security: session,
+    tags: ["API Access"], summary: "List workspace service accounts that are not archived", operationId: "listServiceAccounts", security: session,
     request: { params: workspaceParams, query: pageQuery },
     responses: { 200: { description: "Service-account inventory", content: { "application/json": { schema: paged(serviceAccount) } } }, ...errors },
   });
@@ -164,7 +164,7 @@ export const registerApiAccessPaths = (
 
   const credentialsPath = "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials";
   registry.registerPath({
-    method: "get", path: credentialsPath, tags: ["API Access"], summary: "List service-account credentials", operationId: "listServiceAccountCredentials", security: session,
+    method: "get", path: credentialsPath, tags: ["API Access"], summary: "List live service-account credentials", operationId: "listServiceAccountCredentials", security: session,
     request: { params: serviceAccountParams, query: pageQuery },
     responses: { 200: { description: "Safe service-credential metadata", content: { "application/json": { schema: paged(credential) } } }, ...errors },
   });

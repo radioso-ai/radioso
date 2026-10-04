@@ -61,7 +61,7 @@ const uniqueTextArray = (maxItemLength: number) =>
     .default([])
     .transform((values) => [...new Set(values)]);
 
-const authoredDirectiveConditionSchema = z.discriminatedUnion("kind", [
+export const authoredDirectiveConditionSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("always"),
   }).strict(),
@@ -70,6 +70,9 @@ const authoredDirectiveConditionSchema = z.discriminatedUnion("kind", [
     description: trimmedText(AUTHORED_DIRECTIVE_LIMITS.conditionDescription),
   }).strict(),
 ]);
+
+/** Create proposals only require that their agent still exists. */
+export const DIRECTIVE_CREATE_FENCE = "agent-exists";
 
 const authoredDirectiveBindingSchema = z.object({
   kind: z.literal("skill"),
@@ -120,6 +123,14 @@ export const authoredDirectiveInputSchema = z.object({
   metadata: z.record(z.unknown()).optional().default({}),
 }).strict();
 
+/**
+ * The schema's own default for a directive's `enabled` flag, exposed so a caller comparing
+ * differently-aged directive configs (e.g. eval case replay, where a config captured before this
+ * field existed simply omits it) can fill in an absent flag with the exact value this schema would
+ * apply, instead of a second hard-coded copy of it that could drift if the default ever changes.
+ */
+export const AUTHORED_DIRECTIVE_ENABLED_DEFAULT: boolean = authoredDirectiveInputSchema.shape.enabled.parse(undefined);
+
 export type AuthoredDirectiveInput = z.input<typeof authoredDirectiveInputSchema>;
 
 export type NormalizedAuthoredDirectiveInput = z.infer<typeof authoredDirectiveInputSchema>;
@@ -152,6 +163,22 @@ export interface AuthoredDirective {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Directive relationships are names rather than ids because they resolve against the merged
+ * built-in and authored steering catalog. Both draft-time and save-time owners use this one
+ * projection so a proposal cannot advertise a replacement that the persisted directive rejects.
+ */
+export const validateDirectiveReplacementNames = (
+  excludes: ReadonlyArray<string>,
+  existingDirectives: ReadonlyArray<Pick<AuthoredDirective, "name">>,
+): { readonly unknown: string[]; readonly validNames: string[] } => {
+  const validNames = [...new Set([
+    ...defaultAnswerDirectives.map((directive) => directive.name),
+    ...existingDirectives.map((directive) => directive.name),
+  ])];
+  return { unknown: excludes.filter((name) => !validNames.includes(name)), validNames };
+};
 
 interface AuthoredDirectiveCapabilityValidationOk {
   ok: true;

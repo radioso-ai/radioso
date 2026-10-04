@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createWebsiteCrawlerRoutes } from "../../../src/modules/websiteCrawler/routes.js";
 import type { WebsiteCrawlerProvider } from "../../../src/modules/websiteCrawler/provider.js";
+import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import { unauthorized } from "../../../src/shared/domain/errors.js";
 
 type RouteDependencies = Parameters<typeof createWebsiteCrawlerRoutes>[0];
@@ -96,7 +97,7 @@ const createApp = (dependencies: Partial<Record<keyof RouteDependencies, unknown
       record: vi.fn().mockResolvedValue(undefined),
     },
     abuseControlService: {
-      enforce: vi.fn().mockResolvedValue(undefined),
+      enforce: vi.fn().mockResolvedValue(admittedAbuseControlDecision()),
     },
     documentIngestionService: {
       ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),

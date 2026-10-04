@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import { createAgentCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/agentProposalAdapter.js";
 import { createAgentProposalCopilotTools, createWebsiteAnalysisProbeCopilotTools } from "../../../src/modules/operatorCopilot/tools/agentProposals.js";
 import { WebsiteAnalysisProbeService } from "../../../src/modules/operatorCopilot/services/websiteAnalysisProbeService.js";
@@ -245,7 +246,7 @@ describe("propose_agent", () => {
 
 describe("analyze_website", () => {
   const probeDeps = () => {
-    const enforce = vi.fn(async () => undefined);
+    const enforce = vi.fn(async () => admittedAbuseControlDecision());
     const record = vi.fn(async () => undefined);
     const analyzeWebsite = vi.fn(async () => analysis());
     return {

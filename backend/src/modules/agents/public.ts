@@ -6,6 +6,7 @@ export {
   isAgentBootstrapActive,
   isAgentRetrievalEnabled,
   resolveAgentDisplayName,
+  unpublishedAgentPublicIdentity,
   validateAgentInput,
   type AgentBrandingSettings,
   type AgentChatModelOverride,
@@ -24,9 +25,17 @@ export {
   type WebsiteEmbedSurfaceSettings,
 } from "./domain.js";
 export {
+  AGENT_CONFIG_FULL_TEXT_FIELD_PATHS,
   agentInputFieldSchemas,
   agentInputThemeSchema,
+  agentReviewedSettingsPatchSchema,
+  type AgentReviewedSettingsPatch,
 } from "./agentInputSchema.js";
+export {
+  describePublicAccessChange,
+  mintPublicId,
+  rotatedPublicIdInput,
+} from "./services/agentPublicIdentity.js";
 export {
   DEFAULT_CONTACT_REQUEST_DELIVERY,
   hasConfiguredContactDestination,
@@ -35,10 +44,15 @@ export {
 } from "./domain.js";
 export {
   AgentService,
+  type AgentFieldProposalApplyInput,
+  type AgentFieldProposalApplyOutcome,
+  type AgentFieldsProposalPreparation,
   type AgentSettingsResource,
+  type AgentSettingsProposalPort,
 } from "./services/agentService.js";
 export {
   AuthoredDirectiveService,
+  isDirectiveNameConflict,
   type AuthoredDirectiveServiceOptions,
 } from "./services/authoredDirectiveService.js";
 export {
@@ -46,7 +60,10 @@ export {
 } from "./routineScopedReferenceGuard.js";
 export {
   DirectiveAuthorService,
+  DIRECTIVE_CREATE_FENCE,
   directiveAuthorDraftInputSchema,
+  directiveAuthorProposalInputSchema,
+  projectDirectiveAuthorProposalInput,
 } from "./services/directiveAuthorService.js";
 export {
   steeringDirectivesFromAuthored,
@@ -83,6 +100,7 @@ export {
 export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfaceExtension.js";
 export {
   AgentRevisionService,
+  agentPublicationReviewedEffect,
   assertCandidateSnapshotIsRunnable,
   DEFAULT_AGENT_LOCALE_FALLBACK,
   equalScopedAuthoringSnapshots,
@@ -107,6 +125,8 @@ export {
   type EmbedConfigCacheInvalidator,
 } from "./services/embedConfigCacheInvalidator.js";
 export {
+  AUTHORED_DIRECTIVE_ENABLED_DEFAULT,
+  authoredDirectiveConditionSchema,
   authoredDirectiveInputSchema,
   authoredDirectiveRouteValues,
   authoredDirectiveSurfaceValues,

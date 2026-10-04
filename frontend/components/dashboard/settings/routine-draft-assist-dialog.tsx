@@ -12,7 +12,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 
 export function RoutineDraftAssistDialog({
@@ -60,9 +59,9 @@ export function RoutineDraftAssistDialog({
           <Button
             type="button"
             onClick={onLoadProposal}
-            disabled={isDrafting || !prose.trim()}
+            disabled={!prose.trim()}
+            loading={isDrafting} icon={<WandSparkles />}
           >
-            {isDrafting ? <Spinner className="mr-2 h-4 w-4" /> : <WandSparkles className="mr-2 h-4 w-4" />}
             Load proposal
           </Button>
         </DialogFooter>

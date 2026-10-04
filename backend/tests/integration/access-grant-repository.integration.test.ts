@@ -163,6 +163,40 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
     expect(page.grants.map((g) => g.tokenHash)).toContain("grant-hash-2");
   });
 
+  it("listByAgent omits revoked and expired grants and keeps disabled ones", async () => {
+    const lifecycleAgentId = randomUUID();
+    await database.query(
+      `INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, $3)`,
+      [lifecycleAgentId, workspaceId, "Grant Lifecycle Agent"],
+    );
+    const grant = (label: string, overrides: { enabled?: boolean; expiresAt: Date }) => repository.save({
+      agentId: lifecycleAgentId,
+      workspaceId,
+      label,
+      principalKind: "agent-api",
+      role: "agent",
+      channel: "agent-api",
+      tokenPrefix: `rdso_${label}`,
+      tokenHash: `lifecycle-${label}-${randomUUID()}`,
+      encryptedToken: null,
+      originConstraint: { mode: "allow-all", origins: [] },
+      ...overrides,
+    });
+
+    const active = await grant("active", { expiresAt: new Date(Date.now() + 60_000) });
+    const disabled = await grant("disabled", { enabled: false, expiresAt: new Date(Date.now() + 60_000) });
+    const revoked = await grant("revoked", { expiresAt: new Date(Date.now() + 60_000) });
+    await repository.revoke(revoked.id, new Date());
+    const expired = await grant("expired", { expiresAt: new Date(Date.now() - 60_000) });
+
+    const page = await repository.listByAgent(lifecycleAgentId);
+    const listedIds = page.grants.map((item) => item.id);
+    expect(listedIds).toEqual(expect.arrayContaining([active.id, disabled.id]));
+    expect(listedIds).not.toContain(revoked.id);
+    expect(listedIds).not.toContain(expired.id);
+    expect(listedIds).toHaveLength(2);
+  });
+
   it("keeps exact PostgreSQL timestamp precision across keyset pages", async () => {
     const ids = [randomUUID(), randomUUID(), randomUUID()];
     const timestamps = [

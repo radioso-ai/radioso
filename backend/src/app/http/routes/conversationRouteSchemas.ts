@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { parseActivityCursor } from "../../../modules/conversationActivity/contracts/index.js";
+
 export const conversationParamsSchema = z.object({
   conversationId: z.string().uuid(),
 });
@@ -53,6 +55,9 @@ export const historyItemsListQuerySchema = historyItemsPageQuerySchema.extend({
   agentId: z.string().uuid().optional(),
   sourceOrigin: z.string().trim().min(1).max(2048).optional(),
   outcome: z.enum(["in_progress", "completed", "handed_off"]).optional(),
+  // Who was on the other side (spec 1290, FR-051). Absent means both, because the unfiltered
+  // list is the one an operator triages from; the filter narrows it rather than defining it.
+  callerKind: z.enum(["human", "agent"]).optional(),
 });
 
 export const conversationWindowQuerySchema = z.object({
@@ -64,4 +69,11 @@ export const conversationWindowQuerySchema = z.object({
 export const conversationTailQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z.string().min(1).optional(),
+});
+
+/** The operator tail also takes the previous tail's activity cursor, to read only recent activity. */
+export const operatorConversationTailQuerySchema = conversationTailQuerySchema.extend({
+  activityCursor: z.string()
+    .refine((cursor) => parseActivityCursor(cursor) !== null, "Pass back an activityCursor a tail returned")
+    .optional(),
 });

@@ -1,4 +1,11 @@
 import { z } from "zod";
+import {
+  CLOSED_INBOX_ITEM_KINDS,
+  CLOSING_ACTIVITY_KINDS,
+  CONVERSATION_ACTIVITY_KINDS,
+  type ConversationActivityEntry,
+  type RecentlyClosedInboxItem,
+} from "../../../../modules/conversationActivity/contracts/index.js";
 import { assistantChatSchema } from "../../schemas/assistantChatSchemas.js";
 import {
   conversationParamsSchema,
@@ -22,11 +29,18 @@ import {
 } from "../../routes/publicChatRouteSchemas.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
+import type { SameType } from "../../../../shared/types/sameType.js";
+import { registerAgentReplyEnvelopeSchemas } from "./agentReplyEnvelopeSchemas.js";
 
 export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const answerFeedbackParamsSchema = z.object({
     assistantMessageId: z.string().uuid(),
   }).openapi("AnswerFeedbackParams");
+  // Registered once and shared: the list row and the detail answer the same question about the
+  // same conversation, and a second inline enum would let them drift apart.
+  const CallerKindSchema = registry.register("CallerKind", z.enum(["human", "agent"]).openapi({
+    description: "Whether a person or a calling agent is on the other side of the conversation.",
+  }));
   const SkillAvailabilitySchema = registry.register("SkillAvailability", skillAvailabilitySchema);
   const SkillContractReferenceSchema = registry.register("SkillContractReference", skillContractReferenceSchema);
   const SkillDiagnosticsSummarySchema = registry.register("SkillDiagnosticsSummary", skillDiagnosticsSummarySchema);
@@ -274,19 +288,29 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
-  // Declared before the conversation summary/detail schemas so both can carry it. Absent on
-  // the response means the conversation is AI-owned (the ownership table is lazy: no row).
+  // Declared before the conversation summary/detail schemas so both can carry it. Absent on a
+  // summary means the conversation is AI-owned (the ownership table is lazy: no row); detail and
+  // tail carry an AI-owned record too once a teammate has been involved.
   const ConversationOwnershipSchema = registry.register(
     "ConversationOwnership",
     z.object({
       conversationId: z.string().uuid(),
       workspaceId: z.string().uuid(),
       state: z.enum(["ai_owned", "human_owned"]),
-      ownerAccountId: z.string().uuid().nullable(),
-      ownerDisplayName: z.string().nullable(),
+      ownerAccountId: z.string().uuid().nullable().openapi({
+        description: "The organisation the workspace belongs to while a teammate owns the conversation. Shared by every teammate, so it does not identify one.",
+      }),
+      ownerUserId: z.string().uuid().nullable().openapi({
+        description: "The teammate handling the conversation; a human-owned conversation is claimed exactly when this is set. Null while a handoff waits to be claimed, when AI-owned, and once the owner's user is deleted.",
+      }),
+      ownerDisplayName: z.string().nullable().openapi({
+        description: "The owner's teammate label: their display name, else their email. Null whenever `ownerUserId` is null. Operator-facing only.",
+      }),
       reason: z.string().nullable(),
       version: z.number().int().nonnegative(),
-      takenOverAt: z.string().datetime().nullable(),
+      takenOverAt: z.string().datetime().nullable().openapi({
+        description: "When the owning teammate claimed the conversation. Null whenever `ownerUserId` is null.",
+      }),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
     }),
@@ -354,6 +378,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       agentName: z.string().nullable(),
       agentInternalName: z.string().nullable(),
       sourceChannel: z.string().nullable(),
+      callerKind: CallerKindSchema,
       sourceOrigin: z.string().nullable(),
       // Union-with-null rather than `.nullable()`: `.nullable()` on a registered $ref emits a
       // contradictory `allOf: [$ref, null]` under OpenAPI 3.1, so `channelContext: null` (every
@@ -583,24 +608,37 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
-  // Shared by the operator and public message schemas. `debug` and `turnFailure` are
-  // operator-only and are added on top of this shape for the dashboard schema alone:
-  // both carry turn diagnostics (and `turnFailure` carries raw error text), and the
-  // public presenter strips them from every message it returns.
+  // How a recorded user message was produced. `routine_invocation` is a calling
+  // agent's tool call: `routine` carries its structured form for tool-call rendering
+  // while `content` holds the same call as text.
+  const UserMessageInputMetadataSchema = registry.register(
+    "UserMessageInputMetadata",
+    z.object({
+      method: z.enum(["typed", "suggestion_click", "intent_click", "routine_invocation"]),
+      suggestionSourceMessageId: z.string().uuid().optional(),
+      intent: z.object({
+        skillName: z.string(),
+        intentName: z.string().optional(),
+      }).optional(),
+      routine: z.object({
+        toolName: z.string(),
+        input: z.record(z.unknown()),
+      }).optional(),
+    }),
+  );
+
+  // Shared by the operator and public message schemas. `debug`, `turnFailure`, and
+  // `operatorLabel` are operator-only and are added on top of this shape for the dashboard
+  // schema alone: the first two carry turn diagnostics (and `turnFailure` carries raw error
+  // text), `operatorLabel` can be a teammate's email, and the public presenter strips all
+  // three from every message it returns.
   const chatConversationMessageShape = {
     id: z.string().uuid(),
     role: z.enum(["user", "assistant", "system"]),
     source: z.enum(["customer", "ai_agent", "human_agent", "human_agent_on_behalf_of_ai_agent", "system"]),
     content: z.string(),
     createdAt: z.string().datetime(),
-    inputMetadata: z.object({
-      method: z.enum(["typed", "suggestion_click", "intent_click"]),
-      suggestionSourceMessageId: z.string().uuid().optional(),
-      intent: z.object({
-        skillName: z.string(),
-        intentName: z.string().optional(),
-      }).optional(),
-    }).optional(),
+    inputMetadata: UserMessageInputMetadataSchema.optional(),
     citations: z.array(schemas.CitationSchema).optional(),
     answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
     suggestions: z.array(ChatSuggestionSchema).optional(),
@@ -614,6 +652,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       ...chatConversationMessageShape,
       debug: ChatConversationMessageDebugSchema.optional(),
       turnFailure: ChatConversationTurnFailureSchema.optional(),
+      operatorLabel: z.string().optional().openapi({
+        description: "Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API.",
+      }),
     }),
   );
 
@@ -629,6 +670,90 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const ConversationOperatorSchema = registry.register(
+    "ConversationOperator",
+    z.object({
+      userId: z.string().uuid(),
+      label: z.string().openapi({ description: "The teammate label: display name, else email." }),
+    }),
+  );
+
+  const ConversationOperatorsResponseSchema = registry.register(
+    "ConversationOperatorsResponse",
+    z.object({
+      operators: z.array(ConversationOperatorSchema),
+    }),
+  );
+
+  // Inline rather than registered: `.nullable()` on a registered $ref emits a contradictory
+  // `allOf: [$ref, null]` under OpenAPI 3.1.
+  const activityPerson = (description: string) => z.object({
+    userId: z.string().uuid(),
+    label: z.string().nullable().openapi({
+      description: "The teammate label as it is now: display name, else email. Null once the user is deleted.",
+    }),
+  }).nullable().openapi({ description });
+
+  const activityDecision = z.object({
+    optionId: z.string(),
+    label: z.string().openapi({ description: "The option's label as the routine author wrote it." }),
+  }).nullable();
+
+  const ConversationActivityEntrySchema = registry.register(
+    "ConversationActivityEntry",
+    z.object({
+      id: z.string().uuid(),
+      kind: z.enum(CONVERSATION_ACTIVITY_KINDS),
+      createdAt: z.string().datetime(),
+      actor: activityPerson("The teammate who acted. Null when the agent acted, or the change came from a caller that is no teammate."),
+      subject: activityPerson("The teammate who holds a `reassigned` conversation now."),
+      from: activityPerson("Who held a `reassigned` conversation before. Null when nobody had claimed the handoff."),
+      handoffReason: z.string().nullable().openapi({
+        description: "The handoff reason code on `handoff_requested`, for example `routine_handoff` or `retrieval_miss`.",
+      }),
+      decision: activityDecision.openapi({ description: "The option chosen on `approval_decided`." }),
+      resolution: z.string().nullable().openapi({
+        description: "The triage resolution code given on `feedback_resolved` or `feedback_dismissed`.",
+      }),
+      assistantMessageId: z.string().uuid().nullable().openapi({
+        description: "The answer the feedback was on, for `feedback_resolved` and `feedback_dismissed`.",
+      }),
+    }).openapi({
+      description: "Something a teammate or the agent did to the conversation. Operator reads only. `feedback_resolved` and `feedback_dismissed` reach only a caller with Quality access (`workspace.quality.read`).",
+    }),
+  );
+
+  const RecentlyClosedInboxItemSchema = registry.register(
+    "RecentlyClosedInboxItem",
+    z.object({
+      id: z.string().uuid().openapi({ description: "The closing event's id." }),
+      conversationId: z.string().uuid(),
+      itemKind: z.enum(CLOSED_INBOX_ITEM_KINDS),
+      outcome: z.enum(CLOSING_ACTIVITY_KINDS),
+      closedAt: z.string().datetime(),
+      closedBy: activityPerson("The teammate who closed it. Null for a caller that is no teammate, or a user since deleted."),
+      decision: activityDecision.openapi({ description: "The option chosen, for an approval." }),
+      resolution: z.string().nullable().openapi({ description: "The triage resolution code, for negative feedback." }),
+      assistantMessageId: z.string().uuid().nullable().openapi({ description: "The answer, for negative feedback." }),
+      title: z.string().nullable().openapi({ description: "See ChatConversationSummary.title." }),
+      preview: z.string().nullable().openapi({ description: "The conversation's first-message preview." }),
+    }),
+  );
+
+  // A documented shape that drifts from its contract fails tsc here.
+  const activitySchemasMatchContracts: [
+    SameType<z.infer<typeof ConversationActivityEntrySchema>, ConversationActivityEntry>,
+    SameType<z.infer<typeof RecentlyClosedInboxItemSchema>, RecentlyClosedInboxItem>,
+  ] = [true, true];
+  void activitySchemasMatchContracts;
+
+  const RecentlyClosedInboxItemsResponseSchema = registry.register(
+    "RecentlyClosedInboxItemsResponse",
+    z.object({
+      items: z.array(RecentlyClosedInboxItemSchema),
+    }),
+  );
+
   const HumanReplyMessageSchema = registry.register(
     "HumanReplyMessage",
     z.object({
@@ -639,14 +764,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       source: z.enum(["customer", "ai_agent", "human_agent", "human_agent_on_behalf_of_ai_agent", "system"]).optional(),
       content: z.string(),
       metadata: z.record(z.unknown()).optional(),
-      inputMetadata: z.object({
-        method: z.enum(["typed", "suggestion_click", "intent_click"]),
-        suggestionSourceMessageId: z.string().uuid().optional(),
-        intent: z.object({
-          skillName: z.string(),
-          intentName: z.string().optional(),
-        }).optional(),
-      }).optional(),
+      inputMetadata: UserMessageInputMetadataSchema.optional(),
       skillName: z.string().optional(),
       skillOutcome: z.string().optional(),
       skillStatus: z.string().optional(),
@@ -658,6 +776,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     "HumanReplyMessageResponse",
     z.object({
       message: HumanReplyMessageSchema,
+      ownership: ConversationOwnershipSchema.openapi({
+        description: "The conversation's ownership after the reply. A reply to an AI-owned or unclaimed conversation claims it for the replier, so its version moves on.",
+      }),
     }),
   );
 
@@ -670,6 +791,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       agentName: z.string().nullable().optional(),
       agentInternalName: z.string().nullable().optional(),
       sourceChannel: z.string().nullable(),
+      callerKind: CallerKindSchema,
       sourceOrigin: z.string().nullable(),
       // Entry page provenance is dashboard-only; the public detail response omits it (and
       // the three fields below it — see PublicChatConversationDetail's omit list).
@@ -704,7 +826,12 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         description: "Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced.",
       }),
       messages: z.array(ChatConversationMessageSchema),
-      ownership: ConversationOwnershipSchema.optional(),
+      ownership: ConversationOwnershipSchema.optional().openapi({
+        description: "The conversation's ownership record whenever one exists, `ai_owned` included, the same as the tail's, so a reader holding an older record sees a hand-back by its higher version. Absent until a teammate is first involved.",
+      }),
+      activity: z.array(ConversationActivityEntrySchema).optional().openapi({
+        description: "What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed.",
+      }),
     }),
   );
 
@@ -713,7 +840,15 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     z.object({
       messages: z.array(ChatConversationMessageSchema),
       cursor: z.string().nullable(),
-      ownership: ConversationOwnershipSchema.optional(),
+      ownership: ConversationOwnershipSchema.optional().openapi({
+        description: "The conversation's ownership record whenever one exists, `ai_owned` included, so a hand-back made elsewhere reaches a reader polling the tail. Absent until a teammate is first involved.",
+      }),
+      activity: z.array(ConversationActivityEntrySchema).optional().openapi({
+        description: "The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` the events in a recent window. The window reaches back far enough to take in an event whose transaction committed after a newer event's, so it can repeat events the caller already holds: keep each one once by its `id`. Feedback outcomes reach only a caller with Quality access.",
+      }),
+      activityCursor: z.string().optional().openapi({
+        description: "Opaque. Pass as the next tail's `activityCursor` to read only recent activity. Present whenever `activity` is.",
+      }),
     }),
   );
 
@@ -734,6 +869,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     "PublicChatConversationDetail",
     ChatConversationDetailSchema.omit({
       ownership: true,
+      activity: true,
       agentInternalName: true,
       entryPageUrl: true,
       entryReferrer: true,
@@ -792,6 +928,12 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  registerAgentReplyEnvelopeSchemas(registry, schemas, {
+    ChatResponseSchema,
+    ChatBootstrapResponseSchema,
+    AnswerCoverageAssessmentSchema,
+  });
+
   Object.assign(schemas, {
     answerFeedbackParamsSchema,
     conversationParamsSchema,
@@ -810,6 +952,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ChatSuggestionSchema,
     ConversationOwnershipSchema,
     ConversationOwnershipResponseSchema,
+    ConversationOperatorsResponseSchema,
+    RecentlyClosedInboxItemsResponseSchema,
     AssistantRouteSchema,
     AssistantRouteDiagnosticsSchema,
     CapabilitySubTraceSchema,

@@ -7,6 +7,7 @@ export { resolveAvailableContextVariables } from "./availableContextVariables.js
 export { boundContextVariableFragments } from "./contextVariablesBound.js";
 export type { ContextVariableRenderBoundConfig } from "./contextVariablesBound.js";
 export { resolveContextForTurn } from "./contextResolutionService.js";
+export { routineContextRenderer } from "./routineContextRenderer.js";
 export { projectVisitorRequestFacts } from "./visitorRequestFacts.js";
 export type { VisitorRequestFacts } from "./visitorRequestFacts.js";
 export { projectContextForMatching } from "./matchContextProjection.js";

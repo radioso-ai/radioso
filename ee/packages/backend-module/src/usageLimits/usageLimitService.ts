@@ -7,6 +7,8 @@ import { PLAN_CATALOG, type UsageCountKind } from "@radioso/plan-catalog";
 import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type {
   AnswerUsageKind,
+  DocumentCapacityReadPort,
+  DocumentCapacityUsage,
   IndexedStorageReservationInput,
   MonthlyIndexedContentReservationInput,
   UsageLimitDatabasePort,
@@ -14,6 +16,7 @@ import type {
   UsageLimitReservation,
 } from "../radiosoModuleTypes.js";
 import { UsageLimitAccountNotFoundError, UsageLimitExceededError } from "./errors.js";
+import { currentPeriodStart, nextPeriodStart } from "./period.js";
 
 export interface UsageLimitProfile {
   key: string;
@@ -138,15 +141,6 @@ const STORAGE_RESERVATION_TTL_MS = 10 * 60 * 1000;
 
 const toIsoDate = (date: Date): string => date.toISOString().slice(0, 10);
 
-const currentPeriodStart = (date = new Date()): string =>
-  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
-
-const nextPeriodStart = (periodStart: string): string => {
-  const [year, month] = periodStart.split("-").map((part) => Number(part));
-  const date = new Date(Date.UTC(year, month, 1));
-  return date.toISOString();
-};
-
 const toNullableNumber = (value: unknown): number | null => {
   if (value === null || value === undefined) {
     return null;
@@ -188,7 +182,7 @@ const mapProfile = (row: {
   updatedAt: row.updated_at.toISOString(),
 });
 
-export class EnterpriseUsageLimitService implements UsageLimitPolicy {
+export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCapacityReadPort {
   private readonly db: EeDb;
 
   constructor(private readonly database: UsageLimitDatabasePort) {
@@ -352,6 +346,12 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       },
       monthlyConversations: profile ? await this.readConversationUsage(accountId, profile, periodStart) : null,
     };
+  }
+
+  async getDocumentCapacityUsage(input: { accountId?: string | null; workspaceId: string }): Promise<DocumentCapacityUsage> {
+    if (!input.accountId) return { storedDocuments: { used: 0, limit: null }, storedIndexedBytes: { used: 0, limit: null }, monthlyIndexedBytes: { used: 0, limit: null } };
+    const usage = await this.getAccountUsage(input.accountId);
+    return { storedDocuments: usage.storedDocuments, storedIndexedBytes: usage.storedIndexedBytes, monthlyIndexedBytes: usage.monthlyIndexedBytes };
   }
 
   async reserveAnswer(input: {

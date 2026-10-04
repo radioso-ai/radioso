@@ -1,7 +1,7 @@
 ---
 title: "Slack Channel"
 description: "Connect a Radioso workspace and its agents to Slack direct messages, channel threads, human escalation posts, and operator callbacks."
-last_updated: 2026-09-21
+last_updated: 2026-09-30
 ---
 
 # Slack Channel
@@ -116,14 +116,33 @@ Three kinds of events arrive in the operator channel:
 From these messages an operator can:
 
 - Approve or deny a decision. The routine resumes with the chosen option.
-- Take over a conversation. The agent stops answering it.
+- Take over a conversation the agent is handling or nobody has claimed. The
+  agent stops answering it and the conversation is yours.
 - Talk to the customer. A short Slack form opens, and the reply goes to the
   customer where the conversation started: back in their Slack direct message,
   or in the website chat.
 - Hand the conversation back to the agent.
 
-Only Radioso workspace members can act. Radioso matches the Slack user to a
-member by email, so the Slack user's email must match their Radioso account. A
+Slack follows the same ownership rules as the dashboard and the API, enforced by
+the server. When a teammate holds a conversation, only they talk to the customer
+or hand it back. Anyone else who clicks **Take over**, **Talk to customer**, or
+**Hand back to AI** sees "Dana Scully is handling this.", shown only to them; no
+reply form opens and the card stays as it is. A card in the channel can be out
+of date, so Slack never takes a conversation away from the teammate holding it:
+the notice after **Take over** links to the conversation in the dashboard, where
+**Reassign** moves it. A reply form opened on an older version of the
+conversation refuses to send with "This conversation changed. Take over again
+before replying."
+
+Once taken over, the card shows "Handled by Dana Scully" and keeps the notice
+subject and collected values. The name is the teammate's Radioso display name,
+else their Slack profile name, else "a teammate" — never an email address. It
+is escaped, so it cannot mention the channel or add a link.
+
+Only Radioso workspace members can act. Radioso matches the Slack user's email
+to an active teammate whose user is not disabled, so the Slack user's email must
+match their Radioso account. The action is then authorised by the same role and
+workspace-grant rules the dashboard uses (`workspace.conversation.takeover`). A
 Slack user who is not a member, or who lacks the takeover permission, gets a
 private message and the action does not run.
 
@@ -280,7 +299,9 @@ complete.
    or form submission to `/api/connectors/slack/interactivity`. Radioso verifies
    the signature, identifies the operator by email, and resolves the action
    through the same approval and conversation-ownership services the dashboard
-   uses. A human reply is delivered to the customer's original channel.
+   uses. A human reply to a Slack conversation is queued as a `slack.post`
+   action in the same transaction that saves it, keyed by the message, and the
+   action worker posts it to the customer's original channel and thread.
 
 Logs and telemetry must use identifiers and counts only. They must not include
 Slack tokens, signing secrets, message text, prompts, completions, retrieved

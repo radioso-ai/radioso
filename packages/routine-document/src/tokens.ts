@@ -18,6 +18,7 @@ import type {
   RoutineInputBinding,
   RoutineFieldGuardOp,
   RoutineFieldGuardUnit,
+  RoutineFieldGuardValue,
   RoutineCompletionExport,
   ProseTerminalConfig,
   RoutineSlotType,
@@ -27,7 +28,6 @@ import { OUTCOME_GUARD_REF, SLOT_FILLED_GUARD_REF } from './types.js'
 import type { RoutineReentryMode } from '@radioso/routine-definition'
 import { ROUTINE_DEFINITION_LIMITS, routineIdentifierPattern } from '@radioso/routine-definition'
 
-export type RoutineFieldGuardValue = string | number | boolean
 
 export type ParsedProseDoc = {
   name: string | null
@@ -54,7 +54,7 @@ const EXPORT_TRIGGER_KINDS = new Set(['complete', 'handoff'])
 // module reads or negotiates it.
 const GRAMMAR_VERSION = 1
 
-export type ChipTokenInput = {
+type ChipTokenInput = {
   chipKind: ProseChipKind
   refId: string
   op?: RoutineFieldGuardOp | null
@@ -192,6 +192,9 @@ export const tokenForChip = (chip: ChipTokenInput): string => {
   switch (chip.chipKind) {
     case 'variable':
       return `@${chip.refId}`
+    case 'context':
+      // A context variable is read, never collected, so its token is the wire form itself.
+      return `{{context.${chip.refId}}}`
     case 'skill':
       // Skills use `#` (a capability) to stay distinct from `@` variables (a value).
       return `#${chip.refId}${formatSkillSuffix(chip)}`
@@ -688,18 +691,6 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
   }
   flush()
   return segments.length > 0 ? segments : [{ kind: 'text', text: '' }]
-}
-
-// True when pasted text carries our frontmatter fence or any chip token — the signal that
-// the editor should reconstruct a routine rather than insert the text literally.
-export const looksLikeRoutineProse = (text: string): boolean => {
-  const trimmed = text.trim()
-  if (trimmed.startsWith(`${FENCE}\nname:`) || trimmed.startsWith(`${FENCE}\r\nname:`)) return true
-  if (trimmed.startsWith(`${FENCE}\ngrammar:`) || trimmed.startsWith(`${FENCE}\r\ngrammar:`)) return true
-  return /(^|\s)(-> (end|handoff|step:)|\[(if|outcome|filled|action|decision|approval) )/.test(text)
-    || /(^|\s)@[A-Za-z_]/.test(text)
-    // A skill mention `#name` (but not a `# ` heading, which has a space after the hash).
-    || /(^|\s)#[A-Za-z_]/.test(text)
 }
 
 export const parseProseDoc = (

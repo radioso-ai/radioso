@@ -7,6 +7,7 @@ import type {
   ContextVariableUpdateRecord,
 } from "../repository.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
+import { RESERVED_CONTEXT_VARIABLE_PREFIX, isReservedContextVariableName } from "../domain.js";
 import { isValueCompatibleWithType } from "../valueCompatibility.js";
 import type {
   AgentContextVariableEnablement,
@@ -48,11 +49,25 @@ export class ContextVariableService {
     this.agentSkillsReader = options.agentSkillsReader;
   }
 
-  create(input: ContextVariableCreateRecord): Promise<ContextVariable> {
+  // `async` so a rejected name arrives as a rejected promise rather than a synchronous throw from
+  // a method whose signature says it returns one; a caller using `.catch()` would otherwise miss it.
+  async create(input: ContextVariableCreateRecord): Promise<ContextVariable> {
+    this.assertNameIsNotReserved(input.name);
     return this.repository.create(input);
   }
 
-  update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null> {
+  /**
+   * Called from all three write paths this service exposes — `create`, `update`, and
+   * `applyProposal` — so the namespace is defended once rather than at each caller of the service.
+   */
+  private assertNameIsNotReserved(name: string | undefined): void {
+    if (name !== undefined && isReservedContextVariableName(name)) {
+      throw badRequest(`Context variable names starting with "${RESERVED_CONTEXT_VARIABLE_PREFIX}" are reserved for facts Radioso establishes about a turn`);
+    }
+  }
+
+  async update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null> {
+    this.assertNameIsNotReserved(input.name);
     return this.repository.update(workspaceId, id, input);
   }
 
@@ -122,6 +137,10 @@ export class ContextVariableService {
   }
 
   async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
+    // A proposal with a null `variableId` inserts a brand-new variable, so this is a third write
+    // path and not a variant of `update`. A Ray-proposed `radioso_`-prefixed name would otherwise be
+    // created and then permanently shadowed by the reserved key, leaving a variable that never reads.
+    this.assertNameIsNotReserved(input.definition?.name);
     await this.requireAgent(input.workspaceId, input.agentId);
     if (input.variableId) await this.requireVariable(input.workspaceId, input.variableId);
     if (input.enablement) {

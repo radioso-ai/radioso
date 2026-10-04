@@ -64,7 +64,7 @@ export const createWebsiteCrawlProposalCopilotTools = (
     uiLabel: "Drafting a website crawl",
     contributingModule: "websiteCrawler",
     dashboardSubject: { type: "proposal" },
-    requiredPermissions: [...MANAGE_DOCUMENTS] as unknown as CopilotToolDescriptor["requiredPermissions"],
+    requiredPermissions: [...MANAGE_DOCUMENTS],
     createTool: (context) => ({
       ...shared,
       invoke: async (rawChange) => {

@@ -4,6 +4,7 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
+import { admittedAbuseControlDecision } from "../support/fakes.js";
 import { createAnswerFeedbackRoutes, type AnswerFeedbackRouteDependencies } from "../../src/modules/chat/routes/answerFeedbackRoutes.js";
 import type { AnswerFeedbackService } from "../../src/modules/chat/services/answerFeedbackService.js";
 import type { ChatAnswerFeedbackEntry } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
@@ -150,7 +151,7 @@ const createDependencies = (
     WORKSPACE_TOKEN_SECRET: "workspace-secret",
   },
   abuseControlService: {
-    enforce: vi.fn().mockResolvedValue(undefined),
+    enforce: vi.fn().mockResolvedValue(admittedAbuseControlDecision()),
   },
   auditService: {
     record: vi.fn().mockResolvedValue(undefined),

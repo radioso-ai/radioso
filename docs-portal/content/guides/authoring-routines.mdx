@@ -79,6 +79,54 @@ later matching message does:
 - **Let the assistant decide** — the agent chooses whether to resume the run,
   start a fresh one, or leave the completed run in place.
 
+### Expose a routine as a tool
+
+A routine normally starts when its trigger matches what a customer says. An AI
+agent calling your agent on a customer's behalf can start it more directly: as a
+named tool, with the routine's collected information filled in up front. Open
+**Starts when** and switch on **Expose as a tool**, then give the tool a name and
+a one-line description that tells a calling agent when to use it.
+
+The name is what the calling agent invokes, so it follows the grammar tool
+catalogs expect: 2–63 characters of lower-case letters, digits, and underscores,
+starting with a letter — `start_return`, `request_callback`. The editor accepts
+whatever you type and reports a name outside that grammar as a validation note,
+the same way it reports an unreachable step; Review & Publish refuses the
+revision until the name is fixed. Two routines on the same agent cannot share a
+name, and the names the MCP surface keeps for itself — `ask_agent`,
+`radioso_docs`, `radioso_doc_page`, and `get_conversation_updates` — are refused
+as `exposure_tool_name_reserved`.
+
+Once the agent is published with a tool name, that name stays fixed for the
+routine — even while you later switch exposure off — so a calling agent never
+finds the same routine under two names. A publish that renames it is refused
+with `exposure_tool_name_changed`. To offer the routine under a different name,
+switch its exposure off and create a new routine with the new name.
+
+A routine whose activation has a gate cannot be exposed: a tool call would start
+it without the gate being checked. Such a routine stays reachable through
+conversation as before.
+
+### What a calling agent sees
+
+Once the agent is published, a calling agent lists the routine as a tool built
+from the information the routine collects. Each declared slot becomes one input:
+a text slot is a string, number and yes/no slots keep their types, an email slot
+is a string that must look like an address, and a date slot is a string that
+must be an ISO calendar day (`2026-09-01`). A slot marked required is required
+in the tool; the slot's description travels with it, so a clear description
+helps the caller fill it correctly. A routine with no slots is still a valid
+tool — a "request a callback" routine needs nothing up front.
+
+A call with values filled in skips the steps that would have asked for them and
+lands on the first step that still needs something: a slot the caller left out,
+an approval, a skill. From there the routine runs exactly as it does in chat,
+and the reply names the routine, where it stopped, and every slot it still
+needs. A call that does not match the tool's inputs is refused before the
+conversation records anything. Activity shows a tool call as a block with the
+tool name and the values it carried. The [calling agent](/guides/agent-converse#routines-as-tools)
+guide shows the catalog and the call from the caller's side.
+
 ## Collect values and add steps
 
 A value is information the routine collects, such as an order number or email.
@@ -91,11 +139,35 @@ Choose a type — `text`, `number`, `boolean`, `email`, or `date` — in
 while the value remains empty, or **Editable after completion** when a visitor
 may correct it later.
 
+The type decides what the routine keeps. An email has to look like an address,
+a date has to be a real day on the calendar, and a number has to be a number.
+When a visitor's answer does not fit — "giulia at example" for an email, "the
+31st of February" for a date — the routine keeps nothing for that value and asks
+the step again. The turn trace lists the value under `rejectedSlots`, by name
+only.
+
+The `@` menu also lists what the agent already knows about the visitor under
+**Visitor context**. Choose **Current page** to place it in a step, and the
+step reads the page's URL, title, and language when it runs — enough to write
+"If the visitor is on a program page, confirm that is the program they want to
+book; otherwise ask which program @program". A host-defined context variable
+the agent has enabled appears in the same list. This is a value the step
+reads, not one it stores: nothing is added to **Information**, so ask for
+anything you want to keep with an `@` slot.
+
 A blank numbered line always sits after the last step — click it to write a
 chat step directly. The **+ Step** menu adds chat, skill, approval, and action
 steps. A skill step can use a fixed input or a value the routine holds, then
 assign its outputs to values that later steps can read. For example, a refund
 lookup can use `@order_number` and set `@refund_status` for a later branch.
+
+A chat step's instruction is the controlling instruction for its reply. The
+agent's directives still shape how the reply is said — tone, formality, what it
+must not claim — but they don't swap the step's question for a redirect or a
+hand-off, and they don't add contact details or links the step doesn't ask
+for. A step that asks for a name and email asks for them even when an
+**Always** directive tells open answers to send booking questions to
+reception. See [Directives on a routine turn](/guides/authoring-directives#directives-on-a-routine-turn).
 
 ## Set branches, approvals, and endings
 
@@ -114,7 +186,33 @@ choice continues along its decision edge.
 
 An ending row completes the routine with **Finish** or escalates it with **Hand
 off**. Set a message on the ending the agent should deliver. Named endings let
-different paths provide different completion messages.
+different paths provide different completion messages. A **Hand off** ending
+also sends the operators the routine's name and every value it collected, by
+email, the contact webhook, and Slack, so the person picking the conversation
+up starts with what the visitor already said.
+
+A **Finish** ending can send that same notice while the agent keeps the
+conversation. Open the ending and turn on **Notify the team**: a booking
+routine then tells reception about the booking, and the agent goes on to ask
+whether there is anything else it can help with. The switch stays on for a
+**Hand off**, which always notifies. **Subject** and **Intro** are optional —
+type `@` to insert a value the routine collects, as in
+`New booking: {{slot.guest_name}}`; a subject holds up to 200 characters and an
+intro up to 2,000.
+Blank fields use the default subject, such as `Book accommodation: completed`,
+and every notice lists all the collected values below the intro, so a short
+subject never hides what the guest said. A value the routine did not collect
+shows as `—`. The webhook body is documented under
+[Operator notifications](/api/agents-and-skills#operator-notifications).
+
+A step is asked the same way at most three times in a row when the visitor's
+replies give it nothing new. From then on it asks in different words, saying
+plainly what it needs and giving an example of an answer that works. The routine
+stays on the step until the visitor answers it: it takes only the rows you set,
+and a **Hand off** row may be the step's confirmation, so the limit never fires
+one. To give a visitor a way out of a step that collects something hard to get
+right — a booking reference, an exact date — add a row for it, such as **AI
+decides** "the visitor wants to talk to a person" → **Hand off**.
 
 ## Validation and publishing
 
@@ -158,7 +256,9 @@ branch, so you can watch that path too. Choose **Run skills for real** in the
 Test Chat actions menu to start a fresh private test where every skill runs
 exactly as it would for a customer. Retrieval skills run in both modes, and
 test values still stand in for context variables either way. Action steps,
-handoffs, and completion export stay off in every private test.
+handoffs, team notices, and completion export stay off in every private test;
+a test turn that reaches an ending that notifies shows the notice it would
+send in the turn's trace instead.
 
 A notify skill delivers through the saved conversation, so it stays off in
 every private test even with **Run skills for real** on. **Retry** re-runs
@@ -176,10 +276,23 @@ from a test that kept skills off.
   activates a coverage condition.
 - A step skips value collection: add the value with `@` in the instruction so the
   step refers to the stored information.
+- A step's reply carries text from a directive: directives shape every routine
+  reply. The turn trace lists them under `routineStep.steeringDirectives` on the
+  `directive_steering` stage; narrow or turn off the directive when its wording
+  does not belong in the flow.
 - A backward jump fails validation: set **Max N** so the loop has a bounded
   number of passes.
 - A routine never starts at all: check that its pill reads **Live**, not
   **Draft**.
+- A team notice shows `—` where a value belongs: the ending's subject or intro
+  references a value the routine did not collect on that path. Collect it in an
+  earlier step, or drop it from the notice text.
+- A finish sends no team notice: check that **Notify the team** is on for that
+  ending, and that the agent has a contact recipient — the notice goes where
+  contact requests go.
+- Review & Publish refuses the agent with `exposure_tool_name_changed`: a
+  published tool name is fixed. Keep the name, or switch exposure off and create
+  a new routine under the new name.
 
 ## Read next
 

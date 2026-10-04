@@ -1,4 +1,4 @@
-import type { RequestHandler, Router } from "express";
+import type { Request, RequestHandler, Response, Router } from "express";
 import type { Pool } from "pg";
 import type { ZodType } from "zod";
 
@@ -21,6 +21,7 @@ export interface ApplicationModuleRegistrationContext {
   registerDatabaseMigrator(migrator: ApplicationDatabaseMigrator): void;
   registerRouteMount(mount: ApplicationRouteMount): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
+  registerDocumentCapacityReader?(reader: ApplicationDocumentCapacityReaderRegistration): void;
   registerManagedModelPolicy?(policy: ApplicationManagedModelPolicyRegistration): void;
   registerOrganizationCreationGuard?(guard: ApplicationOrganizationCreationGuardRegistration): void;
   registerUsageEventRecorder?(recorder: ApplicationUsageEventRecorderRegistration): void;
@@ -89,6 +90,23 @@ export interface CopilotCapabilityProvenance {
   readonly rayOnly?: { readonly reason: string };
 }
 
+/**
+ * Operator MCP exposure a contributed descriptor declares. OSS keeps a contributed descriptor that
+ * omits it off the operator MCP catalog.
+ */
+export type CopilotMcpDisposition =
+  | {
+      readonly status: "eligible";
+      readonly inputStrategy: "explicit";
+      readonly scope: "operator:read" | "operator:probe" | "operator:act" | "operator:propose" | "operator:write";
+      readonly retry: {
+        readonly effect: "none" | "proposal" | "act";
+        readonly idempotent: boolean;
+        readonly operationIdentity: "client" | "input";
+      };
+    }
+  | { readonly status: "excluded"; readonly reason: string };
+
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly name: string;
   readonly shape: CopilotToolShape;
@@ -109,6 +127,7 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly requiredPermissions: readonly [string, ...string[]];
   readonly capabilityProvenance: CopilotCapabilityProvenance;
   readonly contributingModule: string;
+  readonly mcpDisposition?: CopilotMcpDisposition;
   readonly dashboardSubject: CopilotEntityReference;
   createTool(context: CopilotToolInvocationContext): CopilotAgentTool<TInput, TOutput>;
 }
@@ -256,6 +275,24 @@ export type AnswerUsageKind =
   | "test_run"
   | "pulse_report";
 
+/**
+ * Mirrors OSS's `DocumentCapacityUsage` (in `backend/src/shared/domain/usageLimitPolicy.ts`).
+ */
+export interface DocumentCapacityUsage {
+  storedDocuments: { used: number; limit: number | null };
+  storedIndexedBytes: { used: number; limit: number | null };
+  monthlyIndexedBytes: { used: number; limit: number | null };
+}
+
+/**
+ * Mirrors OSS's `DocumentCapacityReadPort` (in `backend/src/shared/domain/usageLimitPolicy.ts`).
+ * A narrow read consumed only by the documents reviewed-operation service, kept off
+ * `UsageLimitPolicy` so its reservation fakes never need to stub it.
+ */
+export interface DocumentCapacityReadPort {
+  getDocumentCapacityUsage(input: { accountId?: string | null; workspaceId: string }): Promise<DocumentCapacityUsage>;
+}
+
 export interface UsageLimitPolicy {
   reserveAnswer(input: {
     accountId?: string | null;
@@ -283,6 +320,8 @@ export type OrganizationCoreProvisioningRequest =
       organizationName: string;
       email: string;
       passwordHash: string;
+      /** Already normalized by the caller; absent or null leaves the user unnamed. */
+      displayName?: string | null;
       emailVerifiedAt: Date | null;
     }
   | {
@@ -339,6 +378,14 @@ export interface ApplicationRouteMount {
   path: string;
   createRouter(dependencies: {
     connectorDb: UsageLimitDatabasePort;
+    // OSS passes its application logger to every route mount. Declared as the
+    // narrow shape EE reads so a module can report its boot-time configuration
+    // state, and refuse an unusable request out loud, without importing the
+    // host's logger type.
+    logger?: {
+      info(entry: unknown, message?: string): void;
+      warn(entry: unknown, message?: string): void;
+    };
     env: {
       SESSION_COOKIE_NAME: string;
       STAFF_SESSION_COOKIE_NAME?: string;
@@ -350,6 +397,15 @@ export interface ApplicationRouteMount {
       OPERATOR_MCP_OAUTH_SOURCE_RATE_LIMIT_MAX_ATTEMPTS?: number;
     };
     apiPrincipalRouteInventory: ApiPrincipalRouteInventory;
+    /**
+     * The host's resolved client source for a request, as an opaque, stable
+     * digest for rate-limit subject keys. OSS resolves forwarded addresses once
+     * per request against its own proxy configuration; `req.ip` is always the
+     * socket peer, so a limiter keyed on it budgets the proxy, not the caller.
+     */
+    requestSource: {
+      digest(req: Request, res: Response): string;
+    };
     abuseControlService: {
       enforce(input: {
         scope: string;
@@ -378,12 +434,17 @@ export interface ApplicationRouteMount {
       // Provider-agnostic federated sign-in. EE modules translate their
       // provider response (e.g. Google OAuth) into this verified-identity
       // assertion; OSS owns account provisioning + session issuance and never
-      // learns about the specific provider.
+      // learns about the specific provider. The result mirrors OSS's
+      // `AuthenticatedAccountSession` (in
+      // `backend/src/modules/auth/services/authService.ts`), structurally like
+      // every other host contract in this file: `radioso-backend` is a private
+      // application, not an importable package.
       federatedLogin(input: {
         provider: string;
         subject: string;
         email: string;
         emailVerified: boolean;
+        displayName?: string | null;
       }): Promise<{
         userId: string;
         accountId: string;
@@ -606,6 +667,15 @@ export type ApplicationUsageLimitPolicyRegistration =
         error(entry: unknown, message?: string): void;
       };
     }) => UsageLimitPolicy);
+
+export type ApplicationDocumentCapacityReaderRegistration =
+  | DocumentCapacityReadPort
+  | ((context: {
+      database: UsageLimitDatabasePort;
+      logger: {
+        error(entry: unknown, message?: string): void;
+      };
+    }) => DocumentCapacityReadPort);
 
 /**
  * Mirrors OSS's `ManagedModelPolicy` (`backend/src/shared/domain/managedModelPolicy.ts`): the

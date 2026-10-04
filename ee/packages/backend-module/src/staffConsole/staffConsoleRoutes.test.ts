@@ -44,6 +44,9 @@ const createDependencies = (input: {
   abuseControlService: {
     enforce: input.abuseControlEnforce ?? vi.fn(async () => undefined),
   },
+  requestSource: {
+    digest: () => "host-source-digest",
+  },
   logger: input.logger,
 } as unknown as RouteDependencies);
 
@@ -253,6 +256,17 @@ const sampleOrganizationRows = {
       profileKey: "starter",
       profileDisplayName: "Starter",
       monthlyAnswers: { used: 7, limit: 10 },
+      monthlyConversations: null,
+    },
+    {
+      accountId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      name: "Comet Customer",
+      ownerEmail: "comet@example.com",
+      ownerCount: 1,
+      profileKey: "comet",
+      profileDisplayName: "Comet",
+      monthlyAnswers: { used: 0, limit: null },
+      monthlyConversations: { used: 12.5, limit: 50 },
     },
   ],
   pageInfo: {
@@ -260,7 +274,7 @@ const sampleOrganizationRows = {
     offset: 0,
     nextOffset: null,
     hasMore: false,
-    total: 1,
+    total: 2,
   },
 };
 
@@ -472,6 +486,26 @@ describe("staff console routes and guards", () => {
       subjectKey: "owner@example.com",
       limit: 10,
       windowMs: 60_000,
+    }));
+  });
+
+  it("keys a staff login attempt without an email on the host's request source", async () => {
+    const repositories = await createMemoryRepositories();
+    const abuseControlEnforce = vi.fn(async () => undefined);
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      abuseControlEnforce,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+
+    await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .set("X-Forwarded-For", "203.0.113.7")
+      .send({ password: "password-123" });
+
+    expect(abuseControlEnforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "ee.staff_console.auth.login",
+      subjectKey: "host-source-digest",
     }));
   });
 

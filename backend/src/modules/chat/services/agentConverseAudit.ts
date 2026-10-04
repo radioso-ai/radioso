@@ -42,6 +42,7 @@ export class AgentConverseAudit {
   }
 
   async recordValidationDenied(input: { grant?: GrantAuditFields | null; payload?: ConverseChatSessionPayload | null; reason: string }) {
+    const payloadOrigin = input.payload?.origin;
     await this.auditService.record({
       workspaceId: input.grant?.workspaceId ?? input.payload?.workspaceId,
       eventType: "mcp_converse.session.validate",
@@ -49,7 +50,7 @@ export class AgentConverseAudit {
       metadata: {
         ...grantMetadata(input.grant),
         reason: input.reason,
-        payloadGrantId: input.payload?.grantId ?? null,
+        payloadGrantId: payloadOrigin?.kind === "grant" ? payloadOrigin.grantId : null,
         publicSessionId: input.payload?.publicSessionId ?? null,
       },
     });
@@ -58,7 +59,7 @@ export class AgentConverseAudit {
   async recordAskOutcome(input: {
     workspaceId: string;
     agentId: string;
-    grantId: string;
+    grantId: string | null;
     publicSessionId: string;
     status: "success" | "failure";
     reason?: string | null;

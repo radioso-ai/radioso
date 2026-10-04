@@ -28,10 +28,11 @@ describeIntegration("AccountMembershipRepository (Postgres)", () => {
       `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
       [accountId, "Membership Co", `acct-${accountId}@example.com`, "hash"],
     );
-    await database.query(`INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)`, [
+    await database.query(`INSERT INTO users (id, email, password_hash, display_name) VALUES ($1, $2, $3, $4)`, [
       userAId,
       userAEmail,
       "hash",
+      "Member A",
     ]);
     await database.query(`INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)`, [
       userBId,
@@ -78,13 +79,41 @@ describeIntegration("AccountMembershipRepository (Postgres)", () => {
     expect(await repository.findById(randomUUID())).toBeNull();
   });
 
-  it("listActiveByAccount joins the user email and orders by created_at ASC", async () => {
+  it("listActiveByAccount joins the user email and display name and orders by created_at ASC", async () => {
     await repository.create({ accountId, userId: userBId, role: "member" });
 
     const rows = await repository.listActiveByAccount(accountId);
     expect(rows.map((r) => r.userId)).toEqual([userAId, userBId]);
     const a = rows.find((r) => r.userId === userAId);
     expect(a?.email).toBe(userAEmail);
+    expect(a?.displayName).toBe("Member A");
+    expect(a?.disabledAt).toBeNull();
+    expect(rows.find((r) => r.userId === userBId)?.displayName).toBeNull();
+  });
+
+  it("findActiveUserByAccountAndUser returns one member with their user, and null for a stranger", async () => {
+    const member = await repository.findActiveUserByAccountAndUser(accountId, userAId);
+
+    expect(member).toMatchObject({
+      accountId,
+      userId: userAId,
+      email: userAEmail,
+      displayName: "Member A",
+      status: "active",
+      disabledAt: null,
+    });
+    expect(await repository.findActiveUserByAccountAndUser(accountId, randomUUID())).toBeNull();
+    expect(await repository.findActiveUserByAccountAndUser(randomUUID(), userAId)).toBeNull();
+  });
+
+  it("listActiveByAccount reports when a member's user is disabled", async () => {
+    const disabledAt = new Date("2026-09-01T00:00:00.000Z");
+    await database.query(`UPDATE users SET disabled_at = $1 WHERE id = $2`, [disabledAt, userBId]);
+
+    const rows = await repository.listActiveByAccount(accountId);
+
+    expect(rows.find((r) => r.userId === userBId)?.disabledAt).toEqual(disabledAt);
+    await database.query(`UPDATE users SET disabled_at = NULL WHERE id = $1`, [userBId]);
   });
 
   it("listActiveByUser returns active memberships for a user", async () => {
@@ -97,6 +126,15 @@ describeIntegration("AccountMembershipRepository (Postgres)", () => {
     const updated = await repository.updateRole(first!.id, "admin");
     expect(updated.role).toBe("admin");
     expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(first!.updatedAt.getTime());
+  });
+
+  it("updateRole answers with the member's email and display name", async () => {
+    const named = await repository.findActiveByAccountAndUser(accountId, userAId);
+    const updated = await repository.updateRole(named!.id, "owner");
+    expect(updated).toMatchObject({ id: named!.id, userId: userAId, email: userAEmail, displayName: "Member A" });
+
+    const unnamed = await repository.findActiveByAccountAndUser(accountId, userBId);
+    expect(await repository.updateRole(unnamed!.id, "member")).toMatchObject({ email: userBEmail, displayName: null });
   });
 
   it("deleteById returns true then false", async () => {

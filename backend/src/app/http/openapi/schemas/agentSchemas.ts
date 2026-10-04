@@ -141,6 +141,19 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       assistantDefaultLocale: z.string().nullable(),
       proactiveGreetingEnabled: z.boolean(),
       assistantBootstrapActive: z.boolean(),
+      publicId: z.string().nullable().openapi({
+        description: "Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller.",
+      }),
+      publicDescription: z.string().openapi({
+        description: "Operator-authored sentence the agent's public cards carry.",
+      }),
+      agentCardEnabled: z.boolean(),
+      publicAgentAccessEnabled: z.boolean().openapi({
+        description: "Whether a calling agent may connect with the public id and no credential. Requires agentCardEnabled.",
+      }),
+      walkInConversationsPerHour: z.number().int().nullable().openapi({
+        description: "Per-agent walk-in conversation budget. Null leaves the deployment default in charge.",
+      }),
       chatModelOverride: z.object({
         provider: z.enum(["openai", "openai-compatible", "gemini", "claude"]),
         model: z.string(),
@@ -193,6 +206,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       greetingInstruction: z.string().max(200).optional(),
       assistantDefaultLocale: z.string().max(35).nullable().optional(),
       proactiveGreetingEnabled: z.boolean().optional(),
+      publicDescription: z.string().max(500).optional(),
+      agentCardEnabled: z.boolean().optional(),
+      publicAgentAccessEnabled: z.boolean().optional(),
+      walkInConversationsPerHour: z.number().int().min(1).max(100_000).nullable().optional(),
       chatModelOverride: z.union([
         z.null(),
         z.object({

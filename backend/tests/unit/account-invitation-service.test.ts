@@ -141,6 +141,7 @@ describe("AccountInvitationService", () => {
         email: "teammate@example.com",
         acceptancePath: invitation.acceptanceUrl,
         invitedByEmail: "owner@example.com",
+        invitedByName: null,
         expiresAt: new Date(invitation.expiresAt),
       },
     ]);
@@ -152,6 +153,26 @@ describe("AccountInvitationService", () => {
         metadata: expect.objectContaining({ email: "teammate@example.com", emailDelivered: true }),
       }),
     );
+  });
+
+  it("names the inviter by their display name in the notification", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    membershipRepository.setUserRepository(userRepository);
+    const notifier = new RecordingAccountInvitationNotifier();
+    const service = new AccountInvitationService(
+      new InMemoryAccountInvitationRepository(),
+      userRepository,
+      new AccountAccessService(membershipRepository, createAuditService()),
+      createAuditService(),
+      notifier,
+    );
+    const inviter = await userRepository.create({ email: "owner@example.com", passwordHash: "hash", displayName: "Olivia Owner" });
+    await membershipRepository.create({ accountId: "account-1", userId: inviter.id, role: "owner" });
+
+    await service.createInvitation({ accountId: "account-1", invitedByUserId: inviter.id, email: "teammate@example.com" });
+
+    expect(notifier.notifications[0]).toMatchObject({ invitedByEmail: "owner@example.com", invitedByName: "Olivia Owner" });
   });
 
   it("keeps the invitation usable and reports it undelivered when notification fails", async () => {
@@ -269,8 +290,8 @@ describe("AccountInvitationService", () => {
       invitationId: invitation.id,
     });
 
-    const [stored] = await service.listForAccount("account-1");
-    expect(stored.status).toBe("revoked");
+    expect(await service.listForAccount("account-1")).toEqual([]);
+    expect(await invitationRepository.findById(invitation.id)).toMatchObject({ status: "revoked" });
     expect(auditService.events).toContainEqual(
       expect.objectContaining({
         accountId: "account-1",
@@ -279,6 +300,42 @@ describe("AccountInvitationService", () => {
         metadata: expect.objectContaining({ email: "teammate@example.com" }),
       }),
     );
+  });
+
+  it("omits an invitation whose expiry has passed from the account listing", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    membershipRepository.setUserRepository(userRepository);
+    const accessService = new AccountAccessService(membershipRepository, createAuditService());
+    const invitationRepository = new InMemoryAccountInvitationRepository();
+    const service = new AccountInvitationService(
+      invitationRepository,
+      userRepository,
+      accessService,
+      createAuditService(),
+      new RecordingAccountInvitationNotifier(),
+    );
+    const inviter = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
+    const membership = await membershipRepository.create({ accountId: "account-1", userId: inviter.id, role: "owner" });
+
+    const live = await invitationRepository.create({
+      accountId: "account-1",
+      email: "live@example.com",
+      invitedByMembershipId: membership.id,
+      tokenHash: "live-hash",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const stale = await invitationRepository.create({
+      accountId: "account-1",
+      email: "stale@example.com",
+      invitedByMembershipId: membership.id,
+      tokenHash: "stale-hash",
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+
+    const listed = await service.listForAccount("account-1");
+    expect(listed.map((invitation) => invitation.id)).toEqual([live.id]);
+    expect(await invitationRepository.findById(stale.id)).toMatchObject({ status: "expired" });
   });
 
   it("rejects revoking an already accepted invitation", async () => {

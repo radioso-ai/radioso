@@ -79,6 +79,38 @@ describeIntegration("AbuseControlRepository (Postgres)", () => {
     expect((await repository.find(concurrentScope, "same-subject"))?.attemptCount).toBe(2);
   });
 
+  it("weighs the expiring window so a burst cannot spend the budget twice across the boundary", async () => {
+    const burstScope = `${scope}.burst`;
+    const service = new AbuseControlService(repository);
+    const windowStart = new Date("2026-03-30T10:00:00.000Z");
+    const policy = { scope: burstScope, subjectKey: "same-subject", limit: 5, windowMs: 60_000 };
+
+    for (const offsetMs of [0, 59_000, 59_100, 59_200, 59_300]) {
+      await service.enforce({ ...policy, now: new Date(windowStart.getTime() + offsetMs) });
+    }
+
+    await expect(
+      service.enforce({ ...policy, now: new Date(windowStart.getTime() + 61_000) }),
+    ).rejects.toMatchObject({ statusCode: 429, code: "rate_limit_exceeded" });
+
+    const entry = await repository.find(burstScope, "same-subject");
+    expect(entry?.previousAttemptCount).toBe(5);
+    expect(entry?.attemptCount).toBe(1);
+
+    // A window that stands a full window clear of the last one starts from nothing.
+    const separateScope = `${scope}.burst.separate`;
+    for (const offsetMs of [0, 59_000, 59_100, 59_200, 59_300]) {
+      await service.enforce({ ...policy, scope: separateScope, now: new Date(windowStart.getTime() + offsetMs) });
+    }
+    const afterGap = await service.enforce({
+      ...policy,
+      scope: separateScope,
+      now: new Date(windowStart.getTime() + 180_000),
+    });
+
+    expect(afterGap.remaining).toBe(4);
+  });
+
   it("rolls back the grant consumption when the workspace budget is unavailable", async () => {
     const batchScope = `${scope}.batch`;
     const service = new AbuseControlService(repository);

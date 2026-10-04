@@ -14,6 +14,13 @@ handling, auth/session state, audit output, and backend conversation calls
 through `converseApiAdapter.ts`. The `operator/` directory owns only protected-
 resource transport, signed admission calls, rate controls, and safe observations;
 Operator Copilot owns catalog eligibility and invocation behavior in the backend.
+The transport stays stateless across every request, including a reviewed
+operation's `approval_required` outcome: `requestHandler.ts` recognizes it by
+shape and, for a client that declared URL-mode elicitation on protocol
+`2026-07-28`, answers with the 2026-07-28 multi-round-trip `input_required`
+result instead of calling anything backend-specific; the client's retry lands
+on any instance because the approval it waits for lives on the backend's own
+proposal row.
 
 It should not own backend product behavior. If a tool needs new product
 behavior, add or change the backend API contract first, then update this package
@@ -21,9 +28,16 @@ as a client.
 
 ## Read First
 
-- `server.ts`: MCP server construction.
-- `tools/converseTools.ts`: the sole `ask_agent` tool definition and handler.
-- `converseApiAdapter.ts`: backend agent-converse API boundary.
+- `server.ts`: MCP server construction; takes the session's routine descriptors and
+  lists them after the static tools.
+- `tools/converseTools.ts`: the `ask_agent` tool definition and handler.
+- `tools/routineTools.ts` and `tools/routineToolSchema.ts`: one tool per exposed
+  routine descriptor; the descriptor's JSON Schema is handed to the SDK as-is.
+- `converseApiAdapter.ts`: backend agent-converse API boundary, typed from
+  `generated/openapiTypes.ts`.
+- `auth/toolCatalogKey.ts` and `http/sessionServerManager.ts`: the catalog is read
+  once at session exchange and pinned to the session record; servers are cached per
+  catalog key (bounded LRU) and shared by sessions with identical catalogs.
 - `http/requestHandler.ts`, `http/runtime.ts`, `http/createHttpServer.ts`: HTTP
   transport runtime.
 - `auth/`: agent-channel credential validation and session handling.
@@ -32,8 +46,8 @@ as a client.
 
 ## Common Change Paths
 
-- New MCP tool: update `tools/converseTools.ts`, result formatting, tests, and docs. The public catalog is intentionally limited to `ask_agent`.
-- Backend contract change: update `converseApiAdapter.ts` and adjust tool tests.
+- New static MCP tool: update `tools/converseTools.ts`, result formatting, tests, and docs. Its name must be on the backend's reserved list, because a routine tool with the same name is skipped with a warning.
+- Backend contract change: run `pnpm run sync:openapi`, update `converseApiAdapter.ts`, and adjust tool tests.
 - HTTP auth/session behavior: update `auth/`, `http/`, and auth tests.
 - Audit behavior: update `audit/` and matching tests.
 - Operator transport: update `operator/`, its focused tests, and the generated

@@ -154,8 +154,9 @@ const installOperatorRoutes = async (page: Page, options: {
     if (request.method() === "GET" && /\/grants\/[^/]+$/.test(path)) return route.fulfill({ json: options.details ?? grantDetail() });
     if (request.method() === "POST" && path.endsWith("/revoke")) {
       options.onRevoke?.();
-      currentGrants = currentGrants.map((item) => ({ ...item, status: "revoked", revokedAt: "2026-09-04T12:00:00.000Z" }));
-      return route.fulfill({ json: currentGrants[0] ?? grant({ status: "revoked" }) });
+      const revoked = currentGrants.map((item) => ({ ...item, status: "revoked", revokedAt: "2026-09-04T12:00:00.000Z" }));
+      currentGrants = [];
+      return route.fulfill({ json: revoked[0] ?? grant({ status: "revoked" }) });
     }
     return route.fulfill({ status: 404, json: { error: { message: `Unhandled Operator MCP request: ${path}` } } });
   });
@@ -344,7 +345,7 @@ test("password sign-in returns to the pending consent transaction", async ({ pag
   });
 
   await page.goto(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
-  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Back in the light" })).toBeVisible();
   await page.getByLabel("Email").fill("operator@example.com");
   await page.getByLabel("Password").fill("password-for-test");
   await page.getByRole("button", { name: "Sign In" }).click();
@@ -388,6 +389,8 @@ test("grant inventory exposes safe detail and requires explicit confirmation bef
   await card.getByRole("button", { name: "Revoke grant" }).click();
   await page.getByRole("alertdialog", { name: "Revoke grant?" }).getByRole("button", { name: "Revoke grant" }).click();
   await expect.poll(() => revokeRequests).toHaveLength(1);
+  await expect(card.getByText("Codex CLI", { exact: true })).toHaveCount(0);
+  await expect(card.getByText("No operator MCP grants yet.", { exact: false })).toBeVisible();
 });
 
 test("member sees an owner-controlled grant without a revoke action", async ({ page }) => {
@@ -473,11 +476,29 @@ test("proposal deep-link returns to review after a signed-out operator logs in",
 
   const proposalPath = "/oauth/operator-mcp/proposal/33333333-3333-4333-8333-333333333333";
   await page.goto(proposalPath);
-  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Back in the light" })).toBeVisible();
   await page.getByLabel("Email").fill("operator@example.com");
   await page.getByLabel("Password").fill("password-for-test");
   await page.getByRole("button", { name: "Sign In" }).click();
 
   await expect(page).toHaveURL(proposalPath);
+  await expect(page.getByText("Review proposal from Radioso MCP", { exact: true })).toBeVisible();
+});
+
+test("proposal deep-link offers a switch to an account the signed-in operator can access", async ({ page }) => {
+  await seedDashboardStorage(page);
+  let switched = false;
+  await page.route("**/backend/api/v1/copilot/proposals/33333333-3333-4333-8333-333333333333", async (route) => route.fulfill(switched
+    ? { json: proposalDetail }
+    : { status: 409, json: { error: { code: "proposal_account_mismatch", message: "This proposal belongs to another account.", details: { accountId: "account-2", accountName: "Support", workspaceId } } } }));
+  await page.route("**/backend/api/v1/account/switch", async (route) => {
+    switched = true;
+    await route.fulfill({ json: { userId: "user-1", accountId: "account-2", organizationName: "Support", workspaceId, workspacePublicRouteKey: workspaceKey } });
+  });
+  await page.route("**/backend/api/v1/copilot/availability", async (route) => route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["ingestion_settings"] } }));
+
+  await page.goto("/oauth/operator-mcp/proposal/33333333-3333-4333-8333-333333333333");
+  await expect(page.getByText("This proposal belongs to Support.")).toBeVisible();
+  await page.getByRole("button", { name: "Switch to Support" }).click();
   await expect(page.getByText("Review proposal from Radioso MCP", { exact: true })).toBeVisible();
 });

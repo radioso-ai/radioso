@@ -73,6 +73,7 @@ export type ApprovalDocOption = {
 
 export type ProseChipKind =
   | "variable"
+  | "context"
   | "skill"
   | "action"
   | "handoff"

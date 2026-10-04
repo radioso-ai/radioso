@@ -12,10 +12,11 @@ import { parseUsageDetailsQuery } from './usage-details'
 
 export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'eval' | 'settings' | 'account' | 'copilot'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
+export type AgentTestChatView = 'history'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion'
 export type ActivityTab = 'needs-attention' | 'all'
 export type SettingsTab = 'workspace' | 'api-access' | 'providers'
-export type AccountTab = 'members' | 'usage'
+export type AccountTab = 'profile' | 'members' | 'usage'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
 export type HistoryItemKind = 'chat' | 'search' | 'contact'
 export type QualityStatusFilter =
@@ -83,8 +84,10 @@ export interface DashboardRouteState {
   agentId?: string
   agentTab?: AgentTab
   agentRoutineId?: string
-  /** When opening the agent chat tab, open this saved test execution instead of starting a fresh one. */
+  /** The agent chat tab's open test, carried as route state rather than a one-shot open command. */
   agentTestExecutionId?: string
+  /** Which Test Chat view the agent chat tab shows; absent means the chat itself. */
+  agentTestChatView?: AgentTestChatView
   knowledgeTab?: KnowledgeTab
   settingsTab?: SettingsTab
   accountTab?: AccountTab
@@ -136,6 +139,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'agentTab',
   'agentRoutineId',
   'agentTestExecutionId',
+  'agentTestChatView',
   'knowledgeTab',
   'settingsTab',
   'accountTab',
@@ -338,6 +342,8 @@ const parseAgentTab = (value: string | null): AgentTab | undefined => {
 }
 
 const isValidAgentId = (value: string): boolean => UUID_PATTERN.test(value)
+/** A shared test link comes from someone else; check its id before it reaches an API path. */
+export const isValidTestExecutionId = (value: string): boolean => UUID_PATTERN.test(value)
 
 const parseKnowledgeTab = (value: string | null): KnowledgeTab | undefined => {
   if (value === 'documents' || value === 'sources' || value === 'ingestion') {
@@ -363,7 +369,7 @@ const parseSettingsTab = (value: string | null): SettingsTab | undefined => {
 }
 
 const parseAccountTab = (value: string | null): AccountTab | undefined => {
-  if (value === 'members' || value === 'usage') {
+  if (value === 'profile' || value === 'members' || value === 'usage') {
     return value
   }
   if (value === 'users') {
@@ -415,6 +421,13 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
       state.agentTestExecutionId
     ) {
       normalized.agentTestExecutionId = state.agentTestExecutionId
+    } else if (
+      state.agentId &&
+      !state.agentRoutineId &&
+      (state.agentTab ?? DEFAULT_AGENT_TAB) === 'chat' &&
+      state.agentTestChatView
+    ) {
+      normalized.agentTestChatView = state.agentTestChatView
     }
     if (state.anchor) {
       normalized.anchor = state.anchor
@@ -602,6 +615,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.agentTestExecutionId) {
       searchParams.set('testExecution', normalized.agentTestExecutionId)
+    }
+    if (normalized.agentTestChatView) {
+      searchParams.set('view', normalized.agentTestChatView)
     }
     if (normalized.anchor) {
       searchParams.set('anchor', normalized.anchor)
@@ -819,6 +835,9 @@ export const buildAgentSectionHref = (
   agentTab: target.agentTab,
   anchor: target.anchor,
   agentRoutineId: undefined,
+  // A section link lands on the section itself, never on an open test or a sub-view.
+  agentTestExecutionId: undefined,
+  agentTestChatView: undefined,
 })
 
 export const buildAccountRoute = (
@@ -934,6 +953,9 @@ export const parseDashboardRoute = (
       agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
       ...(searchParams?.get('testExecution')
         ? { agentTestExecutionId: searchParams.get('testExecution') ?? undefined }
+        : {}),
+      ...(searchParams?.get('view') === 'history'
+        ? { agentTestChatView: 'history' as const }
         : {}),
       anchor: parseAnchor(searchParams?.get('anchor') ?? null),
     })

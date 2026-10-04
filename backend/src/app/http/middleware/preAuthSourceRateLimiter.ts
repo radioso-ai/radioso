@@ -1,26 +1,26 @@
 import type { RequestHandler } from "express";
-import {
-  MCP_SOURCE_PROOF_HEADERS,
-  resolveSourceDigest,
-  verifyMcpSourceProof,
-} from "@radioso/mcp-source-proof";
+import { MCP_SOURCE_PROOF_HEADERS, verifyMcpSourceProof } from "@radioso/mcp-source-proof";
 
 import { forbidden } from "../../../shared/domain/errors.js";
-import type { RateLimitAbuseControlPort } from "./rateLimit.js";
+import { readRequestSource } from "./requestSource.js";
 
-export const preAuthSourceDigest = (
-  req: Parameters<RequestHandler>[0],
-  trustedProxyHops = 0,
-): string => resolveSourceDigest({
-  forwardedFor: req.headers["x-forwarded-for"],
-  socketAddress: req.socket.remoteAddress,
-  trustedProxyHops,
-});
+/**
+ * Pre-authentication limiters spend budget and answer with a bare rejection, so they never read
+ * the decision back and never advertise a budget to an unauthenticated caller.
+ */
+export interface PreAuthSourceAbuseControlPort {
+  enforce(input: {
+    scope: string;
+    subjectKey: string;
+    limit: number;
+    windowMs: number;
+  }): Promise<unknown>;
+}
 
 const singleHeader = (value: string | string[] | undefined): string | null =>
   typeof value === "string" ? value : null;
 
-export const verifiedMcpSourceDigest = (
+const verifiedMcpSourceDigest = (
   req: Parameters<RequestHandler>[0],
   signingSecret?: string,
 ): string | null => {
@@ -40,13 +40,39 @@ export const verifiedMcpSourceDigest = (
   });
 };
 
+interface PreAuthSourceLocals {
+  /**
+   * The calling source's opaque digest, resolved once per request by the first source
+   * limiter on the route. Later middleware budgets and audits by it rather than
+   * recomputing — two resolutions of the same request must never disagree.
+   */
+  preAuthSourceDigest: string;
+}
+
+/** Publishes the digest for later middleware on the same request. */
+export const publishPreAuthSourceDigest = (
+  res: Parameters<RequestHandler>[1],
+  sourceDigest: string,
+): string => {
+  (res.locals as typeof res.locals & PreAuthSourceLocals).preAuthSourceDigest = sourceDigest;
+  return sourceDigest;
+};
+
+export const readPreAuthSourceDigest = (
+  res: Parameters<RequestHandler>[1],
+): string | null =>
+  (res.locals as typeof res.locals & Partial<PreAuthSourceLocals>).preAuthSourceDigest ?? null;
+
+/**
+ * The standalone MCP server's signed digest names the caller it saw, so it wins over
+ * everything this backend observed. Otherwise the request source the app published, which
+ * already prefers a verified frontend edge envelope over this backend's own forwarded chain.
+ */
 export const resolvedPreAuthSourceDigest = (
   req: Parameters<RequestHandler>[0],
+  res: Parameters<RequestHandler>[1],
   signingSecret?: string,
-  trustedProxyHops = 0,
-): string => {
-  return verifiedMcpSourceDigest(req, signingSecret) ?? preAuthSourceDigest(req, trustedProxyHops);
-};
+): string => verifiedMcpSourceDigest(req, signingSecret) ?? readRequestSource(req, res).digest;
 
 export const requireValidMcpSourceProof = (signingSecret?: string): RequestHandler => (req, _res, next) => {
   if (!verifiedMcpSourceDigest(req, signingSecret)) {
@@ -57,18 +83,21 @@ export const requireValidMcpSourceProof = (signingSecret?: string): RequestHandl
 };
 
 export const createPreAuthSourceRateLimiter = (input: {
-  service: RateLimitAbuseControlPort;
+  service: PreAuthSourceAbuseControlPort;
   scope: string;
   limit: number;
   signingSecret?: string;
-  trustedProxyHops?: number;
   windowMs: number;
   onFailure?: (input: { outcome: "limited" | "unavailable" }) => void;
-}): RequestHandler => async (req, _res, next) => {
+}): RequestHandler => async (req, res, next) => {
   try {
+    const sourceDigest = publishPreAuthSourceDigest(
+      res,
+      resolvedPreAuthSourceDigest(req, res, input.signingSecret),
+    );
     await input.service.enforce({
       scope: input.scope,
-      subjectKey: `source:${resolvedPreAuthSourceDigest(req, input.signingSecret, input.trustedProxyHops)}`,
+      subjectKey: `source:${sourceDigest}`,
       limit: input.limit,
       windowMs: input.windowMs,
     });

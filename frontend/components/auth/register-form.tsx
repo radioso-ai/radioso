@@ -4,12 +4,13 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { useOptionalAuth } from '@/lib/auth-context'
+import { useAuthSunrise } from './auth-shell'
 
 interface RegisterFormProps {
   onSwitchToLogin: () => void
+  onVerificationPending: () => void
 }
 
 const getErrorMessage = (error: unknown) => {
@@ -28,9 +29,11 @@ const getErrorMessage = (error: unknown) => {
   return 'Registration failed. Please try again.'
 }
 
-export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
+export function RegisterForm({ onSwitchToLogin, onVerificationPending }: RegisterFormProps) {
   const auth = useOptionalAuth()
+  const riseSun = useAuthSunrise()
   const [organizationName, setOrganizationName] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -62,19 +65,22 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
         email,
         password,
         organizationName: organizationName.trim() || undefined,
+        displayName: displayName.trim() || undefined,
       })
       if (response.requiresEmailVerification) {
         setPendingVerificationEmail(email)
         setPassword('')
         setConfirmPassword('')
         setMessage('Check your email to verify your account before signing in.')
+        onVerificationPending()
         return
       }
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       if (!auth) {
         throw new Error('Registration is unavailable outside the auth shell')
       }
-      await auth.login(email, response.userId, response.accountId, response.organizationName)
+      riseSun()
+      await auth.login({ ...response, email })
     } catch (error) {
       setError(getErrorMessage(error))
     } finally {
@@ -101,12 +107,9 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
   if (pendingVerificationEmail) {
     return (
       <div className="space-y-4">
-        <div className="space-y-2">
-          <h2 className="text-lg font-semibold text-foreground">Verify your email</h2>
-          <p className="text-sm text-muted-foreground">
-            We sent a verification link to {pendingVerificationEmail}. Verify your email before signing in.
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          We sent a verification link to {pendingVerificationEmail}.
+        </p>
         {message ? (
           <p className="text-sm text-muted-foreground">{message}</p>
         ) : null}
@@ -117,11 +120,10 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
           type="button"
           className="w-full"
           variant="outline"
-          disabled={isResendingVerification}
+          loading={isResendingVerification}
           onClick={handleResendVerification}
         >
-          {isResendingVerification ? <Spinner className="mr-2" /> : null}
-          <span>Resend verification email</span>
+          Resend verification email
         </Button>
         <Button type="button" className="w-full" onClick={onSwitchToLogin}>
           Back to Sign In
@@ -132,6 +134,17 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="displayName">Your name (optional)</Label>
+        <Input
+          id="displayName"
+          type="text"
+          autoComplete="name"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          disabled={isLoading}
+        />
+      </div>
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -186,20 +199,9 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       {message && (
         <p className="text-sm text-muted-foreground">{message}</p>
       )}
-      <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? <Spinner className="mr-2" /> : null}
-        <span>Create account</span>
+      <Button type="submit" className="w-full" loading={isLoading}>
+        Create account
       </Button>
-      <p className="text-center text-sm text-muted-foreground">
-        Already have an account?{' '}
-        <button
-          type="button"
-          onClick={onSwitchToLogin}
-          className="text-primary hover:underline font-medium"
-        >
-          Sign in
-        </button>
-      </p>
     </form>
   )
 }

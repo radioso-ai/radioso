@@ -28,6 +28,12 @@ import {
   type TurnPlanOutcome,
 } from "../../src/modules/chat/services/turnPlanCoordinator.js";
 import type { TurnPlan, TurnPlanService } from "../../src/modules/chat/services/turnPlanService.js";
+import { setTraceAttributes } from "../../src/shared/observability/tracing/operations.js";
+
+vi.mock("../../src/shared/observability/tracing/operations.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/shared/observability/tracing/operations.js")>();
+  return { ...actual, setTraceAttributes: vi.fn() };
+});
 
 const turn = { agent: { id: "a" }, sessionId: "s", inputEvent: { id: "i", kind: "message", content: "q" }, history: [], stagedContext: [], steering: [] } as unknown as TurnContext;
 
@@ -526,6 +532,36 @@ describe("planAwareResponseLanguage", () => {
     const fallback = vi.fn(async () => "detected");
     const language = await planAwareResponseLanguage({ handle: handleFor(undefined), fallback });
     expect(language).toBe("detected");
+  });
+
+  it("records a planned language and its planner source on the turn span", async () => {
+    vi.mocked(setTraceAttributes).mockClear();
+    await planAwareResponseLanguage({
+      handle: handleFor({ status: "planned", plan: plan({ responseLanguage: "Italian" }), prepared: preparedRank }),
+      fallback: vi.fn(async () => undefined),
+    });
+    expect(setTraceAttributes).toHaveBeenCalledWith({
+      "chat.response.language": "Italian",
+      "chat.response.language.source": "planner",
+    });
+  });
+
+  // A valid plan may return `responseLanguage: null`; the span then carries the same
+  // stable unresolved reason a detector no-label outcome does.
+  it("records no_label when a valid plan carries no language", async () => {
+    vi.mocked(setTraceAttributes).mockClear();
+    const { responseLanguage: _omitted, ...unlabelled } = plan();
+    const fallback = vi.fn(async () => "detected");
+    const language = await planAwareResponseLanguage({
+      handle: handleFor({ status: "planned", plan: unlabelled, prepared: preparedRank }),
+      fallback,
+    });
+    expect(language).toBeUndefined();
+    expect(fallback).not.toHaveBeenCalled();
+    expect(setTraceAttributes).toHaveBeenCalledWith({
+      "chat.response.language.source": "planner",
+      "chat.response.language.unresolved_reason": "no_label",
+    });
   });
 });
 

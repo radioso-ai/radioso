@@ -340,6 +340,18 @@ describe('CopilotProposalCard', () => {
     expect(rows[0]?.proposed).toBe('This directive will be permanently removed.')
   })
 
+  it('shows directive priority and replacements in the proposal diff', () => {
+    const rows = buildCopilotProposalDiff({
+      current: { name: 'Quote source', priority: null, excludes: [] },
+      proposed: { name: 'Quote source', priority: 85, excludes: ['represent-organization'] },
+    })
+
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '$.priority', proposed: 85 }),
+      expect.objectContaining({ path: '$.excludes', proposed: ['represent-organization'] }),
+    ]))
+  })
+
   it('shows no rows for an untouched half of a preview once the source echoes it identically on both sides', () => {
     // This is the shape createContextVariableCopilotProposalAdapter's preview now returns for a
     // definition-only proposal: the untouched enablement is echoed forward as the same value on

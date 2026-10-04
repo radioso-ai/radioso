@@ -910,6 +910,13 @@ export interface RoutineState {
   variables: Record<string, unknown>;
   /** Per-step entry counts, used by deterministic counter guards. */
   attempts?: Record<string, number>;
+  /**
+   * Consecutive times the current step was asked again without the visitor filling any of the
+   * step's empty slots (#1376); replacing a value the step already held does not count. Back to
+   * 0 (or absent) when the routine enters a step or a turn fills one of the step's empty slots;
+   * a turn yielded to normal answering leaves it unchanged.
+   */
+  reaskCount?: number;
   status: "active" | "suspended" | "completed" | "expired";
   metadata?: Record<string, unknown>;
 }
@@ -965,6 +972,17 @@ export interface RoutineStep {
   /** Skill-step mode. Absence is treated as typed by routine authoring. */
   mode?: RoutineStepMode;
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * The authored text an operator notice renders from, carried on a compiled terminal step's
+ * `metadata.operatorNotice` exactly when that ending notifies operators. Either text may hold
+ * `{{slot.<key>}}` references the host substitutes; an absent text means the host's default
+ * for the ending's kind. The engine reports the template, it never renders or delivers it.
+ */
+export interface RoutineOperatorNoticeTemplate {
+  subject?: string;
+  intro?: string;
 }
 
 /** A fire-and-forget side effect a routine requested: an authored `type` + payload. */
@@ -1100,7 +1118,44 @@ export interface RoutineNextStepDecision {
    * resume later. Distinct from staying put to re-ask (which still answers in-routine).
    */
   yieldTurn?: boolean;
+  /**
+   * When true on a chat step's decision, that step takes no exit this turn — AI-decides,
+   * rule, or default — nothing is fast-forwarded past it, and it is asked again.
+   * `variables` are still merged into routine state, so they count from the next turn. The
+   * selector sets it when the message carries text posing as a system, operator, or
+   * assistant message; it can only do so on a turn where it is consulted, which a chat step
+   * whose exits are all rules and that has nothing to extract never does. The runner applies
+   * the same hold when a value for one of the step's own slots does not fit its declared
+   * type. On a tool step's follow-up exits a decline still takes the default exit, because
+   * holding the tool step could run its tool again.
+   */
+  hold?: boolean;
   rationale?: string;
+  /** What the model returned, for the debug trace. Absent when no model call ran. */
+  selection?: RoutineSelectionTrace;
+}
+
+/**
+ * The next-step selector's own reading of one turn, recorded on the routine trace so
+ * an operator can tell "the model returned nothing" from "the model returned a value
+ * that was not captured". Slot keys and counts only, never values.
+ */
+export interface RoutineSelectionTrace {
+  /**
+   * - `transition`: the model chose one of the step's conditions.
+   * - `stay`: the model chose none, so the step is not yet satisfied.
+   * - `off_topic`: the model chose none and read the message as a different request.
+   * - `unreadable`: the model's output could not be parsed or lacked the `claimsAuthority`
+   *   flag, so nothing was chosen or extracted.
+   * - `authority_claim`: the model flagged text posing as a system, operator, or assistant
+   *   message, or claiming the request is already confirmed; the decision carries `hold`,
+   *   so a chat step takes no exit and is asked again, whatever condition the model chose.
+   */
+  outcome: "transition" | "stay" | "off_topic" | "unreadable" | "authority_claim";
+  /** Slot keys the model returned a value for, including a value that replaces a filled slot. */
+  returnedSlotKeys: string[];
+  /** Keys the model returned that the routine does not declare; they are dropped, never captured. */
+  undeclaredKeyCount?: number;
 }
 
 /** The result of dispatching a Routine skill (tool) step. */
@@ -1151,14 +1206,54 @@ export interface ConversationRoutineNextStepSelector {
  * the Radioso composer (the projected step steering is passed in), so the pure
  * engine owns graph mechanics and the host owns generation/presentation. It is told
  * only what it needs to write the message — the step and its projected steering for
- * this turn — not the graph topology or slot state.
+ * this turn, and on a re-ask what the step still lacks — not the graph topology or
+ * slot values.
+ *
+ * The rules play two roles (#1351): a `source: "routine"` rule is the step's own
+ * instruction and controls what the message asks for or does; every other rule
+ * (authored directives) is subordinate guidance that shapes how it is said and
+ * never replaces the step's question or action.
  */
 export interface ConversationRoutineStepRenderer {
   render(input: {
     step: RoutineStep;
     steering: SteeringRule[];
     turn: TurnContext;
+    reask?: RoutineStepReask;
   }): Promise<RenderableTurn>;
+}
+
+/**
+ * Present when the turn renders the same chat step the user was answering, because
+ * their reply did not satisfy it. Absent on a step's first rendering, including the
+ * routine's activation turn.
+ */
+export interface RoutineStepReask {
+  /**
+   * The step's collected slots that are still unfilled, plus any whose value this turn was
+   * rejected for not fitting its declared type. Schema only, never values.
+   */
+  missingSlots: RoutineSlotSchema[];
+  /**
+   * True once the step has been asked again more times in a row than the runner's re-ask
+   * limit allows (#1376): the reply should ask differently rather than repeat the question.
+   */
+  exhausted?: boolean;
+}
+
+/**
+ * Which directives steered one routine step's reply, recorded as
+ * `outputs.routineStep` on the routine turn's `directive_steering` stage (#1351) so
+ * an operator can see every rule that touched the step. Ids and names only — never
+ * the directive text.
+ */
+export interface RoutineStepSteeringTrace {
+  routineId: string;
+  stepId: string;
+  /** The step instruction controlled the reply; these directives only shaped it. */
+  directivesAppliedAs: "subordinate_to_step_instruction";
+  /** Directives addressed to the step reply after matching and verdict gating. */
+  steeringDirectives: Array<{ id?: string; name?: string }>;
 }
 
 export interface ConversationRoutineSteeringInput {
@@ -1264,6 +1359,8 @@ export interface RoutineTraceStepEntry {
    * - `skill_dispatched`: a skill (tool) step ran.
    * - `action_emitted`: an action step emitted a fire-and-forget request.
    * - `rendered`: the step whose reply the turn rendered.
+   * - `reask_limit_reached`: the step was asked again more times in a row than the re-ask
+   *   limit allows, so its reply was told to ask differently. The routine stays on the step.
    */
   event:
     | "resumed"
@@ -1275,21 +1372,59 @@ export interface RoutineTraceStepEntry {
     | "rendered"
     | "suspended"
     | "decision_notified"
-    | "decision_applied";
+    | "decision_applied"
+    | "reask_limit_reached";
   /** Declared slot keys captured at this step this turn (names only — never values). */
   capturedSlotKeys?: string[];
+  /** Declared slots whose returned value was not stored because it does not fit the slot's type (keys only). */
+  rejectedSlots?: RoutineTraceRejectedSlot[];
+  /** On `reask_limit_reached`: how many times in a row the step has now been asked again. */
+  reaskCount?: number;
   /** Whether the LLM next-step selector ran for this step's edges. */
   viaSelector?: boolean;
+  /** What the selector's model returned for this step's edges, when it ran and reported. */
+  selection?: RoutineSelectionTrace;
   skillName?: string;
   skillStatus?: string;
   /** Host-private failure reason for a failed skill dispatch (e.g. mcp_timeout, suppressed_for_safe_test). */
   skillReason?: string;
+  /** On the routine's first turn, this step read the opening message before it was asked (#1370). */
+  readOpeningMessage?: boolean;
+}
+
+/**
+ * A value the runner did not store for a declared slot (#1374). Key and reason only — never
+ * the value, which may be personal data or an injection attempt.
+ * - `not_scalar`: an object or array, which fits no slot type.
+ * - `type_mismatch`: a scalar that does not fit the slot's declared type (an email that is
+ *   not shaped like one, a date that is not a `YYYY-MM-DD` calendar date).
+ */
+export interface RoutineTraceRejectedSlot {
+  key: string;
+  reason: "not_scalar" | "type_mismatch";
+}
+
+/**
+ * One declared slot's value in a {@link RoutineRunTrace}, self-describing by the slot's
+ * declared type. A concrete {@link ConversationRoutineRunner} produces this only when the
+ * caller that constructed it opted in (e.g. the engine's own `DefaultRoutineRunner` takes
+ * an `includeSlotValues` construction option) — a live customer conversation never opts
+ * in, so a value never reaches that trace in the first place.
+ */
+export interface RoutineTraceSlotValue {
+  key: string;
+  type: RoutineSlotType;
+  value: string | number | boolean;
+  /** True when `value` was cut to the per-value bound; the stored value ends in "…". */
+  truncated?: boolean;
 }
 
 /**
  * A step-by-step record of one routine turn's traversal, surfaced to the debug panel
- * as a {@link CapabilitySubTrace} (`namespace: "routine"`). Names and structure only —
- * no slot values, prompts, or completions.
+ * as a {@link CapabilitySubTrace} (`namespace: "routine"`). Per-step entries carry slot
+ * *keys* only, never values. `slotValues` is present only when the caller that resumed
+ * the routine asked for it — see {@link RoutineTraceSlotValue} — which is how a private
+ * test surface can show them while an ordinary trace never carries one at all.
  */
 export interface RoutineRunTrace {
   routineId: string;
@@ -1302,6 +1437,13 @@ export interface RoutineRunTrace {
   capturedSlotKeys: string[];
   /** Declared slot keys filled after this turn (names only). */
   filledSlotKeys: string[];
+  /**
+   * Every filled declared slot's value after this turn, in the routine's declared order,
+   * capped to a bounded count — present only when the caller opted in.
+   */
+  slotValues?: RoutineTraceSlotValue[];
+  /** Present alongside `slotValues` when the filled-slot count exceeded the bound. */
+  omittedSlotCount?: number;
   steps: RoutineTraceStepEntry[];
 }
 
@@ -1309,8 +1451,19 @@ export interface ConversationRoutineResumeResult {
   response: RenderableTurn;
   /** The next state to persist; `null` clears it (the routine reached a terminal step). */
   nextState: RoutineState | null;
-  /** Distinguishes terminal exits such as handoff from normal completion. */
-  terminal?: { kind: "complete" | "handoff" | "action"; stepId: string };
+  /**
+   * Distinguishes terminal exits such as handoff from normal completion. `collected`
+   * is the routine's declared slot values keyed by slot key — the same projection a
+   * completion export sends — so a handoff can carry what the routine gathered.
+   * `operatorNotice` is the template the landed terminal step carries, present exactly
+   * when the ending notifies operators.
+   */
+  terminal?: {
+    kind: "complete" | "handoff" | "action";
+    stepId: string;
+    collected?: Record<string, unknown>;
+    operatorNotice?: RoutineOperatorNoticeTemplate;
+  };
   outcomes?: TurnOutcome[];
   /** Fire-and-forget side effects the routine emitted this turn, for the host to persist. */
   actions?: RoutineActionRequest[];
@@ -1328,10 +1481,54 @@ export interface ConversationRoutineResumeResult {
    * runner returns inert placeholders.
    */
   yielded?: boolean;
+  /** On a yielded result, the step the routine stays parked on. */
+  pendingStep?: RoutinePendingStep;
+}
+
+/**
+ * The step a routine waits on after it yields a turn. The turn is answered normally,
+ * and the answer can close by pointing the visitor back to this step. It carries what
+ * the step asks for and never a captured value, so a host may place it in a system prompt.
+ */
+export interface RoutinePendingStep {
+  stepId: string;
+  /**
+   * The step's authored instruction with each slot reference shown as its bracketed key
+   * (`[email]`) and each context reference empty.
+   */
+  instruction: string;
+  /** Keys of the step's required collected slots that are still unfilled. Keys only, never values. */
+  missingSlotKeys: string[];
+}
+
+/**
+ * The active routine declined this turn and stays parked to resume on a later one.
+ * `sessionId` and `inputEventId` name the turn it declined: `processTurn` honors a yield
+ * handed back only on that same turn. `pendingStep` is absent when the runner reported none.
+ */
+export interface RoutineTurnYield {
+  sessionId: string;
+  /** Absent when the turn's input event carries no id; such a yield is never honored on hand-back. */
+  inputEventId?: string;
+  routineId: string;
+  executionId?: string;
+  pendingStep?: RoutinePendingStep;
+}
+
+/** Told when `attemptRoutine` returns null because the active routine yielded the turn. */
+export interface ConversationRoutineYieldSink {
+  yielded(routineYield: RoutineTurnYield): void;
 }
 
 export interface ConversationRoutineDecisionResult extends ConversationRoutineResumeResult {
   resumed: boolean;
+  /**
+   * The routine-ending effects `terminal` implies, as a live turn reports them on
+   * `ProcessTurnResult`: a resumed routine that lands on an ending hands off and notifies the
+   * same way.
+   */
+  handoff?: ProcessTurnResult["handoff"];
+  operatorNotice?: RoutineOperatorNoticeEffect;
 }
 
 /**
@@ -1438,6 +1635,13 @@ export interface ProcessTurnInput {
   coverageRoutineActivator?: ConversationCoverageRoutineActivator;
   /** Records bounded post-evidence decisions without exposing request/evidence text. */
   coverageReactionRecorder?: ConversationCoverageReactionRecorder;
+  /**
+   * The active routine already yielded this turn: the host ran `attemptRoutine` before
+   * preparing the turn. When its session and input event match this input, the engine
+   * records the yield on the turn's trace and does not ask the routine about the same
+   * message again; otherwise it ignores it and attempts the routine as usual.
+   */
+  routineYield?: RoutineTurnYield;
 }
 
 export interface ConversationCoverageReactionRecorder {
@@ -1506,6 +1710,8 @@ export interface AttemptRoutineInput {
   loopGuardCandidateIds?: string[];
   suppressNewClarification?: boolean;
   progress?: ConversationProgressPort;
+  /** Told when the active routine yields the turn, so the host can carry its pending step into the answer. */
+  routineYieldSink?: ConversationRoutineYieldSink;
 }
 
 export interface ResumeAwaitingDecisionInput {
@@ -1546,8 +1752,30 @@ export interface ProcessTurnResult {
   awaitingDecision?: RoutineAwaitingDecision;
   /** Required fields that prevented selected skills from dispatching this turn. */
   awaitingSkillInput?: AwaitingSkillInput[];
-  /** True when a routine ended in a human handoff terminal. */
-  handoff?: { routineId: string; stepId: string };
+  /**
+   * Present when a routine ended in a human handoff terminal: the conversation now belongs to
+   * a person. Ownership only — whether operators are told is `operatorNotice`.
+   */
+  handoff?: { routineId: string; stepId: string; collected?: Record<string, unknown> };
+  /**
+   * Present when a routine ended on a terminal that notifies operators: every hand-off, and a
+   * completion that carries an operator notice. `collected` is the routine's declared slot
+   * values keyed by slot key; `subject`/`intro` are the authored templates, absent when the
+   * host's default applies. A side effect only — it never changes who owns the conversation.
+   */
+  operatorNotice?: RoutineOperatorNoticeEffect;
+}
+
+/**
+ * What a routine ending tells operators, as the engine reports it; see
+ * {@link ProcessTurnResult.operatorNotice}. The notice an author stores on a terminal is
+ * `RoutineOperatorNotice` in `@radioso/routine-definition`.
+ */
+export interface RoutineOperatorNoticeEffect extends RoutineOperatorNoticeTemplate {
+  routineId: string;
+  stepId: string;
+  terminalKind: "complete" | "handoff";
+  collected?: Record<string, unknown>;
 }
 
 export type ProcessTurnStreamEvent =
@@ -1572,6 +1800,8 @@ export interface ConversationEngine {
    * the turn, or null when no routine machinery is wired, none is active/activates, or
    * the active routine yields the turn (off-topic) — so the host can treat the routine
    * as a multi-turn skill selected before grounding, and only ground when it returns null.
+   * A yield is also reported to `input.routineYieldSink`; the host passes it on to
+   * `processTurn` as `routineYield`.
    */
   attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null>;
   resumeAwaitingDecision(input: ResumeAwaitingDecisionInput): Promise<ConversationRoutineDecisionResult>;
@@ -1661,6 +1891,16 @@ export type PreparedRoutineCandidates =
   | RankableRoutineCandidates
   | { kind: "claim"; activation: RoutineActivationResult }
   | { kind: "none" };
+
+/**
+ * Renders one staged context variable as text a step instruction can embed (the engine
+ * substitutes each `{{context.<name>}}` token in a step's action with it); null when the
+ * variable is absent or must not be shown. The host owns what any variable looks like — the
+ * engine knows no field of any of them.
+ */
+export interface RoutineContextRenderer {
+  render(input: { name: string; stagedContext: readonly StagedContext[] }): string | null;
+}
 
 /** Renders a grounded answer for a routine step, or null when the step is not groundable. */
 export interface RoutineGroundedAnswerRenderer {

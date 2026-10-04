@@ -255,6 +255,7 @@ export const createRedisClientHandle = async ({
         conversationId: input.conversationId,
         converseSessionToken: input.converseSessionToken,
         sessionId: input.sessionId,
+        toolCatalog: input.toolCatalog,
       };
 
       const ttlSeconds = ttlSecondsFromDate(session.expiresAt);

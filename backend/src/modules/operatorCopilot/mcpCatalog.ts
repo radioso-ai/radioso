@@ -1,9 +1,9 @@
 import type { OperatorMcpScope, OperatorToolDescriptor } from "@radioso/operator-mcp-contract";
-import { zodToJsonSchema } from "zod-to-json-schema";
 
 import type { CopilotMcpInvocationReconciliation, CopilotToolDescriptor, CopilotToolInvocationContext } from "./contracts.js";
 import type { OperatorMcpInvocationRecord } from "./mcpContracts.js";
 import { hasCurrentCopilotToolPermissions } from "./catalog.js";
+import { operatorMcpToolSchemas } from "./mcpToolSchema.js";
 
 export class OperatorMcpCatalogError extends Error {
   constructor(readonly code: "unknown_tool" | "forbidden" | "invalid_arguments" | "invalid_result") {
@@ -15,9 +15,6 @@ const eligible = (descriptor: CopilotToolDescriptor) => {
   const disposition = descriptor.mcpDisposition;
   return disposition?.status === "eligible" ? disposition : null;
 };
-
-const jsonSchema = (schema: CopilotToolDescriptor["inputSchema"]): Record<string, unknown> =>
-  zodToJsonSchema(schema, { target: "openApi3", $refStrategy: "none" });
 
 export class OperatorMcpCatalogService {
   private readonly descriptors: ReadonlyMap<string, CopilotToolDescriptor>;
@@ -38,8 +35,7 @@ export class OperatorMcpCatalogService {
       result.push({
         name: descriptor.name,
         description: descriptor.description,
-        inputSchema: jsonSchema(descriptor.inputSchema),
-        outputSchema: jsonSchema(descriptor.outputSchema),
+        ...operatorMcpToolSchemas(descriptor),
         shape: descriptor.shape,
         requiredScope: disposition.scope,
       });
@@ -81,6 +77,7 @@ export class OperatorMcpCatalogService {
     scopes: ReadonlySet<OperatorMcpScope>;
     staleBefore: Date;
     now: Date;
+    signal: AbortSignal;
   }): Promise<CopilotMcpInvocationReconciliation<unknown>> {
     const descriptor = this.descriptors.get(input.name);
     if (!descriptor) throw new OperatorMcpCatalogError("unknown_tool");
@@ -100,13 +97,14 @@ export class OperatorMcpCatalogService {
       context: input.context,
       staleBefore: input.staleBefore,
       now: input.now,
+      signal: input.signal,
     });
-    if (reconciliation.status !== "recovered") return reconciliation;
+    if (reconciliation.status !== "recovered" && reconciliation.status !== "unconfirmed") return reconciliation;
     if (!(await hasCurrentCopilotToolPermissions(descriptor, input.context))) {
       throw new OperatorMcpCatalogError("forbidden");
     }
     const parsedOutput = descriptor.outputSchema.safeParse(reconciliation.output);
     if (!parsedOutput.success) throw new OperatorMcpCatalogError("invalid_result");
-    return { status: "recovered", output: parsedOutput.data };
+    return { status: reconciliation.status, output: parsedOutput.data };
   }
 }

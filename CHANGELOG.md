@@ -9,6 +9,306 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.14.0] - 2026-10-02
+
+### Added
+
+- **test-chat:** add message counts and shareable links to test history ([#1399](https://github.com/radioso-ai/radioso/pull/1399))
+
+### Database migrations
+
+This release adds 2 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `207_test_execution_seed_summary.sql`
+- `208_test_execution_seed_summary_backfill.sql`
+
+[1.14.0]: https://github.com/radioso-ai/radioso/compare/v1.13.0...v1.14.0
+
+## [1.13.0] - 2026-10-02
+
+### Added
+
+- **routines:** let a routine ending notify the team without handing off the conversation ([#1398](https://github.com/radioso-ai/radioso/pull/1398))
+
+### Fixed
+
+- **deps:** patch critical and high-severity Dependabot alerts ([#1394](https://github.com/radioso-ai/radioso/pull/1394))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `206_routine_terminal_operator_notice.sql`
+
+[1.13.0]: https://github.com/radioso-ai/radioso/compare/v1.12.1...v1.13.0
+
+## [1.12.1] - 2026-10-01
+
+### Fixed
+
+- **routines:** read the opening message for the step the routine lands on ([#1389](https://github.com/radioso-ai/radioso/pull/1389))
+
+[1.12.1]: https://github.com/radioso-ai/radioso/compare/v1.12.0...v1.12.1
+
+## [1.12.0] - 2026-10-01
+
+### Added
+
+- record who handled and closed each conversation ([#1381](https://github.com/radioso-ai/radioso/pull/1381))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `205_conversation_activity.sql`
+
+[1.12.0]: https://github.com/radioso-ai/radioso/compare/v1.11.1...v1.12.0
+
+## [1.11.1] - 2026-10-01
+
+### Fixed
+
+- **routines:** lead back to the pending question after a digression ([#1387](https://github.com/radioso-ai/radioso/pull/1387))
+- **routines:** hold a step on text that poses as a system notice ([#1386](https://github.com/radioso-ai/radioso/pull/1386))
+- **routines:** check slot values against their declared type and bound re-asks ([#1385](https://github.com/radioso-ai/radioso/pull/1385))
+- **routines:** skip steps the visitor already answered ([#1380](https://github.com/radioso-ai/radioso/pull/1380))
+- **routines:** keep stated slot values and never confirm on a re-asked step ([#1379](https://github.com/radioso-ai/radioso/pull/1379))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `204_routine_state_reask_count.sql`
+
+[1.11.1]: https://github.com/radioso-ai/radioso/compare/v1.11.0...v1.11.1
+
+## [1.11.0] - 2026-09-30
+
+### Added
+
+- record the teammate who owns a conversation and hand it to another ([#1346](https://github.com/radioso-ai/radioso/pull/1346))
+- add user profile with display name ([#1344](https://github.com/radioso-ai/radioso/pull/1344))
+- **auth:** redesign the signed-out screens around the broadcasting sun ([#1368](https://github.com/radioso-ai/radioso/pull/1368))
+
+### Fixed
+
+- **settings:** land on sign-in after deleting an organization ([#1367](https://github.com/radioso-ai/radioso/pull/1367))
+
+### Database migrations
+
+This release adds 2 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `202_user_display_name.sql`
+- `203_conversation_ownership_owner_user.sql`
+
+[1.11.0]: https://github.com/radioso-ai/radioso/compare/v1.10.0...v1.11.0
+
+## [1.10.0] - 2026-09-30
+
+### Added
+
+- **activity:** make the debug turn flow read as a progression ([#1363](https://github.com/radioso-ai/radioso/pull/1363))
+
+### Fixed
+
+- **operator-mcp:** resolve Test Chat's agent without dashboard page context ([#1364](https://github.com/radioso-ai/radioso/pull/1364))
+- resume built-in routines on revision-bound turns and unlock failed Test Chat turns ([#1365](https://github.com/radioso-ai/radioso/pull/1365))
+- **auth:** keep the signup's own error when cleanup fails too ([#1366](https://github.com/radioso-ai/radioso/pull/1366))
+
+[1.10.0]: https://github.com/radioso-ai/radioso/compare/v1.9.0...v1.10.0
+
+## [1.9.0] - 2026-09-30
+
+### Added
+
+- show routine slot values and the hand-off preview in Test Chat traces ([#1359](https://github.com/radioso-ai/radioso/pull/1359))
+
+### Fixed
+
+- **routines:** let the step instruction control routine replies over always-on directives ([#1360](https://github.com/radioso-ai/radioso/pull/1360))
+- **operator-mcp:** give Test Chat its own budget and tell clients when to retry ([#1358](https://github.com/radioso-ai/radioso/pull/1358))
+- **chat:** keep routine handoff endings in the visitor's language ([#1357](https://github.com/radioso-ai/radioso/pull/1357))
+- **operator-mcp:** exempt write-bounded authored fields from string compaction ([#1356](https://github.com/radioso-ai/radioso/pull/1356))
+- **operator-mcp:** let a reviewed execution retry after a post-claim permission denial ([#1350](https://github.com/radioso-ai/radioso/pull/1350))
+
+### Internal
+
+- **machine-access:** pin the in-memory repository to the harness clock ([#1349](https://github.com/radioso-ai/radioso/pull/1349))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `201_operator_mcp_invocation_budget_kind.sql`
+
+[1.9.0]: https://github.com/radioso-ai/radioso/compare/v1.8.2...v1.9.0
+
+## [1.8.2] - 2026-09-29
+
+### Fixed
+
+- key pre-auth source limits on the published request source ([#1343](https://github.com/radioso-ai/radioso/pull/1343))
+
+[1.8.2]: https://github.com/radioso-ai/radioso/compare/v1.8.1...v1.8.2
+
+## [1.8.1] - 2026-09-28
+
+### Fixed
+
+- key every source rate limit on the resolved client address ([#1340](https://github.com/radioso-ai/radioso/pull/1340))
+- **operator-mcp:** answer every replay with a schema-valid result or an actionable error ([#1338](https://github.com/radioso-ai/radioso/pull/1338))
+
+[1.8.1]: https://github.com/radioso-ai/radioso/compare/v1.8.0...v1.8.1
+
+## [1.8.0] - 2026-09-27
+
+### Added
+
+- **operator-mcp:** open the approval page through URL elicitation ([#1337](https://github.com/radioso-ai/radioso/pull/1337))
+- **operator-mcp:** require signed-in approval for live and irreversible reviewed changes ([#1336](https://github.com/radioso-ai/radioso/pull/1336))
+- **operator-mcp:** prepare and execute reviewed directive changes ([#1335](https://github.com/radioso-ai/radioso/pull/1335))
+- **operator-mcp:** prepare and execute reviewed ingestion and agent settings changes ([#1334](https://github.com/radioso-ai/radioso/pull/1334))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `200_copilot_reviewed_approval.sql`
+
+[1.8.0]: https://github.com/radioso-ai/radioso/compare/v1.7.0...v1.8.0
+
+## [1.7.0] - 2026-09-26
+
+### Added
+
+- **operator-mcp:** import, remove, and reprocess documents through reviewed operations ([#1333](https://github.com/radioso-ai/radioso/pull/1333))
+- **operator-mcp:** list documents and read plan usage ([#1330](https://github.com/radioso-ai/radioso/pull/1330))
+- **operator-mcp:** accept structured directive fields in propose_directive ([#1329](https://github.com/radioso-ai/radioso/pull/1329))
+
+### Fixed
+
+- **operator-mcp:** refuse invalid revisions with diagnostics and read back proposals ([#1331](https://github.com/radioso-ai/radioso/pull/1331))
+- **operator-copilot:** mark a proposal stale only when the fields it changes moved ([#1332](https://github.com/radioso-ai/radioso/pull/1332))
+
+### Database migrations
+
+This release adds 2 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `198_operator_mcp_rejection_details.sql`
+- `199_copilot_document_operation_target.sql`
+
+[1.7.0]: https://github.com/radioso-ai/radioso/compare/v1.6.0...v1.7.0
+
+## [1.6.0] - 2026-09-25
+
+### Added
+
+- **operator-mcp:** read and drive Test Chat over operator MCP ([#1327](https://github.com/radioso-ai/radioso/pull/1327))
+
+### Fixed
+
+- **operator-mcp:** settle owner refusals on reviewed executions as failed ([#1326](https://github.com/radioso-ai/radioso/pull/1326))
+- **operator-mcp:** refuse an unknown reviewed operation instead of reporting an outage ([#1325](https://github.com/radioso-ai/radioso/pull/1325))
+
+### Internal
+
+- **operator-copilot:** use owner rules for notify reachability, retrieval expiry, and directive defaults ([#1328](https://github.com/radioso-ai/radioso/pull/1328))
+
+[1.6.0]: https://github.com/radioso-ai/radioso/compare/v1.5.0...v1.6.0
+
+## [1.5.0] - 2026-09-24
+
+### Added
+
+- **agents:** record and act on whether a caller is a person or another agent ([#1316](https://github.com/radioso-ai/radioso/pull/1316))
+
+### Fixed
+
+- **operator-mcp:** accept write tool calls without an operation id ([#1321](https://github.com/radioso-ai/radioso/pull/1321))
+- **access:** list only live credentials in every access inventory ([#1318](https://github.com/radioso-ai/radioso/pull/1318))
+- **mcp:** name the field a rejected operator MCP request got wrong ([#1320](https://github.com/radioso-ai/radioso/pull/1320))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `197_conversation_caller_kind.sql`
+
+[1.5.0]: https://github.com/radioso-ai/radioso/compare/v1.4.1...v1.5.0
+
+## [1.4.1] - 2026-09-24
+
+### Fixed
+
+- **mcp:** advertise operator tool schemas in the dialect clients read ([#1317](https://github.com/radioso-ai/radioso/pull/1317))
+
+[1.4.1]: https://github.com/radioso-ai/radioso/compare/v1.4.0...v1.4.1
+
+## [1.4.0] - 2026-09-24
+
+### Added
+
+- **agents:** let a visiting AI agent discover an agent, walk in without a credential, and come back after a handoff ([#1306](https://github.com/radioso-ai/radioso/pull/1306))
+- **agents:** expose routines as typed tools and return an agent reply envelope for calling agents ([#1292](https://github.com/radioso-ai/radioso/pull/1292))
+
+### Fixed
+
+- **mcp:** name the cause when an operator MCP route fails ([#1314](https://github.com/radioso-ai/radioso/pull/1314))
+- **mcp:** make prepare_routine_structure callable and say what a rejected call got wrong ([#1313](https://github.com/radioso-ai/radioso/pull/1313))
+- **mcp:** advertise every operator tool with an object schema ([#1310](https://github.com/radioso-ai/radioso/pull/1310))
+- **auth:** wire Enterprise Google login into the Cloud Run deploy ([#1295](https://github.com/radioso-ai/radioso/pull/1295))
+- isolate workspace selection and improve MCP connections ([#1304](https://github.com/radioso-ai/radioso/pull/1304))
+- **security:** admit rate-limited requests on a sliding window and tell callers when to retry ([#1305](https://github.com/radioso-ai/radioso/pull/1305))
+- **frontend:** stop an unconfigured channel from reading as a live one ([#1303](https://github.com/radioso-ai/radioso/pull/1303))
+- **operator-console:** read the conversation meter for catalog-plan organizations ([#1300](https://github.com/radioso-ai/radioso/pull/1300))
+- **test-chat:** keep the draft-candidate refusal visible after the proactive greeting starts ([#1297](https://github.com/radioso-ai/radioso/pull/1297))
+- **frontend:** give Button a loading/icon slot so translated labels cannot crash submits ([#1298](https://github.com/radioso-ai/radioso/pull/1298))
+
+### Internal
+
+- **evals:** record baselines for routine tool invocation and exposure cases ([#1299](https://github.com/radioso-ai/radioso/pull/1299))
+
+### Database migrations
+
+This release adds 3 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `194_routine_definition_exposure.sql`
+- `195_abuse_control_sliding_window.sql`
+- `196_agent_public_identity.sql`
+
+[1.4.0]: https://github.com/radioso-ai/radioso/compare/v1.3.0...v1.4.0
+
+## [1.3.0] - 2026-09-22
+
+### Added
+
+- **routines:** handoff notices carry collected values; chat steps read the current page ([#1291](https://github.com/radioso-ai/radioso/pull/1291))
+- **slack:** thread follow-ups, bound-channel respond mode, markdown replies, and the Slack agent pane ([#1289](https://github.com/radioso-ai/radioso/pull/1289))
+- **routines:** restyle the routine editor as a notebook-style procedure document ([#1284](https://github.com/radioso-ai/radioso/pull/1284))
+- **llm:** add provider-neutral input token caching ([#1282](https://github.com/radioso-ai/radioso/pull/1282))
+- **visitors:** show operators who they are talking to — visitor profiles, location, and previous conversations ([#1280](https://github.com/radioso-ai/radioso/pull/1280))
+
+### Fixed
+
+- **notifications:** send operator webhooks a dashboard link that routes ([#1285](https://github.com/radioso-ai/radioso/pull/1285))
+- **security:** replace backtracking anchored regexes with linear trims (CodeQL polynomial-redos) ([#1288](https://github.com/radioso-ai/radioso/pull/1288))
+- **deps:** run firebase-tools via pnpm dlx instead of a docs-portal devDependency ([#1287](https://github.com/radioso-ai/radioso/pull/1287))
+- **deps:** patch adm-zip and faker Dependabot alerts via pnpm overrides ([#1286](https://github.com/radioso-ai/radioso/pull/1286))
+- **db:** serialise migration ownership across instances with a session advisory lock ([#1283](https://github.com/radioso-ai/radioso/pull/1283))
+
+### Other
+
+- **terraform:** auto-generate the edge proof secret and stamp client geo headers at the load balancer ([#1281](https://github.com/radioso-ai/radioso/pull/1281))
+
+### Database migrations
+
+This release adds 2 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `192_visitors.sql`
+- `193_slack_binding_respond_mode.sql`
+
+[1.3.0]: https://github.com/radioso-ai/radioso/compare/v1.2.1...v1.3.0
+
 ## [1.2.1] - 2026-09-18
 
 ### Fixed

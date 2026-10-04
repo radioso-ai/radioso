@@ -429,6 +429,25 @@ describe('routine form transforms', () => {
     expect(formToRoutineDraft(form)).not.toHaveProperty('completionExport')
   })
 
+  it('carries tool exposure through the form model and leaves an unexposed routine without the block', () => {
+    const exposure = { enabled: true, toolName: 'collect_intake', description: 'Collect a visitor intake.' }
+    const form = routineToForm({ ...routine, exposure })
+
+    expect(form.exposure).toEqual(exposure)
+    expect(formToRoutineDraft(form)).toMatchObject({ exposure })
+    expect(routineToForm(routine).exposure).toBeUndefined()
+    expect(formToRoutineDraft(routineToForm(routine))).not.toHaveProperty('exposure')
+    expect(formToRoutineDraft(createEmptyRoutineForm())).not.toHaveProperty('exposure')
+  })
+
+  it('carries each ending\'s operator notice through the form model, so a dashboard save never drops it', () => {
+    const operatorNotice = { subject: 'Intake: {{slot.email}}', intro: null }
+    const form = routineToForm({ ...routine, terminals: [{ ...routine.terminals[0], operatorNotice }] })
+
+    expect(formToRoutineDraft(form).terminals).toEqual([{ ...routine.terminals[0], operatorNotice }])
+    expect(formToRoutineDraft(routineToForm(routine)).terminals[0]).not.toHaveProperty('operatorNotice')
+  })
+
   it('round-trips enabled completion export settings and builds a payload preview', () => {
     const destinationRef = '33333333-3333-4333-8333-333333333333'
     const form = routineToForm({

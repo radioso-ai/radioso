@@ -3,13 +3,9 @@ import type {
   ConversationCoverageRoutineActivator,
   ConversationCoverageReactionRecorder,
   ConversationEngine,
-  ConversationModelGateway,
   ConversationProgressPort,
   ConversationRetrievalWorkPort,
-  ConversationRoutineActivator,
-  ConversationRoutineReentryGate,
   ConversationRoutineRunner,
-  ConversationRoutineSlotCorrection,
   ConversationRoutineStore,
   ConversationTrace,
   ConversationTurnInterpreter,
@@ -18,22 +14,24 @@ import type {
   ClarificationPolicy,
   PendingClarification,
   RoutineActionRequest,
-  Routine,
   RoutineAwaitingDecision,
+  RoutineOperatorNoticeEffect,
   RoutineState,
   ProcessTurnResult,
   TurnContext,
   TurnOutcome,
 } from "@radioso/conversation-contract";
-import type { RoutineGroundedAnswerRenderer } from "@radioso/conversation-contract";
 
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { buildPendingDecisionTransition } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
+import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
+import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import type { ChatAnswerPresenter, ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
+import type { RoutineHandoffEffect } from "./handoffOwnership.js";
 import {
   ChatSessionPreparer,
   type PreparedSession,
@@ -92,8 +90,6 @@ import {
 } from "./conversationContractMappers.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import { APPROVAL_REQUEST_ACTION_TYPE } from "./actions/approvalRequestActionHandler.js";
-import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
-import type { ConversationDurability, SkillEffectPolicy, TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
 import type { AnswerCoverageRecord } from "../../answerCoverage/public.js";
@@ -204,38 +200,6 @@ export const applyCoverageInteractionTrace = (
   };
 };
 
-export interface ChatRoutineProvider {
-  forTurn(input: {
-    modelGateway: ConversationModelGateway;
-    agentId: string;
-    /** Immutable release pinned on the conversation; absent only for fixture/replay paths. */
-    agentRevisionId?: string;
-    workspaceId?: string;
-    accountId?: string;
-    pinnedRoutineIds?: string[];
-    /**
-     * Operator-only workbench test override: routine definition ids (drafts included)
-     * to make eligible for this turn, bypassing the published-only gate. Empty/absent
-     * for every live end-user turn.
-     */
-    previewRoutineIds?: string[];
-    executionMode?: TurnExecutionMode;
-    skillEffects?: SkillEffectPolicy;
-    conversationDurability?: ConversationDurability;
-    responseLanguage?: string | Promise<string | undefined>;
-    groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
-    throwIfCancelled?: () => void;
-    turnPlan?: ChatTurnPlanHandle;
-  }): Promise<{
-    routines?: readonly Routine[];
-    activator: ConversationRoutineActivator;
-    coverageActivator?: ConversationCoverageRoutineActivator;
-    runner: ConversationRoutineRunner;
-    slotCorrection?: ConversationRoutineSlotCorrection;
-    reentryGate?: ConversationRoutineReentryGate;
-  } | null>;
-}
-
 export const buildRoutinePendingDecisionTransition = (input: {
   session: PreparedSession;
   awaitingDecision?: RoutineAwaitingDecision;
@@ -328,8 +292,10 @@ export interface ChatTurnAssemblyRoutineResult {
   presentation: ChatPresentedAnswer;
   engineTrace?: ConversationTrace;
   actions?: RoutineActionRequest[];
-  handoff?: { routineId: string; stepId: string };
+  handoff?: RoutineHandoffEffect;
+  operatorNotice?: RoutineOperatorNoticeEffect;
   routineStateTransition?: CapturedRoutineTransition | null;
+  routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
   suspended?: boolean;
   clarificationTransition?: CapturedClarificationTransition | null;
@@ -340,8 +306,10 @@ export interface ChatTurnAssemblyRoutineResult {
 
 interface CoverageRoutineEffects {
   actions?: RoutineActionRequest[];
-  handoff?: { routineId: string; stepId: string };
+  handoff?: RoutineHandoffEffect;
+  operatorNotice?: RoutineOperatorNoticeEffect;
   routineStateTransition?: CapturedRoutineTransition | null;
+  routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
   suspended?: boolean;
   commitRoutineState?: () => Promise<void>;
@@ -393,11 +361,21 @@ export interface ChatTurnAssemblyOptions {
   coverageHeadRecorder?: AnswerCoverageHeadRecorder;
   /** Off-critical-path #1260 shadow; absent (replay/draft, or the flag disabled) never calls the old assessor. */
   coverageShadowAssessor?: AnswerCoverageShadowAssessor;
+  /**
+   * Includes each filled routine slot's value on this assembly's routine sub-traces
+   * (bounded — see `DefaultRoutineRunner`'s per-value/per-turn caps). Never set for the
+   * durable, customer-facing assembly (its trace is what a persisted audit record's
+   * metadata copies verbatim). The ephemeral replay assembly forwards it from
+   * `WorkbenchReplayInput.includeSlotValues` per call — only Test Chat's entry point
+   * (`TrustedTestExecutionRunnerAdapter`) sets that true; eval replay never does, since
+   * eval persists its trace into an append-only, longer-retained record.
+   */
+  includeSlotValues?: boolean;
 }
 
 type ChatTurnAssemblySharedOptions = Omit<
   ChatTurnAssemblyOptions,
-  "chatSessionPreparer" | "directiveStateStore" | "routineStore"
+  "chatSessionPreparer" | "directiveStateStore" | "routineStore" | "includeSlotValues"
 >;
 
 interface ChatTurnAssemblyEffectPorts {
@@ -406,6 +384,7 @@ interface ChatTurnAssemblyEffectPorts {
   routineStore?: ConversationRoutineStore;
   coverageHeadRecorder?: AnswerCoverageHeadRecorder;
   coverageShadowAssessor?: AnswerCoverageShadowAssessor;
+  includeSlotValues?: boolean;
 }
 
 /**
@@ -441,6 +420,34 @@ export class ChatTurnAssembly {
     }, "Coverage routine activation failed");
   }
 
+  /**
+   * A routine suspended awaiting an approval decision keeps the turn without
+   * running, so the routine attempt is bypassed and nothing else would describe
+   * it. Reports the suspended routine — and, on an invocation turn, that the tool
+   * call started nothing — onto the session for the reply envelope.
+   */
+  async describeSuspendedRoutineTurn(session: PreparedSession, suspendedRoutine: RoutineState): Promise<void> {
+    const reporter = await this.options.routineProvider?.reporterFor?.({
+      agentId: session.agent.id,
+      agentRevisionId: session.conversation.agentRevisionId ?? undefined,
+      workspaceId: session.conversation.workspaceId,
+      pinnedRoutineIds: [suspendedRoutine.routineId],
+      previewRoutineIds: session.previewRoutineIds,
+      routineInvocation: session.routineInvocation,
+    });
+    if (!reporter) {
+      return;
+    }
+    const described = reporter.describe({ state: suspendedRoutine, awaitingDecision: true });
+    if (described) {
+      session.suspendedRoutine = described;
+    }
+    const invocationReport = reporter.describeInvocation();
+    if (invocationReport) {
+      session.routineInvocationReport = invocationReport;
+    }
+  }
+
   async attemptRoutineTurn(
     session: PreparedSession,
     input: {
@@ -468,6 +475,7 @@ export class ChatTurnAssembly {
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, input.activeRoutine),
       previewRoutineIds: session.previewRoutineIds,
+      routineInvocation: session.routineInvocation,
       skillEffects: session.skillEffects,
       conversationDurability: session.conversationDurability,
       responseLanguage: input.responseLanguage,
@@ -481,6 +489,7 @@ export class ChatTurnAssembly {
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
       turnPlan: session.turnPlan,
+      includeSlotValues: this.options.includeSlotValues,
     });
     if (!routineTurnPorts) {
       return null;
@@ -548,7 +557,19 @@ export class ChatTurnAssembly {
       presentRoutineReply: (response) =>
         presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, response),
     });
+    // The tool call's outcome is known once the engine ran, whether or not a
+    // routine claimed the turn; the lifecycle reports it from the session.
+    const invocationReport = routineTurnPorts.reporter?.describeInvocation() ?? null;
+    if (invocationReport) {
+      session.routineInvocationReport = invocationReport;
+    }
     if (!outcome) {
+      // A direct invocation the activator declined leaves no routine state; the
+      // turn answers normally and the envelope still names the completed routine.
+      const declinedRoutine = routineTurnPorts.reporter?.describeDeclined() ?? null;
+      if (declinedRoutine) {
+        session.declinedRoutine = declinedRoutine;
+      }
       return null;
     }
     this.recordTraceClarificationDecisions(outcome.result.trace);
@@ -576,7 +597,9 @@ export class ChatTurnAssembly {
       engineTrace: outcome.result.trace,
       actions,
       handoff: outcome.result.handoff,
+      operatorNotice: outcome.result.operatorNotice,
       routineStateTransition,
+      routineReporter: routineTurnPorts.reporter,
       pendingDecisionTransition,
       suspended: Boolean(outcome.result.awaitingDecision),
       clarificationTransition: deferredClarificationStore?.getTransition(),
@@ -667,9 +690,11 @@ export class ChatTurnAssembly {
         effects: reactionEffects,
       };
     }
+    // Its own usage key: the pre-retrieval routine attempt in the same turn builds another
+    // gateway under `routine_turn`, and a shared key drops one call's usage (#1378).
     const modelGateway = new RoutineChatModelGateway(this.options.chatGateway, {
       workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
-      usageContext: this.answerSupport.buildChatUsageContext(session, input.accountId, "routine_turn"),
+      usageContext: this.answerSupport.buildChatUsageContext(session, input.accountId, "routine_coverage_turn"),
       signal: input.coordination?.signal,
     });
     const routineTurnPorts = await this.options.routineProvider.forTurn({
@@ -680,6 +705,7 @@ export class ChatTurnAssembly {
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, null),
       previewRoutineIds: session.previewRoutineIds,
+      routineInvocation: session.routineInvocation,
       skillEffects: session.skillEffects,
       conversationDurability: session.conversationDurability,
       responseLanguage: input.responseLanguage,
@@ -693,6 +719,7 @@ export class ChatTurnAssembly {
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
       turnPlan: session.turnPlan,
+      includeSlotValues: this.options.includeSlotValues,
     });
     if (!routineTurnPorts?.coverageActivator) {
       return {
@@ -733,7 +760,9 @@ export class ChatTurnAssembly {
               ]
             : result.actions,
           handoff: result.handoff,
+          operatorNotice: result.operatorNotice,
           routineStateTransition,
+          routineReporter: routineTurnPorts.reporter,
           pendingDecisionTransition,
           suspended: Boolean(result.awaitingDecision),
           commitRoutineState: () => deferredStore.commit(),

@@ -49,7 +49,9 @@ import type { DirectiveMatcherPort } from "../../modules/directives/public.js";
 import type { DirectiveMatchGatewayFactory } from "../../shared/infra/llm/contextualGateways.js";
 import {
   ApplicationModuleCoordinator,
+  chatTurnQueueableActionHandlers,
   createApplicationExtensionRegistry,
+  routineAuthorableActionHandlers,
   type ApplicationDirectiveRegistration,
   type ApplicationModule,
 } from "./applicationModule.js";
@@ -63,6 +65,7 @@ import { createUsageReportingApplicationModule } from "./builtIn/usageReportingM
 import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirectivesModule.js";
 import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
 import { createWebhookSendApplicationModule } from "./builtIn/webhookSendModule.js";
+import { createConversationTransferNoticeApplicationModule } from "./builtIn/conversationTransferNoticeModule.js";
 import { createCustomerEmailApplicationModule } from "../../modules/customerEmail/composition.js";
 import { createSlackApplicationModule } from "../../modules/slack/composition.js";
 import { createOssOrganizationCreationApplicationModule } from "../../modules/auth/composition.js";
@@ -84,7 +87,10 @@ import {
 
 export interface ApplicationComposition {
   capabilityPolicy: CapabilityPolicy;
+  /** What a chat turn may queue — an author's action step or a host-queued notice. */
   actionCapabilityMap: ActionCapabilityMap;
+  /** The actions an author may write as a routine action step; validation and publishing admit these. */
+  routineActionCapabilityMap: ActionCapabilityMap;
   connectors: ReturnType<typeof createApplicationExtensionRegistry>["connectors"];
   telemetrySinks: ReturnType<typeof createApplicationExtensionRegistry>["telemetrySinks"];
   productAnalyticsSinks: ReturnType<typeof createApplicationExtensionRegistry>["productAnalyticsSinks"];
@@ -99,13 +105,17 @@ export interface ApplicationComposition {
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   facetExtraction?: ReturnType<typeof createApplicationExtensionRegistry>["facetExtraction"];
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
+  documentCapacityReaderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["documentCapacityReaderRegistration"];
   managedModelPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["managedModelPolicyRegistration"];
   organizationCreationGuardRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["organizationCreationGuardRegistration"];
   usageEventRecorderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageEventRecorderRegistration"];
   publicChatActionAdvertiserRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["publicChatActionAdvertiserRegistrations"];
   routineRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["routineRegistrations"];
   publishedRoutineRegistrationSource: ReturnType<typeof createApplicationExtensionRegistry>["publishedRoutineRegistrationSource"];
+  /** Every registered handler; the worker dispatches all of them. */
   actionHandlerRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["actionHandlerRegistrations"];
+  /** The handlers routine authoring offers. */
+  routineActionHandlerRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["actionHandlerRegistrations"];
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
   answerFeedbackHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["answerFeedbackHistoryProviderRegistration"];
   agentSurfaceExtensions: ReturnType<typeof createApplicationExtensionRegistry>["agentSurfaceExtensions"];
@@ -155,15 +165,20 @@ export const createDefaultApplicationComposition = (options: {
     createAudiencePulseApplicationModule(),
     createContactRoutineApplicationModule(),
     createWebhookSendApplicationModule(),
+    createConversationTransferNoticeApplicationModule(),
     createOssOrganizationCreationApplicationModule(),
     createCustomerEmailApplicationModule(options.env),
     createSlackApplicationModule(options.env),
     ...(options.modules ?? []),
   ]);
 
+  const routineActionHandlerRegistrations = routineAuthorableActionHandlers(registry.actionHandlerRegistrations);
+  const chatTurnActionHandlerRegistrations = chatTurnQueueableActionHandlers(registry.actionHandlerRegistrations);
+
   return {
     capabilityPolicy: registry.capabilityPolicy ?? new DefaultAllowCapabilityPolicy(),
-    actionCapabilityMap: new StaticActionCapabilityMap(registry.actionHandlerRegistrations),
+    actionCapabilityMap: new StaticActionCapabilityMap(chatTurnActionHandlerRegistrations),
+    routineActionCapabilityMap: new StaticActionCapabilityMap(routineActionHandlerRegistrations),
     connectors: registry.connectors,
     telemetrySinks: registry.telemetrySinks,
     productAnalyticsSinks: registry.productAnalyticsSinks,
@@ -178,6 +193,7 @@ export const createDefaultApplicationComposition = (options: {
     websiteEmbedIntegration: registry.websiteEmbedIntegration,
     facetExtraction: registry.facetExtraction,
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
+    documentCapacityReaderRegistration: registry.documentCapacityReaderRegistration,
     managedModelPolicyRegistration: registry.managedModelPolicyRegistration,
     organizationCreationGuardRegistration: registry.organizationCreationGuardRegistration,
     usageEventRecorderRegistration: registry.usageEventRecorderRegistration,
@@ -185,6 +201,7 @@ export const createDefaultApplicationComposition = (options: {
     routineRegistrations: registry.routineRegistrations,
     publishedRoutineRegistrationSource: registry.publishedRoutineRegistrationSource,
     actionHandlerRegistrations: registry.actionHandlerRegistrations,
+    routineActionHandlerRegistrations,
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
     answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
     agentSurfaceExtensions: registry.agentSurfaceExtensions,

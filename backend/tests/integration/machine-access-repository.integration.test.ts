@@ -164,6 +164,7 @@ describeIntegration("MachineAccessRepository", () => {
       workspaceId,
       serviceAccountId: created!.account.id,
       kind: "service",
+      now: new Date(),
       limit: 2,
       page,
     });
@@ -341,7 +342,7 @@ describeIntegration("MachineAccessRepository", () => {
     try {
       await createAuditFailureTrigger("machine_access.personal_credential.issued");
       await expect(service.issue(issueInput)).rejects.toThrow(/required audit unavailable/i);
-      expect((await repository.listCredentials({ workspaceId, ownerUserId: userId, kind: "personal", limit: 100 })).filter((credential) => credential.label === issueInput.label)).toEqual([]);
+      expect((await repository.listCredentials({ workspaceId, ownerUserId: userId, kind: "personal", now: new Date(), limit: 100 })).filter((credential) => credential.label === issueInput.label)).toEqual([]);
       await removeAuditFailureTrigger();
 
       const requestId = `request-${randomUUID()}`;
@@ -636,14 +637,14 @@ describeIntegration("MachineAccessRepository", () => {
       await expect(archive).resolves.toMatchObject({ status: "archived" });
       await expect(rotate).rejects.toMatchObject({ statusCode: 409 });
 
-      const persistedCredentials = await repository.listCredentials({
-        workspaceId,
-        serviceAccountId: created!.account.id,
-        kind: "service",
-        limit: 10,
-      });
+      // Read the rows directly: the inventory list drops revoked credentials, and this assertion is about
+      // what archiving persisted, not about what an operator sees.
+      const persistedCredentials = await database.query<{ id: string; revoked_at: Date | null }>(
+        "SELECT id, revoked_at FROM api_credentials WHERE service_account_id = $1",
+        [created!.account.id],
+      );
       expect(persistedCredentials).toHaveLength(1);
-      expect(persistedCredentials.every((credential) => credential.revokedAt !== null)).toBe(true);
+      expect(persistedCredentials.every((credential) => credential.revoked_at !== null)).toBe(true);
       const invalidatedCredentialIds = audit.events
         .filter((event) => event.eventType === "machine_access.service_credential.invalidated")
         .map((event) => String(event.metadata?.credentialId));
@@ -651,6 +652,82 @@ describeIntegration("MachineAccessRepository", () => {
     } finally {
       await removeRaceTriggers();
     }
+  });
+
+  it("omits revoked and expired credentials from the inventory and its count", async () => {
+    const now = new Date();
+    const created = await repository.createServiceAccountWithinLimit({
+      workspaceId,
+      accountId,
+      displayName: "Lifecycle inventory",
+      role: "member",
+      createdByUserId: userId,
+      credentialLabel: "live",
+      expiresAt: new Date(now.getTime() + 86_400_000),
+      limit: 50,
+      issueSecret: () => ({ secret: "live", tokenPrefix: "radioso_svc_v1_live", tokenHash: `live-${randomUUID()}` }),
+    });
+    expect(created).not.toBeNull();
+    const serviceAccountId = created!.account.id;
+    const issue = async (label: string) => {
+      const result = await repository.createServiceCredentialWithinLimit({
+        accountId,
+        workspaceId,
+        serviceAccountId,
+        label,
+        expiresAt: new Date(now.getTime() + 86_400_000),
+        createdByUserId: userId,
+        now,
+        limit: 5,
+        issueSecret: () => ({ secret: label, tokenPrefix: "radioso_svc_v1_life", tokenHash: `${label}-${randomUUID()}` }),
+      });
+      expect(result).toMatchObject({ status: "created" });
+      return result.status === "created" ? result.credential.id : "";
+    };
+    const revokedId = await issue("revoked");
+    const expiredId = await issue("expired");
+    await expect(repository.revokeCredential({ id: revokedId, actorUserId: userId, now })).resolves.toBe(true);
+    await database.query(
+      "UPDATE api_credentials SET expires_at = $2 WHERE id = $1",
+      [expiredId, new Date(now.getTime() - 1_000)],
+    );
+
+    const query = { workspaceId, serviceAccountId, kind: "service" as const, now };
+    const listed = await repository.listCredentials({ ...query, limit: 100 });
+    expect(listed.map((credential) => credential.id)).toEqual([created!.credential.id]);
+    await expect(repository.countCredentials(query)).resolves.toBe(1);
+  });
+
+  it("omits archived service accounts from the inventory and its count while keeping disabled ones", async () => {
+    const inventoryWorkspaceId = randomUUID();
+    await database.query(
+      "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)",
+      [inventoryWorkspaceId, accountId, "Inventory", `inventory-${inventoryWorkspaceId}`],
+    );
+    const create = async (displayName: string) => {
+      const created = await repository.createServiceAccountWithinLimit({
+        workspaceId: inventoryWorkspaceId,
+        accountId,
+        displayName,
+        role: "member",
+        createdByUserId: userId,
+        credentialLabel: "primary",
+        expiresAt: new Date(Date.now() + 86_400_000),
+        limit: 50,
+        issueSecret: () => ({ secret: displayName, tokenPrefix: "radioso_svc_v1_inv", tokenHash: `${displayName}-${randomUUID()}` }),
+      });
+      expect(created).not.toBeNull();
+      return created!.account.id;
+    };
+    const enabledId = await create("Enabled account");
+    const disabledId = await create("Disabled account");
+    const archivedId = await create("Archived account");
+    await database.query("UPDATE workspace_service_accounts SET status = 'disabled', disabled_at = NOW() WHERE id = $1", [disabledId]);
+    await database.query("UPDATE workspace_service_accounts SET status = 'archived', archived_at = NOW() WHERE id = $1", [archivedId]);
+
+    const listed = await repository.listServiceAccounts({ workspaceId: inventoryWorkspaceId, limit: 100 });
+    expect(listed.map((account) => account.id).sort()).toEqual([enabledId, disabledId].sort());
+    await expect(repository.countServiceAccounts(inventoryWorkspaceId)).resolves.toBe(2);
   });
 });
 

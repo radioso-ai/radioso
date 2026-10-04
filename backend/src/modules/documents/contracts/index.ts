@@ -1,5 +1,7 @@
 import type { DocumentSourceResolverInput, IndexedFieldValue } from "./documentContracts.js";
 
+export { documentInventoryStatuses } from "./documentContracts.js";
+
 export type {
   ChunkDetail,
   ChunkMetadataRevisionPatch,
@@ -10,11 +12,16 @@ export type {
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
   DocumentEnrichmentMetadataUpdateInput,
+  DocumentInventoryListInput,
+  DocumentInventoryPort,
   DocumentRetrievalSettingsInput,
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
   DocumentProcessingJobOptions,
+  DocumentReviewedOperationApplyPort,
+  DocumentReviewedOperationPreparationPort,
+  DocumentReviewedWriteGuard,
   DocumentRetrievalSettingsResult,
   DocumentSourceResolverInput,
   DocumentSourceSummary,
@@ -38,6 +45,12 @@ export type {
   DocumentStoragePort,
 } from "./storage.js";
 export { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
+export {
+  describeDocumentReviewedOperationPlan,
+  documentReviewedChangeEffect,
+  documentReviewedOperationPlanSchema,
+  documentReviewedOperationTargetRefSchema,
+} from "../services/documentReviewedOperationPlan.js";
 
 export interface DocumentIngestionPort {
   ingest(input: {

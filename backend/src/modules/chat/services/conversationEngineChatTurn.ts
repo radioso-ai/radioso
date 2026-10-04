@@ -154,6 +154,17 @@ const wasYieldedBySkill = (presentation: ChatPresentedAnswer | null): boolean =>
   presentation?.yielded === true;
 
 /**
+ * Once `processTurn` has answered, the engine has recorded the routine's yield and the
+ * answer has led back to its step, so the session drops it. A failed turn keeps it, so a
+ * retry of the same turn hands it back rather than asking the routine again.
+ */
+const releaseRoutineYield = (...sessions: PreparedSession[]): void => {
+  for (const session of sessions) {
+    delete session.routineYield;
+  }
+};
+
+/**
  * Runs a prepared Radioso chat turn through a conversation-engine implementation
  * while preserving Radioso-owned rendering. The engine selects (via the existing
  * TurnSelectionStrategy) and dispatches a terminal answer skill from the injected
@@ -223,6 +234,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
   });
 
   const result = await input.engine.processTurn(processTurnInput);
+  releaseRoutineYield(input.session, readSession());
   // A coverage verdict sink yielded the turn before any answer text was released:
   // the skill's own (empty) presentation is not what the visitor sees — the
   // post-evidence routine result the engine substituted for `result.response` is.
@@ -411,6 +423,7 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
         if (!presentation) {
           throw new Error("conversation_engine_stream_missing_chat_result");
         }
+        releaseRoutineYield(input.session, readSession());
         enqueue({
           type: "final",
           presentation,

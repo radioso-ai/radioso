@@ -1,7 +1,7 @@
 ---
 title: "Test your agent in the workbench"
 description: "Chat with your agent as an operator, inspect a turn, and capture an answer as an eval case from the dashboard Chat workbench."
-last_updated: 2026-09-17
+last_updated: 2026-10-03
 ---
 
 # Test your agent in the workbench
@@ -24,17 +24,39 @@ A notify skill delivers through the saved conversation, so it stays off even whe
 
 ## Test Chat and History
 
-Open the three-dot menu and choose **History** to reopen a previous test. A comparison reopens both sides together,
-with the versions and sample values it originally used. Older test sessions
-without recorded version information keep an explicit label. Your tests stay
-separate from customer conversations in Activity.
+Open the three-dot menu and choose **Conversation history** to reopen a previous
+test. Each saved test is listed by its first message, with the versions it ran
+against, how many messages were sent to the agent in it (replies aren't
+counted), and when it started. A test you continued from a real conversation
+counts the customer's messages it copied in, too.
+Conversation history has its own address, so you can bookmark it or send it to
+someone, and the test you have open keeps its own address too: reloading the
+page, or coming back to this tab later, leaves the same test open. Back and
+Forward step between the tests you opened and Conversation history in the
+order you visited them, the same way they do on any other page. A comparison
+reopens both sides together, with the versions and sample values it
+originally used. Older test sessions without recorded version information
+keep an explicit label. Your tests stay separate from customer conversations
+in Activity.
+
+To show a test to a colleague, choose the link icon on its row in Conversation
+history, or **Copy link to this chat** in the three-dot menu while the test is
+open, and send them the link. It opens that test with its versions, sample
+values, and transcript for anyone in the workspace who can manage agents. A
+message they send there continues the same test, so if they want to try their
+own variation, they can start a **New chat** instead. A dashboard served over
+plain HTTP can't write to the clipboard, so it shows the link for you to copy
+by hand.
 
 Use the revision selector to choose the saved draft candidate, the current
 published version, or an earlier published version. Releases are labelled **v1**,
 **v2**, and so on; the saved draft shows the published version it is based on.
-Saving or testing a draft does not allocate a release number. Choose **Compare
-versions** from the three-dot menu to open two private conversations. Each keeps
-its selected version, and every message goes to both panes.
+Saving or testing a draft does not allocate a release number. When the draft
+cannot be released — a routine step referencing something that no longer
+exists, for example — the selector offers only published versions, and the
+reason appears above the chat. Choose **Compare versions** from the three-dot
+menu to open two private conversations. Each keeps its selected version, and
+every message goes to both panes.
 
 When proactive greeting is enabled, opening a fresh Test Chat starts the selected
 private test and shows the assistant's first greeting before you type. The
@@ -78,7 +100,8 @@ Saved revision tests reopen in Test Chat with their recorded versions and messag
 - A weak answer after uploading a document can mean processing is still running. Check the document's status before comparing answers.
 - If a draft save fails, your message stays unsent. Resolve the save error and try again.
 - If one comparison side fails, retry that side to retain the successful answer from the other version.
-- Look for private tests in **History**; customer conversations remain in Activity.
+- After a failed turn, retry it or type your next message and carry on. Once a later message is sent, the failed turn stays in the transcript as a record and can't be retried. Only a turn that is still running makes you wait.
+- Look for private tests in **Conversation history**; customer conversations remain in Activity.
 
 ## Read next
 

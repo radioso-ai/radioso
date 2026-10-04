@@ -7,17 +7,32 @@ import type {
   ConversationRoutineStepRenderer,
   Routine,
   RoutineActionRequest,
+  RoutineContextRenderer,
   RoutineGuard,
   RoutineNextStepDecision,
+  RoutineOperatorNoticeTemplate,
+  RoutinePendingStep,
   RoutineRunTrace,
+  RoutineSelectionTrace,
   RoutineSkillResult,
   RoutineState,
   RoutineStep,
+  RoutineStepReask,
+  RoutineTraceRejectedSlot,
+  RoutineTraceSlotValue,
   RoutineTraceStepEntry,
   RoutineTransition,
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
+
+import {
+  collectedSlotsForStep,
+  isSlotCollectionStepSatisfied,
+  requiredCollectedSlots,
+  slotFilledGuardPasses,
+} from "./slotCollectionStep.js";
+import { checkSlotValue } from "./slotValue.js";
 
 type RoutineFieldGuard = Extract<RoutineGuard, { kind: "field" }>;
 
@@ -167,18 +182,13 @@ const projectStep = (step: RoutineStep): SteeringRule[] =>
       }]
     : [];
 
-const SLOT_REFERENCE = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
+// A step instruction embeds two kinds of reference: `{{slot.<key>}}` reads a captured
+// variable, `{{context.<name>}}` reads a staged context variable (the visitor's current
+// page, a host-pushed value). Both resolve in ONE pass over the authored text, so a value
+// substituted for one reference is never re-scanned for the other — a visitor-typed slot
+// value or a page title cannot smuggle a second reference in.
+const STEP_REFERENCE = /\{\{\s*(slot|context)\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
 
-/**
- * Substitute `{{slot.<key>}}` references in a step's instruction with the values the
- * routine has captured so far, so a confirmation like "call you at {{slot.phone}}"
- * renders the real value rather than leaking the raw token to the user. A reference to
- * a slot not captured yet resolves to an empty string, not the literal token.
- */
-// Captured slot values come from LLM-extracted JSON and are typed as `unknown`; render
-// them with the same default stringification `String()` would use for any JS value
-// (including the "[object Object]" fallback for a plain object), just spelled out so the
-// static type of each branch is known rather than `unknown`.
 const stringifySlotValue = (value: unknown): string => {
   if (typeof value === "string") {
     return value;
@@ -195,9 +205,24 @@ const stringifySlotValue = (value: unknown): string => {
   return Array.isArray(value) ? value.toString() : Object.prototype.toString.call(value);
 };
 
-const interpolateSlots = (text: string, variables: Record<string, unknown>): string =>
-  text.replace(SLOT_REFERENCE, (_match, key: string) =>
-    Object.prototype.hasOwnProperty.call(variables, key) ? stringifySlotValue(variables[key]) : "");
+/**
+ * Fills captured slots and referenced context into a step's authored instruction before it
+ * is rendered. The host's renderer decides what any context variable looks like; the engine
+ * only substitutes. An uncaptured slot, an absent or withheld context variable, or no
+ * context renderer at all leaves an empty string, never the raw token.
+ */
+const resolveStepAction = (
+  action: string,
+  variables: Record<string, unknown>,
+  stagedContext: TurnContext["stagedContext"],
+  contextRenderer: RoutineContextRenderer | undefined,
+): string =>
+  action.replace(STEP_REFERENCE, (_match, kind: string, name: string) => {
+    if (kind === "context") {
+      return contextRenderer?.render({ name, stagedContext }) ?? "";
+    }
+    return Object.prototype.hasOwnProperty.call(variables, name) ? stringifySlotValue(variables[name]) : "";
+  });
 
 const assignOutputs = (
   outputAssignments: Record<string, string> | undefined,
@@ -237,15 +262,103 @@ const stagedContextForSkillResult = (
 const hasTypedSlotSchema = (routine: Routine): boolean =>
   Array.isArray(routine.slots) && routine.slots.length > 0;
 
-const collectedSlotsFor = (step: RoutineStep): string[] => {
-  const value = step.metadata?.collectsSlots;
-  return Array.isArray(value) && value.every((candidate): candidate is string => typeof candidate === "string")
-    ? value
-    : [];
-};
-
 const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(variables, key);
+
+/**
+ * What a re-rendered step still lacks: its required collected slots that are unfilled, and
+ * any collected slot whose value this turn was rejected for not fitting its type, as
+ * declared schema — never values. `null` when the step collects required slots, holds them
+ * all, and rejected nothing: it stayed for another reason, and telling the renderer the reply
+ * "fell short" made it ask again for values it already had. An optional slot counts as
+ * missing only when its value was rejected.
+ */
+const reaskFor = (
+  routine: Routine,
+  step: RoutineStep,
+  variables: Record<string, unknown>,
+  rejectedKeys: ReadonlySet<string>,
+): RoutineStepReask | null => {
+  const collected = new Set(collectedSlotsForStep(step));
+  const required = requiredCollectedSlots(routine, step);
+  const missingSlots = (routine.slots ?? []).filter((slot) =>
+    collected.has(slot.key) && (rejectedKeys.has(slot.key) || (slot.required && !hasVariable(variables, slot.key))),
+  );
+  return required.length > 0 && missingSlots.length === 0 ? null : { missingSlots };
+};
+
+/**
+ * Consecutive no-progress re-asks of one step before the reply is told to ask differently
+ * (#1376).
+ */
+const DEFAULT_REASK_LIMIT = 3;
+
+/**
+ * Keeps the values that fit their declared slot type, in that type's canonical form (#1374).
+ * A value for an undeclared key, or on a routine with no slot schema, passes through as it
+ * always has. A blank one is "not given" and dropped; one that does not fit is dropped and
+ * reported by key and reason — never by value.
+ */
+const checkDeclaredSlotValues = (
+  routine: Routine,
+  values: Record<string, unknown>,
+): { values: Record<string, unknown>; rejected: RoutineTraceRejectedSlot[] } => {
+  const slotTypes = new Map((routine.slots ?? []).map((slot) => [slot.key, slot.type]));
+  const kept: Record<string, unknown> = {};
+  const rejected: RoutineTraceRejectedSlot[] = [];
+  for (const [key, value] of Object.entries(values)) {
+    const type = slotTypes.get(key);
+    if (!type) {
+      kept[key] = value;
+      continue;
+    }
+    const checked = checkSlotValue(type, value);
+    if (checked.ok) {
+      kept[key] = checked.value;
+    } else if (checked.reason !== "empty") {
+      rejected.push({ key, reason: checked.reason });
+    }
+  }
+  return { values: kept, rejected };
+};
+
+/** The rejected keys that belong to slots this step collects. */
+const rejectedCollectedKeys = (step: RoutineStep, rejected: readonly RoutineTraceRejectedSlot[]): Set<string> => {
+  const collected = new Set(collectedSlotsForStep(step));
+  return new Set(rejected.map((slot) => slot.key).filter((key) => collected.has(key)));
+};
+
+/**
+ * Whether the turn filled a slot the step collects that was empty before it: progress that
+ * resets the re-ask count. Replacing a value the step already held is not progress, or a
+ * visitor restating an optional value with each failed answer would never reach the limit.
+ */
+const filledCollectedSlot = (
+  step: RoutineStep,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): boolean =>
+  collectedSlotsForStep(step).some((key) => !hasVariable(before, key) && hasVariable(after, key));
+
+/**
+ * The step a yielding routine stays parked on. The host puts it into the answer's system
+ * prompt, so it carries no captured value: a captured value is visitor text, and a slot
+ * reference shows as its bracketed key instead ("Ask [name] for the dates"). The routine
+ * claims nothing this turn, so the context staged for the turn (the visitor's page) is not
+ * the routine's to read either, and a context reference renders empty.
+ */
+const pendingStepFor = (
+  routine: Routine,
+  step: RoutineStep,
+  variables: Record<string, unknown>,
+): RoutinePendingStep => ({
+  stepId: step.id,
+  instruction: (step.action ?? "").replace(STEP_REFERENCE, (_match, kind: string, name: string) =>
+    kind === "slot" ? `[${name}]` : ""),
+  missingSlotKeys: requiredCollectedSlots(routine, step)
+    .filter((slot) => !hasVariable(variables, slot.key))
+    .map((slot) => slot.key),
+});
 
 const declaredSlotVariables = (
   routine: Routine,
@@ -258,6 +371,63 @@ const declaredSlotVariables = (
       .map((key) => [key, variables[key]]),
   );
 
+/** Per-value character bound for a traced slot value (including the ellipsis), matching the host's output-bounding magnitude. */
+const MAX_TRACE_SLOT_VALUE_CHARS = 500;
+
+/** Filled-slot count bound for one turn's traced slot values. */
+const MAX_TRACE_SLOT_VALUES = 50;
+
+/** Narrows a captured slot value to the scalar shape a trace can carry, and caps its length. */
+const traceableSlotValue = (value: unknown): { value: string | number | boolean; truncated?: boolean } => {
+  const scalar = typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? value
+    : JSON.stringify(value) ?? String(value);
+  if (typeof scalar === "string" && scalar.length > MAX_TRACE_SLOT_VALUE_CHARS) {
+    // The ellipsis counts toward the bound, so the kept slice is one character short of it.
+    return { value: `${scalar.slice(0, MAX_TRACE_SLOT_VALUE_CHARS - 1)}…`, truncated: true };
+  }
+  return { value: scalar };
+};
+
+/**
+ * Every filled declared slot's value after this turn, self-described by its declared
+ * type, capped to `MAX_TRACE_SLOT_VALUES` entries with each value capped to
+ * `MAX_TRACE_SLOT_VALUE_CHARS`. Called only when the runner's `includeSlotValues`
+ * construction option is set — this is the one place the trace carries slot *values*
+ * rather than just keys, and it never runs otherwise.
+ */
+const declaredSlotTraceValues = (
+  routine: Routine,
+  variables: Record<string, unknown>,
+): { slotValues: RoutineTraceSlotValue[]; omittedSlotCount: number } => {
+  const filled = (routine.slots ?? []).filter((slot) => hasVariable(variables, slot.key));
+  const kept = filled.slice(0, MAX_TRACE_SLOT_VALUES);
+  return {
+    slotValues: kept.map((slot) => {
+      const { value, truncated } = traceableSlotValue(variables[slot.key]);
+      return { key: slot.key, type: slot.type, value, ...(truncated ? { truncated: true } : {}) };
+    }),
+    omittedSlotCount: filled.length - kept.length,
+  };
+};
+
+/** The `slotValues`/`omittedSlotCount` fields to spread onto a trace, present only when requested. */
+const slotValuesTraceFields = (
+  routine: Routine,
+  variables: Record<string, unknown>,
+  includeSlotValues: boolean | undefined,
+): Pick<RoutineRunTrace, "slotValues" | "omittedSlotCount"> => {
+  if (!includeSlotValues) {
+    return {};
+  }
+  const { slotValues, omittedSlotCount } = declaredSlotTraceValues(routine, variables);
+  return { slotValues, ...(omittedSlotCount > 0 ? { omittedSlotCount } : {}) };
+};
+
+/**
+ * Runner-local gate on top of the shared `isSlotCollectionStepSatisfied` rule: only a
+ * chat step on a routine with a typed slot schema can be fast-forwarded past.
+ */
 const isSatisfiedSlotCollectionStep = (
   routine: Routine,
   step: RoutineStep,
@@ -266,8 +436,7 @@ const isSatisfiedSlotCollectionStep = (
   if (step.kind !== "chat" || !hasTypedSlotSchema(routine)) {
     return false;
   }
-  const collectedSlots = collectedSlotsFor(step);
-  return collectedSlots.length > 0 && collectedSlots.every((key) => hasVariable(variables, key));
+  return isSlotCollectionStepSatisfied(routine, step, variables);
 };
 
 const isDefaultTransition = (transition: RoutineTransition): boolean =>
@@ -282,6 +451,32 @@ const terminalKindFor = (step: RoutineStep): "complete" | "handoff" | "action" |
   }
   const kind = step.metadata?.terminalKind;
   return kind === "handoff" || kind === "action" || kind === "complete" ? kind : "complete";
+};
+
+const terminalResult = (
+  kind: "complete" | "handoff" | "action",
+  step: RoutineStep,
+  collected: Record<string, unknown>,
+): NonNullable<ConversationRoutineResumeResult["terminal"]> => {
+  const operatorNotice = operatorNoticeTemplateFor(step);
+  return { kind, stepId: step.id, collected, ...(operatorNotice ? { operatorNotice } : {}) };
+};
+
+/**
+ * The operator notice template a terminal step carries. The host's compiler puts it there
+ * exactly when the ending notifies operators; the runner only reads it back, keeping the
+ * text fields that are strings so a malformed metadata value can never reach a notice.
+ */
+const operatorNoticeTemplateFor = (step: RoutineStep): RoutineOperatorNoticeTemplate | null => {
+  const notice = step.kind === "terminal" ? step.metadata?.operatorNotice : undefined;
+  if (typeof notice !== "object" || notice === null || Array.isArray(notice)) {
+    return null;
+  }
+  const { subject, intro } = notice as Record<string, unknown>;
+  return {
+    ...(typeof subject === "string" ? { subject } : {}),
+    ...(typeof intro === "string" ? { intro } : {}),
+  };
 };
 
 const completionExportActionFor = (
@@ -325,15 +520,36 @@ const completionExportActionFor = (
  * mechanics; generation/presentation stays in the host. Implements the slice-1
  * `ConversationRoutineRunner` seam, so the engine resumes through it unchanged.
  */
+interface DefaultRoutineRunnerOptions {
+  /** Time source for relative-date guards; defaults to the wall clock. */
+  clock?: () => Date;
+  /** Renders `{{context.<name>}}` references in step instructions; absent means they resolve to nothing. */
+  contextRenderer?: RoutineContextRenderer;
+  /**
+   * Whether this runner's trace includes each filled slot's value. Absent/false (the
+   * default) is what every live customer conversation gets — the trace it builds is
+   * exactly what feeds a persisted audit record, so no value is ever produced for it in
+   * the first place. Only a construction the host builds specifically for a private
+   * replay (Test Chat, eval) sets this.
+   */
+  includeSlotValues?: boolean;
+  /** Consecutive no-progress re-asks of one step allowed before the reply asks differently; defaults to 3. */
+  reaskLimit?: number;
+}
+
 export class DefaultRoutineRunner implements ConversationRoutineRunner {
   constructor(
     private readonly routines: readonly Routine[],
     private readonly selector: ConversationRoutineNextStepSelector,
     private readonly renderer: ConversationRoutineStepRenderer,
     private readonly skillDispatcher?: ConversationRoutineSkillDispatcher,
-    // Injectable so relative-date guards ("older_than 6 months") are deterministic in tests.
-    private readonly clock: () => Date = () => new Date(),
+    private readonly options: DefaultRoutineRunnerOptions = {},
   ) {}
+
+  // Injectable so relative-date guards ("older_than 6 months") are deterministic in tests.
+  private get clock(): () => Date {
+    return this.options.clock ?? (() => new Date());
+  }
 
   getCurrentStep(state: RoutineState): RoutineStep | null {
     const routine = this.routines.find((candidate) => candidate.id === state.routineId);
@@ -350,12 +566,22 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     steeringResolver?: ConversationRoutineSteeringResolver;
     activationTurn?: boolean;
   }): Promise<ConversationRoutineResumeResult> {
-    const { turn, state } = input;
+    const { turn } = input;
     const now = this.clock();
-    const routine = this.routines.find((candidate) => candidate.id === state.routineId);
+    const routine = this.routines.find((candidate) => candidate.id === input.state.routineId);
     if (!routine) {
-      throw new Error(`routine_not_found:${state.routineId}`);
+      throw new Error(`routine_not_found:${input.state.routineId}`);
     }
+    // The values a routine starts with — the activator's extraction, or what a re-entered run
+    // carries — enter its state here, so they are checked like any selector's (#1374).
+    const startCheck = input.activationTurn ? checkDeclaredSlotValues(routine, input.state.variables) : null;
+    const state: RoutineState = startCheck ? { ...input.state, variables: startCheck.values } : input.state;
+    // The activator's rejections the selector did not make good: the selector reads the same
+    // opening message, so a valid value it returns for the slot replaces the rejected one.
+    const unreplacedStartRejections = (variables: Record<string, unknown>): RoutineTraceRejectedSlot[] =>
+      (startCheck?.rejected ?? []).filter((rejected) => !hasVariable(variables, rejected.key));
+    // Every next state sets the re-ask count afresh for the step it rests on (#1376).
+    const { reaskCount: _previousReaskCount, ...stateWithoutReaskCount } = state;
     const stepById = (id: string): RoutineStep => {
       const step = routine.steps.find((candidate) => candidate.id === id);
       if (!step) {
@@ -375,6 +601,14 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
 
     const currentStepId = state.path.at(-1) ?? routine.rootStepId;
     const currentStep = stepById(currentStepId);
+    // A yield leaves the saved state untouched, so the routine waits on the step it resumed
+    // on, whatever this message would have filled or walked past.
+    const yieldTurn = (): ConversationRoutineResumeResult => ({
+      yielded: true,
+      response: { answer: "" },
+      nextState: null,
+      pendingStep: pendingStepFor(routine, currentStep, state.variables),
+    });
 
     // Debug trace: a step-by-step log of this turn's traversal, surfaced to the panel.
     // Slot KEYS only — never the captured values (which may be PII).
@@ -392,8 +626,29 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       );
     };
     // Set by `selectNext` each call: whether it consulted the LLM selector (vs taking a
-    // default/structured-guard edge). Read immediately after each awaited call.
+    // default/structured-guard edge), and what the selector reported its model returned.
+    // Read immediately after each awaited call.
     let lastSelectorRan = false;
+    let lastSelection: RoutineSelectionTrace | undefined;
+    // The slots whose returned value the last `selectNext` call did not store (#1374).
+    let lastRejectedSlots: RoutineTraceRejectedSlot[] = [];
+    // Whether a selector decision in the last `selectNext` call asked to hold its step (#1375).
+    let lastSelectorHold = false;
+    // Every selector call goes through here, so no selector implementation can store a value
+    // that does not fit its slot's declared type.
+    const selectChecked = async (
+      selectInput: Parameters<ConversationRoutineNextStepSelector["select"]>[0],
+    ): Promise<RoutineNextStepDecision> => {
+      const decision = await this.selector.select(selectInput);
+      lastSelection = decision.selection;
+      lastSelectorHold = lastSelectorHold || decision.hold === true;
+      if (!decision.variables) {
+        return decision;
+      }
+      const checked = checkDeclaredSlotValues(routine, decision.variables);
+      lastRejectedSlots = [...lastRejectedSlots, ...checked.rejected];
+      return { ...decision, variables: checked.values };
+    };
 
     const attempts: Record<string, number> = { ...(state.attempts ?? {}) };
     if (state.path.length === 0) {
@@ -411,7 +666,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     ): boolean => {
       switch (transition.guard?.kind) {
         case "slot_filled":
-          return transition.guard.slots.length > 0 && transition.guard.slots.every((slot) => hasVariable(variables, slot));
+          return slotFilledGuardPasses(transition, variables);
         case "outcome":
           return skillResult?.status === transition.guard.status;
         case "counter":
@@ -422,6 +677,18 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           return false;
       }
     };
+    // Where a satisfied slot step goes when its structure decides: its only exit, else the
+    // first rule exit that matches, else its default exit. `undefined` when only an
+    // AI-decides exit could move it.
+    const satisfiedStepExit = (
+      step: RoutineStep,
+      exits: readonly RoutineTransition[],
+      variables: Record<string, unknown>,
+    ): string | undefined =>
+      exits.length === 1
+        ? exits[0].to
+        : (exits.find((exit) => !isDefaultTransition(exit) && !isLlmTransition(exit) && guardMatches(exit, step.id, variables))
+          ?? exits.find(isDefaultTransition))?.to;
     type SelectNextInput = {
       step: RoutineStep;
       transitions: RoutineTransition[];
@@ -429,9 +696,16 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       state: RoutineState;
       skillResult?: RoutineSkillResult;
       defaultOnDecline?: boolean;
+      /** Extract even when the step's slots are filled: nothing has read this message yet. */
+      alwaysExtract?: boolean;
+      /** The step the visitor answered: a rejected value for one of its own slots holds it this turn. */
+      answeredStep?: boolean;
     };
     const selectNextRaw = async (input: SelectNextInput): Promise<RoutineNextStepDecision> => {
       lastSelectorRan = false;
+      lastSelection = undefined;
+      lastRejectedSlots = [];
+      lastSelectorHold = false;
       const defaultTransition = input.transitions.find(isDefaultTransition);
       const conditionedTransitions = input.transitions.filter((transition) => !isDefaultTransition(transition));
 
@@ -443,21 +717,20 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // `llm` edge will trigger the selector, run an extraction-only pass first and let
       // the deterministic guards below decide the branch from the merged values.
       //
-      // Only when at least one collected slot is still missing. A *satisfied* step
-      // (every slot already filled) is reached on the fast-forward walk — running the
-      // selector there would add a model round-trip to a deterministic path, let an
-      // unrelated message overwrite an already-filled slot, and could spuriously yield
-      // the turn. "Already collected" means nothing to extract, so skip it.
-      const collected = collectedSlotsFor(input.step);
+      // Only when at least one collected slot is still missing. A step already holding
+      // every collected slot has nothing to extract — running the selector there would add
+      // a model round-trip to a deterministic path, let an unrelated message overwrite an
+      // already-filled slot, and could spuriously yield the turn.
+      const collected = collectedSlotsForStep(input.step);
       let extracted: Record<string, unknown> = {};
       if (
         collected.length > 0 &&
-        collected.some((key) => !hasVariable(input.variables, key)) &&
+        (input.alwaysExtract || collected.some((key) => !hasVariable(input.variables, key))) &&
         input.transitions.length > 0 &&
         !conditionedTransitions.some(isLlmTransition)
       ) {
         lastSelectorRan = true;
-        const extraction = await this.selector.select({
+        const extraction = await selectChecked({
           routine,
           state: input.state,
           currentStep: input.step,
@@ -496,7 +769,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
 
       lastSelectorRan = true;
-      const decision = await this.selector.select({
+      const decision = await selectChecked({
         routine,
         state: input.state,
         currentStep: input.step,
@@ -509,8 +782,19 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
       const allowed = new Set([input.step.id, ...llmTransitions.map((transition) => transition.to)]);
       const chosen = allowed.has(decision.nextStepId) ? decision.nextStepId : input.step.id;
-      if (input.defaultOnDecline && chosen === input.step.id && defaultTransition) {
-        return { ...decision, nextStepId: defaultTransition.to };
+      if (chosen === input.step.id) {
+        if (input.defaultOnDecline && defaultTransition) {
+          return { ...decision, nextStepId: defaultTransition.to };
+        }
+        // No AI-decides exit held, yet the reply filled what the step asks for: the step is
+        // done, so its rule or default exit moves on instead of asking again (#1372).
+        const withDecision = { ...variables, ...(decision.variables ?? {}) };
+        const exit = isSatisfiedSlotCollectionStep(routine, input.step, withDecision)
+          ? satisfiedStepExit(input.step, input.transitions, withDecision)
+          : undefined;
+        if (exit !== undefined) {
+          return { ...decision, nextStepId: exit };
+        }
       }
       return { ...decision, nextStepId: chosen };
     };
@@ -519,14 +803,41 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // On the activation turn the user's message is the routine's trigger, not a reply
       // to the current step (which has never been rendered) — an off-topic yield here
       // would silently drop the activation, so land on the step and render it instead.
-      return decision.yieldTurn && input.activationTurn
-        ? { nextStepId: selectInput.step.id }
-        : decision;
+      if (decision.yieldTurn && !input.activationTurn) {
+        return decision;
+      }
+      const landed: RoutineNextStepDecision = decision.yieldTurn ? { nextStepId: selectInput.step.id } : decision;
+      // The hold: the chat step stays and is asked again, whichever exit — AI-decides, rule,
+      // or default — would otherwise have fired. The values that did fit are kept. It has two
+      // reasons:
+      // - an authority claim (#1375): the selector asked to hold the step because the message
+      //   carries text posing as a system, operator, or assistant message. It holds any chat
+      //   step the selector read the message for: the one the visitor answered, or one reached
+      //   by skipping ahead;
+      // - a rejected value (#1374): the visitor gave a value for one of the answered step's own
+      //   slots that does not fit its type — to the selector this turn, or to the activator in
+      //   the opening message with no valid replacement since — so the step is not answered.
+      //   A rejected value for another step's slot is dropped and holds nothing.
+      // A tool step's follow-up still leaves by its default after a decline, since holding
+      // the tool step could run its tool again.
+      if (selectInput.defaultOnDecline) {
+        return landed;
+      }
+      const rejected = selectInput.answeredStep
+        ? [...lastRejectedSlots, ...unreplacedStartRejections({ ...selectInput.variables, ...(landed.variables ?? {}) })]
+        : [];
+      const hold = lastSelectorHold || rejectedCollectedKeys(selectInput.step, rejected).size > 0;
+      return hold ? { ...landed, nextStepId: selectInput.step.id, hold: true } : landed;
     };
 
     let step: RoutineStep;
     let variables = { ...state.variables };
     let path: string[];
+    // Values rejected on the step the visitor answered and not made good this turn; they
+    // are listed as missing on its re-ask.
+    let resumeStepRejected: RoutineTraceRejectedSlot[] = [];
+    // Whether `selectNext` held the step the visitor answered (see the hold there).
+    let held = false;
     if (currentStep.kind === "skill" || currentStep.kind === "action") {
       // Transit steps execute when the routine lands on them. This matters for a
       // routine whose root step is a tool (for example retrieval.context): selecting
@@ -535,22 +846,32 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       path = state.path.at(-1) === currentStep.id ? [...state.path] : [...state.path, currentStep.id];
     } else {
       // Select the step this turn lands on from the current step's outgoing edges.
+      // On the activation turn the activator may already have filled this step's slot
+      // from the message; the rest of the message (dates given with a program) still has
+      // to be read, or it is lost (#1370).
       const decision = await selectNext({
         step: currentStep,
         transitions: outgoing(currentStepId),
         variables: state.variables,
         state: { ...state, attempts },
+        ...(input.activationTurn ? { alwaysExtract: true } : {}),
+        answeredStep: true,
       });
       // The user's message is off-topic for the routine → decline this turn and let
       // normal answering handle it; the routine stays at its current step to resume.
       // response/nextState are inert placeholders the engine ignores on a yield.
       if (decision.yieldTurn) {
-        return { yielded: true, response: { answer: "" }, nextState: null };
+        return yieldTurn();
       }
+      held = decision.hold === true;
       const mainSelectorRan = lastSelectorRan;
+      const mainSelection = lastSelection;
+      const selectorRejected = lastRejectedSlots;
+      const tracedRejected = [...(startCheck?.rejected ?? []), ...selectorRejected];
       const landedId = landingStepId(currentStepId, decision);
       step = landedId === currentStepId ? currentStep : stepById(landedId);
       variables = { ...state.variables, ...(decision.variables ?? {}) };
+      resumeStepRejected = [...selectorRejected, ...unreplacedStartRejections(variables)];
       // Trace the resume step's outcome: it either advanced off (the user satisfied it) or
       // was re-asked. Captured keys, if any, belong to this step's edge evaluation.
       {
@@ -560,7 +881,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           kind: currentStep.kind,
           event: step.id === currentStepId ? "reasked" : "advanced",
           ...(captured.length > 0 ? { capturedSlotKeys: captured } : {}),
+          ...(tracedRejected.length > 0 ? { rejectedSlots: tracedRejected } : {}),
           viaSelector: mainSelectorRan,
+          ...(mainSelection ? { selection: mainSelection } : {}),
         });
       }
       // Append to the path only on a real advance; re-asking a step keeps it stable.
@@ -571,27 +894,111 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     }
     let stagedContext = turn.stagedContext;
 
-    // Skip slot-collection steps whose slots are already filled, so an intake never
-    // re-asks for a value the routine already holds. A bounded loop (a `counter`
-    // back-edge into a satisfied step) would otherwise fast-forward forever — track the
-    // steps visited this traversal and, on a revisit, stop and render the current step
-    // instead of throwing. This keeps the runner on the degrade-don't-throw path: a
-    // loop that can't fast-forward to progress settles on a chat step the user can act on.
+    // Skip slot-collection steps that are already satisfied, so an intake never re-asks
+    // for a value the routine already holds. A satisfied step leaves by its structure — a
+    // matching rule exit, else its default — with no model call: the latest message
+    // answered an earlier step and has already been read (#1372). Only a step whose way on
+    // is an AI-decides exit asks the selector.
+    // A bounded loop (a `counter` back-edge into a satisfied step) would otherwise
+    // fast-forward forever — track the steps visited this traversal and, on a revisit, stop
+    // and render the current step instead of throwing. This keeps the runner on the
+    // degrade-don't-throw path: a loop that can't fast-forward to progress settles on a
+    // chat step the user can act on.
     const fastForwarded = new Set<string>([step.id]);
-    while (isSatisfiedSlotCollectionStep(routine, step, variables)) {
+    // Trace entry for a step whose edges the selector just judged this call: what it ran
+    // with and what changed. Shared by the fast-forward and landing-read branches below so
+    // both record identically; never called for a step moved on deterministically (no
+    // selector call), which builds its own bare entry instead.
+    const selectorEntry = (
+      forStep: RoutineStep,
+      before: Record<string, unknown>,
+      decision: RoutineNextStepDecision,
+    ): RoutineTraceStepEntry => {
+      const entry: RoutineTraceStepEntry = { stepId: forStep.id, kind: forStep.kind, event: "fast_forwarded" };
+      if (lastSelectorRan) {
+        entry.viaSelector = true;
+      }
+      if (lastSelection) {
+        entry.selection = lastSelection;
+      }
+      const captured = capturedKeysFrom(before, decision);
+      if (captured.length > 0) {
+        entry.capturedSlotKeys = captured;
+      }
+      if (lastRejectedSlots.length > 0) {
+        entry.rejectedSlots = lastRejectedSlots;
+      }
+      return entry;
+    };
+    // A held step is asked again even when the values it kept, or an earlier value, would
+    // satisfy it: nothing is fast-forwarded past it this turn.
+    while (!held) {
+      if (!isSatisfiedSlotCollectionStep(routine, step, variables)) {
+        // Activation turn only (#1370): the message that starts the routine can state
+        // values for a step further down the graph than the one it answers directly.
+        // Read it once for the step the walk stops on here; a later reply answers the
+        // step shown on screen, so this never runs past the first turn. The walk never
+        // revisits a step (every advance below lands outside `fastForwarded`), so nothing
+        // needs to track which steps already had this read.
+        if (
+          !input.activationTurn ||
+          step.kind !== "chat" ||
+          step.id === currentStepId ||
+          collectedSlotsForStep(step).length === 0
+        ) {
+          break;
+        }
+
+        const landingEdges = outgoing(step.id);
+        const beforeLanding = variables;
+        const landingDecision = await selectNext({
+          step,
+          transitions: landingEdges,
+          variables,
+          state: { ...state, path, variables, attempts, status: "active" },
+        });
+        const landingEntry = selectorEntry(step, beforeLanding, landingDecision);
+        landingEntry.readOpeningMessage = true;
+        variables = { ...variables, ...(landingDecision.variables ?? {}) };
+
+        // Moving on requires the step to be satisfied after this merge, checked before
+        // `nextStepId`: a lone default edge resolves on its own regardless of what was
+        // extracted, right once a step has been asked, wrong for one never shown to the
+        // visitor. A hold (#1375) renders the step even when the merge would satisfy it.
+        if (landingDecision.hold || !isSatisfiedSlotCollectionStep(routine, step, variables)) {
+          traceSteps.push({ ...landingEntry, event: "rendered" });
+          break;
+        }
+
+        // Satisfied and moved on: take that exit. Satisfied but stayed: the step's own
+        // structure decides — never ask the selector twice about the same step.
+        const landingNextId = landingDecision.nextStepId === step.id
+          ? satisfiedStepExit(step, landingEdges, variables)
+          : landingStepId(step.id, landingDecision);
+        if (landingNextId === undefined || fastForwarded.has(landingNextId)) {
+          traceSteps.push({ ...landingEntry, event: "rendered" });
+          break;
+        }
+        traceSteps.push(landingEntry);
+        step = stepById(landingNextId);
+        fastForwarded.add(step.id);
+        enterStep(step, path);
+        continue;
+      }
+
       const stepEdges = outgoing(step.id);
       if (stepEdges.length === 0) {
         break;
       }
 
-      const fastForwardEntry: RoutineTraceStepEntry = {
-        stepId: step.id,
-        kind: step.kind,
-        event: "fast_forwarded",
-      };
+      let fastForwardEntry: RoutineTraceStepEntry = { stepId: step.id, kind: step.kind, event: "fast_forwarded" };
+      const decidedExit = satisfiedStepExit(step, stepEdges, variables);
       let nextStepId: string;
-      if (stepEdges.length === 1) {
-        nextStepId = stepEdges[0].to;
+      if (decidedExit !== undefined) {
+        nextStepId = decidedExit;
+      } else if (!stepEdges.some(isLlmTransition)) {
+        // Rule exits that don't match and no default: nothing moves this step on.
+        break;
       } else {
         const fastForwardState: RoutineState = { ...state, path, variables, attempts, status: "active" };
         const beforeFastForward = variables;
@@ -602,18 +1009,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           state: fastForwardState,
         });
         if (fastForwardDecision.yieldTurn) {
-          return { yielded: true, response: { answer: "" }, nextState: null };
+          return yieldTurn();
         }
-        if (lastSelectorRan) {
-          fastForwardEntry.viaSelector = true;
-        }
-        const captured = capturedKeysFrom(beforeFastForward, fastForwardDecision);
-        if (captured.length > 0) {
-          fastForwardEntry.capturedSlotKeys = captured;
-        }
+        fastForwardEntry = selectorEntry(step, beforeFastForward, fastForwardDecision);
         variables = { ...variables, ...(fastForwardDecision.variables ?? {}) };
         nextStepId = landingStepId(step.id, fastForwardDecision);
         if (nextStepId === step.id) {
+          // The step stays — held, or nothing chosen — so it is the one this turn renders;
+          // record it with what its selector returned.
+          traceSteps.push({ ...fastForwardEntry, event: "rendered" });
           break;
         }
       }
@@ -629,6 +1033,22 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       step = stepById(nextStepId);
       fastForwarded.add(step.id);
       enterStep(step, path);
+    }
+
+    // Bound how often one step is asked again with nothing new captured (#1376). Past the
+    // limit the reply is told to ask differently; the routine never leaves the step by itself.
+    // An authored exit — even one to a hand-off end — can be the step's confirmation edge, and
+    // taking it would submit what the visitor never confirmed.
+    const reasked = !input.activationTurn &&
+      currentStep.kind === "chat" &&
+      step.id === currentStepId &&
+      path.length === state.path.length;
+    const reaskCount = reasked && !filledCollectedSlot(currentStep, state.variables, variables)
+      ? (state.reaskCount ?? 0) + 1
+      : 0;
+    const reaskExhausted = reaskCount > (this.options.reaskLimit ?? DEFAULT_REASK_LIMIT);
+    if (reaskExhausted) {
+      traceSteps.push({ stepId: currentStep.id, kind: currentStep.kind, event: "reask_limit_reached", reaskCount });
     }
 
     // Run through any transit steps — skill (dispatch a tool) and action (emit a
@@ -712,9 +1132,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         if (lastSelectorRan) {
           skillEntry.viaSelector = true;
         }
+        if (lastSelection) {
+          skillEntry.selection = lastSelection;
+        }
         const capturedAtSkill = capturedKeysFrom(beforeSkill, skillDecision);
         if (capturedAtSkill.length > 0) {
           skillEntry.capturedSlotKeys = capturedAtSkill;
+        }
+        if (lastRejectedSlots.length > 0) {
+          skillEntry.rejectedSlots = lastRejectedSlots;
         }
         variables = { ...variables, ...(skillDecision.variables ?? {}) };
         const chosen = landingStepId(step.id, skillDecision);
@@ -738,9 +1164,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (!step.decision) {
         throw new Error(`routine_await_step_missing_decision:${routine.id}:${step.id}`);
       }
-      const nextState: RoutineState = { ...state, path, variables, attempts, status: "suspended" };
+      const nextState: RoutineState = { ...stateWithoutReaskCount, path, variables, attempts, status: "suspended" };
       const renderedStep = step.action
-        ? { ...step, action: interpolateSlots(step.action, variables) }
+        ? { ...step, action: resolveStepAction(step.action, variables, stagedContext, this.options.contextRenderer) }
         : step;
       const baseSteering = projectStep(renderedStep);
       const steering = input.steeringResolver
@@ -758,6 +1184,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         landedStepId: step.id,
         capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
         filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
+        ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
         steps: traceSteps,
       };
       const reason = typeof step.metadata?.reason === "string" ? step.metadata.reason : undefined;
@@ -776,11 +1203,19 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       };
     }
 
-    const nextState: RoutineState = { ...state, path, variables, attempts, status: "active" };
-    // Fill the captured slot values into the step's instruction before it reaches the
-    // renderer, so references like "{{slot.phone}}" render the real value.
+    const nextState: RoutineState = {
+      ...stateWithoutReaskCount,
+      path,
+      variables,
+      attempts,
+      status: "active",
+      ...(reaskCount > 0 ? { reaskCount } : {}),
+    };
+    // Fill the captured slot values and referenced context into the step's instruction
+    // before it reaches the renderer, so "{{slot.phone}}" renders the real value and
+    // "{{context.page_context}}" the host's rendering of the visitor's page.
     const renderedStep = step.action
-      ? { ...step, action: interpolateSlots(step.action, variables) }
+      ? { ...step, action: resolveStepAction(step.action, variables, stagedContext, this.options.contextRenderer) }
       : step;
     const turnWithStagedContext: TurnContext = stagedContext === turn.stagedContext
       ? turn
@@ -790,10 +1225,22 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       ? await input.steeringResolver.resolve({ step, baseSteering, turn: turnWithStagedContext })
       : baseSteering;
 
+    // Rendering the chat step the user was answering means their reply did not satisfy
+    // it. The renderer must know, or it reads a bare "yes" to a confirmation question as
+    // the flow being done (#1369). On the activation turn the step is asked for the first time.
+    const missing =
+      !input.activationTurn && step.kind === "chat" && step.id === currentStepId
+        ? reaskFor(routine, step, variables, rejectedCollectedKeys(step, resumeStepRejected))
+        : null;
+    // Past the re-ask limit the renderer is always told, even when the step holds its slots.
+    const reask: RoutineStepReask | null = reaskExhausted
+      ? { ...(missing ?? { missingSlots: [] }), exhausted: true }
+      : missing;
     const response = await this.renderer.render({
       step: renderedStep,
       steering,
       turn: turnWithStagedContext,
+      ...(reask ? { reask } : {}),
     });
 
     const terminalKind = terminalKindFor(step);
@@ -815,6 +1262,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       ...(terminalKind ? { terminalKind } : {}),
       capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
       filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
+      ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
       steps: traceSteps,
     };
 
@@ -822,7 +1270,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       response,
       // A terminal step ends the routine — clear its state.
       nextState: step.kind === "terminal" ? null : nextState,
-      ...(terminalKind ? { terminal: { kind: terminalKind, stepId: step.id } } : {}),
+      ...(terminalKind
+        ? { terminal: terminalResult(terminalKind, step, declaredSlotVariables(routine, variables)) }
+        : {}),
       ...(actions.length > 0 ? { actions } : {}),
       trace,
     };

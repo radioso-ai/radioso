@@ -250,8 +250,14 @@ describe('useAgentChannelCredentials', () => {
     expect(engine.credentials.map((entry) => entry.status)).toEqual(['active'])
   })
 
-  it('marks a revoked credential without dropping it from the inventory', async () => {
-    apiMocks.list.mockResolvedValue({ credentials: [makeCredential({ label: 'Current credential' })], nextCursor: null })
+  it('drops a revoked credential from the inventory', async () => {
+    apiMocks.list.mockResolvedValue({
+      credentials: [
+        makeCredential({ label: 'Current credential' }),
+        makeCredential({ id: 'credential-2', label: 'Second credential' }),
+      ],
+      nextCursor: null,
+    })
     apiMocks.revoke.mockResolvedValue(undefined)
 
     await render('agent-1', 'mcp')
@@ -259,8 +265,7 @@ describe('useAgentChannelCredentials', () => {
       await engine.revoke('credential-1')
     })
 
-    expect(engine.credentials.map((entry) => entry.status)).toEqual(['revoked'])
-    expect(engine.credentials[0]?.revokedAt).toBeTruthy()
+    expect(engine.credentials.map((entry) => entry.id)).toEqual(['credential-2'])
   })
 })
 

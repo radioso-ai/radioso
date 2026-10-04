@@ -33,6 +33,19 @@ interface PublishedRoutineRegistrationSourceOptions {
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
+/**
+ * A revision-bound turn pinned an authored routine its release does not carry. The name
+ * and code let a caller that logs only structural error fields tell this apart.
+ */
+class PinnedRevisionRoutineNotFoundError extends Error {
+  readonly code = "pinned_revision_routine_not_found";
+
+  constructor(routineId: string) {
+    super(`pinned_revision_routine_not_found:${routineId}`);
+    this.name = "PinnedRevisionRoutineNotFoundError";
+  }
+}
+
 const registrationFromDefinition = async (
   definition: RoutineDefinition,
   options: PublishedRoutineRegistrationSourceOptions,
@@ -231,7 +244,7 @@ const compileFrozenPinnedDefinitions = async (
       ? byId.get(routineId)
       : legacyById.get(routineId);
     if (!definition) {
-      throw new Error(`pinned_revision_routine_not_found:${routineId}`);
+      throw new PinnedRevisionRoutineNotFoundError(routineId);
     }
     const registration = await registrationFromDefinition(definition, options);
     registrations.push(uuidPattern.test(routineId)

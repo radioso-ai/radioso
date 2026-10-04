@@ -423,3 +423,31 @@ variable "ops_event_webhook_queue_limit" {
   type        = number
   default     = 500
 }
+
+variable "google_login_client_id" {
+  description = "Google OAuth web client ID for Enterprise 'Sign in with Google' in staging."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "google_login_client_secret" {
+  description = "Google OAuth web client secret for Enterprise 'Sign in with Google' in staging."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "stripe_secret_key" {
+  description = "Stripe secret API key for Enterprise billing in staging."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "stripe_webhook_secret" {
+  description = "Stripe webhook signing secret for Enterprise billing in staging."
+  type        = string
+  sensitive   = true
+  default     = null
+}

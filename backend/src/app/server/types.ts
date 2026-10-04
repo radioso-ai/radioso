@@ -55,7 +55,6 @@ import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRep
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
-import type { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
@@ -84,7 +83,8 @@ import type { AgentSkillsService } from "../../modules/agentSkills/public.js";
 import type { AgentBundleExportService, AgentBundleImportCleanupWorker, AgentBundleImportService } from "../../modules/agentBundle/public.js";
 import type { SkillCapabilityRegistry } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
-import type { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
+import type { AgentToolCatalogPort, RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
+import type { AgentPublicProfilePort } from "../../modules/agentDiscovery/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type {
   ContextVariableResolutionReaderPort,
@@ -108,7 +108,11 @@ import type {
   EvalSnapshotService,
 } from "../../modules/eval/composition.js";
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
-import type { OperatorReplyService } from "../../modules/handoff/public.js";
+import type { ConversationActivityReadService } from "../../modules/conversationActivity/public.js";
+import type {
+  ConversationOperatorDirectory,
+  ConversationOwnershipService,
+} from "../../modules/handoff/public.js";
 import type { VectorIndexReconciler } from "../../modules/retrieval/composition.js";
 import type {
   EmbeddingBindingResolverPort,
@@ -134,6 +138,7 @@ import type {
 } from "../../modules/machineAccess/public.js";
 import type { MachineAccessSecurityObserver } from "../../modules/machineAccess/public.js";
 import type { ApiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
+import type { RequestSourceDigestPort } from "../http/middleware/requestSource.js";
 import type { AgentConverseSessionMappingPort } from "../../modules/settings/contracts/agentConverseSession.js";
 import type {
   OperatorMcpAuthorizationService,
@@ -177,6 +182,8 @@ export interface AppDependencies {
   accountInvitationService: AccountInvitationService;
   apiPrincipalAuthenticator: ApiPrincipalAuthenticator;
   apiPrincipalRouteInventory: ApiPrincipalRouteInventory;
+  /** Application route mounts key their source budgets through this rather than reading `req.ip`. */
+  requestSource: RequestSourceDigestPort;
   machineAccessSecurityObserver?: MachineAccessSecurityObserver;
   credentialExpiryWarningLifecycle: Pick<CredentialExpiryWarningService, "start" | "stop">;
   personalCredentialService: PersonalCredentialService;
@@ -233,7 +240,12 @@ export interface AppDependencies {
   documentStorage: DocumentStoragePort;
   chatService: ChatService;
   approvalDecisionService: ApprovalDecisionService;
-  operatorReplyService: OperatorReplyService;
+  /** Who handles a human-owned conversation: take over, reply, transfer, hand back. */
+  conversationOwnershipService: ConversationOwnershipService;
+  /** The teammates a conversation can be handed to in a workspace. */
+  conversationOperatorDirectory: ConversationOperatorDirectory;
+  /** Operator reads of conversation activity: a conversation's timeline, the Inbox's recently closed items. */
+  conversationActivityReads: ConversationActivityReadService;
   workbenchReplayRunner: WorkbenchReplayRunner;
   /** Operator-only immutable candidate test executions; never mounted on public chat. */
   testExecutionService: TestExecutionService;
@@ -247,6 +259,10 @@ export interface AppDependencies {
   slackInboundEventRetentionWorker: TtlRetentionWorker;
   chatBootstrapService: ChatBootstrapService;
   agentStarterPromptReader: AgentStarterPromptReader;
+  /** Exposed-routine descriptors a calling agent lists and both agent-facing doors validate tool calls against. */
+  agentToolCatalog: AgentToolCatalogPort;
+  /** Public id to published profile, for the unauthenticated discovery documents. */
+  agentPublicProfile: AgentPublicProfilePort;
   chatHistoryService: ChatHistoryService;
   assistantChatService: AssistantChatService;
   assistantHistoryService: AssistantHistoryService;
@@ -284,10 +300,6 @@ export interface AppDependencies {
   accountRepository: AccountRepositoryPort;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
-  conversationOwnershipRepository: Pick<
-    ConversationOwnershipRepository,
-    "load" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
-  >;
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
   connectorManagementService: ConnectorManagementPort;

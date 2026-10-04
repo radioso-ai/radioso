@@ -5,7 +5,8 @@ import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../ag
 import { buildAssistantLogoCacheKey, buildOperatorAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
-import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
+import { fieldProposalVersion } from "../../../shared/domain/fieldProposalVersion.js";
 import { validateWebsiteEmbedSettings } from "../domain/websiteEmbedSettings.js";
 import {
   DefaultWebsiteEmbedIntegrationProvider,
@@ -17,10 +18,44 @@ import type {
   PlatformSettingsResource,
 } from "../domain/platformSettings.js";
 import { resolvePublicLaunchLifecycle } from "../../accessGrants/public.js";
+import type {
+  PlatformSettingsFieldProposalApplyInput,
+  PlatformSettingsFieldProposalApplyOutcome,
+  PlatformSettingsFieldProposalPreparation,
+  PlatformSettingsProposalPatch,
+} from "../contracts/services.js";
+
+const platformSettingsProposalFields = [
+  "assistantName", "greetingInstruction", "assistantDefaultLocale", "proactiveGreetingEnabled",
+  "suggestedQuestionsEnabled", "customInstruction", "anonymousChatEnabled", "websiteEmbedEnabled",
+  "websiteEmbedAllowedOrigins", "websiteEmbedLauncherLabel", "websiteEmbedLauncherPosition",
+] as const;
+/** Internal agent-row CAS outcome; distinct from the copilot-facing `PlatformSettingsFieldProposalApplyOutcome`. */
+type PlatformSettingsProposalApplyOutcome =
+  | { readonly outcome: "applied" }
+  | { readonly outcome: "changed"; readonly fields: readonly string[] }
+  | { readonly outcome: "targetChanged" }
+  | { readonly outcome: "targetDeleted" };
+
+const platformProposalSurface = (settings: PlatformSettingsResource): Record<string, unknown> => ({
+  assistantName: settings.assistant.assistantName,
+  greetingInstruction: settings.assistant.greetingInstruction,
+  assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
+  proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
+  suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
+  customInstruction: settings.assistant.customInstruction,
+  anonymousChatEnabled: settings.channels.anonymousChatEnabled,
+  websiteEmbedEnabled: settings.channels.websiteEmbedEnabled,
+  websiteEmbedAllowedOrigins: [...settings.channels.websiteEmbedAllowedOrigins],
+  websiteEmbedLauncherLabel: settings.channels.websiteEmbedLauncherLabel,
+  websiteEmbedLauncherPosition: settings.channels.websiteEmbedLauncherPosition,
+});
+
+const sameProposalValue = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
 
 interface PlatformSettingsServiceDependencies {
   workspaceRepository: Pick<WorkspaceRepositoryPort, "findById">;
-  agentService: Pick<AgentService, "resolve" | "update" | "withRotatedTokens">;
+  agentService: Pick<AgentService, "resolve" | "update" | "applyProposalPatch" | "withRotatedTokens">;
   accessGrantService?: Pick<AccessGrantService, "resolvePublicLaunchGrant">;
   auditService?: Pick<AuditService, "record">;
   logger?: Pick<AppLogger, "warn">;
@@ -128,6 +163,186 @@ export class PlatformSettingsService {
     context: PlatformSettingsUpdateContext = {},
   ): Promise<void> {
     await this.writeForWorkspace(workspaceId, patch, context);
+  }
+
+  /**
+   * The platform-settings proposal boundary owns normalization, field diffs, and the draft-time
+   * values that its conditional write compares. Copilot only persists this prepared result.
+   */
+  async prepareFieldProposal(
+    workspaceId: string,
+    patch: PlatformSettingsProposalPatch,
+  ): Promise<PlatformSettingsFieldProposalPreparation> {
+    if (Object.values(patch).every((value) => value === undefined)) {
+      throw badRequest("Name at least one workspace setting to change");
+    }
+    const { settings } = await this.getVersionedForWorkspace(workspaceId);
+    const current = platformProposalSurface(settings);
+    const named = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    let embed;
+    try {
+      embed = validateWebsiteEmbedSettings({
+        websiteEmbedEnabled: (named.websiteEmbedEnabled as boolean | undefined) ?? current.websiteEmbedEnabled as boolean,
+        websiteEmbedAllowedOrigins: (named.websiteEmbedAllowedOrigins as string[] | undefined) ?? current.websiteEmbedAllowedOrigins as string[],
+        websiteEmbedLauncherLabel: (named.websiteEmbedLauncherLabel as string | undefined) ?? current.websiteEmbedLauncherLabel as string,
+        websiteEmbedLauncherPosition: (named.websiteEmbedLauncherPosition as AgentRecord["surfaceSettings"]["websiteEmbed"]["launcherPosition"] | undefined) ?? current.websiteEmbedLauncherPosition as AgentRecord["surfaceSettings"]["websiteEmbed"]["launcherPosition"],
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "The proposed embed settings are not valid";
+      const embedFields = ["websiteEmbedEnabled", "websiteEmbedAllowedOrigins", "websiteEmbedLauncherLabel", "websiteEmbedLauncherPosition"];
+      throw badRequest(embedFields.some((field) => field in named)
+        ? reason
+        : `The workspace's stored website embed settings block any settings change until they are fixed: ${reason}`);
+    }
+    const normalized = {
+      ...current,
+      ...named,
+      websiteEmbedEnabled: embed.websiteEmbedEnabled,
+      websiteEmbedAllowedOrigins: embed.websiteEmbedAllowedOrigins,
+      websiteEmbedLauncherLabel: embed.websiteEmbedLauncherLabel,
+      websiteEmbedLauncherPosition: embed.websiteEmbedLauncherPosition,
+    } as PlatformSettingsProposalPatch;
+    const changed = platformSettingsProposalFields.filter((field) => !sameProposalValue(current[field], normalized[field]));
+    if (changed.length === 0) {
+      throw badRequest("The workspace settings already hold these values");
+    }
+    const expected = Object.fromEntries(changed.map((field) => [field, current[field]])) as PlatformSettingsProposalPatch;
+    return {
+      normalizedPatch: normalized,
+      expected,
+      display: {
+        current,
+        proposed: normalized,
+        changesReach: changed.some((field) => ["anonymousChatEnabled", "websiteEmbedEnabled", "websiteEmbedAllowedOrigins"].includes(field)),
+      },
+    };
+  }
+
+  async readFieldProposalVersion(
+    workspaceId: string,
+    expected?: PlatformSettingsProposalPatch,
+  ): Promise<string> {
+    const { settings, updatedAt } = await this.getVersionedForWorkspace(workspaceId);
+    if (!expected) return updatedAt.toISOString();
+    const current = platformProposalSurface(settings);
+    return fieldProposalVersion(Object.fromEntries(Object.keys(expected).map((field) => [field, current[field]])));
+  }
+
+  async readFieldProposalDisplay(workspaceId: string): Promise<Record<string, unknown>> {
+    const { settings } = await this.getVersionedForWorkspace(workspaceId);
+    return platformProposalSurface(settings);
+  }
+
+  /** Applies a prepared proposal through the owner's locked CAS and post-write side effects. */
+  async applyFieldProposal(
+    workspaceId: string,
+    prepared: PlatformSettingsFieldProposalApplyInput,
+  ): Promise<PlatformSettingsFieldProposalApplyOutcome> {
+    const patch = "expected" in prepared
+      ? Object.fromEntries(Object.keys(prepared.expected).map((field) => [field, prepared.normalizedPatch[field as keyof PlatformSettingsProposalPatch]])) as PlatformSettingsProposalPatch
+      : prepared.normalizedPatch;
+    let outcome: PlatformSettingsProposalApplyOutcome;
+    try {
+      outcome = await this.applyProposalPatch({ workspaceId, patch, ...("expected" in prepared
+        ? { expected: prepared.expected }
+        : { expectedUpdatedAt: prepared.expectedUpdatedAt }) });
+    } catch (error) {
+      // AgentService runs its follow-up effects after the row commit. Confirming the narrowly
+      // prepared surface here prevents a retry from duplicating a write that is already live.
+      const actual = await this.readFieldProposalDisplay(workspaceId).catch(() => null);
+      const proposed = Object.fromEntries(Object.keys(patch).map((field) => [field, prepared.normalizedPatch[field as keyof PlatformSettingsProposalPatch]]));
+      if (actual && Object.entries(proposed).every(([field, value]) => sameProposalValue(actual[field], value))) {
+        const reason = error instanceof Error ? error.message : "Workspace settings apply did not finish cleanly";
+        return { status: "applied", reason: `The workspace settings now hold the proposed values, but the apply did not finish cleanly: ${reason}` };
+      }
+      throw error;
+    }
+    if (outcome.outcome === "applied") return { status: "applied" };
+    if (outcome.outcome === "targetDeleted") return { status: "target_deleted" };
+    if (outcome.outcome === "targetChanged") return { status: "target_changed" };
+    return { status: "changed", fields: outcome.fields };
+  }
+
+  /** Owner-side field CAS used by both copilot proposals and reviewed operations. */
+  async applyProposalPatch(input: {
+    readonly workspaceId: string;
+    readonly patch: PlatformSettingsProposalPatch;
+  } & (
+    | { readonly expected: PlatformSettingsProposalPatch }
+    | { readonly expectedUpdatedAt: Date }
+  )): Promise<PlatformSettingsProposalApplyOutcome> {
+    const workspace = await this.dependencies.workspaceRepository.findById(input.workspaceId);
+    if (!workspace) return { outcome: "targetDeleted" };
+    let agent: AgentRecord;
+    try {
+      agent = await this.dependencies.agentService.resolve(input.workspaceId);
+    } catch (error) {
+      if (error instanceof AppError && error.code === "not_found") return { outcome: "targetDeleted" };
+      throw error;
+    }
+    const agentInputForPatch = (patch: PlatformSettingsProposalPatch, current?: AgentRecord) => {
+      const website = current?.surfaceSettings.websiteEmbed;
+      const normalizedWebsite = website && (patch.websiteEmbedEnabled !== undefined || patch.websiteEmbedAllowedOrigins !== undefined || patch.websiteEmbedLauncherLabel !== undefined || patch.websiteEmbedLauncherPosition !== undefined)
+        ? validateWebsiteEmbedSettings({
+            websiteEmbedEnabled: patch.websiteEmbedEnabled ?? website.enabled,
+            websiteEmbedToken: website.token,
+            websiteEmbedAllowedOrigins: patch.websiteEmbedAllowedOrigins ?? website.allowedOrigins,
+            websiteEmbedLauncherLabel: patch.websiteEmbedLauncherLabel ?? website.launcherLabel,
+            websiteEmbedLauncherPosition: patch.websiteEmbedLauncherPosition ?? website.launcherPosition,
+            websiteEmbedTheme: website.theme,
+            websiteEmbedCopy: website.copy,
+            websiteEmbedExpertOverrides: website.expertOverrides,
+          })
+        : null;
+      const surfaceSettings = {
+      ...(patch.anonymousChatEnabled === undefined ? {} : { anonymousChat: { enabled: patch.anonymousChatEnabled } }),
+      ...(patch.websiteEmbedEnabled === undefined && patch.websiteEmbedAllowedOrigins === undefined && patch.websiteEmbedLauncherLabel === undefined && patch.websiteEmbedLauncherPosition === undefined ? {} : {
+        websiteEmbed: {
+          enabled: normalizedWebsite?.websiteEmbedEnabled ?? patch.websiteEmbedEnabled,
+          allowedOrigins: normalizedWebsite?.websiteEmbedAllowedOrigins ?? patch.websiteEmbedAllowedOrigins,
+          launcherLabel: normalizedWebsite?.websiteEmbedLauncherLabel ?? patch.websiteEmbedLauncherLabel,
+          launcherPosition: normalizedWebsite?.websiteEmbedLauncherPosition ?? patch.websiteEmbedLauncherPosition,
+        },
+      }),
+      };
+      return {
+        ...(patch.assistantName === undefined ? {} : { name: patch.assistantName }),
+        ...(patch.greetingInstruction === undefined ? {} : { greetingInstruction: patch.greetingInstruction }),
+        ...(patch.assistantDefaultLocale === undefined ? {} : { assistantDefaultLocale: patch.assistantDefaultLocale }),
+        ...(patch.proactiveGreetingEnabled === undefined ? {} : { proactiveGreetingEnabled: patch.proactiveGreetingEnabled }),
+        ...(patch.suggestedQuestionsEnabled === undefined ? {} : { suggestedQuestionsEnabled: patch.suggestedQuestionsEnabled }),
+        ...(patch.customInstruction === undefined ? {} : { customInstruction: patch.customInstruction }),
+        ...(Object.keys(surfaceSettings).length ? { surfaceSettings } : {}),
+      };
+    };
+    const patch = input.patch;
+    const outcome = await this.dependencies.agentService.applyProposalPatch(input.workspaceId, agent.id, {
+        ...agentInputForPatch(patch),
+      }, "expected" in input
+        ? { expectedFields: Object.entries(input.expected).map(([key, value]) => ({ key: key === "assistantName" ? "name" : key, value })), expectedDefaultAgentId: agent.id, normalizeLocked: (current) => agentInputForPatch(patch, current) }
+        : { expectedUpdatedAt: input.expectedUpdatedAt, expectedDefaultAgentId: agent.id, normalizeLocked: (current) => agentInputForPatch(patch, current) });
+    if (outcome.outcome === "targetDeleted") return outcome;
+    if (outcome.outcome === "changed") {
+      if (outcome.fields.includes("target")) {
+        return { outcome: "targetChanged" };
+      }
+      return {
+        outcome: "changed",
+        fields: outcome.fields.filter((field) => platformSettingsProposalFields.includes(field as never)),
+      };
+    }
+    await this.recordChannelAuditEvents({
+      accountId: workspace.accountId,
+      workspaceId: input.workspaceId,
+      previousAgent: outcome.previous,
+      anonymousChatEnabled: outcome.agent.surfaceSettings.anonymousChat.enabled,
+      rotateAnonymousChatToken: false,
+      websiteEmbedEnabled: outcome.agent.surfaceSettings.websiteEmbed.enabled,
+      websiteEmbedAllowedOrigins: outcome.agent.surfaceSettings.websiteEmbed.allowedOrigins,
+      websiteEmbedLauncherPosition: outcome.agent.surfaceSettings.websiteEmbed.launcherPosition,
+      rotateWebsiteEmbedToken: false,
+    });
+    return { outcome: "applied" };
   }
 
   private async writeForWorkspace(

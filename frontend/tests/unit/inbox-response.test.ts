@@ -4,6 +4,7 @@ import type { ChatConversationSummary, ConversationOwnership } from '@/lib/api'
 import {
   doneControlTooltip,
   findFirstVisitorMessage,
+  freshestOwnership,
   informativeChannelLabel,
   readOnlyHandledByLabel,
   resolveReadOnlySource,
@@ -19,6 +20,7 @@ const ownership = (overrides: Partial<ConversationOwnership> = {}): Conversation
   workspaceId: 'workspace-1',
   state: 'human_owned',
   ownerAccountId: 'account-1',
+  ownerUserId: 'user-anna',
   ownerDisplayName: 'Anna',
   reason: null,
   version: 1,
@@ -28,12 +30,23 @@ const ownership = (overrides: Partial<ConversationOwnership> = {}): Conversation
   ...overrides,
 })
 
-const rowSummary = (overrides: Partial<ChatConversationSummary> = {}): ChatConversationSummary => ({
+// The record a hand-back leaves: AI-owned again, naming no teammate.
+const handedBack = (version: number): ConversationOwnership => ownership({
+  state: 'ai_owned',
+  ownerAccountId: null,
+  ownerUserId: null,
+  ownerDisplayName: null,
+  takenOverAt: null,
+  version,
+})
+
+const rowSummary =(overrides: Partial<ChatConversationSummary> = {}): ChatConversationSummary => ({
   id: 'conversation-1',
   agentId: 'agent-1',
   agentName: 'Marta',
   agentInternalName: null,
   sourceChannel: 'authenticated_chat',
+  callerKind: 'human' as const,
   sourceOrigin: null,
   channelContext: null,
   anonymousSessionId: 'session-1',
@@ -227,32 +240,100 @@ describe('doneControlTooltip', () => {
   })
 })
 
+describe('freshestOwnership', () => {
+  it('picks the higher version, whichever side it came from', () => {
+    const stale = ownership({ version: 3, ownerDisplayName: 'Anna' })
+    const fresh = ownership({ version: 5, ownerDisplayName: 'Bea' })
+
+    expect(freshestOwnership(stale, fresh)).toBe(fresh)
+    expect(freshestOwnership(fresh, stale)).toBe(fresh)
+  })
+
+  it('falls back to whichever side exists when the other is missing', () => {
+    const only = ownership({ version: 2 })
+
+    expect(freshestOwnership(only, undefined)).toBe(only)
+    expect(freshestOwnership(undefined, only)).toBe(only)
+    expect(freshestOwnership(undefined, undefined)).toBeUndefined()
+  })
+
+  it('prefers the second argument on a tied version, since a poll result is never older than what it followed', () => {
+    const detailOwnership = ownership({ version: 4, ownerDisplayName: 'Anna' })
+    const tailOwnership = ownership({ version: 4, ownerDisplayName: 'Anna' })
+
+    expect(freshestOwnership(detailOwnership, tailOwnership)).toBe(tailOwnership)
+  })
+
+  it('lets a hand-back reported by the tail replace a stale human-owned detail record', () => {
+    const heldInDetail = ownership({ version: 4 })
+    const handedBackOnTail = handedBack(5)
+
+    expect(freshestOwnership(heldInDetail, handedBackOnTail)).toBe(handedBackOnTail)
+  })
+
+  it('keeps a newer claim from the detail refetch over an older hand-back still on the tail', () => {
+    const claimedAgain = ownership({ version: 6 })
+
+    expect(freshestOwnership(claimedAgain, handedBack(5))).toBe(claimedAgain)
+  })
+})
+
 describe('shouldShowDoneControl', () => {
+  // `ownership()` is held by user-anna; the viewer here is someone else unless a case says otherwise.
+  const viewer = 'user-me'
+  const unclaimed = () => ownership({ ownerAccountId: null, ownerUserId: null, ownerDisplayName: null, takenOverAt: null })
+
   it('never shows Done for an approval', () => {
-    expect(shouldShowDoneControl('approval', null)).toBe(false)
-    expect(shouldShowDoneControl('approval', detail({ ownership: ownership() }))).toBe(false)
+    expect(shouldShowDoneControl('approval', null, viewer)).toBe(false)
+    expect(shouldShowDoneControl('approval', detail({ ownership: ownership({ ownerUserId: viewer }) }), viewer)).toBe(false)
+    expect(shouldShowDoneControl('approval', detail({ ownership: unclaimed() }), viewer)).toBe(false)
   })
 
   it('always shows Done for negative feedback, regardless of ownership or load state', () => {
-    expect(shouldShowDoneControl('negative_feedback', null)).toBe(true)
-    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: undefined }))).toBe(true)
-    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: ownership() }))).toBe(true)
+    expect(shouldShowDoneControl('negative_feedback', null, viewer)).toBe(true)
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: undefined }), viewer)).toBe(true)
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: ownership({ ownerUserId: viewer }) }), viewer)).toBe(true)
+  })
+
+  it('shows Done for negative feedback on a conversation a teammate holds', () => {
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: ownership() }), viewer)).toBe(true)
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: ownership() }), null)).toBe(true)
   })
 
   it('shows Done for a handoff while the detail has not loaded yet — unknown, not "nothing to hand back"', () => {
-    expect(shouldShowDoneControl('handoff', null)).toBe(true)
+    expect(shouldShowDoneControl('handoff', null, viewer)).toBe(true)
   })
 
-  it('shows Done for a handoff once the loaded detail carries an ownership record', () => {
-    expect(shouldShowDoneControl('handoff', detail({ ownership: ownership() }))).toBe(true)
+  it('shows Done for a handoff the viewer holds', () => {
+    expect(shouldShowDoneControl('handoff', detail({ ownership: ownership({ ownerUserId: viewer }) }), viewer)).toBe(true)
+  })
+
+  it('shows Done for a handoff waiting unclaimed', () => {
+    expect(shouldShowDoneControl('handoff', detail({ ownership: unclaimed() }), viewer)).toBe(true)
+  })
+
+  it('hides Done for a handoff a teammate holds — only the owner hands it back', () => {
+    expect(shouldShowDoneControl('handoff', detail({ ownership: ownership() }), viewer)).toBe(false)
   })
 
   it('hides Done for a handoff once the loaded detail shows no ownership record — a live AI-owned conversation with nothing to hand back', () => {
-    expect(shouldShowDoneControl('handoff', detail({ ownership: undefined }))).toBe(false)
+    expect(shouldShowDoneControl('handoff', detail({ ownership: undefined }), viewer)).toBe(false)
+  })
+
+  it('hides Done for a handoff whose freshest record is AI-owned — already handed back, nothing left to hand back', () => {
+    expect(shouldShowDoneControl('handoff', detail({ ownership: handedBack(5) }), viewer)).toBe(false)
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: handedBack(5) }), viewer)).toBe(true)
+  })
+
+  it('hides a handoff’s Done until the signed-in teammate is known, whoever holds it or whether the detail has loaded', () => {
+    expect(shouldShowDoneControl('handoff', null, null)).toBe(false)
+    expect(shouldShowDoneControl('handoff', detail({ ownership: ownership() }), null)).toBe(false)
+    expect(shouldShowDoneControl('handoff', detail({ ownership: unclaimed() }), null)).toBe(false)
+    expect(shouldShowDoneControl('negative_feedback', null, null)).toBe(true)
   })
 
   it('hides Done when there is no effective item at all (undefined type)', () => {
-    expect(shouldShowDoneControl(undefined, detail({ ownership: ownership() }))).toBe(false)
+    expect(shouldShowDoneControl(undefined, detail({ ownership: ownership() }), viewer)).toBe(false)
   })
 })
 
@@ -278,13 +359,13 @@ describe('resolveReadOnlySource', () => {
   })
 
   it('prefers a loaded detail that shows the conversation was handed back, over a stale owned row summary', () => {
-    // The reverse case: the row summary still shows the old human owner: the
-    // detail, fetched after a hand-back, carries no ownership at all. The
+    // The reverse case: the row summary still shows the old human owner; the
+    // detail, fetched after a hand-back, carries the AI-owned record. The
     // stale hint must not keep this rendering actionable as if still owned.
     const row = rowSummary({ ownership: ownership() })
-    const loaded = detail({ ownership: undefined })
+    const loaded = detail({ ownership: handedBack(2) })
 
-    expect(resolveReadOnlySource(row, loaded)?.ownership).toBeUndefined()
+    expect(resolveReadOnlySource(row, loaded)?.ownership).toMatchObject({ state: 'ai_owned', version: 2 })
   })
 
   it('carries anonymousSessionId and preview over from the row summary once detail loads, since the detail response has neither', () => {

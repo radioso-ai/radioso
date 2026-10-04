@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AUTHORED_DIRECTIVE_ENABLED_DEFAULT,
   authoredDirectiveInputSchema,
   validateAuthoredDirectiveCapabilities,
 } from "../../src/modules/agents/authoredDirectives.js";
@@ -110,6 +111,17 @@ describe("authored directive domain validation", () => {
       enabled: false,
     });
     expect(disabled.enabled).toBe(false);
+  });
+
+  it("exposes the schema's own enabled default for callers filling in an absent flag", () => {
+    expect(AUTHORED_DIRECTIVE_ENABLED_DEFAULT).toBe(true);
+    expect(AUTHORED_DIRECTIVE_ENABLED_DEFAULT).toBe(
+      authoredDirectiveInputSchema.parse({
+        name: "default-enabled-constant-check",
+        condition: { kind: "always" },
+        action: "Use the configured behavior.",
+      }).enabled,
+    );
   });
 
   it("normalizes directive tags without requiring scope prefixes", () => {

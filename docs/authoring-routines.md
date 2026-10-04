@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-09-21
+last_updated: 2026-10-02
 ---
 
 # Authoring Routines
@@ -64,6 +64,70 @@ later matching message does:
 - **Let the assistant decide** — the agent chooses whether to resume the run,
   start a fresh one, or leave the completed run in place.
 
+### Expose a routine as a tool
+
+A routine normally starts when its trigger matches what a customer says. An AI
+agent calling your agent on a customer's behalf can start it more directly: as a
+named tool, with the routine's collected information filled in up front. Open
+**Starts when** and switch on **Expose as a tool**, then give the tool a name and
+a one-line description that tells a calling agent when to use it.
+
+The name is what the calling agent invokes, so it follows the grammar tool
+catalogs expect: 2–63 characters of lower-case letters, digits, and underscores,
+starting with a letter — `start_return`, `request_callback`. The editor accepts
+whatever you type and reports a name outside that grammar as a validation note,
+the same way it reports an unreachable step; Review & Publish refuses the
+revision until the name is fixed. Two routines on the same agent cannot share a
+name, and the names the MCP surface keeps for itself — `ask_agent`,
+`radioso_docs`, `radioso_doc_page`, and `get_conversation_updates` — are refused
+as `exposure_tool_name_reserved`.
+
+Once the agent is published with a tool name, that name stays fixed for the
+routine — even while you later switch exposure off — so a calling agent never
+finds the same routine under two names. A publish that renames it is refused
+with `exposure_tool_name_changed`. To offer the routine under a different name,
+switch its exposure off and create a new routine with the new name.
+
+A routine whose activation has a gate cannot be exposed: a tool call would start
+it without the gate being checked. Such a routine stays reachable through
+conversation as before.
+
+The block is part of the routine's own content, saved through the same update
+call:
+
+```json
+{
+  "exposure": {
+    "enabled": true,
+    "toolName": "start_return",
+    "description": "Start a return for an order the customer already has."
+  }
+}
+```
+
+### What a calling agent sees
+
+Once the agent is published, a calling agent lists the routine as a tool built
+from the information the routine collects. Each declared slot becomes one input:
+a text slot is a string, number and yes/no slots keep their types, an email slot
+is a string that must look like an address, and a date slot is a string that
+must be an ISO calendar day (`2026-09-01`). A slot marked required is required
+in the tool; the slot's description travels with it, so a clear description
+helps the caller fill it correctly. A routine with no slots is still a valid
+tool — a "request a callback" routine needs nothing up front.
+
+A call with values filled in skips the steps that would have asked for them and
+lands on the first step that still needs something: a slot the caller left out,
+an approval, a skill. From there the routine runs exactly as it does in chat,
+and the reply names the routine, where it stopped, and every slot it still
+needs. A call that does not match the tool's inputs is refused before the
+conversation records anything. The operator view shows a tool call as a block
+with the tool name and the values it carried, and the same call in text form is
+what the agent reads as the customer's message.
+
+[MCP Client Setup](./mcp-client-setup.md#routines-as-tools) shows the catalog
+and the call from the caller's side.
+
 ## Document view
 
 **Document** lays a routine out from top to bottom: a collapsible **When to
@@ -111,13 +175,32 @@ on a later branch. In **Information**, you can also mark a value:
 An `@` reference uses the same stored value throughout the routine. A skill
 output can also supply a value that later steps and branches read.
 
+#### Read the visitor's context
+
+The same `@` menu lists what the agent already knows about the visitor under
+**Visitor context**. Choose **Current page** to place it in a step, and the
+step reads the page's URL, title, and language when it runs — enough to write
+"If the visitor is on a program page, confirm that is the program they want to
+book; otherwise ask which program @program". A host-defined context variable
+the agent has enabled, such as `cart`, appears in the same list.
+
+This is a value the step reads, not one it stores: nothing is added to
+**Information**, and later steps see nothing unless they place the same chip.
+To keep a value, ask for it with an `@` slot. The visible page text stays out
+of the step; the step sees the page's identity, and the page still counts as
+untrusted data the agent reasons about rather than instructions it follows.
+
 ### Add steps and connect skills
 
 Use the **+ Step** menu to add a **chat**, **skill**, **approval**, or **action**
 step. Chat steps guide the conversation. Skill steps call a capability available
 to the agent, such as `retrieve`, `email`, `webhook_call`, or `mcp_tool`. Action
 steps emit an outbox action, such as `contact.send`, then continue through the
-flow.
+flow. To tell your team, set the notice on the routine's ending instead (see
+[Operator notices](#operator-notices)), which names the routine and lists the
+values it collected. Radioso queues ending and approval notices itself, so
+validation flags an action step naming one, such as `handoff.notify`, and the
+agent can't be published until that step is removed.
 
 Select a skill step to configure its **uses → sets** bindings. Each required
 input receives either a fixed value or an `@` value already held by the routine.
@@ -181,6 +264,24 @@ eligible refund and an ineligible refund.
 The routine's **Completion message** controls its default finish. Its **Handoff
 message** controls the standard escalation reply. A named ending carries its own
 message and appears as a target in the branch rows that reach it.
+
+An ending can also tell your team what the routine collected. A hand-off always
+does: the conversation goes to a person, and that person needs the details. A
+finish does when you turn on **Notify the team** in the ending's editor. The
+agent keeps the conversation, so a booking routine can end with "Is there
+anything else I can help you with?" while reception gets the booking by email.
+The row of a finish that notifies reads *notifies the team*.
+
+**Subject** and **Intro** are optional. Type `@` in either to insert a collected
+value, such as `New booking: {{slot.guest_name}}`; the notice fills it in when it
+sends. `@` offers only the values the routine collects; to put a new one in a
+notice, have a step ask for it first.
+A subject holds up to 200 characters and an intro up to 2,000; the field stops
+taking text at the limit. Leave them blank for the default subject, `Book accommodation: completed`
+for a finish or `Book accommodation: needs a human` for a hand-off. Whatever you
+write, the notice lists every collected value below the intro, so a short
+subject never hides what the guest said. See [Operator notices](#operator-notices)
+for what the team receives.
 
 ### Read validation notes
 
@@ -275,15 +376,56 @@ When the terminal matches `triggerKinds`, the runtime emits a `webhook.send`
 action. The action worker resolves the destination, signs the JSON body with its
 secret, and delivers it through the action outbox.
 
-### Handoff notifications
+### Operator notices
 
-When a routine reaches a `handoff` terminal, the chat turn sends the routine's
-reply, requests human ownership of the conversation, and queues a
-`handoff.notify` action. The notice reaches the agent's contact recipients by
-email and, when one is configured, the contact webhook. Both carry the
-conversation, workspace, agent, and reason, plus a `dashboardUrl` that opens the
-conversation in the dashboard; the webhook body is documented under
-[Handoff and approval notifications](../docs-portal/content/api/agents-and-skills.mdx).
+A routine's ending decides two separate things. Its kind decides who has the
+conversation next: a hand-off moves it to a person, a finish leaves it with the
+agent. Its notice decides whether your team hears about it: every hand-off sends
+one, and a finish sends one when **Notify the team** is on.
+
+When a routine reaches a hand-off, the chat turn sends the routine's reply,
+requests human ownership of the conversation, and queues a `handoff.notify`
+action. When it reaches a finish that notifies, the turn sends the reply and
+queues a `completion.notify` action; the agent goes on answering the visitor,
+and nothing appears in the Inbox. Both notices go to the agent's contact
+recipients by email, to the contact webhook when one is configured, and to the
+Slack escalation channel when the workspace has one.
+
+The email reads as plain prose for whoever picks it up, not a log: it carries
+
+- the subject: the ending's **Subject** with collected values filled in, or the
+  default for its kind;
+- the headline, then the ending's **Intro** when it has one;
+- every value the routine collected — its declared slots, keyed by slot key, in
+  the order the routine declares them;
+- the page the conversation started on, when the conversation has one.
+
+The Slack post carries the same subject, headline, intro, collected values, and
+entry page as one block of text, led by the subject line. Before posting, the
+text escapes `&`, `<`, and `>`, so a collected value or an authored intro can't
+open a channel mention like `<!channel>` or a labelled link
+(`<https://example.com|label>`). `*bold*`, `_italic_`, and `` `code` `` still
+format, and Slack auto-links any bare URL the text contains. The webhook body
+carries the ids, the reason, the routine, the collected values in that same
+order, and the authored subject and intro as JSON fields; the entry page
+appears only in the email and Slack text. If the routine is deleted before the
+notice goes out, the collected values still arrive, in storage order rather
+than declaration order.
+
+A booking desk that receives a "Book accommodation" notice reads the program,
+dates, and guest name in the notice itself instead of opening the transcript
+first. Slot values that are text, numbers, or yes/no appear in the notice; a slot
+holding a structured value is left out of it. Dates appear as the routine stored
+them (`2026-10-12`), which reads the same in every language on your team. A
+`{{slot.<key>}}` in the subject or intro whose value the routine never collected
+shows a dash (`—`), and the notice still goes out. The email is plain text and
+ends with an `Open:` line that opens the conversation in the dashboard; the
+webhook body is documented under
+[Operator notifications](../docs-portal/content/api/agents-and-skills.mdx).
+
+Test Chat never sends a notice. A test turn that reaches an ending that notifies
+shows what the notice would say — its kind, subject, and body — in the turn's
+trace instead.
 
 ## How a routine goes live
 

@@ -80,10 +80,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Workspaces belong to the signed-in identity, so a profile edit that
+  // replaces the user object leaves them loaded.
+  const signedInUserId = user?.userId ?? null
+  const signedInAccountId = user?.accountId ?? null
+
   useEffect(() => {
     if (isBootstrapping) return
 
-    if (!user) {
+    if (!signedInUserId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Auth logout must clear workspace provider state.
       setWorkspaces([])
       setActiveWorkspaceId(null)
@@ -133,7 +138,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       cancelled = true
       window.removeEventListener('radioso:accounts-updated', handleAccountRefresh)
     }
-  }, [user, isBootstrapping, logout, refreshAccounts])
+  }, [signedInUserId, signedInAccountId, isBootstrapping, logout, refreshAccounts])
 
   const switchWorkspace = useCallback(async (workspaceId: string) => {
     const workspace = workspaces.find((candidate) => candidate.id === workspaceId) ?? null

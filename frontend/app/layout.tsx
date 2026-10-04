@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { Fraunces } from 'next/font/google'
+import { SunriseProvider } from '@/components/auth/sunrise'
 import { ThemeProvider } from '@/components/theme-provider'
 import { FrontendErrorBoundary } from '@/components/frontend-error-boundary'
 import { ProductAnalyticsProvider } from '@/components/product-analytics-provider'
@@ -42,11 +43,13 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <FrontendErrorBoundary>
-            <AuthProvider>
-              <WorkspaceProvider>
-                {children}
-              </WorkspaceProvider>
-            </AuthProvider>
+            <SunriseProvider>
+              <AuthProvider>
+                <WorkspaceProvider>
+                  {children}
+                </WorkspaceProvider>
+              </AuthProvider>
+            </SunriseProvider>
           </FrontendErrorBoundary>
           <Suspense fallback={null}>
             <ProductAnalyticsProvider />

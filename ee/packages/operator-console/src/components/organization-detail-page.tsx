@@ -7,16 +7,19 @@ import { useEffect, useMemo, useState } from "react";
 
 import { formatHumanBytes } from "../lib/byte-units";
 import { canWriteTiers, staffAuthApi, type AccountUsageSummary, type UsageLimitProfile, type StaffUser } from "../lib/staff-auth-api";
-import { ErrorBanner, limitText, StaffLayout } from "./staff-layout";
+import { formatMeterNumber, limitText } from "../lib/meter-text";
+import { overLimitResources } from "../lib/tier-change";
+import { ErrorBanner, StaffLayout } from "./staff-layout";
 
 const resourceLabels = {
+  monthlyConversations: "Monthly conversations",
   monthlyAnswers: "Monthly answers",
   storedDocuments: "Stored documents",
   storedIndexedBytes: "Stored indexed bytes",
   monthlyIndexedBytes: "Monthly indexed bytes",
 } as const;
 
-type ResourceKey = keyof typeof resourceLabels;
+type ResourceKey = Exclude<keyof typeof resourceLabels, "monthlyConversations">;
 
 const resourceKeys: ResourceKey[] = ["monthlyAnswers", "storedDocuments", "storedIndexedBytes", "monthlyIndexedBytes"];
 
@@ -24,7 +27,7 @@ const resourceLimitText = (key: ResourceKey, limit: number | null) =>
   key.includes("IndexedBytes") ? formatHumanBytes(limit) : limitText(limit);
 
 const resourceUsedText = (key: ResourceKey, used: number) =>
-  key.includes("IndexedBytes") ? formatHumanBytes(used) : used.toLocaleString();
+  key.includes("IndexedBytes") ? formatHumanBytes(used) : formatMeterNumber(used);
 
 export function OrganizationDetailPage({ accountId }: { accountId: string }) {
   const [staff, setStaff] = useState<StaffUser | null>(null);
@@ -64,21 +67,10 @@ export function OrganizationDetailPage({ accountId }: { accountId: string }) {
     () => tiers.find((tier) => tier.key === targetTier) ?? null,
     [targetTier, tiers],
   );
-  const overLimitResources = useMemo(() => {
-    if (!usage || !selectedTier) {
-      return [];
-    }
-    return resourceKeys.filter((key) => {
-      const limit = selectedTier[key === "monthlyAnswers"
-        ? "monthlyAnswerLimit"
-        : key === "storedDocuments"
-          ? "storedDocumentLimit"
-          : key === "storedIndexedBytes"
-            ? "storedIndexedByteLimit"
-            : "monthlyIndexedByteLimit"];
-      return limit !== null && usage[key].used > limit;
-    });
-  }, [selectedTier, usage]);
+  const breachedResources = useMemo(
+    () => (usage && selectedTier ? overLimitResources(usage, selectedTier) : []),
+    [selectedTier, usage],
+  );
 
   const changeTier = async () => {
     if (!usage) {
@@ -128,9 +120,9 @@ export function OrganizationDetailPage({ accountId }: { accountId: string }) {
                     ? <AlertTriangle className="size-5 text-amber-300" />
                     : <CheckCircle2 className="size-5 text-emerald-300" />}
                 </div>
-                <div className="mt-4 text-2xl font-semibold">{usage.monthlyConversations.used.toLocaleString()}</div>
+                <div className="mt-4 text-2xl font-semibold">{formatMeterNumber(usage.monthlyConversations.used)}</div>
                 <div className="mt-1 text-sm text-zinc-400">Limit {limitText(usage.monthlyConversations.limit)}</div>
-                <div className="mt-1 text-sm text-zinc-400">{usage.monthlyConversations.credits.toLocaleString()} prepaid credits</div>
+                <div className="mt-1 text-sm text-zinc-400">{formatMeterNumber(usage.monthlyConversations.credits)} prepaid credits</div>
                 {usage.monthlyConversations.used > usage.monthlyConversations.limit
                   ? <div className="mt-3 text-sm text-amber-200">Warn only: current usage is over this limit.</div>
                   : null}
@@ -172,9 +164,9 @@ export function OrganizationDetailPage({ accountId }: { accountId: string }) {
                     ))}
                   </select>
                 </label>
-                {overLimitResources.length > 0 ? (
+                {breachedResources.length > 0 ? (
                   <div className="rounded-md border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
-                    Warn only: selected tier is below current usage for {overLimitResources.map((key) => resourceLabels[key]).join(", ")}.
+                    Warn only: selected tier is below current usage for {breachedResources.map((resource) => resourceLabels[resource]).join(", ")}.
                   </div>
                 ) : null}
                 <Button onClick={() => { void changeTier(); }} disabled={saving || targetTier === (usage.profile?.key ?? "")}>

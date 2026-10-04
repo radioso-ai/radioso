@@ -27,6 +27,60 @@ rows. Start at `test-execution/README.md` and
 
 - `contracts/`: chat response types, stream events, gateway contracts, and
   extension provider ports.
+  `contracts/routineProvider.ts` is the `ChatRoutineProvider` port the routines
+  module implements (`modules/routines/turnProvider.ts`); chat never names a routine.
+  `contracts/routineTurnState.ts` re-exports the routines module's
+  `RoutineTurnReporter` (returned beside the activator, or alone from the provider's
+  `reporterFor` for a turn a suspended routine keeps), the `RoutineTurnState` it
+  yields (`name`, `status`, `pendingInput`), and the `RoutineInvocationReport`
+  (`toolName`, `outcome`) under chat-side names; routines owns those shapes in
+  `modules/routines/turnReport.ts`.
+- `services/agentReplyEnvelope.ts` (exported through `contracts/`): the agent reply
+  envelope core — `conversationId`, `answerCoverage`, `ownership`, `routine?`,
+  `invocation?`, `traceId?` — that the MCP converse `ask` route and the REST agent
+  chat route return beside their own answer layouts. `chatTurnLifecycle.ts` always
+  records `answerCoverage` (`not_recorded` when no assessment ran), marks `ownership`
+  human-owned on a handoff turn, asks the reporter to describe the routine state the
+  turn saved (falling back to `PreparedSession.declinedRoutine` / `suspendedRoutine`
+  when it saved none), forwards `PreparedSession.routineInvocationReport` as
+  `invocation`, and counts it as `routine_invocations_total{outcome}` — the one place
+  turn-time outcomes (`started`, `reentered`, `declined`, `not_started`,
+  `unknown_tool`) are counted. `presentChatPayload` strips `routine` and `invocation`
+  from the human-facing routes; only `sendChatSse(..., { agentEnvelope: true })` and
+  the agent channel route publish them.
+- `services/agentTurnInput.ts` (exported through `contracts/`): `resolveAgentTurnInput`
+  turns an agent-facing body into `{ kind: "message" }` or `{ kind: "routine_invocation" }`
+  once, before any turn state exists. The REST agent chat route calls it with the
+  revision the named conversation is pinned to; `agentConverseService.ts` calls it after
+  binding the session's conversation, with that conversation's pinned revision — so
+  neither transport validates a tool call on its own and both check the release the
+  turn will run on. It loads that release's catalog (`AgentToolCatalogPort`, composed
+  in `app/composition/agentToolCatalog.ts`), validates the input with the routines
+  module's validator, and throws `routine_tool_unknown` (404) or
+  `routine_invocation_invalid` (400, field-level `details.errors`); both ride
+  `error.details.code`, with `error.code` staying `not_found` / `bad_request`. The
+  validated `RoutineInvocation` (`contracts/routineInvocation.ts`) rides
+  `AssistantChatRequest` → `ChatService` → `PrepareChatSessionInput` →
+  `PreparedSession` → the routine provider unread; `assistantChatService.ts` renders
+  it as the turn's query text and the preparer records the user message with
+  `inputMetadata.method = "routine_invocation"`. On an invocation turn `ChatService`
+  skips pending-clarification resolution (the call is not a reply to the question, and
+  a mapped answer would substitute the question's activator). When the provider's
+  activator declines the call (the routine completed under `once_per_conversation`),
+  `chatTurnAssembly.ts` sets `PreparedSession.declinedRoutine`; when a suspended routine
+  bypasses the attempt, `describeSuspendedRoutineTurn` sets `suspendedRoutine` and an
+  `invocation` of `not_started`. When the active routine yields the turn as off-topic,
+  the routine yield sink `createAttemptRoutineInput` wires records the engine's report
+  on `PreparedSession.routineYield`. `createChatProcessTurnInput` hands it back to
+  `processTurn`, which records the `routine_yield` stage without asking the routine
+  again when the yield's session and input event match the turn;
+  `conversationEngineChatTurn.ts` drops it from the session once `processTurn` answers.
+  The grounded, grounded-miss, and direct composers end their prompt with
+  `appendRoutineLeadBack` (`shared/infra/prompts/steeringPromptRenderer.ts`) so the reply
+  closes by asking for what the pending step still needs. On an agent that hands
+  retrieval misses to a person, `retrievalTurnSkill.ts` gives a composed decline no
+  lead-back, and the grounded prompt adds `chat/routine-lead-back-decline-handoff.md`
+  so a `no_support` answer leaves it out.
 - `composition.ts`: chat module wiring used by application composition.
 - `llmAdapters.ts`: LLM-provider registration for chat.
 - `retrievalSupport.ts`: narrow helpers used by retrieval answer assembly.
@@ -199,10 +253,52 @@ imports from `services/`.
   `conversationRepository`, `quality/service.ts`, and `pendingDecisionRepository`.
   `chatHistoryService.getConversation` is shared by the dashboard and the
   public/embed visitor surface; every operator-only fact (`includeOwnership`,
-  `includeAgentInternalName`, `includeTurnFailureDebug`) is an explicit,
-  default-off option, and `AssistantHistoryService` is the only place that turns
-  them on (`dashboardConversationDetailOptions`) — the public routes call
-  `chatHistoryService.getConversation` directly and never set them.
+  `includeAgentInternalName`, `includeTurnFailureDebug`, `includeOperatorLabel`)
+  is an explicit, default-off option, and `AssistantHistoryService` is the only
+  history-route place that turns them on (`dashboardConversationDetailOptions`,
+  and the operator tail) — the public routes call
+  `chatHistoryService.getConversation` directly and never set them. Ray's
+  `conversation_transcript` and `turn_trace` read with the same flags.
+  A human-agent reply's `operatorDisplayName` follows one rule on every surface
+  that reads it (visitor chat and embed, dashboard, Ray, API), applied in
+  `operatorDisplayNameFrom`: the stored `humanAgent.displayName` shows, trimmed,
+  unless it holds an email address anywhere in it (`outwardFacingName` from
+  `auth/contracts`), whether or not the reply records a `humanAgent.userId`.
+  Then it is omitted, and the visitor surface labels the reply "A teammate".
+  Operator reads add `operatorLabel` (`includeOperatorLabel`): the replier's
+  teammate label (display name, else email) read now through the narrow
+  `TeammateLabelReaderPort` (owned by `auth/contracts`) — one batched lookup per
+  read, wired in `app/composition/teammateLabelReader.ts` — falling back to the
+  signature rule above when the reply names no user or the user is gone. It can be
+  an email, so the public presenters also strip it; the calling-agent update reader
+  reads the tail with ownership only and never gets it. Operator reads also add the
+  conversation's `activity` (`activity: ConversationActivityReadScope`, resolved from
+  the caller's permissions at the route edge) through the conversation activity
+  module's `ConversationActivityTimelineReader`, labelling the activity's teammates in
+  the same lookup as the repliers; the operator tail reads only the activity in the
+  window behind its `activityCursor`. The public presenters strip both.
+  `PostgresAssistantTurnPersistence` records a turn's `handoff_requested` event in
+  the turn's transaction when the handoff changed ownership.
+- Routine endings: `services/routineEndingEffects.ts` is the one place every chat
+  path (routine, coverage, rendered; streaming or not; a resume after an approval in
+  `services/approvalResumeTurn.ts`) turns the engine's ending report into effects.
+  `ProcessTurnResult.handoff` (and the same field on
+  `ConversationRoutineDecisionResult`) becomes the ownership change;
+  `ProcessTurnResult.operatorNotice` queues `handoff.notify` for a hand-off and
+  `completion.notify` for a completion with an operator notice, with the authored
+  `notice` text on the payload. A hand-off reported without an `operatorNotice`
+  still queues `handoff.notify` with the default text (`operatorNoticeForTurn`),
+  and without authored text its payload is the same bytes it always was. A completion notice never changes ownership and
+  creates no Inbox item. `services/operatorNoticeAction.ts` owns the notice payload
+  and `ROUTINE_ENDING_NOTICE_ACTIONS`, the one table from an ending's kind to its
+  action type, reason code, and notification kind. Both action types dispatch
+  through one `RoutineEndingNotifyActionHandler`, registered once per row in
+  `app/composition/builtIn/contactRoutineModule.ts`, which resolves the agent and
+  routine names, the routine's slot order, and the conversation's entry page at
+  delivery, and hands the notice to the `operatorNotifications` sinks. The handler
+  routes and looks up by the queued action row's own workspace and conversation
+  ids, never by copies of those ids on the payload, since a routine action-step
+  payload carries visitor-filled variables under arbitrary keys.
   `includeTurnFailureDebug` attaches a `turnFailure` fact (failed or superseded,
   never both classified as the same) to the user message of a turn that never
   produced an assistant reply — the read-side counterpart to
@@ -298,6 +394,30 @@ imports from `services/`.
   while the lifecycle suppresses external actions, ownership handoffs, customer
   analytics, and summary regeneration. Chat does not own the caller's identity,
   provenance, or authorization policy; application composition supplies those.
+  A routine's captured slot values are opt-in at the source rather than masked
+  after the fact: `WorkbenchReplayInput.includeSlotValues` threads through
+  `ChatTurnAssemblyOptions`/`ChatRoutineProvider.forTurn` to the engine's
+  `DefaultRoutineRunner` construction, which is the only place a slot value is
+  ever produced on a routine trace, bounded there to 500 characters per value
+  (`truncated: true` on a cut one) and 50 filled slots per turn
+  (`omittedSlotCount` reports the rest). Only the Test Chat entry point
+  (`TrustedTestExecutionRunnerAdapter`) sets it, because Test Chat's trace is
+  stored in `agent_test_execution_attempts` under Test Chat's own retention.
+  Eval replay (`evalRunService.ts`) never does — an eval case can be captured
+  from a customer conversation, and eval persists its trace into append-only
+  `eval_runs`/revision-eval evidence with no per-conversation erasure path. A
+  live conversation — and a Ray `test_agent_turn` probe turn, which persists to
+  `audit_events` the same way a live turn does — never sets it either, so its
+  trace reports only which slots were filled (`filledSlotKeys`,
+  `capturedSlotKeys`), exactly as before slot values existed at all. A Test Chat
+  turn that ends on a routine ending that notifies operators — a hand-off, or a
+  completion with an operator notice, whose `handoff.notify` / `completion.notify`
+  action a replayed turn never dispatches — carries the notice content (`kind`,
+  subject, and body, authored text included) that the operator notification would
+  send, as the trace's `handoffPreview`, built through the same `operatorNotifications`
+  text formatter the real dispatch uses (`WorkbenchReplayRunner.operatorNoticePreviewFor`);
+  live delivery additionally appends the conversation link, which a replayed turn
+  has none of.
 - Fused turn planning: `turnPlanService.ts` (one `turn_planning` call on the
   agent's chat model + prompt `backend/prompts/chat/turn-planning.md`, strict
   parse and semantic validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from
@@ -311,7 +431,10 @@ imports from `services/`.
   `workbenchReplayRunner.ts`; their shared
   `chatTurnAssembly.ts` consumes the plan so replay executes the identical
   schedule, including the staged response-language detector on bypass or planner
-  failure. Policy stays with the owning modules: the routine
+  failure. Both run that detector through `turnResponseLanguage.ts`, which
+  records the language source and any unresolved reason on the turn span and
+  warns when a detection fails (`tests/unit/chat/turnResponseLanguage.test.ts`).
+  Policy stays with the owning modules: the routine
   activator applies plan rankings through `RoutineRegistry.prepareCandidates` /
   `applyRankedDecision` (including extracted activation variables), completed-
   routine correction/reentry adapters pin the plan as bypassed when they claim

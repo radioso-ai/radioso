@@ -2,6 +2,7 @@ import { AgentSkillRepository } from "../../modules/agentSkills/repository.js";
 import type { AgentSkillMcpApplyPort } from "../../modules/operatorCopilot/proposalAdapters.js";
 import { CopilotRepository } from "../../db/repositories/copilotRepository.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import { conflict } from "../../shared/domain/errors.js";
 
 /**
  * Composition-only unit of work. AgentSkills keeps its validation and draft projection rules;
@@ -26,7 +27,8 @@ const applyOn = async (
     enabled: input.enabled,
     expectedUpdatedAt: input.expectedUpdatedAt,
   });
-  if (!updated) throw new Error("reviewed_agent_skill_version_conflict");
+  // A domain conflict, so the reviewed executor settles the proposal stale instead of uncertain.
+  if (!updated) throw conflict("Skill was updated by another writer; reload before saving again");
   const appliedRef = { agentId: input.agentId, skillId: updated.id };
   const settled = await new CopilotRepository(db).settleMcpAppliedOn({
     proposalId: input.proposalId,

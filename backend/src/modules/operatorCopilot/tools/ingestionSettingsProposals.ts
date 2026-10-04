@@ -16,7 +16,7 @@ import {
 
 const MANAGE_SETTINGS = ["workspace.settings.manage"] as const;
 const NAME = "propose_ingestion_settings";
-const DESCRIPTION = "Propose a change to how documents are chunked and enriched when they are processed, for the operator to review and apply. Name only the fields you want changed; the rest are carried over from the stored settings. Applying it re-chunks nothing on its own — reprocess a document or a source afterwards for the change to reach what is already indexed.";
+const DESCRIPTION = "Propose a change to how documents are chunked and enriched when they are processed, for the operator to review and apply. Name only the fields you want changed; the rest are carried over from the stored settings. Applying it re-chunks nothing on its own — use prepare_document_reprocess afterwards for the change to reach what is already indexed.";
 
 export type IngestionSettingsProposalCopilotToolDependencies = CopilotProposalToolDependencies & {
   readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
@@ -45,7 +45,7 @@ export const createIngestionSettingsProposalCopilotTools = (
     uiLabel: "Drafting an ingestion settings change",
     contributingModule: "settings",
     dashboardSubject: { type: "proposal" },
-    requiredPermissions: [...MANAGE_SETTINGS] as unknown as CopilotToolDescriptor["requiredPermissions"],
+    requiredPermissions: [...MANAGE_SETTINGS],
     reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
       if (!invocation.operationId) return { status: "conflict" };
       const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({

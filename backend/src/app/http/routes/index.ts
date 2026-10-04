@@ -5,6 +5,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { createAccountRoutes } from "./accountRoutes.js";
 import { createAccountUserRoutes } from "./accountUserRoutes.js";
 import { createAuthRoutes } from "./authRoutes.js";
+import { createConversationActivityRoutes } from "./conversationActivityRoutes.js";
 import { createConversationOwnershipRoutes } from "./conversationOwnershipRoutes.js";
 import { createContextVariableRoutes } from "./contextVariableRoutes.js";
 import { createDecisionRoutes } from "./decisionRoutes.js";
@@ -13,6 +14,7 @@ import { createAssistantRoutes } from "./assistantRoutes.js";
 import { createAgentRoutes } from "./agentRoutes.js";
 import { createAgentExternalSkillsRoutes } from "./agentExternalSkillsRoutes.js";
 import { createAgentBundleRoutes } from "./agentBundleRoutes.js";
+import { createAgentPublicIdentityRoutes } from "./agentPublicIdentityRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
 import { createHistoryRoutes } from "./historyRoutes.js";
 import { createMetricsRoutes } from "./metricsRoutes.js";
@@ -39,6 +41,7 @@ import { createCopilotRoutes } from "../../../modules/operatorCopilot/routes.js"
 import { createApiAccessRoutes } from "./apiAccessRoutes.js";
 import { createOperatorMcpSetupRoutes } from "../../../modules/operatorMcpSetup/routes.js";
 import { createOperatorMcpDashboardRoutes } from "../../../modules/operatorMcpAuthorization/dashboardRoutes.js";
+import { createAgentDiscoveryRoutes } from "../../../modules/agentDiscovery/public.js";
 import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../../modules/operatorMcpAuthorization/routes.js";
 import { createOperatorMcpInternalRoutes } from "../../../modules/operatorCopilot/mcpRoutes.js";
 import { createTestExecutionRoutes } from "./testExecutionRoutes.js";
@@ -54,6 +57,7 @@ type ApiRouteMount = {
  */
 export const createApiRouteMounts = (_dependencies: AppDependencies): readonly ApiRouteMount[] => [
   { path: "/.well-known", createRouter: createOperatorMcpDiscoveryRoutes },
+  { path: "/.well-known", createRouter: createAgentDiscoveryRoutes },
   { path: "/api/v1/auth", createRouter: createAuthRoutes },
   { path: "/api/v1/account", createRouter: createAccountRoutes },
   { path: "/api/v1/account", createRouter: createAccountUserRoutes },
@@ -79,6 +83,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/agents", createRouter: createDecisionRoutes },
   { path: "/api/v1/decisions", createRouter: createDecisionsQueryRoutes },
   { path: "/api/v1/agents", createRouter: createAgentBundleRoutes },
+  { path: "/api/v1/agents", createRouter: createAgentPublicIdentityRoutes },
   { path: "/api/v1/agents", createRouter: createAgentExternalSkillsRoutes },
   { path: "/api/v1/agents", createRouter: createEmailSkillRoutes },
   { path: "/api/v1/agents", createRouter: createWebhookSkillRoutes },
@@ -86,6 +91,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/agents", createRouter: createAgentSkillRoutes },
   { path: "/api/v1/assistant", createRouter: createAssistantRoutes },
   { path: "/api/v1/copilot", createRouter: createCopilotRoutes },
+  { path: "/api/v1/conversations", createRouter: createConversationActivityRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationOwnershipRoutes },
   { path: "/api/v1/history", createRouter: createHistoryRoutes },
   { path: "/api/v1/observability", createRouter: createObservabilityRoutes },

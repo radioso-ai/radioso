@@ -193,11 +193,11 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
 }): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "workspace_settings", shape: "read", verificationCost: () => 0, uiLabel: "Reading workspace settings", contributingModule: "settings", dashboardSubject: { type: "workspace_settings" }, requiredPermissions: ["workspace.settings.read"],
-    description: "Read safe workspace retrieval, ingestion, model, credential-health, embedding-coverage, and general configuration. Tokens, secrets, credential values, and connection strings are excluded.",
+    description: "Read safe workspace retrieval, ingestion, model, credential-health, embedding-coverage, and general configuration. Use workspace_usage_limits in Enterprise workspaces for plan limits and current usage. Tokens, secrets, credential values, and connection strings are excluded.",
     inputSchema: workspaceSettingsInputSchema, outputSchema: workspaceSettingsOutputSchema,
     createTool: (context) => ({
       name: "workspace_settings",
-      description: "Read safe workspace retrieval, ingestion, model, credential-health, embedding-coverage, and general configuration. Tokens, secrets, credential values, and connection strings are excluded.",
+      description: "Read safe workspace retrieval, ingestion, model, credential-health, embedding-coverage, and general configuration. Use workspace_usage_limits in Enterprise workspaces for plan limits and current usage. Tokens, secrets, credential values, and connection strings are excluded.",
       inputSchema: workspaceSettingsInputSchema,
       outputSchema: workspaceSettingsOutputSchema,
       invoke: async () => {

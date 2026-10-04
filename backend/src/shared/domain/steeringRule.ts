@@ -1,11 +1,17 @@
-export type { SteeringRule } from "@radioso/conversation-contract";
+// A yielded routine's pending step steers the turn's answer as a closing lead-back (#1377).
+export type { RoutinePendingStep, SteeringRule } from "@radioso/conversation-contract";
 export {
   addressesSurface,
   appendSteeringRules,
   effectiveSurfaces,
   orderSteeringRules,
+  // A routine step's steering in its two roles (#1351): the step's rule controls
+  // the reply, directives render as guidance subordinate to it.
+  partitionRoutineStepSteering,
+  renderRoutineStepInstructions,
   renderSteeringRules,
   resolveRenderSurfaces,
+  routineStepSteeringOptions,
   // Narrowing a steering set to one generation surface is a steering operation, so it
   // enters the backend through this sanctioned barrel rather than a second one.
   steeringForSurface,

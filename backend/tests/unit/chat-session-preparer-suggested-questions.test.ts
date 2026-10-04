@@ -160,6 +160,7 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       agentName: agent.name,
       agentInternalName: agent.internalName ?? null,
       sourceChannel: "workbench_replay",
+      callerKind: "human" as const,
       sourceOrigin: null,
       channelContext: null,
       anonymousSessionId: null,

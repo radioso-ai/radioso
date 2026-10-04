@@ -153,9 +153,8 @@ export function useAgentChannelCredentials(
     try {
       await agentChannelCredentialsApi.revoke(agentId, credentialId)
       if (scopeGeneration.current !== generation) return false
-      setCredentials((current) => current.map((credential) => credential.id === credentialId
-        ? { ...credential, status: 'revoked', revokedAt: new Date().toISOString() }
-        : credential))
+      // Revoked access leaves the inventory: the list answers what can reach the agent now.
+      setCredentials((current) => current.filter((credential) => credential.id !== credentialId))
       setIssued((current) => current?.credential.id === credentialId ? null : current)
       return true
     } catch (revokeError: unknown) {

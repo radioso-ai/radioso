@@ -14,6 +14,7 @@ describe("operator probe owner ports", () => {
       agentName: null,
       agentInternalName: null,
       sourceChannel: "operator_copilot",
+      callerKind: "human" as const,
       sourceOrigin: "operator:1",
       channelContext: null,
       anonymousSessionId: null,

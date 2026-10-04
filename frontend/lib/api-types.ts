@@ -31,6 +31,9 @@ export type PasswordResetRequest = ApiSchemas['PasswordResetRequest']
 export type PasswordResetConfirmRequest = ApiSchemas['PasswordResetConfirmRequest']
 export type PasswordResetConfirmResponse = ApiSchemas['PasswordResetConfirmResponse']
 export type SessionResponse = ApiSchemas['SessionResponse']
+export type UserProfile = ApiSchemas['UserProfile']
+export type UserProfileUpdateRequest = ApiSchemas['UserProfileUpdateRequest']
+export type InvitationAcceptRequest = ApiSchemas['InvitationAcceptRequest']
 export type EmailVerificationVerifyRequest = ApiSchemas['EmailVerificationVerifyRequest']
 export type EmailVerificationVerifyResponse = ApiSchemas['EmailVerificationVerifyResponse']
 export type EmailVerificationResendRequest = ApiSchemas['EmailVerificationResendRequest']
@@ -111,7 +114,9 @@ export type RoutineTransition = Omit<ApiSchemas['RoutineDefinition']['transition
 export type RoutineTerminal = Omit<ApiSchemas['RoutineDefinition']['terminals'][number], 'kind'> & {
   kind: RoutineTerminalKind
 }
+export type RoutineOperatorNotice = NonNullable<RoutineTerminal['operatorNotice']>
 export type RoutineCompletionExport = NonNullable<ApiSchemas['RoutineDefinition']['completionExport']>
+export type RoutineExposure = NonNullable<ApiSchemas['RoutineDefinition']['exposure']>
 export type RoutineDefinitionDraft = {
   name: string
   // Whether the routine may activate. Optional on the draft shape so a caller that never reads
@@ -133,6 +138,9 @@ export type RoutineDefinitionDraft = {
   transitions: RoutineTransition[]
   terminals: RoutineTerminal[]
   completionExport?: RoutineCompletionExport
+  // How the routine is offered to calling AI agents as a named tool. Absent means not offered;
+  // omitted from an update payload means unchanged, the same as completionExport.
+  exposure?: RoutineExposure
 }
 export type RoutineDefinition = RoutineDefinitionDraft & {
   id: string
@@ -304,9 +312,12 @@ export const toGeneralSettings = (settings: PlatformSettings): GeneralSettings =
 type GeneratedChatUserInputMetadata = NonNullable<
   Extract<ApiSchemas['AssistantChatRequest'], { inputMetadata?: unknown }>['inputMetadata']
 >
+/** A calling agent's tool call as recorded on a user message (history `UserMessageInputMetadata.routine`). */
+export type ChatUserRoutineInvocation = NonNullable<ApiSchemas['UserMessageInputMetadata']['routine']>
 export type ChatUserInputMetadata = Omit<GeneratedChatUserInputMetadata, 'method' | 'intent'> & {
-  method: 'typed' | 'suggestion_click' | 'intent_click'
+  method: ApiSchemas['UserMessageInputMetadata']['method']
   intent?: PublicChatIntakeAction
+  routine?: ChatUserRoutineInvocation
 }
 export type Citation = ApiSchemas['Citation']
 export type SkillDisplayMetadata = NonNullable<ApiSchemas['SkillCatalogEntry']['display']>
@@ -420,6 +431,11 @@ export type ChatConversationSummary = ApiSchemas['ChatConversationSummary'] & {
   channelContext?: ConversationChannelContext | null
 }
 export type ConversationOwnership = ApiSchemas['ConversationOwnership']
+export type ConversationOperator = ApiSchemas['ConversationOperator']
+export type ConversationOperatorsResponse = ApiSchemas['ConversationOperatorsResponse']
+export type ConversationActivityEntry = ApiSchemas['ConversationActivityEntry']
+export type ConversationActivityKind = ConversationActivityEntry['kind']
+export type RecentlyClosedInboxItemsResponse = ApiSchemas['RecentlyClosedInboxItemsResponse']
 export type ConversationRequestContext = ApiSchemas['ConversationRequestContext']
 export type ConversationVisitorProfile = ApiSchemas['ConversationVisitorProfile']
 export type ChatConversationMessage = ApiSchemas['ChatConversationMessage']

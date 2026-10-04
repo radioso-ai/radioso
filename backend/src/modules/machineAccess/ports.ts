@@ -214,11 +214,14 @@ export interface MachineAccessPersistencePort {
   findCredential(id: string): Promise<ApiCredentialRecord | null>;
   findServiceAccount(id: string): Promise<ServiceAccountRecord | null>;
   findLegacyMigrationTime(workspaceId: string): Promise<Date | null>;
+  // `now` is the caller's clock, not the database's: the caller derives each credential's status from the
+  // same instant, so a row the inventory keeps must be a row the status derivation still calls live.
   listCredentials(input: {
     workspaceId: string;
     kind?: MachineCredentialKind;
     ownerUserId?: string;
     serviceAccountId?: string;
+    now: Date;
     limit: number;
     page?: number;
   }): Promise<ApiCredentialRecord[]>;
@@ -227,6 +230,7 @@ export interface MachineAccessPersistencePort {
     kind?: MachineCredentialKind;
     ownerUserId?: string;
     serviceAccountId?: string;
+    now: Date;
   }): Promise<number>;
   listServiceAccounts(input: {
     workspaceId: string;

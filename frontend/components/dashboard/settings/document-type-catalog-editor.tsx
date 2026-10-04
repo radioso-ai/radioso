@@ -610,9 +610,8 @@ export function DocumentTypeCatalogEditor() {
         {saveError ? <p className="text-sm text-destructive" role="alert">{saveError}</p> : null}
 
         <div className="flex items-center gap-3 border-t border-border/70 pt-4">
-          <Button type="button" onClick={handleSave} disabled={isSaving || issues.length > 0}>
-            {isSaving ? <Spinner className="mr-2" /> : null}
-            <span>Save document types</span>
+          <Button type="button" onClick={handleSave} disabled={issues.length > 0} loading={isSaving}>
+            Save document types
           </Button>
           {savedMessage ? <p className="text-sm text-muted-foreground">{savedMessage}</p> : null}
         </div>

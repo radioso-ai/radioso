@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createIngestionSettingsCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
+import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
+import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
 import { createIngestionSettingsProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/ingestionSettingsProposals.js";
-import { conflict } from "../../../src/shared/domain/errors.js";
+import { badRequest } from "../../../src/shared/domain/errors.js";
+import type { CopilotIngestionSettingsPort } from "../../../src/modules/operatorCopilot/contracts/ingestionSettingsAuthoring.js";
 
 const context = {
   workspaceId: "workspace-1",
@@ -29,10 +32,36 @@ const storedSettings = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const settingsPorts = (settings = storedSettings()) => ({
-  getForWorkspace: vi.fn(async () => settings),
-  updateForWorkspace: vi.fn(async () => settings),
-});
+type SettingsPortMock = CopilotIngestionSettingsPort & {
+  applyFieldProposal: ReturnType<typeof vi.fn>;
+};
+
+const settingsPorts = (settings = storedSettings()): SettingsPortMock => {
+  const surface = () => ({
+    chunkingStrategy: settings.chunkingStrategy,
+    fixedWindowChunkSize: settings.fixedWindowChunkSize,
+    fixedWindowChunkOverlap: settings.fixedWindowChunkOverlap,
+    structuredMinChunkSize: settings.structuredMinChunkSize,
+    structuredMaxChunkSize: settings.structuredMaxChunkSize,
+    documentEnrichmentEnabled: settings.documentEnrichmentEnabled,
+    manualDocumentEnrichmentOverride: settings.manualDocumentEnrichmentOverride,
+  });
+  return {
+    prepareFieldProposal: vi.fn(async (_workspaceId, patch) => {
+      const named = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+      if (Object.keys(named).length === 0) throw badRequest("Name at least one ingestion setting to change");
+      const current = surface();
+      const normalized = { ...current, ...named };
+      if (normalized.fixedWindowChunkOverlap >= normalized.fixedWindowChunkSize) throw badRequest("Overlap must be smaller than window");
+      const changed = Object.keys(normalized).filter((key) => normalized[key as keyof typeof normalized] !== current[key as keyof typeof current]);
+      if (changed.length === 0) throw badRequest("The ingestion settings already hold these values");
+      return { normalizedPatch: normalized, expected: Object.fromEntries(changed.map((key) => [key, current[key as keyof typeof current]])), display: { current, proposed: normalized } };
+    }),
+    readFieldProposalVersion: vi.fn(async () => "fields:test"),
+    readFieldProposalDisplay: vi.fn(async () => surface()),
+    applyFieldProposal: vi.fn(async () => ({ status: "applied" as const })),
+  } as unknown as SettingsPortMock;
+};
 
 const adapterFor = (settings = settingsPorts()) => ({
   adapter: createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings }),
@@ -57,6 +86,35 @@ const toolFor = (adapter: ReturnType<typeof createIngestionSettingsCopilotPropos
 };
 
 describe("propose_ingestion_settings", () => {
+  it("validates the proposal input and output through the operator MCP catalog", async () => {
+    const { adapter, settings } = adapterFor();
+    const { descriptor, createProposal } = toolFor(adapter);
+    const catalog = new OperatorMcpCatalogService([{
+      ...descriptor,
+      mcpDisposition: operatorMcpDispositions[descriptor.name],
+    }]);
+
+    await expect(catalog.invoke({
+      name: "propose_ingestion_settings",
+      arguments: { fixedWindowChunkSize: 1_500 },
+      context: {
+        ...context,
+        surface: "mcp",
+        copilotConversationId: undefined,
+        operatorMcpInvocationId: "11111111-1111-4111-8111-111111111111",
+      },
+      scopes: new Set(["operator:propose"]),
+      signal: AbortSignal.timeout(1_000),
+    })).resolves.toMatchObject({
+      proposalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      targetType: "ingestion_settings",
+    });
+    expect(settings.prepareFieldProposal).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ fixedWindowChunkSize: 1_500 }));
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      targetRef: { expectedFields: { fixedWindowChunkSize: 1_000 } },
+    }));
+  });
+
   it("expands a one-field change against the stored settings, because the write is a whole-object replace", async () => {
     const { adapter, settings } = adapterFor();
     const { descriptor, createProposal } = toolFor(adapter);
@@ -66,11 +124,11 @@ describe("propose_ingestion_settings", () => {
       rationale: "Answers keep truncating mid-procedure.",
     }, {} as never);
 
-    expect(settings.getForWorkspace).toHaveBeenCalledWith("workspace-1");
+    expect(settings.prepareFieldProposal).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ fixedWindowChunkSize: 1_500 }));
     expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
       targetType: "ingestion_settings",
-      targetRef: {},
-      versionToken: "2026-08-30T10:00:00.000Z",
+      targetRef: { expectedFields: { fixedWindowChunkSize: 1_000 } },
+      versionToken: expect.stringMatching(/^fields:/),
       payload: expect.objectContaining({
         chunkingStrategy: "fixed_window",
         fixedWindowChunkSize: 1_500,
@@ -140,7 +198,7 @@ describe("propose_ingestion_settings", () => {
     const now = new Date("2026-09-04T00:03:00.000Z");
     const staleBefore = new Date("2026-09-04T00:01:00.000Z");
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({
         status: "recovered",
         output: {
@@ -177,11 +235,7 @@ describe("ingestion settings proposal adapter", () => {
       structuredMaxChunkSize: 2_000,
     }, "2026-08-30T10:00:00.000Z");
 
-    expect(settings.updateForWorkspace).toHaveBeenCalledWith(
-      "workspace-1",
-      expect.objectContaining({ fixedWindowChunkSize: 1_500 }),
-      { expectedUpdatedAt: new Date("2026-08-30T10:00:00.000Z") },
-    );
+    expect(settings.applyFieldProposal).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ expectedUpdatedAt: new Date("2026-08-30T10:00:00.000Z") }));
     expect(outcome).toEqual({ outcome: "applied", appliedRef: { workspaceId: "workspace-1" } });
   });
 
@@ -198,16 +252,14 @@ describe("ingestion settings proposal adapter", () => {
       embeddingModel: "text-embedding-3-large",
     }, "2026-08-30T10:00:00.000Z")).rejects.toThrow(/embeddingModel/);
 
-    expect(settings.updateForWorkspace).not.toHaveBeenCalled();
+    expect(settings.applyFieldProposal).not.toHaveBeenCalled();
   });
 
   // The version is the write's own predicate now, so staleness is what the settings service
   // reports back rather than something this adapter decides from a preceding read.
   it("reports a settings change as stale when the write refuses the drafted version", async () => {
     const settings = settingsPorts();
-    settings.updateForWorkspace = vi.fn(async () => {
-      throw conflict("Ingestion settings were updated by another writer; reload before saving again");
-    });
+    settings.applyFieldProposal = vi.fn(async () => ({ status: "changed" as const, fields: ["fixedWindowChunkSize"] }));
     const { adapter } = adapterFor(settings);
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", {}, {
@@ -219,7 +271,7 @@ describe("ingestion settings proposal adapter", () => {
       structuredMaxChunkSize: 2_000,
     }, "2026-08-01T10:00:00.000Z");
 
-    expect(outcome).toEqual({ outcome: "stale" });
+    expect(outcome).toEqual({ outcome: "stale", reason: "Field changed: fixedWindowChunkSize" });
   });
 
   it("previews only the fields the proposal changes against their stored values", async () => {

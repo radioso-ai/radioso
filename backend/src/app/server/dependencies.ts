@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { scopeTag } from "@radioso/conversation-defaults";
 import { getEnv, type Env } from "../config/env.js";
+import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
+import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
+import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
+import { requestSourceDigestPort } from "../http/middleware/requestSource.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
@@ -31,6 +35,7 @@ import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloud
 import { createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { EvalRunOverrides } from "../../modules/eval/composition.js";
 import { CopilotReplayEvidenceRepository } from "../../db/repositories/copilotReplayEvidenceRepository.js";
+import { OperatorMcpAuthorizationRepository } from "../../db/repositories/operatorMcpAuthorizationRepository.js";
 import type { AppDependencies } from "./types.js";
 import {
   buildInfrastructure,
@@ -74,6 +79,7 @@ import {
   OperatorCopilotService,
   ReplyDraftProbeService,
   RetrievalProbeService,
+  TestChatService,
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
@@ -86,7 +92,10 @@ import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotPro
 import { createAgentPublicationProposalAdapter } from "../../modules/operatorCopilot/agentPublicationProposalAdapter.js";
 import { createRoutineMcpApplyPort } from "../composition/copilotRoutineAtomicApply.js";
 import { createAgentSkillMcpApplyPort } from "../composition/copilotAgentSkillAtomicApply.js";
+import { createReviewedReceiptSettlement } from "../composition/copilotReviewedReceiptSettlement.js";
 import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
+import { createDocumentReviewedOperationAdapter } from "../../modules/operatorCopilot/documentReviewedOperationAdapter.js";
+import { DocumentReviewedOperationService } from "../../modules/documents/composition.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../modules/operatorCopilot/workspaceSettingProposalAdapter.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../modules/operatorCopilot/websiteCrawlProposalAdapter.js";
@@ -102,6 +111,12 @@ import { RoutineStateRepository } from "../../db/repositories/routineStateReposi
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
+import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
+import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
+import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
+import { createConversationActivityComposition } from "../composition/conversationActivity.js";
+import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
+import { ConversationOwnershipService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
@@ -244,6 +259,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
     logger,
   });
+  const teammateLabels = createTeammateLabelReader({ users: repositories.userRepository });
+  const conversationActivity = createConversationActivityComposition({
+    store: repositories.conversationActivityRepository,
+    teammateLabels,
+    messages: repositories.messageRepository,
+  });
   const chat = buildChatServices({
     accountAccessService: access.accountAccessService,
     agentRetrievalScope,
@@ -253,6 +274,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     composition,
+    conversationActivity,
     conversationOwnershipRepository: repositories.conversationOwnershipRepository,
     conversationRepository: repositories.conversationRepository,
     clusteringEmbeddings: embeddingPorts,
@@ -288,6 +310,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ingestionSettingsService: settings.ingestionSettingsService,
     routineTriggerEmbeddingService,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
+    teammateLabels,
   });
   const skillCatalog = buildSkillCatalogServices({
     accessGrantService: access.accessGrantService,
@@ -361,22 +384,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentReader: { get: agentService.get.bind(agentService) },
     agentSkillsReader: { list: agentSkillsService.list.bind(agentSkillsService) },
   });
-  const testExecutionService = new TestExecutionService({
-    revisions: repositories.testExecutionRepository,
-    contextCatalog: contextVariableRepository,
-    repository: repositories.testExecutionRepository,
-    runner: new TrustedTestExecutionRunnerAdapter({
-      replay: chat.workbenchReplayRunner,
-      liveAgentConfig: createLiveAgentConfigReader({ agentRepository: repositories.agentRepository }),
-      revisions: repositories.testExecutionRepository,
-      bootstrap: chat.chatBootstrapService,
-    }),
-    seedSource: chat.testExecutionSeedSource,
-    usageLimitPolicy: infrastructure.usageLimitPolicy,
-    audit: infrastructure.auditService,
-    logger,
-    createId: randomUUID,
-  });
 
   // Lazy-loaded crawler utility provider for EE agent wizard, also reused by
   // the connector ingestion port for HTML-to-text normalisation.
@@ -422,6 +429,28 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     // check instead of once per routine (item 8 of the routine-lifecycle-collapse review).
     validateManyForServing: routineDefinitionService.validateManyForServing.bind(routineDefinitionService),
   });
+  const testExecutionService = new TestExecutionService({
+    revisions: repositories.testExecutionRepository,
+    // The agents module owns which revision a test runs when the caller names none.
+    defaultRevision: { resolveDefault: ({ workspaceId, agentId }) => agentRevisionService.resolveDefaultTestRevision(workspaceId, agentId) },
+    contextCatalog: contextVariableRepository,
+    repository: repositories.testExecutionRepository,
+    runner: new TrustedTestExecutionRunnerAdapter({
+      replay: chat.workbenchReplayRunner,
+      liveAgentConfig: createLiveAgentConfigReader({ agentRepository: repositories.agentRepository }),
+      revisions: repositories.testExecutionRepository,
+      bootstrap: chat.chatBootstrapService,
+    }),
+    seedSource: chat.testExecutionSeedSource,
+    usageLimitPolicy: infrastructure.usageLimitPolicy,
+    audit: infrastructure.auditService,
+    logger,
+    createId: randomUUID,
+  });
+  const operatorIdentityResolver = new OperatorIdentityResolver({
+    users: repositories.userRepository,
+    accounts: repositories.accountRepository,
+  });
   const evalServices = buildEvalServices({
     chat,
     infrastructure,
@@ -446,9 +475,36 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalSuiteService,
     operatorReplyService,
   } = evalServices;
+  const conversationOperatorDirectory = createConversationOperatorDirectory({ accountAccess: access.accountAccessService });
+  const conversationOwnershipService = new ConversationOwnershipService({
+    conversations: repositories.conversationRepository,
+    ownership: repositories.conversationOwnershipRepository,
+    changes: createPostgresOwnershipChangeUnitOfWork({
+      db: infrastructure.database.kysely,
+      activity: conversationActivity.recorder,
+      actionDrain: chat.actionDrainDispatcher,
+      logger,
+      errorReporter: infrastructure.errorReportingService,
+    }),
+    replyWrites: createPostgresOwnershipReplyUnitOfWork({
+      db: infrastructure.database.kysely,
+      activity: conversationActivity.recorder,
+      actionDrain: chat.actionDrainDispatcher,
+      logger,
+      errorReporter: infrastructure.errorReportingService,
+    }),
+    operators: conversationOperatorDirectory,
+    operatorIdentities: operatorIdentityResolver,
+    replies: operatorReplyService,
+    audit: infrastructure.auditService,
+    publisher: realtimePublisherComposition.publisher,
+    logger,
+    errorReporter: infrastructure.errorReportingService,
+  });
   const qualitySignalsService = new QualityTurnsService(
     infrastructure.database.kysely,
     new SkillCatalogOutcomeSource(skillCatalogService),
+    conversationActivity.recorder,
     undefined,
     {
       getByAssistantMessageIds: (workspaceId, assistantMessageIds) =>
@@ -524,8 +580,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     buildStepScopeTag: scopeTag.step,
   });
   const copilotProposalAdapters = [
-    createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
-    createAgentSettingCopilotProposalAdapter({ agentService }),
+    createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
+    createAgentSettingCopilotProposalAdapter({ agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
     createAgentGreetingCopilotProposalAdapter({ agentService, agentRevisions: agentRevisionService }),
     createAgentCopilotProposalAdapter({
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
@@ -558,8 +614,18 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       documentDeletion: documents.documentDeletionService,
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
     }),
-    createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService }),
-    createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService, createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository })) }),
+    createDocumentReviewedOperationAdapter({
+      operations: new DocumentReviewedOperationService(
+        repositories.documentRepository,
+        documents.documentIngestionService,
+        documents.documentDeletionService,
+        infrastructure.documentCapacityReader,
+        documents.documentSourceReprocessService,
+        documents.workspaceIngestionReprocessService,
+      ),
+    }),
+    createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
+    createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService) }),
     createWebsiteCrawlCopilotProposalAdapter({
       websiteCrawl: { assertCrawlUrlAllowed: assertPublicWebsiteUrl, normalizeCrawlUrl: normalizeBaseUrl, enqueue: documents.websiteCrawlJobService.enqueue.bind(documents.websiteCrawlJobService) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
@@ -660,6 +726,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       },
     },
   });
+  const testChatService = new TestChatService({
+    executions: testExecutionService,
+    createId: randomUUID,
+    abuseControl: chat.abuseControlService,
+    audit: infrastructure.auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
   const evalCaseCaptureService = new EvalCaseCaptureService({
     messageCases: evalMessageCaseService,
     audit: infrastructure.auditService,
@@ -741,6 +817,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       ? registration({ database: infrastructure.database, logger, auditService: infrastructure.auditService })
       : registration);
   const copilotToolCatalog = createCopilotToolCatalog({
+    appBaseUrl: env.APP_BASE_URL,
     toolContributions: copilotToolContributions,
     agentService: {
       get: agentService.get.bind(agentService),
@@ -755,6 +832,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatHistoryService: chat.chatHistoryService,
     agentTurnProbe: agentTurnProbeService,
     documentSearchService: retrieval.documentSearchService,
+    documentInventory: {
+      listInventoryForWorkspace: documents.documentIngestionService.listInventoryForWorkspace.bind(documents.documentIngestionService),
+    },
     documentChunks: repositories.chunkRepository,
     documentMaintenance: {
       reprocessDocument: documents.documentIngestionService.reprocessEligible.bind(documents.documentIngestionService),
@@ -767,6 +847,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalSuiteProbe: evalSuiteProbeService,
     evalCaseReplay: evalCaseReplayService,
     retrievalProbe: retrievalProbeService,
+    testChat: testChatService,
     websiteAnalysisProbe: websiteAnalysisProbeService,
     proposalEvidence: {
       evidence: copilotReplayEvidenceRepository,
@@ -829,7 +910,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     routines: {
       findCreateConflict: routineDefinitionService.findCreateConflict.bind(routineDefinitionService),
       get: routineDefinitionService.get.bind(routineDefinitionService),
-      validate: routineDefinitionService.validate.bind(routineDefinitionService),
+      validateForDraftMutation: routineDefinitionService.validateForDraftMutation.bind(routineDefinitionService),
     },
     scopedReferences: scopedRoutineReferences,
     reviewedProposalExecution: {
@@ -843,6 +924,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
         return operatorCopilotService.getMcpReviewedProposal(input);
       },
+      isDashboardReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot proposal service is not initialized");
+        return operatorCopilotService.isDashboardReviewedProposal(input);
+      },
     },
     cancelReviewedProposal: {
       cancelMcpReviewedProposal: async (input) => {
@@ -850,7 +935,25 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         return operatorCopilotService.cancelMcpReviewedProposal(input);
       },
     },
+    proposalDetail: {
+      getProposalDetail: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot proposal service is not initialized");
+        return operatorCopilotService.getProposalDetail(input);
+      },
+    },
     retrievalAuthoring,
+    agentSettings: agentService,
+    ingestionSettings: settings.ingestionSettingsService,
+    directiveAuthor: directiveAuthorService,
+    directives: authoredDirectiveService,
+    documents: new DocumentReviewedOperationService(
+      repositories.documentRepository,
+      documents.documentIngestionService,
+      documents.documentDeletionService,
+      infrastructure.documentCapacityReader,
+      documents.documentSourceReprocessService,
+      documents.workspaceIngestionReprocessService,
+    ),
     logger,
   });
   const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
@@ -863,6 +966,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     prompt: copilotPrompt,
     tools: copilotToolCatalog,
     probeBudgetPerTurn: env.COPILOT_PROBE_BUDGET_PER_TURN,
+    appBaseUrl: env.APP_BASE_URL,
+    reviewedGrantClient: new OperatorMcpAuthorizationRepository(infrastructure.database.kysely),
+    reviewedApprovalMetrics: infrastructure.metricsRegistry,
+    logger,
     currentAuthorization: {
       hasAllPermissions: ({ workspaceId, accountId, operatorUserId, requiredPermissions }) =>
         access.accountAccessService.hasAllWorkspacePermissions({
@@ -925,6 +1032,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     mcpConnectionRepository,
     externalSkillDefinitionRepository,
   });
+  // Shared by the agent-facing catalog route and the public discovery documents, which
+  // describe the same published release and must not drift apart.
+  const agentDiscoveryRevisionReader = new AgentRevisionRuntimeRepository(infrastructure.database.kysely);
+  const agentToolCatalog = createAgentToolCatalogComposition({
+    agentRepository: repositories.agentRepository,
+    agentRevisionReader: agentDiscoveryRevisionReader,
+  });
   return {
     env,
     logger,
@@ -958,6 +1072,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     accountInvitationService: access.accountInvitationService,
     apiPrincipalAuthenticator: access.apiPrincipalAuthenticator,
     apiPrincipalRouteInventory,
+    requestSource: requestSourceDigestPort,
     machineAccessSecurityObserver: access.machineAccessSecurityObserver,
     credentialExpiryWarningLifecycle: access.credentialExpiryWarningLifecycle,
     personalCredentialService: access.personalCredentialService,
@@ -1012,11 +1127,20 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentStorage: documents.documentStorage,
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
-    operatorReplyService,
+    conversationOwnershipService,
+    conversationOperatorDirectory,
+    conversationActivityReads: conversationActivity.reads,
     workbenchReplayRunner: chat.workbenchReplayRunner,
     testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,
     agentStarterPromptReader: chat.agentStarterPromptReader,
+    agentToolCatalog,
+    agentPublicProfile: createAgentPublicProfileComposition({
+      agentRepository: repositories.agentRepository,
+      agentRevisionReader: agentDiscoveryRevisionReader,
+      agentToolCatalog,
+      mcpBaseUrl: env.PUBLIC_MCP_CONVERSE_URL,
+    }),
     chatHistoryService: chat.chatHistoryService,
     assistantChatService: chat.assistantChatService,
     assistantHistoryService: chat.assistantHistoryService,
@@ -1055,7 +1179,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     identityNonceRepository: repositories.identityNonceRepository,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     conversationRepository: repositories.conversationRepository,
-    conversationOwnershipRepository: repositories.conversationOwnershipRepository,
     messageRepository: repositories.messageRepository,
     connectorRegistry,
     connectorManagementService,

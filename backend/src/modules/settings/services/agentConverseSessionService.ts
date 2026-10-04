@@ -1,7 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
-
 import { AppError, serviceUnavailable } from "../../../shared/domain/errors.js";
-import type { AccessGrant, AccessGrantEvaluation } from "../../accessGrants/public.js";
+import type { AccessGrant } from "../../accessGrants/public.js";
 import type { AccessGrantService } from "../../accessGrants/public.js";
 import { AGENT_CONVERSE_PERMISSIONS } from "../../account/public.js";
 import {
@@ -12,9 +10,18 @@ import {
 import type {
   AgentConverseAgentLookupPort,
   AgentConversePrincipal,
+  AgentConverseOriginVerifier,
+  AgentConverseSessionExchangeInput,
   AgentConverseSessionExchangeResult,
   AgentConverseSessionMappingPort,
+  AgentConverseWalkInIssuerPort,
+  AgentConverseWalkInObserver,
 } from "../contracts/agentConverseSession.js";
+import {
+  openGrantExchangeOrigin,
+  openWalkInExchangeOrigin,
+  type ConverseExchangeOrigin,
+} from "./converseExchangeOrigins.js";
 
 interface AgentConverseAuditPort {
   recordExchangeDenied(input: { grant?: AccessGrant | null; reason: string; clientName?: string | null }): Promise<void>;
@@ -25,111 +32,56 @@ interface AgentConverseAuditPort {
 const converseError = (statusCode: number, code: string, message: string) =>
   new AppError(statusCode, statusCode === 401 ? "unauthorized" : "forbidden", message, { code });
 
-const grantVersion = (grant: Pick<AccessGrant, "id" | "tokenHash">): string =>
-  createHash("sha256").update(`${grant.id}:${grant.tokenHash}`).digest("base64url");
-
-const denialCode = (evaluation: AccessGrantEvaluation): string => {
-  if (evaluation.allowed) {
-    return "allowed";
-  }
-  if (evaluation.reason === "revoked") {
-    return "grant_revoked";
-  }
-  return `grant_${evaluation.reason}`;
-};
-
 export class AgentConverseSessionService {
   constructor(
     private readonly dependencies: {
       accessGrantService: Pick<
         AccessGrantService,
-        "resolveConverseGrant" | "resolvePublicLaunchGrant" | "findGrantById" | "evaluate" | "touchGrant" | "recordAuthFailure"
+        "resolveConverseGrant" | "resolvePublicLaunchGrant" | "evaluate" | "touchGrant" | "recordAuthFailure"
       >;
       agentLookup: AgentConverseAgentLookupPort;
       sessionMapping: AgentConverseSessionMappingPort;
+      originVerifier: AgentConverseOriginVerifier;
+      walkInIssuer?: AgentConverseWalkInIssuerPort;
+      walkInObserver?: AgentConverseWalkInObserver;
       publicChatSessionSecret?: string;
       audit?: AgentConverseAuditPort;
     },
   ) {}
 
-  async exchange(input: { launchToken: string; client?: { name?: string; version?: string } }): Promise<AgentConverseSessionExchangeResult> {
-    if (!this.dependencies.publicChatSessionSecret) {
+  async exchange(input: AgentConverseSessionExchangeInput): Promise<AgentConverseSessionExchangeResult> {
+    const secret = this.dependencies.publicChatSessionSecret;
+    if (!secret) {
       throw serviceUnavailable("MCP converse sessions are not configured.", {
         missingEnv: "PUBLIC_CHAT_SESSION_SECRET",
       });
     }
 
-    const wrongPublicGrant = await this.dependencies.accessGrantService.resolvePublicLaunchGrant(input.launchToken);
-    if (wrongPublicGrant) {
-      await this.dependencies.audit?.recordExchangeDenied({
-        grant: wrongPublicGrant,
-        reason: "grant_channel_not_allowed",
-        clientName: input.client?.name,
-      });
-      throw converseError(403, "grant_channel_not_allowed", "This launch token is not valid for MCP converse.");
-    }
+    const issued = "publicId" in input
+      ? await this.openWalkIn(input.publicId, input.sourceDigest)
+      : await openGrantExchangeOrigin(
+        {
+          accessGrantService: this.dependencies.accessGrantService,
+          agentLookup: this.dependencies.agentLookup,
+          sessionMapping: this.dependencies.sessionMapping,
+          audit: this.dependencies.audit,
+          refuse: converseError,
+        },
+        { launchToken: input.launchToken, client: input.client },
+      );
 
-    const grant = await this.dependencies.accessGrantService.resolveConverseGrant(input.launchToken);
-    if (!grant) {
-      await this.dependencies.audit?.recordExchangeDenied({
-        reason: "invalid_converse_grant",
-        clientName: input.client?.name,
-      });
-      throw converseError(401, "invalid_converse_grant", "Invalid MCP converse grant.");
-    }
-
-    const evaluation = this.dependencies.accessGrantService.evaluate(grant, {});
-    if (!evaluation.allowed) {
-      await this.dependencies.accessGrantService.recordAuthFailure({
-        grant,
-        reason: evaluation.reason,
-        surface: "mcp-converse",
-      });
-      await this.dependencies.audit?.recordExchangeDenied({
-        grant,
-        reason: denialCode(evaluation),
-        clientName: input.client?.name,
-      });
-      throw converseError(403, denialCode(evaluation), "MCP converse grant is not active.");
-    }
-
-    const agent = await this.dependencies.agentLookup.findByIdAndWorkspaceId(grant.agentId, grant.workspaceId);
-    if (!agent) {
-      await this.dependencies.audit?.recordExchangeDenied({
-        grant,
-        reason: "agent_unavailable",
-        clientName: input.client?.name,
-      });
-      throw converseError(403, "agent_unavailable", "The bound agent is unavailable.");
-    }
-
-    const version = grantVersion(grant);
-    const publicSessionId = await this.dependencies.sessionMapping.resolvePublicSessionId({
-      grantId: grant.id,
-      grantVersion: version,
-      proposedPublicSessionId: randomUUID(),
-    });
-    const session = issueConverseChatSession(this.dependencies.publicChatSessionSecret, {
-      workspaceId: grant.workspaceId,
-      agentId: grant.agentId,
-      publicSessionId,
-      grantId: grant.id,
-      grantVersion: version,
-    });
-    await this.dependencies.audit?.recordExchangeSucceeded({
-      grant,
-      publicSessionId: session.publicSessionId,
-      clientName: input.client?.name,
+    const session = issueConverseChatSession(secret, {
+      workspaceId: issued.workspaceId,
+      agentId: issued.agentId,
+      publicSessionId: issued.publicSessionId,
+      origin: issued.origin,
     });
 
     return {
       ...this.toPrincipal(session),
       sessionToken: session.token,
       expiresAt: session.expiresAt,
-      agent: {
-        id: agent.id,
-        name: agent.name,
-      },
+      agent: issued.agent,
     };
   }
 
@@ -140,42 +92,28 @@ export class AgentConverseSessionService {
       throw converseError(401, "invalid_session", "Invalid MCP converse session.");
     }
 
-    const grant = await this.dependencies.accessGrantService.findGrantById(payload.grantId);
-    if (!grant) {
-      await this.dependencies.audit?.recordValidationDenied({ payload, reason: "grant_revoked" });
-      throw converseError(403, "grant_revoked", "MCP converse grant is no longer active.");
-    }
-    if (grant.principalKind !== "agent-api" || grant.channel !== "mcp-converse") {
-      await this.dependencies.audit?.recordValidationDenied({ grant, payload, reason: "grant_channel_not_allowed" });
-      throw converseError(403, "grant_channel_not_allowed", "MCP converse grant channel is not allowed.");
-    }
-    if (grant.workspaceId !== payload.workspaceId || grant.agentId !== payload.agentId) {
-      await this.dependencies.audit?.recordValidationDenied({ grant, payload, reason: "grant_rotated" });
-      throw converseError(403, "grant_rotated", "MCP converse grant changed.");
-    }
-
-    const evaluation = this.dependencies.accessGrantService.evaluate(grant, {});
-    if (!evaluation.allowed) {
-      await this.dependencies.accessGrantService.recordAuthFailure({
-        grant,
-        reason: evaluation.reason,
-        surface: "mcp-converse",
-      });
-      await this.dependencies.audit?.recordValidationDenied({ grant, payload, reason: denialCode(evaluation) });
-      throw converseError(403, denialCode(evaluation), "MCP converse grant is no longer active.");
-    }
-
-    if (payload.grantVersion !== grantVersion(grant)) {
-      await this.dependencies.audit?.recordValidationDenied({ grant, payload, reason: "grant_rotated" });
-      throw converseError(403, "grant_rotated", "MCP converse grant changed.");
+    // One call, whatever issued the session: the adapter behind this port owns both the
+    // re-check and its own audit trail, so nothing here switches on the origin kind.
+    const revalidation = await this.dependencies.originVerifier.revalidate({
+      origin: payload.origin,
+      workspaceId: payload.workspaceId,
+      agentId: payload.agentId,
+    });
+    if (!revalidation.ok) {
+      throw converseError(revalidation.statusCode, revalidation.code, revalidation.message);
     }
 
     return this.toPrincipal(payload);
   }
 
-  recordSuccessfulUse(principal: Pick<AgentConversePrincipal, "grantId">): void {
+  recordSuccessfulUse(principal: Pick<AgentConversePrincipal, "origin">): void {
+    if (principal.origin.kind !== "grant") {
+      // A walk-in session has no credential whose last use could be recorded.
+      return;
+    }
+    const { grantId } = principal.origin;
     try {
-      void Promise.resolve(this.dependencies.accessGrantService.touchGrant(principal.grantId)).catch(() => undefined);
+      void Promise.resolve(this.dependencies.accessGrantService.touchGrant(grantId)).catch(() => undefined);
     } catch {
       // Last-use metadata must never change the completed request outcome.
     }
@@ -185,13 +123,25 @@ export class AgentConverseSessionService {
     return [...AGENT_CONVERSE_PERMISSIONS];
   }
 
+  private async openWalkIn(publicId: string, sourceDigest?: string): Promise<ConverseExchangeOrigin> {
+    const walkInIssuer = this.dependencies.walkInIssuer;
+    if (!walkInIssuer) {
+      throw serviceUnavailable("MCP walk-in access is not configured.", {
+        code: "mcp_converse_walk_in_unavailable",
+      });
+    }
+    return openWalkInExchangeOrigin(
+      { walkInIssuer, observer: this.dependencies.walkInObserver, refuse: converseError },
+      { publicId, sourceDigest },
+    );
+  }
+
   private toPrincipal(payload: ConverseChatSessionPayload): AgentConversePrincipal {
     return {
       workspaceId: payload.workspaceId,
       agentId: payload.agentId,
       publicSessionId: payload.publicSessionId,
-      grantId: payload.grantId,
-      grantVersion: payload.grantVersion,
+      origin: payload.origin,
       sourceChannel: "mcp",
       sourceOrigin: null,
       authPrincipal: {

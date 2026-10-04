@@ -100,8 +100,12 @@ export default function WorkspaceDashboardPage() {
     }
   }, [parsedRoute])
 
+  // The route resolves against who is signed in, so an edit that replaces the
+  // user object — a renamed profile, a name learned in the background — leaves it be.
+  const signedInAccountId = user?.accountId ?? null
+  const signedInEmail = user?.email ?? null
   useEffect(() => {
-    if (isBootstrapping || !user || !workspaceKey || !parsedRoute) {
+    if (isBootstrapping || !signedInAccountId || !signedInEmail || !workspaceKey || !parsedRoute) {
       return
     }
 
@@ -113,7 +117,7 @@ export default function WorkspaceDashboardPage() {
         if (cancelled) return
         const pendingAccountSwitchId = getPendingAccountSwitchId()
 
-        if (resolved.accountId !== user.accountId) {
+        if (resolved.accountId !== signedInAccountId) {
           if (pendingAccountSwitchId && pendingAccountSwitchId !== resolved.accountId) {
             return
           }
@@ -121,7 +125,7 @@ export default function WorkspaceDashboardPage() {
           const response = await accountApi.switchAccount(resolved.accountId, resolved.workspaceId)
           if (cancelled) return
           seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-          await login(user.email, response.userId, response.accountId, response.organizationName)
+          await login({ ...response, email: signedInEmail })
         } else {
           seedWorkspaceSession(resolved.workspaceId, resolved.workspaceKey)
         }
@@ -152,7 +156,7 @@ export default function WorkspaceDashboardPage() {
 
     void resolveRoute()
     return () => { cancelled = true }
-  }, [isBootstrapping, login, parsedRoute, router, user, workspaceKey])
+  }, [isBootstrapping, login, parsedRoute, router, signedInAccountId, signedInEmail, workspaceKey])
 
   useEffect(() => {
     if (!canonicalHref || !isCanonicalizing) {

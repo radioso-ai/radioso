@@ -7,18 +7,20 @@ import type {
 } from "../../../shared/infra/llm/providerTypes.js";
 import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import type { SteeringRule } from "../../../shared/domain/steeringRule.js";
+import type { RoutinePendingStep, SteeringRule } from "../../../shared/domain/steeringRule.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import { resolveChatLocale } from "./chatLocale.js";
-import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
+import { appendRoutineLeadBack, appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 
 export interface FallbackReplyInput {
   query: string;
   userExpectedLocale?: string | null;
   answerInstructionBlock?: string;
   steering?: SteeringRule[];
+  /** The step a routine that yielded this turn still waits on; the decline closes by pointing back to it. */
+  pendingRoutineStep?: RoutinePendingStep;
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext: ChatGatewayUsageContext;
   signal?: AbortSignal;
@@ -144,13 +146,17 @@ const readComposedDecline = (raw: string | undefined): ComposedDecline => {
 };
 
 const buildGroundedMissSystemPrompt = (input: FallbackReplyInput): string =>
-  appendSteeringBlock(
-    renderPromptTemplate("chat/grounded-miss.md", {
-      decline_rules: loadPromptTemplate("chat/grounded-decline-rules.md"),
-      locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
-      answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
-    }),
+  appendRoutineLeadBack(
+    appendSteeringBlock(
+      renderPromptTemplate("chat/grounded-miss.md", {
+        decline_rules: loadPromptTemplate("chat/grounded-decline-rules.md"),
+        locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
+        answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
+      }),
+      input.steering,
+    ),
     input.steering,
+    input.pendingRoutineStep,
   );
 
 export class ModelFallbackReplyComposer implements FallbackReplyComposer {

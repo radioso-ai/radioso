@@ -1,4 +1,7 @@
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
+import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
+import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
+import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
 import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { setTimeout as delay } from "node:timers/promises";
@@ -7,6 +10,9 @@ import request from "supertest";
 import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
 import { createMailAccountInvitationNotifier } from "../../src/app/composition/accountInvitationNotifier.js";
+import { createConversationOperatorDirectory } from "../../src/app/composition/conversationOperatorDirectory.js";
+import { createTeammateLabelReader } from "../../src/app/composition/teammateLabelReader.js";
+import { createConversationActivityComposition } from "../../src/app/composition/conversationActivity.js";
 import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
@@ -47,6 +53,7 @@ import {
   AgentService,
   AgentSurfaceExtensionRegistry,
   AuthoredDirectiveService,
+  createRoutineScopedReferenceGuard,
   DirectiveAuthorService,
   serializeAuthoredDirectivesWithIds,
   type AgentRecord,
@@ -55,9 +62,9 @@ import {
 } from "../../src/modules/agents/public.js";
 import type { TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
 import type { RevisionEvalRunService } from "../../src/modules/eval/services/revisionEvalRun.js";
-import { ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService, selectCanonicalRoutineDefinitions } from "../../src/modules/routines/public.js";
+import { createAgentToolCatalog, createDirectInvocationTurnPorts, createRoutineTurnReporter, ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService, selectCanonicalRoutineDefinitions, type AgentToolCatalogPort } from "../../src/modules/routines/public.js";
 import { InMemoryAgentRevisionRepository } from "./agentRevisionFakes.js";
-import { toDefaultRetrieveSkillConfig } from "../../src/db/repositories/agentRepository.js";
+import { toDefaultRetrieveSkillConfig, type AgentRepositoryPort } from "../../src/db/repositories/agentRepository.js";
 import {
   type ComposedDecline,
   type FallbackReplyComposer,
@@ -65,6 +72,7 @@ import {
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import { DocumentReviewedOperationService } from "../../src/modules/documents/services/documentReviewedOperationService.js";
 import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
 import { DocumentSearchHistoryService } from "../../src/modules/documents/services/documentSearchHistoryService.js";
 import { DocumentSearchService } from "../../src/modules/documents/services/documentSearchService.js";
@@ -164,8 +172,13 @@ import { InMemoryWebhookSkillDefinitionRepository } from "./inMemoryWebhookSkill
 import { InMemorySlackSkillDefinitionRepository } from "./inMemorySlackSkillDefinitions.js";
 import { InMemoryAgentSkillRepository } from "./inMemoryAgentSkills.js";
 import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
-import { OperatorReplyService } from "../../src/modules/handoff/public.js";
-import { AgentSkillsService } from "../../src/modules/agentSkills/public.js";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import {
+  ConversationOwnershipService,
+  OperatorIdentityResolver,
+  OperatorReplyService,
+} from "../../src/modules/handoff/public.js";
+import { AgentRetrievalAuthoringService, AgentSkillsService } from "../../src/modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../src/modules/skills/capabilityRegistry.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import {
@@ -188,6 +201,7 @@ import {
   EvalSuiteProbeService,
   OperatorCopilotService,
   RetrievalProbeService,
+  TestChatService,
   type CopilotReplayEvidenceRecord,
   type CopilotReplayEvidenceRepositoryPort,
 } from "../../src/modules/operatorCopilot/public.js";
@@ -214,6 +228,7 @@ import type { AppDependencies } from "../../src/app/server/types.js";
 import type { RealtimeRolloutPolicy } from "../../src/modules/realtime/domain/realtimeRolloutPolicy.js";
 import { badRequest, conflict, notFound } from "../../src/shared/domain/errors.js";
 import { apiPrincipalRouteInventory } from "../../src/app/http/apiPrincipalRoutePolicy.js";
+import { requestSourceDigestPort } from "../../src/app/http/middleware/requestSource.js";
 import type {
   AgentContextVariableEnablement,
   ContextVariable,
@@ -244,7 +259,7 @@ import {
   createSystemRetrievalDefaultsProvider,
 } from "../../src/app/composition/index.js";
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
-import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
+import { NoopDocumentCapacityReadPort, NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import { NoopManagedModelPolicy, type ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
 import { WorkspaceLlmCapabilityResolver } from "../../src/app/composition/workspaceLlmCapabilityResolver.js";
 import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
@@ -292,6 +307,8 @@ import {
   InMemoryIngestionSettingsRepository,
   InMemoryHistoryItemsRepository,
   InMemoryMessageRepository,
+  InMemoryActionOutbox,
+  InMemoryConversationActivityStore,
   InMemoryConversationOwnershipRepository,
   InMemoryRetrievalSettingsRepository,
   InMemoryFederatedIdentityRepository,
@@ -320,7 +337,6 @@ import {
 export const createTestEnv = (): Env => ({
   NODE_ENV: "test",
   PORT: 8080,
-  TRUST_PROXY_HOPS: 0,
   RADIOSO_RELEASE: "development",
   RADIOSO_COMMIT: "unknown",
   OBSERVABILITY_ENABLED: true,
@@ -418,6 +434,7 @@ export const createTestEnv = (): Env => ({
   SLACK_OAUTH_CLIENT_SECRET: undefined,
   SLACK_SIGNING_SECRET: undefined,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
+  PUBLIC_MCP_CONVERSE_URL: "https://mcp.radioso.test/mcp",
   RADIOSO_EDITION: "oss",
   RADIOSO_APPLICATION_MODULES: undefined,
 });
@@ -435,6 +452,8 @@ interface TestRepositories {
   conversationRepository: InMemoryConversationRepository;
   visitorRepository: InMemoryVisitorProfileRepository;
   conversationOwnershipRepository: InMemoryConversationOwnershipRepository;
+  conversationActivity: InMemoryConversationActivityStore;
+  actionOutbox: InMemoryActionOutbox;
   messageRepository: InMemoryMessageRepository;
   agentRepository: InMemoryAgentRepository;
   agentRevisionRepository: InMemoryAgentRevisionRepository;
@@ -454,40 +473,45 @@ const appRevisionFixtures = new WeakMap<object, PublishedTestAgentRevisionReader
  * selected-release reads without making chat fall back to mutable authoring rows.
  */
 class PublishedTestAgentRevisionReader implements AgentRevisionRuntimeReaderPort {
-  private readonly revisions = new Map<string, AgentRevision>();
+  /** The current release per agent; every earlier release stays readable by id, as in Postgres. */
+  private readonly current = new Map<string, AgentRevision>();
+  private readonly revisionsById = new Map<string, { agentKey: string; revision: AgentRevision }>();
 
   constructor(
     private readonly contextVariables?: Pick<ContextVariableRepositoryPort, "listByAgent">,
   ) {}
 
-  async publish(agent: AgentRecord): Promise<AgentRevision> {
+  async publish(agent: AgentRecord, snapshot: { routines?: AgentRevision["snapshot"]["routines"] } = {}): Promise<AgentRevision> {
+    const agentKey = this.key(agent.workspaceId, agent.id);
+    const previous = this.current.get(agentKey) ?? null;
     const revision: AgentRevision = {
       id: randomUUID(),
       snapshot: {
         customInstruction: agent.customInstruction,
         directives: agent.authoredDirectives ?? [],
-        routines: [],
+        routines: snapshot.routines ?? [],
         contextVariableEnablements: this.contextVariables
           ? await this.contextVariables.listByAgent(agent.workspaceId, agent.id)
           : [],
       },
-      sourceDraftGeneration: 1,
-      sourceBasePublishedRevisionId: null,
+      sourceDraftGeneration: (previous?.sourceDraftGeneration ?? 0) + 1,
+      sourceBasePublishedRevisionId: previous?.id ?? null,
       createdAt: new Date(),
       publishedAt: new Date(),
-      publishedVersion: 1,
+      publishedVersion: (previous?.publishedVersion ?? 0) + 1,
     };
-    this.revisions.set(this.key(agent.workspaceId, agent.id), revision);
+    this.current.set(agentKey, revision);
+    this.revisionsById.set(revision.id, { agentKey, revision });
     return revision;
   }
 
   async findCurrentPublished(input: { workspaceId: string; agentId: string }): Promise<AgentRevision | null> {
-    return this.revisions.get(this.key(input.workspaceId, input.agentId)) ?? null;
+    return this.current.get(this.key(input.workspaceId, input.agentId)) ?? null;
   }
 
   async findRevision(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<AgentRevision | null> {
-    const revision = this.revisions.get(this.key(input.workspaceId, input.agentId));
-    return revision?.id === input.revisionId ? revision : null;
+    const stored = this.revisionsById.get(input.revisionId);
+    return stored?.agentKey === this.key(input.workspaceId, input.agentId) ? stored.revision : null;
   }
 
   private key(workspaceId: string, agentId: string): string {
@@ -507,8 +531,23 @@ class TestFallbackReplyComposer implements FallbackReplyComposer {
 class InMemoryRoutineStateStore implements ConversationRoutineStore {
   readonly states = new Map<string, RoutineState>();
 
+  // Mirrors the Postgres store (routineStateRepository.ts): an active lookup never
+  // returns a suspended instance, which only the suspended reader sees.
   async loadActive({ sessionId }: { sessionId: string }): Promise<RoutineState | null> {
-    return this.states.get(sessionId) ?? null;
+    const state = this.states.get(sessionId);
+    return state?.status === "active" ? state : null;
+  }
+
+  async loadSuspended({ sessionId }: { sessionId: string }): Promise<RoutineState | null> {
+    const state = this.states.get(sessionId);
+    return state?.status === "suspended" ? state : null;
+  }
+
+  // Mirrors the Postgres store: a completed instance is what reentry and the
+  // activator's suppression list see on the next turn (one row per session).
+  async loadCompleted({ sessionId }: { sessionId: string }): Promise<RoutineState[]> {
+    const state = this.states.get(sessionId);
+    return state?.status === "completed" ? [state] : [];
   }
 
   async save(state: RoutineState): Promise<void> {
@@ -783,6 +822,11 @@ export const createTestDependencies = (overrides: {
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   realtimeRolloutPolicy?: RealtimeRolloutPolicy;
   testExecutionService?: TestExecutionService;
+  /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
+  agentToolCatalog?: (readers: {
+    agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
+    agentRevisionReader: AgentRevisionRuntimeReaderPort;
+  }) => AgentToolCatalogPort;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories; routineStateStore: InMemoryRoutineStateStore; directiveStateStore: InMemoryDirectiveStateStore; publishedAgentRevisions: PublishedTestAgentRevisionReader } => {
   const env = {
     ...createTestEnv(),
@@ -862,7 +906,16 @@ export const createTestDependencies = (overrides: {
   const documentStorage = new InMemoryDocumentStorage();
   const conversationRepository = new InMemoryConversationRepository();
   const conversationOwnershipRepository = new InMemoryConversationOwnershipRepository();
+  const conversationActivity = new InMemoryConversationActivityStore(
+    async (conversationId) => conversationRepository.items.get(conversationId)?.title ?? null,
+  );
   conversationRepository.setOwnershipReader(conversationOwnershipRepository);
+  const actionOutbox = new InMemoryActionOutbox();
+  const operatorIdentityResolver = new OperatorIdentityResolver({
+    users: userRepository,
+    accounts: accountRepository,
+  });
+  const conversationOperatorDirectory = createConversationOperatorDirectory({ accountAccess: accountAccessService });
   // Visitor resolution itself is exercised against real Postgres in
   // tests/integration/visitor-resolver.integration.test.ts; this fake only lets a contract
   // test seed a visitor row directly so it can assert the operator-facing read surface
@@ -1672,9 +1725,12 @@ export const createTestDependencies = (overrides: {
     skillCatalog: skillCatalogService,
     externalSkills: externalSkillDefinitionService,
   });
+  const actionComposition = createDefaultApplicationComposition({ logger });
   const routineDefinitionService = new RoutineDefinitionService({
     agentRepository,
     repository: routineDefinitionRepository,
+    actionCapabilities: actionComposition.routineActionCapabilityMap,
+    hostQueuedActionTypes: chatTurnQueuedActionTypes(actionComposition.actionHandlerRegistrations),
     skillAuthoringCatalog,
     contextVariableReader: contextVariableService,
     webhookDestinations: {
@@ -1684,8 +1740,8 @@ export const createTestDependencies = (overrides: {
     auditService,
   });
   // Real routine-servability wiring (matches src/app/server/dependencies.ts): a candidate or
-  // publish call rejects an enabled routine whose skill/capability/webhook reference cannot
-  // serve, on top of the repository's own structural (directive-scope) gate.
+  // publish call rejects an enabled routine whose skill, capability, webhook, or action reference
+  // cannot serve, on top of the repository's own structural (directive-scope) gate.
   const agentRevisionService = new AgentRevisionService(agentRevisionRepository, randomUUID, {
     validateForServing: routineDefinitionService.validateForServing.bind(routineDefinitionService),
   });
@@ -1726,6 +1782,12 @@ export const createTestDependencies = (overrides: {
     parse: (value: unknown) => value,
   });
 
+  const teammateLabels = createTeammateLabelReader({ users: userRepository });
+  const conversationActivityReads = createConversationActivityComposition({
+    store: conversationActivity,
+    teammateLabels,
+    messages: messageRepository,
+  }).reads;
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
     messageRepository,
@@ -1736,6 +1798,8 @@ export const createTestDependencies = (overrides: {
     conversationOwnershipRepository,
     undefined,
     visitorRepository,
+    teammateLabels,
+    conversationActivityReads,
   );
   const routineStateStore = new InMemoryRoutineStateStore();
   const directiveStateStore = new InMemoryDirectiveStateStore();
@@ -1772,35 +1836,51 @@ export const createTestDependencies = (overrides: {
     },
   });
   const staticRoutineRegistrations: RoutineRegistration[] = [];
+  const loadTurnRoutineRegistrations = async (agentId: string, pinnedRoutineIds: string[]) => {
+    let publishedRegistrations: RoutineRegistration[];
+    try {
+      publishedRegistrations = await publishedRoutineSource.load({ agentId });
+    } catch (error) {
+      logger.warn(
+        {
+          agentId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "Published routine definitions failed to load; continuing without DB-backed routines",
+      );
+      publishedRegistrations = [];
+    }
+    let pinnedRegistrations: RoutineRegistration[];
+    try {
+      pinnedRegistrations = await publishedRoutineSource.loadPinned({ agentId, routineIds: pinnedRoutineIds });
+    } catch (error) {
+      logger.warn(
+        {
+          agentId,
+          routineIds: pinnedRoutineIds,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "Pinned routine definitions failed to load; continuing without resume-only DB-backed routines",
+      );
+      pinnedRegistrations = [];
+    }
+    return { publishedRegistrations, pinnedRegistrations };
+  };
   const routineProvider: ChatRoutineProvider = {
-    async forTurn({ modelGateway, agentId, pinnedRoutineIds = [], responseLanguage, groundedAnswerRenderer }) {
-      let publishedRegistrations: RoutineRegistration[];
-      try {
-        publishedRegistrations = await publishedRoutineSource.load({ agentId });
-      } catch (error) {
-        logger.warn(
-          {
-            agentId,
-            err: error instanceof Error ? error.message : String(error),
-          },
-          "Published routine definitions failed to load; continuing without DB-backed routines",
-        );
-        publishedRegistrations = [];
+    async reporterFor({ agentId, pinnedRoutineIds = [], routineInvocation }) {
+      const { publishedRegistrations, pinnedRegistrations } = await loadTurnRoutineRegistrations(agentId, pinnedRoutineIds);
+      const routinesById = new Map([...staticRoutineRegistrations, ...publishedRegistrations, ...pinnedRegistrations]
+        .map((registration) => [registration.routine.id, registration.routine]));
+      if (routinesById.size === 0) {
+        return null;
       }
-      let pinnedRegistrations: RoutineRegistration[];
-      try {
-        pinnedRegistrations = await publishedRoutineSource.loadPinned({ agentId, routineIds: pinnedRoutineIds });
-      } catch (error) {
-        logger.warn(
-          {
-            agentId,
-            routineIds: pinnedRoutineIds,
-            err: error instanceof Error ? error.message : String(error),
-          },
-          "Pinned routine definitions failed to load; continuing without resume-only DB-backed routines",
-        );
-        pinnedRegistrations = [];
-      }
+      // Mirrors the production provider: a bypassed turn's activator never runs, so a tool call started nothing.
+      return createRoutineTurnReporter([...routinesById.values()], routineInvocation
+        ? { invocation: { toolName: routineInvocation.toolName, outcome: () => null } }
+        : {});
+    },
+    async forTurn({ modelGateway, agentId, pinnedRoutineIds = [], routineInvocation, responseLanguage, groundedAnswerRenderer }) {
+      const { publishedRegistrations, pinnedRegistrations } = await loadTurnRoutineRegistrations(agentId, pinnedRoutineIds);
       const routineRegistry = new RoutineRegistry([
         ...staticRoutineRegistrations,
         ...publishedRegistrations,
@@ -1813,21 +1893,38 @@ export const createTestDependencies = (overrides: {
       if (routineRegistry.isEmpty && routines.length === 0) {
         return null;
       }
+      const runner = new DefaultRoutineRunner(
+        routines,
+        new RoutineNextStepSelector(modelGateway, {
+          promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
+        }),
+        new RoutineStepRenderer(modelGateway, {
+          promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+          responseLanguage,
+          groundedAnswerRenderer,
+        }),
+      );
+      if (routineInvocation) {
+        // Same port pairing production uses (routines/exposure/directInvocationTurn.ts).
+        const direct = createDirectInvocationTurnPorts({
+          registrations: [...staticRoutineRegistrations, ...publishedRegistrations, ...pinnedRegistrations],
+          routines,
+          invocation: routineInvocation,
+        });
+        return {
+          reporter: direct.reporter,
+          activator: direct.activator,
+          reentryGate: direct.reentryGate,
+          slotCorrection: direct.slotCorrection,
+          runner,
+        };
+      }
       return {
+        reporter: createRoutineTurnReporter(routines),
         activator: routineRegistry.isEmpty
           ? { activate: async () => null }
           : routineRegistry.activator(modelGateway),
-        runner: new DefaultRoutineRunner(
-          routines,
-          new RoutineNextStepSelector(modelGateway, {
-            promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
-          }),
-          new RoutineStepRenderer(modelGateway, {
-            promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
-            responseLanguage,
-            groundedAnswerRenderer,
-          }),
-        ),
+        runner,
       };
     },
   };
@@ -1841,6 +1938,7 @@ export const createTestDependencies = (overrides: {
       chatGateway,
       fallbackReplyComposer,
       skillOutcomeCapabilities: createSkillOutcomeCapabilityProvider(skillCatalogRegistry),
+      metrics: metricsRegistry,
     }),
     productAnalyticsService,
     workspaceRepository,
@@ -1852,6 +1950,8 @@ export const createTestDependencies = (overrides: {
     turnRouter,
     conversationEngine: createConversationEngine(),
     routineStore: routineStateStore,
+    // Mirror production wiring: a suspended routine bypasses the routine attempt.
+    suspendedRoutineReader: routineStateStore,
     routineProvider,
     // Mirror production wiring (dependencyBuilders): a real route-scoped directive
     // runtime so authored directives are matchable in integration tests. Built-in
@@ -1872,6 +1972,8 @@ export const createTestDependencies = (overrides: {
     conversationTurnRegistry: new InMemoryConversationTurnRegistry(
       new LoggingConversationTurnInterruptionObserver(logger, metricsRegistry),
     ),
+    // Mirror production wiring: a human-owned conversation suppresses the agent's turn.
+    conversationOwnershipReader: conversationOwnershipRepository,
     logger,
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -1931,11 +2033,38 @@ export const createTestDependencies = (overrides: {
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
   const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const operatorReplyService = new OperatorReplyService({
-    conversationRepository,
-    messageRepository,
     auditService,
     publicConversationEventBus,
-    customerReplyDelivery: { deliver: async () => {} },
+    customerReplyDelivery: { route: async () => null },
+    logger,
+  });
+  const workspaceInvalidationPublisher: WorkspaceInvalidationPublisher = {
+    enqueue: () => ({ accepted: false, reason: "disabled" }),
+  };
+  const conversationOwnershipService = new ConversationOwnershipService({
+    conversations: conversationRepository,
+    ownership: conversationOwnershipRepository,
+    // The in-memory stores have no transactions; atomicity is covered against Postgres.
+    changes: {
+      run: (work) => work({ ownership: conversationOwnershipRepository, outbox: actionOutbox, activity: conversationActivity.writer() }),
+    },
+    replyWrites: {
+      run: (work) => work({
+        conversations: {
+          lockForUpdate: async (conversationId, workspaceId) =>
+            (await conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId)) !== null,
+        },
+        ownership: conversationOwnershipRepository,
+        reply: { messages: messageRepository, conversations: conversationRepository, outbox: actionOutbox },
+        activity: conversationActivity.writer(),
+      }),
+    },
+    operators: conversationOperatorDirectory,
+    operatorIdentities: operatorIdentityResolver,
+    replies: operatorReplyService,
+    audit: auditService,
+    publisher: workspaceInvalidationPublisher,
+    logger,
   });
   const agentRetrievalScope = createAgentRetrievalScopeResolver({ agentRepository });
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, agentRetrievalScope);
@@ -1948,6 +2077,16 @@ export const createTestDependencies = (overrides: {
   });
   const retrievalProbeService = new RetrievalProbeService({
     retrievalSearch: retrievalSearchService,
+    abuseControl: abuseControlService,
+    audit: auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
+  const testChatService = new TestChatService({
+    executions: testExecutionService,
+    createId: randomUUID,
     abuseControl: abuseControlService,
     audit: auditService,
     abusePolicy: {
@@ -1974,6 +2113,7 @@ export const createTestDependencies = (overrides: {
         throw new Error("approval_resume_not_configured");
       },
     },
+    conversationActivity,
     {
       resolveWorkspaceRole: (caller) => accountAccessService.resolveWorkspaceRole(caller),
     },
@@ -2067,7 +2207,7 @@ export const createTestDependencies = (overrides: {
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
     }),
     createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: ingestionSettingsService }),
-    createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService, createCopilotWorkspaceAccountResolver({ workspaceRepository })) }),
+    createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService) }),
     createAgentCopilotProposalAdapter({
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
@@ -2098,6 +2238,16 @@ export const createTestDependencies = (overrides: {
     runtime: new DefaultAgentRuntime({ gateway: new TextRoutedToolCallingGateway(chatInferencePipeline) }),
   });
   const copilotPrompt = loadPromptTemplate("copilot/system.md");
+  const scopedRoutineReferences = createRoutineScopedReferenceGuard({
+    listDirectiveTags: async ({ workspaceId, agentId }) =>
+      (await authoredDirectiveService.list(workspaceId, agentId)).map((directive) => directive.tags),
+    buildStepScopeTag: scopeTag.step,
+  });
+  const retrievalAuthoring = new AgentRetrievalAuthoringService({
+    agentSkills: agentSkillsService,
+    defaults: retrievalDefaultsProvider,
+    documentSources: documentSourceRepository,
+  });
   const copilotToolCatalog = createCopilotToolCatalog({
     agentService: {
       get: agentService.get.bind(agentService),
@@ -2112,8 +2262,12 @@ export const createTestDependencies = (overrides: {
     chatHistoryService,
     agentTurnProbe: agentTurnProbeService,
     retrievalProbe: retrievalProbeService,
+    testChat: testChatService,
     websiteAnalysisProbe: websiteAnalysisProbeService,
     documentSearchService,
+    documentInventory: {
+      listInventoryForWorkspace: documentIngestionService.listInventoryForWorkspace.bind(documentIngestionService),
+    },
     documentChunks: chunkRepository,
     documentMaintenance: {
       reprocessDocument: documentIngestionService.reprocessEligible.bind(documentIngestionService),
@@ -2214,8 +2368,44 @@ export const createTestDependencies = (overrides: {
     auditService,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
+    revisions: agentRevisionService,
+    routines: {
+      get: routineDefinitionService.get.bind(routineDefinitionService),
+      validate: routineDefinitionService.validate.bind(routineDefinitionService),
+    },
+    scopedReferences: scopedRoutineReferences,
+    reviewedProposalExecution: {
+      executeMcpReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
+        return operatorCopilotService.executeMcpReviewedProposal(input);
+      },
+    },
+    reviewedProposalOutcome: {
+      getMcpReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
+        return operatorCopilotService.getMcpReviewedProposal(input);
+      },
+    },
+    cancelReviewedProposal: {
+      cancelMcpReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
+        return operatorCopilotService.cancelMcpReviewedProposal(input);
+      },
+    },
+    retrievalAuthoring,
+    documents: new DocumentReviewedOperationService(
+      documentRepository,
+      documentIngestionService,
+      documentDeletionService,
+      new NoopDocumentCapacityReadPort(),
+      documentSourceReprocessService,
+      workspaceIngestionReprocessService,
+    ),
   });
-  const operatorCopilotService = new OperatorCopilotService({
+  // `copilotToolCatalog` and `operatorCopilotService` are mutually dependent (its reviewed-proposal
+  // tools call back into this service; the service runs the tools), so the closures above reference
+  // this `const` ahead of its declaration, mirroring production wiring in `app/server/dependencies.ts`.
+  const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
     repository: copilotRepository,
     capabilityRunner: copilotCapabilityRunner,
     usageLimitPolicy,
@@ -2289,12 +2479,27 @@ export const createTestDependencies = (overrides: {
     mcpConnectionRepository,
     externalSkillDefinitionRepository,
   });
+  // By default the same live definitions the test routine provider activates from, so
+  // the catalog a calling agent reads matches what a tool call can admit; a test may
+  // compose the production reader over the published-revision fixture instead.
+  const agentToolCatalog = overrides.agentToolCatalog?.({ agentRepository, agentRevisionReader: publishedAgentRevisions })
+    ?? createAgentToolCatalog({
+      agents: {
+        find: async ({ workspaceId, agentId }) => {
+          const agent = await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+          return agent ? { name: agent.name, description: null } : null;
+        },
+      },
+      publishedRoutines: {
+        listPublished: ({ agentId }) => routineDefinitionRepository.listActiveByAgent(agentId),
+      },
+    });
   const dependencies: AppDependencies = {
     env,
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
     agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,
-    workspaceInvalidationPublisher: { enqueue: () => ({ accepted: false, reason: "disabled" }) },
+    workspaceInvalidationPublisher,
     conversationLinks: { resolve: async () => null },
     realtimePublisherLifecycle: { shutdown: async () => undefined },
     credentialExpiryWarningLifecycle,
@@ -2360,6 +2565,7 @@ export const createTestDependencies = (overrides: {
     authService,
     apiPrincipalAuthenticator,
     apiPrincipalRouteInventory,
+    requestSource: requestSourceDigestPort,
     personalCredentialService,
     serviceAccountService,
     accessGrantService,
@@ -2422,7 +2628,9 @@ export const createTestDependencies = (overrides: {
     documentStorage,
     chatService,
     approvalDecisionService,
-    operatorReplyService,
+    conversationOwnershipService,
+    conversationOperatorDirectory,
+    conversationActivityReads,
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
     revisionEvalRunService,
@@ -2456,6 +2664,13 @@ export const createTestDependencies = (overrides: {
     }),
     chatBootstrapService,
     agentStarterPromptReader,
+    agentToolCatalog,
+    agentPublicProfile: createAgentPublicProfileComposition({
+      agentRepository,
+      agentRevisionReader: publishedAgentRevisions,
+      agentToolCatalog,
+      mcpBaseUrl: env.PUBLIC_MCP_CONVERSE_URL,
+    }),
     chatHistoryService,
     assistantChatService,
     assistantHistoryService,
@@ -2487,7 +2702,6 @@ export const createTestDependencies = (overrides: {
     identityNonceRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,
-    conversationOwnershipRepository,
     messageRepository,
     connectorRegistry,
     connectorManagementService: new ConnectorManagementService({
@@ -2535,6 +2749,8 @@ export const createTestDependencies = (overrides: {
       conversationRepository,
       visitorRepository,
       conversationOwnershipRepository,
+      conversationActivity,
+      actionOutbox,
       messageRepository,
       agentRepository,
       agentRevisionRepository,
@@ -2570,6 +2786,7 @@ export const createTestApp = (overrides: {
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   realtimeRolloutPolicy?: RealtimeRolloutPolicy;
   testExecutionService?: TestExecutionService;
+  agentToolCatalog?: NonNullable<Parameters<typeof createTestDependencies>[0]>["agentToolCatalog"];
 } = {}) => {
   const {
     dependencies,
@@ -2667,13 +2884,16 @@ export const issueTestSession = async (
 /** Explicitly publishes the current immutable baseline for a contract-test agent. */
 export const publishTestAgentBaseline = async (
   app: ReturnType<typeof createTestApp>["app"],
-  input: { workspaceId: string; agentId?: string },
+  input: { workspaceId: string; agentId?: string; routines?: AgentRevision["snapshot"]["routines"] },
 ): Promise<AgentRevision> => {
   const [dependencies, revisions] = [appDependencyMap.get(app), appRevisionFixtures.get(app)];
   if (!dependencies || !revisions) {
     throw new Error("Test app revision fixture was not registered");
   }
-  return revisions.publish(await dependencies.agentService.resolve(input.workspaceId, input.agentId));
+  return revisions.publish(
+    await dependencies.agentService.resolve(input.workspaceId, input.agentId),
+    { routines: input.routines },
+  );
 };
 
 export const adminSessionHeaders = (session: { cookie: string; workspaceId: string }) => ({

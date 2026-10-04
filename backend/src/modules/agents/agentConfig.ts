@@ -1,4 +1,5 @@
 import { GENERATION_SURFACE, type GenerationSurface } from "../../shared/domain/generationSurface.js";
+import { unpublishedAgentPublicIdentity } from "./domain.js";
 import type {
   AgentLogo,
   AgentSourceScope,
@@ -895,6 +896,12 @@ export const materializeAgentFromConfig = (
     surfaceSettings: cloneJson(config.surfaceSettings),
     skillSettings: retrievalAnswer.skillSettings,
     chatModelOverride: config.chatModelOverride ? cloneJson(config.chatModelOverride) : null,
+    // An agent's public identity stays out of the portable config. `publicId` is workspace-scoped
+    // and globally unique, so it can no more travel in a bundle than `id` can; the two flags open
+    // a public door, and a bundle import is the wrong moment to open one on a workspace that did
+    // not ask. A materialized agent is therefore always an unpublished one, and an operator turns
+    // discovery on where the agent now lives.
+    ...unpublishedAgentPublicIdentity(),
     authoredDirectives: materializeAuthoredDirectives(config.authoredDirectives, identity),
     createdAt: new Date(INTERNAL_CONFIG_DATE.getTime()),
     updatedAt: new Date(INTERNAL_CONFIG_DATE.getTime()),

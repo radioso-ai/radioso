@@ -15,6 +15,7 @@ import {
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
+  type CopilotProposalAdapter,
   type CopilotProposalDraft,
   type CopilotProposalApplyClaimGuard,
   type CopilotProposalClaim,
@@ -27,6 +28,11 @@ import { createDirectiveProposalCopilotTools } from "../../../src/modules/operat
 import { createRoutineProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
 import { citedProposalEvidence } from "../../../src/modules/operatorCopilot/tools/shared.js";
 import { createAgentPublicationProposalAdapter } from "../../../src/modules/operatorCopilot/agentPublicationProposalAdapter.js";
+import { createCancelReviewedProposalTool } from "../../../src/modules/operatorCopilot/tools/cancelReviewedProposal.js";
+import { createReviewedProposalOutcomeTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalOutcome.js";
+import { REVIEWED_OPERATION_NOT_FOUND } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
+import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
+import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
 import { conflict } from "../../../src/shared/domain/errors.js";
 
 const workspaceId = randomUUID();
@@ -75,6 +81,16 @@ const proposalOriginFields = (input: CopilotProposalDraft) => {
     origin,
     conversationId: origin.type === "conversation" ? origin.conversationId : null,
     operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null,
+    executionInvocationId: null,
+    reviewDigest: input.reviewDigest ?? null,
+    reviewSnapshot: input.reviewSnapshot ?? null,
+    expiresAt: input.expiresAt ?? null,
+    confirmationRequirement: input.confirmationRequirement ?? null,
+    changeEffect: input.changeEffect ?? null,
+    approvedAt: null,
+    approvedByUserId: null,
+    approvalDigest: null,
+    reason: null,
   };
 };
 
@@ -219,7 +235,7 @@ describe("US3 copilot proposals", () => {
           readVersionToken: vi.fn(async () => "directive-version"),
           preview: vi.fn(),
           applyIfVersionMatches: vi.fn(),
-          draft: vi.fn(async () => ({ payload: { name: "Avoid competitors" }, targetLabel: "Avoid competitors", summary: "Draft directive" })),
+          draft: vi.fn(async () => ({ payload: { name: "Avoid competitors" }, targetLabel: "Avoid competitors", summary: "Draft directive", versionToken: "directive-version" })),
         },
         {
           targetType: "agent_setting",
@@ -240,6 +256,7 @@ describe("US3 copilot proposals", () => {
       { name: "propose_directive_enablement", shape: "propose" },
       { name: "propose_routine", shape: "propose" },
       { name: "propose_routine_edit", shape: "propose" },
+      { name: "propose_routine_exposure", shape: "propose" },
       { name: "propose_agent_setting", shape: "propose" },
     ]);
 
@@ -249,6 +266,45 @@ describe("US3 copilot proposals", () => {
     expect(createProposal).toHaveBeenCalledTimes(2);
     expect(createProposal.mock.calls[0]?.[0]).toMatchObject({ targetType: "directive", targetRef: { agentId, directiveId }, versionToken: "directive-version" });
     expect(createProposal.mock.calls[1]?.[0]).toMatchObject({ targetType: "agent_setting", targetRef: { agentId, settingKey: "retrievalEnabled" }, versionToken: "agent-version" });
+  });
+
+  it("forwards structured directive fields unchanged to the owner adapter", async () => {
+    const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({ id: randomUUID(), ...input, ...proposalOriginFields(input), messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date() }));
+    const draft = vi.fn(async () => ({
+      payload: { name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", priority: 85, excludes: ["represent-organization"] },
+      targetLabel: "quote-primary-source",
+      summary: "quote-primary-source",
+      versionToken: "draft-snapshot-version",
+    }));
+    const readVersionToken = vi.fn(async () => "later-version");
+    const descriptors = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+      proposalAdapters: [{ targetType: "directive", readVersionToken, draft, preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+    const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const fields = { name: "quote-primary-source", condition: { kind: "always" as const }, action: "Quote first.", priority: 85, excludes: ["represent-organization"] };
+
+    await descriptors.find((descriptor) => descriptor.name === "propose_directive")?.createTool(context).invoke(fields, {} as never);
+
+    expect(draft).toHaveBeenCalledWith(workspaceId, { agentId, directiveId: null }, fields);
+    expect(readVersionToken).not.toHaveBeenCalled();
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({ versionToken: "draft-snapshot-version" }));
+  });
+
+  it("bounds structured directive priority and replacement names in the input schema", () => {
+    const descriptor = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), draft: vi.fn(async () => ({ payload: { name: "quote-primary-source" }, targetLabel: "quote-primary-source", summary: "quote-primary-source", versionToken: "directive-version" })), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    }).find((candidate) => candidate.name === "propose_directive")!;
+
+    expect(descriptor.inputSchema.safeParse({ name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", priority: 101 }).success).toBe(false);
+    expect(descriptor.inputSchema.safeParse({ name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", excludes: Array.from({ length: 101 }, (_, index) => `directive-${index}`) }).success).toBe(false);
   });
 
   it("creates a reversible directive enablement proposal after reading its version first", async () => {
@@ -420,7 +476,7 @@ describe("US3 copilot proposals", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
-    const draft = vi.fn(async () => ({ payload: { name: "Avoid competitors" }, targetLabel: "Avoid competitors", summary: "Draft directive" }));
+    const draft = vi.fn(async () => ({ payload: { name: "Avoid competitors" }, targetLabel: "Avoid competitors", summary: "Draft directive", versionToken: "directive-version" }));
     const [descriptor] = createDirectiveProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
@@ -597,6 +653,27 @@ describe("US3 copilot proposals", () => {
     expect(applyIfVersionMatches).toHaveBeenCalledOnce();
   });
 
+  it("keeps an interrupted dashboard apply's start when authority is revoked after the reclaim", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 });
+    repository.expireApplyClaim(proposal.id);
+    const applyIfVersionMatches = vi.fn();
+    const service = new OperatorCopilotService({
+      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, tools: [],
+      currentAuthorization: { hasAllPermissions: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false) },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
+    });
+
+    await expect(service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
+      .rejects.toBeInstanceOf(CopilotAuthorizationError);
+
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+    // The next claim still sees the interrupted attempt's lapsed start, not the denied reclaim's own.
+    const next = await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 });
+    expect(next?.previousAttemptStartedAt?.getTime()).toBeLessThan(Date.now() - 300_000);
+  });
+
   it("settles an interrupted MCP apply from the owner receipt without repeating the mutation", async () => {
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
@@ -640,7 +717,7 @@ describe("US3 copilot proposals", () => {
     repository.expireApplyClaim(proposal.id);
     const recoveredClaim = (await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 }))!;
     const publish = vi.fn(async () => ({ publicationId: randomUUID(), revisionId: candidateRevisionId, publishedAt: new Date(), idempotentReplay: true }));
-    const adapter = createAgentPublicationProposalAdapter({ revisions: { state: vi.fn(), detail: vi.fn(), publish } });
+    const adapter = createAgentPublicationProposalAdapter({ revisions: { state: vi.fn(), detail: vi.fn(), publish, createCandidate: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn() } });
     const service = new OperatorCopilotService({
       repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [], proposalAdapters: [adapter],
     });
@@ -691,8 +768,9 @@ describe("US3 copilot proposals", () => {
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
     const applyIfVersionMatches = vi.fn();
+    const logger = { warn: vi.fn() };
     const service = new OperatorCopilotService({
-      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
+      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [], logger,
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
     });
     const originalClaim = repository.claimMcpReviewedProposalApply.bind(repository);
@@ -710,7 +788,42 @@ describe("US3 copilot proposals", () => {
 
     expect(applyIfVersionMatches).not.toHaveBeenCalled();
     expect(repository.hasApplyClaim(proposal.id)).toBe(false);
-    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+    // Nothing was applied, so no receipt needs to reconcile it: a retry under any receipt may claim.
+    await expect(repository.findProposal({ id: proposal.id, workspaceId, operatorUserId })).resolves.toMatchObject({ status: "pending", executionInvocationId: null });
+    // An authorization refusal is not an unconfirmed owner effect - the claim releases cleanly, so
+    // there is nothing here for support to correlate.
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("keeps an interrupted MCP apply bound to its receipt when authorization is revoked after the reclaim", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const claimInput = { proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", workspaceId, operatorUserId, grantId: "grant-1", clientId: "client-1", now: new Date(), claimTtlSeconds: 300 };
+    await repository.claimMcpReviewedProposalApply(claimInput);
+    repository.expireApplyClaim(proposal.id);
+    const reclaimed = await repository.claimMcpReviewedProposalApply(claimInput);
+    if (reclaimed.status !== "claimed") throw new Error(`expected claim, got ${reclaimed.status}`);
+    const interruptedAt = reclaimed.claim.previousAttemptStartedAt;
+    expect(interruptedAt).not.toBeNull();
+    const reconcileMcpInterruptedApply = vi.fn();
+    const applyIfVersionMatches = vi.fn();
+    const service = new OperatorCopilotService({
+      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, tools: [],
+      currentAuthorization: { hasAllPermissions: vi.fn(async () => false) },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches, reconcileMcpInterruptedApply }],
+    });
+
+    await expect(service.executeClaimedProposal({
+      input: { surface: "mcp", workspaceId, accountId, operatorUserId, proposalId: proposal.id }, claim: reclaimed.claim, executionInvocationId: "execution-1",
+    })).rejects.toBeInstanceOf(CopilotAuthorizationError);
+
+    expect(reconcileMcpInterruptedApply).not.toHaveBeenCalled();
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+    // The interrupted attempt may have landed: only its receipt may reconcile it, and the next
+    // reclaim must still see that attempt rather than apply as if it were the first.
+    await expect(repository.findProposal({ id: proposal.id, workspaceId, operatorUserId })).resolves.toMatchObject({ status: "pending", executionInvocationId: "execution-1" });
+    const next = await repository.claimMcpReviewedProposalApply(claimInput);
+    expect(next).toMatchObject({ status: "claimed", claim: { previousAttemptStartedAt: interruptedAt } });
   });
 
   it("allows cancellation for a proposal that has not reserved an MCP receipt", async () => {
@@ -722,7 +835,7 @@ describe("US3 copilot proposals", () => {
 
   it("does not cancel a reviewed MCP proposal when request authorization is revoked while its receipt is read", async () => {
     const repository = new MemoryProposalRepository();
-    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const proposal = await createMcpReviewedProposal(repository);
     const originalFind = repository.findMcpReviewedProposal.bind(repository);
     let authorized = true;
     vi.spyOn(repository, "findMcpReviewedProposal").mockImplementation(async (input) => {
@@ -730,17 +843,267 @@ describe("US3 copilot proposals", () => {
       authorized = false;
       return found;
     });
-    const service = new OperatorCopilotService({
-      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
-      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
-    });
+    const service = reviewedOperationService(repository);
 
     await expect(service.cancelMcpReviewedProposal({
-      workspaceId, accountId, operatorUserId, grantId: "grant-1", clientId: "client-1", proposalId: proposal.id,
+      workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id,
       currentAuthorization: { hasAllPermissions: vi.fn(async () => authorized) },
     })).rejects.toBeInstanceOf(CopilotAuthorizationError);
 
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+  });
+
+  it("reports a reviewed MCP proposal that is already cancelled as dismissed without dismissing it again", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const audit = auditService();
+    const service = reviewedOperationService(repository, audit);
+    const cancel = () => service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization });
+
+    await expect(cancel()).resolves.toEqual({ status: "dismissed" });
+    const cancelPendingProposal = vi.spyOn(repository, "cancelPendingProposal");
+    await expect(cancel()).resolves.toEqual({ status: "dismissed" });
+
+    expect(cancelPendingProposal).not.toHaveBeenCalled();
+    expect(audit.record).toHaveBeenCalledOnce();
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.dismissed" }));
+  });
+
+  it("refuses to report an already-cancelled reviewed proposal to a caller whose authorization is denied", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const service = reviewedOperationService(repository);
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization })).resolves.toEqual({ status: "dismissed" });
+    const denied = { hasAllPermissions: vi.fn(async () => false) };
+
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization: denied }))
+      .rejects.toBeInstanceOf(CopilotAuthorizationError);
+    expect(denied.hasAllPermissions).toHaveBeenCalledOnce();
+  });
+
+  it("finds a reviewed proposal to cancel only through the grant and client that prepared it", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const service = reviewedOperationService(repository);
+
+    for (const binding of [{ ...mcpBinding, clientId: "client-2" }, { ...mcpBinding, grantId: "grant-2" }]) {
+      await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...binding, proposalId: proposal.id, currentAuthorization }))
+        .resolves.toEqual({ status: "not_found" });
+    }
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+  });
+
+  it("finds no bound reviewed operation for a propose_*-style proposal, which never carries a review digest", async () => {
+    const repository = new MemoryProposalRepository();
+    const preparationId = randomUUID();
+    repository.bindMcpPreparation(preparationId, mcpBinding);
+    const proposal = await repository.createProposal({
+      workspaceId, operatorUserId, origin: { type: "operator_mcp_invocation", invocationId: preparationId }, targetType: "directive", targetRef: { agentId, directiveId },
+      payload: { name: "Updated" }, versionToken: "current", evidence: null,
+    });
+    const service = reviewedOperationService(repository);
+
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization }))
+      .resolves.toEqual({ status: "dashboard_reviewed" });
+  });
+
+  /** Grants exactly the listed permissions; every other `requiredPermissions` check fails. */
+  const authorizedFor = (granted: readonly string[]) => ({
+    hasAllPermissions: vi.fn(async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) =>
+      requiredPermissions.every((permission) => granted.includes(permission))),
+  });
+  const dashboardProposalContext = (granted: readonly string[]) => ({
+    workspaceId, accountId, operatorUserId, surface: "mcp" as const,
+    operatorMcpGrantId: mcpBinding.grantId, operatorMcpClientId: mcpBinding.clientId,
+    currentAuthorization: authorizedFor(granted),
+    pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+  });
+  const createDashboardDocumentProposal = (repository: MemoryProposalRepository) => repository.createProposal({
+    workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "document", targetRef: { documentId: null },
+    payload: { op: "create", name: "Handbook", content: "Operator-readable document text" }, versionToken: "create", evidence: null,
+  });
+  const dashboardReviewedMessage = "This is a dashboard-reviewed proposal. Read it with proposal_detail.";
+
+  it("through the MCP catalog, tells reviewed_proposal_outcome apart from a propose_document proposal only for a caller who can read documents", async () => {
+    const repository = new MemoryProposalRepository();
+    const documentProposal = await createDashboardDocumentProposal(repository);
+    const service = reviewedOperationService(repository);
+    const descriptor = {
+      ...createReviewedProposalOutcomeTool({
+        getMcpReviewedProposal: service.getMcpReviewedProposal.bind(service),
+        isDashboardReviewedProposal: service.isDashboardReviewedProposal.bind(service),
+      }),
+      mcpDisposition: { status: "eligible" as const, inputStrategy: "explicit" as const, scope: "operator:write" as const, retry: { effect: "none" as const, idempotent: true, operationIdentity: "client" as const } },
+    };
+    const catalog = new OperatorMcpCatalogService([descriptor]);
+    const invoke = (context: ReturnType<typeof dashboardProposalContext>) => catalog.invoke({
+      name: "reviewed_proposal_outcome", arguments: { proposalId: documentProposal.id }, context, scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(1_000),
+    });
+
+    // Holds the tool's own gate (workspace.agents.manage) but not the document target's read
+    // permission: this id must read as unknown, not as "a dashboard-reviewed proposal exists here".
+    await expect(invoke(dashboardProposalContext(["workspace.agents.manage"])))
+      .rejects.toMatchObject({ statusCode: 404, message: REVIEWED_OPERATION_NOT_FOUND });
+    // Holding the document target's read permission earns the diagnosable refusal instead.
+    await expect(invoke(dashboardProposalContext(["workspace.agents.manage", "workspace.documents.read"])))
+      .rejects.toMatchObject({ statusCode: 400, message: dashboardReviewedMessage });
+  });
+
+  it("through the MCP catalog, tells cancel_reviewed_proposal apart from a propose_document proposal only for a caller who can read documents", async () => {
+    const repository = new MemoryProposalRepository();
+    const documentProposal = await createDashboardDocumentProposal(repository);
+    const service = reviewedOperationService(repository);
+    const descriptor = {
+      ...createCancelReviewedProposalTool({ cancelMcpReviewedProposal: service.cancelMcpReviewedProposal.bind(service) }),
+      mcpDisposition: { status: "eligible" as const, inputStrategy: "explicit" as const, scope: "operator:write" as const, retry: { effect: "act" as const, idempotent: true, operationIdentity: "client" as const } },
+    };
+    const catalog = new OperatorMcpCatalogService([descriptor]);
+    const invoke = (context: ReturnType<typeof dashboardProposalContext>) => catalog.invoke({
+      name: "cancel_reviewed_proposal", arguments: { proposalId: documentProposal.id }, context, scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(1_000),
+    });
+
+    await expect(invoke(dashboardProposalContext(["workspace.agents.manage"])))
+      .rejects.toMatchObject({ statusCode: 404, message: REVIEWED_OPERATION_NOT_FOUND });
+    await expect(invoke(dashboardProposalContext(["workspace.agents.manage", "workspace.documents.read"])))
+      .rejects.toMatchObject({ statusCode: 400, message: dashboardReviewedMessage });
+  });
+
+  it("reports a cancellation that lost its race to a concurrent cancellation as dismissed", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const audit = auditService();
+    const service = reviewedOperationService(repository, audit);
+    const concurrentCancel = repository.cancelPendingProposal.bind(repository);
+    vi.spyOn(repository, "cancelPendingProposal").mockImplementationOnce(async (input) => {
+      await concurrentCancel(input);
+      return null;
+    });
+
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization }))
+      .resolves.toEqual({ status: "dismissed" });
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it("keeps refusing a cancellation that lost its race to a reviewed execution", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const service = reviewedOperationService(repository);
+    vi.spyOn(repository, "cancelPendingProposal").mockResolvedValueOnce(null);
+
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization }))
+      .resolves.toEqual({ status: "not_cancellable" });
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+  });
+
+  it("does not report an applied reviewed proposal's state to a caller whose current authorization is denied", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
+    const service = reviewedOperationService(repository, auditService(), applyIfVersionMatches);
+    await expect(service.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", currentAuthorization }))
+      .resolves.toMatchObject({ status: "applied" });
+    const denied = { hasAllPermissions: vi.fn(async () => false) };
+
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization: denied }))
+      .rejects.toBeInstanceOf(CopilotAuthorizationError);
+  });
+
+  it.each([
+    [{ status: "settled", outcome: "stale", appliedRef: null }, { status: "stale" }],
+    [{ status: "settled", outcome: "failed", appliedRef: null, reason: "target unavailable" }, { status: "failed", reason: "target unavailable" }],
+    [{ status: "settled", outcome: "applied", appliedRef: { directiveId: "directive-1" } }, { status: "applied", appliedRef: { directiveId: "directive-1" } }],
+  ] as const)("answers a receipt its reviewed execution already settled with that outcome (%o)", async (claimed, expected) => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const applyIfVersionMatches = vi.fn();
+    const service = reviewedOperationService(repository, auditService(), applyIfVersionMatches);
+    vi.spyOn(repository, "claimMcpReviewedProposalApply").mockResolvedValueOnce(claimed);
+
+    await expect(service.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", currentAuthorization }))
+      .resolves.toEqual(expected);
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+  });
+
+  it("answers a receipt whose apply claim is still held with the unconfirmed outcome its first attempt reported", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const applyIfVersionMatches = vi.fn(async () => { throw new Error("owner response lost"); });
+    const service = reviewedOperationService(repository, auditService(), applyIfVersionMatches);
+    const execute = () => service.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", currentAuthorization });
+    const first = await execute();
+    expect(first).toMatchObject({ status: "uncertain" });
+    vi.spyOn(repository, "claimMcpReviewedProposalApply").mockResolvedValueOnce({ status: "claim_held" });
+
+    await expect(execute()).resolves.toEqual(first);
+    expect(applyIfVersionMatches).toHaveBeenCalledOnce();
+  });
+
+  // An adapter proves a deterministic owner refusal wrote nothing before it ever reports `failed`
+  // (see the routine/skill/publication adapters' own classification). The service's only job here
+  // is to trust that proof the same way it already trusts a dashboard `failed`: settle the
+  // proposal durably so a retry of the same receipt replays the outcome instead of asking again.
+  it("settles a deterministic owner refusal as failed on a reviewed MCP execution", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "failed" as const, reason: "The routine references a capability the workspace no longer grants." }));
+    const service = reviewedOperationService(repository, auditService(), applyIfVersionMatches);
+
+    await expect(service.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", currentAuthorization }))
+      .resolves.toEqual({ status: "failed", reason: "The routine references a capability the workspace no longer grants." });
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("failed");
+  });
+
+  it("logs an unconfirmed MCP apply exactly once when the adapter throws", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const thrown = new Error("owner response lost");
+    const applyIfVersionMatches = vi.fn(async () => { throw thrown; });
+    const logger = { warn: vi.fn() };
+    const service = reviewedOperationService(repository, auditService(), applyIfVersionMatches, { logger });
+
+    await expect(service.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", currentAuthorization }))
+      .resolves.toMatchObject({ status: "uncertain" });
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ proposalId: proposal.id, executionInvocationId: "execution-1", err: thrown }), expect.any(String));
+  });
+
+  it("answers uncertain, not a thrown conflict, when settling a reviewed MCP apply loses its outcome race", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
+    const logger = { warn: vi.fn() };
+    const service = reviewedOperationService(repository, auditService(), applyIfVersionMatches, { logger });
+    // A concurrent settlement of the same receipt (e.g. another replica racing this retry) can win
+    // the compare-and-set before this attempt's own recordOutcome does, so the CAS write finds
+    // nothing left to update and the row it re-reads does not match what this attempt just applied.
+    // That is a lost race, not a caller mistake, and the MCP edge cannot act on a thrown conflict --
+    // it must see the same schema-valid `uncertain` answer an adapter exception already produces.
+    vi.spyOn(repository, "updateProposalOutcome").mockResolvedValueOnce(null);
+
+    await expect(service.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", currentAuthorization }))
+      .resolves.toEqual({ status: "uncertain", reason: expect.any(String) });
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+    expect(logger.warn).toHaveBeenCalledOnce();
+  });
+
+  it("logs an unconfirmed MCP reconcile exactly once when the adapter's reconcile throws", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 });
+    repository.expireApplyClaim(proposal.id);
+    const recoveredClaim = (await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 }))!;
+    const thrown = new Error("connection reset");
+    const reconcileMcpInterruptedApply = vi.fn(async () => { throw thrown; });
+    const logger = { warn: vi.fn() };
+    const service = reviewedOperationService(repository, auditService(), vi.fn(), { logger, reconcileMcpInterruptedApply });
+
+    await expect(service.executeClaimedProposal({
+      input: { surface: "mcp", workspaceId, accountId, operatorUserId, proposalId: proposal.id },
+      claim: recoveredClaim,
+      executionInvocationId: "execution-1",
+    })).resolves.toEqual({ status: "uncertain", reason: expect.any(String) });
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ proposalId: proposal.id, executionInvocationId: "execution-1", err: thrown }), expect.any(String));
   });
 
   it("finalizes an unexpected apply exception as failed so the proposal is not stranded", async () => {
@@ -827,11 +1190,34 @@ const tool = (name: string, requiredPermission: "workspace.agents.manage") => ({
 const auditService = () => ({ record: vi.fn(async () => {}), getLatestSuccessfulChatAnswerMetadata: vi.fn(), updateChatAnswerSuggestions: vi.fn() });
 const noLimitPolicy = () => ({ reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() });
 
+const mcpBinding = { grantId: "grant-1", clientId: "client-1" } as const;
+/** A reviewed proposal prepared over the operator MCP transport by `mcpBinding`'s grant and client. */
+const createMcpReviewedProposal = async (repository: MemoryProposalRepository): Promise<CopilotProposal> => {
+  const preparationId = randomUUID();
+  repository.bindMcpPreparation(preparationId, mcpBinding);
+  return repository.createProposal({
+    workspaceId, operatorUserId, origin: { type: "operator_mcp_invocation", invocationId: preparationId }, targetType: "directive", targetRef: { agentId, directiveId },
+    payload: { name: "Updated" }, versionToken: "current", evidence: null, reviewDigest: "a".repeat(43), reviewSnapshot: { name: "Updated" }, expiresAt: new Date(Date.now() + 60_000),
+    confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
+  });
+};
+const reviewedOperationService = (
+  repository: MemoryProposalRepository,
+  audit = auditService(),
+  applyIfVersionMatches: CopilotProposalAdapter["applyIfVersionMatches"] = vi.fn(),
+  extra: { logger?: { warn(fields: Record<string, unknown>, message: string): void }; reconcileMcpInterruptedApply?: CopilotProposalAdapter["reconcileMcpInterruptedApply"] } = {},
+) => new OperatorCopilotService({
+  repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: audit, prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
+  ...(extra.logger ? { logger: extra.logger } : {}),
+  proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches, ...(extra.reconcileMcpInterruptedApply ? { reconcileMcpInterruptedApply: extra.reconcileMcpInterruptedApply } : {}) }],
+});
+
 class MemoryProposalRepository implements CopilotRepositoryPort {
   conversations: CopilotConversation[] = [];
   messages: CopilotMessage[] = [];
   proposals: CopilotProposal[] = [];
   private readonly applyClaims = new Map<string, Date>();
+  private readonly mcpPreparations = new Map<string, { grantId: string; clientId: string }>();
 
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> { const createdAt = new Date(); const conversation = { id: randomUUID(), ...input, status: "idle" as const, createdAt, updatedAt: createdAt }; this.conversations.push(conversation); return conversation; }
   async findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null> { return this.conversations.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
@@ -841,9 +1227,15 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> { return this.messages.filter((item) => item.conversationId === input.conversationId).map((message) => ({ ...message, proposals: this.proposals.filter((proposal) => proposal.messageId === message.id).map(presentProposal) })); }
   async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> { const conversation = await this.findConversation(input); if (!conversation || conversation.status === "running") return conversation ? "running" : null; const next = { ...conversation, status: "running" as const }; this.conversations[this.conversations.indexOf(conversation)] = next; return next; }
   async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> { const conversation = await this.findConversation(input); if (conversation) this.conversations[this.conversations.indexOf(conversation)] = { ...conversation, status: "idle" }; }
-  async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> { const createdAt = new Date(); const origin = input.origin ?? { type: "conversation" as const, conversationId: input.conversationId }; const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), messageId: null, reviewDigest: input.reviewDigest ?? null, reviewSnapshot: input.reviewSnapshot ?? null, expiresAt: input.expiresAt ?? null, executionInvocationId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
+  async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> { const createdAt = new Date(); const origin = input.origin ?? { type: "conversation" as const, conversationId: input.conversationId }; const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), messageId: null, reviewDigest: input.reviewDigest ?? null, reviewSnapshot: input.reviewSnapshot ?? null, expiresAt: input.expiresAt ?? null, confirmationRequirement: input.confirmationRequirement ?? null, changeEffect: input.changeEffect ?? null, approvedAt: null, approvedByUserId: null, approvalDigest: null, executionInvocationId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { return this.proposals.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
-  async findMcpReviewedProposal(input: { id: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string }): Promise<CopilotProposal | null> { return this.findProposal(input); }
+  async findMcpReviewedProposal(input: { id: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string }): Promise<CopilotProposal | null> {
+    const proposal = await this.findProposal(input);
+    const binding = proposal?.operatorMcpInvocationId ? this.mcpPreparations.get(proposal.operatorMcpInvocationId) : undefined;
+    return proposal?.reviewDigest && binding?.grantId === input.grantId && binding.clientId === input.clientId ? proposal : null;
+  }
+  /** Records the grant and client of the MCP preparation a reviewed proposal was created by. */
+  bindMcpPreparation(invocationId: string, binding: { grantId: string; clientId: string }): void { this.mcpPreparations.set(invocationId, binding); }
   async findProposalWorkspace(input: { id: string; accountId: string; operatorUserId: string }): Promise<string | null> { return this.proposals.find((item) => item.id === input.id && item.operatorUserId === input.operatorUserId)?.workspaceId ?? null; }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId } : proposal); }
   async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
@@ -864,7 +1256,7 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
     this.applyClaims.set(proposal.id, claimedAt);
     return { proposal, claimedAt, previousAttemptStartedAt };
   }
-  async claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }) {
+  async claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }): ReturnType<CopilotRepositoryPort["claimMcpReviewedProposalApply"]> {
     const claim = await this.claimProposalApply({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, claimTtlSeconds: input.claimTtlSeconds });
     if (claim) {
       const proposal = await this.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
@@ -872,12 +1264,17 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
     }
     return claim ? { status: "claimed" as const, claim } : { status: "not_prepared" as const };
   }
-  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean> {
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date; previousAttemptStartedAt: Date | null }): Promise<boolean> {
     const proposal = await this.findProposal(input);
     if (!proposal || proposal.status !== "pending") return false;
     const claimedAt = this.applyClaims.get(proposal.id);
     if (!claimedAt || claimedAt.getTime() !== input.claimedAt.getTime()) return false;
-    this.applyClaims.delete(proposal.id);
+    if (input.previousAttemptStartedAt) {
+      this.applyClaims.set(proposal.id, input.previousAttemptStartedAt);
+    } else {
+      this.applyClaims.delete(proposal.id);
+      this.proposals[this.proposals.indexOf(proposal)] = { ...proposal, executionInvocationId: null };
+    }
     return true;
   }
   async cancelPendingProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {
@@ -908,7 +1305,7 @@ describe("directive proposal adapter payload mapping", () => {
     const create = vi.fn(async () => ({ directive: { id: "directive-1" }, coherence: null }));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create, update: vi.fn() } as never,
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn(async () => ({ updatedAt: new Date(0) })) } as never,
     });
 
@@ -941,7 +1338,7 @@ describe("directive proposal adapter payload mapping", () => {
     const deleteDirective = vi.fn();
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update, delete: deleteDirective } as never,
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn(async () => ({ updatedAt: new Date(0) })) } as never,
     });
 
@@ -969,14 +1366,14 @@ describe("directive proposal adapter payload mapping", () => {
     });
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), delete: deleteDirective },
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn(async () => ({ updatedAt: currentUpdatedAt })) } as never,
     });
     const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" };
 
     // A stale token races an edit made after the proposal drafted. Deleting here would discard
     // whatever changed the directive between drafting and apply, so it must be refused outright.
-    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(0).toISOString())).toEqual({ outcome: "stale" });
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(0).toISOString())).toEqual({ outcome: "stale", reason: "Field changed: directive" });
 
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(5).toISOString())).toEqual({ outcome: "applied", appliedRef: { directiveId: "6a6a6a6a-1111-2222-3333-444444444445" } });
     expect(deleteDirective).toHaveBeenCalledWith("workspace-1", targetRef.agentId, "6a6a6a6a-1111-2222-3333-444444444445", { expectedUpdatedAt: new Date(5) });
@@ -987,7 +1384,7 @@ describe("directive proposal adapter payload mapping", () => {
     const existing = { id: "6a6a6a6a-1111-2222-3333-444444444445", agentId: "6a6a6a6a-1111-2222-3333-444444444444", name: "Avoid competitors", condition: { kind: "always" }, action: "Say nothing about rivals.", priority: null, requiredCapabilities: [], dependsOn: [], excludes: [], routes: [], tags: [], description: null, binding: null, lifecycle: null, metadata: {}, createdAt: new Date(0), updatedAt: new Date(0) };
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as never,
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn() },
     });
 
@@ -1004,6 +1401,34 @@ describe("directive proposal adapter payload mapping", () => {
     expect(preview.proposed as string).toMatch(/remov/i);
   });
 
+  it("creates a new directive whose fence survives an unrelated agent-row change", async () => {
+    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+    const { DIRECTIVE_CREATE_FENCE } = await import("../../../src/modules/agents/public.js");
+    const agentId = "6a6a6a6a-1111-2222-3333-444444444444";
+    const create = vi.fn(async () => ({ directive: { id: "6a6a6a6a-1111-2222-3333-444444444445" } }));
+    const draftForProposal = vi.fn(async () => ({
+      draft: { directive: { name: "locale", condition: { kind: "always" }, action: "Use Estonian." } },
+      versionToken: DIRECTIVE_CREATE_FENCE,
+    }));
+    const adapter = createDirectiveCopilotProposalAdapter({
+      authoredDirectiveService: { list: vi.fn(async () => []), create, update: vi.fn(), delete: vi.fn() } as never,
+      directiveAuthorService: { draftForProposal, readProposalFence: vi.fn(async () => DIRECTIVE_CREATE_FENCE) } as never,
+      // An unrelated write bumps the agent row between draft and apply; the create fence must not
+      // depend on that row at all, so applying below never has to reconcile against it.
+      agentService: { get: vi.fn(async () => ({ updatedAt: new Date("2026-09-26T12:00:00.000Z") })) } as never,
+    });
+    const targetRef = { agentId, directiveId: null };
+
+    // The owner-defined create fence is the agent-exists constant, not the agent version.
+    const drafted = await adapter.draft("workspace-1", targetRef, { name: "locale", condition: { kind: "always" }, action: "Use Estonian." });
+    expect(drafted.versionToken).toBe(DIRECTIVE_CREATE_FENCE);
+    expect(await adapter.readVersionToken("workspace-1", targetRef)).toBe(DIRECTIVE_CREATE_FENCE);
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, {
+      name: "locale", condition: { kind: "always" }, action: "Use Estonian.",
+    }, DIRECTIVE_CREATE_FENCE)).resolves.toMatchObject({ outcome: "applied" });
+    expect(create).toHaveBeenCalledWith("workspace-1", agentId, expect.objectContaining({ name: "locale" }), {});
+  });
+
   it("previews and applies a set_enabled payload as a one-field partial update", async () => {
     const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const existing = {
@@ -1013,7 +1438,7 @@ describe("directive proposal adapter payload mapping", () => {
     const update = vi.fn(async () => ({ directive: { ...existing, enabled: false }, coherence: null }));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update, delete: vi.fn() } as never,
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn() },
     });
     const targetRef = { agentId: existing.agentId, directiveId: existing.id };
@@ -1032,7 +1457,7 @@ describe("directive proposal adapter payload mapping", () => {
     const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn() },
     });
 
@@ -1056,12 +1481,12 @@ describe("directive proposal adapter payload mapping", () => {
       .mockRejectedValueOnce(new Error('Directive binding skill "order.lookup" is disabled'));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update, delete: vi.fn() },
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn() },
     });
 
     await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "set_enabled", enabled: false }, new Date(0).toISOString()))
-      .resolves.toEqual({ outcome: "stale" });
+      .resolves.toEqual({ outcome: "stale", reason: "Field changed: directive" });
     await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "set_enabled", enabled: false }, new Date(0).toISOString()))
       .resolves.toEqual({ outcome: "applied", appliedRef: { directiveId: targetRef.directiveId } });
     await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "set_enabled", enabled: true }, new Date(0).toISOString()))
@@ -1986,7 +2411,7 @@ describe("proposal card presentation", () => {
   it("keeps a routine proposal's drafted summary across a reload", async () => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     const base = {
-      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1",
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1", reviewDigest: null, reviewSnapshot: null, expiresAt: null, executionInvocationId: null,
       targetType: "routine" as const, targetRef: { agentId: "agent-1", routineId: null }, versionToken: "v1", evidence: null,
       status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     };
@@ -2004,7 +2429,7 @@ describe("proposal card presentation", () => {
   it("marks a reloaded directive removal proposal's card with removal: true", async () => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     const base = {
-      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1",
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1", reviewDigest: null, reviewSnapshot: null, expiresAt: null, executionInvocationId: null,
       targetType: "directive" as const, targetRef: { agentId: "agent-1", directiveId: "directive-1" }, versionToken: "v1", evidence: null,
       status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     };
@@ -2016,7 +2441,7 @@ describe("proposal card presentation", () => {
   it("does not mark an ordinary directive save proposal's card as a removal", async () => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     const base = {
-      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1",
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1", reviewDigest: null, reviewSnapshot: null, expiresAt: null, executionInvocationId: null,
       targetType: "directive" as const, targetRef: { agentId: "agent-1", directiveId: "directive-1" }, versionToken: "v1", evidence: null,
       status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     };
@@ -2040,7 +2465,7 @@ describe("proposal card evidence", () => {
   const card = async (evidence: CopilotProposal["evidence"]) => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     return presentProposalCard({
-      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation", conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1",
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation", conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1", reviewDigest: null, reviewSnapshot: null, expiresAt: null, executionInvocationId: null,
       targetType: "directive", targetRef: { agentId: "agent-1", directiveId: null }, payload: { name: "Refund window", rationale: "State it" },
       versionToken: "v1", evidence, status: "pending", reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     });
@@ -2098,7 +2523,7 @@ describe("proposals carrying replay evidence", () => {
         {
           targetType: "directive" as const,
           readVersionToken: vi.fn(async () => "directive-version"),
-          draft: vi.fn(async () => ({ payload: { name: "Refund window" }, targetLabel: "Refund window", summary: "State the refund window" })),
+          draft: vi.fn(async () => ({ payload: { name: "Refund window" }, targetLabel: "Refund window", summary: "State the refund window", versionToken: "directive-version" })),
           preview: vi.fn(),
           applyIfVersionMatches: vi.fn(),
         },
@@ -2330,6 +2755,65 @@ describe("routine edit and lifecycle proposal tools", () => {
     }));
   });
 
+  it("drafts a tool exposure as a routine edit whose card carries the label and summary the adapter set", async () => {
+    const readVersionToken = vi.fn(async () => "routine-version");
+    const draftEdit = vi.fn(async (_workspaceId: string, _targetRef: unknown, changes: unknown, rationale?: string) => ({
+      payload: { kind: "edit", name: "Start a return", changes, rationale: rationale ?? "Edit routine Start a return: exposed as tool start_return." },
+      targetLabel: "Start a return",
+      summary: "Edit routine Start a return: exposed as tool start_return.",
+      diagnostics: [],
+    }));
+    const { createProposal, descriptors } = proposalTools({ readVersionToken, draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
+
+    const result = await descriptors.find((descriptor) => descriptor.name === "propose_routine_exposure")!
+      .createTool(toolContext)
+      .invoke({ routineId, enabled: true, toolName: "start_return", description: "Start a return for an order." }, {} as never);
+
+    // The exposure rides the same field patch the edit tool uses, so preview and apply need no
+    // second producer of a routine card.
+    expect(draftEdit).toHaveBeenCalledWith(workspaceId, { agentId, routineId }, { exposure: { enabled: true, toolName: "start_return", description: "Start a return for an order." } }, undefined);
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      targetType: "routine",
+      targetRef: { agentId, routineId },
+      versionToken: "routine-version",
+      payload: expect.objectContaining({ kind: "edit", changes: { exposure: { enabled: true, toolName: "start_return", description: "Start a return for an order." } } }),
+    }));
+    expect(result).toEqual(expect.objectContaining({
+      targetType: "routine",
+      targetLabel: "Start a return",
+      summary: "Edit routine Start a return: exposed as tool start_return.",
+      validation: { ok: true, diagnostics: [] },
+    }));
+  });
+
+  it("drafts an exposure change without a tool name, leaving the adapter to keep the routine's stored one", async () => {
+    const readVersionToken = vi.fn(async () => "routine-version");
+    const draftEdit = vi.fn(async (_workspaceId: string, _targetRef: unknown, changes: unknown, rationale?: string) => ({
+      payload: { kind: "edit", name: "Start a return", changes, rationale: rationale ?? "Edit routine Start a return: tool exposure off." },
+      targetLabel: "Start a return",
+      summary: "Edit routine Start a return: tool exposure off.",
+      diagnostics: [],
+    }));
+    const { descriptors } = proposalTools({ readVersionToken, draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
+
+    await descriptors.find((descriptor) => descriptor.name === "propose_routine_exposure")!
+      .createTool(toolContext)
+      .invoke({ routineId, enabled: false, description: "Start a return for an order." }, {} as never);
+
+    expect(draftEdit).toHaveBeenCalledWith(workspaceId, { agentId, routineId }, { exposure: { enabled: false, description: "Start a return for an order." } }, undefined);
+  });
+
+  it("refuses to draft an exposure for a routine nobody named", async () => {
+    const draftEdit = vi.fn();
+    const { createProposal, descriptors } = proposalTools({ readVersionToken: vi.fn(), draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
+
+    await expect(descriptors.find((descriptor) => descriptor.name === "propose_routine_exposure")!
+      .createTool(toolContext)
+      .invoke({ enabled: true, toolName: "start_return", description: "" }, {} as never)).rejects.toThrow(/routine/i);
+    expect(draftEdit).not.toHaveBeenCalled();
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
   it("refuses to draft an edit for a routine nobody named", async () => {
     const draftEdit = vi.fn();
     const { createProposal, descriptors } = proposalTools({ readVersionToken: vi.fn(), draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
@@ -2389,6 +2873,45 @@ describe("routine proposal adapter edits", () => {
     expect(input.steps).toEqual(storedRoutine().steps);
   });
 
+  it("exposes a routine as a tool through the same edit path, previewing the block and writing only it", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const exposure = { enabled: true, toolName: "start_return", description: "Start a return for an order." };
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { exposure });
+
+    expect(draft.summary).toBe("Edit routine support-intake: exposed as tool start_return.");
+    expect(draft.payload).toMatchObject({ kind: "edit", name: "support-intake", changes: { exposure }, rationale: draft.summary });
+    expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toMatchObject({
+      targetLabel: "support-intake",
+      current: { exposure: null },
+      proposed: { exposure },
+    });
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: targetRef.routineId },
+    });
+    const [, , updatedId, input] = ports.updateDraft.mock.calls[0] as unknown as [string, string, string, { exposure: unknown; steps: unknown[] }];
+    expect(updatedId).toBe(targetRef.routineId);
+    expect(input.exposure).toEqual(exposure);
+    expect(input.steps).toEqual(storedRoutine().steps);
+  });
+
+  it("keeps the routine's stored tool name when an exposure edit leaves it blank, since a published name is frozen", async () => {
+    const ports = routineAdapterPorts(storedRoutine({ exposure: { enabled: true, toolName: "start_return", description: "Start a return." } }));
+    const adapter = await routineAdapter(ports);
+
+    const withdrawn = await adapter.draftEdit(workspaceId, targetRef, { exposure: { enabled: false, description: "Start a return." } });
+    const reworded = await adapter.draftEdit(workspaceId, targetRef, { exposure: { enabled: true, toolName: "", description: "Begin a return." } });
+
+    expect(withdrawn.payload).toMatchObject({ changes: { exposure: { enabled: false, toolName: "start_return", description: "Start a return." } } });
+    expect(withdrawn.summary).toBe("Edit routine support-intake: tool exposure off.");
+    expect(reworded.payload).toMatchObject({ changes: { exposure: { enabled: true, toolName: "start_return", description: "Begin a return." } } });
+    expect(reworded.summary).toBe("Edit routine support-intake: exposed as tool start_return.");
+    expect(await adapter.preview(workspaceId, targetRef, reworded.payload)).toMatchObject({
+      proposed: { exposure: { enabled: true, toolName: "start_return", description: "Begin a return." } },
+    });
+  });
+
   it("declines to write when the routine moved under the proposal", async () => {
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
@@ -2399,7 +2922,12 @@ describe("routine proposal adapter edits", () => {
     expect(ports.updateDraft).not.toHaveBeenCalled();
   });
 
-  it("refuses an edit that would break the routine, and names what it would break", async () => {
+  it("refuses an edit that would introduce a new diagnostic as a caller-correctable revision_invalid, never the raw diagnostic text", async () => {
+    // Regression coverage for a bare `Error` here: it becomes an MCP -32002 "runtime is
+    // unavailable" outage (nothing remaps a plain Error) instead of the caller-correctable
+    // refusal prepare_routine_structure already uses for the same class of failure. The raw
+    // diagnostic message ("No such information field: order_number.") also names a slot the
+    // operator typed, so it must never reach the caller verbatim.
     const ports = routineAdapterPorts();
     ports.validate
       .mockResolvedValueOnce({ ok: true, diagnostics: [] })
@@ -2407,7 +2935,67 @@ describe("routine proposal adapter edits", () => {
     const adapter = await routineAdapter(ports);
 
     await expect(adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Confirm {{slot.order_number}}." }] }))
-      .rejects.toThrow(/order_number/);
+      .rejects.toMatchObject({
+        statusCode: 422,
+        code: "revision_invalid",
+        message: "This edit would make support-intake invalid to serve. Use validate_routine to correct the reported diagnostics.",
+        details: {
+          diagnostics: [{
+            safeDiagnostic: true,
+            routineId: targetRef.routineId,
+            code: "unknown_slot_reference",
+            location: "steps.confirm",
+            message: "The routine structure is not valid for serving.",
+          }],
+        },
+      });
+  });
+
+  it("through the MCP catalog, refuses propose_routine_edit as invalid_arguments (safe diagnostics, no authored text) instead of an outage", async () => {
+    // copilot-proposals.test.ts's raw-adapter test above proves draftEdit itself throws the right
+    // shape; this proves that shape actually survives the tool/catalog boundary a real MCP client
+    // calls through. Before this fix, draftEdit's bare Error crossed unremapped and the caller saw
+    // a fake 503 dependency outage instead of a correctable revision_invalid.
+    const ports = routineAdapterPorts();
+    ports.validate
+      .mockResolvedValueOnce({ ok: true, diagnostics: [] })
+      .mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_slot_reference", location: "steps.confirm", message: "No such information field: order_number." }] });
+    const adapter = await routineAdapter(ports);
+    const descriptors = createRoutineProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [adapter],
+      auditService: auditService(),
+    } as never);
+    const descriptor = { ...descriptors.find((candidate) => candidate.name === "propose_routine_edit")!, mcpDisposition: operatorMcpDispositions.propose_routine_edit };
+    const catalog = new OperatorMcpCatalogService([descriptor]);
+    const mcpContext = {
+      workspaceId, accountId, operatorUserId, surface: "mcp" as const,
+      operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1",
+      currentAuthorization,
+      pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+    };
+
+    await expect(catalog.invoke({
+      name: "propose_routine_edit",
+      arguments: { agentId, routineId: targetRef.routineId, changes: { steps: [{ stableStepId: "confirm", instruction: "Confirm {{slot.order_number}}." }] } },
+      context: mcpContext,
+      scopes: new Set(["operator:propose"]),
+      signal: AbortSignal.timeout(1_000),
+    })).rejects.toMatchObject({
+      statusCode: 422,
+      code: "revision_invalid",
+      message: "This edit would make support-intake invalid to serve. Use validate_routine to correct the reported diagnostics.",
+      details: {
+        diagnostics: [{
+          safeDiagnostic: true,
+          routineId: targetRef.routineId,
+          code: "unknown_slot_reference",
+          location: "steps.confirm",
+          message: "The routine structure is not valid for serving.",
+        }],
+      },
+    });
   });
 
   it("lets a rename through when the routine already had a routine-level diagnostic", async () => {
@@ -2523,6 +3111,10 @@ describe("operator MCP proposal reconciliation", () => {
     targetRef: null,
     versionToken: "recovered-version",
     evidence: null,
+    reviewDigest: null,
+    reviewSnapshot: null,
+    expiresAt: null,
+    executionInvocationId: null,
     status: "pending",
     reason: null,
     appliedRef: null,
@@ -2545,7 +3137,7 @@ describe("operator MCP proposal reconciliation", () => {
       auditService: auditService(),
     });
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({
         status: "recovered",
         output: { proposalId: "proposal-1", targetType: "directive", targetLabel: "Avoid competitors", summary: "Draft directive" },
@@ -2572,7 +3164,7 @@ describe("operator MCP proposal reconciliation", () => {
       auditService: auditService(),
     });
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({ status: "conflict" });
   });
 
@@ -2590,7 +3182,7 @@ describe("operator MCP proposal reconciliation", () => {
     });
     const descriptor = descriptors.find((candidate) => candidate.name === "propose_directive_removal")!;
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({
         status: "recovered",
         output: {
@@ -2621,7 +3213,7 @@ describe("operator MCP proposal reconciliation", () => {
       auditService: auditService(),
     });
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({
         status: "recovered",
         output: { proposalId: "proposal-3", targetType: "agent_setting", targetLabel: "retrievalEnabled", summary: "Turn retrieval off for this agent." },
@@ -2645,7 +3237,7 @@ describe("operator MCP proposal reconciliation", () => {
       auditService: auditService(),
     });
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({
         status: "recovered",
         output: { proposalId: "proposal-5", targetType: "agent_greeting", targetLabel: "Greeting", summary: "Turn on Exact words for the greeting." },
@@ -2670,7 +3262,7 @@ describe("operator MCP proposal reconciliation", () => {
     });
     const descriptor = descriptors.find((candidate) => candidate.name === "propose_routine_edit")!;
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({
         status: "recovered",
         output: {
@@ -2701,7 +3293,7 @@ describe("operator MCP proposal reconciliation", () => {
     });
     const descriptor = descriptors.find((candidate) => candidate.name === "propose_routine_edit")!;
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({ status: "conflict" });
   });
 
@@ -2715,7 +3307,7 @@ describe("operator MCP proposal reconciliation", () => {
       auditService: auditService(),
     });
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({ status: "retry_prepare" });
   });
 
@@ -2730,7 +3322,7 @@ describe("operator MCP proposal reconciliation", () => {
     });
     const invocationWithoutOperationId = { ...invocationRaw, operationId: undefined } as never;
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation: invocationWithoutOperationId, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation: invocationWithoutOperationId, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({ status: "conflict" });
     expect(recoverOperatorMcpProposal).not.toHaveBeenCalled();
   });

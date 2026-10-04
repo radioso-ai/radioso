@@ -47,6 +47,13 @@ describe('dashboard query invalidation coordinator', () => {
     )).toBe(true)
   })
 
+  it('refreshes the recently-closed strip on every change that closes an Inbox item, and no other', () => {
+    const recentlyClosed = dashboardQueryKeys.attention.recentlyClosed(workspaceId, { limit: 10 })
+
+    expect(INVALIDATION_KINDS.filter((kind) => matchesWorkspaceInvalidation(kind, recentlyClosed, workspaceId)))
+      .toEqual(['conversation.ownership_changed', 'hitl.decision_resolved', 'quality.triage_changed'])
+  })
+
   it('rejects unrelated workspaces and non-owning query families', () => {
     const key = dashboardQueryKeys.history.list('workspace-b', { variant: 'all', page: 1, pageSize: 50 })
     expect(matchesWorkspaceInvalidation('conversation.created', key, workspaceId)).toBe(false)

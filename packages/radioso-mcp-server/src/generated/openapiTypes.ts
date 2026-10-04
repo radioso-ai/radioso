@@ -175,6 +175,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the signed-in user's profile
+         * @description Returns the signed-in person's own profile: their email and the display name teammates see.
+         */
+        get: operations["getUserProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update the signed-in user's profile
+         * @description Sets the signed-in person's display name, the name teammates see in the dashboard. The name is trimmed; an empty string or null clears it. It may use any script, holds at most 80 characters, and cannot contain control characters.
+         */
+        patch: operations["updateUserProfile"];
+        trace?: never;
+    };
     "/api/v1/auth/invitations/{invitationToken}": {
         parameters: {
             query?: never;
@@ -314,7 +338,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List active account users and invitations */
+        /** List active account users and pending invitations */
         get: operations["listAccountUsers"];
         put?: never;
         post?: never;
@@ -435,7 +459,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List personal-token metadata */
+        /** List live personal-token metadata */
         get: operations["listPersonalApiTokens"];
         put?: never;
         /** Issue a personal API token */
@@ -504,7 +528,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List workspace service accounts */
+        /** List workspace service accounts that are not archived */
         get: operations["listServiceAccounts"];
         put?: never;
         /** Create a service account and first credential */
@@ -591,7 +615,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List service-account credentials */
+        /** List live service-account credentials */
         get: operations["listServiceAccountCredentials"];
         put?: never;
         /** Issue another service-account credential */
@@ -677,7 +701,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List visible Operator MCP grants */
+        /** List active Operator MCP grants */
         get: operations["listOperatorMcpGrants"];
         put?: never;
         post?: never;
@@ -1276,7 +1300,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run chat through a REST credential bound to this agent */
+        /**
+         * Run chat through a REST credential bound to this agent
+         * @description Send `message` or `routine` (a tool call to one exposed routine; validated against the catalog of the release the conversation is pinned to before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), never both. `startConversation: true` requests the bootstrap greeting instead of a turn: it accepts a `message` (ignored) but not a `routine`.
+         */
         post: operations["createAgentChannelChatResponse"];
         delete?: never;
         options?: never;
@@ -1326,7 +1353,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List MCP and REST chat credentials for an agent with cursor pagination */
+        /** List live MCP and REST chat credentials for an agent with cursor pagination */
         get: operations["listAgentChannelCredentials"];
         put?: never;
         /** Issue an MCP or REST chat credential for an agent */
@@ -1365,6 +1392,26 @@ export interface paths {
         put?: never;
         /** Revoke an agent channel credential */
         post: operations["revokeAgentChannelCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/public-id/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate the agent's public id
+         * @description Replaces the identifier callers reach this agent by. Every agent connected without a credential is dropped on its next request. The agent must already have a public id, which publishing its agent card mints.
+         */
+        post: operations["rotateAgentPublicId"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2869,6 +2916,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversations/recently-closed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the Inbox items closed most recently
+         * @description Returns the workspace's most recently closed Inbox items, newest first: handoffs handed back to the agent, approvals decided, and negative feedback resolved or dismissed. Negative feedback is listed only to a caller with Quality access (`workspace.quality.read`). Each item names the teammate who closed it, labelled by display name, else email. Dashboard test chats are left out.
+         */
+        get: operations["listRecentlyClosedInboxItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/operators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the teammates who can own a conversation
+         * @description Returns the active teammates who hold conversation takeover permission on the workspace, labelled by display name, else email. These are the valid transfer targets.
+         */
+        get: operations["listConversationOperators"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/conversations/{conversationId}/takeover": {
         parameters: {
             query?: never;
@@ -2878,7 +2965,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Take human ownership of a conversation */
+        /**
+         * Take human ownership of a conversation
+         * @description Claims a conversation the AI owns or that waits for a teammate. A conversation another teammate holds returns 409; take it from them by transferring it to yourself.
+         */
         post: operations["takeOverConversation"];
         delete?: never;
         options?: never;
@@ -2895,7 +2985,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reply to a conversation as a human operator */
+        /**
+         * Reply to a conversation as a human operator
+         * @description Only the teammate who owns the conversation replies. A reply to a conversation the AI owns, or one waiting for a teammate, claims it for you first. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
+         */
         post: operations["replyToConversation"];
         delete?: never;
         options?: never;
@@ -2912,7 +3005,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Transfer human ownership of a conversation */
+        /**
+         * Transfer human ownership of a conversation
+         * @description Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404 with code `transfer_target_unavailable`; a conversation that is not in the workspace returns 404 with code `not_found`.
+         */
         post: operations["transferConversationOwnership"];
         delete?: never;
         options?: never;
@@ -2929,7 +3025,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Return a human-owned conversation to AI ownership */
+        /**
+         * Return a human-owned conversation to AI ownership
+         * @description Only the teammate who owns the conversation hands it back; anyone may while it waits unclaimed. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
+         */
         post: operations["handBackConversation"];
         delete?: never;
         options?: never;
@@ -3287,6 +3386,23 @@ export interface paths {
         put?: never;
         /** Apply a pending copilot proposal */
         post: operations["applyCopilotProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/proposals/{proposalId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a reviewed MCP operation */
+        post: operations["approveCopilotProposal"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3665,7 +3781,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Exchange an MCP converse launch token for a signed session */
+        /**
+         * Exchange a launch token or an agent's public id for a signed converse session
+         * @description Send exactly one of `launchToken` or `publicId`. A `launchToken` is the credential an operator minted for this agent. A `publicId` is the agent's public identifier and carries no secret: it works only while the agent accepts walk-in connections, and it opens a fresh conversation each time. Rotating the public id or closing walk-in access refuses the next request on every session issued against it.
+         */
         post: operations["createMcpConverseSession"];
         delete?: never;
         options?: never;
@@ -3690,6 +3809,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mcp/converse/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the bound agent's exposed routines as tools
+         * @description Returns the agent's name and one descriptor per exposed routine in its current published release, on every call. The standalone MCP server reads this once at session exchange and pins the result, so an MCP client's `tools/list` is stable for a session; a direct caller sees the current catalog each time.
+         */
+        get: operations["getMcpConverseTools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/converse/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read what happened in this session's conversation since a cursor, optionally waiting for it
+         * @description Returns messages after `cursor` with the author kind and the conversation's current ownership, plus the `cursor` to resume from. The cursor is opaque and comes from a previous response; without one the call returns the conversation's most recent page. With `waitMs` the call parks until a message lands or the deadline passes, and returns an empty list at the deadline rather than an error — so a calling agent that handed off to a person can come back for the reply. One call spends one unit of the session's read budget no matter how long it waits.
+         */
+        get: operations["getMcpConverseMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mcp/converse/ask": {
         parameters: {
             query?: never;
@@ -3699,8 +3858,62 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run one MCP ask_agent turn through the bound agent */
+        /**
+         * Run one turn through the bound agent: a message, or a tool call to an exposed routine
+         * @description Send exactly one of `message` or `routine`. An optional `signedIdentity` is the same HMAC visitor token the website embed sends, bound to this session's `conversationId` rather than a browser origin; one that does not verify leaves the turn anonymous. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 whose `details` is `RoutineInvocationInvalidDetails` (`code` `routine_invocation_invalid`, field-level `errors`).
+         */
         post: operations["askMcpConverseAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/agent-card/{publicId}.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an agent's A2A Agent Card */
+        get: operations["getAgentCard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/mcp/server-card/{publicId}.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an agent's MCP server card */
+        get: operations["getAgentMcpServerCard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/ai-catalog/{publicId}.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an agent's catalog entry */
+        get: operations["getAgentAiCatalog"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3853,6 +4066,8 @@ export interface components {
         RegisterResponse: {
             /** Format: uuid */
             userId: string;
+            /** @description The name the person chose for themselves, or null when they have not set one. */
+            displayName: string | null;
             /** Format: uuid */
             accountId: string;
             organizationName: string;
@@ -3865,6 +4080,8 @@ export interface components {
         LoginResponse: {
             /** Format: uuid */
             userId: string;
+            /** @description The name the person chose for themselves, or null when they have not set one. */
+            displayName: string | null;
             /** Format: uuid */
             accountId: string;
             organizationName: string;
@@ -3884,6 +4101,14 @@ export interface components {
         SessionResponse: components["schemas"]["LoginResponse"] & {
             /** Format: email */
             email: string;
+        };
+        UserProfile: {
+            /** Format: uuid */
+            userId: string;
+            /** Format: email */
+            email: string;
+            /** @description The name the person chose for themselves, or null when they have not set one. */
+            displayName: string | null;
         };
         EmailVerificationVerifyResponse: {
             /** @enum {boolean} */
@@ -3933,6 +4158,7 @@ export interface components {
             email: string;
             password: string;
             organizationName?: string;
+            displayName?: string | null;
         };
         CreateAccountRequest: {
             organizationName: string;
@@ -3969,6 +4195,10 @@ export interface components {
             /** Format: email */
             email: string;
             password: string;
+            displayName?: string | null;
+        };
+        UserProfileUpdateRequest: {
+            displayName: string | null;
         };
         AccountInvitationCreateRequest: {
             /** Format: email */
@@ -4000,6 +4230,8 @@ export interface components {
             userId: string;
             /** Format: email */
             email: string;
+            /** @description The name the person chose for themselves, or null when they have not set one. */
+            displayName: string | null;
             /** @enum {string} */
             role: "owner" | "admin" | "member";
             /** @enum {string} */
@@ -4680,6 +4912,15 @@ export interface components {
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
             assistantBootstrapActive: boolean;
+            /** @description Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller. */
+            publicId: string | null;
+            /** @description Operator-authored sentence the agent's public cards carry. */
+            publicDescription: string;
+            agentCardEnabled: boolean;
+            /** @description Whether a calling agent may connect with the public id and no credential. Requires agentCardEnabled. */
+            publicAgentAccessEnabled: boolean;
+            /** @description Per-agent walk-in conversation budget. Null leaves the deployment default in charge. */
+            walkInConversationsPerHour: number | null;
             chatModelOverride: {
                 /** @enum {string} */
                 provider: "openai" | "openai-compatible" | "gemini" | "claude";
@@ -4726,6 +4967,10 @@ export interface components {
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
             proactiveGreetingEnabled?: boolean;
+            publicDescription?: string;
+            agentCardEnabled?: boolean;
+            publicAgentAccessEnabled?: boolean;
+            walkInConversationsPerHour?: number | null;
             chatModelOverride?: null | {
                 /** @enum {string} */
                 provider: "openai" | "openai-compatible" | "gemini" | "claude";
@@ -4951,6 +5196,12 @@ export interface components {
             /** Format: uuid */
             conversationId?: string;
             message?: string;
+            routine?: {
+                toolName: string;
+                input: {
+                    [key: string]: unknown;
+                };
+            };
             /** @default false */
             startConversation: boolean;
             /** @default false */
@@ -5194,6 +5445,10 @@ export interface components {
                 /** @enum {string} */
                 kind: "complete" | "handoff";
                 instruction?: string | null;
+                operatorNotice?: {
+                    subject?: string | null;
+                    intro?: string | null;
+                };
                 ordinal: number;
             }[];
             completionExport?: {
@@ -5203,6 +5458,11 @@ export interface components {
                 triggerKinds: ("complete" | "handoff")[];
                 /** @default  */
                 destinationRef: string;
+            };
+            exposure?: {
+                enabled: boolean;
+                toolName: string;
+                description: string;
             };
         };
         RoutineDefinitionUpdateRequest: {
@@ -5293,12 +5553,21 @@ export interface components {
                 /** @enum {string} */
                 kind: "complete" | "handoff";
                 instruction?: string | null;
+                operatorNotice?: {
+                    subject?: string | null;
+                    intro?: string | null;
+                };
                 ordinal: number;
             }[];
             completionExport?: {
                 enabled?: boolean;
                 triggerKinds?: ("complete" | "handoff")[];
                 destinationRef?: string;
+            };
+            exposure?: {
+                enabled: boolean;
+                toolName: string;
+                description: string;
             };
         };
         RoutineDraftAssistRequest: {
@@ -5308,7 +5577,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision" | "node_id_collision";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation";
                 location: string;
                 message: string;
             }[];
@@ -5403,6 +5672,10 @@ export interface components {
                 /** @enum {string} */
                 kind: "complete" | "handoff";
                 instruction?: string | null;
+                operatorNotice?: {
+                    subject?: string | null;
+                    intro?: string | null;
+                };
                 ordinal: number;
             }[];
             completionExport?: {
@@ -5412,6 +5685,11 @@ export interface components {
                 triggerKinds: ("complete" | "handoff")[];
                 /** @default  */
                 destinationRef: string;
+            };
+            exposure?: {
+                enabled: boolean;
+                toolName: string;
+                description: string;
             };
             /** Format: uuid */
             id: string;
@@ -5529,6 +5807,10 @@ export interface components {
                     /** @enum {string} */
                     kind: "complete" | "handoff";
                     instruction?: string | null;
+                    operatorNotice?: {
+                        subject?: string | null;
+                        intro?: string | null;
+                    };
                     ordinal: number;
                 }[];
                 completionExport?: {
@@ -5538,6 +5820,11 @@ export interface components {
                     triggerKinds: ("complete" | "handoff")[];
                     /** @default  */
                     destinationRef: string;
+                };
+                exposure?: {
+                    enabled: boolean;
+                    toolName: string;
+                    description: string;
                 };
             };
             validation: components["schemas"]["RoutineValidationResult"];
@@ -5892,6 +6179,10 @@ export interface components {
                     /** @enum {string} */
                     kind: "complete" | "handoff";
                     instruction?: string | null;
+                    operatorNotice?: {
+                        subject?: string | null;
+                        intro?: string | null;
+                    };
                     ordinal: number;
                 }[];
                 completionExport?: {
@@ -5901,6 +6192,11 @@ export interface components {
                     triggerKinds: ("complete" | "handoff")[];
                     /** @default  */
                     destinationRef: string;
+                };
+                exposure?: {
+                    enabled: boolean;
+                    toolName: string;
+                    description: string;
                 };
             };
         };
@@ -6725,6 +7021,11 @@ export interface components {
                 activityTrace: components["schemas"]["ActivityTrace"];
             };
         };
+        /**
+         * @description Whether a person or a calling agent is on the other side of the conversation.
+         * @enum {string}
+         */
+        CallerKind: "human" | "agent";
         SkillAvailability: {
             /** @enum {string} */
             state: "available" | "forbidden" | "unavailable";
@@ -7176,12 +7477,24 @@ export interface components {
             workspaceId: string;
             /** @enum {string} */
             state: "ai_owned" | "human_owned";
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The organisation the workspace belongs to while a teammate owns the conversation. Shared by every teammate, so it does not identify one.
+             */
             ownerAccountId: string | null;
+            /**
+             * Format: uuid
+             * @description The teammate handling the conversation; a human-owned conversation is claimed exactly when this is set. Null while a handoff waits to be claimed, when AI-owned, and once the owner's user is deleted.
+             */
+            ownerUserId: string | null;
+            /** @description The owner's teammate label: their display name, else their email. Null whenever `ownerUserId` is null. Operator-facing only. */
             ownerDisplayName: string | null;
             reason: string | null;
             version: number;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description When the owning teammate claimed the conversation. Null whenever `ownerUserId` is null.
+             */
             takenOverAt: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -7236,6 +7549,7 @@ export interface components {
             agentName: string | null;
             agentInternalName: string | null;
             sourceChannel: string | null;
+            callerKind: components["schemas"]["CallerKind"];
             sourceOrigin: string | null;
             channelContext: components["schemas"]["ConversationChannelContext"] | null;
             anonymousSessionId: string | null;
@@ -7433,6 +7747,22 @@ export interface components {
         ClearAnswerFeedbackResponse: {
             cleared: boolean;
         };
+        UserMessageInputMetadata: {
+            /** @enum {string} */
+            method: "typed" | "suggestion_click" | "intent_click" | "routine_invocation";
+            /** Format: uuid */
+            suggestionSourceMessageId?: string;
+            intent?: {
+                skillName: string;
+                intentName?: string;
+            };
+            routine?: {
+                toolName: string;
+                input: {
+                    [key: string]: unknown;
+                };
+            };
+        };
         ChatConversationMessage: {
             /** Format: uuid */
             id: string;
@@ -7443,16 +7773,7 @@ export interface components {
             content: string;
             /** Format: date-time */
             createdAt: string;
-            inputMetadata?: {
-                /** @enum {string} */
-                method: "typed" | "suggestion_click" | "intent_click";
-                /** Format: uuid */
-                suggestionSourceMessageId?: string;
-                intent?: {
-                    skillName: string;
-                    intentName?: string;
-                };
-            };
+            inputMetadata?: components["schemas"]["UserMessageInputMetadata"];
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
@@ -7460,6 +7781,8 @@ export interface components {
             operatorDisplayName?: string;
             debug?: components["schemas"]["ChatConversationMessageDebug"];
             turnFailure?: components["schemas"]["ChatConversationTurnFailure"];
+            /** @description Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API. */
+            operatorLabel?: string;
         };
         PublicChatConversationMessage: {
             /** Format: uuid */
@@ -7471,16 +7794,7 @@ export interface components {
             content: string;
             /** Format: date-time */
             createdAt: string;
-            inputMetadata?: {
-                /** @enum {string} */
-                method: "typed" | "suggestion_click" | "intent_click";
-                /** Format: uuid */
-                suggestionSourceMessageId?: string;
-                intent?: {
-                    skillName: string;
-                    intentName?: string;
-                };
-            };
+            inputMetadata?: components["schemas"]["UserMessageInputMetadata"];
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
@@ -7489,6 +7803,102 @@ export interface components {
         };
         ConversationOwnershipResponse: {
             ownership: components["schemas"]["ConversationOwnership"];
+        };
+        ConversationOperator: {
+            /** Format: uuid */
+            userId: string;
+            /** @description The teammate label: display name, else email. */
+            label: string;
+        };
+        ConversationOperatorsResponse: {
+            operators: components["schemas"]["ConversationOperator"][];
+        };
+        /** @description Something a teammate or the agent did to the conversation. Operator reads only. `feedback_resolved` and `feedback_dismissed` reach only a caller with Quality access (`workspace.quality.read`). */
+        ConversationActivityEntry: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "handoff_requested" | "claimed" | "reassigned" | "handed_back" | "approval_decided" | "feedback_resolved" | "feedback_dismissed";
+            /** Format: date-time */
+            createdAt: string;
+            /** @description The teammate who acted. Null when the agent acted, or the change came from a caller that is no teammate. */
+            actor: {
+                /** Format: uuid */
+                userId: string;
+                /** @description The teammate label as it is now: display name, else email. Null once the user is deleted. */
+                label: string | null;
+            } | null;
+            /** @description The teammate who holds a `reassigned` conversation now. */
+            subject: {
+                /** Format: uuid */
+                userId: string;
+                /** @description The teammate label as it is now: display name, else email. Null once the user is deleted. */
+                label: string | null;
+            } | null;
+            /** @description Who held a `reassigned` conversation before. Null when nobody had claimed the handoff. */
+            from: {
+                /** Format: uuid */
+                userId: string;
+                /** @description The teammate label as it is now: display name, else email. Null once the user is deleted. */
+                label: string | null;
+            } | null;
+            /** @description The handoff reason code on `handoff_requested`, for example `routine_handoff` or `retrieval_miss`. */
+            handoffReason: string | null;
+            /** @description The option chosen on `approval_decided`. */
+            decision: {
+                optionId: string;
+                /** @description The option's label as the routine author wrote it. */
+                label: string;
+            } | null;
+            /** @description The triage resolution code given on `feedback_resolved` or `feedback_dismissed`. */
+            resolution: string | null;
+            /**
+             * Format: uuid
+             * @description The answer the feedback was on, for `feedback_resolved` and `feedback_dismissed`.
+             */
+            assistantMessageId: string | null;
+        };
+        RecentlyClosedInboxItem: {
+            /**
+             * Format: uuid
+             * @description The closing event's id.
+             */
+            id: string;
+            /** Format: uuid */
+            conversationId: string;
+            /** @enum {string} */
+            itemKind: "handoff" | "approval" | "negative_feedback";
+            /** @enum {string} */
+            outcome: "handed_back" | "approval_decided" | "feedback_resolved" | "feedback_dismissed";
+            /** Format: date-time */
+            closedAt: string;
+            /** @description The teammate who closed it. Null for a caller that is no teammate, or a user since deleted. */
+            closedBy: {
+                /** Format: uuid */
+                userId: string;
+                /** @description The teammate label as it is now: display name, else email. Null once the user is deleted. */
+                label: string | null;
+            } | null;
+            /** @description The option chosen, for an approval. */
+            decision: {
+                optionId: string;
+                /** @description The option's label as the routine author wrote it. */
+                label: string;
+            } | null;
+            /** @description The triage resolution code, for negative feedback. */
+            resolution: string | null;
+            /**
+             * Format: uuid
+             * @description The answer, for negative feedback.
+             */
+            assistantMessageId: string | null;
+            /** @description See ChatConversationSummary.title. */
+            title: string | null;
+            /** @description The conversation's first-message preview. */
+            preview: string | null;
+        };
+        RecentlyClosedInboxItemsResponse: {
+            items: components["schemas"]["RecentlyClosedInboxItem"][];
         };
         HumanReplyMessage: {
             /** Format: uuid */
@@ -7505,16 +7915,7 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
-            inputMetadata?: {
-                /** @enum {string} */
-                method: "typed" | "suggestion_click" | "intent_click";
-                /** Format: uuid */
-                suggestionSourceMessageId?: string;
-                intent?: {
-                    skillName: string;
-                    intentName?: string;
-                };
-            };
+            inputMetadata?: components["schemas"]["UserMessageInputMetadata"];
             skillName?: string;
             skillOutcome?: string;
             skillStatus?: string;
@@ -7523,6 +7924,7 @@ export interface components {
         };
         HumanReplyMessageResponse: {
             message: components["schemas"]["HumanReplyMessage"];
+            ownership: components["schemas"]["ConversationOwnership"] & unknown;
         };
         ChatConversationDetail: {
             /** Format: uuid */
@@ -7534,6 +7936,7 @@ export interface components {
             agentName?: string | null;
             agentInternalName?: string | null;
             sourceChannel: string | null;
+            callerKind: components["schemas"]["CallerKind"];
             sourceOrigin: string | null;
             entryPageUrl?: string | null;
             /** @description Client-claimed referrer of the host page. Dashboard-only, like entryPageUrl. */
@@ -7559,12 +7962,18 @@ export interface components {
             /** @description Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced. */
             tailCursor: string | null;
             messages: components["schemas"]["ChatConversationMessage"][];
-            ownership?: components["schemas"]["ConversationOwnership"];
+            ownership?: components["schemas"]["ConversationOwnership"] & unknown;
+            /** @description What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed. */
+            activity?: components["schemas"]["ConversationActivityEntry"][];
         };
         ChatConversationTail: {
             messages: components["schemas"]["ChatConversationMessage"][];
             cursor: string | null;
-            ownership?: components["schemas"]["ConversationOwnership"];
+            ownership?: components["schemas"]["ConversationOwnership"] & unknown;
+            /** @description The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` the events in a recent window. The window reaches back far enough to take in an event whose transaction committed after a newer event's, so it can repeat events the caller already holds: keep each one once by its `id`. Feedback outcomes reach only a caller with Quality access. */
+            activity?: components["schemas"]["ConversationActivityEntry"][];
+            /** @description Opaque. Pass as the next tail's `activityCursor` to read only recent activity. Present whenever `activity` is. */
+            activityCursor?: string;
         };
         PublicChatConversationTail: {
             messages: components["schemas"]["PublicChatConversationMessage"][];
@@ -7579,6 +7988,7 @@ export interface components {
             agentId: string | null;
             agentName?: string | null;
             sourceChannel: string | null;
+            callerKind: components["schemas"]["CallerKind"];
             sourceOrigin: string | null;
             /** @description See ChatConversationSummary.title. */
             title: string | null;
@@ -7629,6 +8039,203 @@ export interface components {
             total: number;
             nextCursor: string | null;
             hasMore: boolean;
+        };
+        /** @description Who owns the conversation after this turn. `suppressed` is true when a human owns it and the agent generated nothing. */
+        ChatOwnershipAck: {
+            /** @enum {string} */
+            state: "ai_owned" | "human_owned";
+            suppressed: boolean;
+        };
+        RoutinePendingInput: {
+            key: string;
+            /** @enum {string} */
+            type: "text" | "number" | "boolean" | "email" | "date";
+            required: boolean;
+            description?: string;
+        };
+        /** @description Where the turn left the routine it touched. `pendingInput` lists every unfilled required slot plus the current step's unfilled optional slots, so a caller can supply everything in one re-call. */
+        RoutineTurnState: {
+            toolName?: string;
+            name: string;
+            /** @enum {string} */
+            status: "active" | "waiting_for_input" | "waiting_for_approval" | "completed" | "abandoned";
+            pendingInput: components["schemas"]["RoutinePendingInput"][];
+        };
+        /** @description What became of the tool call this turn carried. `not_started`: another routine was active or suspended and the existing interruption/approval rules kept the turn; `routine` then describes that routine. `declined`: the named routine already completed under `once_per_conversation`. `unknown_tool`: the release the conversation is pinned to carries no routine under that name. */
+        RoutineInvocationReport: {
+            toolName: string;
+            /** @enum {string} */
+            outcome: "started" | "reentered" | "declined" | "not_started" | "unknown_tool";
+        };
+        /** @description The machine-readable part of an agent reply, identical on the MCP converse ask route and the REST agent chat route. */
+        AgentReplyEnvelopeCore: {
+            /** Format: uuid */
+            conversationId: string;
+            answerCoverage: components["schemas"]["AnswerCoverageAssessment"];
+            ownership: components["schemas"]["ChatOwnershipAck"];
+            routine?: components["schemas"]["RoutineTurnState"];
+            invocation?: components["schemas"]["RoutineInvocationReport"];
+            traceId?: string;
+        };
+        /** @description The machine-readable part of an agent reply, identical on the MCP converse ask route and the REST agent chat route. */
+        McpConverseAskResponse: components["schemas"]["AgentReplyEnvelopeCore"] & {
+            answer: {
+                text: string;
+                citations: components["schemas"]["Citation"][];
+            };
+        };
+        AgentChannelChatTurnResponse: components["schemas"]["ChatResponse"] & components["schemas"]["AgentReplyEnvelopeCore"] & {
+            citations: components["schemas"]["Citation"][];
+        };
+        /** @description A chat turn carries the agent reply envelope core beside the answer; a bootstrap greeting (`startConversation`) has no turn and carries none. */
+        AgentChannelChatResponse: components["schemas"]["AgentChannelChatTurnResponse"] | components["schemas"]["ChatBootstrapResponse"];
+        /** @description JSON Schema for the tool's input: one property per declared routine slot (`text`→string, `number`, `boolean`, `email`→string/format=email, `date`→string/format=date), `required` from the slot. */
+        AgentToolInputSchema: {
+            /** @enum {string} */
+            type: "object";
+            properties: {
+                [key: string]: {
+                    /** @enum {string} */
+                    type: "string" | "number" | "boolean";
+                    /** @enum {string} */
+                    format?: "email" | "date";
+                    description?: string;
+                };
+            };
+            required: string[];
+            /** @enum {boolean} */
+            additionalProperties: false;
+        };
+        /** @description One exposed routine as a calling agent sees it: the name it invokes, the operator-authored description, and the input schema built from the routine's slots. */
+        AgentToolDescriptor: {
+            toolName: string;
+            description: string;
+            inputSchema: components["schemas"]["AgentToolInputSchema"];
+            routineLineageId: string;
+        };
+        /** @description The bound agent's tool catalog: exposed routines from its current published release. */
+        McpConverseToolsResponse: {
+            agent: {
+                name: string;
+                description: string | null;
+            };
+            tools: components["schemas"]["AgentToolDescriptor"][];
+            /** @description The description an MCP client should advertise for `ask_agent`, composed from the agent's name, its operator-authored description, and the names of its exposed tools. Assembled from configuration rather than written by a model, so the same settings always produce the same sentence. The tool names come from the published release; the name and description are read from the agent's current settings. */
+            askAgentDescription: string;
+        };
+        /** @description One field-level problem with a tool call's input. `too_long` is a string value over 2000 characters; `format` is an `email` or `date` slot whose value does not parse as one. */
+        RoutineInvocationError: {
+            /** @description The slot key the problem is on. */
+            path: string;
+            /** @enum {string} */
+            code: "required" | "type" | "format" | "unknown_field" | "too_long";
+        };
+        /** @description The `error.details` of a 400 that refused a tool call before any turn state was written: every problem at once, so a caller can fix the whole call in one retry. Values are never echoed back. */
+        RoutineInvocationInvalidDetails: {
+            /** @enum {string} */
+            code: "routine_invocation_invalid";
+            toolName: string;
+            errors: components["schemas"]["RoutineInvocationError"][];
+        };
+        /** @description One message in the conversation. `author` is provenance, not role: an operator's reply is stored as an assistant message, so `human` is the only thing that tells a person's turn from the agent's. */
+        ConverseMessage: {
+            id: string;
+            /** @enum {string} */
+            author: "agent" | "human";
+            /** Format: date-time */
+            createdAt: string;
+            text: string;
+        };
+        /** @description Who owns the conversation right now. `human_owned` means a person has taken it over and the agent is not answering, so keep reading rather than asking again. */
+        ConverseOwnershipState: {
+            /** @enum {string} */
+            state: "ai_owned" | "human_owned";
+        };
+        /** @description Messages after the request's cursor, the cursor to resume from, and who owns the conversation now. `cursor` is null only while the conversation holds no messages. */
+        ConverseMessagesResponse: {
+            messages: components["schemas"]["ConverseMessage"][];
+            cursor: string | null;
+            ownership: components["schemas"]["ConverseOwnershipState"];
+        };
+        /** @description An A2A Agent Card for one agent: who it is, where its MCP endpoint is, how a caller authenticates, and one skill per exposed routine. */
+        A2aAgentCard: {
+            protocolVersion: string;
+            name: string;
+            description: string;
+            url: string;
+            preferredTransport: string;
+            version: string;
+            documentationUrl?: string;
+            capabilities: {
+                streaming: boolean;
+                pushNotifications: boolean;
+                stateTransitionHistory: boolean;
+            };
+            defaultInputModes: string[];
+            defaultOutputModes: string[];
+            securitySchemes: {
+                [key: string]: {
+                    /** @enum {string} */
+                    type: "http";
+                    scheme: string;
+                    description?: string;
+                };
+            };
+            security: {
+                [key: string]: string[];
+            }[];
+            skills: {
+                id: string;
+                name: string;
+                description: string;
+                tags: string[];
+                inputModes: string[];
+                outputModes: string[];
+            }[];
+        };
+        /** @description The MCP server card for one agent, in the published MCP server document shape. `$schema` is omitted until the server-card extension publishes one. */
+        McpServerCard: {
+            name: string;
+            description: string;
+            version: string;
+            websiteUrl?: string;
+            remotes: {
+                /** @enum {string} */
+                type: "streamable-http";
+                url: string;
+            }[];
+            _meta: {
+                "ai.radioso/agent": {
+                    title: string;
+                    publicId: string;
+                    /** @enum {string} */
+                    authentication: "none" | "bearer";
+                    tools: string[];
+                    publishedAt: string;
+                };
+            };
+        };
+        /** @description The catalog entry for one agent: the index a customer's own origin points at. */
+        AiCatalog: {
+            agents: {
+                publicId: string;
+                name: string;
+                description: string | null;
+                documentationUrl: string | null;
+                /** @enum {string} */
+                authentication: "none" | "bearer";
+                mcp: {
+                    url: string;
+                    /** @enum {string} */
+                    transport: "streamable-http";
+                    serverCardUrl: string;
+                };
+                tools: {
+                    name: string;
+                    description: string;
+                }[];
+                publishedAt: string;
+            }[];
         };
         ConnectorField: {
             key: string;
@@ -8995,11 +9602,21 @@ export interface components {
                     createdAt: string;
                 }[];
             }[];
+            /** @description User messages copied in from the real conversation this test continues; 0 when it started fresh. */
+            seededTurnCount: number;
             testValues: unknown[];
             attempts: components["schemas"]["TestExecutionAttemptRecord"][];
         };
+        TestExecutionHistoryListItem: components["schemas"]["TestExecutionHistoryItem"] & {
+            /** @description User messages in this test: those copied from a real conversation it continues, plus those the operator sent. A greeting is not one. */
+            turnCount: number;
+            /** @description The first of those messages with text. A longer one is clipped to 200 characters ending in "…". Null until there is one. */
+            firstMessage: string | null;
+            /** @description Whether firstMessage was cut to fit, so a message that really ends in "…" reads as whole. */
+            firstMessageClipped: boolean;
+        };
         TestExecutionHistoryListResponse: {
-            executions: components["schemas"]["TestExecutionHistoryItem"][];
+            executions: components["schemas"]["TestExecutionHistoryListItem"][];
             nextCursor: string | null;
             hasMore: boolean;
         };
@@ -9416,6 +10033,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description No active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getUserProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profile returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfile"];
+                };
+            };
+            /** @description No active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateUserProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserProfileUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Profile updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfile"];
+                };
+            };
+            /** @description Request validation failed, or the display name breaks the naming rules */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description No active session */
@@ -12087,7 +12775,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description User or workspace grant inventory */
+            /** @description Active user or workspace grant inventory; revoked and superseded grants are excluded */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -14096,13 +14784,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Agent chat response returned as JSON or SSE */
+            /** @description Agent chat response returned as JSON or SSE; the SSE `done` frame carries the same envelope core as the JSON body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AssistantChatResponse"];
+                    "application/json": components["schemas"]["AgentChannelChatResponse"];
                     "text/event-stream": string;
                 };
             };
@@ -14113,7 +14801,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Request validation failed */
+            /** @description Request validation failed, or routine invocation input did not match the tool's schema */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -14124,6 +14812,15 @@ export interface operations {
             };
             /** @description Invalid, inactive, cross-audience, or cross-agent credential */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Routine tool is not in the agent's catalog */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14484,6 +15181,55 @@ export interface operations {
                 };
             };
             /** @description Agent or channel credential not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateAgentPublicId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent with its replacement public id */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description The agent has no public id to rotate */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -21610,6 +22356,7 @@ export interface operations {
                 agentId?: string;
                 sourceOrigin?: string;
                 outcome?: "in_progress" | "completed" | "handed_off";
+                callerKind?: "human" | "agent";
             };
             header?: never;
             path?: never;
@@ -21763,6 +22510,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string;
+                activityCursor?: string;
             };
             header?: never;
             path: {
@@ -21968,6 +22716,94 @@ export interface operations {
             };
         };
     };
+    listRecentlyClosedInboxItems: {
+        parameters: {
+            query?: {
+                /** @description How many items to return, 1 to 50. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recently closed items returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentlyClosedInboxItemsResponse"];
+                };
+            };
+            /** @description Invalid query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listConversationOperators: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Teammates returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationOperatorsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     takeOverConversation: {
         parameters: {
             query?: never;
@@ -22127,8 +22963,11 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** Format: uuid */
-                    toAccountId: string;
+                    /**
+                     * Format: uuid
+                     * @description The teammate to hand the conversation to. Pass your own user id to take a conversation another teammate holds.
+                     */
+                    toUserId: string;
                     expectedVersion: number;
                 };
             };
@@ -22170,7 +23009,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Conversation not found */
+            /** @description Conversation not found (`not_found`), or transfer target unavailable (`transfer_target_unavailable`) */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -23121,7 +23960,7 @@ export interface operations {
                         /** @enum {string} */
                         reason: "ok" | "no_llm_capability";
                         canManage: boolean;
-                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting")[];
+                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting")[];
                     };
                 };
             };
@@ -23216,7 +24055,7 @@ export interface operations {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting";
+                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting";
                                 targetLabel: string;
                                 summary: string;
                                 /** @enum {string} */
@@ -23362,11 +24201,11 @@ export interface operations {
                         /** Format: uuid */
                         workspaceId: string;
                         /** @enum {string} */
-                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting";
+                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting";
                         targetRef?: unknown;
                         target: {
                             /** @enum {string} */
-                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting";
+                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting";
                             ref?: unknown;
                         };
                         targetLabel: string;
@@ -23399,6 +24238,23 @@ export interface operations {
                             after: "pass" | "fail" | "error" | "recorded";
                             stale: boolean;
                         }[] | null;
+                        reviewedOperation: {
+                            /** @enum {string} */
+                            requirement: "conversation" | "signed_in_approval";
+                            effect: {
+                                /** @enum {string} */
+                                exposure: "draft" | "live";
+                                /** @enum {string} */
+                                reversibility: "reversible" | "irreversible";
+                                metered: boolean;
+                            };
+                            reviewDigest: string;
+                            reviewCode: string;
+                            expiresAt: string | null;
+                            approvedAt: string | null;
+                            clientName: string | null;
+                            review?: unknown;
+                        } | null;
                     };
                 };
             };
@@ -23408,6 +24264,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Proposal belongs to another account the signed-in user can access */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "proposal_account_mismatch";
+                            message: string;
+                            details: {
+                                /** Format: uuid */
+                                accountId: string;
+                                accountName: string;
+                                /** Format: uuid */
+                                workspaceId: string;
+                            };
+                        };
+                    };
+                };
             };
         };
     };
@@ -23445,6 +24323,44 @@ export interface operations {
             };
             /** @description Proposal is not pending */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    approveCopilotProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reviewDigest: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Approval outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "approved" | "expired" | "not_pending" | "digest_mismatch";
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -24980,7 +25896,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    launchToken: string;
+                    launchToken?: string;
+                    publicId?: string;
                     client?: {
                         name?: string;
                         version?: string;
@@ -25019,7 +25936,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Grant channel or bound agent is not allowed */
+            /** @description Grant channel or bound agent is not allowed, or the agent does not accept walk-in connections */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25102,38 +26019,22 @@ export interface operations {
             };
         };
     };
-    askMcpConverseAgent: {
+    getMcpConverseTools: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": {
-                    message: string;
-                    /** @enum {boolean} */
-                    stream?: false;
-                };
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Agent answer */
+            /** @description The bound agent's tool catalog */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** Format: uuid */
-                        conversationId: string;
-                        answer: {
-                            text: string;
-                            citations: unknown[];
-                        };
-                        traceId?: string;
-                    };
+                    "application/json": components["schemas"]["McpConverseToolsResponse"];
                 };
             };
             /** @description Invalid converse session */
@@ -25154,6 +26055,145 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description MCP converse rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMcpConverseMessages: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                waitMs?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Messages after the cursor, the next cursor, and current ownership */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConverseMessagesResponse"];
+                };
+            };
+            /** @description Invalid cursor or `waitMs` outside 0..25000 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid converse session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Converse session is no longer authorized */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description MCP converse read rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    askMcpConverseAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    message?: string;
+                    routine?: {
+                        toolName: string;
+                        input: {
+                            [key: string]: unknown;
+                        };
+                    };
+                    signedIdentity?: string;
+                    /** @enum {boolean} */
+                    stream?: false;
+                };
+            };
+        };
+        responses: {
+            /** @description Agent reply envelope with the answer text and citations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpConverseAskResponse"];
+                };
+            };
+            /** @description Routine invocation input did not match the tool's schema (`details` is `RoutineInvocationInvalidDetails`), or the body failed validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid converse session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Converse session is no longer authorized */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Routine tool is not in the agent's catalog */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Turn superseded by a newer message in the same conversation */
             409: {
                 headers: {
@@ -25164,6 +26204,147 @@ export interface operations {
                 };
             };
             /** @description MCP converse ask rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                publicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public document served */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["A2aAgentCard"];
+                };
+            };
+            /** @description Document unchanged since the caller's ETag */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No public document for this id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Discovery read rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentMcpServerCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                publicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public document served */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServerCard"];
+                };
+            };
+            /** @description Document unchanged since the caller's ETag */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No public document for this id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Discovery read rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentAiCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                publicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public document served */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiCatalog"];
+                };
+            };
+            /** @description Document unchanged since the caller's ETag */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No public document for this id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Discovery read rate limit exceeded */
             429: {
                 headers: {
                     [name: string]: unknown;

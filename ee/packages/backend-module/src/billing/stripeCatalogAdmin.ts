@@ -77,6 +77,8 @@ export interface StripeWebhookEndpointState {
 export interface StripeWebhookEndpointInput {
   url: string;
   enabledEvents: readonly StripeHandledWebhookEventType[];
+  /** The Stripe API version to pin the new endpoint to; the planner's desired version, not a default. */
+  apiVersion: string;
 }
 
 export interface StripeCreatedWebhookEndpoint {
@@ -140,7 +142,7 @@ export interface StripeCatalogAdmin {
   listWebhookEndpoints(): Promise<StripeWebhookEndpointState[]>;
   createWebhookEndpoint(input: StripeWebhookEndpointInput): Promise<StripeCreatedWebhookEndpoint>;
   /** Sets the endpoint's events and turns it back on if it was disabled. */
-  updateWebhookEndpoint(id: string, input: { enabledEvents: readonly StripeHandledWebhookEventType[] }): Promise<void>;
+  updateWebhookEndpoint(id: string, input: { enabledEvents: readonly string[] }): Promise<void>;
   /** The default portal configuration, or else the one an earlier sync run created; null when neither exists. */
   findPortalConfiguration(): Promise<StripePortalConfigurationState | null>;
   createPortalConfiguration(features: StripePortalFeatures): Promise<StripePortalConfigurationState>;

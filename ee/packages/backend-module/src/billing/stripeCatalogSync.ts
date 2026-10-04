@@ -175,7 +175,10 @@ export type StripeCatalogSyncAction =
       kind: "update_webhook_endpoint";
       endpointId: string;
       url: string;
-      enabledEvents: readonly StripeHandledWebhookEventType[];
+      /** The existing endpoint's events plus `addedEvents`; never drops an event the endpoint already has. */
+      enabledEvents: readonly string[];
+      /** Required events the endpoint was missing. Empty when the update only re-enables the endpoint. */
+      addedEvents: readonly string[];
     };
 
 export type StripeCatalogSyncNotice =
@@ -184,7 +187,14 @@ export type StripeCatalogSyncNotice =
       kind: "webhook_api_version_mismatch";
       endpointId: string;
       url: string;
-      currentApiVersion: string | null;
+      currentApiVersion: string;
+      expectedApiVersion: string;
+    }
+  | {
+      /** `null` API version means the endpoint tracks the account default, which may already be right. */
+      kind: "webhook_api_version_account_default";
+      endpointId: string;
+      url: string;
       expectedApiVersion: string;
     }
   | { kind: "portal_not_default"; configurationId: string }
@@ -336,6 +346,12 @@ const sameMembers = (left: readonly string[], right: readonly string[]): boolean
   return new Set(left).size === rightSet.size && left.every((entry) => rightSet.has(entry));
 };
 
+/** True when every member of `required` is already in `held`. */
+const isSuperset = (held: readonly string[], required: readonly string[]): boolean => {
+  const heldSet = new Set(held);
+  return required.every((event) => heldSet.has(event));
+};
+
 const portalProductsEqual = (left: readonly StripePortalProduct[], right: readonly StripePortalProduct[]): boolean =>
   left.length === right.length &&
   left.every((product) => {
@@ -360,6 +376,9 @@ const findWebhookEndpoint = (
   endpoints: readonly StripeWebhookEndpointState[],
 ): StripeWebhookEndpointState | undefined => endpoints.find((endpoint) => endpoint.url === desired.url);
 
+/** Stripe's shorthand for "every event", which by construction already covers anything required. */
+const WILDCARD_EVENT = "*";
+
 const planWebhook = (
   desired: DesiredStripeWebhook,
   endpoints: readonly StripeWebhookEndpointState[],
@@ -370,12 +389,15 @@ const planWebhook = (
       { kind: "create_webhook_endpoint", url: desired.url, enabledEvents: desired.enabledEvents, apiVersion: desired.apiVersion },
     ];
   }
-  if (existing.enabled && sameMembers(existing.enabledEvents, desired.enabledEvents)) {
+  const hasWildcard = existing.enabledEvents.includes(WILDCARD_EVENT);
+  const coversRequired = hasWildcard || isSuperset(existing.enabledEvents, desired.enabledEvents);
+  if (existing.enabled && coversRequired) {
     return [];
   }
-  return [
-    { kind: "update_webhook_endpoint", endpointId: existing.id, url: desired.url, enabledEvents: desired.enabledEvents },
-  ];
+  // Never remove an event the endpoint already has: an operator or another integration may rely on it.
+  const addedEvents = hasWildcard ? [] : desired.enabledEvents.filter((event) => !existing.enabledEvents.includes(event));
+  const enabledEvents = hasWildcard ? existing.enabledEvents : [...existing.enabledEvents, ...addedEvents];
+  return [{ kind: "update_webhook_endpoint", endpointId: existing.id, url: desired.url, enabledEvents, addedEvents }];
 };
 
 const planNotices = (desired: DesiredStripeCatalog, current: StripeCatalogState): StripeCatalogSyncNotice[] => {
@@ -383,7 +405,16 @@ const planNotices = (desired: DesiredStripeCatalog, current: StripeCatalogState)
   const endpoint = desired.webhook ? findWebhookEndpoint(desired.webhook, current.webhookEndpoints) : undefined;
   if (desired.webhook && endpoint) {
     notices.push({ kind: "webhook_secret_unreadable", endpointId: endpoint.id, url: endpoint.url });
-    if (endpoint.apiVersion !== desired.webhook.apiVersion) {
+    if (endpoint.apiVersion === null) {
+      // `null` means the endpoint tracks the account's default version, which may already be the one
+      // the runtime expects; that can only be checked in the Dashboard, so this is a notice, not a warning.
+      notices.push({
+        kind: "webhook_api_version_account_default",
+        endpointId: endpoint.id,
+        url: endpoint.url,
+        expectedApiVersion: desired.webhook.apiVersion,
+      });
+    } else if (endpoint.apiVersion !== desired.webhook.apiVersion) {
       notices.push({
         kind: "webhook_api_version_mismatch",
         endpointId: endpoint.id,

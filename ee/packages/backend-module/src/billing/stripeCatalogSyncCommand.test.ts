@@ -119,9 +119,12 @@ class FakeStripeCatalogAdmin implements StripeCatalogAdmin {
     return this.webhooks.map((endpoint) => ({ ...endpoint }));
   }
 
+  lastCreateWebhookEndpointApiVersion: string | null = null;
+
   async createWebhookEndpoint(input: StripeWebhookEndpointInput): Promise<StripeCreatedWebhookEndpoint> {
     const id = `we_${this.nextId++}`;
     this.writes.push(`create_webhook_endpoint ${input.url}`);
+    this.lastCreateWebhookEndpointApiVersion = input.apiVersion;
     this.webhooks.push({ id, url: input.url, enabledEvents: [...input.enabledEvents], apiVersion: this.apiVersion, enabled: true });
     return { id, secret: `whsec_fakeSigningSecret${id}` };
   }
@@ -174,6 +177,7 @@ const run = async (
   admin: FakeStripeCatalogAdmin,
   argv: string[],
   env: Record<string, string | undefined> = { STRIPE_SECRET_KEY: TEST_KEY },
+  cwd: string = process.cwd(),
 ): Promise<RunResult & { adminCreated: boolean }> => {
   const out: string[] = [];
   const err: string[] = [];
@@ -181,6 +185,7 @@ const run = async (
   const code = await runStripeCatalogSyncCommand({
     argv,
     env,
+    cwd,
     createAdmin: () => {
       adminCreated = true;
       return admin;
@@ -277,6 +282,43 @@ describe("runStripeCatalogSyncCommand", () => {
     expect(wrongKind.adminCreated).toBe(false);
   });
 
+  it("refuses --live with a test-mode key, before talking to Stripe", async () => {
+    const result = await run(admin, ["--apply", "--live"], { STRIPE_SECRET_KEY: TEST_KEY });
+
+    expect(result.code).toBe(1);
+    expect(result.err).toMatch(/--live/);
+    expect(result.err).toMatch(/test/i);
+    expect(result.adminCreated).toBe(false);
+    expect(admin.writes).toEqual([]);
+  });
+
+  it("rejects a non-https --webhook-url", async () => {
+    const result = await run(admin, ["--webhook-url", "http://app.example.com/api/v1/ee/billing/webhook"]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toMatch(/https/);
+    expect(result.adminCreated).toBe(false);
+  });
+
+  it("resolves a relative --webhook-secret-file against the given base directory, not the process cwd", async () => {
+    const result = await run(
+      admin,
+      ["--apply", "--webhook-url", WEBHOOK_URL, "--webhook-secret-file", "whsec"],
+      { STRIPE_SECRET_KEY: TEST_KEY },
+      dir,
+    );
+
+    expect(result.code).toBe(0);
+    const secret = await readFile(join(dir, "whsec"), "utf8");
+    expect(secret).toMatch(/^whsec_/);
+  });
+
+  it("creates the webhook endpoint pinned to the adapter's API version", async () => {
+    await run(admin, ["--apply", "--webhook-url", WEBHOOK_URL]);
+
+    expect(admin.lastCreateWebhookEndpointApiVersion).toBe(admin.apiVersion);
+  });
+
   it("writes a new endpoint's signing secret to a 0600 file and never prints it or the API key", async () => {
     const secretFile = join(dir, "whsec");
 
@@ -303,6 +345,31 @@ describe("runStripeCatalogSyncCommand", () => {
     expect(result.err).toContain(secretFile);
     expect(admin.writes).toEqual([]);
     expect(await readFile(secretFile, "utf8")).toBe("keep me");
+  });
+
+  it("refuses a secret file whose directory does not exist, before changing anything", async () => {
+    const secretFile = join(dir, "missing-subdir", "whsec");
+
+    const result = await run(admin, ["--apply", "--webhook-url", WEBHOOK_URL, "--webhook-secret-file", secretFile]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain(secretFile);
+    expect(admin.writes).toEqual([]);
+  });
+
+  it("prints the secret and exits non-zero when writing it still fails after the endpoint is created", async () => {
+    const notADirectory = join(dir, "not-a-directory");
+    await writeFile(notADirectory, "a file, not a directory");
+    const secretFile = join(notADirectory, "whsec");
+
+    const result = await run(admin, ["--apply", "--webhook-url", WEBHOOK_URL, "--webhook-secret-file", secretFile]);
+
+    expect(result.code).toBe(1);
+    expect(admin.writes).toContain(`create_webhook_endpoint ${WEBHOOK_URL}`);
+    const secret = `whsec_fakeSigningSecret${admin.webhooks[0].id}`;
+    expect(result.out).toContain(secret);
+    expect(result.out).toMatch(/could not write/i);
+    expect(result.out).toMatch(/store this secret now/i);
   });
 
   it("prints a new endpoint's signing secret once when no secret file is given", async () => {
@@ -352,6 +419,37 @@ describe("runStripeCatalogSyncCommand", () => {
 
     expect(result.out).toMatch(/head office/i);
     expect(result.out).toContain("0 active registrations");
+  });
+
+  it("prints which events it is adding, not the whole list, when it updates an existing endpoint", async () => {
+    await run(admin, ["--apply", "--webhook-url", WEBHOOK_URL]);
+    admin.webhooks[0].enabledEvents = ["invoice.paid"];
+
+    const result = await run(admin, ["--webhook-url", WEBHOOK_URL]);
+
+    expect(result.out).toMatch(
+      /add checkout\.session\.completed, customer\.subscription\.updated, customer\.subscription\.deleted, invoice\.payment_failed/,
+    );
+  });
+
+  it("notices, without advising deletion, when an endpoint follows the account's default API version", async () => {
+    await run(admin, ["--apply", "--webhook-url", WEBHOOK_URL]);
+    admin.webhooks[0].apiVersion = null;
+
+    const result = await run(admin, ["--webhook-url", WEBHOOK_URL]);
+
+    expect(result.out).toMatch(/Note: webhook endpoint .* account's default API version/i);
+    expect(result.out).not.toMatch(/delete the endpoint/i);
+  });
+
+  it("warns, advising deletion, when an endpoint uses a specific, different API version", async () => {
+    await run(admin, ["--apply", "--webhook-url", WEBHOOK_URL]);
+    admin.webhooks[0].apiVersion = "2024-06-20";
+
+    const result = await run(admin, ["--webhook-url", WEBHOOK_URL]);
+
+    expect(result.out).toMatch(/Warning: webhook endpoint .* API version/i);
+    expect(result.out).toMatch(/delete the endpoint/i);
   });
 
   it("reports a Stripe failure with exit code 1 and keeps the API key out of the message", async () => {

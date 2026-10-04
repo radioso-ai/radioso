@@ -4,7 +4,9 @@
  * `--apply` executes it. Owns flags, the live-mode guard, operator-facing output, and where a new
  * webhook signing secret goes; the planner owns what should change, the adapter owns Stripe calls.
  */
+import { constants as fsConstants } from "node:fs";
 import { access, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { formatPrice, PLAN_CATALOG, STRIPE_PLAN_METADATA_KEY } from "@radioso/plan-catalog";
@@ -26,6 +28,8 @@ import {
 interface StripeCatalogSyncCommandDeps {
   argv: readonly string[];
   env: Readonly<Record<string, string | undefined>>;
+  /** The directory a relative `--webhook-secret-file` resolves against: where the operator ran the command from. */
+  cwd: string;
   createAdmin: (secretKey: string) => StripeCatalogAdmin;
   out: (line: string) => void;
   err: (line: string) => void;
@@ -81,10 +85,15 @@ const runCommand = async (
     io.out(USAGE);
     return 0;
   }
-  const options = parseOptions(deps.argv);
+  const options = resolveWebhookSecretFile(parseOptions(deps.argv), deps.cwd);
   const mode = stripeKeyMode(secretKey);
   if (!mode) {
     throw new CommandError("Set STRIPE_SECRET_KEY to a Stripe secret (sk_) or restricted (rk_) key.");
+  }
+  if (options.live && mode === "test") {
+    throw new CommandError(
+      "--live was given but STRIPE_SECRET_KEY is a TEST key. Remove --live, or set STRIPE_SECRET_KEY to your live-mode key.",
+    );
   }
   if (mode === "live" && options.apply && !options.live) {
     throw new CommandError(
@@ -114,7 +123,7 @@ const runCommand = async (
     io.out(`Dry run: nothing changed. Re-run with --apply${mode === "live" ? " --live" : ""} to make these changes.`);
     return 0;
   }
-  await assertSecretFileIsFree(plan, options);
+  await assertSecretFileCanBeWritten(plan, options);
   await applyPlan(admin, plan, current, options, io);
   io.out(`Applied ${plan.actions.length} change${plan.actions.length === 1 ? "" : "s"}.`);
   return 0;
@@ -145,20 +154,23 @@ const parseOptions = (argv: readonly string[]): CommandOptions => {
   if (webhookSecretFile && !webhookUrl) {
     throw new CommandError("--webhook-secret-file needs --webhook-url: the secret belongs to the endpoint that run creates.");
   }
-  if (webhookUrl && !isHttpUrl(webhookUrl)) {
+  if (webhookUrl && !isHttpsUrl(webhookUrl)) {
     throw new CommandError(`--webhook-url must be an absolute https:// URL, got "${webhookUrl}".`);
   }
   return { apply: values.apply ?? false, live: values.live ?? false, webhookUrl, webhookSecretFile };
 };
 
-const isHttpUrl = (value: string): boolean => {
+const isHttpsUrl = (value: string): boolean => {
   try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:";
+    return new URL(value).protocol === "https:";
   } catch {
     return false;
   }
 };
+
+/** `--webhook-secret-file` is relative to where the operator ran the command, not this package's directory. */
+const resolveWebhookSecretFile = (options: CommandOptions, cwd: string): CommandOptions =>
+  options.webhookSecretFile ? { ...options, webhookSecretFile: resolve(cwd, options.webhookSecretFile) } : options;
 
 const stripeKeyMode = (key: string): StripeKeyMode | null => {
   const mode = /^(?:sk|rk)_(test|live)_/.exec(key)?.[1];
@@ -218,7 +230,7 @@ const printPlan = (
   if (plan.notices.length > 0) {
     io.out("");
     for (const notice of plan.notices) {
-      io.out(`${notice.kind === "webhook_secret_unreadable" ? "Note" : "Warning"}: ${describeNotice(notice)}`);
+      io.out(`${isSoftNotice(notice) ? "Note" : "Warning"}: ${describeNotice(notice)}`);
     }
   }
   io.out("");
@@ -273,9 +285,15 @@ const describeAction = (action: StripeCatalogSyncAction): string => {
     case "create_webhook_endpoint":
       return `create webhook endpoint ${action.url} for ${action.enabledEvents.join(", ")} (API version ${action.apiVersion})`;
     case "update_webhook_endpoint":
-      return `update webhook endpoint ${action.endpointId} (${action.url}): enable it for ${action.enabledEvents.join(", ")}`;
+      return action.addedEvents.length > 0
+        ? `update webhook endpoint ${action.endpointId} (${action.url}): add ${action.addedEvents.join(", ")}, keeping its other events`
+        : `update webhook endpoint ${action.endpointId} (${action.url}): re-enable it`;
   }
 };
+
+/** Notices that describe a benign or unconfirmed state, printed under "Note" rather than "Warning". */
+const isSoftNotice = (notice: StripeCatalogSyncNotice): boolean =>
+  notice.kind === "webhook_secret_unreadable" || notice.kind === "webhook_api_version_account_default";
 
 const describeNotice = (notice: StripeCatalogSyncNotice): string => {
   switch (notice.kind) {
@@ -287,9 +305,15 @@ const describeNotice = (notice: StripeCatalogSyncNotice): string => {
       );
     case "webhook_api_version_mismatch":
       return (
-        `webhook endpoint ${notice.endpointId} sends events in API version ${notice.currentApiVersion ?? "(account default)"}, ` +
+        `webhook endpoint ${notice.endpointId} sends events in API version ${notice.currentApiVersion}, ` +
         `and the billing runtime reads ${notice.expectedApiVersion} payloads. Stripe cannot change an endpoint's version: ` +
         "delete the endpoint in the Dashboard, re-run with --webhook-url to recreate it, and store the new signing secret."
+      );
+    case "webhook_api_version_account_default":
+      return (
+        `webhook endpoint ${notice.endpointId} uses the account's default API version, and the billing runtime expects ` +
+        `${notice.expectedApiVersion} or newer. Check the account default in Dashboard > Developers > Webhooks; if it's ` +
+        "older, re-run with --webhook-url to create a new endpoint pinned to the version this run expects."
       );
     case "portal_not_default":
       return (
@@ -312,7 +336,7 @@ const describeNotice = (notice: StripeCatalogSyncNotice): string => {
 };
 
 /** Checked before any change: a secret Stripe shows once must have somewhere to land. */
-const assertSecretFileIsFree = async (plan: StripeCatalogSyncPlan, options: CommandOptions): Promise<void> => {
+const assertSecretFileCanBeWritten = async (plan: StripeCatalogSyncPlan, options: CommandOptions): Promise<void> => {
   const createsEndpoint = plan.actions.some((action) => action.kind === "create_webhook_endpoint");
   if (!createsEndpoint || !options.webhookSecretFile) {
     return;
@@ -324,6 +348,17 @@ const assertSecretFileIsFree = async (plan: StripeCatalogSyncPlan, options: Comm
   if (exists) {
     throw new CommandError(
       `Refusing to overwrite ${options.webhookSecretFile}. Pass a path that does not exist yet; nothing was changed.`,
+    );
+  }
+  const secretFileDir = dirname(options.webhookSecretFile);
+  const writable = await access(secretFileDir, fsConstants.W_OK).then(
+    () => true,
+    () => false,
+  );
+  if (!writable) {
+    throw new CommandError(
+      `Cannot write to ${secretFileDir} for --webhook-secret-file ${options.webhookSecretFile}. Pass a path in a ` +
+        "directory that exists and is writable; nothing was changed.",
     );
   }
 };
@@ -372,7 +407,11 @@ const applyPlan = async (
         await admin.updatePortalConfiguration(action.configurationId, portalFeatures(action.products));
         break;
       case "create_webhook_endpoint": {
-        const created = await admin.createWebhookEndpoint({ url: action.url, enabledEvents: action.enabledEvents });
+        const created = await admin.createWebhookEndpoint({
+          url: action.url,
+          enabledEvents: action.enabledEvents,
+          apiVersion: action.apiVersion,
+        });
         await storeWebhookSecret(created, options, io);
         break;
       }
@@ -397,9 +436,14 @@ const storeWebhookSecret = async (
   try {
     await writeFile(options.webhookSecretFile, created.secret, { mode: 0o600, flag: "wx" });
   } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    // The endpoint already exists in Stripe at this point; losing the secret here means rolling it
+    // in the Dashboard, so print it now rather than letting it go only to the error path.
+    io.out(`could not write ${options.webhookSecretFile}: ${reason}; store this secret now. STRIPE_WEBHOOK_SECRET for ${created.id}:`);
+    io.out(created.secret);
     throw new Error(
       `Created webhook endpoint ${created.id} but could not write its signing secret to ${options.webhookSecretFile} ` +
-        `(${error instanceof Error ? error.message : String(error)}). Roll the endpoint's signing secret in the Dashboard.`,
+        `(${reason}). The secret was printed above; store it now.`,
       { cause: error },
     );
   }

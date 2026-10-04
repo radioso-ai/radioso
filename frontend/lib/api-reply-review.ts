@@ -1,5 +1,54 @@
 import { request } from './api-client'
 import { withQuery } from './api-query'
+import type { TurnTraceEnvelope } from './api-types'
+
+/**
+ * Where a held reply stands. `released` went out as written and `edited` as the operator changed
+ * it; `discarded` and `superseded` never went out. `queued_auto` is waiting for an automatic send.
+ */
+type HeldReplyState = 'pending' | 'queued_auto' | 'released' | 'edited' | 'discarded' | 'superseded'
+
+/**
+ * A reply the agent wrote that waits for an operator before it reaches the customer, with what the
+ * turn found. Fact values are producer codes, rendered through the Inbox's own copy.
+ */
+export type HeldReply = {
+  id: string
+  conversationId: string
+  agentId: string | null
+  state: HeldReplyState
+  holdReason: string
+  facts: {
+    grounding: string
+    coverage: string
+    handoff: { requested: boolean; reason: string | null }
+    outcome: string
+  }
+  /** The reply relies on an action the turn was not allowed to run. */
+  dependsOnSuppressedAction: boolean
+  suppressedEffects: { skillName: string }[]
+  /** The agent's text, kept as written even after an edited release. */
+  draftText: string
+  editedText: string | null
+  createdAt: string
+  decidedAt: string | null
+  releaserUserId: string | null
+  editorUserId: string | null
+  /** Whether the conversation still waits on an operator because of this reply. */
+  attentionOpen: boolean
+  trace: TurnTraceEnvelope | null
+}
+
+export type HeldReplyPage = { items: HeldReply[]; nextCursor: string | null }
+
+type HeldReplyQuery = {
+  attention?: 'open' | 'all'
+  agentId?: string
+  cursor?: string | null
+  limit?: number
+}
+
+type HeldReplyReleaseResult = { heldReply: HeldReply; messageId: string; delivery: 'queued' }
 
 /**
  * How a reply failed to reach the customer: bounced, refused or failed, of an outcome nobody knows,
@@ -37,8 +86,48 @@ type DeliveryFailureResolution = 'marked_sent' | 'resend'
 const failurePath = (failureId: string, action: 'acknowledge' | 'resolve') =>
   `/delivery-failures/${encodeURIComponent(failureId)}/${action}`
 
-/** The operator review of replies sent to customers: their delivery failures. */
+const conversationPath = (conversationId: string) => `/conversations/${encodeURIComponent(conversationId)}`
+
+const heldReplyPath = (conversationId: string, heldReplyId: string, action: 'release' | 'discard') =>
+  `${conversationPath(conversationId)}/held-replies/${encodeURIComponent(heldReplyId)}/${action}`
+
+/**
+ * The operator review of replies to customers: held replies before they are sent, and delivery
+ * failures after.
+ */
 export const replyReviewApi = {
+  listHeldReplies(query: HeldReplyQuery = {}, signal?: AbortSignal): Promise<HeldReplyPage> {
+    return request<HeldReplyPage>(
+      withQuery('/held-replies', {
+        attention: query.attention,
+        agentId: query.agentId,
+        cursor: query.cursor,
+        limit: query.limit,
+      }),
+      { method: 'GET', ...(signal ? { signal } : {}) },
+    )
+  },
+
+  /** The conversation's current held reply, or null when it has none. */
+  getCurrentHeldReply(conversationId: string, signal?: AbortSignal): Promise<{ heldReply: HeldReply | null }> {
+    return request<{ heldReply: HeldReply | null }>(`${conversationPath(conversationId)}/held-reply`, {
+      method: 'GET',
+      ...(signal ? { signal } : {}),
+    })
+  },
+
+  /** Sends the draft as written, or the operator's edit of it when `editedText` is given. */
+  releaseHeldReply(conversationId: string, heldReplyId: string, editedText?: string): Promise<HeldReplyReleaseResult> {
+    return request<HeldReplyReleaseResult>(heldReplyPath(conversationId, heldReplyId, 'release'), {
+      method: 'POST',
+      body: JSON.stringify(editedText === undefined ? {} : { editedText }),
+    })
+  },
+
+  discardHeldReply(conversationId: string, heldReplyId: string): Promise<HeldReply> {
+    return request<HeldReply>(heldReplyPath(conversationId, heldReplyId, 'discard'), { method: 'POST' })
+  },
+
   listDeliveryFailures(query: DeliveryFailureQuery = {}, signal?: AbortSignal): Promise<DeliveryFailurePage> {
     return request<DeliveryFailurePage>(
       withQuery('/delivery-failures', {

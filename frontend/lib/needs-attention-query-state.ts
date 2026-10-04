@@ -190,8 +190,9 @@ export const needsAttentionQualityInputs: {
   },
 } as const
 
-// A server without the delivery-failures route answers 404: that is no failures, not an outage to retry.
-const retryDeliveryFailures = (attempt: number, error: unknown) =>
+// A server without the delivery-failures or held-replies route answers 404: that is none, not an
+// outage to retry.
+const retryReplyReview = (attempt: number, error: unknown) =>
   attempt < 2
   && isDashboardQueryRetryable(error)
   && !(typeof error === 'object' && error !== null && 'status' in error && error.status === 404)
@@ -203,6 +204,9 @@ export const useAttentionRailQueries = (workspaceId: string) => {
     pageSize: NEEDS_ATTENTION_PAGE_SIZE,
   })
   const deliveryFailuresKey = dashboardQueryKeys.attention.deliveryFailures(workspaceId, {
+    limit: NEEDS_ATTENTION_PAGE_SIZE,
+  })
+  const heldRepliesKey = dashboardQueryKeys.attention.heldReplies(workspaceId, {
     limit: NEEDS_ATTENTION_PAGE_SIZE,
   })
   const decisions = useQuery({
@@ -226,9 +230,16 @@ export const useAttentionRailQueries = (workspaceId: string) => {
     queryFn: ({ signal }) => replyReviewApi.listDeliveryFailures({ state: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE }, signal),
     enabled: Boolean(workspaceId) && policy.queriesEnabled,
     refetchInterval: policy.intervalFor(deliveryFailuresKey),
-    retry: retryDeliveryFailures,
+    retry: retryReplyReview,
   })
-  return { decisions, humanOwned, deliveryFailures, policy }
+  const heldReplies = useQuery({
+    queryKey: heldRepliesKey,
+    queryFn: ({ signal }) => replyReviewApi.listHeldReplies({ attention: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE }, signal),
+    enabled: Boolean(workspaceId) && policy.queriesEnabled,
+    refetchInterval: policy.intervalFor(heldRepliesKey),
+    retry: retryReplyReview,
+  })
+  return { decisions, humanOwned, deliveryFailures, heldReplies, policy }
 }
 
 export const useNeedsAttentionQueries = (workspaceId: string) => {
@@ -255,7 +266,7 @@ export const useNeedsAttentionQueries = (workspaceId: string) => {
  * (spec 1116 unification) — the same client inbox model that drives the tab
  * title in `useInboxAttentionSignal`, so the count never disagrees with what
  * the Needs-you lens's own queue shows. Uses `useAttentionRailQueries`
- * (approvals, handoffs, delivery failures) plus
+ * (approvals and held replies, handoffs, delivery failures) plus
  * the one quality-turns query the model needs (commented feedback); the
  * review-summary query the full `useNeedsAttentionQueries` hook also fetches
  * is unused for a plain count, so it's left out here to avoid firing it from
@@ -276,5 +287,6 @@ export const useNeedsAttentionOpenCount = (workspaceId: string): number => {
     conversations: selectHumanOwned(attention.humanOwned.data?.conversations ?? []),
     qualityTurns: commentedFeedback.data?.items ?? [],
     deliveryFailures: attention.deliveryFailures.data?.items ?? [],
+    heldReplies: attention.heldReplies.data?.items ?? [],
   }).items.length
 }

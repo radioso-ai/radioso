@@ -72,6 +72,12 @@ type CreateEmailMailboxRequest = {
   engagementMode?: EmailEngagementMode
 }
 
+/** A settings change; `expectedPolicyVersion` refuses it when someone saved the mailbox since it was read. */
+type UpdateEmailMailboxRequest = {
+  engagementMode?: EmailEngagementMode
+  expectedPolicyVersion?: number
+}
+
 export type EmailEvent = {
   id: string
   createdAt: string
@@ -148,6 +154,10 @@ export const emailChannelApi = {
 
   getMailbox(workspaceId: string, mailboxId: string): Promise<EmailMailbox> {
     return request<EmailMailbox>(mailboxPath(workspaceId, mailboxId), { method: 'GET' })
+  },
+
+  updateMailbox(workspaceId: string, mailboxId: string, body: UpdateEmailMailboxRequest): Promise<EmailMailbox> {
+    return request<EmailMailbox>(mailboxPath(workspaceId, mailboxId), { method: 'PATCH', body: JSON.stringify(body) })
   },
 
   startSetupCheck(workspaceId: string, mailboxId: string, step: EmailSetupCheckStep): Promise<EmailMailboxSetupCheck> {

@@ -44,11 +44,30 @@ vi.mock('@/lib/api-hitl', async () => {
 })
 vi.mock('@/lib/api-reply-review', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api-reply-review')>('@/lib/api-reply-review')
-  return { ...actual, replyReviewApi: { ...actual.replyReviewApi, listDeliveryFailures: vi.fn() } }
+  return { ...actual, replyReviewApi: { ...actual.replyReviewApi, listDeliveryFailures: vi.fn(), listHeldReplies: vi.fn() } }
 })
 
 const page = { items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }
 const noDeliveryFailures = { items: [], nextCursor: null }
+const noHeldReplies = { items: [], nextCursor: null }
+const heldReply = (id: string, conversationId: string) => ({
+  id,
+  conversationId,
+  agentId: 'agent-1',
+  state: 'pending' as const,
+  holdReason: 'draft_mode',
+  facts: { grounding: 'grounded', coverage: 'answered', handoff: { requested: false, reason: null }, outcome: 'answered' },
+  dependsOnSuppressedAction: false,
+  suppressedEffects: [],
+  draftText: 'Your order shipped on Monday.',
+  editedText: null,
+  createdAt: '2026-06-19T10:00:00.000Z',
+  decidedAt: null,
+  releaserUserId: null,
+  editorUserId: null,
+  attentionOpen: true,
+  trace: null,
+})
 const interest = {
   open: ({ onLifecycle }: { onLifecycle(signal: 'ready'): void }) => {
     onLifecycle('ready')
@@ -83,6 +102,7 @@ describe('Needs Attention query state', () => {
     vi.mocked(chatApi.listChatHistory).mockResolvedValue({ conversations: [], total: 0 } as never)
     vi.mocked(qualityApi.listTurns).mockResolvedValue(page)
     vi.mocked(replyReviewApi.listDeliveryFailures).mockResolvedValue(noDeliveryFailures)
+    vi.mocked(replyReviewApi.listHeldReplies).mockResolvedValue(noHeldReplies)
     let client!: QueryClient
     await renderProbe((_value, nextClient) => { client = nextClient })
     await vi.waitFor(() => {
@@ -90,7 +110,11 @@ describe('Needs Attention query state', () => {
       expect(chatApi.listChatHistory).toHaveBeenCalledTimes(1)
       expect(qualityApi.listTurns).toHaveBeenCalledTimes(2)
       expect(replyReviewApi.listDeliveryFailures).toHaveBeenCalledTimes(1)
+      expect(replyReviewApi.listHeldReplies).toHaveBeenCalledTimes(1)
     })
+    // Held replies are a second approval source, read beside routine decisions, never instead of them.
+    expect(replyReviewApi.listHeldReplies).toHaveBeenCalledWith({ attention: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE }, expect.any(AbortSignal))
+    expect(client.getQueryData(dashboardQueryKeys.attention.heldReplies('workspace-1', { limit: NEEDS_ATTENTION_PAGE_SIZE }))).toEqual(noHeldReplies)
     expect(replyReviewApi.listDeliveryFailures).toHaveBeenCalledWith({ state: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE }, expect.any(AbortSignal))
     expect(client.getQueryData(dashboardQueryKeys.attention.deliveryFailures('workspace-1', { limit: NEEDS_ATTENTION_PAGE_SIZE }))).toEqual(noDeliveryFailures)
     expect(hitlApi.listPendingDecisions).toHaveBeenCalledTimes(1)
@@ -107,16 +131,19 @@ describe('Needs Attention query state', () => {
     vi.mocked(chatApi.listChatHistory).mockReturnValue(pending.promise)
     vi.mocked(qualityApi.listTurns).mockReturnValue(pending.promise)
     vi.mocked(replyReviewApi.listDeliveryFailures).mockReturnValue(pending.promise)
+    vi.mocked(replyReviewApi.listHeldReplies).mockReturnValue(pending.promise)
     const { root, container } = await renderProbe(() => undefined)
     await vi.waitFor(() => {
       expect(hitlApi.listPendingDecisions).toHaveBeenCalled()
       expect(chatApi.listChatHistory).toHaveBeenCalled()
       expect(qualityApi.listTurns).toHaveBeenCalledTimes(2)
       expect(replyReviewApi.listDeliveryFailures).toHaveBeenCalled()
+      expect(replyReviewApi.listHeldReplies).toHaveBeenCalled()
     })
     await act(async () => root.unmount())
     expect(vi.mocked(hitlApi.listPendingDecisions).mock.calls[0]?.[0]?.aborted).toBe(true)
     expect(vi.mocked(replyReviewApi.listDeliveryFailures).mock.calls[0]?.[1]?.aborted).toBe(true)
+    expect(vi.mocked(replyReviewApi.listHeldReplies).mock.calls[0]?.[1]?.aborted).toBe(true)
     expect(vi.mocked(chatApi.listChatHistory).mock.calls[0]?.[1]?.aborted).toBe(true)
     expect(vi.mocked(qualityApi.listTurns).mock.calls[0]?.[1]?.aborted).toBe(true)
     container.remove()
@@ -126,6 +153,7 @@ describe('Needs Attention query state', () => {
     vi.mocked(hitlApi.listPendingDecisions).mockResolvedValue({ decisions: [] })
     vi.mocked(chatApi.listChatHistory).mockResolvedValue({ conversations: [], total: 0 } as never)
     vi.mocked(qualityApi.listTurns).mockResolvedValue(page)
+    vi.mocked(replyReviewApi.listHeldReplies).mockResolvedValue(noHeldReplies)
     vi.mocked(replyReviewApi.listDeliveryFailures).mockResolvedValue({
       items: ['failure-1', 'failure-2'].map((id) => ({
         id,
@@ -153,6 +181,45 @@ describe('Needs Attention query state', () => {
       root.render(<DashboardQueryProvider workspaceId="workspace-1" interest={interest}><Count /></DashboardQueryProvider>)
     })
     await vi.waitFor(() => expect(counts.at(-1)).toBe(2))
+    await act(async () => root.unmount())
+  })
+
+  it('counts held replies as approvals beside routine approvals in the Needs-you lens', async () => {
+    vi.mocked(hitlApi.listPendingDecisions).mockResolvedValue({
+      decisions: [{
+        handle: 'decision-1',
+        conversationId: 'conversation-routine',
+        agentId: 'agent-1',
+        routineId: 'routine-1',
+        stepId: 'step-1',
+        reason: 'Approve the refund',
+        options: [{ id: 'approve', label: 'Approve' }],
+        contentHash: 'hash-1',
+        canResolve: true,
+        deadline: null,
+        createdAt: '2026-06-19T09:00:00.000Z',
+      }],
+    })
+    vi.mocked(chatApi.listChatHistory).mockResolvedValue({ conversations: [], total: 0 } as never)
+    vi.mocked(qualityApi.listTurns).mockResolvedValue(page)
+    vi.mocked(replyReviewApi.listDeliveryFailures).mockResolvedValue(noDeliveryFailures)
+    vi.mocked(replyReviewApi.listHeldReplies).mockResolvedValue({
+      items: [heldReply('held-1', 'conversation-email-1'), heldReply('held-2', 'conversation-email-2')],
+      nextCursor: null,
+    })
+    const counts: number[] = []
+    const Count = () => {
+      const count = useNeedsAttentionOpenCount('workspace-1')
+      useEffect(() => { counts.push(count) }, [count])
+      return null
+    }
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(<DashboardQueryProvider workspaceId="workspace-1" interest={interest}><Count /></DashboardQueryProvider>)
+    })
+    await vi.waitFor(() => expect(counts.at(-1)).toBe(3))
     await act(async () => root.unmount())
   })
 

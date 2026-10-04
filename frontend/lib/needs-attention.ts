@@ -7,11 +7,11 @@ import type {
   QualityTriageState,
 } from '@/lib/api'
 import type { RecentlyClosedInboxItemsResponse } from '@/lib/api-types'
-import type { DeliveryFailure } from '@/lib/api-reply-review'
+import type { DeliveryFailure, HeldReply } from '@/lib/api-reply-review'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import { formatApprovalCreatedAt } from '@/lib/needs-attention-format'
-import { buildDeliveryFailureRows } from '@/lib/needs-attention-reply-review'
+import { buildDeliveryFailureRows, buildHeldReplyRows } from '@/lib/needs-attention-reply-review'
 import { conversationOwner, type ConversationOwner } from '@/lib/operator-actions'
 
 export type HumanOwnedConversationSummary = ChatConversationSummary & {
@@ -63,6 +63,12 @@ export interface InboxItem {
    * `conversationId` alone (see `findPendingApprovalDecision`).
    */
   handle?: string
+  /**
+   * Present only for an approval that is a held reply: an agent's reply waiting for an operator
+   * to send, edit or discard it. Such an approval has no `handle`, and a conversation holds at
+   * most one current held reply, so it is matched by conversation (see `findRefreshedInboxItem`).
+   */
+  heldReplyId?: string
   /**
    * Present only for delivery failures — the failure itself. One conversation can
    * hold several (one per failed reply), so a failure row is matched by this
@@ -173,8 +179,10 @@ export const buildInboxModel = (input: {
   conversations: HumanOwnedConversationSummary[]
   qualityTurns: LowQualityTurn[]
   deliveryFailures?: readonly DeliveryFailure[]
+  /** Held replies are approvals too, beside routine decisions. */
+  heldReplies?: readonly HeldReply[]
 }): InboxModel => {
-  const approvals: InboxItem[] = input.decisions.map((decision) => ({
+  const routineApprovals: InboxItem[] = input.decisions.map((decision) => ({
     key: `approval:${decision.agentId}:${decision.handle}`,
     conversationId: decision.conversationId,
     type: 'approval',
@@ -188,6 +196,9 @@ export const buildInboxModel = (input: {
     // PendingApprovalDecision carries no conversation-level last-message time.
     lastMessageAt: null,
   }))
+  const heldReplyApprovals: InboxItem[] = buildHeldReplyRows(input.heldReplies ?? [], input.conversations)
+    .map((row) => ({ ...row, severity: ESCALATION_SEVERITY[row.type] }))
+  const approvals = [...routineApprovals, ...heldReplyApprovals]
 
   const handoffs: InboxItem[] = input.conversations.map(toHandoffInboxItem)
 
@@ -363,7 +374,9 @@ export const findPendingApprovalDecision = (
  * matching by conversationId + type alone could silently swap the selected
  * approval for the conversation's other one on refetch. A delivery failure
  * is matched by its own id for the same reason: one conversation can hold a
- * failure per failed reply. Every other type matches by conversationId + type instead — a handoff's key embeds its
+ * failure per failed reply. A held reply is matched by its conversation, which holds one current
+ * held reply at a time, so the selection follows the newer draft that replaced it and never lands
+ * on a routine approval. Every other type matches by conversationId + type instead — a handoff's key embeds its
  * ownership version, which changes the moment the operator claims it, and
  * key-matching would otherwise "lose" that item on the very refetch it's
  * trying to track.
@@ -372,8 +385,13 @@ export const findRefreshedInboxItem = (
   items: readonly InboxItem[],
   current: InboxItem,
 ): InboxItem | undefined => items.find((candidate) => {
+  if (current.type === 'approval' && current.heldReplyId) {
+    // A newer inbound replaces a conversation's held reply with a fresh one: follow it there.
+    return candidate.type === 'approval' && candidate.heldReplyId !== undefined && candidate.conversationId === current.conversationId
+  }
   if (current.type === 'approval') {
-    return candidate.type === 'approval' && candidate.agentId === current.agentId && candidate.handle === current.handle
+    return candidate.type === 'approval' && candidate.heldReplyId === undefined
+      && candidate.agentId === current.agentId && candidate.handle === current.handle
   }
   if (current.type === 'delivery_failed') {
     return candidate.type === 'delivery_failed' && candidate.deliveryFailure?.id === current.deliveryFailure?.id

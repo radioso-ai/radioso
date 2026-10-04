@@ -26,7 +26,7 @@ import {
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { getHitlApiErrorStatus } from '@/lib/api-hitl'
-import type { DeliveryFailurePage } from '@/lib/api-reply-review'
+import type { DeliveryFailurePage, HeldReplyPage } from '@/lib/api-reply-review'
 import { useOptionalAuth } from '@/lib/auth-context'
 import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -67,6 +67,14 @@ interface NeedsAttentionViewProps {
   accountId: string
   routeState: DashboardRouteState
 }
+
+/**
+ * A teammate without the takeover permission, or a server without the route, gets 403 or 404 from a
+ * reply-review source, and that settled answer is "none". Its polls must not count as loading: a
+ * query with no data goes back to pending on every refetch, which would blank the Inbox each time.
+ */
+const isFirstReplyReviewLoad = (query: { isLoading: boolean; dataUpdatedAt: number; errorUpdatedAt: number }) =>
+  query.isLoading && query.dataUpdatedAt === 0 && query.errorUpdatedAt === 0
 
 export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionViewProps) {
   const workspaceId = routeState.workspaceId ?? ''
@@ -134,6 +142,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     () => attentionQueries.deliveryFailures.data?.items ?? [],
     [attentionQueries.deliveryFailures.data],
   )
+  const heldReplies = useMemo(
+    () => attentionQueries.heldReplies.data?.items ?? [],
+    [attentionQueries.heldReplies.data],
+  )
   const qualityPresentation = useMemo(() => qualityInboxPresentation(qualitySnapshot), [qualitySnapshot])
   const qualityLoadState = qualityLoadStateFromQueries(
     attentionQueries.commentedFeedback,
@@ -144,8 +156,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     [qualityPresentation.turns, terminalQualityMessageIds],
   )
   const inboxModel = useMemo(
-    () => buildInboxModel({ decisions, conversations: humanOwnedConversations, qualityTurns, deliveryFailures }),
-    [decisions, humanOwnedConversations, qualityTurns, deliveryFailures],
+    () => buildInboxModel({ decisions, conversations: humanOwnedConversations, qualityTurns, deliveryFailures, heldReplies }),
+    [decisions, humanOwnedConversations, qualityTurns, deliveryFailures, heldReplies],
   )
   const items = inboxModel.items
   const criticalOpenCount = useMemo(
@@ -177,7 +189,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const isLoading = attentionQueries.policy.queriesEnabled && (
     attentionQueries.decisions.isLoading
     || attentionQueries.humanOwned.isLoading
-    || attentionQueries.deliveryFailures.isLoading
+    || isFirstReplyReviewLoad(attentionQueries.deliveryFailures)
+    || isFirstReplyReviewLoad(attentionQueries.heldReplies)
     || attentionQueries.commentedFeedback.isLoading
     || attentionQueries.reviewSummary.isLoading
   )
@@ -193,6 +206,13 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     && deliveryFailureErrorStatus !== 403
     && deliveryFailureErrorStatus !== 404
     ? getApiErrorMessage(attentionQueries.deliveryFailures.error, 'Failed to load delivery failures.')
+    : null
+  // The same holds for held replies.
+  const heldReplyErrorStatus = getHitlApiErrorStatus(attentionQueries.heldReplies.error)
+  const heldReplyError = attentionQueries.heldReplies.error
+    && heldReplyErrorStatus !== 403
+    && heldReplyErrorStatus !== 404
+    ? getApiErrorMessage(attentionQueries.heldReplies.error, 'Failed to load draft replies.')
     : null
 
   const typeCounts = useMemo(() => countInboxItemsByType(items), [items])
@@ -286,6 +306,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     setSelectedRecentlyClosedItem(item)
   }, [])
 
+  // A reply or takeover re-reads held replies through `conversation.ownership_changed`.
+  const heldRepliesKey = useMemo(
+    () => dashboardQueryKeys.attention.heldReplies(workspaceId, { limit: NEEDS_ATTENTION_PAGE_SIZE }),
+    [workspaceId],
+  )
+
   const handleOperatorChanged = useCallback(async (result: OperatorActionResult) => {
     if (result.kind === 'ownership') {
       invalidateDashboardQueries(['conversation.ownership_changed'])
@@ -309,6 +335,16 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       // ownership so a teammate's queue reflects the claim without waiting on
       // the next poll cycle.
       invalidateDashboardQueries(['conversation.ownership_changed'])
+    } else if (result.kind === 'held_reply_settled') {
+      // A sent reply leaves the queue at once; a discarded one stays until someone replies. The
+      // panel keeps the selection, its focus, and says what happened itself. The server's own
+      // `hitl.decision_resolved` re-reads the rest; this view does not wait for it.
+      if (result.outcome === 'released' || result.outcome === 'edited') {
+        queryClient.setQueryData<HeldReplyPage>(heldRepliesKey, (page) => page
+          ? { ...page, items: page.items.filter((heldReply) => heldReply.id !== result.heldReplyId) }
+          : page)
+      }
+      invalidateDashboardQueries(['hitl.decision_resolved'])
     } else if (result.kind === 'delivery_failure_cleared') {
       // No workspace event reports a cleared failure, so this view drops the row itself and
       // re-reads the failures and the recently-closed strip.
@@ -328,7 +364,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         setStatusAnnouncement('Delivery failure acknowledged.')
       }
     }
-  }, [invalidateDashboardQueries, queryClient, workspaceId])
+  }, [heldRepliesKey, invalidateDashboardQueries, queryClient, workspaceId])
 
   const requestCloseReview = useCallback((item: InboxItem, anchor: HTMLElement) => {
     setTriageError(null)
@@ -395,7 +431,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   // lens toggle lives in the left pane) — only the row list swaps for the
   // confidence message, so the operator can always reach the All lens even
   // when nothing needs them (spec 1116 unification, fix for issue #6).
-  const isQueueEmpty = !isLoading && !approvalError && !conversationError && !deliveryFailureError && items.length === 0
+  const isQueueEmpty = !isLoading && !approvalError && !conversationError && !deliveryFailureError && !heldReplyError
+    && items.length === 0
   const showNoFilterMatches = !isQueueEmpty
     && filteredItems.length === 0
     && !selectedInboxItem
@@ -477,6 +514,11 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         {deliveryFailureError ? (
           <div className="m-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             {deliveryFailureError}
+          </div>
+        ) : null}
+        {heldReplyError ? (
+          <div className="m-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            {heldReplyError}
           </div>
         ) : null}
 

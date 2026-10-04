@@ -15,6 +15,7 @@ import { emailChannelApi, type EmailDnsRecord, type EmailDomain } from '@/lib/ap
 const REFUSAL_COPY: Readonly<Record<string, string>> = {
   domain_claimed_elsewhere: 'This domain is claimed by another workspace.',
   email_channel_not_configured: 'Email isn’t enabled on this server.',
+  engagement_mode_unavailable: 'That mode isn’t available on this server.',
 }
 
 /** The operator-facing message for an email channel request that failed. */

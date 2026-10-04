@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ChatConversationSummary, ConversationOwnership, LowQualityTurn, PendingApprovalDecision } from '@/lib/api'
-import type { DeliveryFailure } from '@/lib/api-reply-review'
+import type { DeliveryFailure, HeldReply } from '@/lib/api-reply-review'
 import {
   buildInboxModel,
   buildInboxItems,
@@ -1433,5 +1433,148 @@ describe('delivery failures in the inbox model', () => {
 
     expect(findRefreshedInboxItem(refetched, second)?.deliveryFailure?.kind).toBe('failed')
     expect(findRefreshedInboxItem(refetched, first)).toBeUndefined()
+  })
+})
+
+describe('held replies in the inbox model', () => {
+  const heldReply = (overrides: Partial<HeldReply> = {}): HeldReply => ({
+    id: 'held-1',
+    conversationId: 'c-email',
+    agentId: 'agent-1',
+    state: 'pending',
+    holdReason: 'draft_mode',
+    facts: {
+      grounding: 'grounded',
+      coverage: 'answered',
+      handoff: { requested: false, reason: null },
+      outcome: 'answered',
+    },
+    dependsOnSuppressedAction: false,
+    suppressedEffects: [],
+    draftText: 'Your order 4417 shipped on Monday.',
+    editedText: null,
+    createdAt: '2026-06-19T10:02:00.000Z',
+    decidedAt: null,
+    releaserUserId: null,
+    editorUserId: null,
+    attentionOpen: true,
+    trace: null,
+    ...overrides,
+  })
+
+  it('makes each held reply a critical approval row that carries its heldReplyId', () => {
+    const items = buildInboxItems({ decisions: [], conversations: [], qualityTurns: [], heldReplies: [heldReply()] })
+
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      key: 'approval:held:held-1',
+      conversationId: 'c-email',
+      type: 'approval',
+      severity: 'critical',
+      heldReplyId: 'held-1',
+      escalatedAt: '2026-06-19T10:02:00.000Z',
+      agentId: 'agent-1',
+    })
+    expect(items[0].handle).toBeUndefined()
+    expect(items[0].title).toBeTruthy()
+  })
+
+  it('titles the row after its conversation, and carries its agent, when the conversation is loaded', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({ id: 'c-email', title: 'Where is my order?', agentId: 'agent-2', agentName: 'Gioia' })],
+      qualityTurns: [],
+      heldReplies: [heldReply()],
+    })
+
+    expect(items.find((item) => item.heldReplyId)).toMatchObject({ title: 'Where is my order?', agentName: 'Gioia' })
+  })
+
+  it('leaves routine approvals exactly as they were, sorted with held replies oldest first', () => {
+    const routineApproval = decision({ handle: 'd1', conversationId: 'c-approval', createdAt: '2026-06-19T10:03:00.000Z' })
+    const withoutHeld = buildInboxItems({ decisions: [routineApproval], conversations: [], qualityTurns: [] })
+    const withHeld = buildInboxItems({
+      decisions: [routineApproval],
+      conversations: [],
+      qualityTurns: [],
+      heldReplies: [heldReply({ createdAt: '2026-06-19T10:01:00.000Z' })],
+    })
+
+    expect(withHeld.map((item) => item.key)).toEqual(['approval:held:held-1', 'approval:agent-1:d1'])
+    expect(withHeld[1]).toEqual(withoutHeld[0])
+    expect(withHeld[1].heldReplyId).toBeUndefined()
+  })
+
+  it('keeps a discarded reply whose attention is still open, and drops one whose attention closed', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [],
+      heldReplies: [
+        heldReply({ id: 'held-discarded', conversationId: 'c-1', state: 'discarded', attentionOpen: true }),
+        heldReply({ id: 'held-released', conversationId: 'c-2', state: 'released', attentionOpen: false }),
+      ],
+    })
+
+    expect(items.map((item) => item.heldReplyId)).toEqual(['held-discarded'])
+  })
+
+  it('drops feedback on a conversation with a held reply: critical wins', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [commentedQualityTurn({ conversationId: 'c-email' })],
+      heldReplies: [heldReply()],
+    })
+
+    expect(items.map((item) => item.type)).toEqual(['approval'])
+  })
+
+  it('counts held replies as approvals and filters them with the approval type', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ handle: 'd1', conversationId: 'c-approval' })],
+      conversations: [humanOwned({ id: 'c-handoff' })],
+      qualityTurns: [],
+      heldReplies: [heldReply()],
+    })
+
+    expect(countInboxItemsByType(items)).toMatchObject({ all: 3, approval: 2, handoff: 1 })
+    expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, type: 'approval' }, { currentUserId: null })
+      .map((item) => item.key)).toEqual(['approval:agent-1:d1', 'approval:held:held-1'])
+  })
+
+  it('never resolves a held reply as a routine decision, even on the same conversation and agent', () => {
+    const [item] = buildInboxItems({ decisions: [], conversations: [], qualityTurns: [], heldReplies: [heldReply()] })
+
+    expect(findPendingApprovalDecision(item, [decision({ conversationId: 'c-email', agentId: 'agent-1' })])).toBeNull()
+  })
+
+  it('follows the selected held reply to the newer draft that replaced it on its conversation', () => {
+    const [selected] = buildInboxItems({ decisions: [], conversations: [], qualityTurns: [], heldReplies: [heldReply()] })
+    const refetched = buildInboxItems({
+      decisions: [decision({ handle: 'd1', conversationId: 'c-email', agentId: 'agent-1' })],
+      conversations: [],
+      qualityTurns: [],
+      heldReplies: [
+        heldReply({ id: 'held-other', conversationId: 'c-other' }),
+        heldReply({ id: 'held-2', draftText: 'It arrives tomorrow.' }),
+      ],
+    })
+
+    expect(findRefreshedInboxItem(refetched, selected)?.heldReplyId).toBe('held-2')
+  })
+
+  it('never swaps a selected routine approval for a held reply, or a held reply for another conversation\'s', () => {
+    const [selectedApproval] = buildInboxItems({ decisions: [decision({ handle: 'd1' })], conversations: [], qualityTurns: [] })
+    const [selectedHeld] = buildInboxItems({ decisions: [], conversations: [], qualityTurns: [], heldReplies: [heldReply()] })
+    const refetched = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [],
+      heldReplies: [heldReply({ id: 'held-other', conversationId: 'c-other' })],
+    })
+
+    expect(findRefreshedInboxItem(refetched, selectedApproval)).toBeUndefined()
+    expect(findRefreshedInboxItem(refetched, selectedHeld)).toBeUndefined()
   })
 })

@@ -209,12 +209,20 @@ shows as `—`. The webhook body is documented under
 
 A step is asked the same way at most three times in a row when the visitor's
 replies give it nothing new. From then on it asks in different words, saying
-plainly what it needs and giving an example of an answer that works. The routine
-stays on the step until the visitor answers it: it takes only the rows you set,
-and a **Hand off** row may be the step's confirmation, so the limit never fires
-one. To give a visitor a way out of a step that collects something hard to get
-right — a booking reference, an exact date — add a row for it, such as **AI
-decides** "the visitor wants to talk to a person" → **Hand off**.
+plainly what it needs and giving an example of an answer that works. The limit
+never fires a row you set: a **Hand off** row may be the step's confirmation, and
+taking it would send a request the visitor never confirmed.
+
+What comes next depends on whether the routine hands off at all. When some row
+leads to a **Hand off** ending, a visitor who still gives the step nothing after it
+asked differently goes to a person. The routine ends on that step, tells the
+visitor someone will continue the conversation, and notifies your operators with
+the reason `routine_stuck` and every value collected so far. The **Hand off**
+ending's message and the completion export stay for visitors who reach that
+ending. A routine with no **Hand off** ending stays on the step until the visitor
+answers it. To give a visitor an earlier way out of a step that collects something
+hard to get right — a booking reference, an exact date — add a row for it, such as
+**AI decides** "the visitor wants to talk to a person" → **Hand off**.
 
 ## Validation and publishing
 

@@ -68,6 +68,14 @@ and month. Do not blame the user, say their answers were wrong, or quote them ba
 offer anything the step instruction does not offer, such as passing the conversation to a
 person or skipping this question.`;
 
+export const DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT = `Write one short message in {{language}} saying that a person will continue this conversation
+and help the user from here.
+
+The user's request has not been submitted, booked, confirmed, sent, or completed, so do not say
+or imply that it has. Do not ask for anything again, repeat an earlier question, or blame the user.
+
+Do not add links, contact details, recommendations, options, or follow-up questions.`;
+
 export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide what should
 happen next, based on what the user just said.
 

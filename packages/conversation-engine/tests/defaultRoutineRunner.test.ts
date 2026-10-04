@@ -4110,6 +4110,135 @@ describe("DefaultRoutineRunner bounded re-asks (#1376)", () => {
     const next = await new DefaultRoutineRunner([withoutHandoff], staying(), renderer()).resume({ turn, state: stored });
     expect(next.nextState?.reaskCount).toBe(3);
   });
+
+  describe("a visitor stuck past the limit is handed to a person (#1384)", () => {
+    // The routine's author drew a hand-off end (`toPerson`), so people take its conversations over.
+    const exporting: Routine = {
+      ...withHandoff,
+      completionExport: {
+        enabled: true,
+        destinationRef: "33333333-3333-4333-8333-333333333333",
+        triggerKinds: ["complete", "handoff"],
+      },
+    };
+    const noHandoffEnd: Routine = {
+      ...withoutHandoff,
+      steps: steps.filter((step) => step.id !== "handoff"),
+    };
+
+    it("asks differently once, then ends stuck on the step with what it collected", async () => {
+      const render = renderer();
+      const runner = new DefaultRoutineRunner([exporting], staying(), render);
+
+      const askedDifferently = await runner.resume({ turn, state: onContactStep(3, { full_name: "Giulia" }) });
+      const stuck = await runner.resume({ turn, state: askedDifferently.nextState! });
+
+      expect(askedDifferently.terminal).toBeUndefined();
+      expect(askedDifferently.nextState).toMatchObject({ path: ["ask_contact"], reaskCount: 4 });
+      expect(stuck.nextState).toBeNull();
+      expect(stuck.terminal).toEqual({ kind: "stuck", stepId: "ask_contact", collected: { full_name: "Giulia" } });
+      expect(stuck.response.answer).toBe("[ask_contact]");
+      expect(render.render).toHaveBeenLastCalledWith({
+        step: expect.objectContaining({ id: "ask_contact" }),
+        steering: [],
+        turn,
+        stuckHandoff: true,
+      });
+    });
+
+    it("never walks into, renders, or exports the authored hand-off end", async () => {
+      const render = renderer();
+      const select = vi.fn(async () => ({ nextStepId: "ask_contact", variables: {} }));
+      const runner = new DefaultRoutineRunner([exporting], { select }, render);
+
+      const result = await runner.resume({ turn, state: onContactStep(4) });
+
+      expect(result.terminal?.kind).toBe("stuck");
+      expect(result.actions).toBeUndefined();
+      expect(render.render).toHaveBeenCalledTimes(1);
+      expect(render.render).not.toHaveBeenCalledWith(expect.objectContaining({
+        step: expect.objectContaining({ id: "handoff" }),
+      }));
+      expect(result.trace?.steps.map((entry) => entry.stepId)).not.toContain("handoff");
+    });
+
+    it("records why on the stuck step's trace and ends the run trace stuck", async () => {
+      const runner = new DefaultRoutineRunner([withHandoff], staying(), renderer());
+
+      const result = await runner.resume({ turn, state: onContactStep(4) });
+
+      expect(result.trace).toMatchObject({ startStepId: "ask_contact", landedStepId: "ask_contact", terminalKind: "stuck" });
+      expect(result.trace?.steps).toEqual([
+        expect.objectContaining({ stepId: "ask_contact", event: "reasked" }),
+        { stepId: "ask_contact", kind: "chat", event: "reask_limit_handoff", reaskCount: 5 },
+      ]);
+    });
+
+    it.each([
+      ["no hand-off end", noHandoffEnd],
+      ["a hand-off end nothing leads to", withoutHandoff],
+    ])("keeps asking differently on a routine with %s", async (_label, stuckRoutine) => {
+      const render = renderer();
+      const runner = new DefaultRoutineRunner([stuckRoutine], staying(), render);
+
+      const fifth = await runner.resume({ turn, state: onContactStep(4) });
+      const sixth = await runner.resume({ turn, state: fifth.nextState! });
+
+      for (const result of [fifth, sixth]) {
+        expect(result.terminal).toBeUndefined();
+        expect(result.nextState?.path).toEqual(["ask_contact"]);
+      }
+      expect(sixth.nextState?.reaskCount).toBe(6);
+      for (const [call] of vi.mocked(render.render).mock.calls) {
+        expect(call).toMatchObject({ reask: { exhausted: true } });
+        expect(call).not.toHaveProperty("stuckHandoff");
+      }
+    });
+
+    it("starts over when the ask-differently turn fills a slot the step collects", async () => {
+      const render = renderer();
+      const runner = new DefaultRoutineRunner([withHandoff], staying({ full_name: "Giulia Verdi" }), render);
+
+      const result = await runner.resume({ turn, state: onContactStep(4) });
+
+      expect(result.terminal).toBeUndefined();
+      expect(result.nextState?.path).toEqual(["ask_contact"]);
+      expect(result.nextState?.reaskCount ?? 0).toBe(0);
+      expect(render.render).not.toHaveBeenCalledWith(expect.objectContaining({ stuckHandoff: true }));
+    });
+
+    it("leaves a stuck step parked when the turn is yielded to normal answering", async () => {
+      const yielding = { select: vi.fn(async () => ({ nextStepId: "ask_contact", yieldTurn: true })) };
+      const render = renderer();
+
+      const result = await new DefaultRoutineRunner([withHandoff], yielding, render).resume({ turn, state: onContactStep(4) });
+
+      expect(result).toMatchObject({ yielded: true, nextState: null });
+      expect(result.terminal).toBeUndefined();
+      expect(render.render).not.toHaveBeenCalled();
+    });
+
+    it("never hands off on the routine's first turn", async () => {
+      const runner = new DefaultRoutineRunner([withHandoff], staying(), renderer());
+
+      const result = await runner.resume({ turn, state: { ...state([]), reaskCount: 6 }, activationTurn: true });
+
+      expect(result.terminal).toBeUndefined();
+      expect(result.nextState).toMatchObject({ status: "active" });
+      expect(result.trace?.landedStepId).toBe("ask_contact");
+    });
+
+    it("hands off one turn past the runner's own re-ask limit", async () => {
+      const runner = new DefaultRoutineRunner([withHandoff], staying(), renderer(), undefined, { reaskLimit: 1 });
+
+      const askedDifferently = await runner.resume({ turn, state: onContactStep(1) });
+      const stuck = await runner.resume({ turn, state: askedDifferently.nextState! });
+
+      expect(askedDifferently.terminal).toBeUndefined();
+      expect(askedDifferently.nextState?.reaskCount).toBe(2);
+      expect(stuck.terminal?.kind).toBe("stuck");
+    });
+  });
 });
 
 describe("DefaultRoutineRunner operator notices", () => {

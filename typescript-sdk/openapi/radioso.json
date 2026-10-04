@@ -15809,7 +15809,7 @@
               "string",
               "null"
             ],
-            "description": "The handoff reason code on `handoff_requested`, for example `routine_handoff` or `retrieval_miss`."
+            "description": "The handoff reason code on `handoff_requested`, for example `routine_handoff`, `routine_stuck`, or `retrieval_miss`."
           },
           "decision": {
             "type": [

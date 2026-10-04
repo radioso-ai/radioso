@@ -7,6 +7,7 @@ import type {
   ConversationRoutineStepRenderer,
   Routine,
   RoutineActionRequest,
+  RoutineAuthoredTerminalKind,
   RoutineContextRenderer,
   RoutineGuard,
   RoutineNextStepDecision,
@@ -294,6 +295,12 @@ const reaskFor = (
 const DEFAULT_REASK_LIMIT = 3;
 
 /**
+ * Turns a step asks differently, past the re-ask limit, before a routine with a hand-off end
+ * stops asking and hands the stuck visitor to a person (#1384).
+ */
+const ASK_DIFFERENTLY_TURNS_BEFORE_HANDOFF = 1;
+
+/**
  * Keeps the values that fit their declared slot type, in that type's canonical form (#1374).
  * On a routine with no slot schema there is nothing to check a key against, so every key
  * passes through as it always has. On a routine that declares one, a key the schema does
@@ -453,7 +460,7 @@ const isDefaultTransition = (transition: RoutineTransition): boolean =>
 const isLlmTransition = (transition: RoutineTransition): boolean =>
   !transition.guard || transition.guard.kind === "llm";
 
-const terminalKindFor = (step: RoutineStep): "complete" | "handoff" | "action" | null => {
+const terminalKindFor = (step: RoutineStep): RoutineAuthoredTerminalKind | null => {
   if (step.kind !== "terminal") {
     return null;
   }
@@ -461,8 +468,19 @@ const terminalKindFor = (step: RoutineStep): "complete" | "handoff" | "action" |
   return kind === "handoff" || kind === "action" || kind === "complete" ? kind : "complete";
 };
 
+/**
+ * Whether the author routed some path of this routine to a hand-off end — people take its
+ * conversations over, so a visitor stuck on a step can go to one (#1384). A routine no exit
+ * leads to a hand-off step declares no such path.
+ */
+const routesToHandoff = (routine: Routine): boolean =>
+  routine.transitions.some((transition) => {
+    const target = routine.steps.find((step) => step.id === transition.to);
+    return target !== undefined && terminalKindFor(target) === "handoff";
+  });
+
 const terminalResult = (
-  kind: "complete" | "handoff" | "action",
+  kind: RoutineAuthoredTerminalKind,
   step: RoutineStep,
   collected: Record<string, unknown>,
 ): NonNullable<ConversationRoutineResumeResult["terminal"]> => {
@@ -490,7 +508,7 @@ const operatorNoticeTemplateFor = (step: RoutineStep): RoutineOperatorNoticeTemp
 const completionExportActionFor = (
   routine: Routine,
   step: RoutineStep,
-  terminalKind: "complete" | "handoff" | "action" | null,
+  terminalKind: RoutineAuthoredTerminalKind | null,
   variables: Record<string, unknown>,
 ): RoutineActionRequest | null => {
   const completionExport = routine.completionExport;
@@ -1094,9 +1112,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     };
 
     // Bound how often one step is asked again with nothing new captured (#1376). Past the
-    // limit the reply is told to ask differently; the routine never leaves the step by itself.
-    // An authored exit — even one to a hand-off end — can be the step's confirmation edge, and
-    // taking it would submit what the visitor never confirmed.
+    // limit the reply is told to ask differently. The routine never takes an authored exit by
+    // itself: one to a hand-off end can be the step's confirmation edge, and taking it would
+    // submit what the visitor never confirmed.
     const reasked = !input.activationTurn &&
       currentStep.kind === "chat" &&
       step.id === currentStepId &&
@@ -1104,7 +1122,30 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     const reaskCount = reasked && !filledCollectedSlot(currentStep, state.variables, variables)
       ? (state.reaskCount ?? 0) + 1
       : 0;
-    const reaskExhausted = reaskCount > (this.options.reaskLimit ?? DEFAULT_REASK_LIMIT);
+    const reaskLimit = this.options.reaskLimit ?? DEFAULT_REASK_LIMIT;
+    // Still stuck after asking differently, on a routine whose author hands visitors to a
+    // person: the run ends `stuck` on this step instead (#1384). It enters no terminal step: the
+    // hand-off end's message and the completion export run only for a visitor who reaches it.
+    if (reaskCount > reaskLimit + ASK_DIFFERENTLY_TURNS_BEFORE_HANDOFF && routesToHandoff(routine)) {
+      traceSteps.push({ stepId: currentStep.id, kind: currentStep.kind, event: "reask_limit_handoff", reaskCount });
+      const response = await this.renderer.render({ step: currentStep, steering: [], turn, stuckHandoff: true });
+      return {
+        response,
+        nextState: null,
+        terminal: { kind: "stuck", stepId: currentStep.id, collected: declaredSlotVariables(routine, variables) },
+        trace: {
+          routineId: routine.id,
+          startStepId: currentStepId,
+          landedStepId: currentStep.id,
+          terminalKind: "stuck",
+          capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
+          filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
+          ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
+          steps: traceSteps,
+        },
+      };
+    }
+    const reaskExhausted = reaskCount > reaskLimit;
     if (reaskExhausted) {
       traceSteps.push({ stepId: currentStep.id, kind: currentStep.kind, event: "reask_limit_reached", reaskCount });
     }

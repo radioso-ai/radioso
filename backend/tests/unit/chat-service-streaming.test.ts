@@ -2251,7 +2251,7 @@ describe("chat service streaming", () => {
       ending: "hand-off",
       decision: {
         terminal: { kind: "handoff" as const, stepId: "escalate", collected: { order: "A-17" } },
-        handoff: { routineId: "refund-flow", stepId: "escalate", collected: { order: "A-17" } },
+        handoff: { routineId: "refund-flow", stepId: "escalate", terminalKind: "handoff" as const, collected: { order: "A-17" } },
       },
       ownershipHandoff: { reason: "routine_handoff", routineId: "refund-flow", stepId: "escalate" },
       notifyType: HANDOFF_NOTIFY_ACTION_TYPE,
@@ -3550,6 +3550,86 @@ describe("chat service streaming", () => {
         workspaceId: "workspace-1",
         routineId: "routine_support",
         stepId: "handoff_terminal",
+      },
+    });
+  });
+
+  it("threads a visitor stuck past the re-ask limit (#1384) into ownership handoff with reason routine_stuck", async () => {
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => null,
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async () => ({
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: "routine_support" }) },
+        runner: {
+          resume: async () => ({
+            response: { answer: "A person will continue from here." },
+            nextState: null,
+            terminal: {
+              kind: "stuck" as const,
+              stepId: "ask_contact",
+              collected: { topic: "billing" },
+            },
+          }),
+        },
+      }),
+    };
+    const assistantTurnPersistence: NonNullable<ChatServiceOptions["assistantTurnPersistence"]> = {
+      completeAssistantTurn: vi.fn(async (input) => ({ message: {
+        id: input.assistantMessage.id!,
+        conversationId: input.assistantMessage.conversationId,
+        workspaceId: input.assistantMessage.workspaceId,
+        role: "assistant" as const,
+        content: input.assistantMessage.content,
+        metadata: input.assistantMessage.metadata,
+        skillName: input.assistantMessage.skillName,
+        skillOutcome: input.assistantMessage.skillOutcome,
+        skillStatus: input.assistantMessage.skillStatus,
+        createdAt: new Date(),
+      }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
+    };
+    const service = makeChatService(
+      new InMemoryConversationRepository(),
+      new InMemoryMessageRepository(),
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "x"; }, async *streamAnswer() { yield "x"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider, assistantTurnPersistence },
+    );
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "still stuck", stream: false });
+
+    expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+    expect(persisted.ownershipHandoff).toEqual({
+      reason: "routine_stuck",
+      routineId: "routine_support",
+      stepId: "ask_contact",
+    });
+    expect(persisted.actions).toContainEqual({
+      type: HANDOFF_NOTIFY_ACTION_TYPE,
+      payload: expect.objectContaining({
+        conversationId: response.conversationId,
+        workspaceId: "workspace-1",
+        agentId: response.agentId,
+        reason: "routine_stuck",
+        routineId: "routine_support",
+        stepId: "ask_contact",
+        collected: { topic: "billing" },
+      }),
+    });
+    expect(persisted.ownershipAuditEvent).toMatchObject({
+      eventType: "hitl.ownership",
+      metadata: {
+        action: "handoff_requested",
+        reason: "routine_stuck",
+        routineId: "routine_support",
+        stepId: "ask_contact",
       },
     });
   });

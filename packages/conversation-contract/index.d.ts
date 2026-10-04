@@ -427,10 +427,26 @@ export interface SkillEmitPort {
   emitCustom(data: Record<string, unknown>): Promise<void>;
 }
 
+/**
+ * Where a routine skill step's argument came from, so an executor can tell a value the
+ * author wrote from one a visitor or host page supplied.
+ * - `literal`: the author wrote it into the step's input binding.
+ * - `slot`: a routine variable. Extraction can store a value under any routine variable
+ *   name, so every routine variable, including one a skill output fills, counts as
+ *   visitor-provided.
+ * - `context`: a turn context variable, supplied by the host page or the visitor.
+ */
+export type SkillArgumentOrigin = "literal" | "slot" | "context";
+
 /** Everything a skill executor needs for a single dispatch. */
 export interface SkillInvocation {
   skill: SkillDefinition;
   collected: Record<string, unknown>;
+  /**
+   * Where each `collected` value came from, keyed like `collected`. A routine skill step
+   * sets it; a dispatch whose inputs the model filled leaves it absent.
+   */
+  collectedOrigins?: Record<string, SkillArgumentOrigin>;
   context?: Record<string, unknown>;
   /** Interim-event channel for the current turn. */
   emit: SkillEmitPort;

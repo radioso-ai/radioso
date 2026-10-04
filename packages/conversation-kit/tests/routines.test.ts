@@ -6,6 +6,8 @@ import type {
   Routine,
   RoutineState,
   SkillDefinition,
+  SkillExecutorPort,
+  SkillInvocation,
   TurnContext,
 } from "@radioso/conversation-contract";
 
@@ -264,7 +266,33 @@ describe("createDefaultRoutineSkillDispatcher", () => {
       orderId: "A-1",
       locale: "et-EE",
     });
+    expect(lookup.calls[0]?.inputOrigins).toEqual({ channel: "literal", orderId: "slot", locale: "context" });
     expect(result).toMatchObject({ status: "completed", outputs: { eta: "tomorrow" } });
+  });
+
+  it("hands a skill executor port each argument's origin alongside its value", async () => {
+    const invocations: SkillInvocation[] = [];
+    const executor: SkillExecutorPort = {
+      async dispatch(invocation) {
+        invocations.push(invocation);
+        return { disposition: "settled", outcome: { status: "completed" } };
+      },
+    };
+    const dispatcher = createDefaultRoutineSkillDispatcher(new Map([["order_lookup", executor]]), [orderLookupSkill]);
+
+    await dispatcher.dispatch({
+      skillName: "order_lookup",
+      state: state({ orderId: "A-1" }),
+      turn: turnWithContextVariable(),
+      inputBindings: {
+        channel: { kind: "literal", value: "chat" },
+        orderId: { kind: "variableRef", ref: "orderId" },
+        locale: { kind: "contextVariableRef", contextVariable: "locale" },
+      },
+    });
+
+    expect(invocations[0]?.collected).toEqual({ channel: "chat", orderId: "A-1", locale: "et-EE" });
+    expect(invocations[0]?.collectedOrigins).toEqual({ channel: "literal", orderId: "slot", locale: "context" });
   });
 
   it("hands an untyped step the routine's collected variables when it authors no bindings", async () => {
@@ -281,6 +309,7 @@ describe("createDefaultRoutineSkillDispatcher", () => {
     });
 
     expect(lookup.calls[0]?.input).toEqual({ orderId: "A-1", email: "sam@example.com" });
+    expect(lookup.calls[0]?.inputOrigins).toEqual({ orderId: "slot", email: "slot" });
   });
 
   it("degrades to a failed result when the skill is unknown or has no handler", async () => {

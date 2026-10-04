@@ -267,7 +267,7 @@ export class ConversationOwnershipRepository {
     // Taking over an ai_owned row is a fresh claim: stamp `operator_takeover`. Taking over an
     // already human_owned but unclaimed row (an awaiting handoff, claimed by Send or Take over
     // instead of a reply or transfer) is claiming that handoff, so its own reason — routine_handoff,
-    // retrieval_miss — survives instead of being overwritten.
+    // routine_stuck, retrieval_miss — survives instead of being overwritten.
     const updatedResult = await selectWritten(sql`
       UPDATE conversation_ownership
           SET state = 'human_owned',

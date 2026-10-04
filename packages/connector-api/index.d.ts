@@ -19,8 +19,13 @@ export type {
   ConnectorLogger,
   ConnectorPlugin,
   ConnectorPublicHttpPort,
+  ConnectorReplyDraft,
+  ConnectorRespondInput,
   ConnectorSourceDescriptor,
   ConnectorStatePort,
   ConnectorSummary,
+  ConnectorTurnExecutionMode,
+  ConnectorTurnFacts,
+  ConnectorTurnResult,
   ConnectorValidationIssue,
 } from "./connectorPlugin.js";

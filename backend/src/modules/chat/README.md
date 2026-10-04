@@ -89,6 +89,16 @@ rows. Start at `test-execution/README.md` and
   through `ConversationOwnershipService.requestHumanOwnership` commit in one
   `ConversationIngestUnitOfWork` (bound in `app/composition/conversationIngest.ts`).
   It reserves no usage. `ConnectorChatPort.ingest` delegates to it.
+- `ChatService.review` (`types/chatReview.ts`, `services/reviewDraft.ts`): runs a
+  `review` turn on a recorded customer message and returns `draft`, `no_draft`, or
+  `human_owned` with the turn's facts, instead of persisting a reply. The preparer
+  loads the message scoped to its conversation and workspace and reads only
+  `historyWindow.maxMessages` earlier messages. The turn starts and resumes no
+  routine, suppresses every skill effect, drops actions, and reports a hand-off
+  without applying it; the lifecycle's `draft` completion commits only a
+  `chat.answer` audit event keyed on `requestMessageId` and `turnId`. Usage is
+  reserved as a reply on the conversation's channel. `ConnectorChatPort.respond`
+  maps the result through `connectors/services/connectorTurnFacts.ts`.
 - `llmAdapters.ts`: LLM-provider registration for chat.
 - `retrievalSupport.ts`: narrow helpers used by retrieval answer assembly.
 

@@ -47,6 +47,55 @@ export interface ConnectorIngestResult {
   ownership: { state: "ai_owned" | "human_owned"; version: number };
 }
 
+/** The only execution mode a connector may ask `respond` for. */
+export type ConnectorTurnExecutionMode = "review";
+
+/** A turn on a recorded customer message (from `ingest`) whose reply comes back unpublished. */
+export interface ConnectorRespondInput {
+  workspaceId: string;
+  agentId: string;
+  conversationId: string;
+  /** The recorded customer message the turn answers. */
+  respondToMessageId: string;
+  executionMode: ConnectorTurnExecutionMode;
+  /** The most earlier messages the turn reads as conversation history. */
+  historyWindow: { maxMessages: number };
+}
+
+/**
+ * What the turn recorded about itself, for the connector's publication decision. A
+ * connector decides on these facts and never on the reply's text. `unknown`,
+ * `not_assessed` and `unavailable` mean the host could not tell; treat them as not publishable.
+ */
+export interface ConnectorTurnFacts {
+  outcome: ConnectorChatOutcome;
+  grounding: "grounded" | "ungrounded" | "not_applicable" | "unknown";
+  coverage: "answered" | "partial" | "unanswered" | "unclear" | "unavailable" | "not_assessed";
+  /** A hand-off the turn asked for. It is reported, never applied: ownership is unchanged. */
+  handoff: { requested: false } | { requested: true; reason: string };
+  /** Skills the turn would have run but did not, because a review turn acts on nothing. */
+  suppressedEffects: readonly { skillName: string }[];
+  citationCount: number;
+}
+
+/** An unpublished reply. */
+export interface ConnectorReplyDraft {
+  readonly text: string;
+  /** Host-owned; a connector stores it and hands it back unchanged, never inspecting it. */
+  readonly presentation: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * How a `respond` turn ended. `ownershipVersion` is the ownership the turn read; a
+ * connector compares it before publishing, since a person may have taken over meanwhile.
+ */
+export type ConnectorTurnResult =
+  | { kind: "draft"; conversationId: string; ownershipVersion: number; facts: ConnectorTurnFacts; draft: ConnectorReplyDraft }
+  /** No reviewable reply: no text, or the model could not be reached. `facts.handoff` names who should take it. */
+  | { kind: "no_draft"; conversationId: string; ownershipVersion: number; facts: ConnectorTurnFacts }
+  /** A person owns the conversation, so no turn ran. */
+  | { kind: "human_owned"; conversationId: string; ownershipVersion: number };
+
 export interface ConnectorChatPort {
   /**
    * Records the customer's message, and the human ownership asked for, in one unit of work. Runs
@@ -54,6 +103,13 @@ export interface ConnectorChatPort {
    */
   // Message-queue impact: synchronous host port only; no AMQP or worker payload changes.
   ingest(input: ConnectorIngestInput): Promise<ConnectorIngestResult>;
+  /**
+   * Runs a turn on a recorded customer message and returns its reply unpublished, with the
+   * facts a publication decision needs. Writes no reply, applies no hand-off, runs no
+   * skill effect and starts no routine; reserves usage as a conversation reply.
+   */
+  // Message-queue impact: synchronous host port only; no AMQP or worker payload changes.
+  respond(input: ConnectorRespondInput): Promise<ConnectorTurnResult>;
   answer(input: {
     workspaceId: string;
     agentId?: string;

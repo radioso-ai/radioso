@@ -67,8 +67,20 @@ import type { CapturedClarificationTransition } from "./clarification/deferredCl
 import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
-import { turnExecutionCapabilities, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import {
+  turnExecutionCapabilities,
+  type AnswerTurnExecutionMode,
+  type TurnExecutionMode,
+} from "../../../shared/domain/turnExecutionMode.js";
+import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
+import type { ReviewedTurnDraft, ReviewTurnFactsSource } from "../types/chatReview.js";
 import { CONTACT_SEND_ACTION_TYPE } from "./routines/contactRoutine.js";
+import {
+  reviewedTurnAuditEvent,
+  reviewedTurnDraft,
+  reviewTurnFacts,
+  type ReviewTurnCorrelation,
+} from "./reviewDraft.js";
 import type {
   PageReadCandidateSource,
   PageReadDecision,
@@ -149,13 +161,29 @@ const getChatTurnRoute = (session: PreparedSession, engineTrace?: ConversationTr
   };
 };
 
-/** How a turn ended once completed. `live` and `safe_test` turns always persist the reply. */
-type CompletedAssistantTurn = {
+/** A turn whose reply was persisted. `live` and `safe_test` turns always complete this way. */
+interface PersistedAssistantTurn {
   kind: "persisted";
   response: ChatResponse;
   assistantMessageId: string;
   postCommitReceipt: PostCommitInvalidationReceipt;
-};
+}
+
+/**
+ * A `review` turn: its reply is returned as a draft and no message row is written, so
+ * it correlates on the customer message it answered and the turn, never on an
+ * assistant message id.
+ */
+interface DraftAssistantTurn {
+  kind: "draft";
+  draft: ReviewedTurnDraft;
+  facts: ReviewTurnFactsSource;
+  correlation: ReviewTurnCorrelation;
+  postCommitReceipt: PostCommitInvalidationReceipt;
+}
+
+/** How a turn ended once completed; its execution mode's `completion` capability picks the arm. */
+export type CompletedAssistantTurn = PersistedAssistantTurn | DraftAssistantTurn;
 
 /** Labels a non-live turn's audit records with its execution mode and the surface that ran it. */
 const executionModeAuditMetadata = (
@@ -519,6 +547,46 @@ const describeRoutineTurn = (input: {
       })
     : input.session.declinedRoutine ?? input.session.suspendedRoutine ?? null;
 
+interface CompleteAssistantTurnInput {
+  workspaceId: string;
+  accountId?: string;
+  session: PreparedSession;
+  presentation: ChatPresentedAnswer;
+  answerStartedAt: number;
+  stream: boolean;
+  /** Suppresses customer-facing effects while retaining the synthetic messages and trace. */
+  executionMode?: TurnExecutionMode;
+  /**
+   * The conversation engine's turn trace, present only when the engine ran the
+   * turn (flag on). Recorded as audit-only observability alongside the
+   * retrieval-derived activity trace; it does not change the user-facing reply.
+   */
+  engineTrace?: ConversationTrace;
+  /** Turn-scoped model calls captured at the shared inference seam. */
+  modelCallTrace?: ModelCallTraceCollector;
+  /** Fire-and-forget actions a routine emitted this turn; enqueued at completion. */
+  actions?: RoutineActionRequest[];
+  /**
+   * Flushes the routine-state transition this turn made. Invoked only after the
+   * actions are enqueued, so the routine stays recoverable (un-advanced) if the
+   * enqueue fails — the turn message, routine advance, and enqueue are then ordered
+   * so the user is never told a request was sent without a durable outbox row.
+   */
+  commitRoutineState?: () => Promise<void>;
+  routineStateTransition?: CapturedRoutineTransition | null;
+  /** Names and describes the routine state above for the reply envelope; absent when no routine ran. */
+  routineReporter?: ChatRoutineTurnReporter;
+  pendingDecisionTransition?: PendingDecisionCreateInput | null;
+  ownershipHandoff?: OwnershipHandoffInput | null;
+  suspended?: boolean;
+  additionalAuditEvent?: AuditEventInput | null;
+  transaction?: Db;
+  commitClarificationState?: () => Promise<void>;
+  clarificationTransition?: CapturedClarificationTransition | null;
+  /** The skill effects the turn's execution mode suppressed; a draft reports them. */
+  suppressedEffects?: readonly SuppressedSkillEffect[];
+}
+
 const ROUTINE_INVOCATIONS_TOTAL = "routine_invocations_total";
 
 export class ChatTurnLifecycle {
@@ -640,43 +708,12 @@ export class ChatTurnLifecycle {
     return null;
   }
 
-  async completeAssistantTurn(input: {
-    workspaceId: string;
-    accountId?: string;
-    session: PreparedSession;
-    presentation: ChatPresentedAnswer;
-    answerStartedAt: number;
-    stream: boolean;
-    /** Suppresses customer-facing effects while retaining the synthetic messages and trace. */
-    executionMode?: TurnExecutionMode;
-    /**
-     * The conversation engine's turn trace, present only when the engine ran the
-     * turn (flag on). Recorded as audit-only observability alongside the
-     * retrieval-derived activity trace; it does not change the user-facing reply.
-     */
-    engineTrace?: ConversationTrace;
-    /** Turn-scoped model calls captured at the shared inference seam. */
-    modelCallTrace?: ModelCallTraceCollector;
-    /** Fire-and-forget actions a routine emitted this turn; enqueued at completion. */
-    actions?: RoutineActionRequest[];
-    /**
-     * Flushes the routine-state transition this turn made. Invoked only after the
-     * actions are enqueued, so the routine stays recoverable (un-advanced) if the
-     * enqueue fails — the turn message, routine advance, and enqueue are then ordered
-     * so the user is never told a request was sent without a durable outbox row.
-     */
-    commitRoutineState?: () => Promise<void>;
-    routineStateTransition?: CapturedRoutineTransition | null;
-    /** Names and describes the routine state above for the reply envelope; absent when no routine ran. */
-    routineReporter?: ChatRoutineTurnReporter;
-    pendingDecisionTransition?: PendingDecisionCreateInput | null;
-    ownershipHandoff?: OwnershipHandoffInput | null;
-    suspended?: boolean;
-    additionalAuditEvent?: AuditEventInput | null;
-    transaction?: Db;
-    commitClarificationState?: () => Promise<void>;
-    clarificationTransition?: CapturedClarificationTransition | null;
-  }): Promise<CompletedAssistantTurn> {
+  /** A turn in a mode that persists its reply (`live`, `safe_test`, or no mode) always completes persisted. */
+  async completeAssistantTurn(
+    input: CompleteAssistantTurnInput & { executionMode?: AnswerTurnExecutionMode },
+  ): Promise<PersistedAssistantTurn>;
+  async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<CompletedAssistantTurn>;
+  async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<CompletedAssistantTurn> {
     const capabilities = turnExecutionCapabilities(input.executionMode);
     // Safe-test turns retain conversation-local state (routine, decision and
     // clarification transitions) so follow-up turns remain representative; the
@@ -732,6 +769,18 @@ export class ChatTurnLifecycle {
       workspaceId: input.workspaceId,
       conversationId: input.session.conversation.id,
     });
+    if (capabilities.completion === "return_draft") {
+      return this.returnDraft({
+        workspaceId: input.workspaceId,
+        session: input.session,
+        answerOutcome: input.presentation.answerOutcome,
+        turn: presentation,
+        auditEvent,
+        // Reported, never applied: whoever publishes the draft decides on the hand-off.
+        ownershipHandoff: capabilities.ownershipHandoff === "report" ? input.ownershipHandoff : null,
+        suppressedEffects: input.suppressedEffects,
+      });
+    }
     if (this.assistantTurnPersistence) {
       const persisted = await this.assistantTurnPersistence.completeAssistantTurn({
         workspaceId: input.workspaceId,
@@ -810,15 +859,7 @@ export class ChatTurnLifecycle {
       }
     }
 
-    if (input.session.pageReadCapability != null && input.session.pageReadOutcome) {
-      this.metrics?.incrementCounter("chat_page_read_gate_outcomes_total", {
-        help: "Page-read gate outcomes by result and selected operation.",
-        labels: {
-          outcome: input.session.pageReadOutcome.gate.kind,
-          operation: input.session.pageReadOutcome.merged.decision.operation ?? "none",
-        },
-      });
-    }
+    this.recordPageReadGateOutcome(input.session);
 
     // Advance the conversation's directive firing memory (#865) once the reply is
     // durably persisted. Best-effort, off the answer path: a failure here only risks
@@ -893,6 +934,58 @@ export class ChatTurnLifecycle {
         ...(invocationReport ? { invocation: invocationReport } : {}),
       },
     };
+  }
+
+  /**
+   * Completes a `review` turn. The draft commits only the turn's audit event, keyed on the
+   * request it answered; the coverage assessment the turn made is already saved against
+   * that request, and there is no reply row to link it to. No conversation state the
+   * published reply would depend on (routine, decision, clarification, directive firing
+   * memory) advances, because nobody has published the reply.
+   */
+  private async returnDraft(input: {
+    workspaceId: string;
+    session: PreparedSession;
+    answerOutcome: AssistantTurnOutcome | undefined;
+    turn: TurnTracePresentation;
+    auditEvent: AuditEventInput;
+    ownershipHandoff: OwnershipHandoffInput | null | undefined;
+    suppressedEffects: readonly SuppressedSkillEffect[] | undefined;
+  }): Promise<DraftAssistantTurn> {
+    const correlation: ReviewTurnCorrelation = {
+      requestMessageId: input.session.userMessage.id,
+      // The id the reply row would have carried. A draft writes no row, so it names the turn.
+      turnId: input.turn.successInput.assistantMessageId,
+    };
+    await this.auditService.record(reviewedTurnAuditEvent(input.auditEvent, correlation));
+    this.recordPageReadGateOutcome(input.session);
+    return {
+      kind: "draft",
+      draft: reviewedTurnDraft(input.turn.assistantMessage),
+      facts: reviewTurnFacts({
+        answerOutcome: input.answerOutcome ?? legacyAnswerOutcomeForSkillTurnOutcome(input.turn.skillTurnOutcome),
+        answerCoverage: input.session.answerCoverageDebug,
+        skillOutcome: input.turn.skillTurnOutcome.outcome,
+        ownershipHandoff: input.ownershipHandoff,
+        suppressedEffects: input.suppressedEffects,
+        citationCount: input.turn.successInput.citations.length,
+      }),
+      correlation,
+      // Nothing an operator surface shows has changed; whoever holds the draft publishes its own change.
+      postCommitReceipt: createPostCommitInvalidationReceipt(input.workspaceId, []),
+    };
+  }
+
+  private recordPageReadGateOutcome(session: PreparedSession): void {
+    if (session.pageReadCapability != null && session.pageReadOutcome) {
+      this.metrics?.incrementCounter("chat_page_read_gate_outcomes_total", {
+        help: "Page-read gate outcomes by result and selected operation.",
+        labels: {
+          outcome: session.pageReadOutcome.gate.kind,
+          operation: session.pageReadOutcome.merged.decision.operation ?? "none",
+        },
+      });
+    }
   }
 
   async updateSuggestions(input: {

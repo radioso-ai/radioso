@@ -1,4 +1,5 @@
 import type { ChatResponse } from "../types/chatResponses.js";
+import type { ChatReviewInput, ChatReviewResult } from "../types/chatReview.js";
 import type { AssistantClientContextCapabilities } from "../types/assistantApi.js";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
@@ -73,6 +74,12 @@ export type {
   ChatAnswerCoverageAssessment,
   ChatAnswerCoverageInteractionTrace,
 } from "./answerCoverage.js";
+export type {
+  ChatReviewInput,
+  ChatReviewResult,
+  ReviewTurnFactsSource,
+} from "../types/chatReview.js";
+/** The chat turns a connector host runs: a live answer, and a review turn that returns a draft. */
 export interface ChatAnswerPort {
   answer(input: {
     workspaceId: string;
@@ -93,4 +100,5 @@ export interface ChatAnswerPort {
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
   }): Promise<ChatResponse>;
+  review(input: ChatReviewInput): Promise<ChatReviewResult>;
 }

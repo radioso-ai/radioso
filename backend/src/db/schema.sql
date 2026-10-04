@@ -2791,6 +2791,52 @@ CREATE TABLE public.facet_extraction_jobs (
 
 
 --
+-- Name: held_replies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.held_replies (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    agent_id uuid,
+    state text DEFAULT 'pending'::text NOT NULL,
+    release_kind text,
+    review_ref text,
+    answers_message_id uuid NOT NULL,
+    ownership_version integer NOT NULL,
+    policy_ref text,
+    policy_version integer,
+    hold_reason text NOT NULL,
+    turn_facts jsonb NOT NULL,
+    suppressed_effects jsonb DEFAULT '[]'::jsonb NOT NULL,
+    draft_text text NOT NULL,
+    draft_presentation jsonb NOT NULL,
+    edited_text text,
+    editor_user_id uuid,
+    releaser_user_id uuid,
+    discarded_by_user_id uuid,
+    released_message_id uuid,
+    superseded_reason text,
+    attention_cleared_at timestamp with time zone,
+    attention_cleared_reason text,
+    decided_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT date_trunc('milliseconds'::text, now()) NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT held_replies_attention_check CHECK ((((attention_cleared_at IS NULL) = (attention_cleared_reason IS NULL)) AND ((state <> ALL (ARRAY['pending'::text, 'queued_auto'::text])) OR (attention_cleared_at IS NULL)) AND ((state <> ALL (ARRAY['released'::text, 'edited'::text, 'superseded'::text])) OR (attention_cleared_at IS NOT NULL)))),
+    CONSTRAINT held_replies_attention_cleared_reason_check CHECK ((attention_cleared_reason = ANY (ARRAY['released'::text, 'operator_reply'::text, 'takeover'::text, 'superseded'::text]))),
+    CONSTRAINT held_replies_decided_check CHECK (((state = ANY (ARRAY['pending'::text, 'queued_auto'::text])) = (decided_at IS NULL))),
+    CONSTRAINT held_replies_discard_check CHECK (((state <> 'discarded'::text) OR (discarded_by_user_id IS NOT NULL))),
+    CONSTRAINT held_replies_ownership_version_check CHECK ((ownership_version >= 0)),
+    CONSTRAINT held_replies_policy_check CHECK (((policy_ref IS NULL) = (policy_version IS NULL))),
+    CONSTRAINT held_replies_release_check CHECK ((((state = ANY (ARRAY['released'::text, 'edited'::text])) = (release_kind IS NOT NULL)) AND ((state <> 'edited'::text) OR ((release_kind = 'operator'::text) AND (edited_text IS NOT NULL) AND (editor_user_id IS NOT NULL))) AND ((release_kind IS DISTINCT FROM 'operator'::text) OR (releaser_user_id IS NOT NULL)))),
+    CONSTRAINT held_replies_release_kind_check CHECK ((release_kind = ANY (ARRAY['operator'::text, 'auto'::text]))),
+    CONSTRAINT held_replies_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'queued_auto'::text, 'released'::text, 'edited'::text, 'discarded'::text, 'superseded'::text]))),
+    CONSTRAINT held_replies_superseded_check CHECK (((state = 'superseded'::text) = (superseded_reason IS NOT NULL))),
+    CONSTRAINT held_replies_superseded_reason_check CHECK ((superseded_reason = ANY (ARRAY['newer_inbound'::text, 'operator_reply'::text, 'takeover'::text, 'policy_changed'::text])))
+);
+
+
+--
 -- Name: ingestion_settings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5449,6 +5495,14 @@ ALTER TABLE ONLY public.facet_extraction_jobs
 
 
 --
+-- Name: held_replies held_replies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.held_replies
+    ADD CONSTRAINT held_replies_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ingestion_settings ingestion_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7421,6 +7475,41 @@ CREATE INDEX email_thread_messages_conversation_created_idx ON public.email_thre
 --
 
 CREATE UNIQUE INDEX email_thread_messages_mailbox_rfc_message_id_uniq ON public.email_thread_messages USING btree (mailbox_id, rfc_message_id);
+
+
+--
+-- Name: held_replies_conversation_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX held_replies_conversation_created_idx ON public.held_replies USING btree (conversation_id, created_at);
+
+
+--
+-- Name: held_replies_live_conversation_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX held_replies_live_conversation_uniq ON public.held_replies USING btree (conversation_id) WHERE (state = ANY (ARRAY['pending'::text, 'queued_auto'::text]));
+
+
+--
+-- Name: held_replies_live_policy_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX held_replies_live_policy_idx ON public.held_replies USING btree (policy_ref) WHERE (state = ANY (ARRAY['pending'::text, 'queued_auto'::text]));
+
+
+--
+-- Name: held_replies_review_ref_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX held_replies_review_ref_uniq ON public.held_replies USING btree (conversation_id, review_ref) WHERE (review_ref IS NOT NULL);
+
+
+--
+-- Name: held_replies_workspace_attention_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX held_replies_workspace_attention_idx ON public.held_replies USING btree (workspace_id, created_at) WHERE ((attention_cleared_at IS NULL) AND (state <> 'queued_auto'::text));
 
 
 --
@@ -10847,6 +10936,14 @@ ALTER TABLE ONLY public.email_send_intents
 
 
 --
+-- Name: email_send_intents email_send_intents_held_reply_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_send_intents
+    ADD CONSTRAINT email_send_intents_held_reply_id_fkey FOREIGN KEY (held_reply_id) REFERENCES public.held_replies(id) ON DELETE SET NULL;
+
+
+--
 -- Name: email_send_intents email_send_intents_mailbox_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11092,6 +11189,30 @@ ALTER TABLE ONLY public.facet_extraction_jobs
 
 ALTER TABLE ONLY public.facet_extraction_jobs
     ADD CONSTRAINT facet_extraction_jobs_workspace_id_message_id_fkey FOREIGN KEY (workspace_id, message_id) REFERENCES public.messages(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: held_replies held_replies_answers_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.held_replies
+    ADD CONSTRAINT held_replies_answers_message_id_fkey FOREIGN KEY (answers_message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
+
+
+--
+-- Name: held_replies held_replies_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.held_replies
+    ADD CONSTRAINT held_replies_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: held_replies held_replies_released_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.held_replies
+    ADD CONSTRAINT held_replies_released_message_id_fkey FOREIGN KEY (released_message_id) REFERENCES public.messages(id) ON DELETE SET NULL;
 
 
 --

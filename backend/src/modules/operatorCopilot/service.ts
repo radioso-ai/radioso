@@ -170,6 +170,15 @@ export interface CopilotProposalClaim {
    * adapter knows whether repeating it is safe.
    */
   readonly previousAttemptStartedAt: Date | null;
+  /**
+   * Set only by a reviewed MCP claim: the request this claim made the execution receipt's attempt,
+   * and the attempt it replaced, so a denied release hands the receipt back along with the proposal.
+   */
+  readonly receiptAttempt?: {
+    readonly executionInvocationId: string;
+    readonly attemptInvocationId: string;
+    readonly previousAttemptInvocationId: string | null;
+  };
 }
 
 export interface CopilotRepositoryPort {
@@ -193,13 +202,20 @@ export interface CopilotRepositoryPort {
   /** Cancellation never steals an execution claim, even after its recovery lease expires. */
   cancelPendingProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
   claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string; claimTtlSeconds: number }): Promise<CopilotProposalClaim | null>;
-  /** Restores the row to what this attempt's claim found, after a pre-mutation denial: unbinds a reviewed receipt unless an earlier attempt is still outstanding. A claim already superseded by a later reclaim is left alone. */
-  releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date; previousAttemptStartedAt: Date | null }): Promise<boolean>;
-  claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }): Promise<
+  /** Restores the row to what this attempt's claim found, after a pre-mutation denial: unbinds a reviewed receipt unless an earlier attempt is still outstanding, and hands the receipt's attempt back. A claim already superseded by a later reclaim is left alone. */
+  releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date; previousAttemptStartedAt: Date | null; receiptAttempt?: CopilotProposalClaim["receiptAttempt"] }): Promise<boolean>;
+  claimMcpReviewedProposalApply(input: {
+    proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number;
+    /** The MCP request claiming: the receipt's own request (the default), or a retry taking the receipt over to reconcile it. */
+    attemptInvocationId?: string;
+  }): Promise<
     | { readonly status: "claimed"; readonly claim: CopilotProposalClaim }
     /** The proposal already reached this terminal outcome through this same execution receipt. */
     | { readonly status: "settled"; readonly outcome: "applied" | "stale" | "failed"; readonly appliedRef: unknown; readonly reason?: string }
-    /** This same execution receipt holds the apply claim and its lease has not expired. */
+    /**
+     * This same execution receipt holds the apply claim and its lease has not expired, or a retry
+     * took the receipt over from the request now claiming it.
+     */
     | { readonly status: "claim_held" }
     | { readonly status: "missing" | "binding_mismatch" | "digest_mismatch" | "expired" | "canceled" | "not_prepared" | "approval_required" }
   >;
@@ -500,7 +516,9 @@ export class OperatorCopilotService {
 
   /**
    * Restores the pre-claim start time, so a reclaim of an interrupted apply still sees that
-   * attempt and reconciles it rather than applying as if it were the first.
+   * attempt and reconciles it rather than applying as if it were the first. A reviewed claim also
+   * hands the execution receipt back to the attempt it replaced, so that attempt can still record
+   * what it applied.
    */
   private async releaseDeniedClaim(input: { workspaceId: string; operatorUserId: string }, claim: CopilotProposalClaim): Promise<void> {
     await this.deps.repository.releaseProposalApplyClaim({
@@ -509,6 +527,7 @@ export class OperatorCopilotService {
       operatorUserId: input.operatorUserId,
       claimedAt: claim.claimedAt,
       previousAttemptStartedAt: claim.previousAttemptStartedAt,
+      ...(claim.receiptAttempt ? { receiptAttempt: claim.receiptAttempt } : {}),
     });
   }
 
@@ -520,6 +539,8 @@ export class OperatorCopilotService {
     readonly proposalId: string;
     readonly reviewDigest: string;
     readonly executionInvocationId: string;
+    /** The MCP request making this attempt: the execution receipt's own request (the default), or a retry reconciling it. */
+    readonly attemptInvocationId?: string;
     readonly grantId: string;
     readonly clientId: string;
     /** The authenticated MCP request's credential/grant-aware authorization. */
@@ -559,6 +580,7 @@ export class OperatorCopilotService {
     const claimed = await this.deps.repository.claimMcpReviewedProposalApply({
       proposalId: input.proposalId,
       executionInvocationId: input.executionInvocationId,
+      ...(input.attemptInvocationId ? { attemptInvocationId: input.attemptInvocationId } : {}),
       reviewDigest: input.reviewDigest,
       workspaceId: input.workspaceId,
       operatorUserId: input.operatorUserId,

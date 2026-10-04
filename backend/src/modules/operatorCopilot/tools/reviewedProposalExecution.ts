@@ -26,6 +26,12 @@ export interface ReviewedProposalExecutionPort {
     readonly proposalId: string;
     readonly reviewDigest: string;
     readonly executionInvocationId: string;
+    /**
+     * The MCP request making this attempt. It is the execution receipt's own request on a first
+     * call, and a retry when one reconciles that receipt; the claim records it as the receipt's
+     * attempt, so only it records the receipt's outcome from then on.
+     */
+    readonly attemptInvocationId: string;
     readonly grantId: string;
     readonly clientId: string;
     /** Request-bound MCP credential/grant authorization, rechecked by the owner before mutation. */
@@ -53,7 +59,7 @@ export const createReviewedProposalExecutionTool = (
   outputSchema,
   reconcileMcpInvocation: async ({ invocation, arguments: rawInput, context, staleBefore, signal }) => {
     const input = inputSchema.parse(rawInput);
-    if (!context.operatorMcpGrantId || !context.operatorMcpClientId) return { status: "conflict" };
+    if (!context.operatorMcpInvocationId || !context.operatorMcpGrantId || !context.operatorMcpClientId) return { status: "conflict" };
     // An open receipt whose proof is inside the recovery lease belongs to its first runner: a
     // retry that reached the owner first could claim under that receipt before the runner does.
     if (invocation.status === "admitted" || invocation.status === "running") {
@@ -67,8 +73,10 @@ export const createReviewedProposalExecutionTool = (
       proposalId: input.proposalId,
       reviewDigest: input.reviewDigest,
       // The durable proposal is bound to the first receipt. A fresh request provides only
-      // current authority; it must never become a replacement execution receipt.
+      // current authority; it must never become a replacement execution receipt. A claim makes it
+      // that receipt's attempt instead, which fences out the request it took the receipt over from.
       executionInvocationId: invocation.id,
+      attemptInvocationId: context.operatorMcpInvocationId,
       grantId: context.operatorMcpGrantId,
       clientId: context.operatorMcpClientId,
       currentAuthorization: context.currentAuthorization,
@@ -98,6 +106,7 @@ export const createReviewedProposalExecutionTool = (
         proposalId: input.proposalId,
         reviewDigest: input.reviewDigest,
         executionInvocationId: context.operatorMcpInvocationId,
+        attemptInvocationId: context.operatorMcpInvocationId,
         grantId: context.operatorMcpGrantId,
         clientId: context.operatorMcpClientId,
         currentAuthorization: context.currentAuthorization,

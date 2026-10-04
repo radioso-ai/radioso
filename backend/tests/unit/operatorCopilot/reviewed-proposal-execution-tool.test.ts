@@ -19,7 +19,7 @@ describe("reviewed proposal execution tool", () => {
     await expect(tool.invoke({ proposalId: "11111111-1111-4111-8111-111111111111", reviewDigest: "a".repeat(43) }, {} as never))
       .resolves.toMatchObject({ proposalId: "11111111-1111-4111-8111-111111111111", status: "applied" });
     expect(executeMcpReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({
-      executionInvocationId: "execution-1", grantId: "grant-1", clientId: "client-1", accountId: "account-1",
+      executionInvocationId: "execution-1", attemptInvocationId: "execution-1", grantId: "grant-1", clientId: "client-1", accountId: "account-1",
       currentAuthorization,
     }));
   });
@@ -42,7 +42,7 @@ describe("reviewed proposal execution tool", () => {
 
     expect(recovered).toMatchObject({ status: "recovered", output: { status: "applied" } });
     expect(executeMcpReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({
-      executionInvocationId: "original-receipt", currentAuthorization, grantId: "grant-1", clientId: "client-1",
+      executionInvocationId: "original-receipt", attemptInvocationId: "fresh-retry", currentAuthorization, grantId: "grant-1", clientId: "client-1",
     }));
   });
 
@@ -57,7 +57,7 @@ describe("reviewed proposal execution tool", () => {
     arguments: { proposalId, reviewDigest: "a".repeat(43) },
     context: {
       workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "user-1", surface: "mcp",
-      operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1", currentAuthorization: { hasAllPermissions: vi.fn() },
+      operatorMcpInvocationId: "fresh-retry", operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1", currentAuthorization: { hasAllPermissions: vi.fn() },
       pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
     },
     staleBefore, now: recoveryNow,

@@ -5,8 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { apiPrincipalRoutePolicy } from "../../src/app/http/apiPrincipalRoutePolicy.js";
 import { operationPermissionRequirements } from "../../src/app/http/openapi/operationPermissionRequirements.js";
+import { CustomerReplyDeliveryDispatcher } from "../../src/modules/customerReplyDelivery/public.js";
+import { EmailHeldReplyChannelScope, emailMailboxPolicyRef } from "../../src/modules/emailChannel/heldReplyChannelScope.js";
+import { EmailCustomerReplyDeliverer } from "../../src/modules/emailChannel/operator/emailCustomerReplyDeliverer.js";
 import type { HeldReplyRecord } from "../../src/modules/handoff/public.js";
 import { forbidden } from "../../src/shared/domain/errors.js";
+import { InMemoryEmailDomains, InMemoryEmailMailboxes } from "../support/inMemoryEmailChannel.js";
 import { createInMemoryHeldReplyService } from "../support/inMemoryHeldReplies.js";
 import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
@@ -277,6 +281,88 @@ describe("held replies contract", () => {
       expect(stateOf(h, held.id)).toBe("pending");
       expect(h.held.messages).toEqual([]);
       expect(auditEvents(h)).toEqual([]);
+    });
+
+    describe("through the email channel's own scope and delivery", () => {
+      /**
+       * A held reply on an email conversation whose mailbox sends from a domain in `sendingStatus`,
+       * released through email's real channel scope and reply deliverer over in-memory rows.
+       */
+      const emailRelease = async (sendingStatus: "pending" | "verified") => {
+        const clock = () => new Date("2026-10-04T09:00:00.000Z");
+        const domains = new InMemoryEmailDomains(clock);
+        const mailboxes = new InMemoryEmailMailboxes(clock);
+        // What the scope locks; a test that removes the mailbox while the release waits swaps it.
+        const lockPolicy = vi.fn((mailboxId: string) => mailboxes.findActiveById(mailboxId));
+        const h = await harness({
+          channel: {
+            scope: new EmailHeldReplyChannelScope({ mailboxes: { lockPolicy }, domains }),
+            delivery: new CustomerReplyDeliveryDispatcher({
+              email: new EmailCustomerReplyDeliverer({ mailboxes, domains, ownership: { versionOf: async () => 0 } }),
+            }),
+          },
+        });
+        const domain = domains.seed({ workspaceId: h.owner.workspaceId, domain: "customer.test", sendingStatus });
+        const mailbox = mailboxes.seed({ workspaceId: h.owner.workspaceId, domainId: domain.id, address: "support@customer.test" });
+        const conversationId = h.held.seedConversation(h.owner.workspaceId, 0, {
+          provider: "email",
+          mailbox: { id: mailbox.id, address: mailbox.address },
+          threadKey: "thread-1",
+          participant: { address: "pat@example.org" },
+        } as never);
+        const held = h.seed({ conversationId, policy: { ref: emailMailboxPolicyRef(mailbox.id), version: mailbox.policyVersion } });
+        return { h, held, mailboxes, mailbox, lockPolicy };
+      };
+
+      it("refuses as email_sending_not_verified, naming the step, when the mailbox's sending domain is not verified", async () => {
+        const { h, held } = await emailRelease("pending");
+
+        const refused = await release(h, held).expect(409);
+
+        expect(refused.body.error.code).toBe("email_sending_not_verified");
+        expect(refused.body.error.details).toEqual({ step: "verify_sending_domain", domain: "customer.test" });
+        expect(stateOf(h, held.id)).toBe("pending");
+        expect(h.held.messages).toEqual([]);
+        expect(auditEvents(h)).toEqual([]);
+      });
+
+      // Delivery is resolved before the transaction opens, so a mailbox already removed is refused
+      // there, by the same refusal a teammate's reply gets, naming the step that restores sending.
+      it("refuses a mailbox removed before the release as email_sending_not_verified, naming add_mailbox", async () => {
+        const { h, held, mailboxes, mailbox } = await emailRelease("verified");
+        await mailboxes.markRemoved(mailbox.workspaceId, mailbox.id);
+
+        const refused = await release(h, held).expect(409);
+
+        expect(refused.body.error.code).toBe("email_sending_not_verified");
+        expect(refused.body.error.details).toEqual({ step: "add_mailbox", domain: "customer.test" });
+        expect(stateOf(h, held.id)).toBe("pending");
+      });
+
+      it("refuses as channel_not_ready when the mailbox is removed before the release can lock its policy", async () => {
+        const { h, held, mailboxes, mailbox, lockPolicy } = await emailRelease("verified");
+        lockPolicy.mockImplementationOnce(async (mailboxId) => {
+          await mailboxes.markRemoved(mailbox.workspaceId, mailbox.id);
+          return mailboxes.findActiveById(mailboxId);
+        });
+
+        const refused = await release(h, held).expect(409);
+
+        expect(refused.body.error.code).toBe("channel_not_ready");
+        expect(refused.body.error.details).toEqual({ heldReply: expect.objectContaining({ id: held.id, state: "pending" }) });
+        expect(stateOf(h, held.id)).toBe("pending");
+        expect(h.held.messages).toEqual([]);
+        expect(auditEvents(h)).toEqual([]);
+      });
+
+      it("sends once the mailbox can send", async () => {
+        const { h, held } = await emailRelease("verified");
+
+        await release(h, held).expect(201);
+
+        expect(stateOf(h, held.id)).toBe("released");
+        expect(h.held.outbox).toEqual([expect.objectContaining({ type: "email.send", payload: expect.objectContaining({ trigger: "held_release", heldReplyId: held.id }) })]);
+      });
     });
 
     it("refuses an empty, oversized or unknown edit field", async () => {

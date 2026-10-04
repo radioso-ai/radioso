@@ -528,4 +528,32 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       },
     ],
   },
+  {
+    id: "email-review-covered-refund",
+    name: "An emailed refund question the policy covers is drafted grounded and answered, and not sent",
+    description:
+      "A review turn, as the email channel runs one: the customer's message is already recorded and the reply comes back as a draft. The 30-day refund window covers the question, so the draft is grounded and the coverage verdict is answered, and the conversation gains no assistant message.",
+    tags: ["email", "review", "grounding", "coverage"],
+    executionMode: "review",
+    query: "Hi, I bought an annual plan two weeks ago and it isn't working out for us. Can I still get a full refund?",
+    assertions: [
+      { type: "turn_grounding_verdict", verdict: "grounded" },
+      { type: "turn_answer_coverage", coverage: "answered" },
+      { type: "turn_persists_no_reply" },
+    ],
+  },
+  {
+    id: "email-review-uncovered-nonprofit-discount",
+    name: "An emailed question the corpus does not answer is drafted as unsupported and unanswered, and not sent",
+    description:
+      "A review turn on a question next to the pricing material that no document answers: retrieval finds the plans, the draft states no discount it cannot source, the coverage verdict is unanswered, and the conversation gains no assistant message.",
+    tags: ["email", "review", "grounding", "coverage"],
+    executionMode: "review",
+    query: "Hello, we are a registered charity. Do you offer a nonprofit discount on your plans?",
+    assertions: [
+      { type: "turn_grounding_verdict", verdict: "no_support" },
+      { type: "turn_answer_coverage", coverage: "unanswered" },
+      { type: "turn_persists_no_reply" },
+    ],
+  },
 ];

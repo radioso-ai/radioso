@@ -6,6 +6,7 @@ import type {
   AssistantPageContext,
 } from "../../chat/contracts/index.js";
 import { renderRoutineInvocation } from "../../routines/public.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { EvalRunRoutineStartState } from "../domain/types.js";
 import type { SuiteAssertion } from "./scoring.js";
 
@@ -26,6 +27,13 @@ export interface ConversationQualityCase {
   description?: string;
   /** Free-form labels for filtering a run, e.g. "routing" | "routine" | "grounding". */
   tags?: string[];
+  /**
+   * `"review"` drives the case as a review turn: `query` is recorded as the customer's
+   * message, after `history`, and answered as a draft, so no reply is persisted, no routine
+   * runs and no skill effect fires. A review case takes no other turn input. Absent, the
+   * case is a live turn.
+   */
+  executionMode?: Extract<TurnExecutionMode, "review">;
   /** Prior turns, oldest first, replayed as conversation history before `query`. */
   history?: Array<{ role: "user" | "assistant"; content: string }>;
   /** The message to drive; absent when the turn is a `routineInvocation`. */
@@ -90,13 +98,24 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn_asks_clarification") }),
   z.object({ type: z.literal("turn_grounding_verdict"), verdict: z.enum(["grounded", "degraded", "no_support"]) }),
   z.object({ type: z.literal("turn_answer_coverage"), coverage: z.enum(["answered", "partial", "unanswered", "unclear"]) }),
+  z.object({ type: z.literal("turn_persists_no_reply") }),
 ]);
+
+/** Turn inputs a review turn has no way to take: it answers a recorded message with its history. */
+const REVIEW_UNSUPPORTED_INPUTS = [
+  "routineInvocation",
+  "routineStartState",
+  "pageContext",
+  "clientContextCapabilities",
+  "agentConfigOverride",
+] as const;
 
 const conversationQualityCaseSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   description: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  executionMode: z.literal("review").optional(),
   history: z
     .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() }))
     .optional(),
@@ -113,6 +132,9 @@ const conversationQualityCaseSchema = z.object({
 }).refine(
   (value) => (value.query === undefined) !== (value.routineInvocation === undefined),
   { message: "exactly one of query or routineInvocation is required", path: ["query"] },
+).refine(
+  (value) => value.executionMode !== "review" || REVIEW_UNSUPPORTED_INPUTS.every((input) => value[input] === undefined),
+  { message: `a review case takes only query and history, not ${REVIEW_UNSUPPORTED_INPUTS.join(", ")}`, path: ["executionMode"] },
 );
 
 /**

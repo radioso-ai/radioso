@@ -2286,9 +2286,16 @@ export const createTestDependencies = (overrides: {
     documentSources: documentSourceRepository,
   });
   const deliveryFailureRecords = createInMemoryDeliveryFailures().failures;
+  const heldReplies: AppDependencies["heldReplies"] = overrides.heldReplies ?? {
+    list: async () => ({ items: [], nextCursor: null }),
+    current: async () => ({ heldReply: null }),
+    release: async () => { throw notFound("Held reply not found"); },
+    discard: async () => { throw notFound("Held reply not found"); },
+  };
   const copilotToolCatalog = createCopilotToolCatalog({
     emailChannel: null,
     deliveryFailures: deliveryFailureRecords,
+    heldReplies,
     agentService: {
       get: agentService.get.bind(agentService),
       listExisting: agentService.listExisting.bind(agentService),
@@ -2679,12 +2686,7 @@ export const createTestDependencies = (overrides: {
       audit: auditService,
       logger,
     }),
-    heldReplies: overrides.heldReplies ?? {
-      list: async () => ({ items: [], nextCursor: null }),
-      current: async () => ({ heldReply: null }),
-      release: async () => { throw notFound("Held reply not found"); },
-      discard: async () => { throw notFound("Held reply not found"); },
-    },
+    heldReplies,
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
     revisionEvalRunService,

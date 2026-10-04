@@ -2,24 +2,43 @@ import { randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import type { WorkspaceInvalidationKind } from "@radioso/workspace-invalidation-contract";
 import cookieParser from "cookie-parser";
 import express from "express";
 import request from "supertest";
 
+import { createConversationActivityComposition } from "../../../src/app/composition/conversationActivity.js";
 import { createPostgresOwnershipChangeUnitOfWork } from "../../../src/app/composition/conversationOwnershipChanges.js";
 import { createPostgresOwnershipReplyUnitOfWork } from "../../../src/app/composition/conversationOwnershipReplies.js";
 import { createEmailChannelComposition, createPostgresDeliveryFailures } from "../../../src/app/composition/emailChannel.js";
+import {
+  createPostgresHeldReplyUnitOfWork,
+  emailHeldReplyChannelRegistration,
+  type HeldReplyChannelRegistration,
+} from "../../../src/app/composition/heldReplyUnitOfWork.js";
+import { createTeammateLabelReader } from "../../../src/app/composition/teammateLabelReader.js";
 import { parseEmailChannelConfig } from "../../../src/app/config/env.js";
 import { createErrorHandler } from "../../../src/app/http/middleware/errorHandler.js";
 import type { WorkspaceSessionDependencies } from "../../../src/app/http/middleware/requireWorkspaceSession.js";
 import { createConversationOwnershipRoutes } from "../../../src/app/http/routes/conversationOwnershipRoutes.js";
+import { createHeldReplyRoutes } from "../../../src/app/http/routes/heldReplyRoutes.js";
+import { createHistoryRoutes } from "../../../src/app/http/routes/historyRoutes.js";
+import type { AppDependencies } from "../../../src/app/server/types.js";
+import { AnswerCoverageRepository } from "../../../src/db/repositories/answerCoverageRepository.js";
+import { AuditEventRepository } from "../../../src/db/repositories/auditEventRepository.js";
 import { ConversationActivityRepository } from "../../../src/db/repositories/conversationActivityRepository.js";
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import { ConversationRepository } from "../../../src/db/repositories/conversationRepository.js";
+import { HeldReplyRepository } from "../../../src/db/repositories/heldReplyRepository.js";
+import { HistoryItemsRepository } from "../../../src/db/repositories/historyItemsRepository.js";
+import { MessageRepository } from "../../../src/db/repositories/messageRepository.js";
+import { UserRepository } from "../../../src/db/repositories/userRepository.js";
 import type { AuditEventInput } from "../../../src/modules/audit/contracts/index.js";
+import { AssistantHistoryService, ChatHistoryService } from "../../../src/modules/chat/composition.js";
+import type { PublicConversationEvent } from "../../../src/modules/chat/services/publicConversationEventBus.js";
 import { CustomerReplyDeliveryDispatcher, DeliveryFailureDecisions } from "../../../src/modules/customerReplyDelivery/public.js";
 import { EmailSendIntentRepository, NoopEmailChannelDrainDispatcher } from "../../../src/modules/emailChannel/public.js";
-import { ConversationOwnershipService, OperatorReplyService } from "../../../src/modules/handoff/public.js";
+import { ConversationOwnershipService, HeldReplyService, OperatorReplyService } from "../../../src/modules/handoff/public.js";
 import type { EmailMessage } from "../../../src/modules/mail/public.js";
 import { unauthorized } from "../../../src/shared/domain/errors.js";
 import type { Database } from "../../../src/shared/infra/database.js";
@@ -50,7 +69,7 @@ interface Teammate {
   userId: string;
 }
 
-const seedTeammate = async (
+export const seedTeammate = async (
   database: Database,
   workspace: { accountId: string; workspaceId: string },
 ): Promise<Teammate> => {
@@ -91,6 +110,7 @@ const sessionDependencies = (sessions: ReadonlyMap<string, Teammate>) => {
     accountAccessService: {
       requireActiveMembership: async () => undefined,
       requirePermission: async () => null,
+      hasPermission: async () => true,
     },
     workspaceSessionService: {
       resolve: async (input: { accountId: string; workspaceId?: string }) => {
@@ -105,15 +125,25 @@ const sessionDependencies = (sessions: ReadonlyMap<string, Teammate>) => {
 
 /**
  * The API process: the conversation reply route over the ownership service and reply unit of work
- * as the server composes them, delivering to the email channel through the channel composition's
- * reply deliverer, and the delivery-failure decisions over the composition's resolver. The action
- * drain pushes it would send after a commit are counted, not sent; a worker dispatches the outbox.
+ * as the server composes them, the held-reply routes over the held-reply service and its unit of
+ * work, both delivering to the email channel through the channel composition's reply deliverer,
+ * the delivery-failure decisions over the composition's resolver, and the history API over the
+ * conversation history as the chat composition builds it. The action drain pushes it would send
+ * after a commit are counted, not sent; a worker dispatches the outbox. The public conversation
+ * events and the dashboard invalidations it publishes are kept, so a test can see what went out.
  */
 const apiNodeDrains = (): never => {
   throw new Error("The API node never drains the email channel");
 };
 
-export const createApiNode = (database: Database, options: { spoolDir: string }) => {
+export const createApiNode = (
+  database: Database,
+  options: {
+    spoolDir: string;
+    /** The held-reply channel registrations; email's as the server registers it unless a test wraps it. */
+    heldReplyChannels?: readonly HeldReplyChannelRegistration[];
+  },
+) => {
   const db = database.kysely;
   const activity = new ConversationActivityRepository(db);
   const audit = new RecordingAudit();
@@ -142,6 +172,15 @@ export const createApiNode = (database: Database, options: { spoolDir: string })
   });
   if (!channel) throw new Error("the local provider composes the email channel");
 
+  const events: PublicConversationEvent[] = [];
+  const invalidations: { workspaceId: string; kinds: readonly WorkspaceInvalidationKind[] }[] = [];
+  const replies = new OperatorReplyService({
+    auditService: audit,
+    publicConversationEventBus: { publish: (event) => { events.push(event); } },
+    customerReplyDelivery: new CustomerReplyDeliveryDispatcher({ email: channel.customerReplyDeliverer }),
+    logger,
+  });
+
   const ownership = new ConversationOwnershipService({
     conversations: new ConversationRepository(db),
     ownership: new ConversationOwnershipRepository(db),
@@ -149,15 +188,49 @@ export const createApiNode = (database: Database, options: { spoolDir: string })
     replyWrites: createPostgresOwnershipReplyUnitOfWork({ db, activity, actionDrain, logger }),
     operators: { find: async () => null },
     operatorIdentities: { resolve: async ({ userId }) => ({ userId, teammateLabel: "Dana Scully", replySignature: null }) },
-    replies: new OperatorReplyService({
-      auditService: audit,
-      publicConversationEventBus: { publish: () => undefined },
-      customerReplyDelivery: new CustomerReplyDeliveryDispatcher({ email: channel.customerReplyDeliverer }),
-      logger,
-    }),
+    replies,
     audit,
     logger,
   });
+
+  const heldReplies = new HeldReplyService({
+    conversations: new ConversationRepository(db),
+    writes: createPostgresHeldReplyUnitOfWork({
+      db,
+      channels: options.heldReplyChannels ?? [emailHeldReplyChannelRegistration],
+      activity,
+      actionDrain,
+      logger,
+    }),
+    reads: new HeldReplyRepository(db),
+    operatorIdentities: { resolve: async ({ userId }) => ({ userId, teammateLabel: "Dana Scully", replySignature: null }) },
+    customerReplyDelivery: new CustomerReplyDeliveryDispatcher({ email: channel.customerReplyDeliverer }),
+    replies,
+    audit,
+    publisher: {
+      enqueue: (workspaceId, kinds) => {
+        invalidations.push({ workspaceId, kinds });
+        return { accepted: true, coalesced: false };
+      },
+    },
+    logger,
+  });
+
+  const messages = new MessageRepository(db);
+  const teammateLabels = createTeammateLabelReader({ users: new UserRepository(db) });
+  const history = new ChatHistoryService(
+    new ConversationRepository(db),
+    messages,
+    new AuditEventRepository(db),
+    new HistoryItemsRepository(db),
+    undefined,
+    undefined,
+    new ConversationOwnershipRepository(db),
+    new AnswerCoverageRepository(db),
+    undefined,
+    teammateLabels,
+    createConversationActivityComposition({ store: activity, teammateLabels, messages }).reads,
+  );
 
   const sessions = new Map<string, Teammate>();
   const app = express();
@@ -167,6 +240,13 @@ export const createApiNode = (database: Database, options: { spoolDir: string })
     ...sessionDependencies(sessions),
     conversationOperatorDirectory: { list: async () => [], find: async () => null },
     conversationOwnershipService: ownership,
+  }));
+  app.use("/api/v1", createHeldReplyRoutes({ ...sessionDependencies(sessions), heldReplies }));
+  app.use("/api/v1/history", createHistoryRoutes({
+    ...sessionDependencies(sessions),
+    assistantHistoryService: new AssistantHistoryService(history),
+    // Document-search history is not read through this node.
+    documentSearchHistoryService: {} as AppDependencies["documentSearchHistoryService"],
   }));
   app.use(createErrorHandler());
 
@@ -180,6 +260,10 @@ export const createApiNode = (database: Database, options: { spoolDir: string })
     channel,
     audit,
     actionDrain,
+    events,
+    invalidations,
+    heldReplies,
+    history,
     decisions: new DeliveryFailureDecisions({
       failures: createPostgresDeliveryFailures({ db, activity }),
       resolver: channel.deliveryFailureResolver,
@@ -193,6 +277,26 @@ export const createApiNode = (database: Database, options: { spoolDir: string })
         .set("Cookie", signIn(teammate))
         .set("x-workspace-id", teammate.workspaceId)
         .send(body),
+    /** `POST /api/v1/conversations/{id}/held-replies/{heldReplyId}/release` as the signed-in teammate; an edit with `editedText`. */
+    releaseHeldReply: (teammate: Teammate, target: { conversationId: string; heldReplyId: string }, body: { editedText?: string } = {}) =>
+      request(app)
+        .post(`/api/v1/conversations/${target.conversationId}/held-replies/${target.heldReplyId}/release`)
+        .set("Cookie", signIn(teammate))
+        .set("x-workspace-id", teammate.workspaceId)
+        .send(body),
+    /** `GET /api/v1/history{path}` as the signed-in teammate, such as `/chat/{id}`. */
+    readHistory: (teammate: Teammate, path: string) =>
+      request(app)
+        .get(`/api/v1/history${path}`)
+        .set("Cookie", signIn(teammate))
+        .set("x-workspace-id", teammate.workspaceId),
+    /** `POST /api/v1/conversations/{id}/held-replies/{heldReplyId}/discard` as the signed-in teammate. */
+    discardHeldReply: (teammate: Teammate, target: { conversationId: string; heldReplyId: string }) =>
+      request(app)
+        .post(`/api/v1/conversations/${target.conversationId}/held-replies/${target.heldReplyId}/discard`)
+        .set("Cookie", signIn(teammate))
+        .set("x-workspace-id", teammate.workspaceId)
+        .send(),
   };
 };
 

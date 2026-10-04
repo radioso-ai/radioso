@@ -616,6 +616,32 @@ describe("HeldReplyService", () => {
       expect(messages).toEqual([]);
     });
 
+    it("refuses with the held reply as it is once the policy lock is held, not as it was read before", async () => {
+      const { service, heldReplies, channelScope, messages } = createService({ lockedPolicyVersion: 6 });
+      const held = heldReplies.seed({ policy: { ref: policyRef, version: 5 } });
+      // The policy change the lock waited out superseded the draft before it committed.
+      vi.mocked(channelScope.lockPolicy).mockImplementationOnce(async () => {
+        heldReplies.rows.set(held.id, {
+          ...held,
+          state: "superseded",
+          supersededReason: "policy_changed",
+          attentionClearedAt: new Date(),
+          attentionClearedReason: "superseded",
+          decidedAt: new Date(),
+        });
+        return { version: 6 };
+      });
+
+      const refused = await service.release(dana, { conversationId, heldReplyId: held.id, editedText: null });
+
+      expect(refused).toMatchObject({
+        ok: false,
+        refusal: "policy_changed",
+        current: { id: held.id, state: "superseded", supersededReason: "policy_changed", attentionOpen: false },
+      });
+      expect(messages).toEqual([]);
+    });
+
     it("refuses a draft that is no longer pending, with its current state", async () => {
       const { service, heldReplies, messages } = createService();
       const discarded = heldReplies.seed({ state: "discarded", discardedByUserId: "user-fox", decidedAt: new Date() });

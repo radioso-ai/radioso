@@ -51,8 +51,11 @@ const isRfcMessageId = (value: RfcMessageId | null): value is RfcMessageId => va
  * 5. applies the outcome through the fenced transition (research B18);
  * 6. fetches the delivered Message-ID.
  *
- * After an unknown outcome the reconciler owns re-POSTs. This slice delivers operator-authorized
- * triggers; `auto_reply` materializes through the held-reply dispatch port (research B9).
+ * After an unknown outcome the reconciler owns re-POSTs. It delivers the operator-authorized
+ * triggers: an operator reply, a held reply's release, and an audited resend. The author is the
+ * message's: an unchanged release is the agent's message and carries `Auto-Submitted:
+ * auto-generated`, an edited one is the teammate's and does not (FR-034). `auto_reply` materializes
+ * through the held-reply dispatch port (research B9).
  */
 export class EmailSendActionHandler implements ActionHandler {
   constructor(private readonly deps: {

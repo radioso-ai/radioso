@@ -42,13 +42,20 @@ const fakeDb = () => {
   return { db: { isTransaction: false, transaction: vi.fn(() => ({ execute })) }, execute };
 };
 
+/** The host ports the channel reaches only while draining. */
+const hostPorts = () => ({
+  chat: { ingest: vi.fn(), respond: vi.fn() },
+  heldReplies: { hold: vi.fn(), findByReviewRef: vi.fn() },
+  ownership: { requestHumanOwnership: vi.fn() },
+});
+
 const compose = (config: ReturnType<typeof parseEmailChannelConfig>) =>
   createEmailChannelComposition({
     config,
     db: fakeDb().db as never,
     drains: new NoopEmailChannelDrainDispatcher(),
     activity: { record: vi.fn() },
-    conversationIngest: { ingest: vi.fn() },
+    ...hostPorts(),
     agents: { findByIdAndWorkspaceId: vi.fn(async () => null) },
     audit: { record: vi.fn() },
     actionDrain: { requestDrain: vi.fn(async () => undefined) },
@@ -90,11 +97,11 @@ describe("email channel composition", () => {
     expect(composition?.provisioner).toBeInstanceOf(ResendEmailDomainProvisioner);
   });
 
-  it("supports operator_only alone in this slice, and defaults new mailboxes to it", () => {
+  it("supports operator_only and draft, and defaults new mailboxes to draft", () => {
     const composition = compose(localConfig());
 
-    expect(composition?.supportedModes).toEqual(["operator_only"]);
-    expect(composition?.mailboxes.modes()).toEqual({ supportedModes: ["operator_only"], defaultMode: "operator_only" });
+    expect(composition?.supportedModes).toEqual(["operator_only", "draft"]);
+    expect(composition?.mailboxes.modes()).toEqual({ supportedModes: ["operator_only", "draft"], defaultMode: "draft" });
   });
 
   it("routes replies on email conversations through the email.send deliverer, and resolves their delivery failures", () => {
@@ -177,7 +184,7 @@ describe("email channel composition", () => {
       db: db as never,
       drains: new NoopEmailChannelDrainDispatcher(),
       activity: { record: vi.fn() },
-      conversationIngest: { ingest: vi.fn() },
+      ...hostPorts(),
       agents: { findByIdAndWorkspaceId: vi.fn(async () => null) },
       audit: { record: vi.fn() },
       actionDrain: { requestDrain: vi.fn(async () => undefined) },

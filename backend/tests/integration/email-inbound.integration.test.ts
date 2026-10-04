@@ -74,6 +74,10 @@ describeIntegration("email inbound end to end (Postgres, local receiver)", () =>
     suite = await createEmailChannelDatabase(integrationDatabaseUrl, "inbound");
     database = suite.database;
     spool = await createSpool();
+    const host = createHostIngest(database);
+    const unused = (): never => {
+      throw new Error("This suite runs no review turn");
+    };
     const composed = createEmailChannelComposition({
       config: parseEmailChannelConfig({
         EMAIL_CHANNEL_PROVIDER: "local",
@@ -85,7 +89,10 @@ describeIntegration("email inbound end to end (Postgres, local receiver)", () =>
       db: database.kysely,
       drains: new NoopEmailChannelDrainDispatcher(),
       activity: new ConversationActivityRepository(database.kysely),
-      conversationIngest: createHostIngest(database),
+      // This suite drains stage 1 only; no review turn runs here.
+      chat: { ingest: (input) => host.ingest(input), respond: unused },
+      heldReplies: { hold: unused, findByReviewRef: unused },
+      ownership: { requestHumanOwnership: unused },
       agents: { findByIdAndWorkspaceId: async (agentId) => ({ id: agentId }) },
       audit: { record: async () => undefined },
       actionDrain: { requestDrain: async () => undefined },
@@ -335,15 +342,15 @@ describeIntegration("email inbound end to end (Postgres, local receiver)", () =>
     });
   });
 
-  it("SC-003: runs no turn for any protocol fixture and logs every one of them", async () => {
-    // The mailbox asks for full autonomy with an agent; only classification and the deployment's
-    // supported modes stand between this mail and a turn.
+  it("SC-003: runs no turn for any automated protocol fixture and logs every one of them", async () => {
+    // The mailbox asks for full autonomy with an agent, which the deployment caps at draft: only
+    // classification stands between this mail and a review turn. Mail from a person is accepted.
     const { target, mailbox } = await supportTarget({ engagementMode: "auto", withAgent: true });
     const { conversationId } = await firstContact(target);
     await seedOutboundMessageId(database, mailbox, conversationId, OUTBOUND_ID);
     const expected: Record<string, { classification: string; disposition: string; reason: string }> = {
       "auto-submitted-auto-replied.eml": { classification: "automated_sender", disposition: "drop", reason: "automated_sender" },
-      "auto-submitted-no.eml": { classification: "person", disposition: "ingest_only", reason: "operator_only_mailbox" },
+      "auto-submitted-no.eml": { classification: "person", disposition: "run_review_turn", reason: "accepted" },
       "dsn-foreign-id.eml": { classification: "automated_sender", disposition: "drop", reason: "automated_sender" },
       "dsn-radioso-id.eml": { classification: "bounce", disposition: "drop", reason: "bounce" },
       "list-id.eml": { classification: "automated_sender", disposition: "drop", reason: "automated_sender" },
@@ -369,11 +376,10 @@ describeIntegration("email inbound end to end (Postgres, local receiver)", () =>
     }
 
     const turns = await database.query(
-      `SELECT d.id FROM email_inbound_deliveries d WHERE d.mailbox_id = $1 AND d.disposition = 'run_review_turn'
+      `SELECT d.id FROM email_inbound_deliveries d
+        WHERE d.mailbox_id = $1 AND d.disposition = 'run_review_turn' AND d.classification <> 'person'
        UNION ALL
-       SELECT m.id FROM messages m WHERE m.workspace_id = $2 AND m.role <> 'user'
-       UNION ALL
-       SELECT l.conversation_id FROM email_thread_links l WHERE l.mailbox_id = $1 AND (l.review_revision > 0 OR l.review_due_at IS NOT NULL)`,
+       SELECT m.id FROM messages m WHERE m.workspace_id = $2 AND m.role <> 'user'`,
       [mailbox.id, mailbox.workspaceId],
     );
     expect(turns).toEqual([]);

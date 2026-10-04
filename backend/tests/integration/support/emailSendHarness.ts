@@ -109,6 +109,10 @@ const sessionDependencies = (sessions: ReadonlyMap<string, Teammate>) => {
  * reply deliverer, and the delivery-failure decisions over the composition's resolver. The action
  * drain pushes it would send after a commit are counted, not sent; a worker dispatches the outbox.
  */
+const apiNodeDrains = (): never => {
+  throw new Error("The API node never drains the email channel");
+};
+
 export const createApiNode = (database: Database, options: { spoolDir: string }) => {
   const db = database.kysely;
   const activity = new ConversationActivityRepository(db);
@@ -126,11 +130,10 @@ export const createApiNode = (database: Database, options: { spoolDir: string })
     db,
     drains: new NoopEmailChannelDrainDispatcher(),
     activity,
-    conversationIngest: {
-      ingest: () => {
-        throw new Error("The API node never drains inbound mail");
-      },
-    },
+    // The API node never drains: it neither records inbound mail nor reviews it.
+    chat: { ingest: apiNodeDrains, respond: apiNodeDrains },
+    heldReplies: { hold: apiNodeDrains, findByReviewRef: apiNodeDrains },
+    ownership: { requestHumanOwnership: apiNodeDrains },
     agents: { findByIdAndWorkspaceId: async (agentId) => ({ id: agentId }) },
     audit,
     actionDrain,

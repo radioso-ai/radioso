@@ -6,7 +6,10 @@ import type { ConversationActivityEvent } from "../../../src/modules/conversatio
 import {
   CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
   ConversationOwnershipService,
+  heldReplyTransition,
   type ConversationOperator,
+  type HeldReplyEvent,
+  type HeldReplyState,
   type OperatorReplyService,
   type OwnershipActor,
 } from "../../../src/modules/handoff/public.js";
@@ -27,6 +30,48 @@ const operators: Record<string, ConversationOperator> = {
 const conversationRecord = { id: conversationId, workspaceId } as ConversationRecord;
 
 type OperatorReply = Parameters<OperatorReplyService["prepare"]>[0];
+
+interface HeldReplyRow {
+  state: HeldReplyState;
+  supersededReason: string | null;
+  attentionCleared: string | null;
+}
+
+/**
+ * The conversation's held replies behind the supersede scope, moved by the real held-reply machine.
+ * Each call is recorded as a step, so a test can tell which unit of work it ran in.
+ */
+const createHeldReplies = (steps: string[]) => {
+  const rows = new Map<string, HeldReplyRow>();
+  const apply = (event: HeldReplyEvent): number => {
+    let changed = 0;
+    for (const [id, row] of rows) {
+      const transition = heldReplyTransition(row.state, event);
+      if (!transition || (event.kind === "clear_discarded_attention" && row.attentionCleared !== null)) {
+        continue;
+      }
+      rows.set(id, {
+        state: transition.state,
+        supersededReason: event.kind === "supersede" ? event.reason : row.supersededReason,
+        attentionCleared: transition.attentionCleared,
+      });
+      changed += 1;
+    }
+    return changed;
+  };
+  return {
+    rows,
+    seed: (id: string, state: HeldReplyState) => rows.set(id, { state, supersededReason: null, attentionCleared: null }),
+    supersedePendingForConversation: vi.fn(async (_conversationId: string, reason: "newer_inbound" | "takeover" | "operator_reply") => {
+      steps.push(`held_replies:supersede:${reason}`);
+      return apply({ kind: "supersede", reason });
+    }),
+    clearDiscardedAttention: vi.fn(async (_conversationId: string, reason: "operator_reply" | "takeover") => {
+      steps.push(`held_replies:clear_discarded:${reason}`);
+      return apply({ kind: "clear_discarded_attention", reason });
+    }),
+  };
+};
 
 const createService = (options: {
   outbox?: { enqueue: InMemoryActionOutbox["enqueue"] };
@@ -62,6 +107,14 @@ const createService = (options: {
     }),
   };
   const replyScope = { messages: { create: vi.fn() }, conversations: { touch: vi.fn() }, outbox: { enqueue: vi.fn() } };
+  const heldReplies = createHeldReplies(steps);
+  // Marks where each unit of work opens and commits, so a step between the two ran inside it.
+  const inUnitOfWork = async <T>(work: () => Promise<T>): Promise<T> => {
+    steps.push("begin");
+    const result = await work();
+    steps.push("commit");
+    return result;
+  };
   const lockedConversations = {
     lockForUpdate: vi.fn(async (id: string, inWorkspace: string) => {
       steps.push("lock_conversation");
@@ -105,10 +158,10 @@ const createService = (options: {
     conversations,
     ownership,
     changes: {
-      run: (work) => work({ ownership, outbox: options.outbox ?? outbox, activity }),
+      run: (work) => inUnitOfWork(() => work({ ownership, outbox: options.outbox ?? outbox, activity, heldReplies })),
     },
     replyWrites: {
-      run: (work) => work({ conversations: lockedConversations, ownership, reply: replyScope, activity }),
+      run: (work) => inUnitOfWork(() => work({ conversations: lockedConversations, ownership, reply: replyScope, activity, heldReplies })),
     },
     operators: {
       find: vi.fn(async (input: { userId: string }) => operators[input.userId] ?? null),
@@ -122,7 +175,7 @@ const createService = (options: {
   });
   return {
     service, ownership, outbox, audit, publisher, replies, replyScope, conversations, lockedConversations, operatorIdentities,
-    loadForUpdate, logger, errorReporter, steps, activity, activityEvents,
+    loadForUpdate, logger, errorReporter, steps, activity, activityEvents, heldReplies,
   };
 };
 
@@ -155,7 +208,18 @@ describe("ConversationOwnershipService", () => {
       await service.reply(fox, { conversationId, message: "Hi", expectedVersion: 0 });
 
       expect(steps).toEqual([
-        "prepare", "lock_conversation", "lock_ownership", "activity:claimed", "write", "announce", "audit:taken_over", "audit:replied",
+        "prepare",
+        "begin",
+        "lock_conversation",
+        "lock_ownership",
+        "activity:claimed",
+        "held_replies:supersede:operator_reply",
+        "held_replies:clear_discarded:operator_reply",
+        "write",
+        "commit",
+        "announce",
+        "audit:taken_over",
+        "audit:replied",
       ]);
     });
 
@@ -527,6 +591,135 @@ describe("ConversationOwnershipService", () => {
         .rejects.toMatchObject({ statusCode: 404, code: "transfer_target_unavailable" });
       await expect(service.transfer(dana, { conversationId: "conversation-missing", toUserId: "user-fox", expectedVersion: 1 }))
         .rejects.toMatchObject({ statusCode: 404, code: "not_found" });
+    });
+  });
+
+  describe("held replies", () => {
+    it.each(["pending", "queued_auto"] as const)(
+      "a takeover supersedes a %s draft and closes a discarded draft's attention, in the unit of work that claims",
+      async (live) => {
+        const { service, heldReplies, steps } = createService();
+        heldReplies.seed("held-live", live);
+        heldReplies.seed("held-discarded", "discarded");
+
+        await service.takeOver(dana, { conversationId });
+
+        expect(heldReplies.supersedePendingForConversation).toHaveBeenCalledWith(conversationId, "takeover");
+        expect(heldReplies.clearDiscardedAttention).toHaveBeenCalledWith(conversationId, "takeover");
+        expect(Object.fromEntries(heldReplies.rows)).toEqual({
+          "held-live": { state: "superseded", supersededReason: "takeover", attentionCleared: "takeover" },
+          "held-discarded": { state: "discarded", supersededReason: null, attentionCleared: "takeover" },
+        });
+        expect(steps).toEqual([
+          "begin",
+          "activity:claimed",
+          "held_replies:supersede:takeover",
+          "held_replies:clear_discarded:takeover",
+          "commit",
+          "audit:taken_over",
+        ]);
+      },
+    );
+
+    it("leaves held replies alone for a takeover that changes nothing or is refused", async () => {
+      const { service, heldReplies } = createService();
+      await service.takeOver(dana, { conversationId });
+      heldReplies.supersedePendingForConversation.mockClear();
+      heldReplies.clearDiscardedAttention.mockClear();
+
+      await service.takeOver(dana, { conversationId });
+      await service.takeOver(fox, { conversationId });
+
+      expect(heldReplies.supersedePendingForConversation).not.toHaveBeenCalled();
+      expect(heldReplies.clearDiscardedAttention).not.toHaveBeenCalled();
+    });
+
+    it("a transfer to yourself supersedes as a takeover, inside the transfer's unit of work", async () => {
+      const { service, heldReplies, steps } = createService();
+      const claim = await service.takeOver(dana, { conversationId });
+      heldReplies.seed("held-live", "pending");
+      steps.length = 0;
+
+      await service.transfer(fox, { conversationId, toUserId: "user-fox", expectedVersion: claim.record!.version });
+
+      expect(heldReplies.rows.get("held-live")).toEqual({ state: "superseded", supersededReason: "takeover", attentionCleared: "takeover" });
+      expect(steps.slice(0, steps.indexOf("commit") + 1)).toEqual([
+        "begin",
+        "lock_ownership",
+        "activity:reassigned",
+        "held_replies:supersede:takeover",
+        "held_replies:clear_discarded:takeover",
+        "commit",
+      ]);
+    });
+
+    it("leaves held replies alone for a transfer to a teammate, or one that changed nothing", async () => {
+      const { service, heldReplies } = createService();
+      const claim = await service.takeOver(dana, { conversationId });
+      heldReplies.seed("held-live", "pending");
+      heldReplies.supersedePendingForConversation.mockClear();
+      heldReplies.clearDiscardedAttention.mockClear();
+
+      await service.transfer(dana, { conversationId, toUserId: "user-dana", expectedVersion: claim.record!.version });
+      await service.transfer(dana, { conversationId, toUserId: "user-fox", expectedVersion: claim.record!.version });
+
+      expect(heldReplies.supersedePendingForConversation).not.toHaveBeenCalled();
+      expect(heldReplies.clearDiscardedAttention).not.toHaveBeenCalled();
+      expect(heldReplies.rows.get("held-live")?.state).toBe("pending");
+    });
+
+    it.each(["pending", "queued_auto"] as const)(
+      "an operator reply supersedes a %s draft and closes a discarded draft's attention before its message is written",
+      async (live) => {
+        const { service, heldReplies, steps } = createService();
+        const claim = await service.takeOver(dana, { conversationId });
+        heldReplies.seed("held-live", live);
+        heldReplies.seed("held-discarded", "discarded");
+        steps.length = 0;
+
+        await service.reply(dana, { conversationId, message: "Hi", expectedVersion: claim.record!.version });
+
+        expect(Object.fromEntries(heldReplies.rows)).toEqual({
+          "held-live": { state: "superseded", supersededReason: "operator_reply", attentionCleared: "operator_reply" },
+          "held-discarded": { state: "discarded", supersededReason: null, attentionCleared: "operator_reply" },
+        });
+        expect(steps.slice(steps.indexOf("begin"), steps.indexOf("commit") + 1)).toEqual([
+          "begin",
+          "lock_conversation",
+          "lock_ownership",
+          "held_replies:supersede:operator_reply",
+          "held_replies:clear_discarded:operator_reply",
+          "write",
+          "commit",
+        ]);
+      },
+    );
+
+    it("supersedes nothing for a reply that is refused", async () => {
+      const { service, heldReplies } = createService();
+      const claim = await service.takeOver(dana, { conversationId });
+      heldReplies.supersedePendingForConversation.mockClear();
+
+      await service.reply(fox, { conversationId, message: "Hi" });
+      await service.reply(dana, { conversationId, message: "Hi", expectedVersion: claim.record!.version + 1 });
+
+      expect(heldReplies.supersedePendingForConversation).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["takeover", (service: ConversationOwnershipService) => service.takeOver(dana, { conversationId })],
+      ["reply", (service: ConversationOwnershipService) => service.reply(fox, { conversationId, message: "Hi" })],
+    ] as const)("fails the %s, telling no one, when its held replies cannot be superseded", async (_command, command) => {
+      const failure = new Error("held replies unavailable");
+      const { service, heldReplies, audit, publisher, replies } = createService();
+      heldReplies.supersedePendingForConversation.mockRejectedValue(failure);
+
+      await expect(command(service)).rejects.toThrow(failure);
+
+      expect(replies.write).not.toHaveBeenCalled();
+      expect(replies.announce).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+      expect(publisher.enqueue).not.toHaveBeenCalled();
     });
   });
 

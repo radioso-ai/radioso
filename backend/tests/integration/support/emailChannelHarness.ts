@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { ConnectorContext, ConnectorPlugin } from "@radioso/connector-api";
+import type { ConnectorChatPort, ConnectorContext, ConnectorPlugin } from "@radioso/connector-api";
 import express, { type Router } from "express";
 import pg from "pg";
 import request from "supertest";
@@ -17,11 +17,13 @@ import {
   createPostgresEmailSendUnitOfWork,
   createPostgresThreadProtocolUnitOfWork,
 } from "../../../src/app/composition/emailChannel.js";
+import { createPostgresHeldReplyUnitOfWork, emailHeldReplyChannelRegistration } from "../../../src/app/composition/heldReplyUnitOfWork.js";
 import { createPostgresMailboxPolicyChangeUnitOfWork } from "../../../src/app/composition/mailboxPolicyChange.js";
 import { ActionRequestRepository } from "../../../src/db/repositories/actionRequestRepository.js";
 import { ConversationActivityRepository } from "../../../src/db/repositories/conversationActivityRepository.js";
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import { ConversationRepository } from "../../../src/db/repositories/conversationRepository.js";
+import { HeldReplyRepository } from "../../../src/db/repositories/heldReplyRepository.js";
 import { MessageRepository } from "../../../src/db/repositories/messageRepository.js";
 import { ActionDispatcher, ActionHandlerRegistry, ConversationIngestService } from "../../../src/modules/chat/composition.js";
 import { createEmailChannelConnector } from "../../../src/modules/connectors/plugins/index.js";
@@ -43,7 +45,7 @@ import {
   type EmailChannelDrainDispatcherPort,
   type EngagementMode,
 } from "../../../src/modules/emailChannel/public.js";
-import { ConversationOwnershipService } from "../../../src/modules/handoff/public.js";
+import { ConversationOwnershipService, HeldReplyService } from "../../../src/modules/handoff/public.js";
 import { LocalEmailDriver } from "../../../src/modules/mail/adapters/localEmailDriver.js";
 import { LocalInboundEmailReceiver } from "../../../src/modules/mail/adapters/localInboundReceiver.js";
 import {
@@ -344,25 +346,81 @@ const unused = (): never => {
   throw new Error("Not used by conversation ingest");
 };
 
-/** The host's conversation ingest over Postgres, as `app/server/dependencies.ts` composes it. */
-export const createHostIngest = (database: Database): ConversationIngestService => {
+/** The host's ownership rules over Postgres, for ingest's and a review's hand-off to a person. */
+const createHostOwnership = (database: Database): ConversationOwnershipService => {
   const db = database.kysely;
   const activity = new ConversationActivityRepository(db);
   const actionDrain = { requestDrain: async () => undefined };
   const logger = { warn: () => undefined };
-  return new ConversationIngestService({
-    unitOfWork: createPostgresConversationIngestUnitOfWork({ db, activity }),
-    ownership: new ConversationOwnershipService({
-      conversations: new ConversationRepository(db),
-      ownership: new ConversationOwnershipRepository(db),
-      changes: createPostgresOwnershipChangeUnitOfWork({ db, activity, actionDrain, logger }),
-      replyWrites: createPostgresOwnershipReplyUnitOfWork({ db, activity, actionDrain, logger }),
-      operators: { find: unused },
-      operatorIdentities: { resolve: unused },
-      replies: { prepare: unused, write: unused, announce: unused, audit: unused },
-      audit: { record: unused },
-    }),
+  return new ConversationOwnershipService({
+    conversations: new ConversationRepository(db),
+    ownership: new ConversationOwnershipRepository(db),
+    changes: createPostgresOwnershipChangeUnitOfWork({ db, activity, actionDrain, logger }),
+    replyWrites: createPostgresOwnershipReplyUnitOfWork({ db, activity, actionDrain, logger }),
+    operators: { find: unused },
+    operatorIdentities: { resolve: unused },
+    replies: { prepare: unused, write: unused, announce: unused, audit: unused },
+    audit: { record: unused },
   });
+};
+
+/** The host's conversation ingest over Postgres, as `app/server/dependencies.ts` composes it. */
+export const createHostIngest = (database: Database): ConversationIngestService =>
+  new ConversationIngestService({
+    unitOfWork: createPostgresConversationIngestUnitOfWork({ db: database.kysely, activity: new ConversationActivityRepository(database.kysely) }),
+    ownership: createHostOwnership(database),
+  });
+
+/** A review turn for suites that run none: draining stage 2 there is a test bug. */
+const noReviewTurn: ConnectorChatPort["respond"] = async () => {
+  throw new Error("This suite runs no review turn");
+};
+
+/**
+ * Stage 2's host ports over Postgres, as the channel composition binds them: the held-reply
+ * producer (the held-reply service and its unit of work), the conversation reads, and the hand-off
+ * to a person in its own transaction.
+ */
+const createReviewPorts = (database: Database): EmailChannelConnectorDependencies["review"] => {
+  const db = database.kysely;
+  const activity = new ConversationActivityRepository(db);
+  const records = new HeldReplyRepository(db);
+  const ownershipRules = createHostOwnership(database);
+  const heldReplies = new HeldReplyService({
+    conversations: new ConversationRepository(db),
+    writes: createPostgresHeldReplyUnitOfWork({
+      db,
+      channels: [emailHeldReplyChannelRegistration],
+      activity,
+      actionDrain: { requestDrain: async () => undefined },
+      logger: { warn: () => undefined },
+    }),
+    reads: records,
+    operatorIdentities: { resolve: unused },
+    customerReplyDelivery: { route: unused },
+    replies: { write: unused, announce: unused },
+    audit: { record: async () => undefined },
+  });
+  return {
+    conversations: {
+      latestCustomerMessageId: (conversationId) => records.latestCustomerMessageId(conversationId),
+      ownershipVersionOf: async (conversationId) => (await new ConversationOwnershipRepository(db).load(conversationId))?.version ?? 0,
+    },
+    heldReplies: {
+      hold: (input) => heldReplies.hold(input),
+      findByReviewRef: (conversationId, reviewRef) => heldReplies.findByReviewRef(conversationId, reviewRef),
+      supersedePendingForConversation: (conversationId, reason) => records.supersedePendingForConversation(conversationId, reason),
+    },
+    handoffs: {
+      requestHumanOwnership: async (input) => {
+        await db.transaction().execute((trx) => ownershipRules.requestHumanOwnership({
+          ownership: new ConversationOwnershipRepository(trx),
+          activity: { record: (event) => activity.record(trx, event) },
+        }, input));
+      },
+    },
+    maxAttempts: 4,
+  };
 };
 
 type EmailChannelConnectorDependencies = Parameters<typeof createEmailChannelConnector>[0];
@@ -403,6 +461,8 @@ const createConnectorDependencies = (
   options: {
     spoolDir: string;
     supportedModes?: readonly EngagementMode[];
+    /** The host's review turn; suites that run none leave it out. */
+    respond?: ConnectorChatPort["respond"];
     logger: RecordingLogger;
     metrics: MetricsRegistry;
     drains: EmailChannelDrainDispatcherPort;
@@ -417,6 +477,7 @@ const createConnectorDependencies = (
   const inbound = new EmailInboundRepository(db);
   const { logger, metrics } = options;
   const supportedModes = options.supportedModes ?? ["operator_only"];
+  const hostIngest = createHostIngest(database);
   return {
     receiver: new LocalInboundEmailReceiver({ spoolDir: options.spoolDir, signingSecrets: { current: WEBHOOK_SECRET, previous: null } }),
     inbound,
@@ -437,14 +498,16 @@ const createConnectorDependencies = (
     }),
     deliveryEvents: options.sends.deliveryEvents,
     threadProtocol: createPostgresThreadProtocolUnitOfWork({ db, activity: new ConversationActivityRepository(db) }),
-    chat: createHostIngest(database),
+    chat: { ingest: (input) => hostIngest.ingest(input), respond: options.respond ?? noReviewTurn },
+    review: createReviewPorts(database),
     drains: options.drains,
     metrics,
     logger,
     clock,
     createId: randomUUID,
     randomBytes: randomBytesOf,
-    config: { inboundDomain: INBOUND_DOMAIN, rawMaxBytes: 2 * 1024 * 1024, supportedModes },
+    // Reviews fall due at once, so a suite drains them without waiting out the window.
+    config: { inboundDomain: INBOUND_DOMAIN, rawMaxBytes: 2 * 1024 * 1024, supportedModes, coalesceSeconds: 0 },
     workersEnabled: true,
     sweep: new EmailChannelSweep({
       inbound,
@@ -559,6 +622,7 @@ const SEAMS = [
   "threadProtocol.run",
   "chat.ingest",
   "inbound.recordIngested",
+  "threads.completeReview",
   "inbound.settleEvent",
   "outbox.claimPending",
   "driver.send",
@@ -705,7 +769,12 @@ export const barrier = (parties: number, timeoutMs = 5_000): { arrive: () => Pro
  */
 export const createWorkerNode = (
   databaseUrl: string,
-  options: { spoolDir: string; supportedModes?: readonly EngagementMode[]; rewritesMessageId?: boolean },
+  options: {
+    spoolDir: string;
+    supportedModes?: readonly EngagementMode[];
+    rewritesMessageId?: boolean;
+    respond?: ConnectorChatPort["respond"];
+  },
 ) => {
   const database = new Database(databaseUrl);
   const seams = new WorkerSeams();

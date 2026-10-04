@@ -14,9 +14,13 @@ It does not own:
 - **Transport.** `backend/src/modules/connectors/plugins/email/` holds the
   webhook mount and the pure functions that decide what an inbound message
   means — `emailInboundClassification.ts`, `emailThreadResolution.ts`,
-  `emailEngagementDisposition.ts` — and calls down into this module's
-  repositories and services. This module knows nothing about HTTP, the
-  webhook signature, or the worker that drains inbound events.
+  `emailEngagementDisposition.ts`, `emailPublicationDecision.ts` — and the
+  worker's two stages: `emailInboundProcessor.ts` (stage 1, which schedules a
+  thread's coalesced review) and `emailReviewRunner.ts` (stage 2, which runs
+  the review through the host's `respond` and holds its draft through
+  handoff's producer port). Both call down into this module's repositories
+  and services. This module knows nothing about HTTP, the webhook signature,
+  or the worker that drains inbound events.
 - **Provider calls.** `backend/src/modules/mail/` is the only place that
   talks to Resend or the `local` driver (`EmailDriver`,
   `InboundEmailReceiver`, `EmailDomainProvisioner`). This module calls those
@@ -42,7 +46,16 @@ It does not own:
   routing (`mailboxRouting.ts`), engagement-mode ordering
   (`effectiveMode.ts`), receiving-state derivation
   (`receivingState.ts`), and the policy change-of-record
-  (`mailboxPolicyChangeUnitOfWork.ts`).
+  (`mailboxPolicyChangeUnitOfWork.ts`), which supersedes the drafts bound
+  to the version it replaces.
+- `heldReplyChannelScope.ts` — email's side of a held-reply transaction.
+  Drafts are bound to `email_mailbox:<mailboxId>`; `lockPolicy` locks the
+  mailbox row `FOR SHARE` and returns its policy version for handoff to
+  compare, and `enqueueRelease` queues a released message as a
+  `held_release` `email.send` under `email:send:msg:<messageId>`, refusing
+  `409 email_sending_not_verified` when the mailbox can no longer send.
+  Composition registers it under the `email_mailbox:` prefix
+  (`backend/src/app/composition/heldReplyUnitOfWork.ts`).
 - `domains/` — sending-domain registration and readiness
   (`sendingDomainService.ts`, `sendingState.ts`).
 - `content/` — the quoted-history stripper (`quotedHistory.ts`), the
@@ -90,6 +103,8 @@ pnpm exec vitest run tests/integration/email-channel-schema-migrations.integrati
 pnpm exec vitest run tests/integration/email-thread-protocol.integration.test.ts       # B15 interleavings, two workers
 pnpm exec vitest run tests/integration/email-inbound.integration.test.ts               # end to end: SC-002, SC-003, B16
 pnpm exec vitest run tests/integration/email-channel-crash-recovery.integration.test.ts # SC-007 inbound
+pnpm exec vitest run tests/integration/email-review-revision.integration.test.ts        # B17 stale review, crash after hold
+pnpm exec vitest run tests/unit/eval-suite/email-outcome-table.test.ts                 # outcome table, operator_only and draft rows
 pnpm run email:dev -- inbound <file.eml> --relay <relay address>                      # local provider, running API
 pnpm run email:dev -- delivery --intent <send intent id> --type bounced                # a provider delivery event for a local send
 ```

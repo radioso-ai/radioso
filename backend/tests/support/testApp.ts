@@ -830,6 +830,8 @@ export const createTestDependencies = (overrides: {
   emailChannel?: AppDependencies["emailChannel"];
   /** Delivery failures and the decisions on them; omitted means an empty in-memory store no channel resolves. */
   deliveryFailures?: AppDependencies["deliveryFailures"];
+  /** Held replies and the decisions on them; omitted means a workspace with none. */
+  heldReplies?: AppDependencies["heldReplies"];
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
   agentToolCatalog?: (readers: {
     agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
@@ -2046,12 +2048,22 @@ export const createTestDependencies = (overrides: {
   const workspaceInvalidationPublisher: WorkspaceInvalidationPublisher = {
     enqueue: () => ({ accepted: false, reason: "disabled" }),
   };
+  // No review runs against the in-memory app, so it holds no drafts for a claim, reply or ingest to supersede.
+  const noHeldReplies = {
+    supersedePendingForConversation: async () => 0,
+    clearDiscardedAttention: async () => 0,
+  };
   const conversationOwnershipService = new ConversationOwnershipService({
     conversations: conversationRepository,
     ownership: conversationOwnershipRepository,
     // The in-memory stores have no transactions; atomicity is covered against Postgres.
     changes: {
-      run: (work) => work({ ownership: conversationOwnershipRepository, outbox: actionOutbox, activity: conversationActivity.writer() }),
+      run: (work) => work({
+        ownership: conversationOwnershipRepository,
+        outbox: actionOutbox,
+        activity: conversationActivity.writer(),
+        heldReplies: noHeldReplies,
+      }),
     },
     replyWrites: {
       run: (work) => work({
@@ -2062,6 +2074,7 @@ export const createTestDependencies = (overrides: {
         ownership: conversationOwnershipRepository,
         reply: { messages: messageRepository, conversations: conversationRepository, outbox: actionOutbox },
         activity: conversationActivity.writer(),
+        heldReplies: noHeldReplies,
       }),
     },
     operators: conversationOperatorDirectory,
@@ -2084,6 +2097,7 @@ export const createTestDependencies = (overrides: {
         messages: messageRepository,
         ownership: conversationOwnershipRepository,
         activity: conversationActivity.writer(),
+        heldReplies: noHeldReplies,
       }),
     },
     ownership: conversationOwnershipService,
@@ -2665,6 +2679,12 @@ export const createTestDependencies = (overrides: {
       audit: auditService,
       logger,
     }),
+    heldReplies: overrides.heldReplies ?? {
+      list: async () => ({ items: [], nextCursor: null }),
+      current: async () => ({ heldReply: null }),
+      release: async () => { throw notFound("Held reply not found"); },
+      discard: async () => { throw notFound("Held reply not found"); },
+    },
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
     revisionEvalRunService,
@@ -2823,6 +2843,7 @@ export const createTestApp = (overrides: {
   agentToolCatalog?: NonNullable<Parameters<typeof createTestDependencies>[0]>["agentToolCatalog"];
   emailChannel?: AppDependencies["emailChannel"];
   deliveryFailures?: AppDependencies["deliveryFailures"];
+  heldReplies?: AppDependencies["heldReplies"];
 } = {}) => {
   const {
     dependencies,

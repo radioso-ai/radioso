@@ -10,7 +10,7 @@ import { createTestDependencies } from "../support/testApp.js";
 const taskToken = "0123456789abcdef0123456789abcdef";
 
 const createWorker = () => ({
-  drain: vi.fn(async () => ({ claimed: 1, errored: 0, reconciled: 0, processed: 1, ignored: 0, retrying: 0, failed: 0, superseded: 0 })),
+  drain: vi.fn(async () => ({ claimed: 1, errored: 0, reviewed: 0, reconciled: 0, processed: 1, ignored: 0, retrying: 0, failed: 0, superseded: 0 })),
   sweep: vi.fn(async () => ({
     recoveredLeases: 0,
     refreshedDomains: 1,

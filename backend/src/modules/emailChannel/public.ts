@@ -1,5 +1,10 @@
 export { capToSupportedMode, effectiveEngagementMode, type EngagementMode } from "./mailboxes/effectiveMode.js";
 export type { MailboxPolicyChangeUnitOfWork } from "./mailboxes/mailboxPolicyChangeUnitOfWork.js";
+export {
+  EMAIL_MAILBOX_POLICY_REF_PREFIX,
+  EmailHeldReplyChannelScope,
+  emailMailboxPolicyRef,
+} from "./heldReplyChannelScope.js";
 export { routeAddress, type MailboxRoute } from "./mailboxes/mailboxRouting.js";
 export { generateOpaqueToken, parsePlusToken } from "./mailboxes/relayTokens.js";
 export { extractCustomerText } from "./content/customerText.js";
@@ -14,6 +19,7 @@ export { EmailSendIntentRepository } from "./persistence/emailSendIntentReposito
 export { EmailThreadRepository } from "./persistence/emailThreadRepository.js";
 export { lockThreadResolution } from "./persistence/threadResolutionLock.js";
 export { SendingDomainService } from "./domains/sendingDomainService.js";
+export { sendingStateOf } from "./domains/sendingState.js";
 export { MAILBOX_SETTING_BOUNDS, MailboxService } from "./mailboxes/mailboxService.js";
 export { EventLogReader } from "./eventLog/eventLogReader.js";
 export { InboundEventActions } from "./eventLog/inboundEventActions.js";

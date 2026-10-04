@@ -72,8 +72,69 @@ const copilotView = () => {
   return { view, mailbox, events, facts };
 };
 
-const toolsOver = (emailChannel: ReturnType<typeof copilotView>["view"] | null) => {
-  const descriptors = createEmailChannelCopilotTools({ emailChannel });
+const HELD_REPLY_ID = "66666666-6666-4666-8666-666666666666";
+
+/** A held reply as handoff's operator view presents it, with the rows' internals a careless projection would pass on. */
+const heldReplyView = (overrides: Record<string, unknown> = {}) => ({
+  id: HELD_REPLY_ID,
+  conversationId: CONVERSATION_ID,
+  agentId: "77777777-7777-4777-8777-777777777777",
+  state: "pending" as const,
+  holdReason: "draft_mode",
+  facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: true, reason: "refund_over_limit" } },
+  dependsOnSuppressedAction: true,
+  suppressedEffects: [{ skillName: "issue_refund" }],
+  draftText: "Your refund was issued on Monday.",
+  editedText: null,
+  answersMessageId: "33333333-3333-4333-8333-333333333333",
+  releasedMessageId: null,
+  createdAt: new Date("2026-10-03T11:30:00.000Z"),
+  decidedAt: null,
+  releaserUserId: "operator-2",
+  editorUserId: null,
+  discardedByUserId: null,
+  supersededReason: null,
+  attentionOpen: true,
+  presentation: { metadata: { citations: [{ documentId: "doc-1" }], turnTrace: { spine: [] } } },
+  policy: { ref: "email_mailbox:mailbox-1", version: 5 },
+  reviewRef: "email:review:1",
+  workspaceId: WORKSPACE_ID,
+  ...overrides,
+});
+
+const heldRepliesPort = (page: Array<ReturnType<typeof heldReplyView>> = [heldReplyView()]) => ({
+  list: vi.fn(async () => ({ items: page, nextCursor: "next-page" })),
+  current: vi.fn(async (_actor: unknown, conversationId: string) => ({
+    heldReply: conversationId === CONVERSATION_ID ? heldReplyView() : null,
+  })),
+});
+
+/** The held reply as Ray reads it: the operator view's fields, chosen one by one. */
+const heldReplyProjection = {
+  id: HELD_REPLY_ID,
+  conversationId: CONVERSATION_ID,
+  agentId: "77777777-7777-4777-8777-777777777777",
+  state: "pending",
+  holdReason: "draft_mode",
+  facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: true, reason: "refund_over_limit" } },
+  dependsOnSuppressedAction: true,
+  suppressedEffects: [{ skillName: "issue_refund" }],
+  draftText: "Your refund was issued on Monday.",
+  editedText: null,
+  answersMessageId: "33333333-3333-4333-8333-333333333333",
+  releasedMessageId: null,
+  supersededReason: null,
+  createdAt: "2026-10-03T11:30:00.000Z",
+  decidedAt: null,
+  attentionOpen: true,
+};
+
+const toolsOver = (
+  emailChannel: ReturnType<typeof copilotView>["view"] | null,
+  /** Null where no held replies are composed into Ray. */
+  heldReplies: ReturnType<typeof heldRepliesPort> | null = heldRepliesPort(),
+) => {
+  const descriptors = createEmailChannelCopilotTools({ emailChannel, ...(heldReplies ? { heldReplies } : {}) });
   const byName = new Map(descriptors.map((descriptor) => [descriptor.name, descriptor]));
   const invoke = async (name: string, input: unknown) => {
     const descriptor = byName.get(name);
@@ -89,13 +150,14 @@ const SECRETS = [RELAY_TOKEN.toLowerCase(), RELAY_TOKEN, "PREVIOUSRELAYTOKENPREV
 const leaked = (output: unknown): string[] => SECRETS.filter((secret) => JSON.stringify(output).includes(secret));
 
 describe("email channel Ray tools", () => {
-  it("declares three read tools with the permissions of the operations they mirror", () => {
+  it("declares four read tools with the permissions of the operations they mirror", () => {
     const { descriptors } = toolsOver(copilotView().view);
 
     expect(descriptors.map(({ name, shape, requiredPermissions }) => ({ name, shape, requiredPermissions }))).toEqual([
       { name: "email_channel_configuration", shape: "read", requiredPermissions: ["workspace.settings.read"] },
       { name: "email_channel_events", shape: "read", requiredPermissions: ["workspace.settings.read"] },
       { name: "email_conversation_facts", shape: "read", requiredPermissions: ["workspace.conversation.takeover"] },
+      { name: "held_replies", shape: "read", requiredPermissions: ["workspace.conversation.takeover"] },
     ]);
     for (const descriptor of descriptors) {
       expect(descriptor.verificationCost({})).toBe(0);
@@ -109,7 +171,7 @@ describe("email channel Ray tools", () => {
     expect(filterCopilotToolCatalog(descriptors, new Set(["workspace.settings.read"])).map(({ name }) => name))
       .toEqual(["email_channel_configuration", "email_channel_events"]);
     expect(filterCopilotToolCatalog(descriptors, new Set(["workspace.conversation.takeover"])).map(({ name }) => name))
-      .toEqual(["email_conversation_facts"]);
+      .toEqual(["email_conversation_facts", "held_replies"]);
     expect(filterCopilotToolCatalog(descriptors, new Set())).toEqual([]);
   });
 
@@ -215,5 +277,87 @@ describe("email channel Ray tools", () => {
     });
     expect(await invoke("email_channel_events", {})).toEqual({ configured: false, summaries: [] });
     expect(await invoke("email_conversation_facts", { conversationId: CONVERSATION_ID })).toEqual({ facts: null });
+  });
+});
+
+describe("held_replies Ray tool", () => {
+  it("lists the workspace's held replies waiting for a teammate as the signed-in teammate, under an object root", async () => {
+    const port = heldRepliesPort();
+    const { invoke } = toolsOver(null, port);
+
+    const output = await invoke("held_replies", {});
+
+    expect(output).toEqual({ heldReply: null, items: [heldReplyProjection], nextCursor: "next-page" });
+    expect(port.list).toHaveBeenCalledWith(
+      { workspaceId: WORKSPACE_ID, accountId: "account-1", userId: "operator-1" },
+      { attention: "open", limit: 20 },
+    );
+    expect(port.current).not.toHaveBeenCalled();
+  });
+
+  it("passes the listing filters and the page through", async () => {
+    const port = heldRepliesPort();
+    const { invoke, byName } = toolsOver(null, port);
+
+    await invoke("held_replies", { attention: "all", agentId: "77777777-7777-4777-8777-777777777777", cursor: "next-page", limit: 5 });
+
+    expect(port.list).toHaveBeenCalledWith(expect.anything(), {
+      attention: "all",
+      agentId: "77777777-7777-4777-8777-777777777777",
+      cursor: "next-page",
+      limit: 5,
+    });
+    expect(() => byName.get("held_replies")?.inputSchema.parse({ limit: 41 })).toThrow();
+    expect(() => byName.get("held_replies")?.inputSchema.parse({ attention: "closed" })).toThrow();
+  });
+
+  it("reads one conversation's current held reply under the heldReply root, and null when it has none", async () => {
+    const port = heldRepliesPort();
+    const { invoke } = toolsOver(null, port);
+
+    expect(await invoke("held_replies", { conversationId: CONVERSATION_ID }))
+      .toEqual({ heldReply: heldReplyProjection, items: [], nextCursor: null });
+    expect(port.current).toHaveBeenCalledWith(
+      { workspaceId: WORKSPACE_ID, accountId: "account-1", userId: "operator-1" },
+      CONVERSATION_ID,
+    );
+    expect(await invoke("held_replies", { conversationId: "55555555-5555-4555-8555-555555555555" }))
+      .toEqual({ heldReply: null, items: [], nextCursor: null });
+    expect(port.list).not.toHaveBeenCalled();
+  });
+
+  it("carries the draft as the operator view shows it and nothing behind it: no presentation, trace, policy, review ref or teammate", async () => {
+    const output = await toolsOver(null).invoke("held_replies", { conversationId: CONVERSATION_ID });
+
+    const serialized = JSON.stringify(output);
+    for (const internal of ["presentation", "citations", "turnTrace", "email_mailbox:", "email:review:1", "operator-2", "releaserUserId", "workspaceId"]) {
+      expect(serialized).not.toContain(internal);
+    }
+  });
+
+  it("bounds a long draft and says it did", async () => {
+    const draftText = "a".repeat(2_000);
+    const { invoke } = toolsOver(null, heldRepliesPort([heldReplyView({ draftText })]));
+
+    const output = await invoke("held_replies", {}) as { items: Array<{ draftText: string }>; truncation?: { truncated: boolean } };
+
+    expect(output.items[0].draftText.length).toBeLessThan(draftText.length);
+    expect(output.truncation).toEqual(expect.objectContaining({ truncated: true }));
+  });
+
+  it("names the conversation it reads, or the agent it lists, as the dashboard handoff", async () => {
+    const descriptor = toolsOver(null).byName.get("held_replies");
+
+    expect(await descriptor?.describeEntity?.({ conversationId: CONVERSATION_ID }, context)).toEqual({ type: "conversation", id: CONVERSATION_ID });
+    expect(await descriptor?.describeEntity?.({ agentId: "77777777-7777-4777-8777-777777777777" }, context))
+      .toEqual({ type: "agent", id: "77777777-7777-4777-8777-777777777777" });
+    expect(descriptor?.dashboardSubject).toEqual({ type: "needs_attention" });
+  });
+
+  it("reads none where no held replies are composed into Ray", async () => {
+    const { invoke } = toolsOver(null, null);
+
+    expect(await invoke("held_replies", {})).toEqual({ heldReply: null, items: [], nextCursor: null });
+    expect(await invoke("held_replies", { conversationId: CONVERSATION_ID })).toEqual({ heldReply: null, items: [], nextCursor: null });
   });
 });

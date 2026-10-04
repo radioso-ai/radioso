@@ -18,6 +18,8 @@ export {
   ConversationIngestService,
   type ConversationIngestUnitOfWork,
 } from "./services/conversationIngestService.js";
+// The agent message a released review draft is written as; app composition binds it to the release.
+export { publishedDraftReply } from "./services/reviewDraft.js";
 export type { ChatRoutineProvider } from "./contracts/routineProvider.js";
 export { ChatTurnAssemblyFactory } from "./services/chatTurnAssembly.js";
 export type { PreparedSession } from "./services/chatSessionPreparer.js";

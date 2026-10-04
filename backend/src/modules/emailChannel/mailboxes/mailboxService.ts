@@ -4,6 +4,7 @@ import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js
 import { normalizeDomainName, type SendingDomainService } from "../domains/sendingDomainService.js";
 import { sendingStateOf, type MailboxSendingState } from "../domains/sendingState.js";
 import { recordEmailChannelAudit, type EmailChannelActor, type EmailChannelAuditDependencies } from "../emailChannelAudit.js";
+import { emailMailboxPolicyRef } from "../heldReplyChannelScope.js";
 import type { EmailDomainRecord, EmailDomainRepository } from "../persistence/emailDomainRepository.js";
 import type {
   EmailMailboxRecord,
@@ -239,7 +240,8 @@ export class MailboxService {
   /**
    * Updates settings and policy together. Mode, enabled and agent changes go through the
    * policy-change unit of work: the row is locked, a stale `expectedPolicyVersion` is refused, and
-   * a real change writes the next version with its history row.
+   * a real change writes the next version with its history row and supersedes the drafts bound to
+   * the version it replaced, which no release could send any more (FR-025, FR-030).
    */
   async update(
     actor: EmailChannelActor,
@@ -250,7 +252,7 @@ export class MailboxService {
     const settings = validatedSettings(request);
     if (request.agentId) await this.requireAgent(workspaceId, request.agentId);
 
-    const outcome = await this.deps.policyChanges.run(async ({ mailboxes }) => {
+    const outcome = await this.deps.policyChanges.run(async ({ mailboxes, heldReplies }) => {
       const current = await mailboxes.lockForPolicyChange(workspaceId, mailboxId);
       if (!current) return { kind: "not_found" as const };
       if (request.expectedPolicyVersion !== undefined && request.expectedPolicyVersion !== current.policyVersion) {
@@ -268,6 +270,7 @@ export class MailboxService {
       const settingChanges = SETTING_KEYS.filter((key) => settings[key] !== undefined && settings[key] !== current[key]);
 
       let after = current;
+      let supersededHeldReplies = 0;
       if (policyChanges.length > 0) {
         after = this.written(await mailboxes.appendPolicyVersion({
           mailboxId: current.id,
@@ -275,12 +278,13 @@ export class MailboxService {
           ...next,
           changedByUserId: actor.userId,
         }));
+        supersededHeldReplies = await heldReplies.supersedePendingForPolicy(emailMailboxPolicyRef(current.id), "policy_changed");
       }
       if (settingChanges.length > 0) {
         const changedSettings = Object.fromEntries(settingChanges.map((key) => [key, settings[key]])) as Partial<MailboxSettings>;
         after = this.written(await mailboxes.updateSettings(workspaceId, current.id, changedSettings));
       }
-      return { kind: "updated" as const, before: current, after, policyChanges, settingChanges };
+      return { kind: "updated" as const, before: current, after, policyChanges, settingChanges, supersededHeldReplies };
     });
 
     if (outcome.kind === "not_found") throw notFound("Mailbox was not found");
@@ -355,7 +359,13 @@ export class MailboxService {
   private async auditUpdate(
     actor: EmailChannelActor,
     workspaceId: string,
-    outcome: { before: EmailMailboxRecord; after: EmailMailboxRecord; policyChanges: PolicyField[]; settingChanges: (keyof MailboxSettings)[] },
+    outcome: {
+      before: EmailMailboxRecord;
+      after: EmailMailboxRecord;
+      policyChanges: PolicyField[];
+      settingChanges: (keyof MailboxSettings)[];
+      supersededHeldReplies: number;
+    },
   ): Promise<void> {
     const { before, after } = outcome;
     if (outcome.policyChanges.some((field) => field !== "agentId")) {
@@ -370,7 +380,7 @@ export class MailboxService {
           toMode: after.engagementMode,
           enabled: after.enabled,
           policyVersion: after.policyVersion,
-          supersededHeldReplies: 0,
+          supersededHeldReplies: outcome.supersededHeldReplies,
         },
       });
     }

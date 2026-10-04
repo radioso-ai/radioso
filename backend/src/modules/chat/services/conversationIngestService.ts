@@ -12,6 +12,7 @@ import { AppError, notFound } from "../../../shared/domain/errors.js";
 import type {
   ConversationOwnershipRecord,
   ConversationOwnershipService,
+  HeldReplySupersedeScope,
   HumanOwnershipRequestScope,
 } from "../../handoff/public.js";
 import type {
@@ -25,6 +26,7 @@ export interface ConversationIngestScope extends HumanOwnershipRequestScope {
   conversations: Pick<ConversationRepository, "createIfAbsent" | "lockForUpdate" | "touch">;
   messages: Pick<MessageRepositoryPort, "findByIdAndWorkspaceId" | "create">;
   ownership: Pick<ConversationOwnershipRepository, "requestHandoff" | "loadForUpdate">;
+  heldReplies: Pick<HeldReplySupersedeScope, "supersedePendingForConversation">;
 }
 
 /** Runs an ingest's writes as one unit: all commit, or none does. */
@@ -35,6 +37,7 @@ export interface ConversationIngestUnitOfWork {
 interface CommittedIngest {
   conversationCreated: boolean;
   messageCreated: boolean;
+  supersededHeldReplies: number;
   ownership: ConversationOwnershipRecord | null;
   ownershipChanged: boolean;
 }
@@ -47,10 +50,10 @@ const conversationIdConflict = (): AppError =>
 
 /**
  * Records a customer's message without running a turn, for a channel that decides later whether
- * one runs. The conversation (when new), the message and any handoff to a person commit together
- * under the conversation's row lock; the caller's ids make a retry record nothing twice. It runs no
- * turn and reserves no usage — it has no collaborator that could. The dashboard hears of it only
- * once it has committed.
+ * one runs. The conversation (when new), the message, the drafts it makes stale and any handoff to
+ * a person commit together under the conversation's row lock; the caller's ids make a retry record
+ * nothing twice. It runs no turn and reserves no usage — it has no collaborator that could. The
+ * dashboard hears of it only once it has committed.
  */
 export class ConversationIngestService implements ConversationIngestPort {
   constructor(private readonly dependencies: {
@@ -63,8 +66,12 @@ export class ConversationIngestService implements ConversationIngestPort {
     const committed = await this.dependencies.unitOfWork.run(async (scope): Promise<CommittedIngest> => {
       const conversationCreated = await this.openConversation(scope, input);
       const messageCreated = await this.recordMessage(scope, input);
+      // A draft answers the customer's newest message; one they wrote after it makes the draft stale.
+      const supersededHeldReplies = messageCreated && !conversationCreated
+        ? await scope.heldReplies.supersedePendingForConversation(input.conversation.conversationId, "newer_inbound")
+        : 0;
       const { record, changed } = await this.settleOwnership(scope, input);
-      return { conversationCreated, messageCreated, ownership: record, ownershipChanged: changed };
+      return { conversationCreated, messageCreated, supersededHeldReplies, ownership: record, ownershipChanged: changed };
     });
     this.announce(input.workspaceId, committed);
     return {
@@ -147,6 +154,9 @@ export class ConversationIngestService implements ConversationIngestPort {
     }
     if (committed.messageCreated) {
       changeKinds.push("conversation.turn_committed");
+    }
+    if (committed.supersededHeldReplies > 0) {
+      changeKinds.push("hitl.decision_resolved");
     }
     if (committed.ownershipChanged) {
       changeKinds.push("conversation.ownership_changed");

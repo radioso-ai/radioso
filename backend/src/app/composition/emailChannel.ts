@@ -2,6 +2,11 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { resolveTxt } from "node:dns/promises";
 
 import type { ConnectorChatPort, ConnectorPlugin } from "@radioso/connector-api";
+import {
+  createPostCommitInvalidationReceipt,
+  flushPostCommitInvalidationReceipt,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
 import type { Kysely } from "kysely";
 
 import type { Env, parseEmailChannelConfig } from "../config/env.js";
@@ -9,6 +14,7 @@ import { ActionRequestRepository } from "../../db/repositories/actionRequestRepo
 import { ConversationActivityRepository } from "../../db/repositories/conversationActivityRepository.js";
 import { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
+import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import type { ActionDrainDispatcherPort } from "../../modules/chat/composition.js";
@@ -54,6 +60,7 @@ import {
   type EngagementMode,
   type MailboxPolicyChangeUnitOfWork,
 } from "../../modules/emailChannel/public.js";
+import type { ConversationOwnershipService, HeldReplyService } from "../../modules/handoff/public.js";
 import { LocalEmailDomainProvisioner } from "../../modules/mail/adapters/localDomainProvisioner.js";
 import { LocalEmailDriver } from "../../modules/mail/adapters/localEmailDriver.js";
 import { LocalInboundEmailReceiver } from "../../modules/mail/adapters/localInboundReceiver.js";
@@ -72,10 +79,11 @@ import { createPostgresMailboxPolicyChangeUnitOfWork } from "./mailboxPolicyChan
 type EmailChannelConfig = NonNullable<ReturnType<typeof parseEmailChannelConfig>>;
 
 /**
- * The engagement modes this deployment runs (plan, Questions settled, item 4). Inbound mail is
- * received and handed to people; review turns and sending arrive in later slices, which widen it.
+ * The engagement modes this deployment runs (plan, Questions settled, item 4): mail is handed to
+ * people, or the agent drafts a reply a teammate sends. `draft` is the default for new mailboxes;
+ * existing ones keep their mode. Automatic sending arrives with `auto`, which widens it.
  */
-const SUPPORTED_MODES: readonly EngagementMode[] = ["operator_only"];
+const SUPPORTED_MODES: readonly EngagementMode[] = ["operator_only", "draft"];
 
 /** What the operator surfaces call: the settings card, the event log and the inbox's email facts. */
 export interface EmailChannelOperatorServices {
@@ -111,8 +119,17 @@ interface EmailChannelCompositionInput {
   db: Kysely<DB>;
   drains: EmailChannelDrainDispatcherPort;
   activity: ConversationActivityRecorder;
-  /** The host's ingest port; called only while draining, after the application is built. */
-  conversationIngest: Pick<ConnectorChatPort, "ingest">;
+  /**
+   * The host port: `ingest` records inbound mail, `respond` runs its review turn. Called only while
+   * draining, after the application is built.
+   */
+  chat: Pick<ConnectorChatPort, "ingest" | "respond">;
+  /** Where a review's draft is held for a teammate; called only while draining. */
+  heldReplies: Pick<HeldReplyService, "hold" | "findByReviewRef">;
+  /** Hands a reviewed conversation to a person inside the review's hand-off transaction; called only while draining. */
+  ownership: Pick<ConversationOwnershipService, "requestHumanOwnership">;
+  /** Tells the dashboard of a hand-off once it commits. */
+  publisher?: WorkspaceInvalidationPublisher;
   agents: { findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{ id: string } | null> };
   audit: Pick<AuditPort, "record">;
   /** Pushed once a resolution that queued a resend commits. */
@@ -144,6 +161,9 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
   const inbound = new EmailInboundRepository(db);
   const threads = new EmailThreadRepository(db);
   const policyChanges = createPostgresMailboxPolicyChangeUnitOfWork({ db });
+  const heldReplyRecords = new HeldReplyRepository(db);
+  const ownership = new ConversationOwnershipRepository(db);
+  const ownershipVersions = { versionOf: async (conversationId: string) => (await ownership.load(conversationId))?.version ?? 0 };
   const sendingDomains = new SendingDomainService({
     domains: domainRecords,
     mailboxes: mailboxRecords,
@@ -176,14 +196,32 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
     receipts: mailboxes,
     deliveryEvents: sends.deliveryEvents,
     threadProtocol: createPostgresThreadProtocolUnitOfWork({ db, activity: input.activity }),
-    chat: input.conversationIngest,
+    chat: input.chat,
+    review: {
+      conversations: {
+        latestCustomerMessageId: (conversationId) => heldReplyRecords.latestCustomerMessageId(conversationId),
+        ownershipVersionOf: ownershipVersions.versionOf,
+      },
+      heldReplies: {
+        hold: (hold) => input.heldReplies.hold(hold),
+        findByReviewRef: (conversationId, reviewRef) => input.heldReplies.findByReviewRef(conversationId, reviewRef),
+        supersedePendingForConversation: (conversationId, reason) => heldReplyRecords.supersedePendingForConversation(conversationId, reason),
+      },
+      handoffs: createPostgresReviewHandoffs({ db, activity: input.activity, ownership: input.ownership, publisher: input.publisher }),
+      maxAttempts: config.reviewMaxAttempts,
+    },
     drains: input.drains,
     metrics,
     logger,
     clock,
     createId: randomUUID,
     randomBytes: randomBytesOf,
-    config: { inboundDomain: config.inboundDomain, rawMaxBytes: config.rawMaxBytes, supportedModes: SUPPORTED_MODES },
+    config: {
+      inboundDomain: config.inboundDomain,
+      rawMaxBytes: config.rawMaxBytes,
+      supportedModes: SUPPORTED_MODES,
+      coalesceSeconds: config.coalesceSeconds,
+    },
     workersEnabled: config.workersEnabled,
     sweep: new EmailChannelSweep({
       inbound,
@@ -202,8 +240,6 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
     domains: domainRecords,
     sends: sends.intents,
   });
-  const ownership = new ConversationOwnershipRepository(db);
-  const ownershipVersions = { versionOf: async (conversationId: string) => (await ownership.load(conversationId))?.version ?? 0 };
 
   return {
     supportedModes: SUPPORTED_MODES,
@@ -441,6 +477,31 @@ export const createPostgresThreadProtocolUnitOfWork = (deps: {
     conversations: { ownershipOf: (input) => conversationOwnershipOf(trx, input) },
     activity: { record: (event) => deps.activity.record(trx, event) },
   })),
+});
+
+/**
+ * A review's hand-off to a person (research B3, B7) in its own Postgres transaction: the ownership
+ * change with the activity it records, through the ownership rules, and the dashboard told once it
+ * commits. Only binds; whether to hand off is the review runner's decision.
+ */
+const createPostgresReviewHandoffs = (deps: {
+  db: Kysely<DB>;
+  activity: ConversationActivityRecorder;
+  ownership: Pick<ConversationOwnershipService, "requestHumanOwnership">;
+  publisher?: WorkspaceInvalidationPublisher;
+}) => ({
+  async requestHumanOwnership(input: { workspaceId: string; conversationId: string; reason: string }): Promise<void> {
+    const { changed } = await deps.db.transaction().execute((trx) => deps.ownership.requestHumanOwnership({
+      ownership: new ConversationOwnershipRepository(trx),
+      activity: { record: (event) => deps.activity.record(trx, event) },
+    }, input));
+    if (changed && deps.publisher) {
+      flushPostCommitInvalidationReceipt(
+        deps.publisher,
+        createPostCommitInvalidationReceipt(input.workspaceId, ["conversation.ownership_changed"]),
+      );
+    }
+  },
 });
 
 /** Null while the conversation does not exist yet; a conversation with no ownership row is the AI's. */

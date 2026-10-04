@@ -355,6 +355,22 @@ export class EmailMailboxRepository {
   }
 
   /**
+   * Locks the active mailbox row against a policy change (`FOR SHARE`) for the rest of the
+   * caller's transaction: a change waits for it to commit, and one that committed first is the
+   * version read here. Null when the mailbox is removed.
+   */
+  async lockPolicy(mailboxId: string): Promise<EmailMailboxRecord | null> {
+    const row = await this.db
+      .selectFrom("email_mailboxes")
+      .selectAll()
+      .where("id", "=", mailboxId)
+      .where("removed_at", "is", null)
+      .forShare()
+      .executeTakeFirst();
+    return row ? mapMailbox(row) : null;
+  }
+
+  /**
    * Writes the next policy version on the mailbox and appends it to the history in one
    * statement. Null when the version moved since the caller read it, or the mailbox is removed.
    */
@@ -409,6 +425,17 @@ export class EmailMailboxRepository {
       .orderBy("effective_at", "desc")
       .orderBy("version", "desc")
       .limit(1)
+      .executeTakeFirst();
+    return row ? mapPolicy(row) : null;
+  }
+
+  /** One version of the mailbox's policy, as it was written. */
+  async findPolicyVersion(mailboxId: string, version: number): Promise<MailboxPolicyVersion | null> {
+    const row = await this.db
+      .selectFrom("email_mailbox_policies")
+      .selectAll()
+      .where("mailbox_id", "=", mailboxId)
+      .where("version", "=", version)
       .executeTakeFirst();
     return row ? mapPolicy(row) : null;
   }

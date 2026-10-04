@@ -295,9 +295,13 @@ const DEFAULT_REASK_LIMIT = 3;
 
 /**
  * Keeps the values that fit their declared slot type, in that type's canonical form (#1374).
- * A value for an undeclared key, or on a routine with no slot schema, passes through as it
- * always has. A blank one is "not given" and dropped; one that does not fit is dropped and
- * reported by key and reason — never by value.
+ * On a routine with no slot schema there is nothing to check a key against, so every key
+ * passes through as it always has. On a routine that declares one, a key the schema does
+ * not list is dropped and reported as "undeclared" (#1388) — the turn planner, ranked
+ * activation, and a selector return free-form field names, and only a declared slot's
+ * value may reach routine state, an action payload, or an unbound tool-step input. A blank
+ * value is "not given" and dropped silently; one that does not fit its declared type is
+ * dropped and reported by key and reason — never by value.
  */
 const checkDeclaredSlotValues = (
   routine: Routine,
@@ -309,7 +313,11 @@ const checkDeclaredSlotValues = (
   for (const [key, value] of Object.entries(values)) {
     const type = slotTypes.get(key);
     if (!type) {
-      kept[key] = value;
+      if (slotTypes.size > 0) {
+        rejected.push({ key, reason: "undeclared" });
+      } else {
+        kept[key] = value;
+      }
       continue;
     }
     const checked = checkSlotValue(type, value);
@@ -847,6 +855,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // Values rejected on the step the visitor answered and not made good this turn; they
     // are listed as missing on its re-ask.
     let resumeStepRejected: RoutineTraceRejectedSlot[] = [];
+    // The activator's rejections for a routine whose root step is itself a transit step:
+    // that branch below takes it directly, with no selector call and no trace entry of
+    // its own, so nothing else records `startCheck.rejected` for this turn. The transit-
+    // step loop further down attaches it to the first entry it pushes, then clears it —
+    // one turn reads the opening message once, so only that first hop carries it (#1388).
+    let pendingRootRejected: RoutineTraceRejectedSlot[] = [];
     // Whether `selectNext` held the step the visitor answered (see the hold there).
     let held = false;
     if (currentStep.kind === "skill" || currentStep.kind === "action") {
@@ -855,6 +869,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // from its outgoing edges first would skip the tool entirely.
       step = currentStep;
       path = state.path.at(-1) === currentStep.id ? [...state.path] : [...state.path, currentStep.id];
+      pendingRootRejected = unreplacedStartRejections(variables);
     } else {
       // Select the step this turn lands on from the current step's outgoing edges.
       // On the activation turn the activator may already have filled this step's slot
@@ -1117,7 +1132,13 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // Fire-and-forget: record the request (authored type + the routine's variables)
         // and auto-advance — there is no result to branch on.
         actions.push({ type: step.actionType, payload: { ...variables } });
-        traceSteps.push({ stepId: step.id, kind: step.kind, event: "action_emitted" });
+        traceSteps.push({
+          stepId: step.id,
+          kind: step.kind,
+          event: "action_emitted",
+          ...(pendingRootRejected.length > 0 ? { rejectedSlots: pendingRootRejected } : {}),
+        });
+        pendingRootRejected = [];
         step = stepById(actionEdges[0].to);
         enterStep(step, path);
         await fastForwardTransitLanding();
@@ -1153,7 +1174,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         ...(step.skillName ? { skillName: step.skillName } : {}),
         skillStatus: skillResult.status,
         ...(skillReason ? { skillReason } : {}),
+        ...(pendingRootRejected.length > 0 ? { rejectedSlots: pendingRootRejected } : {}),
       };
+      pendingRootRejected = [];
       traceSteps.push(skillEntry);
       const skillEdges = outgoing(step.id);
       if (skillEdges.length === 0) {
@@ -1184,7 +1207,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           skillEntry.capturedSlotKeys = capturedAtSkill;
         }
         if (lastRejectedSlots.length > 0) {
-          skillEntry.rejectedSlots = lastRejectedSlots;
+          skillEntry.rejectedSlots = [...(skillEntry.rejectedSlots ?? []), ...lastRejectedSlots];
         }
         variables = { ...variables, ...(skillDecision.variables ?? {}) };
         const chosen = landingStepId(step.id, skillDecision);

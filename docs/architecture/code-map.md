@@ -265,7 +265,16 @@ engagement modes and budgets, inbound event classification and thread
 resolution, the mailbox event log, and raw-message access for a
 customer-owned mailbox forwarded to a Radioso-operated relay address. A
 mailbox's engagement mode gates whether an agent ever runs a turn on its
-mail; this release ships `operator_only` only.
+mail, and whether that turn's reply is held for an operator or sent on its
+own; this release ships `operator_only` and `draft` (`draft` is the default
+for a new mailbox), with `auto` not yet in `supportedModes`.
+
+A `draft` mailbox's inbound stage 2 (`emailReviewRunner.ts`) runs one
+coalesced turn per thread revision through `ConnectorChatPort.respond`
+(`connectorChatPort.ts`, which calls `ChatService.review` in `review`
+execution mode — see [Assistant Turn Spine](assistant-turn-spine.md#execution-modes)),
+asks the pure `emailPublicationDecision.ts` what to do with the result, and
+hands it to the channel-neutral held-reply module below.
 
 Should not own conversation or routine behavior, and does not reuse
 `backend/src/modules/customerEmail/` — that module sends through a
@@ -283,22 +292,29 @@ Public surfaces and key files:
   inbound / thread repositories.
 - `backend/src/modules/connectors/plugins/email/` — pure functions with no
   I/O: `emailEngagementDisposition.ts`, `emailInboundClassification.ts`,
-  `emailThreadResolution.ts`.
+  `emailThreadResolution.ts`, `emailPublicationDecision.ts` (FR-020: what a
+  review's typed result does next — publish, hold with a reason, or no
+  draft); `emailReviewRunner.ts` is stage 2's orchestration (claims a due
+  thread revision under a lease, runs the review, decides publication,
+  schedules retries and wakeups) and is the one impure file in the
+  directory.
 - `backend/src/modules/emailChannel/README.md`
 
 Useful searches:
 
 - `rg "EmailChannel|email-channel|EMAIL_CHANNEL" backend/src backend/tests`
-- `rg "emailEngagementDisposition|emailInboundClassification|emailThreadResolution" backend/src backend/tests`
+- `rg "emailEngagementDisposition|emailInboundClassification|emailThreadResolution|emailPublicationDecision|emailReviewRunner" backend/src backend/tests`
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/email-channel tests/unit/mail`
 - `cd backend && pnpm exec vitest run tests/integration/email-channel-persistence.integration.test.ts tests/integration/email-channel-schema-migrations.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/email-channel/review-runner.test.ts tests/integration/email-review-revision.integration.test.ts tests/unit/eval-suite/email-outcome-table.test.ts`
 
 Related docs:
 
 - [Email Channel](../email-channel.md)
+- [Human Takeover](../human-takeover.md#held-replies)
 - [Customer Email Connections](../customer-email-skills.md)
 - `specs/1403-email-channel/`
 
@@ -1358,12 +1374,13 @@ Related docs:
 ## Conversation Activity
 
 Owns the vocabulary and operator reads of a conversation's activity: handoffs
-requested, claims, reassignments, hand-backs, approvals decided, and negative
-feedback resolved or dismissed. Each event is written by the module that makes the
-change, in that change's transaction, through one narrow port,
-`ConversationActivityRecorder.record(db, event)`: handoff (claim, transfer,
-hand-back, and a reply's claim, through its units of work), chat turn persistence
-(`handoff_requested`), approvals (`resolve`), and quality (`QualityTriageStore`).
+requested, claims, reassignments, hand-backs, approvals decided, held replies
+released or discarded, and negative feedback resolved or dismissed. Each event is
+written by the module that makes the change, in that change's transaction, through
+one narrow port, `ConversationActivityRecorder.record(db, event)`: handoff (claim,
+transfer, hand-back, and a reply's claim, through its units of work), chat turn
+persistence (`handoff_requested`), approvals (`resolve`), held replies
+(`held_reply_released`, `held_reply_discarded`), and quality (`QualityTriageStore`).
 Reads label every teammate live (display name, else email) through the auth
 module's `TeammateLabelReaderPort`, so activity is operator-only; the public chat
 presenters strip it. Every read takes a `ConversationActivityReadScope` that each
@@ -1377,7 +1394,16 @@ passes an `activityCursor` to re-read a five-minute window behind the previous
 tail, which takes in an event whose transaction committed after a newer one's.
 
 Should not own the changes it records, audit events, or message content — events
-carry ids and codes only.
+carry ids and codes only. It also does not own the held-reply record itself or
+its release transaction: `backend/src/modules/handoff/heldReplies/` owns the
+pending/released/edited/discarded/superseded state machine
+(`heldReplyService.ts`, `heldReplyState.ts`, repository
+`backend/src/db/repositories/heldReplyRepository.ts`, routes
+`backend/src/app/http/routes/heldReplyRoutes.ts`) and writes the two activity
+kinds above when a release or discard commits. A channel supplies a held
+reply's content and binds it to its own authority (policy ref and version);
+handoff interprets neither. The email channel's `emailReviewRunner.ts` is its
+first producer — see [Email Channel](#email-channel).
 
 Public surfaces and contracts:
 
@@ -1387,16 +1413,23 @@ Public surfaces and contracts:
 - `backend/src/app/composition/conversationActivity.ts` (default wiring)
 - `GET /api/v1/conversations/recently-closed` (`backend/src/app/http/routes/conversationActivityRoutes.ts`); `activity` on the operator history detail and tail
 - `frontend/lib/conversation-activity.ts` (thread lines, placement, day breaks, the recently-closed strip's labels)
+- `backend/src/app/composition/heldReplyUnitOfWork.ts` (release's one
+  transaction: lock conversation and ownership, lock the producer's policy,
+  the conditional pending→released/edited update, the delivered message,
+  the outbox enqueue) and `backend/src/modules/handoff/public.ts`
+  (`HeldReplyService`, `HeldReplySupersedeScope`, `HeldReplyView`)
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/handoff tests/unit/approval-decision-service.test.ts tests/unit/quality-triage-service.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/handoff tests/integration/approvals tests/integration/quality-triage.integration.test.ts tests/integration/conversation-activity-backfill-migration.integration.test.ts`
-- `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/handoff/held-reply-service.test.ts tests/unit/handoff/held-reply-state.test.ts tests/unit/app-composition/held-reply-unit-of-work.test.ts tests/integration/held-reply-repository.integration.test.ts tests/contract/held-replies.contract.test.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts tests/unit/needs-attention.test.ts tests/unit/needs-attention-query-state.test.tsx`
 
 Related docs:
 
 - `docs/human-takeover.md#conversation-activity`
+- `docs/human-takeover.md#held-replies`
 
 ## Audience Pulse
 

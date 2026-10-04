@@ -1,7 +1,7 @@
 ---
 title: "Assistant Turn Spine"
-description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, and routing."
-last_updated: 2026-09-10
+description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, routing, and the live, safe-test, and review execution modes."
+last_updated: 2026-10-04
 ---
 
 # Assistant Turn Spine
@@ -21,6 +21,49 @@ A turn moves through four phases:
 
 The loop holds the mechanism, skills hold the behavior. Adding a
 capability means registering a skill, not editing the loop.
+
+## Execution modes
+
+A turn's `TurnExecutionMode` — `live`, `safe_test`, or `review`
+(`backend/src/shared/domain/turnExecutionMode.ts`) — decides what the loop
+may do beyond composing a reply. Every per-mode difference reads one pure
+capability table, `turnExecutionCapabilities(mode)`, rather than a scattered
+mode check. `live` is the default: skill effects run, routines activate, a
+requested hand-off applies, and the reply persists as the conversation's
+assistant message. `safe_test` keeps conversation-local state (routines,
+the reply) so a multi-turn test stays representative, while dropping what a
+customer or operator would act on: skill effects are suppressed unless a
+caller opts in, a hand-off is skipped, and turn actions are dropped.
+
+`review` is for a connector that needs a person to see a reply before it
+reaches anywhere: skill effects are always suppressed regardless of what's
+requested, routines don't activate, and a hand-off the turn would have
+applied is only reported, ownership left as it is. Where `live` and
+`safe_test` both complete by persisting the reply, `review` completes by
+returning it as a draft instead — `chatTurnLifecycle.ts`'s
+`CompletedAssistantTurn` is `{ kind: "persisted", response, assistantMessageId, ... }`
+for the first two and `{ kind: "draft", draft, facts, correlation, ... }`
+for `review`. No assistant-message id is fabricated for a draft: a caller
+correlates on the customer message id and the turn id instead.
+
+A review turn never goes through the public `ChatService.answer` or
+`answerWithReceipt`. A connector calls the internal
+`ChatService.review(input: ChatReviewInput): Promise<ChatReviewResult>`,
+which answers an existing customer message (`existingUserMessageId`) rather
+than creating one, and resolves to `draft`, `no_draft`, or `human_owned`.
+The public chat API, `ChatResponse`, and the live HTTP and SSE responses are
+unchanged by this mode — a review turn's draft reaches only the connector
+that asked for it.
+
+A pure mapper, `backend/src/modules/connectors/services/connectorTurnFacts.ts`,
+turns a review's internal result into the same typed facts every connector
+reasons about: grounding (`grounded`, `ungrounded`, `not_applicable`,
+`unknown`), coverage (`answered`, `partial`, `unanswered`, `unclear`,
+`unavailable`, `not_assessed`), and whether a hand-off was requested and
+why. The [email channel](../email-channel.md#draft-mode-review-before-it-sends)
+is the first producer: its review runner calls `review()` once per
+coalesced thread revision and hands the draft and facts to a held reply for
+an operator to act on.
 
 ## Reusable contract boundary
 

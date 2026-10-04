@@ -430,6 +430,75 @@ as an `approval_decided` [activity](#conversation-activity) event.
 Operators are notified of a new pending approval through the contact-delivery
 transport with an `approval.request` action, mirroring `handoff.notify`.
 
+## Held replies
+
+A `draft` mailbox's review turn doesn't write a customer-visible message —
+it writes a **held reply**: the agent's draft text, its judgment of the turn
+(grounded? fully answered? did it ask for a person?), and whether it depends
+on a skill effect that was suppressed. A held reply opens the same
+`approval` attention kind a routine's [approval](#approvals) gate uses and
+shows in the Inbox the same way, but it's a distinct resource with its own
+list, its own release, and no `routineId` or `stepId`. See
+[Email channel](email-channel.md#draft-mode-review-before-it-sends) for what
+a review turn can and can't do, and what the operator's three choices mean.
+
+### List held replies
+
+`GET /api/v1/held-replies`
+
+Query `attention=open|all`, `agentId?`, `cursor?`, `limit` (up to 100).
+Requires the `workspace.conversation.takeover` permission.
+
+### Read a conversation's current draft
+
+`GET /api/v1/conversations/{conversationId}/held-reply`
+
+Returns `{ "heldReply": ... }`, or `{ "heldReply": null }` when the
+conversation has no draft waiting.
+
+### Release
+
+`POST /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/release`
+
+Body:
+
+```json
+{ "editedText": "Thanks for waiting — here's what I found." }
+```
+
+Omit `editedText` to send the draft exactly as written: the delivered
+message is attributed to the agent. Include it to send your own wording
+instead: the delivered message is attributed to you, and the original
+draft stays on the held reply. Either way, release never changes who owns
+the conversation — it stays `ai_owned`, the same as before the review ran.
+Returns `201` with the held reply, the new message's id, and
+`"delivery": "queued"`.
+
+A release that no longer applies is refused with `409`:
+`held_reply_not_pending` (the body carries the held reply as it is now,
+under `error.details.heldReply`, so you can re-render without a re-read),
+`ownership_changed` (someone took the conversation over since the draft was
+held), `policy_changed` (the mailbox's mode or agent changed since), or
+`channel_not_ready` (the mailbox can't send right now — see
+[Email channel](email-channel.md#verify-sending)).
+
+### Discard
+
+`POST /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/discard`
+
+Nothing is sent. The conversation keeps its attention flag until an
+operator replies or takes it over; the next inbound message on the thread
+gets a fresh draft. Returns the held reply with its new state. A draft
+that's already settled returns `409` with code `held_reply_not_pending`.
+
+### What replaces a draft
+
+A newer inbound message, a free-form operator reply, a takeover, or the
+mailbox's mode being downgraded all supersede a pending held reply before
+an operator acts on it: the draft is replaced, not released, and nothing is
+sent for it. Where there's a new customer message behind the supersede, a
+fresh review turn runs in its place.
+
 ## Delivery failures
 
 A reply can fail after it was already accepted for delivery — a bounce, a

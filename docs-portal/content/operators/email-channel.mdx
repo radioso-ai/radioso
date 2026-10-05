@@ -1,6 +1,6 @@
 ---
 title: Email channel
-description: Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies, cap what the agent does on its own, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log from operator settings.
+description: Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies or let grounded ones send themselves, cap what the agent does on its own, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log from operator settings.
 ---
 
 # Email channel
@@ -14,7 +14,7 @@ You manage it from an agent's **Channels**, alongside Web chat, API, MCP, and Sl
 ## What it does
 
 - Each mailbox you add gets its own opaque relay address on an inbound domain Radioso operates. Forwarding your real address to it is the only setup receiving needs — no DNS at all.
-- A new mailbox runs in `draft` mode: the agent writes a reply to every accepted email, and it waits in the Inbox for you to send, edit, or discard — nothing goes to the customer without that review. Switch a mailbox to `operator_only` and the agent is out of the loop entirely: every accepted email opens or continues a human-owned conversation, and no turn ever runs on it.
+- A new mailbox runs in `draft` mode: the agent writes a reply to every accepted email, and it waits in the Inbox for you to send, edit, or discard — nothing goes to the customer without that review. Switch a mailbox to `auto` and a grounded, complete answer goes out on its own, while everything else still waits for you. Switch it to `operator_only` and the agent is out of the loop entirely: every accepted email opens or continues a human-owned conversation, and no turn ever runs on it.
 - Email conversations show up in the Inbox exactly like any other channel, and they never auto-close on their own. What decides whether one needs attention is whether a person has to act on it — not how long it's been quiet.
 - Replies go out as your real address — `support@customer.com`, not the relay — once you've verified sending for that domain.
 - An email that doesn't turn into a conversation (an autoresponder, a bounce, spam, a message to a mailbox you've disabled) is still recorded: you can see it in the mailbox's event log with its sender, subject, and why it stopped there.
@@ -56,19 +56,42 @@ You have three moves on a draft:
 
 Sending or discarding never takes the conversation over — it stays with the agent, same as before the draft was written. Only a free-form reply or an explicit takeover hands it to a person. If a newer email arrives, a teammate replies, or someone takes the conversation over while a draft is still waiting, that draft is dropped in favor of the newer thing — you'll never see two drafts competing for the same reply.
 
+## Turn on automatic replies
+
+Once a mailbox's drafts have earned your trust, you can let the agent send the easy ones itself. On an `auto` mailbox the agent drafts exactly as in `draft` mode, and a reply goes straight to the customer only when the turn is grounded in your documents, answers the whole question, asks for no person, and needed no action that couldn't run. It's sent with `Auto-Submitted: auto-generated` and the usual delivery states.
+
+To turn it on, choose **Automatic** under the mailbox's **Mode**. The card asks you to confirm and names the limit it runs within — "The agent sends grounded replies on its own, up to 3 per thread until an operator replies." Nothing switches to automatic without that confirmation. Through the API, send `"autoOptIn": true` alongside `"engagementMode": "auto"`; without it the change is refused with `auto_opt_in_required`. The switch applies to mail that arrives afterwards.
+
+Before you switch, run the mailbox in `draft` long enough to read real drafts, and check that the replies that shouldn't go out — partial answers, questions your documents don't cover, hand-offs — are coming back to you as drafts.
+
+**What still comes to you.** Anything the agent isn't sure of waits in the Inbox as a draft, flagged for approval, with its outcome labelled — you send, edit, or discard it as usual. That covers:
+
+- a partial answer, no matching documents, an out-of-scope question, or a request for a person;
+- an answer that depended on an action that didn't run;
+- a thread that has used up its send budget;
+- a mailbox whose sending domain isn't verified.
+
+A turn with no usable answer goes to a person with its hand-off reason instead of a draft.
+
+**It checks again before it sends.** An automatic reply waits in a short queue before it goes out, and right before sending Radioso checks that the mailbox is still `auto` and enabled, the domain is still verified, and the conversation still belongs to the agent. If any of that changed, the reply comes back to you as a draft with the reason `authority_changed`, and the customer sees nothing. A newer email, your reply, a takeover, or a change to the mailbox's settings replaces a queued reply outright — taking a conversation over always stops a reply the agent hasn't sent yet.
+
+**The send budget.** Each thread allows `threadSendBudget` automatic replies in a row — 3 by default. Your reply on the thread, or sending one of its drafts, resets the count. Customer mail never does, so even an autoresponder that slips past the automated-mail check can draw at most three replies before a person steps in. The fourth waits for you with the reason `send_budget`.
+
+To stop automatic replies, switch the mailbox back to `draft` or `operator_only`; any reply still queued is replaced and nothing more goes out on its own.
+
 ## Limits
 
-One autoresponder or one burst of new threads could run up model spend in minutes if nothing capped it. Each limit below hands the work to a person when it's hit, so nothing accepted is lost. Set them per mailbox through the mailbox API.
+One autoresponder or one burst of new threads could run up model spend in minutes if nothing capped it. Each limit below hands the work to a person when it's hit, so nothing accepted is lost. Edit them in the **Limits** section of the mailbox's card, or set them through the mailbox API.
 
-| Mailbox setting | What it caps | Default |
-|---|---|---|
-| `hourlyGenerationBudget` | Drafts the mailbox writes per hour | 30 |
-| `threadSendBudget` | The agent's automatic sends on one thread before you renew it | 3 |
-| `threadContextMessages` | How many of the thread's newest messages a draft reads | 10 |
+| In the card | Mailbox setting | What it caps | Default |
+|---|---|---|---|
+| Agent runs per hour | `hourlyGenerationBudget` | Drafts the mailbox writes per hour | 30 |
+| Replies per thread | `threadSendBudget` | The agent's automatic sends on one thread before you renew it | 3 |
+| Context messages | `threadContextMessages` | How many of the thread's newest messages a draft reads | 10 |
 
 **When the hourly budget runs out**, mail keeps arriving but stops getting drafts: each email opens or continues a conversation handed to a person with the reason `generation_budget`, in the Inbox like any other handoff. The hour is a fixed window that starts with the first draft after the previous window closed, and drafts resume when it rolls over. A conversation already handed to a person stays with them until you hand it back.
 
-**The thread send budget** counts the agent's automatic sends on a thread. Your reply on the thread renews it, and so does sending a draft, as written or edited. Customer mail never renews it. When it's full, the next reply waits for you with the reason `send_budget`. On a `draft` mailbox every reply goes through you, so the count stays at zero.
+**The thread send budget** counts the agent's automatic sends on a thread. Your reply on the thread renews it, and so does sending a draft, as written or edited. Customer mail never renews it. When it's full, the next reply waits for you with the reason `send_budget`. On a `draft` mailbox every reply goes through you, so the count stays at zero; on an `auto` mailbox it's what limits the agent to three replies in a row.
 
 **Bursts share one draft.** Emails on one thread inside the deployment's coalescing window (`EMAIL_CHANNEL_COALESCE_SECONDS`, 60 seconds by default) get a single draft answering all of them.
 
@@ -102,6 +125,8 @@ Instead of forwarding, you can point an entire customer-owned domain or subdomai
 - **A reply shows `halted`.** The mailbox's domain lost its sending verification after the reply was queued, so nothing went out. Re-verify the domain, then resend from the conversation's delivery failure.
 - **A reply has been `uncertain` for a while.** Its outcome never came back from the provider. Mark it sent if you've confirmed the customer got it some other way, or ask for a resend — both are recorded against you.
 - **Sending a draft says "This mailbox cannot send yet."** The mailbox's sending domain isn't verified. See Verify sending, above — nothing was lost, the draft is still there once it is.
+- **A reply you expected to go out automatically is waiting as a draft.** Its hold reason says why: `outcome_not_publishable` means the answer wasn't grounded, complete, and free of a hand-off; `send_budget` means the thread used its automatic replies; `authority_changed` means the mailbox, its domain, or the conversation's owner changed before it sent. Send or edit it from the Inbox.
+- **Switching a mailbox to `auto` through the API is refused with `auto_opt_in_required`.** Add `"autoOptIn": true` to the same request; the mailbox card does this when you confirm.
 - **Sending a draft says the conversation changed hands, or the mailbox settings changed.** Someone took the conversation over, or the mailbox's mode or agent changed, after the draft was written. Nothing was sent; re-open the conversation to see what's current.
 
 ## Read next

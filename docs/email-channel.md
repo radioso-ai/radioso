@@ -1,6 +1,6 @@
 ---
 title: "Email Channel"
-description: "Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies, bound what runs without a person, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
+description: "Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies or let grounded ones send themselves, bound what runs without a person, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
 last_updated: 2026-10-05
 ---
 
@@ -14,15 +14,16 @@ couple of DNS records. Every email the channel accepts is visible to an
 operator somewhere — as a conversation in the Inbox, or as an event in the
 mailbox's event log when it never becomes one.
 
-A mailbox runs in one of two engagement modes. `draft` is the default for a
+A mailbox runs in one of three engagement modes. `draft` is the default for a
 new mailbox: the agent runs a review turn on every accepted email and writes
 a reply, which stays held until an operator sends it, edits it, or discards
 it — see [Draft mode](#draft-mode-review-before-it-sends) below. On an
+`auto` mailbox the same review turn runs, and a reply that is grounded,
+complete, and free of a hand-off goes to the customer with no one in the
+loop; everything else is held as in `draft` — see
+[Automatic mode](#automatic-mode-replies-that-send-themselves). On an
 `operator_only` mailbox every accepted email opens or continues a
-human-owned conversation, and the agent never runs a turn on it. The API's
-`engagementMode` field also accepts `auto`, which sends the agent's reply
-without review; the deployment's `supportedModes` leaves it out, so setting
-it on a mailbox is refused with `engagement_mode_unavailable`. In either
+human-owned conversation, and the agent never runs a turn on it. In every
 mode, the limits under [Bounds](#bounds) cap what runs without a person.
 
 Email conversations never auto-close. Like any other channel, what decides
@@ -202,8 +203,9 @@ person, the same as on any other channel. A held reply is visible only to
 operators: it never appears in the customer's message history, the public
 chat API, or a conversation transcript, in any of its states.
 
-**What replaces a draft.** A held reply is live only while it's pending, and
-exactly one thing happens to it next. A newer inbound message, a free-form
+**What replaces a draft.** A held reply is live only while it's pending (or,
+on an `auto` mailbox, queued to send), and exactly one thing happens to it
+next. A newer inbound message, a free-form
 operator reply, a takeover, or the mailbox's mode being downgraded all
 *supersede* a pending draft: it's replaced rather than released, and nothing
 is sent for it. Where there's a new customer message behind the supersede, a
@@ -215,6 +217,136 @@ the operator API this runs on.
 Several emails on one thread in quick succession get one draft between them
 — see [Coalescing](#coalescing).
 
+## Automatic mode: replies that send themselves
+
+On an `auto` mailbox the agent answers a customer by email with nobody in
+the loop, but only when its turn shows a complete, grounded answer. Every
+accepted email runs the same review turn as in
+[draft mode](#draft-mode-review-before-it-sends), under the same
+restrictions: no skill with an outward effect runs and no routine
+activates. What differs is what happens to the result. A *publication
+decision* reads the turn's typed facts, never the draft's text, and either
+sends the reply or holds it for an operator exactly as a `draft` mailbox
+would.
+
+### What qualifies a reply for sending
+
+The decision runs these checks in order. The first one that fails holds the
+reply, with that check's reason:
+
+| Check | Hold reason when it fails |
+|---|---|
+| The conversation's ownership and the mailbox's policy are still the ones the review ran under | `authority_changed` |
+| The mailbox's sending domain is verified | `sending_not_verified` |
+| The mailbox runs `auto`, both when the email was accepted and now (see [Policy at acceptance](#policy-at-acceptance)) | `draft_mode` |
+| The thread's [send budget](#budgets) has room | `send_budget` |
+| The turn is grounded, fully answered, asked for no person, and needed no suppressed skill effect | `outcome_not_publishable` |
+
+Only a reply that passes all five is sent. A partial answer, no matching
+documents, an out-of-scope question, a hand-off request, or an answer that
+depended on a suppressed skill effect each becomes a held reply with its
+outcome labelled and an `approval` flag in the Inbox, where an operator
+sends, edits, or discards it as on a `draft` mailbox. A turn with no usable
+text creates no held reply; the conversation goes to a person with the
+engine's hand-off reason, or `review_unavailable`. A human-owned
+conversation never gets a review turn at all.
+
+### From queued to sent
+
+A reply that qualifies is queued before it becomes a message. In one
+transaction, Radioso confirms that the conversation's ownership and the
+mailbox's policy are still the ones the review ran under, spends one of the
+thread's automatic sends, records the held reply in state `queued_auto`,
+and enqueues an `email.send` job keyed `email:send:held:<heldReplyId>`.
+While it's queued, the reply exists only as a held reply: operators can see
+it, and the customer's message history, the public chat API, and
+transcripts never contain it. If the ownership or the policy moved, or a
+newer customer message arrived, between the decision and the queue, the
+reply is held with `authority_changed` instead. If a concurrent send took
+the budget's last slot, it's held with `send_budget`.
+
+**Re-authorization at dispatch.** When the send worker picks up the job, it
+checks authority again under the conversation's lock: the mailbox is
+enabled and still `auto` at the policy version the review ran under, the
+conversation is still AI-owned at the same ownership version, and the
+sending domain is verified. When every check passes, one transaction writes
+the agent's message, moves the held reply to `released` with `releaseKind`
+`auto`, and records the send intent. From there it's an ordinary outbound
+send: `Auto-Submitted: auto-generated`, the same
+[delivery states](#send-a-reply-and-track-delivery), the same idempotent
+retries. When any check fails, the customer sees nothing: the held reply
+returns to `pending` with hold reason `authority_changed`, the conversation
+is flagged `approval`, and no message or send intent is written.
+
+### What hands a reply back to a person
+
+- **The decision holds it**, for any reason in the table above.
+- **Something replaces it while it's queued.** A newer customer message, a
+  free-form operator reply, a takeover, or a change to the mailbox's mode,
+  agent, or enabled flag supersedes a `queued_auto` reply the same way it
+  supersedes a pending draft. Nothing is sent for it, and a newer customer
+  message gets a fresh review. A takeover always wins over a queued reply —
+  see [Human Takeover](human-takeover.md#what-replaces-a-draft).
+- **Authority fails at dispatch.** The reply returns to `pending` with
+  `authority_changed`, as described above.
+- **Authority changes after the provider call.** A send whose provider
+  outcome is still unknown stays an ordinary send. If the mailbox or domain
+  loses sending authority in that window, Radioso neither halts nor
+  re-queues it: it goes `uncertain` at once and flags `delivery_failed`, and
+  an operator resolves it as described under
+  [Send a reply and track delivery](#send-a-reply-and-track-delivery).
+
+### Send budget renewal
+
+Every automatic send spends one slot of the thread's `threadSendBudget` (3 by
+default) when it's queued. An operator reply on the thread renews the
+budget, and so does an operator releasing a held reply, as written or
+edited; the count resets when that send is recorded. Customer mail never
+renews it, so a customer, or an autoresponder that gets past the
+[automated-mail](#automated-mail) check, draws at most three automatic
+replies in a row before a person has to step in. A queued reply that goes
+back to `pending` keeps the slot it spent, which errs toward holding.
+`GET /api/v1/conversations/{conversationId}/email` returns the count, the
+limit, and the last renewal time under `sendBudget`.
+
+### Turning it on
+
+A mailbox is never `auto` by default; switching it takes an explicit opt-in.
+In the mailbox's card, choose **Automatic** under **Mode**. The card asks
+you to confirm and names the budget the agent runs within — "The agent
+sends grounded replies on its own, up to 3 per thread until an operator
+replies." — and confirming records the opt-in. Through the API, setting
+`engagementMode` to `auto` when you create a mailbox, or with `PATCH
+/api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}`, needs
+`autoOptIn` alongside it:
+
+```json
+{ "engagementMode": "auto", "autoOptIn": true }
+```
+
+Without it the request is refused with `400` and code
+`auto_opt_in_required`. The switch applies to mail accepted afterwards;
+mail accepted earlier keeps the mode it arrived under. Any change to the
+mailbox's mode, agent, or enabled flag supersedes the replies it has
+pending or queued, so switching away from `auto` stops every automatic
+send that hasn't gone out.
+
+### Rollout and rollback
+
+Turn on `auto` for a mailbox after its team has run it in `draft` and
+reviewed real drafts, and after every outcome that shouldn't publish —
+partial answer, no matching documents, out of scope, hand-off, unavailable
+turn, spent send budget — has been seen to hold rather than send. Then the
+mailbox owner opts in. Radioso enforces the opt-in; the first two gates are
+the operator's to check.
+
+On a deployment that doesn't run `auto`, an `auto` mailbox's mail runs
+under `draft`, and the five-minute sweep sends any reply left in
+`queued_auto` for more than five minutes through the dispatch check, which
+refuses it: the reply returns to `pending` with `authority_changed` and an
+`approval` flag. A queued reply never goes out without an operator there.
+To stop one mailbox, switch it to `draft` or `operator_only`.
+
 ## Bounds
 
 One vacation responder, one mailing list, or one burst of new threads could
@@ -224,15 +356,16 @@ to a person: nothing accepted is dropped.
 
 ### Budgets
 
-Each mailbox carries three limits. Set any of them when you create the
-mailbox, or later with `PATCH
+Each mailbox carries three limits. Edit them in the **Limits** section of
+the mailbox's card, which saves only the fields you changed, or set them
+through the API when you create the mailbox or with `PATCH
 /api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}`:
 
-| Setting | What it bounds | Default | Range |
-|---|---|---|---|
-| `hourlyGenerationBudget` | Review turns the mailbox runs per hour | 30 | 1–1000 |
-| `threadSendBudget` | The agent's automatic sends on one thread between renewals | 3 | 1–20 |
-| `threadContextMessages` | How many of the thread's newest messages a review turn reads | 10 | 1–50 |
+| Setting | In the card | What it bounds | Default | Range |
+|---|---|---|---|---|
+| `hourlyGenerationBudget` | Agent runs per hour | Review turns the mailbox runs per hour | 30 | 1–1000 |
+| `threadSendBudget` | Replies per thread | The agent's automatic sends on one thread between renewals | 3 | 1–20 |
+| `threadContextMessages` | Context messages | How many of the thread's newest messages a review turn reads | 10 | 1–50 |
 
 **Generation budget.** The hour is a fixed window: it opens at the first
 review turn after the previous window closed and runs sixty minutes from
@@ -252,6 +385,7 @@ keep the agent talking. When the count reaches the budget, the next reply
 is held for an operator with hold reason `send_budget`, as an `approval`
 item in the Inbox. On a `draft` mailbox every reply goes out through an
 operator's release, which renews the budget, so the count stays at zero.
+On an `auto` mailbox, see [Send budget renewal](#send-budget-renewal).
 `GET /api/v1/conversations/{conversationId}/email` returns the count, the
 limit, and the last renewal time under `sendBudget`.
 
@@ -314,7 +448,8 @@ well-behaved responder on the other end leaves it alone.
 Every accepted email records the mailbox's policy — mode, enabled, agent —
 as it stood when the webhook accepted it. When the email's turn comes, it
 runs under whichever of the accepted mode and the current mode gives the
-agent less autonomy (`operator_only` is below `draft`), and the mailbox
+agent less autonomy (`operator_only` is below `draft`, and `draft` is
+below `auto`), and the mailbox
 must have been enabled at acceptance and still be enabled. In practice:
 
 - Switch a mailbox from `draft` to `operator_only`, and mail still waiting
@@ -367,8 +502,9 @@ thread-resolution protocol and the engagement disposition, then is ingested.
 schedules one at the end of the [coalescing](#coalescing) window. When it's
 due, the worker claims the thread under a lease, reserves a generation
 against the mailbox's [budget](#budgets), runs the review, and holds the
-result. An `operator_only` mailbox never calls for a review turn, so stage 2
-runs only for `draft` mailboxes.
+result or, on an `auto` mailbox, queues it to send. An `operator_only`
+mailbox never calls for a review turn, so stage 2 runs only for `draft` and
+`auto` mailboxes.
 
 **Scheduled drains.** Each stage pushes its own wakeup — right after the
 webhook commits, at a review's due time, at a failed job's next retry time —
@@ -379,7 +515,9 @@ configured, an interval loop polls for due work every few seconds.
 /internal/tasks/email-channel/sweep`) is recovery, not the primary path: it
 picks up work whose scheduled push was lost, reclaims leases that expired
 without being renewed, refreshes domain readiness that's due, and purges
-events past retention.
+events past retention. On a deployment that doesn't run `auto`, it also
+returns stale `queued_auto` replies to an operator (see
+[Rollout and rollback](#rollout-and-rollback)).
 
 ## Operations
 

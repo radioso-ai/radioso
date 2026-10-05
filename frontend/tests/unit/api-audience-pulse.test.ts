@@ -109,8 +109,43 @@ describe('audiencePulseApi', () => {
     })
   })
 
+  it('leaves topic answers empty when an API older than the browser bundle omits them', async () => {
+    requestMock.mockResolvedValueOnce({
+      kind: 'completed',
+      report: {
+        period: { start: '2026-08-01T00:00:00.000Z', end: '2026-08-31T00:00:00.000Z' },
+        generatedAt: '2026-08-31T09:00:00.000Z',
+        coverage: { populationSize: 5, sampleSize: 5, sampled: false, facetReadyQuestionCount: 5 },
+        weeklyVolume: [],
+        themes: [{
+          id: 'theme-1',
+          title: 'Refund timing',
+          description: 'Questions about refund timelines.',
+          memberCount: 5,
+          share: 1,
+          distinctQuestionCount: 1,
+          weeklyPulse: [],
+          grounding: { grounded: 3, degraded: 1, noSupport: 1, unknown: 0, contentGapEligible: 2 },
+          evidence: [],
+        }],
+        contentGaps: [],
+        recommendations: [],
+        caveats: [],
+        unclassifiedQuestionCount: 0,
+      },
+    })
+
+    const { audiencePulseApi } = await import('@/lib/api-audience-pulse')
+    const result = await audiencePulseApi.read()
+
+    expect(result.kind).toBe('completed')
+    if (result.kind !== 'completed') return
+    expect(result.report.themes[0]?.answers).toBeNull()
+  })
+
   it('keeps the topic-transition fields a current API sends', async () => {
     const transition = { kind: 'survived' as const, parentTopicIds: ['prior-1'], viaCentroidFallback: false }
+    const answers = { answered: 7, partial: 1, unanswered: 1, unclear: 0, outOfScope: 1, notAssessed: 0 }
     requestMock.mockResolvedValueOnce({
       kind: 'completed',
       report: {
@@ -135,6 +170,7 @@ describe('audiencePulseApi', () => {
           distinctQuestionCount: 1,
           weeklyPulse: [],
           grounding: { grounded: 0, degraded: 0, noSupport: 0, unknown: 0, contentGapEligible: 0 },
+          answers,
           evidence: [],
         }],
         contentGaps: [],
@@ -157,6 +193,7 @@ describe('audiencePulseApi', () => {
       previousMemberCount: 8,
       previousShare: 0.8,
       transition,
+      answers,
     })
   })
 

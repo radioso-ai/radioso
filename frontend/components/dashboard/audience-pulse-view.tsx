@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, ChevronDown, FileText, PenSquare, RefreshCw, Info, Play } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
@@ -30,11 +29,8 @@ import {
   type AudiencePulseDraftSeed,
 } from '@/lib/audience-pulse-draft-seed'
 import { writeAudiencePulseEvidenceHandoff } from '@/lib/audience-pulse-evidence-handoff'
-import {
-  getCoverageGapFraction,
-  getSparklinePoints,
-  normalizeTopicShare,
-} from '@/lib/audience-pulse-topic-viz'
+import { answerStatusLabel } from '@/lib/answer-coverage'
+import { formatTopicAnswerCounts, getTopicShortfalls } from '@/lib/audience-pulse-answer-status'
 
 interface AudiencePulseViewProps {
   accountId: string
@@ -59,7 +55,6 @@ type RefreshState =
   | { kind: 'error'; message: string }
 
 const numberFormat = new Intl.NumberFormat()
-const percentFormat = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 })
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
 const dateTimeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -82,6 +77,8 @@ export const getMemberCountDelta = (
   // threshold there is nothing to judge a count change against.
   if (materialityThreshold === undefined) return null
   if (theme.transition?.kind !== 'survived' || theme.previousMemberCount === null) return null
+  // A prior topic matched only by estimate is not proven to be this topic.
+  if (theme.transition.viaCentroidFallback) return null
   if (previousShare === null) return null
 
   const relativeChange = Math.abs(theme.memberCount - theme.previousMemberCount) / Math.max(theme.previousMemberCount, 1)
@@ -517,6 +514,14 @@ function ReportContent({
     return map
   }, [report.contentGaps])
 
+  const recommendationByTheme = useMemo(() => {
+    const map = new Map<string, AudiencePulseRecommendation>()
+    for (const recommendation of report.recommendations) {
+      if (!map.has(recommendation.themeId)) map.set(recommendation.themeId, recommendation)
+    }
+    return map
+  }, [report.recommendations])
+
   const { sampled, sampleSize, populationSize, facetReadyQuestionCount } = report.coverage
   const unclassifiedDenominator = sampled ? sampleSize : populationSize
   // Nothing in this window has been prepared for topic analysis yet — historical questions
@@ -524,7 +529,6 @@ function ReportContent({
   // here would describe the audience when the truth is that nothing has been computed.
   const awaitingTopicAnalysis = populationSize > 0 && facetReadyQuestionCount === 0
   const partiallyAnalysed = !sampled && facetReadyQuestionCount > 0 && facetReadyQuestionCount < populationSize
-  const maxThemeShare = Math.max(...report.themes.map((theme) => theme.share))
 
   return (
     <div className="flex flex-col gap-4">
@@ -630,17 +634,13 @@ function ReportContent({
                       </div>
                     ) : null}
                     <div>
-                      <Button
-                        type="button"
-                        size="sm"
+                      <StartDraftButton
+                        recommendation={recommendation}
+                        onStartDraft={onStartDraft}
+                        canStartDraft={canStartDraft}
                         variant="secondary"
-                        disabled={!canStartDraft}
-                        onClick={() => onStartDraft(recommendation)}
-                        data-testid={`audience-pulse-start-draft-${recommendation.id}`}
-                      >
-                        <PenSquare className="mr-2 h-4 w-4" aria-hidden />
-                        Start draft
-                      </Button>
+                        testId={`audience-pulse-start-draft-${recommendation.id}`}
+                      />
                     </div>
                   </CardContent>
                 </Card>
@@ -666,11 +666,12 @@ function ReportContent({
               <TopicRow
                 key={theme.id}
                 theme={theme}
-                gap={contentGapByTheme.get(theme.id) ?? null}
-                maxShare={maxThemeShare}
+                recommendation={recommendationByTheme.get(theme.id) ?? null}
                 materialityThreshold={report.narrativeReuseMaxDrift}
-                showNewBadge={!report.isFirstCensus}
+                markEmergedAsNew={!report.isFirstCensus}
                 onOpenConversation={onOpenConversation}
+                onStartDraft={onStartDraft}
+                canStartDraft={canStartDraft}
               />
             ))}
           </Card>
@@ -708,253 +709,171 @@ function ReportContent({
   )
 }
 
+
+function StartDraftButton({
+  recommendation,
+  onStartDraft,
+  canStartDraft,
+  variant,
+  testId,
+}: {
+  recommendation: AudiencePulseRecommendation
+  onStartDraft: (recommendation: AudiencePulseRecommendation) => void
+  canStartDraft: boolean
+  variant: 'secondary' | 'outline'
+  testId?: string
+}) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={variant}
+      disabled={!canStartDraft}
+      onClick={() => onStartDraft(recommendation)}
+      data-testid={testId}
+    >
+      <PenSquare className="mr-2 h-4 w-4" aria-hidden />
+      Start draft
+    </Button>
+  )
+}
+
 function TopicRow({
   theme,
-  gap,
-  maxShare,
+  recommendation,
   materialityThreshold,
-  showNewBadge,
+  markEmergedAsNew,
   onOpenConversation,
+  onStartDraft,
+  canStartDraft,
 }: {
   theme: AudiencePulseTheme
-  gap: AudiencePulseContentGap | null
-  maxShare: number
+  recommendation: AudiencePulseRecommendation | null
   materialityThreshold: number | undefined
-  showNewBadge: boolean
+  markEmergedAsNew: boolean
   onOpenConversation: (evidence: AudiencePulseThemeEvidence) => void
+  onStartDraft: (recommendation: AudiencePulseRecommendation) => void
+  canStartDraft: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
   const contentId = `audience-pulse-topic-${theme.id}`
-  const normalizedShare = normalizeTopicShare(theme.share, maxShare)
-  const coverageGapFraction = getCoverageGapFraction(
-    theme.grounding.contentGapEligible,
-    theme.memberCount,
-  )
   // The response has the current share but no prior population or share. Do not
   // turn a raw count change into an importance claim without that comparison.
-  const memberCountDelta = getMemberCountDelta(theme, theme.previousShare, materialityThreshold)
-  const transitionBadge = theme.transition?.kind === 'emerged'
-    ? showNewBadge ? 'New' : null
-    : theme.transition?.kind === 'split'
-      ? 'Split from prior topic'
-      : theme.transition?.kind === 'merged'
-        ? `Merged from ${theme.transition.parentTopicIds.length} ${theme.transition.parentTopicIds.length === 1 ? 'topic' : 'topics'}`
-        : null
+  const lineage = theme.transition?.kind === 'emerged'
+    ? markEmergedAsNew ? 'new' : null
+    : getMemberCountDelta(theme, theme.previousShare, materialityThreshold)
+  const shortfalls = theme.answers ? getTopicShortfalls(theme.answers) : []
 
   return (
     <div className="border-b last:border-b-0" data-testid="audience-pulse-topic-row">
-      <div className="space-y-2 px-4 py-4 sm:px-6">
+      <div className="space-y-3 px-4 py-4 sm:px-6">
         <button
           type="button"
           aria-expanded={expanded}
           aria-controls={contentId}
           onClick={() => setExpanded((prev) => !prev)}
-          className="flex w-full items-center gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="flex w-full items-start gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="text-sm font-medium text-foreground">{theme.title}</span>
-            {transitionBadge ? <Badge variant="secondary">{transitionBadge}</Badge> : null}
-            {theme.transition === null ? (
-              <span className="text-xs text-muted-foreground">Prior identity unknown</span>
-            ) : null}
-            {theme.transition?.viaCentroidFallback ? (
-              <Badge variant="outline" className="text-muted-foreground">Match estimate</Badge>
-            ) : null}
-            {gap ? (
-              <>
-                <Badge
-                  variant="outline"
-                  className="border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100"
-                >
-                  Not covered
-                </Badge>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  asked {numberFormat.format(gap.eligibleEvidenceCount)}× in{' '}
-                  {numberFormat.format(gap.distinctConversationCount)}{' '}
-                  {gap.distinctConversationCount === 1 ? 'conversation' : 'conversations'}
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {numberFormat.format(theme.memberCount)} {theme.memberCount === 1 ? 'question' : 'questions'}
+              {lineage ? ` · ${lineage}` : null}
+              {shortfalls.map((shortfall) => (
+                <span key={shortfall}>
+                  {' · '}
+                  <span className="text-amber-700 dark:text-amber-300">{shortfall}</span>
                 </span>
-              </>
-            ) : null}
+              ))}
+            </span>
           </span>
-          <TopicSparkline weeklyPulse={theme.weeklyPulse} />
           <ChevronDown
-            className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`}
+            className={`mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`}
             aria-hidden
           />
           <span className="sr-only">{expanded ? 'Hide examples' : 'Show examples'}</span>
         </button>
-        <TopicShareBar normalizedShare={normalizedShare} coverageGapFraction={coverageGapFraction} />
-        <p className="text-xs tabular-nums text-muted-foreground">
-          asked {numberFormat.format(theme.memberCount)}×
-          {memberCountDelta ? ` · ${memberCountDelta}` : ''} · {percentFormat.format(theme.share)} of questions
-        </p>
         {expanded ? (
-          <div id={contentId} className="space-y-3 pt-1">
-            <p className="text-sm text-muted-foreground">{theme.description}</p>
-            <GroundingSummaryStrip grounding={theme.grounding} />
-            {theme.coverage ? <CoverageSummaryStrip coverage={theme.coverage} /> : null}
-            {theme.evidence.length > 0 ? (
-              <div>
-                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Examples · {numberFormat.format(theme.evidence.length)} of {numberFormat.format(theme.memberCount)}{' '}
-                  {theme.memberCount === 1 ? 'question' : 'questions'}
-                </p>
-                <ul className="flex flex-col gap-1 text-sm">
-                  {theme.evidence.map((evidence) => (
-                    <li key={evidence.reference} className="flex items-start gap-2">
-                      <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                      <button
-                        type="button"
-                        onClick={() => onOpenConversation(evidence)}
-                        className="text-left text-sm text-foreground underline-offset-2 hover:underline focus:outline-none focus-visible:underline"
-                      >
-                        {evidence.question}
-                        {evidence.occurrenceCount > 1
-                          ? ` · asked ${numberFormat.format(evidence.occurrenceCount)}×`
-                          : null}
-                        {evidence.answerCoverage?.coverage ? ` · ${evidence.answerCoverage.coverage.replaceAll('_', ' ')}` : evidence.coverage ? ` · ${evidence.coverage.replaceAll('_', ' ')}` : null}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </div>
+          <TopicDetails
+            id={contentId}
+            theme={theme}
+            recommendation={recommendation}
+            onOpenConversation={onOpenConversation}
+            onStartDraft={onStartDraft}
+            canStartDraft={canStartDraft}
+          />
         ) : null}
       </div>
     </div>
   )
 }
 
-function TopicShareBar({
-  normalizedShare,
-  coverageGapFraction,
+function TopicDetails({
+  id,
+  theme,
+  recommendation,
+  onOpenConversation,
+  onStartDraft,
+  canStartDraft,
 }: {
-  normalizedShare: number
-  coverageGapFraction: number
+  id: string
+  theme: AudiencePulseTheme
+  recommendation: AudiencePulseRecommendation | null
+  onOpenConversation: (evidence: AudiencePulseThemeEvidence) => void
+  onStartDraft: (recommendation: AudiencePulseRecommendation) => void
+  canStartDraft: boolean
 }) {
-  const hasShare = normalizedShare > 0
-  const hasCoverageGap = hasShare && coverageGapFraction > 0
-  const primaryFraction = 1 - coverageGapFraction
+  const answerCounts = theme.answers ? formatTopicAnswerCounts(theme.answers) : ''
+  const examples = theme.evidence
 
   return (
-    <div className="h-2 w-full rounded-full bg-muted" aria-hidden>
-      {hasShare ? (
-        <div
-          className="relative h-full"
-          style={{ width: `max(2px, ${normalizedShare * 100}%)` }}
-        >
-          {primaryFraction > 0 ? (
-            <span
-              className={`absolute inset-y-0 left-0 bg-primary ${hasCoverageGap ? '' : 'rounded-r-full'}`}
-              style={{ width: `${primaryFraction * 100}%` }}
-            />
-          ) : null}
-          {hasCoverageGap ? (
-            <span
-              className={`absolute inset-y-0 right-0 bg-amber-500 rounded-r-full ${primaryFraction > 0 ? 'border-l-2 border-card' : ''}`}
-              style={{ width: `${coverageGapFraction * 100}%` }}
-            />
-          ) : null}
+    <div id={id} className="space-y-3">
+      <p className="text-sm text-muted-foreground">{theme.description}</p>
+      {answerCounts ? <p className="text-xs tabular-nums text-muted-foreground">{answerCounts}</p> : null}
+      {examples.length > 0 ? (
+        <div>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Examples · {numberFormat.format(examples.length)} of {numberFormat.format(theme.memberCount)}{' '}
+            {theme.memberCount === 1 ? 'question' : 'questions'}
+          </p>
+          <ul className="flex flex-col gap-1 text-sm">
+            {examples.map((evidence) => (
+              <li key={evidence.reference} className="flex items-start gap-2">
+                <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                {/* The status sits inside the button so it is part of the example's accessible name. */}
+                <button
+                  type="button"
+                  onClick={() => onOpenConversation(evidence)}
+                  className="group flex min-w-0 flex-1 items-start text-left text-sm text-foreground focus:outline-none"
+                >
+                  <span className="underline-offset-2 group-hover:underline group-focus-visible:underline">
+                    {evidence.question}
+                    {evidence.occurrenceCount > 1
+                      ? ` · asked ${numberFormat.format(evidence.occurrenceCount)}×`
+                      : null}
+                  </span>
+                  {evidence.answerStatus ? (
+                    <>
+                      {' '}
+                      <span className="ml-auto shrink-0 pl-4 text-xs leading-5 text-muted-foreground">
+                        {answerStatusLabel(evidence.answerStatus)}
+                      </span>
+                    </>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
-    </div>
-  )
-}
-
-// Renders inside the row's expand <button>, so it must stay non-interactive:
-// the quality-tile Sparkline (recharts) adds a tooltip and a focusable
-// accessibility layer, which cannot legally nest inside another control.
-function TopicSparkline({ weeklyPulse }: { weeklyPulse: AudiencePulseTheme['weeklyPulse'] }) {
-  const points = getSparklinePoints(weeklyPulse.map((week) => week.count))
-  if (points.length === 0) return null
-
-  const first = points[0]
-  const last = points.at(-1)
-  if (!first || !last) return null
-
-  return (
-    <span className="shrink-0">
-      <svg
-        viewBox="0 0 72 24"
-        className="h-6 w-[72px] text-muted-foreground"
-        aria-hidden
-        focusable="false"
-      >
-        <polyline
-          points={points.map((point) => `${point.x},${point.y}`).join(' ')}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      {recommendation ? (
+        <StartDraftButton
+          recommendation={recommendation}
+          onStartDraft={onStartDraft}
+          canStartDraft={canStartDraft}
+          variant="outline"
         />
-        <circle
-          cx={last.x}
-          cy={last.y}
-          r="3"
-          className="fill-primary stroke-card"
-          strokeWidth="2"
-        />
-      </svg>
-      <span className="sr-only">
-        Weekly questions by week: {points.map((point) => numberFormat.format(point.value)).join(', ')}.
-      </span>
-    </span>
-  )
-}
-
-function GroundingSummaryStrip({
-  grounding,
-}: {
-  grounding: AudiencePulseTheme['grounding']
-}) {
-  const entries: Array<{ label: string; value: number; tone: string; description: string }> = [
-    { label: 'Answered from your docs', value: grounding.grounded, tone: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100', description: 'Answered with grounded support.' },
-    { label: 'Partly answered', value: grounding.degraded, tone: 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100', description: 'Answered with partial grounded support.' },
-    { label: "Couldn't answer", value: grounding.noSupport, tone: 'border-red-500/40 bg-red-500/10 text-red-900 dark:text-red-100', description: 'Answer had no grounded support.' },
-    { label: 'Not recorded', value: grounding.unknown, tone: 'border-muted bg-muted text-muted-foreground', description: 'No grounding diagnostic was available.' },
-  ]
-
-  const visible = entries.filter((e) => e.value > 0)
-  if (visible.length === 0) return null
-
-  return (
-    <div className="flex flex-wrap gap-2" aria-label="Grounding summary">
-      {visible.map((entry) => (
-        <span
-          key={entry.label}
-          title={entry.description}
-          className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs ${entry.tone}`}
-        >
-          <span className="font-medium">{entry.label}</span>
-          <span className="tabular-nums">{numberFormat.format(entry.value)}</span>
-        </span>
-      ))}
-    </div>
-  )
-}
-
-function CoverageSummaryStrip({
-  coverage,
-}: {
-  coverage: NonNullable<AudiencePulseTheme['coverage']>
-}) {
-  const entries = [
-    ['Answered', coverage.answered, 'border-emerald-500/40 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100'],
-    ['Partly answered', coverage.partial, 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100'],
-    ['Unanswered', coverage.unanswered, 'border-red-500/40 bg-red-500/10 text-red-900 dark:text-red-100'],
-    ['Needs clarification', coverage.unclear, 'border-blue-500/40 bg-blue-500/10 text-blue-900 dark:text-blue-100'],
-    ['Not assessed', coverage.unassessed, 'border-muted bg-muted text-muted-foreground'],
-  ] as const
-  return (
-    <div className="flex flex-wrap gap-2" aria-label="Answer coverage summary">
-      {entries.filter(([, value]) => value > 0).map(([label, value, tone]) => (
-        <span key={label} className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs ${tone}`}>
-          <span className="font-medium">{label}</span><span className="tabular-nums">{numberFormat.format(value)}</span>
-        </span>
-      ))}
-      {coverage.legacy > 0 ? <span className="inline-flex items-center rounded-md border border-muted bg-muted px-2 py-0.5 text-xs text-muted-foreground">Legacy evidence {numberFormat.format(coverage.legacy)}</span> : null}
+      ) : null}
     </div>
   )
 }

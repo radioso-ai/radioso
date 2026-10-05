@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import {
+  AUDIENCE_PULSE_ANSWER_STATUSES,
   AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS,
   audiencePulseEvidenceAnchorRequestSchema,
 } from "../../../../modules/audiencePulse/contracts.js";
@@ -44,6 +45,17 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     answered: z.number().int().min(0), partial: z.number().int().min(0), unanswered: z.number().int().min(0), unclear: z.number().int().min(0),
     unassessed: z.number().int().min(0), legacy: z.number().int().min(0), reasons: z.record(z.string(), z.number().int().min(0)),
   }));
+  const AudiencePulseAnswerStatusSchema = registry.register("AudiencePulseAnswerStatus", z.enum(AUDIENCE_PULSE_ANSWER_STATUSES).openapi({
+    description: "What happened to a visitor question. `out_of_scope` is a partly answered or unanswered verdict with the intentional scope boundary reason; a question with no assessment record reads from its retrieval content-gap grounding.",
+  }));
+  const AudiencePulseAnswerSummarySchema = registry.register("AudiencePulseAnswerSummary", z.object({
+    answered: z.number().int().min(0),
+    partial: z.number().int().min(0),
+    unanswered: z.number().int().min(0),
+    unclear: z.number().int().min(0),
+    outOfScope: z.number().int().min(0),
+    notAssessed: z.number().int().min(0),
+  }).openapi({ description: "Every topic member counted by its answer status." }));
   const AudiencePulseEvidenceSchema = registry.register("AudiencePulseEvidence", z.object({
     reference: z.string(),
     conversationId: z.string().uuid(),
@@ -51,6 +63,8 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     question: z.string().max(AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS),
     occurrenceCount: z.number().int().min(1),
     answerCoverage: AnswerCoverageSchema.optional(),
+    // Absent only for an example from a report saved before answer coverage was recorded.
+    answerStatus: AudiencePulseAnswerStatusSchema.optional(),
   }));
   const AudiencePulseEvidenceAnchorRequestSchema = registry.register(
     "AudiencePulseEvidenceAnchorRequest",
@@ -91,6 +105,7 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     weeklyPulse: z.array(z.object({ weekStart: z.string().datetime(), count: z.number().int().min(0) })),
     grounding: AudiencePulseGroundingSchema,
     coverage: AudiencePulseSemanticCoverageSchema.optional(),
+    answers: AudiencePulseAnswerSummarySchema,
     evidence: z.array(AudiencePulseEvidenceSchema),
   }));
   const AudiencePulseContentGapSchema = registry.register("AudiencePulseContentGap", z.object({

@@ -37,13 +37,7 @@ export interface AudiencePulseGroundingSummary {
 
 export type AudiencePulseCoverageSummary = ApiSchemas['AudiencePulseSemanticCoverage']
 
-export interface AudiencePulseCoverageReasonSummary {
-  sufficient_evidence: number
-  insufficient_evidence: number
-  conflicting_evidence: number
-  ambiguous_request: number
-  intentional_scope_boundary: number
-}
+export type AudiencePulseAnswerSummary = ApiSchemas['AudiencePulseAnswerSummary']
 
 export interface AudiencePulseTopicTransition {
   kind: 'survived' | 'split' | 'merged' | 'emerged' | 'dissolved'
@@ -62,9 +56,9 @@ export interface AudiencePulseThemeEvidence {
   messageId: string
   question: string
   occurrenceCount: number
-  coverage?: 'answered' | 'partial' | 'unanswered' | 'unclear'
-  coverageReason?: keyof AudiencePulseCoverageReasonSummary
   answerCoverage?: ApiSchemas['AnswerCoverage']
+  /** Absent only for an example from a report saved before answer coverage was recorded. */
+  answerStatus?: ApiSchemas['AudiencePulseAnswerStatus']
 }
 
 export interface AudiencePulseTheme {
@@ -82,6 +76,8 @@ export interface AudiencePulseTheme {
   weeklyPulse: Array<{ weekStart: string; count: number }>
   grounding: AudiencePulseGroundingSummary
   coverage?: AudiencePulseCoverageSummary
+  /** Null only when an API older than the browser bundle sent no answer summary. */
+  answers: AudiencePulseAnswerSummary | null
   evidence: AudiencePulseThemeEvidence[]
 }
 
@@ -175,8 +171,9 @@ type OptionalReportFields = 'dissolvedTopics' | 'isFirstCensus' | 'narrativeGene
  * be missing from a response that is otherwise valid.
  */
 type WireAudiencePulseTheme =
-  Omit<AudiencePulseTheme, OptionalTopicTransitionFields>
+  Omit<AudiencePulseTheme, OptionalTopicTransitionFields | 'answers'>
   & Partial<Pick<AudiencePulseTheme, OptionalTopicTransitionFields>>
+  & { answers?: AudiencePulseAnswerSummary }
 
 type WireAudiencePulseReport =
   Omit<AudiencePulseHydratedReport, OptionalReportFields | 'themes'>
@@ -194,7 +191,8 @@ type WireAudiencePulseRefreshResponse =
 /**
  * Restores today's report shape from an older response. Defaults state only what the
  * older API could already prove — no prior identity, no reused narrative, nothing
- * dissolved — so a version-skewed deploy renders a smaller report instead of failing.
+ * dissolved, no answer summary — so a version-skewed deploy renders a smaller report
+ * instead of failing.
  */
 function normalizeAudiencePulseReport(
   report: WireAudiencePulseReport,
@@ -210,6 +208,7 @@ function normalizeAudiencePulseReport(
       previousMemberCount: theme.previousMemberCount ?? null,
       previousShare: theme.previousShare ?? null,
       transition: theme.transition ?? null,
+      answers: theme.answers ?? null,
     })),
   }
 }

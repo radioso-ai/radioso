@@ -1,7 +1,7 @@
 ---
 title: "Answer Coverage Signals"
 description: "Read semantic answer coverage in turn diagnostics and Audience Pulse, and use it to steer directives and routines."
-last_updated: 2026-09-16
+last_updated: 2026-10-05
 ---
 
 # Answer Coverage Signals
@@ -20,7 +20,7 @@ A draft test chat and an eval replay assess coverage the same way, so you can tr
 
 Open a turn's debug view to see its contextualized request, assessment availability, coverage, reason, unresolved request, originating IDs, schema version, and assessment time. The reaction trace records whether coverage criteria were evaluated, whether there was no match, and which directive or routine was applied, offered, activated, skipped, or suppressed.
 
-An assessment with `not_recorded`, `failed`, or `invalid` availability is displayed as **Not assessed**. The debug view does not infer a semantic answer from citations or a successful routine action.
+An assessment with `not_recorded`, `failed`, or `invalid` availability is displayed as **Not assessed**. The debug view does not infer a semantic answer from citations or a successful routine action. The intentional scope boundary reason reads **Out of scope**, so an unanswered decline shows as **Unanswered · Out of scope** in the turn's Flow.
 
 The Activity outcome uses a coverage-specific label when coverage was assessed:
 **Request answered**, **Partly answered**, **Request unanswered**, or
@@ -30,9 +30,20 @@ retrieval answer path actually declined the request.
 
 ## Read Audience Pulse
 
-Expanded topic details show exclusive semantic buckets for answered, partly answered, unanswered, needs clarification, and not assessed questions. Grounding counts remain a separate diagnostic. Pulse evidence carries the recorded assessment; unresolved request text and routine reaction details stay in authorized turn diagnostics.
+Each topic row answers two questions: what visitors ask, and where the agent falls short. The topic's title sits on the first line and its counts on the second:
 
-Reports preserve records created before answer coverage was measured. Those records appear as legacy evidence and remain readable without manufacturing a new assessment.
+```text
+Book, ebook, and audiobook details and access
+19 questions · 2 unanswered · 2 partly answered
+```
+
+That row says 19 questions landed in the topic, 2 went unanswered, and 2 got only part of an answer. A topic where nothing went unanswered or partly answered shows only its question count.
+
+Expand a topic for one line of answer counts across all its questions, such as **11 answered · 2 unanswered · 2 partly answered · 1 out of scope · 3 not assessed** for the 19 above. The collapsed row repeats the unanswered and partly answered numbers from this line, so the two always agree. The counts and the example questions under them use the turn inspector's labels: **Answered**, **Unanswered**, **Partly answered**, **Needs clarification**, **Out of scope**, and **Not assessed**.
+
+**Out of scope** is a question the agent declined on purpose: its assessment is partly answered or unanswered with the intentional scope boundary reason. The agent did what you authored, so the decline is one bucket on the counts line and stays off the collapsed row, which keeps that row to the questions where the agent fell short. A question with no assessment record reads from its answer instead: a grounded answer counts as answered, and a retrieval answer that found partial or no support in your documents counts as partly answered or unanswered. **Not assessed** covers the rest: an assessment that was unavailable, failed, or still pending, and an unassessed answer that was neither. When a saved report carries no answer coverage at all, its counts come from retrieval grounding: grounded answers count as answered, degraded ones as partly answered, unsupported ones as unanswered, and the rest as not assessed. That report's examples carry no label, because none of them has a verdict of its own.
+
+The examples are a sample of up to twelve of the topic's questions, and their heading says how many are shown, such as **Examples · 3 of 9 questions**. The sample takes the topic's unanswered and partly answered questions first and fills any remaining places from the rest of the topic. A question asked more than once appears once for each label it earned, with its count, such as **asked 3×**. Each example opens its conversation in Activity. When the topic has a content opportunity, **Start draft** opens the document composer seeded with its questions. Unresolved request text and routine reaction details stay in authorized turn diagnostics.
 
 ## Shadow assessor
 

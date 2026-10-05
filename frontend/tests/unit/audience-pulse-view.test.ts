@@ -15,6 +15,7 @@ const theme = (overrides: Partial<AudiencePulseTheme>): AudiencePulseTheme => ({
   distinctQuestionCount: 2,
   weeklyPulse: [],
   grounding: { grounded: 0, degraded: 0, noSupport: 0, unknown: 0, contentGapEligible: 0 },
+  answers: null,
   evidence: [],
   ...overrides,
 })
@@ -41,6 +42,18 @@ describe('getMemberCountDelta', () => {
     expect(getMemberCountDelta(theme({ memberCount: 32, share: 0.8 }), 0.4, 0.2)).toBeNull()
     expect(getMemberCountDelta(theme({ memberCount: 96, share: 0.4 }), null, 0.2)).toBeNull()
     expect(getMemberCountDelta(theme({ memberCount: 96, share: 0.4, transition: null }), 0.2, 0.2)).toBeNull()
+  })
+
+  it('reports no delta when the prior topic was only matched by estimate', () => {
+    expect(getMemberCountDelta(
+      theme({
+        memberCount: 60,
+        share: 0.25,
+        transition: { kind: 'survived', parentTopicIds: ['prior-theme-1'], viaCentroidFallback: true },
+      }),
+      0.2,
+      0.2,
+    )).toBeNull()
   })
 
   it('reports no delta when the report carries no materiality threshold', () => {

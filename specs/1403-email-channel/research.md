@@ -406,11 +406,11 @@ The migration runner executes each file in one transaction with `lock_timeout = 
 - **Activity kinds** are widened once, for every kind this feature needs (`channel_exception`, `delivery_failed`, `delivery_failure_cleared`, `held_reply_released`, `held_reply_discarded`), in three committed migrations:
   1. `SET LOCAL lock_timeout = '3s'`, then `ADD CONSTRAINT conversation_activity_kind_v2_check CHECK (…) NOT VALID`. This is a brief exclusive lock.
   2. `VALIDATE CONSTRAINT conversation_activity_kind_v2_check`, under `SHARE UPDATE EXCLUSIVE`, so writes continue.
-  3. `SET LOCAL lock_timeout = '3s'`, then `DROP CONSTRAINT conversation_activity_kind_check`. This is brief.
+  3. `SET LOCAL lock_timeout = '3s'`, then `DROP CONSTRAINT conversation_activity_kind_check`, then the replacement closing index below, in the same migration. The drop's exclusive lock lasts until that migration commits, so it covers the index build; on a large table the pre-created index turns the build into a no-op.
 
   A lock-timeout failure fails the deploy fast instead of queueing application traffic behind it, and a retry is safe. The new kinds are written only by code that ships after step 3.
 - **Closing index**: a replacement partial index `conversation_activity_workspace_closed_v2_idx` includes the two new closing kinds. Its migration uses `CREATE INDEX IF NOT EXISTS` with `lock_timeout = '3s'`. The runbook pre-creates it `CONCURRENTLY` in production when `conversation_activity` exceeds 100k rows, which turns the migration into a no-op. The old index is dropped one slice later (S2), after no running version reads it. The recently-closed query and its OpenAPI enum (`assistantHistorySchemas.ts`, which reads `CLOSING_ACTIVITY_KINDS`) switch together with the new index.
-- **New-table FKs** are added in the migration that creates the referenced table (data-model.md, Migrations), never forward.
+- **New-table FKs** are declared with their columns: one migration creates the feature's tables in dependency order (data-model.md, Migrations).
 
 ### B20. Direct-receiving routing (FR-006a, plan question 1)
 

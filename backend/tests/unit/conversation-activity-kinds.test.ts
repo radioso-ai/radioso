@@ -43,7 +43,7 @@ const CHECK_KINDS = quotedKindsIn(
   /conversation_activity_kind_v2_check CHECK \(kind IN \(([^)]*)\)\)/,
 );
 const CLOSED_INDEX_KINDS = quotedKindsIn(
-  "214_conversation_activity_closed_idx_v2.sql",
+  "213_conversation_activity_kind_v2_finish.sql",
   /conversation_activity_workspace_closed_v2_idx[\s\S]*?WHERE kind IN \(([^)]*)\)/,
 );
 

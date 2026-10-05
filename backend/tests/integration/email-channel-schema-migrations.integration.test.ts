@@ -7,18 +7,19 @@ import { applyTestMigration, runTestMigrationsBefore } from "../support/database
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
-const keystone = "209_email_channel_keystone.sql";
-const inbound = "210_email_inbound_events.sql";
-const activityWidening = [
-  "211_conversation_activity_kind_v2_add.sql",
-  "212_conversation_activity_kind_v2_validate.sql",
-  "213_conversation_activity_kind_drop_v1.sql",
-  "214_conversation_activity_closed_idx_v2.sql",
+const emailChannel = "210_email_channel.sql";
+const EMAIL_CHANNEL_TABLES = [
+  "email_domains",
+  "email_mailboxes",
+  "email_mailbox_policies",
+  "email_thread_links",
+  "email_inbound_events",
+  "email_inbound_deliveries",
+  "held_replies",
+  "email_send_intents",
+  "email_thread_messages",
+  "conversation_delivery_failures",
 ];
-const deliveryFailures = "215_conversation_delivery_failures.sql";
-const sendIntents = "216_email_send_intents.sql";
-const heldReplies = "218_held_replies.sql";
-const mailboxSettingsTrim = "219_email_mailboxes_drop_context_and_spam.sql";
 
 const CHECK_VIOLATION = "23514";
 const UNIQUE_VIOLATION = "23505";
@@ -54,8 +55,8 @@ const errorCode = async (work: Promise<unknown>): Promise<string | undefined> =>
 
 const describeIfDatabase = await canReach(integrationDatabaseUrl) ? describe : describe.skip;
 
-describeIfDatabase("email channel schema (209–219)", () => {
-  const databaseName = `mig209_${randomUUID().replaceAll("-", "")}`;
+describeIfDatabase("email channel schema (210)", () => {
+  const databaseName = `mig210_${randomUUID().replaceAll("-", "")}`;
   let admin: Database;
   let database: Database;
 
@@ -77,7 +78,7 @@ describeIfDatabase("email channel schema (209–219)", () => {
     const agentId = randomUUID();
     await database.execute(
       "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, 'Acct', $2, 'hash')",
-      [accountId, `mig209-${accountId}@example.com`],
+      [accountId, `mig210-${accountId}@example.com`],
     );
     await database.execute(
       "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, 'WS', $3)",
@@ -139,7 +140,7 @@ describeIfDatabase("email channel schema (209–219)", () => {
     admin = new Database(integrationDatabaseUrl!);
     await admin.execute(`CREATE DATABASE "${databaseName}"`);
     database = new Database(isolatedUrl(integrationDatabaseUrl!, databaseName));
-    await runTestMigrationsBefore(database, keystone);
+    await runTestMigrationsBefore(database, emailChannel);
   }, 120_000);
 
   afterAll(async () => {
@@ -148,13 +149,16 @@ describeIfDatabase("email channel schema (209–219)", () => {
     await admin?.close().catch(() => undefined);
   });
 
-  it("209 applies on its own, every FK pointing at a table that already exists, the index links left for later", async () => {
-    await applyTestMigration(database, keystone);
+  it("210 applies on its own, every foreign key declared with its column", async () => {
+    for (const table of EMAIL_CHANNEL_TABLES) {
+      expect((await database.queryOne<{ id: string | null }>("SELECT to_regclass($1)::text AS id", [table])).id, table)
+        .toBeNull();
+    }
 
-    expect(await foreignKeys("email_thread_messages")).toEqual([
-      { column: "conversation_id", target: "conversations", on_delete: "c" },
-      { column: "mailbox_id", target: "email_mailboxes", on_delete: "r" },
-      { column: "message_id", target: "messages", on_delete: "c" },
+    await applyTestMigration(database, emailChannel);
+
+    expect(await foreignKeys("email_domains")).toEqual([
+      { column: "workspace_id", target: "workspaces", on_delete: "c" },
     ]);
     expect(await foreignKeys("email_mailboxes")).toEqual([
       { column: "agent_id", target: "agents", on_delete: "n" },
@@ -168,21 +172,34 @@ describeIfDatabase("email channel schema (209–219)", () => {
     expect(await foreignKeys("email_mailbox_policies")).toEqual([
       { column: "mailbox_id", target: "email_mailboxes", on_delete: "c" },
     ]);
-  });
-
-  it("210 creates the inbound tables and links the thread index to its delivery; the send-intent link waits for 216", async () => {
-    await applyTestMigration(database, inbound);
-
-    expect(await foreignKeys("email_thread_messages")).toContainEqual(
-      { column: "inbound_delivery_id", target: "email_inbound_deliveries", on_delete: "n" },
-    );
-    expect((await foreignKeys("email_thread_messages")).map((fk) => fk.column)).not.toContain("send_intent_id");
     expect(await foreignKeys("email_inbound_deliveries")).toEqual([
       { column: "conversation_id", target: "conversations", on_delete: "c" },
       { column: "inbound_event_id", target: "email_inbound_events", on_delete: "c" },
       { column: "mailbox_id", target: "email_mailboxes", on_delete: "r" },
       { column: "message_id", target: "messages", on_delete: "n" },
       { column: "workspace_id", target: "workspaces", on_delete: "c" },
+    ]);
+    expect(await foreignKeys("held_replies")).toEqual([
+      { column: "answers_message_id", target: "messages", on_delete: "c" },
+      { column: "conversation_id", target: "conversations", on_delete: "c" },
+      { column: "released_message_id", target: "messages", on_delete: "n" },
+    ]);
+    expect(await foreignKeys("email_send_intents")).toEqual([
+      { column: "conversation_id", target: "conversations", on_delete: "c" },
+      { column: "held_reply_id", target: "held_replies", on_delete: "n" },
+      { column: "mailbox_id", target: "email_mailboxes", on_delete: "r" },
+      { column: "message_id", target: "messages", on_delete: "c" },
+    ]);
+    expect(await foreignKeys("email_thread_messages")).toEqual([
+      { column: "conversation_id", target: "conversations", on_delete: "c" },
+      { column: "inbound_delivery_id", target: "email_inbound_deliveries", on_delete: "n" },
+      { column: "mailbox_id", target: "email_mailboxes", on_delete: "r" },
+      { column: "message_id", target: "messages", on_delete: "c" },
+      { column: "send_intent_id", target: "email_send_intents", on_delete: "n" },
+    ]);
+    expect(await foreignKeys("conversation_delivery_failures")).toEqual([
+      { column: "conversation_id", target: "conversations", on_delete: "c" },
+      { column: "message_id", target: "messages", on_delete: "c" },
     ]);
   });
 
@@ -228,7 +245,6 @@ describeIfDatabase("email channel schema (209–219)", () => {
       ["thread_send_budget", "0"],
       ["thread_send_budget", "21"],
       ["hourly_generation_budget", "1001"],
-      ["thread_context_messages", "51"],
       ["silence_threshold_hours", "2161"],
       ["setup_check_step", "'dns'"],
     ] as const) {
@@ -536,18 +552,6 @@ describeIfDatabase("email channel schema (209–219)", () => {
     );
   };
 
-  it("215 creates delivery failures on conversations and messages, after the activity widening", async () => {
-    for (const file of activityWidening) {
-      await applyTestMigration(database, file);
-    }
-    await applyTestMigration(database, deliveryFailures);
-
-    expect(await foreignKeys("conversation_delivery_failures")).toEqual([
-      { column: "conversation_id", target: "conversations", on_delete: "c" },
-      { column: "message_id", target: "messages", on_delete: "c" },
-    ]);
-  });
-
   it("keeps one open delivery failure per message, with the documented kinds and clear reasons", async () => {
     const { workspaceId } = await seedWorkspace();
     const { conversationId, messageId } = await insertConversation(workspaceId);
@@ -594,19 +598,6 @@ describeIfDatabase("email channel schema (209–219)", () => {
       [conversationId],
     );
     expect(left.count).toBe("1");
-  });
-
-  it("216 creates send intents and links the thread index to them", async () => {
-    await applyTestMigration(database, sendIntents);
-
-    expect(await foreignKeys("email_send_intents")).toEqual([
-      { column: "conversation_id", target: "conversations", on_delete: "c" },
-      { column: "mailbox_id", target: "email_mailboxes", on_delete: "r" },
-      { column: "message_id", target: "messages", on_delete: "c" },
-    ]);
-    expect(await foreignKeys("email_thread_messages")).toContainEqual(
-      { column: "send_intent_id", target: "email_send_intents", on_delete: "n" },
-    );
   });
 
   it("keys send intents once by outbox key and provider id, and holds the send-intent states to the machine", async () => {
@@ -734,20 +725,6 @@ describeIfDatabase("email channel schema (209–219)", () => {
     );
   };
 
-  it("218 creates held replies on conversations and messages, and links send intents to them", async () => {
-    expect((await database.query<{ id: string }>("SELECT to_regclass('held_replies') AS id"))[0]?.id).toBeNull();
-    await applyTestMigration(database, heldReplies);
-
-    expect(await foreignKeys("held_replies")).toEqual([
-      { column: "answers_message_id", target: "messages", on_delete: "c" },
-      { column: "conversation_id", target: "conversations", on_delete: "c" },
-      { column: "released_message_id", target: "messages", on_delete: "n" },
-    ]);
-    expect(await foreignKeys("email_send_intents")).toContainEqual(
-      { column: "held_reply_id", target: "held_replies", on_delete: "n" },
-    );
-  });
-
   it("keeps one live draft per conversation and one held reply per review, inside the held-reply machine", async () => {
     const { workspaceId } = await seedWorkspace();
     const { conversationId, messageId } = await insertConversation(workspaceId);
@@ -855,20 +832,14 @@ describeIfDatabase("email channel schema (209–219)", () => {
     )).toContain("held_replies_live_policy_idx");
   });
 
-  it("219 drops the mailbox's thread-context and spam opt-in columns and keeps its mailboxes and settings", async () => {
+  it("keeps no thread-context or spam opt-in setting on a mailbox", async () => {
     const mailboxColumns = async () => (await database.query<{ column_name: string }>(
       "SELECT column_name FROM information_schema.columns WHERE table_name = 'email_mailboxes'",
     )).map((row) => row.column_name);
     const { workspaceId } = await seedWorkspace();
     const domainId = await insertDomain(workspaceId, "trim.example");
     const mailboxId = await insertMailbox(workspaceId, domainId, "support@trim.example");
-    await database.execute(
-      "UPDATE email_mailboxes SET thread_send_budget = 7, thread_context_messages = 20, spam_opt_in = true WHERE id = $1",
-      [mailboxId],
-    );
-    expect(await mailboxColumns()).toEqual(expect.arrayContaining(["thread_context_messages", "spam_opt_in"]));
-
-    await applyTestMigration(database, mailboxSettingsTrim);
+    await database.execute("UPDATE email_mailboxes SET thread_send_budget = 7 WHERE id = $1", [mailboxId]);
 
     const columns = await mailboxColumns();
     expect(columns).not.toContain("thread_context_messages");

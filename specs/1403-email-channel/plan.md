@@ -29,7 +29,7 @@ Email becomes a Radioso channel in which the operator, not the agent, is the def
 
 **Primary Dependencies**: Express, Zod, Kysely, Pino, existing OpenTelemetry tracing, the action outbox (`routine_action_requests`, `ActionDispatcher`), Cloud Tasks drain dispatchers, the `connector-api` plugin host, `customerReplyDelivery`, `handoff`. New backend dependencies: `postal-mime` (MIT-0, MIME parsing), `html-to-text` (MIT), `sanitize-html` (MIT). The Resend API is called by `fetch` inside `mail/adapters/` only, with no SDK (`backend/src/modules/mail/adapters/resendDriver.ts:24-36`). Webhook signatures are verified with `node:crypto` (research A3).
 
-**Storage**: PostgreSQL 16, with pgvector unused here. Ten new tables in ten migrations, `209`–`218` (data-model.md): `email_domains`, `email_mailboxes`, `email_mailbox_policies`, `email_inbound_events`, `email_inbound_deliveries`, `email_thread_links`, `email_thread_messages`, `email_send_intents`, `held_replies`, `conversation_delivery_failures`. One online, three-phase widening of `conversation_activity.kind`, plus one replacement partial index (research B19). Raw MIME is stored as capped `bytea`, with no new storage system.
+**Storage**: PostgreSQL 16, with pgvector unused here. Ten new tables in one migration, `210_email_channel.sql` (data-model.md): `email_domains`, `email_mailboxes`, `email_mailbox_policies`, `email_inbound_events`, `email_inbound_deliveries`, `email_thread_links`, `email_thread_messages`, `email_send_intents`, `held_replies`, `conversation_delivery_failures`. One online, three-phase widening of `conversation_activity.kind`, plus one replacement partial index (research B19). Raw MIME is stored as capped `bytea`, with no new storage system.
 
 **Testing**: Vitest (unit, integration, contract), Supertest, Playwright. Committed MIME, protocol and webhook fixture corpora. Table-driven deterministic outcome-table suite. Crash-at-boundary integration suite (SC-007). CI never touches DNS, a real mailbox, Resend or a live model.
 
@@ -168,7 +168,7 @@ backend/
 │   │   ├── server/builders/{eval.ts,chat.ts}           M  S1/S2  deliverer and handler registration
 │   │   └── worker/{emailChannelWorkerTaskRoutes.ts N, createWorkerTaskApp.ts M}  S1
 │   ├── runtime/startWorkerRuntime.ts                   M  S1
-│   ├── db/migrations/209…218                           N         see data-model.md matrix
+│   ├── db/migrations/210…213                           N         see data-model.md matrix
 │   ├── db/repositories/{heldReplyRepository,conversationDeliveryFailureRepository}.ts  N S3/S2
 │   ├── db/schema.sql                                   M         db:schema
 │   └── shared/infra/kysely/schema.ts                   M         db:types
@@ -312,11 +312,11 @@ They get (catalogue in `contracts/events.md`):
 ## Rollout and Rollback
 
 1. **S0 go/no-go** (Questions settled, Q3) before any S1 adapter merges.
-2. **Additive schema.** Migrations 209–214 ship with S1. Before deploying 214, check the `conversation_activity` row count; above 100k rows, pre-create `conversation_activity_workspace_closed_v2_idx` `CONCURRENTLY` (runbook). Workers ship disabled (`EMAIL_CHANNEL_WORKERS_ENABLED=false`, `EMAIL_CHANNEL_PROVIDER` unset).
+2. **Additive schema.** Migrations 210–213 ship with S1. Before deploying 213, check the `conversation_activity` row count; above 100k rows, pre-create `conversation_activity_workspace_closed_v2_idx` `CONCURRENTLY` (runbook). Workers ship disabled (`EMAIL_CHANNEL_WORKERS_ENABLED=false`, `EMAIL_CHANNEL_PROVIDER` unset).
 3. **Infrastructure per region.** Terraform applies before the image: `email_channel` queue, `email_channel_sweep`, secrets and env. Operations registers the relay domain with receiving in each region's provider account and points the webhook. EU waits on S0 T012.
 4. **Settings, Inbox APIs and UI** (S1, then S2), with `supportedModes = ["operator_only"]`.
 5. **`operator_only` pilot**: one forwarded mailbox, one week, watching backlog, stuck-event and auth alerts.
-6. **Operator sending** after the pilot domain verifies (S2). Migration 217 drops the old closing index.
+6. **Operator sending** after the pilot domain verifies (S2). A later migration, created once S1's query switch is live everywhere, drops the old closing index.
 7. **`draft`** (S3 + S4), gated on SC-004, the outcome table, the held-reply visibility suite, the journeys and SC-006 in staging.
 8. **`auto`** (S6), only after drafts have been reviewed, every non-publish outcome-table row passes, and the mailbox owner opts in explicitly.
 
@@ -382,8 +382,8 @@ Review: `.context/email-channel-plan-review.md` (2026-10-03). One line per findi
 | 2 | `CompletedAssistantTurn` becomes `persisted \| draft`. Review goes through a new `ChatService.review()` returning `ChatReviewResult`. `ChatResponse` and the live HTTP contract are untouched. Correlation uses the request message id and the turn id. No assistant id is fabricated (research B2; ports §3). |
 | 3 | `HeldReplySupersedeScope` takes reasons `newer_inbound \| takeover \| operator_reply \| policy_changed` and is added to the ownership change, reply, ingest and policy-change scopes. `HeldReplyChannelScope` (policy lock, auto budget, enqueue, authority, materialized record) is implemented by email and bound by composition. Renewal moves to materialization, so `CustomerReplyRoute` and `OperatorReplyService` are unchanged (research B1; ports §4). |
 | 4 | Principal policy (tuples and `sessionOnly`), `operationPermissionRequirements`, `copilotCapabilityProvenance`, `operatorMcpDispositions` and the `delivery_failures` triage source are each placed in their slice (openapi-additions §5a; tasks). |
-| 5 | The migration matrix adds each forward FK in the migration that creates its target (210 for deliveries, 216 for send intents, 218 for held replies) (data-model.md Migrations). |
-| 6 | The activity CHECK is widened once, in three committed migrations (211 add NOT VALID, 212 validate, 213 drop old), with `lock_timeout = '3s'` on the exclusive phases. The closing index is replaced (214) and the old one dropped one slice later (217) (research B19). |
+| 5 | One migration (210) creates the feature's tables in dependency order, so each FK is declared with its column, the links to deliveries, send intents and held replies included (data-model.md Migrations). |
+| 6 | The activity CHECK is widened once, in three committed migrations (211 add NOT VALID, 212 validate, 213 drop old), with `lock_timeout = '3s'` on the exclusive phases. The closing index is replaced (213, after the drop) and the old one dropped one slice later, in a migration created then (research B19). |
 | 7 | R3 keeps `scheduleAt`. Drains are scheduled at `review_due_at`, retry times and re-POST times. The sweep is recovery only (research B7; ports §7b). |
 | 8 | Append-only `email_mailbox_policies`. Each delivery stores `accepted_policy_version` (effective at webhook receipt). Execution is capped at the lower autonomy of accepted and current. The bound policy is validated at hold, queue and materialize (research B16). |
 | 9 | One durable protocol: resolve and reserve (forward over index and in-flight reservations, reverse over `reference_ids`, token) under the participant lock, then idempotent ingest with planned ids, then index. Interleavings (i)–(vii) are added to SC-002 and SC-007 tests (research B15). |

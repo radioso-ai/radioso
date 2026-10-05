@@ -121,6 +121,29 @@ test('Manage billing is hidden without a Stripe customer', async ({ page }) => {
   await expect(planCard.getByRole('button', { name: 'Manage billing' })).toHaveCount(0)
 })
 
+test('the Buy button is hidden on a plan ineligible for top-ups (comet, CFO-approved 2026-09-15)', async ({ page }) => {
+  await seedDashboardStorage(page)
+  await installDashboardApiMocks(page, {
+    accountUsageSummary: baseAccountUsageSummary(),
+    billingSummary: {
+      ...baseBillingSummary(),
+      planId: 'comet',
+      planName: 'Comet',
+      hasCustomer: false,
+      upgradePlanId: 'satellite',
+      topUpAvailable: false,
+    },
+    planCatalog: basePlanCatalog(),
+  })
+
+  await page.goto(`/w/${workspaceKey}/usage`)
+  const planCard = page.getByTestId('plan-card')
+
+  await expect(planCard.getByText('Comet')).toBeVisible()
+  await expect(planCard.getByRole('button', { name: 'Upgrade' })).toBeVisible()
+  await expect(planCard.getByRole('button', { name: /Buy 300 more/ })).toHaveCount(0)
+})
+
 test('the plan at the self-serve ceiling shows no Upgrade button', async ({ page }) => {
   await seedDashboardStorage(page)
   await installDashboardApiMocks(page, {

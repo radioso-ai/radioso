@@ -106,6 +106,24 @@ describe("catalog invariants", () => {
     expect(models.has("managed")).toBe(true);
     expect(models.has("byok")).toBe(true);
   });
+
+  it("prices a Ray turn at half a conversation, the same as a test run (CFO-approved 2026-09-15)", () => {
+    expect(PLAN_CATALOG.countsAs.copilot).toBe(0.5);
+  });
+
+  it("marks every plan's top-up eligibility, off for the free plan and on for every priced plan (CFO-approved 2026-09-15)", () => {
+    for (const plan of PLAN_CATALOG.plans) {
+      expect(typeof plan.topUps).toBe("boolean");
+    }
+    const freePlan = findPlan(PLAN_CATALOG.defaultPlanId)!;
+    expect(freePlan.priceCents).toBe(0);
+    expect(freePlan.topUps).toBe(false);
+    for (const plan of PLAN_CATALOG.plans) {
+      if (plan.priceCents > 0) {
+        expect(plan.topUps).toBe(true);
+      }
+    }
+  });
 });
 
 describe("managed models", () => {

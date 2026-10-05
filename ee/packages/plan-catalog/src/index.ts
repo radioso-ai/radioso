@@ -33,6 +33,13 @@ export interface Plan {
   readonly documents: number;
   readonly models: PlanModels;
   readonly support: PlanSupport;
+  /**
+   * Whether the prepaid conversation top-up pack is sold on this plan. `false` on the free plan
+   * (CFO-approved 2026-09-15): a free account plus a few top-up packs would undercut the cheapest
+   * paid plan. An account on a plan id the catalog does not list (a legacy or hand-assigned
+   * profile) is likewise ineligible — see `isTopUpEligible` in the backend module's billing code.
+   */
+  readonly topUps: boolean;
   /** Null on the free plan: nothing to buy. */
   readonly stripe: PlanStripePricing | null;
 }

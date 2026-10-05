@@ -843,6 +843,13 @@ Not fixed in S1; each needs a small decision before it is tasked.
 
 15. **Walkthrough findings (2026-10-05, live local stack, `.context/local-e2e/walkthrough.md`)**: the history API drops the `channel_exception` detail (`automated_sender`), so the inbox note reads only "Channel exception"; the held-reply API view does not expose the release kind (auto vs operator), only the DB does; `POST /agents/{id}/revisions/null/publish` answers 500 (unhandled ZodError) instead of 400, unrelated to email; `backend/scripts/migrate.ts` does not load `.env`; after a supersede the replacement draft answers only the newest message. The downgrade-to-`operator_only` orphaning defect from step 12 is fixed on this branch.
 
+16. **Behaviour findings (2026-10-05, `pnpm run evals:email`, one sample per case on a mini model; results in `.context/email-behaviour/`)**: 8 of 12 asserted cases pass. Product decisions needed, not harness fixes:
+    - **Partial answers can auto-send.** A reply that said "we don't have information about a student discount" was scored `answered` by the coverage verdict, so `auto` published it. The decision already holds `partial`; the verdict itself mislabels. Options: tighten the coverage prompt (shared with web chat; re-baseline the nightly evals), or require a second structural signal before `auto` publishes.
+    - **Action requests do not hand off by themselves.** "Cancel my order" was held only because nothing in the corpus matched; with a covering document it would have been answered. Hand-offs are operator-authored directives by design (FR-026). Decide whether email ships a default directive ("hand off requests to change, cancel, or refund an order") or a publication rule for action intents.
+    - **Clarification menus reach customers.** In 2 of 16 turns a clear question got a numbered "which option do you mean" menu; releasing it unchanged sent the menu. Decide whether a clarification outcome is never publishable on email (hold it, or answer the most likely reading).
+    - **Escalation signals get automatic replies.** A chargeback threat received a policy answer. Same decision as action requests: default directive or an engine signal.
+    - **"Thanks!" opens an approval item.** A pleasantry with no question produced a held "You're welcome!" draft. Decide whether no-question messages are silent on email.
+
 ## Dependencies & Execution Order
 
 ### Phase dependencies

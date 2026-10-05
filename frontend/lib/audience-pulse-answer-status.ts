@@ -1,4 +1,9 @@
-import { answerCoverageLabel, type AnswerCoverageValue } from '@/lib/answer-coverage'
+import {
+  ANSWER_COVERAGE_OUT_OF_SCOPE_LABEL,
+  answerCoverageLabel,
+  isScopeBoundaryDecline,
+  type AnswerCoverageValue,
+} from '@/lib/answer-coverage'
 import type {
   AudiencePulseCoverageSummary,
   AudiencePulseTheme,
@@ -7,11 +12,19 @@ import type {
 
 /**
  * How the agent handled a visitor's question, in the turn inspector's words.
- * A question with no recorded verdict reads as "Not assessed".
+ * A scope-boundary decline reads as "Out of scope", and a question with no
+ * recorded verdict as "Not assessed".
  */
-type AnswerBucket = AnswerCoverageValue | 'not_assessed'
+type AnswerBucket = AnswerCoverageValue | 'out_of_scope' | 'not_assessed'
 
-const COUNTS_ORDER: readonly AnswerBucket[] = ['answered', 'partial', 'unanswered', 'unclear', 'not_assessed']
+const COUNTS_ORDER: readonly AnswerBucket[] = [
+  'answered',
+  'partial',
+  'unanswered',
+  'unclear',
+  'out_of_scope',
+  'not_assessed',
+]
 
 // The buckets a collapsed topic row surfaces, worst first.
 const SHORTFALL_ORDER: readonly AnswerBucket[] = ['unanswered', 'partial']
@@ -22,8 +35,10 @@ const OTHER_RANK = 2
 
 const numberFormat = new Intl.NumberFormat()
 
-const bucketLabel = (bucket: AnswerBucket): string =>
-  answerCoverageLabel(bucket === 'not_assessed' ? undefined : bucket)
+const bucketLabel = (bucket: AnswerBucket): string => {
+  if (bucket === 'out_of_scope') return ANSWER_COVERAGE_OUT_OF_SCOPE_LABEL
+  return answerCoverageLabel(bucket === 'not_assessed' ? undefined : bucket)
+}
 
 /** The report's semantic answer checks for a topic; null when the saved report carries none. */
 const answerChecks = (theme: Pick<AudiencePulseTheme, 'coverage'>): AudiencePulseCoverageSummary | null =>
@@ -37,6 +52,7 @@ const countByBucket = (theme: Pick<AudiencePulseTheme, 'coverage' | 'grounding'>
       partial: coverage.partial,
       unanswered: coverage.unanswered,
       unclear: coverage.unclear,
+      out_of_scope: coverage.outOfScope,
       not_assessed: coverage.unassessed + coverage.legacy,
     }
   }
@@ -47,6 +63,7 @@ const countByBucket = (theme: Pick<AudiencePulseTheme, 'coverage' | 'grounding'>
     partial: grounding.degraded,
     unanswered: grounding.noSupport,
     unclear: 0,
+    out_of_scope: 0,
     not_assessed: grounding.unknown,
   }
 }
@@ -82,7 +99,8 @@ interface TopicExample {
 
 const exampleBucket = (evidence: AudiencePulseThemeEvidence): AnswerBucket => {
   const assessment = evidence.answerCoverage
-  return assessment?.availability === 'assessed' && assessment.coverage ? assessment.coverage : 'not_assessed'
+  if (assessment?.availability !== 'assessed' || !assessment.coverage) return 'not_assessed'
+  return isScopeBoundaryDecline(assessment.coverage, assessment.reason) ? 'out_of_scope' : assessment.coverage
 }
 
 /** A topic's example questions, each labelled with how it was answered, shortfalls first. */

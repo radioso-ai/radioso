@@ -13531,12 +13531,18 @@ components:
         partial:
           type: integer
           minimum: 0
+          description: Partly answered for a reason other than an intentional scope boundary.
         unanswered:
           type: integer
           minimum: 0
+          description: Unanswered for a reason other than an intentional scope boundary.
         unclear:
           type: integer
           minimum: 0
+        outOfScope:
+          type: integer
+          minimum: 0
+          description: Partly answered or unanswered because the request was outside the agent's intended scope.
         unassessed:
           type: integer
           minimum: 0
@@ -13553,6 +13559,7 @@ components:
         - partial
         - unanswered
         - unclear
+        - outOfScope
         - unassessed
         - legacy
         - reasons

@@ -8843,9 +8843,13 @@ export interface components {
         };
         AudiencePulseSemanticCoverage: {
             answered: number;
+            /** @description Partly answered for a reason other than an intentional scope boundary. */
             partial: number;
+            /** @description Unanswered for a reason other than an intentional scope boundary. */
             unanswered: number;
             unclear: number;
+            /** @description Partly answered or unanswered because the request was outside the agent's intended scope. */
+            outOfScope: number;
             unassessed: number;
             legacy: number;
             reasons: {

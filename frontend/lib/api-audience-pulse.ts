@@ -165,8 +165,9 @@ type OptionalReportFields = 'dissolvedTopics' | 'isFirstCensus' | 'narrativeGene
  * be missing from a response that is otherwise valid.
  */
 type WireAudiencePulseTheme =
-  Omit<AudiencePulseTheme, OptionalTopicTransitionFields>
+  Omit<AudiencePulseTheme, OptionalTopicTransitionFields | 'coverage'>
   & Partial<Pick<AudiencePulseTheme, OptionalTopicTransitionFields>>
+  & { coverage?: Omit<AudiencePulseCoverageSummary, 'outOfScope'> & { outOfScope?: number } }
 
 type WireAudiencePulseReport =
   Omit<AudiencePulseHydratedReport, OptionalReportFields | 'themes'>
@@ -184,7 +185,8 @@ type WireAudiencePulseRefreshResponse =
 /**
  * Restores today's report shape from an older response. Defaults state only what the
  * older API could already prove — no prior identity, no reused narrative, nothing
- * dissolved — so a version-skewed deploy renders a smaller report instead of failing.
+ * dissolved, no declines set apart from shortfalls — so a version-skewed deploy
+ * renders a smaller report instead of failing.
  */
 function normalizeAudiencePulseReport(
   report: WireAudiencePulseReport,
@@ -195,11 +197,12 @@ function normalizeAudiencePulseReport(
     narrativeGeneratedAt: report.narrativeGeneratedAt ?? report.generatedAt,
     narrativeReuseCount: report.narrativeReuseCount ?? 0,
     dissolvedTopics: report.dissolvedTopics ?? [],
-    themes: report.themes.map((theme) => ({
+    themes: report.themes.map(({ coverage, ...theme }) => ({
       ...theme,
       previousMemberCount: theme.previousMemberCount ?? null,
       previousShare: theme.previousShare ?? null,
       transition: theme.transition ?? null,
+      ...(coverage ? { coverage: { ...coverage, outOfScope: coverage.outOfScope ?? 0 } } : {}),
     })),
   }
 }

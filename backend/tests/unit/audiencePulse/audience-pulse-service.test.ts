@@ -1697,6 +1697,51 @@ describe("AudiencePulseService", () => {
     });
   });
 
+  it("reads a saved topic coverage summary without an out-of-scope count as zero declines", () => {
+    const savedCoverage = { answered: 1, partial: 1, unanswered: 0, unclear: 0, unassessed: 0, legacy: 0, reasons: { sufficient_evidence: 1, insufficient_evidence: 1 } };
+    const report = {
+      period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
+      generatedAt: "2026-08-01T00:00:00.000Z",
+      isFirstCensus: false,
+      narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+      narrativeReuseCount: 0,
+      narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
+      coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 },
+      weeklyVolume: [],
+      summary: "Summary",
+      unclassifiedQuestionCount: 0,
+      dissolvedTopics: [],
+      themes: [{
+        id: "theme-1",
+        title: "Plans",
+        description: "Visitors ask about plans.",
+        evidenceIds: ["evidence-1"],
+        memberCount: 2,
+        previousMemberCount: null,
+        previousShare: null,
+        transition: null,
+        share: 1,
+        weeklyPulse: [],
+        grounding: { grounded: 1, degraded: 1, noSupport: 0, unknown: 0, contentGapEligible: 1 },
+        coverage: savedCoverage,
+      }],
+      contentGaps: [],
+      recommendations: [],
+      caveats: [],
+    } as unknown as AudiencePulseStoredReport;
+
+    const hydrated = hydrateReport(report, new Map([
+      ["evidence-1", {
+        evidenceId: "evidence-1",
+        conversationId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        messageId: "11111111-1111-1111-1111-111111111111",
+        question: "How do I change my plan?",
+      }],
+    ]));
+
+    expect(hydrated.themes[0]?.coverage).toEqual({ ...savedCoverage, outOfScope: 0 });
+  });
+
   it("normalizes legacy saved reports that predate census coverage fields", () => {
     const legacyReport = {
       period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },

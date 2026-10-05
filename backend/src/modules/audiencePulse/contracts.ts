@@ -134,6 +134,7 @@ export const audiencePulseReportResponseSchema = z.object({
       partial: z.number().int().min(0),
       unanswered: z.number().int().min(0),
       unclear: z.number().int().min(0),
+      outOfScope: z.number().int().min(0),
       unassessed: z.number().int().min(0),
       legacy: z.number().int().min(0),
       reasons: z.record(z.string(), z.number().int().min(0)),

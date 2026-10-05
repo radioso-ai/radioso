@@ -109,6 +109,42 @@ describe('audiencePulseApi', () => {
     })
   })
 
+  it('reads a coverage summary without an out-of-scope count as zero declines', async () => {
+    const savedCoverage = { answered: 3, partial: 1, unanswered: 1, unclear: 0, unassessed: 0, legacy: 0, reasons: {} }
+    requestMock.mockResolvedValueOnce({
+      kind: 'completed',
+      report: {
+        period: { start: '2026-08-01T00:00:00.000Z', end: '2026-08-31T00:00:00.000Z' },
+        generatedAt: '2026-08-31T09:00:00.000Z',
+        coverage: { populationSize: 5, sampleSize: 5, sampled: false, facetReadyQuestionCount: 5 },
+        weeklyVolume: [],
+        themes: [{
+          id: 'theme-1',
+          title: 'Refund timing',
+          description: 'Questions about refund timelines.',
+          memberCount: 5,
+          share: 1,
+          distinctQuestionCount: 1,
+          weeklyPulse: [],
+          grounding: { grounded: 0, degraded: 0, noSupport: 0, unknown: 0, contentGapEligible: 0 },
+          coverage: savedCoverage,
+          evidence: [],
+        }],
+        contentGaps: [],
+        recommendations: [],
+        caveats: [],
+        unclassifiedQuestionCount: 0,
+      },
+    })
+
+    const { audiencePulseApi } = await import('@/lib/api-audience-pulse')
+    const result = await audiencePulseApi.read()
+
+    expect(result.kind).toBe('completed')
+    if (result.kind !== 'completed') return
+    expect(result.report.themes[0]?.coverage).toEqual({ ...savedCoverage, outOfScope: 0 })
+  })
+
   it('keeps the topic-transition fields a current API sends', async () => {
     const transition = { kind: 'survived' as const, parentTopicIds: ['prior-1'], viaCentroidFallback: false }
     requestMock.mockResolvedValueOnce({

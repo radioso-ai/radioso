@@ -151,6 +151,15 @@ const COVERAGE_LABELS: Record<AnswerCoverageValue, string> = {
 export const answerCoverageLabel = (value: AnswerCoverageValue | undefined): string =>
   value ? COVERAGE_LABELS[value] : 'Not assessed'
 
+/** Where a summary sets scope-boundary declines apart, they read as this rather than as a shortfall. */
+export const ANSWER_COVERAGE_OUT_OF_SCOPE_LABEL = 'Out of scope'
+
+/** A partial or unanswered verdict that declined a request outside the agent's intended scope, as authored. */
+export const isScopeBoundaryDecline = (
+  coverage: AnswerCoverageValue | undefined,
+  reason: AnswerCoverageReason | undefined,
+): boolean => reason === 'intentional_scope_boundary' && (coverage === 'partial' || coverage === 'unanswered')
+
 export const answerCoverageReasonLabel = (value: AnswerCoverageReason | undefined): string =>
   value ? value.replaceAll('_', ' ').replace(/^./, (char) => char.toUpperCase()) : 'Not recorded'
 

@@ -14,7 +14,7 @@ const noGrounding: AudiencePulseTheme['grounding'] = {
 const coverage = (
   overrides: Partial<NonNullable<AudiencePulseTheme['coverage']>>,
 ): NonNullable<AudiencePulseTheme['coverage']> => ({
-  answered: 0, partial: 0, unanswered: 0, unclear: 0, unassessed: 0, legacy: 0, reasons: {},
+  answered: 0, partial: 0, unanswered: 0, unclear: 0, outOfScope: 0, unassessed: 0, legacy: 0, reasons: {},
   ...overrides,
 })
 
@@ -44,8 +44,8 @@ describe('formatTopicAnswerCounts', () => {
   it('names every coverage bucket with the turn inspector labels', () => {
     expect(formatTopicAnswerCounts({
       grounding: noGrounding,
-      coverage: coverage({ answered: 2, partial: 4, unanswered: 3, unclear: 1, unassessed: 2, legacy: 2 }),
-    })).toBe('2 answered · 4 partly answered · 3 unanswered · 1 needs clarification · 4 not assessed')
+      coverage: coverage({ answered: 2, partial: 4, unanswered: 3, unclear: 1, outOfScope: 2, unassessed: 2, legacy: 2 }),
+    })).toBe('2 answered · 4 partly answered · 3 unanswered · 1 needs clarification · 2 out of scope · 4 not assessed')
   })
 
   it('folds records from before answers were checked into not assessed', () => {
@@ -98,6 +98,13 @@ describe('getTopicShortfalls', () => {
     })).toEqual([])
   })
 
+  it('leaves out-of-scope declines out of the shortfalls', () => {
+    expect(getTopicShortfalls({
+      grounding: noGrounding,
+      coverage: coverage({ answered: 4, unanswered: 1, outOfScope: 3 }),
+    })).toEqual(['1 unanswered'])
+  })
+
   it('falls back to grounding for a report saved without semantic coverage', () => {
     expect(getTopicShortfalls({
       grounding: { grounded: 5, degraded: 2, noSupport: 1, unknown: 4, contentGapEligible: 3 },
@@ -135,6 +142,25 @@ describe('getTopicExamples', () => {
       ['clarify', 'Needs clarification'],
       ['failed', 'Not assessed'],
       ['legacy', 'Not assessed'],
+    ])
+  })
+
+  it('labels a scope-boundary decline as out of scope and does not rank it as a shortfall', () => {
+    const examples = getTopicExamples({
+      coverage: coverage({ answered: 1, unanswered: 1, outOfScope: 2 }),
+      evidence: [
+        evidence('declined', { availability: 'assessed', coverage: 'unanswered', reason: 'intentional_scope_boundary' }),
+        evidence('answered', assessed('answered')),
+        evidence('partly-declined', { availability: 'assessed', coverage: 'partial', reason: 'intentional_scope_boundary' }),
+        evidence('missing', { availability: 'assessed', coverage: 'unanswered', reason: 'insufficient_evidence' }),
+      ],
+    })
+
+    expect(examples.map(({ evidence: item, label }) => [item.reference, label])).toEqual([
+      ['missing', 'Unanswered'],
+      ['declined', 'Out of scope'],
+      ['answered', 'Answered'],
+      ['partly-declined', 'Out of scope'],
     ])
   })
 

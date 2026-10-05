@@ -19,8 +19,9 @@
  *     `email_behaviour` or end in `_test`, unless `--allow-database <name>` names it.
  *   - A mini-class chat model (LLM_CHAT_MODEL or OPENAI_CHAT_MODEL) and its API key; a larger
  *     model needs `--allow-model <name>`.
- *   - EMAIL_CHANNEL_PROVIDER=local, EMAIL_CHANNEL_WORKERS_ENABLED=true, an inbound domain, a webhook
- *     secret and a spool directory.
+ *   - EMAIL_CHANNEL_PROVIDER=local, EMAIL_CHANNEL_WORKERS_ENABLED=true, an inbound domain and a
+ *     webhook secret. The local spool is `<out>/spool`, and the coalescing window is shortened to
+ *     `BEHAVIOUR_COALESCE_SECONDS`.
  *
  * Application logs (pino, debug level outside production) go to stdout; redirect them to a file.
  */
@@ -50,6 +51,8 @@ const DEFAULT_OUT_DIR = fileURLToPath(new URL("../../.context/email-behaviour/",
 const DISPOSABLE_DATABASE = /email_behaviour|_test$/u;
 /** Model names cheap enough to run on demand without `--allow-model`. */
 const MINI_CLASS_MODEL = /mini|nano/u;
+/** Long enough for a case's burst of mail to share one review, short enough to keep a run quick. */
+const BEHAVIOUR_COALESCE_SECONDS = 2;
 
 interface Flags {
   envFile: string | null;
@@ -146,7 +149,13 @@ const main = async (): Promise<void> => {
     await runMigrations(env.DATABASE_URL, createLogger("silent"));
   }
   print(`Booting the mailbox harness on database ${databaseName}, chat model ${model}…`);
-  const harness = await EmailMailboxHarness.boot({ env, company: EMAIL_BEHAVIOUR_COMPANY, agent: EMAIL_BEHAVIOUR_AGENT, corpusDir: CORPUS_DIR });
+  const harness = await EmailMailboxHarness.boot({
+    env,
+    emailChannel: { localSpoolDir: join(flags.outDir, "spool"), coalesceSeconds: BEHAVIOUR_COALESCE_SECONDS },
+    company: EMAIL_BEHAVIOUR_COMPANY,
+    agent: EMAIL_BEHAVIOUR_AGENT,
+    corpusDir: CORPUS_DIR,
+  });
   try {
     const judge = flags.judge ? createJudge(env, harness.workspaceId) : null;
     const runTag = Date.now().toString(36);

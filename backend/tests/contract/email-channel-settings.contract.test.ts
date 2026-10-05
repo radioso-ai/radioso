@@ -236,8 +236,6 @@ describe("email channel settings contract", () => {
         policyVersion: 1,
         threadSendBudget: 3,
         hourlyGenerationBudget: 30,
-        threadContextMessages: 10,
-        spamOptIn: false,
         silenceThresholdHours: 72,
         receiving: { state: "waiting_for_first_message", lastReceivedAt: null },
         sending: { state: "not_verified" },

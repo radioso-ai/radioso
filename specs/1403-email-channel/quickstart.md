@@ -13,23 +13,29 @@ EMAIL_CHANNEL_INBOUND_DOMAIN=in.localhost.test
 EMAIL_CHANNEL_WEBHOOK_SECRET=whsec_bG9jYWwtZGV2LXNlY3JldC0wMDAwMDAwMDAwMDA=
 EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS=       # optional, used during signing-key rotation
 EMAIL_CHANNEL_WORKERS_ENABLED=true           # default false; rollout ships workers disabled
-EMAIL_CHANNEL_LOCAL_SPOOL_DIR=./.email-spool # local driver only; gitignored
-EMAIL_CHANNEL_COALESCE_SECONDS=5             # default 60; shorter locally
-EMAIL_CHANNEL_RAW_MAX_BYTES=2097152
-EMAIL_CHANNEL_EVENT_RETENTION_DAYS=30
-EMAIL_CHANNEL_REVIEW_MAX_ATTEMPTS=4
 EMAIL_CHANNEL_TASK_QUEUE_NAME=               # Cloud Tasks queue; unset = no-op drain push (interval worker drains)
 
-# Resend only (EMAIL_CHANNEL_PROVIDER=resend). Separate from RESEND_MAIL_API_KEY used for transactional mail.
+# Resend only (EMAIL_CHANNEL_PROVIDER=resend). Falls back to RESEND_MAIL_API_KEY (transactional mail)
+# when unset; set this only to give the channel its own key.
 RESEND_CHANNEL_API_KEY=
-RESEND_CHANNEL_REGION=us-east-1              # eu-west-1 for the EU stack
+RESEND_CHANNEL_REGION=us-east-1              # derived from the stack's Terraform region in deployed environments
 
 # Existing; leave as is for local work. Channel mail is redacted by every driver.
 MAIL_DRIVER=log
 ```
 
+Coalescing (60s), the raw-MIME cap (2 MiB), event retention (30 days), and
+the review retry limit (4 attempts) are constants, not env vars:
+`EMAIL_COALESCE_SECONDS` and `EMAIL_RAW_MAX_BYTES` in
+`emailInboundProcessor.ts`; `EMAIL_REVIEW_MAX_ATTEMPTS` and
+`EMAIL_REVIEW_HISTORY_MESSAGES` (10) in `emailReviewRunner.ts`;
+`EMAIL_EVENT_RETENTION_DAYS` in `emailChannel/maintenance/emailChannelSweep.ts`.
+A test or the behaviour harness overrides any of these but the history
+window, plus the local spool directory, through `EmailChannelOptions`
+(`backend/src/app/composition/emailChannel.ts`) rather than env.
+
 The `local` provider uses three adapters:
-- `LocalInboundEmailReceiver` verifies the same Svix-format signature as production. Its `fetchMessage(id)` reads `${EMAIL_CHANNEL_LOCAL_SPOOL_DIR}/${id}.eml`.
+- `LocalInboundEmailReceiver` verifies the same Svix-format signature as production. Its `fetchMessage(id)` reads `${LOCAL_EMAIL_SPOOL_DIR}/${id}.eml` — fixed at `backend/.email-spool` (`mail/adapters/localSpool.ts`), regardless of the working directory.
 - `LocalEmailDomainProvisioner` returns fixed DNS records in `pending`. `pnpm run email:dev -- verify-domain <domain>` flips them to `verified`.
 - The existing `log` / `noop` `EmailDriver` returns a synthetic `providerMessageId` and a `deliveredMessageId` equal to the supplied one, and logs only redacted fields.
 

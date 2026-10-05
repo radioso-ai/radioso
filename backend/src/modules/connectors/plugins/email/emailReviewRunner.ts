@@ -37,6 +37,10 @@ const NO_REPLY_NEEDED = "no_reply_needed";
 /** No policy version is ever this: a removed mailbox's policy matches no bound version. */
 const REMOVED_POLICY_VERSION = -1;
 const RECEIPT_TO_HELD_REPLY_BUCKETS = [5, 10, 30, 60, 120, 300, 600, 1_800, 3_600];
+/** The thread's newest messages a review turn reads (FR-024). */
+const EMAIL_REVIEW_HISTORY_MESSAGES = 10;
+/** The claims a review gets before its conversation goes to a person with `review_unavailable`. */
+export const EMAIL_REVIEW_MAX_ATTEMPTS = 4;
 
 type ClaimedReview = Awaited<ReturnType<EmailThreadRepository["claimDueReviews"]>>[number];
 type Mailbox = NonNullable<Awaited<ReturnType<EmailMailboxRepository["findActiveById"]>>>;
@@ -135,7 +139,7 @@ export interface EmailReviewRunnerDependencies {
   config: {
     /** The modes this deployment runs (plan, Questions settled, item 4). */
     supportedModes: readonly EngagementMode[];
-    /** `EMAIL_CHANNEL_REVIEW_MAX_ATTEMPTS`: the claims a review gets before it goes to a person. */
+    /** The claims a review gets before it goes to a person: `EMAIL_REVIEW_MAX_ATTEMPTS` in a deployment. */
     maxAttempts: number;
     leaseSeconds?: number;
   };
@@ -267,7 +271,7 @@ export class EmailReviewRunner {
     }
 
     await this.deps.heldReplies.supersedePendingForConversation(conversationId, "newer_inbound");
-    const turn = await this.respond(claim, mailbox.agentId, respondToMessageId, mailbox.threadContextMessages);
+    const turn = await this.respond(claim, mailbox.agentId, respondToMessageId);
     const { decision, completeness } = await this.decide(claim, mailbox, mode, turn, subject);
     if (turn.kind !== "draft") {
       if (decision.kind === "no_draft" && decision.handoffReason !== null) {
@@ -354,7 +358,6 @@ export class EmailReviewRunner {
     claim: ClaimedReview,
     agentId: string,
     respondToMessageId: string,
-    maxMessages: number,
   ): Promise<ConnectorTurnResult> {
     const turn = await traceOperation({
       name: "email.review.turn",
@@ -365,7 +368,7 @@ export class EmailReviewRunner {
         conversationId: claim.conversationId,
         respondToMessageId,
         executionMode: "review",
-        historyWindow: { maxMessages },
+        historyWindow: { maxMessages: EMAIL_REVIEW_HISTORY_MESSAGES },
       }),
       resultAttributes: (result) => ({ result: result.kind }),
     });

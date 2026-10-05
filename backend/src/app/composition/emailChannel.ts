@@ -20,6 +20,9 @@ import { MessageRepository, type MessageRecord } from "../../db/repositories/mes
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { NoopActionDrainDispatcher, type ActionDrainDispatcherPort } from "../../modules/chat/composition.js";
 import {
+  EMAIL_COALESCE_SECONDS,
+  EMAIL_RAW_MAX_BYTES,
+  EMAIL_REVIEW_MAX_ATTEMPTS,
   createEmailChannelConnector,
   createEmailReviewChecks,
   type EmailChannelWorker,
@@ -40,6 +43,7 @@ import {
 } from "../../modules/customerReplyDelivery/public.js";
 import {
   ConversationEmailFactsReader,
+  EMAIL_EVENT_RETENTION_DAYS,
   EMAIL_MAILBOX_POLICY_REF_PREFIX,
   EMAIL_SEND_ACTION_TYPE,
   EmailChannelCopilotView,
@@ -76,6 +80,7 @@ import {
 import { LocalEmailDomainProvisioner } from "../../modules/mail/adapters/localDomainProvisioner.js";
 import { LocalEmailDriver } from "../../modules/mail/adapters/localEmailDriver.js";
 import { LocalInboundEmailReceiver } from "../../modules/mail/adapters/localInboundReceiver.js";
+import { LOCAL_EMAIL_SPOOL_DIR } from "../../modules/mail/adapters/localSpool.js";
 import { ResendApiClient } from "../../modules/mail/adapters/resendApi.js";
 import { ResendEmailDomainProvisioner } from "../../modules/mail/adapters/resendDomainProvisioner.js";
 import { ResendInboundEmailReceiver } from "../../modules/mail/adapters/resendInboundReceiver.js";
@@ -90,6 +95,34 @@ import { createPostgresHeldReplyUnitOfWork, type HeldReplyChannelRegistration } 
 import { createPostgresMailboxPolicyChangeUnitOfWork } from "./mailboxPolicyChange.js";
 
 type EmailChannelConfig = NonNullable<ReturnType<typeof parseEmailChannelConfig>>;
+
+/**
+ * Overrides of the channel's fixed timings and limits and of the local provider's spool, for tests
+ * and the behaviour harness. A deployment composes none: each falls back to the constant of the
+ * module that owns it.
+ */
+export interface EmailChannelOptions {
+  /** Mail on one thread inside it gets one review; `EMAIL_COALESCE_SECONDS` otherwise. */
+  coalesceSeconds?: number;
+  /** Raw MIME bytes stored per delivery; `EMAIL_RAW_MAX_BYTES` otherwise. */
+  rawMaxBytes?: number;
+  /** Days a conversation-less delivery is kept; `EMAIL_EVENT_RETENTION_DAYS` otherwise. */
+  eventRetentionDays?: number;
+  /** Claims a review gets before it goes to a person; `EMAIL_REVIEW_MAX_ATTEMPTS` otherwise. */
+  reviewMaxAttempts?: number;
+  /** Where the local provider spools mail; `LOCAL_EMAIL_SPOOL_DIR` otherwise. Resend ignores it. */
+  localSpoolDir?: string;
+}
+
+/** The provider the channel's adapters are built for: Resend's account, or the local spool. */
+type ChannelProvider =
+  | Extract<EmailChannelConfig["provider"], { kind: "resend" }>
+  | { kind: "local"; spoolDir: string };
+
+const channelProviderOf = (config: EmailChannelConfig, options: EmailChannelOptions): ChannelProvider =>
+  config.provider.kind === "resend"
+    ? config.provider
+    : { kind: "local", spoolDir: options.localSpoolDir ?? LOCAL_EMAIL_SPOOL_DIR };
 
 /**
  * The engagement modes this deployment runs (plan, Questions settled, item 4): mail is handed to
@@ -137,6 +170,7 @@ interface EmailChannelComposition extends EmailChannelOperatorServices {
 interface EmailChannelCompositionInput {
   /** `parseEmailChannelConfig(env)`; undefined when no email provider is configured. */
   config: EmailChannelConfig | undefined;
+  options?: EmailChannelOptions;
   db: Kysely<DB>;
   drains: EmailChannelDrainDispatcherPort;
   activity: ConversationActivityRecorder;
@@ -183,11 +217,13 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
   if (!config) {
     return null;
   }
+  const options = input.options ?? {};
+  const provider = channelProviderOf(config, options);
   const clock = () => new Date();
   const randomBytesOf = (size: number): Uint8Array => randomBytes(size);
-  const { receiver, provisioner } = providerAdapters(config);
+  const { receiver, provisioner } = providerAdapters(config, provider);
   const sends = createEmailSendServices({
-    config,
+    provider,
     db,
     activity: input.activity,
     drains: input.drains,
@@ -271,7 +307,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       handoffs: createPostgresReviewHandoffs({ db, activity: input.activity, ownership: input.ownership, publisher: input.publisher }),
       checks: reviewChecks,
       notes: createPostgresReviewNotes({ db, inbound, activity: input.activity }),
-      maxAttempts: config.reviewMaxAttempts,
+      maxAttempts: options.reviewMaxAttempts ?? EMAIL_REVIEW_MAX_ATTEMPTS,
     },
     drains: input.drains,
     metrics,
@@ -281,9 +317,9 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
     randomBytes: randomBytesOf,
     config: {
       inboundDomain: config.inboundDomain,
-      rawMaxBytes: config.rawMaxBytes,
+      rawMaxBytes: options.rawMaxBytes ?? EMAIL_RAW_MAX_BYTES,
       supportedModes: SUPPORTED_MODES,
-      coalesceSeconds: config.coalesceSeconds,
+      coalesceSeconds: options.coalesceSeconds ?? EMAIL_COALESCE_SECONDS,
     },
     workersEnabled: config.workersEnabled,
     sweep: new EmailChannelSweep({
@@ -292,7 +328,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       sends: sends.reconciler,
       clock,
       logger,
-      config: { eventRetentionDays: config.eventRetentionDays },
+      config: { eventRetentionDays: options.eventRetentionDays ?? EMAIL_EVENT_RETENTION_DAYS },
       abandonedAutoSends: {
         queued: heldReplyRecords,
         outbox: new ActionRequestRepository(db),
@@ -373,6 +409,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
  */
 export const createEmailChannelApplicationModule = (input: {
   config: EmailChannelConfig | undefined;
+  options?: EmailChannelOptions;
   drainDispatcherFor: (env: Env, config: EmailChannelConfig) => EmailChannelDrainDispatcherPort;
 }): ApplicationModule => ({
   id: "radioso-email-channel",
@@ -387,7 +424,7 @@ export const createEmailChannelApplicationModule = (input: {
         const db = database.kysely;
         const activity = new ConversationActivityRepository(db);
         return createEmailSendServices({
-          config,
+          provider: channelProviderOf(config, input.options ?? {}),
           db,
           activity,
           drains: input.drainDispatcherFor(env, config),
@@ -471,7 +508,7 @@ const createHeldReplyDispatch = (deps: {
  * transition, its delivery failure and its thread index rows to one transaction.
  */
 const createEmailSendServices = (input: {
-  config: EmailChannelConfig;
+  provider: ChannelProvider;
   db: Kysely<DB>;
   activity: ConversationActivityRecorder;
   drains: EmailChannelDrainDispatcherPort;
@@ -481,8 +518,8 @@ const createEmailSendServices = (input: {
   logger: AppLogger;
   clock: () => Date;
 }) => {
-  const { config, db, metrics, logger, clock } = input;
-  const driver = channelEmailDriver(config);
+  const { provider, db, metrics, logger, clock } = input;
+  const driver = channelEmailDriver(provider);
   const intents = new EmailSendIntentRepository(db);
   const mailboxes = new EmailMailboxRepository(db);
   const domains = new EmailDomainRepository(db);
@@ -504,7 +541,7 @@ const createEmailSendServices = (input: {
       attempt,
       writer,
       failures: createPostgresDeliveryFailures({ db, activity: input.activity }),
-      provider: config.provider.kind,
+      provider: provider.kind,
       metrics,
       logger,
       createId: randomUUID,
@@ -515,10 +552,10 @@ const createEmailSendServices = (input: {
 };
 
 /** The channel's sending driver, separate from transactional mail's (quickstart §1). */
-const channelEmailDriver = (config: EmailChannelConfig): EmailDriver =>
-  config.provider.kind === "resend"
-    ? new ResendEmailDriver({ api: new ResendApiClient({ apiKey: config.provider.apiKey }) })
-    : new LocalEmailDriver({ spoolDir: config.provider.spoolDir });
+const channelEmailDriver = (provider: ChannelProvider): EmailDriver =>
+  provider.kind === "resend"
+    ? new ResendEmailDriver({ api: new ResendApiClient({ apiKey: provider.apiKey }) })
+    : new LocalEmailDriver({ spoolDir: provider.spoolDir });
 
 /**
  * Binds one send-intent change to one Postgres transaction: the fenced transition, the delivery
@@ -590,18 +627,21 @@ export const createPostgresDeliveryFailures = (deps: { db: Kysely<DB>; activity:
   return new DeliveryFailures({ writes, reads: new ConversationDeliveryFailureRepository(deps.db) });
 };
 
-const providerAdapters = (config: EmailChannelConfig): { receiver: InboundEmailReceiver; provisioner: EmailDomainProvisioner } => {
+const providerAdapters = (
+  config: EmailChannelConfig,
+  provider: ChannelProvider,
+): { receiver: InboundEmailReceiver; provisioner: EmailDomainProvisioner } => {
   const signingSecrets = { current: config.webhookSecret, previous: config.previousWebhookSecret ?? null };
-  if (config.provider.kind === "resend") {
-    const api = new ResendApiClient({ apiKey: config.provider.apiKey });
+  if (provider.kind === "resend") {
+    const api = new ResendApiClient({ apiKey: provider.apiKey });
     return {
       receiver: new ResendInboundEmailReceiver({ api, signingSecrets }),
-      provisioner: new ResendEmailDomainProvisioner({ api, region: config.provider.region, resolveTxt: (hostname) => resolveTxt(hostname) }),
+      provisioner: new ResendEmailDomainProvisioner({ api, region: provider.region, resolveTxt: (hostname) => resolveTxt(hostname) }),
     };
   }
   return {
-    receiver: new LocalInboundEmailReceiver({ spoolDir: config.provider.spoolDir, signingSecrets }),
-    provisioner: new LocalEmailDomainProvisioner({ spoolDir: config.provider.spoolDir }),
+    receiver: new LocalInboundEmailReceiver({ spoolDir: provider.spoolDir, signingSecrets }),
+    provisioner: new LocalEmailDomainProvisioner({ spoolDir: provider.spoolDir }),
   };
 };
 

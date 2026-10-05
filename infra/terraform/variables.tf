@@ -474,16 +474,10 @@ variable "email_channel_webhook_secret" {
 }
 
 variable "resend_channel_api_key" {
-  description = "Resend API key used by the email channel to receive and send channel mail (RESEND_CHANNEL_API_KEY). Separate from resend_mail_api_key, which is transactional auth mail."
+  description = "Optional Resend API key the email channel receives and sends channel mail with (RESEND_CHANNEL_API_KEY). Unset, the channel uses resend_mail_api_key, transactional auth mail's key."
   type        = string
   sensitive   = true
   default     = null
-}
-
-variable "resend_channel_region" {
-  description = "Resend region for the email channel (RESEND_CHANNEL_REGION). Use eu-west-1 for the EU stack."
-  type        = string
-  default     = "us-east-1"
 }
 
 variable "metrics_auth_token" {

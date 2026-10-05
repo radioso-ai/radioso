@@ -45,8 +45,6 @@ export type EmailMailbox = {
   policyVersion: number
   threadSendBudget: number
   hourlyGenerationBudget: number
-  threadContextMessages: number
-  spamOptIn: boolean
   silenceThresholdHours: number
   receiving: { state: EmailMailboxReceivingState; lastReceivedAt: string | null }
   sending: { state: EmailMailboxSendingState }
@@ -72,10 +70,7 @@ type CreateEmailMailboxRequest = {
   engagementMode?: EmailEngagementMode
 }
 
-type EmailMailboxLimits = Pick<
-  EmailMailbox,
-  'threadSendBudget' | 'hourlyGenerationBudget' | 'threadContextMessages' | 'spamOptIn' | 'silenceThresholdHours'
->
+type EmailMailboxLimits = Pick<EmailMailbox, 'threadSendBudget' | 'hourlyGenerationBudget' | 'silenceThresholdHours'>
 
 /** A settings change; `expectedPolicyVersion` refuses it when someone saved the mailbox since it was read. */
 export type UpdateEmailMailboxRequest = Partial<EmailMailboxLimits> & {

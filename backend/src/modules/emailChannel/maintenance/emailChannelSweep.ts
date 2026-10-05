@@ -7,6 +7,8 @@ import { EMAIL_MAILBOX_POLICY_REF_PREFIX } from "../heldReplyChannelScope.js";
 import { emailSendKey } from "../outbound/emailSendAction.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Days a delivery that never joined a conversation stays in the event log (research B10). */
+export const EMAIL_EVENT_RETENTION_DAYS = 30;
 /** Rows one sweep may delete; the retention backlog drains over successive sweeps. */
 const PURGE_BATCH = 1_000;
 /** The action outbox's lease: a send queued more recently may still be in its own dispatch. */
@@ -66,6 +68,7 @@ export class EmailChannelSweep {
     sends: Pick<SendReconciler, "run">;
     clock: () => Date;
     logger: EmailChannelLogger;
+    /** `EMAIL_EVENT_RETENTION_DAYS` in a deployment. */
     config: { eventRetentionDays: number };
     abandonedAutoSends: AbandonedAutoSends;
     /** Composed only where the deployment does not run `auto`. */

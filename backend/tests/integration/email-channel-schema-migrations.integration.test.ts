@@ -18,6 +18,7 @@ const activityWidening = [
 const deliveryFailures = "215_conversation_delivery_failures.sql";
 const sendIntents = "216_email_send_intents.sql";
 const heldReplies = "218_held_replies.sql";
+const mailboxSettingsTrim = "219_email_mailboxes_drop_context_and_spam.sql";
 
 const CHECK_VIOLATION = "23514";
 const UNIQUE_VIOLATION = "23505";
@@ -53,7 +54,7 @@ const errorCode = async (work: Promise<unknown>): Promise<string | undefined> =>
 
 const describeIfDatabase = await canReach(integrationDatabaseUrl) ? describe : describe.skip;
 
-describeIfDatabase("email channel schema (209–218)", () => {
+describeIfDatabase("email channel schema (209–219)", () => {
   const databaseName = `mig209_${randomUUID().replaceAll("-", "")}`;
   let admin: Database;
   let database: Database;
@@ -248,7 +249,7 @@ describeIfDatabase("email channel schema (209–218)", () => {
 
     const defaults = await database.queryOne<Record<string, unknown>>(
       `SELECT enabled, policy_version, thread_send_budget, hourly_generation_budget, generation_window_count,
-              thread_context_messages, spam_opt_in, silence_threshold_hours
+              silence_threshold_hours
          FROM email_mailboxes WHERE id = $1`,
       [sibling],
     );
@@ -258,8 +259,6 @@ describeIfDatabase("email channel schema (209–218)", () => {
       thread_send_budget: 3,
       hourly_generation_budget: 30,
       generation_window_count: 0,
-      thread_context_messages: 10,
-      spam_opt_in: false,
       silence_threshold_hours: 72,
     });
   });
@@ -854,5 +853,29 @@ describeIfDatabase("email channel schema (209–218)", () => {
       "UPDATE held_replies SET state = 'superseded' WHERE policy_ref = $1 AND state IN ('pending', 'queued_auto')",
       ["email_mailbox:1"],
     )).toContain("held_replies_live_policy_idx");
+  });
+
+  it("219 drops the mailbox's thread-context and spam opt-in columns and keeps its mailboxes and settings", async () => {
+    const mailboxColumns = async () => (await database.query<{ column_name: string }>(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'email_mailboxes'",
+    )).map((row) => row.column_name);
+    const { workspaceId } = await seedWorkspace();
+    const domainId = await insertDomain(workspaceId, "trim.example");
+    const mailboxId = await insertMailbox(workspaceId, domainId, "support@trim.example");
+    await database.execute(
+      "UPDATE email_mailboxes SET thread_send_budget = 7, thread_context_messages = 20, spam_opt_in = true WHERE id = $1",
+      [mailboxId],
+    );
+    expect(await mailboxColumns()).toEqual(expect.arrayContaining(["thread_context_messages", "spam_opt_in"]));
+
+    await applyTestMigration(database, mailboxSettingsTrim);
+
+    const columns = await mailboxColumns();
+    expect(columns).not.toContain("thread_context_messages");
+    expect(columns).not.toContain("spam_opt_in");
+    expect(await database.queryOne<Record<string, unknown>>(
+      "SELECT address, thread_send_budget, hourly_generation_budget, silence_threshold_hours FROM email_mailboxes WHERE id = $1",
+      [mailboxId],
+    )).toEqual({ address: "support@trim.example", thread_send_budget: 7, hourly_generation_budget: 30, silence_threshold_hours: 72 });
   });
 });

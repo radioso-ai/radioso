@@ -23,8 +23,6 @@ const mailboxSettingsShape = {
   engagementMode: engagementModeSchema.optional(),
   threadSendBudget: boundedSetting("threadSendBudget").optional(),
   hourlyGenerationBudget: boundedSetting("hourlyGenerationBudget").optional(),
-  threadContextMessages: boundedSetting("threadContextMessages").optional(),
-  spamOptIn: z.boolean().optional(),
   silenceThresholdHours: boundedSetting("silenceThresholdHours").optional(),
   /** Required as `true` to put a mailbox into `auto`; the service answers `auto_opt_in_required` without it. */
   autoOptIn: z.boolean().optional(),

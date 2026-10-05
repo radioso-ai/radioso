@@ -85,19 +85,20 @@ To stop automatic replies, switch the mailbox back to `draft` or `operator_only`
 
 ## Limits
 
-One autoresponder or one burst of new threads could run up model spend in minutes if nothing capped it. Each limit below hands the work to a person when it's hit, so nothing accepted is lost. Edit them in the **Limits** section of the mailbox's card, or set them through the mailbox API.
+One autoresponder or one burst of new threads could run up model spend in minutes if nothing capped it. Each limit below hands the work to a person when it's hit, so nothing accepted is lost. **Replies per thread** sits with the mailbox's other settings; **Agent runs per hour** sits behind the card's collapsed **Advanced** disclosure, alongside the silence alert threshold. Edit them in the **Limits** section of the mailbox's card, or set them through the mailbox API.
 
 | In the card | Mailbox setting | What it caps | Default |
 |---|---|---|---|
 | Agent runs per hour | `hourlyGenerationBudget` | Drafts the mailbox writes per hour | 30 |
 | Replies per thread | `threadSendBudget` | The agent's automatic sends on one thread before you renew it | 3 |
-| Context messages | `threadContextMessages` | How many of the thread's newest messages a draft reads | 10 |
 
 **When the hourly budget runs out**, mail keeps arriving but stops getting drafts: each email opens or continues a conversation handed to a person with the reason `generation_budget`, in the Inbox like any other handoff. The hour is a fixed window that starts with the first draft after the previous window closed, and drafts resume when it rolls over. A conversation already handed to a person stays with them until you hand it back.
 
 **The thread send budget** counts the agent's automatic sends on a thread. Your reply on the thread renews it, and so does sending a draft, as written or edited. Customer mail never renews it. When it's full, the next reply waits for you with the reason `send_budget`. On a `draft` mailbox every reply goes through you, so the count stays at zero; on an `auto` mailbox it's what limits the agent to three replies in a row.
 
-**Bursts share one draft.** Emails on one thread inside the deployment's coalescing window (`EMAIL_CHANNEL_COALESCE_SECONDS`, 60 seconds by default) get a single draft answering all of them.
+**A draft reads the thread's 10 newest messages.** A long thread costs a draft no more than a short one.
+
+**Bursts share one draft.** Emails on one thread inside a 60-second window get a single draft answering all of them.
 
 **Automated mail never gets a reply.** Radioso reads the headers — never the subject or body — and keeps the agent away from any email with:
 

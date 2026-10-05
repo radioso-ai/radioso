@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { LocalEmailDomainProvisioner } from "../../../src/modules/mail/adapters/localDomainProvisioner.js";
 import { LocalInboundEmailReceiver } from "../../../src/modules/mail/adapters/localInboundReceiver.js";
+import { LOCAL_EMAIL_SPOOL_DIR } from "../../../src/modules/mail/adapters/localSpool.js";
 import { InboundFetchError } from "../../../src/modules/mail/public.js";
 
 const FIXTURES = fileURLToPath(new URL("../../fixtures/email-channel/", import.meta.url));
@@ -250,5 +251,11 @@ describe("local email domain provisioner", () => {
     });
 
     expect(readiness.sending).toBe("pending");
+  });
+});
+
+describe("local spool", () => {
+  it("is .email-spool in the backend package, whatever the working directory", () => {
+    expect(LOCAL_EMAIL_SPOOL_DIR).toBe(fileURLToPath(new URL("../../../.email-spool", import.meta.url)));
   });
 });

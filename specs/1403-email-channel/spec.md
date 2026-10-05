@@ -163,11 +163,11 @@ A mailbox is set to `auto`. When the review turn ends as a grounded, complete an
 - The customer removes the forwarding rule. Radioso cannot see this; the mailbox's last-received time and silence notice are the only signal, and the setup check re-proves the path.
 - A webhook arrives for a relay token of a removed mailbox or one inside its rotation grace period. Recorded `no_mailbox` in that workspace's event log, acknowledged, not retried. A token that was never issued names no workspace; it is counted in deployment metrics and swept by retention.
 - Microsoft 365 blocks external auto-forwarding until an admin changes the outbound anti-spam policy, and Google asks the forwarding target to confirm a code. The setup panel surfaces the confirmation message that arrives at the relay address, and the docs state both.
-- The provider reports spam. Recorded with disposition `spam` as a bounded event; mailboxes that opt in get an operator-only conversation instead; no turn runs; `unknown` verdicts are treated as not spam. Authentication results are recorded on every event and never drop a message on their own, because forwarding routinely breaks SPF.
+- The provider reports spam. Recorded with disposition `drop`, reason `spam`, as a bounded event; no turn runs and no conversation opens; `unknown` verdicts are treated as not spam. Authentication results are recorded on every event and never drop a message on their own, because forwarding routinely breaks SPF.
 - The customer's mail service rewrites the forwarded message (new Message-Id, subject prefix, wrapped body). Thread resolution falls back from headers to the plus-address token to a new conversation; the raw event keeps whatever arrived.
 - A held reply exists and the operator takes over. The draft is superseded.
 - The same person emails from two addresses. Two participants, two conversations.
-- A long thread. The review turn reads a bounded window of the thread plus the current message; the bound is a mailbox-level setting with a safe default.
+- A long thread. The review turn reads a bounded window of the thread plus the current message; the bound is fixed at the thread's 10 newest messages.
 - Model provider or mail provider outage. Review turns and sends retry within their jobs; after the retry budget the event or send intent is terminal-failed and visible; nothing acknowledged is dropped.
 
 ## Constitution Constraints *(mandatory)*
@@ -264,7 +264,7 @@ The single source of truth for what happens to an accepted inbound message. "Tur
 
 **Mailboxes and domains**
 
-- **FR-001**: An operator with workspace settings permission MUST be able to add a mailbox by its real address, bind it to an agent, and receive an opaque relay address on the deployment's inbound domain with forwarding instructions; each mailbox MUST carry a display name, engagement mode, enabled flag, thread send budget, hourly generation budget, thread context bound, spam opt-in, and silence threshold, all with safe defaults.
+- **FR-001**: An operator with workspace settings permission MUST be able to add a mailbox by its real address, bind it to an agent, and receive an opaque relay address on the deployment's inbound domain with forwarding instructions; each mailbox MUST carry a display name, engagement mode, enabled flag, thread send budget, hourly generation budget, and silence threshold, all with safe defaults.
 - **FR-002**: The deployment's inbound domain MUST be configuration, provisioned once per deployment; relay tokens MUST be opaque, high-entropy, unique per mailbox, and rotatable by the operator, and the mailbox MUST be resolved only from the relay token on the delivered-to address.
 - **FR-003**: Adding a mailbox MUST register its address's domain as a sending domain for the workspace if not already present and show the DKIM, SPF, and DMARC records with per-record copy and status; a sending domain MUST be unique across workspaces, MUST refresh readiness on a bounded cadence and on provider events, and MUST emit audit events on readiness changes.
 - **FR-004**: A mailbox MUST accept inbound regardless of sending readiness; until its sending domain is verified, agent-authored replies MUST be held with reason `sending_not_verified` and operator replies MUST be refused before any write with the missing step named.
@@ -296,7 +296,7 @@ The single source of truth for what happens to an accepted inbound message. "Tur
 - **FR-021**: A human-owned conversation MUST NOT run a turn on inbound email, regardless of mode.
 - **FR-022**: Each thread MUST have an automatic send budget, defaulting to three, that customer input never resets and that an operator reply or a held-reply release on the thread renews; reaching it MUST hold the next candidate reply with reason `send_budget`.
 - **FR-023**: Each mailbox MUST have a generation budget over a fixed one-hour window anchored at its first generation; when reached, accepted inbound MUST be ingested as human-owned with reason `generation_budget`.
-- **FR-024**: Inbound messages on one thread inside a deployment-configured coalescing window MUST produce one review turn; the review turn's thread context MUST be bounded by the mailbox setting; a terminal review failure MUST hand off with reason `review_unavailable`.
+- **FR-024**: Inbound messages on one thread inside a fixed 60-second coalescing window MUST produce one review turn; the review turn's thread context MUST be bounded to the thread's 10 newest messages; a terminal review failure MUST hand off with reason `review_unavailable`.
 - **FR-025**: A downgrade from `auto` to `draft` MUST halt unsent automatic sends and hold them for review, re-binding pending drafts to the new policy version; a downgrade to `operator_only` MUST supersede them; an upgrade MUST apply only to inbound accepted after the change and supersedes drafts bound to the old policy.
 - **FR-026**: Operators MUST be able to author finer engagement rules as directives; no email-specific rule text MUST exist in code or prompts.
 
@@ -336,7 +336,7 @@ The single source of truth for what happens to an accepted inbound message. "Tur
 ### Key Entities
 
 - **Sending domain**: a customer-owned domain verified for sending on behalf of one workspace; provider domain id, DNS records, readiness, last refresh. A receiving domain (advanced) is the same record with receiving readiness.
-- **Mailbox**: the customer's real address bound to an agent; relay token on the deployment's inbound domain, display name, engagement mode, enabled flag, thread send budget, hourly generation budget, thread context bound, spam opt-in, silence threshold, last received time.
+- **Mailbox**: the customer's real address bound to an agent; relay token on the deployment's inbound domain, display name, engagement mode, enabled flag, thread send budget, hourly generation budget, silence threshold, last received time.
 - **Inbound event**: one verified provider delivery; provider event id, mailbox, processing state, disposition, raw content, received-at. The audit trail for every email that touched the system.
 - **Thread message id**: an RFC Message-Id seen or generated for a mailbox, with direction and conversation.
 - **Thread link**: a conversation's mailbox, participant address, and opaque thread token.
@@ -410,7 +410,7 @@ Defaults applied in this revision, per the CEO review's recommendations. Confirm
 4. **Release and ownership**: releasing a draft never takes ownership; a free-form reply or takeover does.
 5. **Loop bound**: three automatic sends per thread between operator renewals, never reset by customer input, plus an hourly generation budget per mailbox.
 6. **Identity**: `verified_customer_id` stays null; thread continuation requires the original participant; mismatches are operator-visible exceptions.
-7. **Spam**: bounded event record by default; opt-in mailboxes get an operator-only conversation.
+7. **Spam**: always a bounded event record; no opt-in, and no turn or conversation ever follows a spam verdict.
 8. **`operator_only`**: no turn at all.
 9. **Mode downgrade**: halts unsent automatic work; upgrades apply to new inbound only.
 10. **Uncertain sends**: reconcile or audited operator decision; never blind resend.

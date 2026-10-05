@@ -74,8 +74,6 @@ A customer-owned domain verified for sending on behalf of one workspace. Its rec
 | `hourly_generation_budget` | integer | no | default 30; CHECK BETWEEN 1 AND 1000 |
 | `generation_window_started_at` | timestamptz | yes | |
 | `generation_window_count` | integer | no | default 0 |
-| `thread_context_messages` | integer | no | default 10; CHECK BETWEEN 1 AND 50 |
-| `spam_opt_in` | boolean | no | default `false` |
 | `silence_threshold_hours` | integer | no | default 72; CHECK BETWEEN 1 AND 2160 |
 | `plus_address_verified_at` | timestamptz | yes | |
 | `setup_check_step`, `setup_check_started_at` | text, timestamptz | yes | step CHECK IN (`base`,`plus_address`) |
@@ -87,6 +85,7 @@ A customer-owned domain verified for sending on behalf of one workspace. Its rec
 - Unique: (`relay_token`); (`previous_relay_token`) WHERE NOT NULL; (`workspace_id`, `address`) WHERE `removed_at IS NULL`; (`address`) WHERE `removed_at IS NULL` (direct-rule lookup must be unambiguous).
 - The service checks that `address`'s domain equals the domain of `domain_id`; a unit test covers this.
 - Receiving state is derived, never stored (see State machines).
+- Migration 219 drops `thread_context_messages` and `spam_opt_in`: the review's thread-context window is a fixed 10 messages, and spam is always a bounded event with no opt-in (see `email_inbound_deliveries.disposition_reason`, below).
 
 ## `email_mailbox_policies` (append-only, B16)
 
@@ -141,7 +140,7 @@ One processing unit per (event, mailbox). It is the event-log row, the raw-conte
 | `state` | text | no | default `pending`; CHECK IN (`pending`,`fetched`,`resolved`,`ingested`,`done`,`failed`) |
 | `classification` | text | yes | CHECK IN (`person`,`automated_sender`,`bounce`,`self_sender`,`spam`) |
 | `disposition` | text | yes | CHECK IN (`ingest_only`,`run_review_turn`,`drop`) |
-| `disposition_reason` | text | yes | CHECK IN (`no_mailbox`,`mailbox_disabled`,`automated_sender`,`self_sender`,`bounce`,`spam`,`participant_mismatch`,`operator_only_mailbox`,`human_owned`,`generation_budget`,`spam_opt_in`,`no_agent`,`accepted`) |
+| `disposition_reason` | text | yes | CHECK IN (`no_mailbox`,`mailbox_disabled`,`automated_sender`,`self_sender`,`bounce`,`spam`,`participant_mismatch`,`operator_only_mailbox`,`human_owned`,`generation_budget`,`spam_opt_in`,`no_agent`,`accepted`) — the CHECK is unchanged by migration 219; `spam_opt_in` stays an accepted value but is never written, since spam is always `drop`/`spam` |
 | `sender_address`, `sender_display_name`, `subject` | text | yes | |
 | `rfc_message_id` | text | yes | |
 | `reference_ids` | text[] | no | default `'{}'`; `References` ∪ `In-Reply-To`, normalized |
@@ -439,8 +438,9 @@ Numbers continue from `208_test_execution_seed_summary_backfill.sql` and are ren
 | 216 | `216_email_send_intents.sql` | `email_send_intents` | `email_thread_messages.send_intent_id → email_send_intents` | S2 |
 | 217 | `217_conversation_activity_closed_idx_v1_drop.sql` | `SET LOCAL lock_timeout='3s'`; `DROP INDEX IF EXISTS conversation_activity_workspace_closed_idx` (after S1's query switch is deployed everywhere) | none | S2 |
 | 218 | `218_held_replies.sql` | `held_replies` | `email_send_intents.held_reply_id → held_replies` | S3 |
+| 219 | `219_email_mailboxes_drop_context_and_spam.sql` | drops `email_mailboxes.thread_context_messages` and `email_mailboxes.spam_opt_in` | none | — |
 
-That makes ten migration files, one activity widening done in three phases, and one index replacement.
+That makes eleven migration files, one activity widening done in three phases, and one index replacement.
 
 ## Generated artifacts
 

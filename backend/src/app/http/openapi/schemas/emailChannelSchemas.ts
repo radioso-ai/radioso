@@ -57,8 +57,6 @@ export const registerEmailChannelSchemas = (registry: OpenAPIRegistry) => {
     policyVersion: z.number().int().min(1),
     threadSendBudget: z.number().int(),
     hourlyGenerationBudget: z.number().int(),
-    threadContextMessages: z.number().int(),
-    spamOptIn: z.boolean(),
     silenceThresholdHours: z.number().int(),
     receiving: z.object({
       state: z.enum(["waiting_for_first_message", "ok", "silent"]),

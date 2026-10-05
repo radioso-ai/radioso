@@ -6,6 +6,7 @@ import type { ConnectorContext, ConnectorPlugin } from "@radioso/connector-api";
 import express, { type Router } from "express";
 import request from "supertest";
 
+import type { EmailChannelOptions } from "../../src/app/composition/emailChannel.js";
 import { parseEmailChannelConfig, type Env } from "../../src/app/config/env.js";
 import { buildDependencies } from "../../src/app/server/dependencies.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
@@ -16,6 +17,7 @@ import type { EngagementMode } from "../../src/modules/emailChannel/public.js";
 import { HELD_REPLY_STATES, isHeldReplyAttentionOpen, type HeldReplyState } from "../../src/modules/handoff/public.js";
 import { HeldReplyRepository } from "../../src/db/repositories/heldReplyRepository.js";
 import { LocalEmailDomainProvisioner } from "../../src/modules/mail/adapters/localDomainProvisioner.js";
+import { LOCAL_EMAIL_SPOOL_DIR } from "../../src/modules/mail/adapters/localSpool.js";
 import {
   classifyEmailOutcome,
   heldReplySummaryOf,
@@ -75,6 +77,8 @@ export type ReviewTurnScript = (turn: { conversationId: string; customerText: st
 export interface EmailMailboxHarnessOptions {
   /** Parsed environment. The email channel must use the local provider with its workers enabled. */
   env: Env;
+  /** The spool and timings for this run, such as a short coalescing window; the channel's own otherwise. */
+  emailChannel?: EmailChannelOptions;
   company: {
     name: string;
     /** The sending domain every mailbox is created on; verified at boot. */
@@ -247,7 +251,7 @@ const DISPOSITIONS: readonly string[] = ["drop", "ingest_only", "run_review_turn
 const isDisposition = (value: string | null): value is Disposition => value !== null && DISPOSITIONS.includes(value);
 const isHeldReplyState = (value: string): value is HeldReplyState => (HELD_REPLY_STATES as readonly string[]).includes(value);
 
-const requireLocalChannel = (env: Env) => {
+const requireLocalChannel = (env: Env, options: EmailChannelOptions) => {
   const config = parseEmailChannelConfig(env);
   if (config?.provider.kind !== "local") {
     throw new Error("The mailbox harness drives the local provider; set EMAIL_CHANNEL_PROVIDER=local.");
@@ -255,7 +259,7 @@ const requireLocalChannel = (env: Env) => {
   if (!config.workersEnabled) {
     throw new Error("The mailbox harness drains the channel's stages; set EMAIL_CHANNEL_WORKERS_ENABLED=true.");
   }
-  return { spoolDir: config.provider.spoolDir, webhookSecret: config.webhookSecret, inboundDomain: config.inboundDomain };
+  return { spoolDir: options.localSpoolDir ?? LOCAL_EMAIL_SPOOL_DIR, webhookSecret: config.webhookSecret, inboundDomain: config.inboundDomain };
 };
 
 /** Replaces the host's review turn with a script, keeping the rest of the turn's contract. */
@@ -321,8 +325,8 @@ export class EmailMailboxHarness {
 
   /** Boots the composition, seeds the workspace, operator, agent and corpus, and verifies the sending domain. */
   static async boot(options: EmailMailboxHarnessOptions): Promise<EmailMailboxHarness> {
-    const channel = requireLocalChannel(options.env);
-    const deps = buildDependencies(options.env);
+    const channel = requireLocalChannel(options.env, options.emailChannel ?? {});
+    const deps = buildDependencies(options.env, { emailChannel: { ...options.emailChannel, localSpoolDir: channel.spoolDir } });
     try {
       if (options.reviewTurn) {
         installReviewTurn(deps, options.reviewTurn);

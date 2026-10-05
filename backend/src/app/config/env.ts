@@ -57,7 +57,7 @@ const RESEND_CHANNEL_REGIONS = ["us-east-1", "eu-west-1", "sa-east-1", "ap-north
 const DNS_HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 
 type EmailChannelProviderConfig =
-  | { kind: "local"; spoolDir: string }
+  | { kind: "local" }
   | { kind: "resend"; apiKey: string; region: (typeof RESEND_CHANNEL_REGIONS)[number] };
 
 type EmailChannelConfig = {
@@ -67,10 +67,6 @@ type EmailChannelConfig = {
   /** Still accepted while the provider rotates its signing key. */
   previousWebhookSecret?: string;
   workersEnabled: boolean;
-  coalesceSeconds: number;
-  rawMaxBytes: number;
-  eventRetentionDays: number;
-  reviewMaxAttempts: number;
   /** Cloud Tasks queue for drain pushes; unset leaves draining to the interval worker. */
   taskQueueName?: string;
 };
@@ -83,20 +79,18 @@ const emailChannelEnvShape = {
   EMAIL_CHANNEL_WEBHOOK_SECRET: emptyStringToUndefined(z.string().min(1)),
   EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS: emptyStringToUndefined(z.string().min(1)),
   EMAIL_CHANNEL_WORKERS_ENABLED: booleanish(false),
-  EMAIL_CHANNEL_LOCAL_SPOOL_DIR: emptyStringToDefault(z.string().min(1), "./.email-spool"),
-  EMAIL_CHANNEL_COALESCE_SECONDS: emptyStringToDefault(z.coerce.number().int().nonnegative(), 60),
-  EMAIL_CHANNEL_RAW_MAX_BYTES: emptyStringToDefault(z.coerce.number().int().positive(), 2 * 1024 * 1024),
-  EMAIL_CHANNEL_EVENT_RETENTION_DAYS: emptyStringToDefault(z.coerce.number().int().positive(), 30),
-  EMAIL_CHANNEL_REVIEW_MAX_ATTEMPTS: emptyStringToDefault(z.coerce.number().int().positive(), 4),
   EMAIL_CHANNEL_TASK_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
   RESEND_CHANNEL_API_KEY: emptyStringToUndefined(z.string().min(1)),
+  /** Transactional mail's key, which the channel uses when it has none of its own. */
+  RESEND_MAIL_API_KEY: emptyStringToUndefined(z.string().min(1)),
   RESEND_CHANNEL_REGION: emptyStringToDefault(z.enum(RESEND_CHANNEL_REGIONS), "us-east-1"),
 } as const;
 
 /**
  * `EMAIL_CHANNEL_PROVIDER` is the only switch. The other settings may be provisioned ahead of it
- * (secrets, tuning) without turning the channel on, but once a provider is chosen every setting
- * it needs must be present.
+ * (secrets, the queue) without turning the channel on, but once a provider is chosen every setting
+ * it needs must be present. The channel's timings and limits are not deployment settings: each is
+ * a constant of the module that owns it.
  */
 const emailChannelConfigSchema = z.object(emailChannelEnvShape).transform((value, ctx): EmailChannelConfig | undefined => {
   const providerName = value.EMAIL_CHANNEL_PROVIDER;
@@ -104,11 +98,11 @@ const emailChannelConfigSchema = z.object(emailChannelEnvShape).transform((value
     return undefined;
   }
 
-  const missing = (field: string): never => {
+  const missing = (field: string, requirement: string = field): never => {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: [field],
-      message: `${field} is required when EMAIL_CHANNEL_PROVIDER is ${providerName}`,
+      message: `${requirement} is required when EMAIL_CHANNEL_PROVIDER is ${providerName}`,
     });
     return z.NEVER;
   };
@@ -116,10 +110,12 @@ const emailChannelConfigSchema = z.object(emailChannelEnvShape).transform((value
   const provider: EmailChannelProviderConfig = providerName === "resend"
     ? {
       kind: "resend",
-      apiKey: value.RESEND_CHANNEL_API_KEY ?? missing("RESEND_CHANNEL_API_KEY"),
+      apiKey: value.RESEND_CHANNEL_API_KEY
+        ?? value.RESEND_MAIL_API_KEY
+        ?? missing("RESEND_CHANNEL_API_KEY", "RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY"),
       region: value.RESEND_CHANNEL_REGION,
     }
-    : { kind: "local", spoolDir: value.EMAIL_CHANNEL_LOCAL_SPOOL_DIR };
+    : { kind: "local" };
 
   return {
     provider,
@@ -127,10 +123,6 @@ const emailChannelConfigSchema = z.object(emailChannelEnvShape).transform((value
     webhookSecret: value.EMAIL_CHANNEL_WEBHOOK_SECRET ?? missing("EMAIL_CHANNEL_WEBHOOK_SECRET"),
     previousWebhookSecret: value.EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS,
     workersEnabled: value.EMAIL_CHANNEL_WORKERS_ENABLED,
-    coalesceSeconds: value.EMAIL_CHANNEL_COALESCE_SECONDS,
-    rawMaxBytes: value.EMAIL_CHANNEL_RAW_MAX_BYTES,
-    eventRetentionDays: value.EMAIL_CHANNEL_EVENT_RETENTION_DAYS,
-    reviewMaxAttempts: value.EMAIL_CHANNEL_REVIEW_MAX_ATTEMPTS,
     taskQueueName: value.EMAIL_CHANNEL_TASK_QUEUE_NAME,
   };
 });

@@ -831,7 +831,7 @@ describe("EmailInboundProcessor: review scheduling (stage 2)", () => {
       conversationId,
       respondToMessageId: third.deliveries[0].messageId,
       executionMode: "review",
-      historyWindow: { maxMessages: mailbox.threadContextMessages },
+      historyWindow: { maxMessages: 10 },
     }));
     expect(h.conversations.get(conversationId)?.messageIds).toEqual(
       [first, second, third].map((received) => received.deliveries[0].messageId),

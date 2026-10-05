@@ -9486,8 +9486,6 @@ export interface components {
             policyVersion: number;
             threadSendBudget: number;
             hourlyGenerationBudget: number;
-            threadContextMessages: number;
-            spamOptIn: boolean;
             silenceThresholdHours: number;
             receiving: {
                 /** @enum {string} */
@@ -9626,8 +9624,6 @@ export interface components {
             engagementMode?: "operator_only" | "draft" | "auto";
             threadSendBudget?: number;
             hourlyGenerationBudget?: number;
-            threadContextMessages?: number;
-            spamOptIn?: boolean;
             silenceThresholdHours?: number;
             autoOptIn?: boolean;
         };
@@ -9639,8 +9635,6 @@ export interface components {
             engagementMode?: "operator_only" | "draft" | "auto";
             threadSendBudget?: number;
             hourlyGenerationBudget?: number;
-            threadContextMessages?: number;
-            spamOptIn?: boolean;
             silenceThresholdHours?: number;
             autoOptIn?: boolean;
             enabled?: boolean;

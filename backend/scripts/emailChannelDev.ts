@@ -6,6 +6,7 @@ import { parseArgs } from "node:util";
 import { getEnv, parseEmailChannelConfig } from "../src/app/config/env.js";
 import { LocalEmailDomainProvisioner } from "../src/modules/mail/adapters/localDomainProvisioner.js";
 import { LocalEmailDriver } from "../src/modules/mail/adapters/localEmailDriver.js";
+import { LOCAL_EMAIL_SPOOL_DIR } from "../src/modules/mail/adapters/localSpool.js";
 import { normalizeInboundMime } from "../src/modules/mail/public.js";
 import { loadEnvFileIfPresent } from "../src/runtime/loadEnv.js";
 
@@ -60,7 +61,7 @@ const localChannel = (): LocalChannel => {
   if (env.NODE_ENV === "production") fail("email:dev is a development tool and does not run in production.");
   const config = parseEmailChannelConfig(env);
   if (config?.provider.kind !== "local") fail("email:dev drives the local provider; set EMAIL_CHANNEL_PROVIDER=local.");
-  return { spoolDir: config.provider.spoolDir, webhookSecret: config.webhookSecret, port: env.PORT };
+  return { spoolDir: LOCAL_EMAIL_SPOOL_DIR, webhookSecret: config.webhookSecret, port: env.PORT };
 };
 
 const webhooksDir = (channel: LocalChannel) => join(channel.spoolDir, "webhooks");

@@ -183,8 +183,6 @@ export const seedMailbox = async (
     enabled: input.enabled ?? true,
     threadSendBudget: 3,
     hourlyGenerationBudget: 30,
-    threadContextMessages: 10,
-    spamOptIn: false,
     silenceThresholdHours: 72,
     createdByUserId: null,
   });

@@ -88,11 +88,9 @@ const AUTO_OPT_IN_FIELD = "autoOptIn";
 type MailboxLimits = {
   threadSendBudget: number;
   hourlyGenerationBudget: number;
-  threadContextMessages: number;
-  spamOptIn: boolean;
   silenceThresholdHours: number;
 };
-const LIMIT_FIELDS = ["threadSendBudget", "hourlyGenerationBudget", "threadContextMessages", "spamOptIn", "silenceThresholdHours"] as const;
+const LIMIT_FIELDS = ["threadSendBudget", "hourlyGenerationBudget", "silenceThresholdHours"] as const;
 // Mode, enabled and agent are the mailbox's policy; only a change to one of them writes a new version.
 const POLICY_FIELDS = ["engagementMode", "enabled", "agentId"] as const;
 
@@ -153,8 +151,6 @@ const installEmailChannelBackend = async (
     policyVersion: 1,
     threadSendBudget: 3,
     hourlyGenerationBudget: 30,
-    threadContextMessages: 10,
-    spamOptIn: false,
     silenceThresholdHours: 72,
     receiving: { state: "waiting_for_first_message", lastReceivedAt: null },
     sending: { state: "not_verified" },
@@ -587,10 +583,12 @@ test("operator edits a mailbox's limits, keeping focus, and the Automatic confir
   const limits = mailbox.getByRole("form", { name: "Limits" });
   const sendBudget = limits.getByLabel("Replies per thread");
   await expect(sendBudget).toHaveValue("3");
+
+  const advanced = limits.getByRole("button", { name: "Advanced" });
+  await expect(advanced).toHaveAttribute("aria-expanded", "false");
+  await advanced.click();
   await expect(limits.getByLabel("Agent runs per hour")).toHaveValue("30");
-  await expect(limits.getByLabel("Context messages")).toHaveValue("10");
   await expect(limits.getByLabel("Silence alert (hours)")).toHaveValue("72");
-  await expect(limits.getByRole("switch", { name: "Spam to inbox" })).toHaveAttribute("aria-checked", "false");
 
   // Out of the contract's bounds: named inline, and nothing is sent.
   const save = limits.getByRole("button", { name: "Save limits" });
@@ -602,19 +600,17 @@ test("operator edits a mailbox's limits, keeping focus, and the Automatic confir
   expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([]);
 
   await sendBudget.fill("5");
-  await limits.getByRole("switch", { name: "Spam to inbox" }).click();
   await save.click();
 
   await expect(announcer(page)).toHaveText("Limits saved.");
   await expect(save).toBeFocused();
   await expect(sendBudget).toHaveValue("5");
   await expect(sendBudget).not.toHaveAttribute("aria-invalid", "true");
-  await expect(limits.getByRole("switch", { name: "Spam to inbox" })).toHaveAttribute("aria-checked", "true");
   expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([
     {
       method: "PATCH",
       path: `/mailboxes/${mailboxId}`,
-      body: { threadSendBudget: 5, spamOptIn: true, expectedPolicyVersion: 1 },
+      body: { threadSendBudget: 5, expectedPolicyVersion: 1 },
     },
   ]);
 
@@ -636,6 +632,7 @@ test("a limits save against settings saved elsewhere is refused and reloads the 
   await expect(limits.getByLabel("Replies per thread")).toHaveValue("3");
   backend.changePolicyElsewhere({ threadSendBudget: 4 });
 
+  await limits.getByRole("button", { name: "Advanced" }).click();
   await limits.getByLabel("Agent runs per hour").fill("60");
   const save = limits.getByRole("button", { name: "Save limits" });
   await save.click();

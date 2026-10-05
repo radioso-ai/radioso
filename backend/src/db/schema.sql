@@ -2476,8 +2476,6 @@ CREATE TABLE public.email_mailboxes (
     hourly_generation_budget integer DEFAULT 30 NOT NULL,
     generation_window_started_at timestamp with time zone,
     generation_window_count integer DEFAULT 0 NOT NULL,
-    thread_context_messages integer DEFAULT 10 NOT NULL,
-    spam_opt_in boolean DEFAULT false NOT NULL,
     silence_threshold_hours integer DEFAULT 72 NOT NULL,
     plus_address_verified_at timestamp with time zone,
     setup_check_step text,
@@ -2492,7 +2490,6 @@ CREATE TABLE public.email_mailboxes (
     CONSTRAINT email_mailboxes_hourly_generation_budget_check CHECK (((hourly_generation_budget >= 1) AND (hourly_generation_budget <= 1000))),
     CONSTRAINT email_mailboxes_setup_check_step_check CHECK ((setup_check_step = ANY (ARRAY['base'::text, 'plus_address'::text]))),
     CONSTRAINT email_mailboxes_silence_threshold_hours_check CHECK (((silence_threshold_hours >= 1) AND (silence_threshold_hours <= 2160))),
-    CONSTRAINT email_mailboxes_thread_context_messages_check CHECK (((thread_context_messages >= 1) AND (thread_context_messages <= 50))),
     CONSTRAINT email_mailboxes_thread_send_budget_check CHECK (((thread_send_budget >= 1) AND (thread_send_budget <= 20)))
 );
 

@@ -61,8 +61,6 @@ EMAIL_CHANNEL_PROVIDER=local
 EMAIL_CHANNEL_INBOUND_DOMAIN=in.local.test
 EMAIL_CHANNEL_WEBHOOK_SECRET=whsec_<openssl rand -base64 32>
 EMAIL_CHANNEL_WORKERS_ENABLED=true
-EMAIL_CHANNEL_LOCAL_SPOOL_DIR=<absolute path>/spool
-EMAIL_CHANNEL_COALESCE_SECONDS=2
 ```
 
 Then, from `backend/`:
@@ -78,6 +76,8 @@ processes the documents in-process (no document worker needed), runs one sample 
 (`--samples N` for more), and prints the table on stderr. Application logs go to stdout. It writes
 `email-behaviour-results.json` (every step's typed outcome, checks, settle report and model calls)
 and `email-behaviour-table.md` to `--out`, by default the repository's `.context/email-behaviour/`.
+The local provider spools mail in `spool/` under the same directory, and mail on one thread inside
+two seconds shares a review.
 It exits non-zero when an `assert` case fails; `record` cases never gate.
 
 A full run is about 18 review turns plus one judge call per judged reply, on the configured chat

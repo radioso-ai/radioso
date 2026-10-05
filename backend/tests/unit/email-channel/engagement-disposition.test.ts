@@ -23,7 +23,7 @@ const AI_OWNED: Thread = { kind: "existing", ownership: "ai_owned" };
 const HUMAN_OWNED: Thread = { kind: "existing", ownership: "human_owned" };
 const MISMATCH: Thread = { kind: "participant_mismatch" };
 
-const draftMailbox: Mailbox = { effectiveMode: "draft", enabled: true, hasAgent: true, spamOptIn: false };
+const draftMailbox: Mailbox = { effectiveMode: "draft", enabled: true, hasAgent: true };
 
 const input = (overrides: Partial<EngagementDispositionInput> = {}): EngagementDispositionInput => ({
   mailbox: draftMailbox,
@@ -39,17 +39,15 @@ const everyInput = function* (): Generator<EngagementDispositionInput> {
   for (const effectiveMode of MODES) {
     for (const enabled of [true, false]) {
       for (const hasAgent of [true, false]) {
-        for (const spamOptIn of [true, false]) {
-          for (const classification of CLASSIFICATIONS) {
-            for (const thread of THREADS) {
-              for (const generationBudgetExhausted of [true, false]) {
-                yield {
-                  mailbox: { effectiveMode, enabled, hasAgent, spamOptIn },
-                  classification,
-                  thread,
-                  generationBudgetExhausted,
-                };
-              }
+        for (const classification of CLASSIFICATIONS) {
+          for (const thread of THREADS) {
+            for (const generationBudgetExhausted of [true, false]) {
+              yield {
+                mailbox: { effectiveMode, enabled, hasAgent },
+                classification,
+                thread,
+                generationBudgetExhausted,
+              };
             }
           }
         }
@@ -70,16 +68,18 @@ describe("resolveEngagementDisposition", () => {
         .toEqual({ kind: "drop", reason: "mailbox_disabled", noteOnThread: false });
     });
 
-    it.each(["automated_sender", "self_sender", "bounce"] as const)("drops %s mail whatever the mode", (classification) => {
+    it.each(["automated_sender", "self_sender", "bounce", "spam"] as const)("drops %s mail whatever the mode", (classification) => {
       for (const effectiveMode of MODES) {
-        expect(resolveEngagementDisposition(input({ mailbox: mailbox({ effectiveMode, spamOptIn: true }), classification })))
+        expect(resolveEngagementDisposition(input({ mailbox: mailbox({ effectiveMode }), classification })))
           .toEqual({ kind: "drop", reason: classification, noteOnThread: false });
       }
     });
 
-    it("drops spam when the mailbox has not opted in", () => {
-      expect(resolveEngagementDisposition(input({ classification: "spam" })))
-        .toEqual({ kind: "drop", reason: "spam", noteOnThread: false });
+    it("drops spam on every thread, a human-owned one included, and notes it there", () => {
+      for (const thread of [AI_OWNED, HUMAN_OWNED]) {
+        expect(resolveEngagementDisposition(input({ classification: "spam", thread })))
+          .toEqual({ kind: "drop", reason: "spam", noteOnThread: true });
+      }
     });
 
     it("drops a participant mismatch and notes it on the thread", () => {
@@ -90,11 +90,6 @@ describe("resolveEngagementDisposition", () => {
     it("drops on the classification before the participant mismatch", () => {
       expect(resolveEngagementDisposition(input({ classification: "automated_sender", thread: MISMATCH })))
         .toEqual({ kind: "drop", reason: "automated_sender", noteOnThread: true });
-    });
-
-    it("drops opted-in spam on a participant mismatch rather than ingesting it", () => {
-      expect(resolveEngagementDisposition(input({ mailbox: mailbox({ spamOptIn: true }), classification: "spam", thread: MISMATCH })))
-        .toEqual({ kind: "drop", reason: "participant_mismatch", noteOnThread: true });
     });
 
     it("notes a drop on the thread exactly when a thread exists", () => {
@@ -109,25 +104,11 @@ describe("resolveEngagementDisposition", () => {
   });
 
   describe("ingest only", () => {
-    it("ingests opted-in spam as an operator-only conversation", () => {
-      for (const effectiveMode of MODES) {
-        expect(resolveEngagementDisposition(input({ mailbox: mailbox({ effectiveMode, spamOptIn: true }), classification: "spam" })))
-          .toEqual({ kind: "ingest_only", reason: "spam_opt_in", humanOwnershipReason: "operator_only_mailbox" });
-      }
-      expect(resolveEngagementDisposition(input({ mailbox: mailbox({ spamOptIn: true }), classification: "spam", thread: AI_OWNED })))
-        .toEqual({ kind: "ingest_only", reason: "spam_opt_in", humanOwnershipReason: "operator_only_mailbox" });
-    });
-
     it("ingests into a human-owned conversation without changing ownership, whatever the mode", () => {
       for (const effectiveMode of MODES) {
         expect(resolveEngagementDisposition(input({ mailbox: mailbox({ effectiveMode }), thread: HUMAN_OWNED, generationBudgetExhausted: true })))
           .toEqual({ kind: "ingest_only", reason: "human_owned", humanOwnershipReason: null });
       }
-    });
-
-    it("keeps opted-in spam on a human-owned conversation human-owned without a new ownership request", () => {
-      expect(resolveEngagementDisposition(input({ mailbox: mailbox({ spamOptIn: true }), classification: "spam", thread: HUMAN_OWNED })))
-        .toEqual({ kind: "ingest_only", reason: "spam_opt_in", humanOwnershipReason: null });
     });
 
     it("ingests an operator-only mailbox's mail as human-owned", () => {
@@ -186,14 +167,13 @@ describe("resolveEngagementDisposition", () => {
   });
 
   describe("rule order", () => {
-    it("applies mailbox, classification, participant, spam opt-in, ownership, mode, agent, then budget", () => {
+    it("applies mailbox, classification, participant, ownership, mode, agent, then budget", () => {
       const reasons = [
         input({ mailbox: null, classification: "bounce", thread: MISMATCH, generationBudgetExhausted: true }),
         input({ mailbox: mailbox({ enabled: false, effectiveMode: "operator_only", hasAgent: false }), classification: "bounce", thread: MISMATCH }),
         input({ mailbox: mailbox({ effectiveMode: "operator_only" }), classification: "self_sender", thread: MISMATCH }),
-        input({ mailbox: mailbox({ spamOptIn: false }), classification: "spam", thread: MISMATCH }),
-        input({ mailbox: mailbox({ spamOptIn: true }), classification: "person", thread: MISMATCH, generationBudgetExhausted: true }),
-        input({ mailbox: mailbox({ spamOptIn: true, effectiveMode: "operator_only", hasAgent: false }), classification: "spam", thread: HUMAN_OWNED }),
+        input({ classification: "spam", thread: MISMATCH }),
+        input({ classification: "person", thread: MISMATCH, generationBudgetExhausted: true }),
         input({ mailbox: mailbox({ effectiveMode: "operator_only", hasAgent: false }), thread: HUMAN_OWNED, generationBudgetExhausted: true }),
         input({ mailbox: mailbox({ effectiveMode: "operator_only", hasAgent: false }), thread: AI_OWNED, generationBudgetExhausted: true }),
         input({ mailbox: mailbox({ effectiveMode: "auto", hasAgent: false }), thread: AI_OWNED, generationBudgetExhausted: true }),
@@ -209,7 +189,6 @@ describe("resolveEngagementDisposition", () => {
         "self_sender",
         "spam",
         "participant_mismatch",
-        "spam_opt_in",
         "human_owned",
         "operator_only_mailbox",
         "no_agent",

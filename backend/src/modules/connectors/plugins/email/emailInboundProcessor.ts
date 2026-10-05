@@ -59,6 +59,11 @@ const SOURCE_CHANNEL = "email";
 const PROCESSING_FAILED = "processing_failed";
 const RECEIPT_TO_INBOX_BUCKETS = [1, 2, 5, 10, 30, 60, 120, 300, 900];
 
+/** Mail on one thread inside this many seconds gets one review (FR-024). */
+export const EMAIL_COALESCE_SECONDS = 60;
+/** Raw MIME bytes stored per delivery; a larger message is stored truncated. */
+export const EMAIL_RAW_MAX_BYTES = 2 * 1024 * 1024;
+
 type ConversationOwnership = "ai_owned" | "human_owned";
 type FetchedDeliveryContent = Parameters<EmailInboundRepository["recordFetched"]>[1];
 type CustomerText = ReturnType<typeof extractCustomerText>;
@@ -71,7 +76,6 @@ type CustomerText = ReturnType<typeof extractCustomerText>;
 const HUMAN_OWNERSHIP_BY_REASON: ReadonlyMap<string, string> = new Map<IngestOnlyReason, string>([
   ["operator_only_mailbox", "operator_only_mailbox"],
   ["no_agent", "operator_only_mailbox"],
-  ["spam_opt_in", "operator_only_mailbox"],
   ["generation_budget", "generation_budget"],
 ]);
 
@@ -138,10 +142,11 @@ export interface EmailInboundProcessorDependencies {
   randomBytes: (size: number) => Uint8Array;
   config: {
     inboundDomain: string;
+    /** Raw MIME bytes stored per delivery: `EMAIL_RAW_MAX_BYTES` in a deployment. */
     rawMaxBytes: number;
     /** The modes this deployment runs (plan, Questions settled, item 4). */
     supportedModes: readonly EngagementMode[];
-    /** `EMAIL_CHANNEL_COALESCE_SECONDS`: mail on one thread inside it gets one review (FR-024). */
+    /** Mail on one thread inside it gets one review (FR-024): `EMAIL_COALESCE_SECONDS` in a deployment. */
     coalesceSeconds: number;
   };
 }
@@ -521,7 +526,6 @@ export class EmailInboundProcessor {
           effectiveMode: context.authority.mode,
           enabled: context.authority.enabled,
           hasAgent: context.mailbox.agentId !== null,
-          spamOptIn: context.mailbox.spamOptIn,
         },
         classification,
         thread: resolution.kind === "existing"

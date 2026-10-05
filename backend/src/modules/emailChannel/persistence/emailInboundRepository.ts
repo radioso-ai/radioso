@@ -21,7 +21,6 @@ type DispositionReason =
   | "operator_only_mailbox"
   | "human_owned"
   | "generation_budget"
-  | "spam_opt_in"
   | "no_agent"
   | "accepted";
 type SpamVerdict = "spam" | "not_spam" | "unknown";
@@ -45,7 +44,6 @@ const DISPOSITION_REASONS: readonly DispositionReason[] = [
   "operator_only_mailbox",
   "human_owned",
   "generation_budget",
-  "spam_opt_in",
   "no_agent",
   "accepted",
 ];

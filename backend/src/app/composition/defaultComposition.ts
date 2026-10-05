@@ -71,7 +71,7 @@ import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirecti
 import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
 import { createWebhookSendApplicationModule } from "./builtIn/webhookSendModule.js";
 import { createConversationTransferNoticeApplicationModule } from "./builtIn/conversationTransferNoticeModule.js";
-import { createEmailChannelApplicationModule } from "./emailChannel.js";
+import { createEmailChannelApplicationModule, type EmailChannelOptions } from "./emailChannel.js";
 import { createCustomerEmailApplicationModule } from "../../modules/customerEmail/composition.js";
 import { createSlackApplicationModule } from "../../modules/slack/composition.js";
 import { createOssOrganizationCreationApplicationModule } from "../../modules/auth/composition.js";
@@ -147,6 +147,8 @@ export const createDefaultApplicationComposition = (options: {
     | "SLACK_OAUTH_CLIENT_SECRET"
     | "SLACK_SIGNING_SECRET"
   >> & Parameters<typeof parseEmailChannelConfig>[0];
+  /** Test and harness overrides of the email channel's fixed timings, limits and local spool. */
+  emailChannel?: EmailChannelOptions;
   modules?: ApplicationModule[];
   widgetOrigin?: string;
 }): ApplicationComposition => {
@@ -174,6 +176,7 @@ export const createDefaultApplicationComposition = (options: {
     createSlackApplicationModule(options.env),
     createEmailChannelApplicationModule({
       config: parseEmailChannelConfig(options.env ?? {}),
+      options: options.emailChannel,
       drainDispatcherFor: createDefaultEmailChannelDrainDispatcher,
     }),
     ...(options.modules ?? []),

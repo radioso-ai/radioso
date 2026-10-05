@@ -61,7 +61,7 @@ const ADAPTER_VERDICTS: Readonly<Record<string, AdapterVerdict>> = {
 const FIXTURES = readdirSync(PROTOCOL_DIR).filter((name) => name.endsWith(".eml")).sort();
 
 /** One fixture, under one verdict, through stage 1 and stage 2 on a fresh `draft` mailbox. */
-const runThroughChannel = async (fixture: string, verdict: AdapterVerdict, mailboxOptions: { spamOptIn: boolean }) => {
+const runThroughChannel = async (fixture: string, verdict: AdapterVerdict) => {
   let now = new Date("2026-10-04T09:00:00.000Z");
   const clock = () => now;
   const domains = new InMemoryEmailDomains(clock);
@@ -79,7 +79,6 @@ const runThroughChannel = async (fixture: string, verdict: AdapterVerdict, mailb
     relayToken: RELAY_TOKEN,
     engagementMode: "draft",
     agentId: AGENT_ID,
-    spamOptIn: mailboxOptions.spamOptIn,
   });
   mailboxes.history.push({
     mailboxId: mailbox.id,
@@ -213,19 +212,18 @@ const runThroughChannel = async (fixture: string, verdict: AdapterVerdict, mailb
   return { outcome, delivery, reviewed, respond, logged };
 };
 
-const casesOf = (spamOptIn: boolean) =>
-  FIXTURES.flatMap((fixture) => Object.entries(ADAPTER_VERDICTS).map(([verdictName, verdict]) => ({ fixture, verdictName, verdict, spamOptIn })));
+const CASES = FIXTURES.flatMap((fixture) => Object.entries(ADAPTER_VERDICTS).map(([verdictName, verdict]) => ({ fixture, verdictName, verdict })));
 
 describe("SC-003: the protocol corpus never runs a turn", () => {
   it("names every fixture in protocol/ with its header classification", () => {
     expect(Object.keys(HEADER_CLASSIFICATION).sort()).toEqual(FIXTURES);
   });
 
-  describe.each([false, true])("on a draft mailbox with spam opt-in %s", (spamOptIn) => {
-    it.each(casesOf(spamOptIn).filter((entry) => entry.fixture !== CONTROL))(
+  describe("on a draft mailbox", () => {
+    it.each(CASES.filter((entry) => entry.fixture !== CONTROL))(
       "$fixture under $verdictName: no turn, and in the event log with its verdicts",
       async ({ fixture, verdict }) => {
-        const run = await runThroughChannel(fixture, verdict, { spamOptIn });
+        const run = await runThroughChannel(fixture, verdict);
 
         expect(run.outcome).toBe("processed");
         expect(run.delivery).toMatchObject({ state: "done", classification: HEADER_CLASSIFICATION[fixture], disposition: "drop" });
@@ -242,10 +240,10 @@ describe("SC-003: the protocol corpus never runs a turn", () => {
       },
     );
 
-    it.each(casesOf(spamOptIn).filter((entry) => entry.fixture === CONTROL))(
+    it.each(CASES.filter((entry) => entry.fixture === CONTROL))(
       "control $fixture under $verdictName: a person, reviewed unless the adapter marks it spam",
       async ({ fixture, verdict }) => {
-        const run = await runThroughChannel(fixture, verdict, { spamOptIn });
+        const run = await runThroughChannel(fixture, verdict);
         const spam = verdict.spamVerdict === "spam";
 
         expect(run.delivery).toMatchObject({ state: "done", classification: spam ? "spam" : "person" });
@@ -254,9 +252,7 @@ describe("SC-003: the protocol corpus never runs a turn", () => {
           expect(run.delivery).toMatchObject({ disposition: "run_review_turn", dispositionReason: "accepted" });
           expect(run.respond).toHaveBeenCalledOnce();
         } else {
-          expect([run.delivery.disposition, run.delivery.dispositionReason]).toEqual(
-            spamOptIn ? ["ingest_only", "spam_opt_in"] : ["drop", "spam"],
-          );
+          expect([run.delivery.disposition, run.delivery.dispositionReason]).toEqual(["drop", "spam"]);
           expect(run.respond).not.toHaveBeenCalled();
         }
         expect(run.logged).toEqual([expect.objectContaining({ id: run.delivery.id, spamVerdict: verdict.spamVerdict, auth: verdict.authentication })]);

@@ -4,7 +4,7 @@ import { getEnv, parseEmailChannelConfig, type Env } from "../config/env.js";
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
-import { createEmailChannelComposition, createPostgresDeliveryFailures } from "../composition/emailChannel.js";
+import { createEmailChannelComposition, createPostgresDeliveryFailures, type EmailChannelOptions } from "../composition/emailChannel.js";
 import { createConnectorChatPort } from "../../modules/connectors/services/connectorChatPort.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import { requestSourceDigestPort } from "../http/middleware/requestSource.js";
@@ -137,6 +137,8 @@ interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
   realtimePublisherComposition?: RealtimePublisherComposition;
   operatorMcpPreregisteredClients?: ReadonlyMap<string, OperatorMcpClientMetadataSnapshot>;
+  /** Test and harness overrides of the email channel's fixed timings, limits and local spool. */
+  emailChannel?: EmailChannelOptions;
 }
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
@@ -155,6 +157,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     env,
     modules: options.modules,
+    emailChannel: options.emailChannel,
     widgetOrigin: env.RADIOSO_WIDGET_ORIGIN ?? env.APP_BASE_URL,
   });
   const infrastructure = buildInfrastructure({ env, logger, composition });
@@ -387,6 +390,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const emailChannelConfig = parseEmailChannelConfig(env);
   const emailChannel = createEmailChannelComposition({
     config: emailChannelConfig,
+    options: options.emailChannel,
     db: infrastructure.database.kysely,
     drains: createDefaultEmailChannelDrainDispatcher(env, emailChannelConfig),
     activity: conversationActivity.recorder,

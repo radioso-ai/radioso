@@ -25,7 +25,7 @@ interface EmailChannelConnectorDependencies
   threads: EmailInboundProcessorDependencies["threads"] & EmailReviewRunnerDependencies["links"];
   /** The host port: `ingest` records inbound mail (stage 1), `respond` runs its review (stage 2). */
   chat: Pick<ConnectorChatPort, "ingest" | "respond">;
-  /** Stage 2's own ports, and `EMAIL_CHANNEL_REVIEW_MAX_ATTEMPTS`. */
+  /** Stage 2's own ports, and the claims a review gets before it goes to a person. */
   review: Pick<EmailReviewRunnerDependencies, "conversations" | "heldReplies" | "handoffs" | "checks" | "notes"> & { maxAttempts: number };
   logger: {
     info(fields: Record<string, unknown>, message: string): void;

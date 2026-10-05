@@ -16,8 +16,6 @@ export interface MailboxSettings {
   displayName: string;
   threadSendBudget: number;
   hourlyGenerationBudget: number;
-  threadContextMessages: number;
-  spamOptIn: boolean;
   silenceThresholdHours: number;
 }
 
@@ -94,8 +92,6 @@ const mapMailbox = (row: MailboxRow): EmailMailboxRecord => ({
   hourlyGenerationBudget: row.hourly_generation_budget,
   generationWindowStartedAt: row.generation_window_started_at,
   generationWindowCount: row.generation_window_count,
-  threadContextMessages: row.thread_context_messages,
-  spamOptIn: row.spam_opt_in,
   silenceThresholdHours: row.silence_threshold_hours,
   plusAddressVerifiedAt: row.plus_address_verified_at,
   setupCheckStep: readOptionalEnum(row.setup_check_step, SETUP_CHECK_STEPS, "email_mailboxes.setup_check_step"),
@@ -121,8 +117,6 @@ const settingsColumns = (settings: Partial<MailboxSettings>) => ({
   ...(settings.displayName !== undefined ? { display_name: settings.displayName } : {}),
   ...(settings.threadSendBudget !== undefined ? { thread_send_budget: settings.threadSendBudget } : {}),
   ...(settings.hourlyGenerationBudget !== undefined ? { hourly_generation_budget: settings.hourlyGenerationBudget } : {}),
-  ...(settings.threadContextMessages !== undefined ? { thread_context_messages: settings.threadContextMessages } : {}),
-  ...(settings.spamOptIn !== undefined ? { spam_opt_in: settings.spamOptIn } : {}),
   ...(settings.silenceThresholdHours !== undefined ? { silence_threshold_hours: settings.silenceThresholdHours } : {}),
 });
 
@@ -151,8 +145,6 @@ export class EmailMailboxRepository {
             policy_version: 1,
             thread_send_budget: input.threadSendBudget,
             hourly_generation_budget: input.hourlyGenerationBudget,
-            thread_context_messages: input.threadContextMessages,
-            spam_opt_in: input.spamOptIn,
             silence_threshold_hours: input.silenceThresholdHours,
             created_by_user_id: input.createdByUserId,
           })

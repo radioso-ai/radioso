@@ -73,8 +73,6 @@ const mailboxRow = (overrides: Record<string, unknown> = {}): Record<string, unk
   policy_version: 4,
   thread_send_budget: 3,
   hourly_generation_budget: 30,
-  thread_context_messages: 10,
-  spam_opt_in: false,
   silence_threshold_hours: 72,
   plus_address_verified_at: null,
   setup_check_step: null,

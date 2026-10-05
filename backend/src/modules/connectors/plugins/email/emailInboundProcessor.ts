@@ -7,6 +7,7 @@ import {
   effectiveEngagementMode,
   extractCustomerText,
   generateOpaqueToken,
+  isGenerationBudgetExhausted,
   parsePlusToken,
   requestDrainBestEffort,
   type EmailChannelDrainDispatcherPort,
@@ -526,12 +527,16 @@ export class EmailInboundProcessor {
         thread: resolution.kind === "existing"
           ? { kind: "existing", ownership: ownership ?? "ai_owned" }
           : { kind: resolution.kind },
-        // The mailbox's generation budget (research B8) is reserved and checked from S4 (T206).
-        generationBudgetExhausted: false,
+        // Read as the mailbox was when the delivery opened; the review's own reservation is the
+        // atomic check (research B8), so mail racing a full window is still bounded there.
+        generationBudgetExhausted: isGenerationBudgetExhausted(context.mailbox, this.deps.clock()),
       }),
       resultAttributes: (decided) => ({ disposition: decided.kind, reason: dispositionReasonOf(decided) }),
     });
     this.countDelivery(classification, disposition.kind, dispositionReasonOf(disposition));
+    if (disposition.kind === "ingest_only" && disposition.reason === "generation_budget") {
+      this.count("email_budget_hits_total", "Automatic email behavior a budget stopped, by budget.", { budget: "mailbox_generation" });
+    }
     return disposition;
   }
 

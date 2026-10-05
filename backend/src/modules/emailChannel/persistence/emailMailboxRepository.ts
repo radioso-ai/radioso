@@ -3,6 +3,7 @@ import type { Selectable } from "kysely";
 import { currentTimestamp, nowPlusSeconds } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../../shared/infra/kysely/types.js";
 import type { EngagementMode } from "../mailboxes/effectiveMode.js";
+import { generationWindowOpenAfter, type GenerationReservation } from "../mailboxes/generationBudget.js";
 import { readEnum, readOptionalEnum } from "./columnValues.js";
 
 export type SetupCheckStep = "base" | "plus_address";
@@ -38,6 +39,9 @@ export interface EmailMailboxRecord extends MailboxSettings, MailboxPolicy {
   previousRelayToken: string | null;
   previousRelayTokenExpiresAt: Date | null;
   policyVersion: number;
+  /** The generation window (research B8): when its first generation was charged, null before any, and its charges. */
+  generationWindowStartedAt: Date | null;
+  generationWindowCount: number;
   plusAddressVerifiedAt: Date | null;
   setupCheckStep: SetupCheckStep | null;
   setupCheckStartedAt: Date | null;
@@ -88,6 +92,8 @@ const mapMailbox = (row: MailboxRow): EmailMailboxRecord => ({
   policyVersion: row.policy_version,
   threadSendBudget: row.thread_send_budget,
   hourlyGenerationBudget: row.hourly_generation_budget,
+  generationWindowStartedAt: row.generation_window_started_at,
+  generationWindowCount: row.generation_window_count,
   threadContextMessages: row.thread_context_messages,
   spamOptIn: row.spam_opt_in,
   silenceThresholdHours: row.silence_threshold_hours,
@@ -413,6 +419,71 @@ export class EmailMailboxRepository {
       .selectAll()
       .executeTakeFirst();
     return row ? mapMailbox(row) : null;
+  }
+
+  /**
+   * Charges one generation to the mailbox's hourly budget for a conversation's review revision
+   * (research B8), in one statement: the thread link is locked, so the same revision is charged
+   * once however many attempts or workers ask; the mailbox row's conditional update is what
+   * serializes concurrent charges, so the count never passes the budget. A window that opened an
+   * hour or more before `at` rolls, and this charge opens the next one at `at`.
+   */
+  async reserveGeneration(input: {
+    mailboxId: string;
+    conversationId: string;
+    revision: number;
+    at: Date;
+  }): Promise<GenerationReservation> {
+    const openAfter = generationWindowOpenAfter(input.at);
+    const row = await this.db
+      .with("link", (db) =>
+        db
+          .selectFrom("email_thread_links")
+          .select(["conversation_id", "generation_reserved_revision"])
+          .where("conversation_id", "=", input.conversationId)
+          .where("mailbox_id", "=", input.mailboxId)
+          .forUpdate(),
+      )
+      .with("charged", (db) =>
+        db
+          .updateTable("email_mailboxes")
+          .set((eb) => {
+            const windowOpen = eb("generation_window_started_at", ">", openAfter);
+            return {
+              generation_window_started_at: eb.case().when(windowOpen).then(eb.ref("generation_window_started_at")).else(input.at).end(),
+              generation_window_count: eb.case().when(windowOpen).then(eb("generation_window_count", "+", 1)).else(1).end(),
+            };
+          })
+          .where("id", "=", input.mailboxId)
+          .where((eb) =>
+            eb.exists(eb.selectFrom("link").select("conversation_id").where("generation_reserved_revision", "is distinct from", input.revision)),
+          )
+          .where((eb) =>
+            eb.or([
+              eb("generation_window_started_at", "is", null),
+              eb("generation_window_started_at", "<=", openAfter),
+              eb("generation_window_count", "<", eb.ref("hourly_generation_budget")),
+            ]),
+          )
+          .returning("id"),
+      )
+      .with("marked", (db) =>
+        db
+          .updateTable("email_thread_links")
+          .set({ generation_reserved_revision: input.revision, updated_at: currentTimestamp() })
+          .where("conversation_id", "=", input.conversationId)
+          .where((eb) => eb.exists(eb.selectFrom("charged").select("id")))
+          .returning("conversation_id"),
+      )
+      .selectNoFrom((eb) => [
+        eb.exists(eb.selectFrom("link").select("conversation_id")).as("linked"),
+        eb.exists(eb.selectFrom("link").select("conversation_id").where("generation_reserved_revision", "=", input.revision)).as("already"),
+        eb.exists(eb.selectFrom("marked").select("conversation_id")).as("reserved"),
+      ])
+      .executeTakeFirstOrThrow();
+    if (!row.linked) throw new Error("The thread to charge a generation for has no link on the mailbox");
+    if (row.reserved) return "reserved";
+    return row.already ? "already_reserved" : "exhausted";
   }
 
   /** The policy in force at `at`: the newest version effective at or before it. */

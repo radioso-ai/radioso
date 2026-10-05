@@ -12,6 +12,7 @@ import {
   type EngagementMode,
 } from "../../src/modules/emailChannel/public.js";
 import type { EmailDomainProvisioner } from "../../src/modules/mail/public.js";
+import { generationWindowOpenAfter, type GenerationReservation } from "../../src/modules/emailChannel/mailboxes/generationBudget.js";
 import type { EmailDomainRecord, EmailDomainRepository } from "../../src/modules/emailChannel/persistence/emailDomainRepository.js";
 import type { EmailInboundRepository } from "../../src/modules/emailChannel/persistence/emailInboundRepository.js";
 import type {
@@ -186,9 +187,12 @@ export class InMemoryEmailMailboxes implements Pick<
   | "markRemoved"
   | "lockForPolicyChange"
   | "appendPolicyVersion"
+  | "reserveGeneration"
 > {
   readonly records = new Map<string, EmailMailboxRecord>();
   readonly history: MailboxPolicyVersion[] = [];
+  /** `email_thread_links.generation_reserved_revision`, by conversation. */
+  readonly generationReservations = new Map<string, number>();
   /** Every call, in order, so a test can assert the lock came first. */
   readonly calls: string[] = [];
 
@@ -207,6 +211,8 @@ export class InMemoryEmailMailboxes implements Pick<
       policyVersion: 1,
       threadSendBudget: 3,
       hourlyGenerationBudget: 30,
+      generationWindowStartedAt: null,
+      generationWindowCount: 0,
       threadContextMessages: 10,
       spamOptIn: false,
       silenceThresholdHours: 72,
@@ -350,6 +356,23 @@ export class InMemoryEmailMailboxes implements Pick<
       agentId: input.agentId,
       policyVersion: version,
     });
+  }
+
+  /** The repository's conditional charge (research B8): once per conversation revision, never past the budget. */
+  async reserveGeneration(input: Args<EmailMailboxRepository["reserveGeneration"]>[0]): Promise<GenerationReservation> {
+    const record = this.records.get(input.mailboxId);
+    if (!record) throw new Error("The mailbox to charge does not exist");
+    if (this.generationReservations.get(input.conversationId) === input.revision) return "already_reserved";
+    const startedAt = record.generationWindowStartedAt;
+    const open = startedAt !== null && startedAt.getTime() > generationWindowOpenAfter(input.at).getTime();
+    if (open && record.generationWindowCount >= record.hourlyGenerationBudget) return "exhausted";
+    this.records.set(record.id, {
+      ...record,
+      generationWindowStartedAt: open ? startedAt : input.at,
+      generationWindowCount: open ? record.generationWindowCount + 1 : 1,
+    });
+    this.generationReservations.set(input.conversationId, input.revision);
+    return "reserved";
   }
 
   private update(record: EmailMailboxRecord, patch: Partial<EmailMailboxRecord>): EmailMailboxRecord {

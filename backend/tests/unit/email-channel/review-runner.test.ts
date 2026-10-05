@@ -257,6 +257,58 @@ describe("EmailReviewRunner", () => {
     });
   });
 
+  describe("the generation budget (FR-023, research B8)", () => {
+    it("hands the thread off as generation_budget, running no turn, once the mailbox's generation budget is spent", async () => {
+      const h = createEmailReviewHarness();
+      const mailbox = h.seedMailbox({ hourlyGenerationBudget: 1 });
+      const generated = await h.openThread(mailbox);
+      const refused = await h.openThread(mailbox);
+      h.advance(MINUTE_MS);
+      h.respond.mockImplementation(async (input) => h.draftTurn(input.conversationId));
+
+      expect(await h.drain()).toMatchObject({ claimed: 2, held: 1, budget_exhausted: 1 });
+
+      expect(h.respond).toHaveBeenCalledOnce();
+      expect(h.respond).toHaveBeenCalledWith(expect.objectContaining({ conversationId: generated.conversationId }));
+      expect(h.handoffs).toEqual([{ conversationId: refused.conversationId, reason: "generation_budget" }]);
+      expect(h.heldRows.of(refused.conversationId)).toEqual([]);
+      expect(h.threads.links.get(refused.conversationId)).toMatchObject({ reviewDueAt: null, reviewCompletedRevision: 1 });
+      expect(h.counted("email_budget_hits_total")).toEqual([{ budget: "mailbox_generation" }]);
+      expect(h.mailboxes.records.get(mailbox.id)).toMatchObject({ generationWindowCount: 1 });
+    });
+
+    it("charges a revision once, however many attempts its review takes", async () => {
+      const { h, mailbox, conversationId } = await dueThread();
+      h.mailboxes.records.set(mailbox.id, { ...mailbox, hourlyGenerationBudget: 1 });
+      h.respond.mockRejectedValueOnce(new Error("model timeout"));
+      h.respond.mockResolvedValueOnce(h.draftTurn(conversationId));
+
+      expect(await h.drain()).toMatchObject({ retrying: 1 });
+      h.advance(30_000);
+      expect(await h.drain()).toMatchObject({ held: 1 });
+
+      expect(h.respond).toHaveBeenCalledTimes(2);
+      expect(h.handoffs).toEqual([]);
+      expect(h.counted("email_budget_hits_total")).toEqual([]);
+      expect(h.mailboxes.records.get(mailbox.id)).toMatchObject({ generationWindowCount: 1 });
+    });
+
+    it("charges the thread's next revision again: newer mail meets the spent budget and goes to a person", async () => {
+      const { h, mailbox, conversationId } = await dueThread();
+      h.mailboxes.records.set(mailbox.id, { ...mailbox, hourlyGenerationBudget: 1 });
+      h.respond.mockResolvedValue(h.draftTurn(conversationId));
+      await h.drain();
+
+      await h.receive(conversationId, "Any news?");
+      h.advance(MINUTE_MS);
+      expect(await h.drain()).toMatchObject({ claimed: 1, budget_exhausted: 1 });
+
+      expect(h.respond).toHaveBeenCalledOnce();
+      expect(h.handoffs).toEqual([{ conversationId, reason: "generation_budget" }]);
+      expect(h.threads.links.get(conversationId)).toMatchObject({ reviewDueAt: null, reviewCompletedRevision: 2 });
+    });
+  });
+
   describe("failures", () => {
     it("retries a failed review at the backoff time and asks for a drain then", async () => {
       const { h, conversationId } = await dueThread();

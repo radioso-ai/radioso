@@ -247,6 +247,69 @@ describe("MailboxService", () => {
     });
   });
 
+  describe("auto mode (S6)", () => {
+    const ALL_MODES: readonly EngagementMode[] = ["operator_only", "draft", "auto"];
+
+    it("offers auto once the deployment supports it, and keeps draft the default for new mailboxes", async () => {
+      const { service } = harness(ALL_MODES);
+
+      expect(service.modes()).toEqual({ supportedModes: ["operator_only", "draft", "auto"], defaultMode: "draft" });
+      expect(await createSupport(service)).toMatchObject({ engagementMode: "draft" });
+    });
+
+    it("refuses a switch to auto without the explicit opt-in, with 400 auto_opt_in_required, and writes nothing", async () => {
+      const { service, mailboxes, policyChanges } = harness(ALL_MODES);
+      const created = await createSupport(service);
+
+      await expectAppError(service.update(actor, workspaceId, created.id, { engagementMode: "auto" }), 400, "auto_opt_in_required");
+      await expectAppError(service.update(actor, workspaceId, created.id, { engagementMode: "auto", autoOptIn: false }), 400, "auto_opt_in_required");
+
+      expect(mailboxes.records.get(created.id)).toMatchObject({ engagementMode: "draft", policyVersion: 1 });
+      expect(mailboxes.history).toHaveLength(1);
+      expect(policyChanges.heldReplies.superseded).toEqual([]);
+    });
+
+    it("switches to auto with the opt-in as a new policy version, and audits the change", async () => {
+      const { service, mailboxes, audits } = harness(ALL_MODES);
+      const created = await createSupport(service);
+
+      const switched = await service.update(actor, workspaceId, created.id, { engagementMode: "auto", autoOptIn: true, expectedPolicyVersion: 1 });
+
+      expect(switched).toMatchObject({ engagementMode: "auto", policyVersion: 2 });
+      expect(mailboxes.history.map((policy) => policy.engagementMode)).toEqual(["draft", "auto"]);
+      expect(audits().filter((event) => event.metadata.action === "mode_changed").at(-1)?.metadata)
+        .toMatchObject({ fromMode: "draft", toMode: "auto", policyVersion: 2 });
+    });
+
+    it("asks for no opt-in once a mailbox is auto, or to leave auto", async () => {
+      const { service } = harness(ALL_MODES);
+      const created = await createSupport(service, { engagementMode: "auto", autoOptIn: true });
+
+      expect(await service.update(actor, workspaceId, created.id, { engagementMode: "auto", threadSendBudget: 2 }))
+        .toMatchObject({ engagementMode: "auto", threadSendBudget: 2, policyVersion: 1 });
+      expect(await service.update(actor, workspaceId, created.id, { engagementMode: "draft" }))
+        .toMatchObject({ engagementMode: "draft", policyVersion: 2 });
+    });
+
+    it("creates an auto mailbox only with the opt-in", async () => {
+      const { service, sendingDomains, mailboxes } = harness(ALL_MODES);
+
+      await expectAppError(createSupport(service, { engagementMode: "auto" }), 400, "auto_opt_in_required");
+      expect(sendingDomains.ensureRegistered).not.toHaveBeenCalled();
+      expect(mailboxes.records.size).toBe(0);
+
+      expect(await createSupport(service, { engagementMode: "auto", autoOptIn: true })).toMatchObject({ engagementMode: "auto", policyVersion: 1 });
+    });
+
+    it("still refuses auto where the deployment does not run it, opt-in or not", async () => {
+      const { service, mailboxes } = harness(["operator_only", "draft"]);
+      const created = await createSupport(service);
+
+      await expectAppError(service.update(actor, workspaceId, created.id, { engagementMode: "auto", autoOptIn: true }), 409, "engagement_mode_unavailable");
+      expect(mailboxes.records.get(created.id)?.policyVersion).toBe(1);
+    });
+  });
+
   describe("policy changes", () => {
     it("changes enabled, mode and agent through the policy-change port with a new version and history row", async () => {
       const { service, mailboxes, policyChanges, audits } = harness(["operator_only", "draft"]);

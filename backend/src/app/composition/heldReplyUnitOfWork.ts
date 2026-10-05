@@ -49,13 +49,14 @@ const channelRegistry = (
 };
 
 /**
- * Runs a held-reply command — hold, release, discard — in one Postgres transaction, binding to it
- * the conversation and ownership locks, the held replies, the producing channel's scope (found by
- * the draft's policy-ref prefix, bound once per transaction), the message a release writes with
- * its delivery on the action outbox, and the activity. The lock order is the held-reply service's:
- * conversation, ownership, the channel's policy, the conditional held-reply update, the message,
- * then the delivery. The drain push goes out only after commit, when a delivery was queued, and is
- * best-effort.
+ * Runs a held-reply command — hold, queue an automatic send, materialize it, release, discard — in
+ * one Postgres transaction, binding to it the conversation and ownership locks, the held replies,
+ * the producing channel's scope (found by the draft's policy-ref prefix, bound once per
+ * transaction), the message a release or materialization writes with its delivery on the action
+ * outbox, and the activity. The lock order is the held-reply service's: conversation, ownership,
+ * the channel's policy, the conditional held-reply write, the message, then the delivery — a queued
+ * send's on the outbox, a materialized one's as the channel's send record, in the same transaction.
+ * The drain push goes out only after commit, when a delivery was queued, and is best-effort.
  */
 export const createPostgresHeldReplyUnitOfWork = (deps: {
   db: Kysely<DB>;

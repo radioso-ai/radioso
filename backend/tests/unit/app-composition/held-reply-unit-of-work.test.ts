@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,7 +8,7 @@ import {
 } from "../../../src/app/composition/heldReplyUnitOfWork.js";
 import type { ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
 import { emailMailboxPolicyRef, EMAIL_SEND_ACTION_TYPE } from "../../../src/modules/emailChannel/public.js";
-import { HeldReplyService, type OwnershipActor } from "../../../src/modules/handoff/public.js";
+import { HeldReplyService, type HeldReplyChannelScope, type OwnershipActor } from "../../../src/modules/handoff/public.js";
 import { createRecordingKysely, type RecordedAnswer } from "../../support/recordingKysely.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -115,6 +116,11 @@ const kindOf = (sql: string): string | null => {
   if (/^select \* from "held_replies" where "id" = /u.test(sql)) return "read_held_reply";
   if (/^select \* from "email_mailboxes" .*for share$/u.test(sql)) return "lock_policy";
   if (/^update "held_replies" set .*"releaser_user_id" = .*"ownership_version" = /u.test(sql)) return "release_held_reply";
+  if (/^update "held_replies" set "state" = .* "state" in /u.test(sql)) return "materialize_held_reply";
+  if (/^select \* from "held_replies" where "conversation_id" = .* "review_ref" = /u.test(sql)) return "find_by_review_ref";
+  if (/^select "id" from "messages" where "conversation_id" = .* "role" = /u.test(sql)) return "latest_customer_message";
+  if (/^insert into "held_replies"/u.test(sql)) return "insert_held_reply";
+  if (/^insert into "email_send_intents"/u.test(sql)) return "record_intent";
   if (/^insert into "messages"/u.test(sql)) return "insert_message";
   if (/^update "conversations" set "updated_at"/u.test(sql)) return "touch_conversation";
   if (/^select \* from "email_domains"/u.test(sql)) return "read_domain";
@@ -128,6 +134,8 @@ const harness = (options: {
   mailbox?: Record<string, unknown>;
   domain?: Record<string, unknown>;
   channels?: readonly HeldReplyChannelRegistration[];
+  /** Registers a fake automatic-sending channel under email's prefix, in place of `channels`. */
+  autoChannel?: { budgetLeft: boolean; dispatch: { authorized: true } | { authorized: false; code: string } };
   drainFails?: boolean;
 } = {}) => {
   let messageId: string | null = null;
@@ -139,6 +147,18 @@ const harness = (options: {
         return { rows: [heldReplyRow(options.heldReply)] };
       case "lock_policy":
         return { rows: [mailboxRow(options.mailbox)] };
+      case "find_by_review_ref":
+        return { rows: [] };
+      case "latest_customer_message":
+        return { rows: [{ id: answersMessageId }] };
+      case "insert_held_reply":
+        return { rows: [heldReplyRow({ state: "queued_auto", hold_reason: "queued_auto" })] };
+      case "materialize_held_reply":
+        return {
+          rows: [heldReplyRow(options.autoChannel?.dispatch.authorized === false
+            ? { ...options.heldReply, state: "pending", hold_reason: "authority_changed" }
+            : { ...options.heldReply, state: "released", release_kind: "auto", decided_at: at })],
+        };
       case "release_held_reply":
         return { rows: [heldReplyRow({ ...options.heldReply, state: "released", release_kind: "operator", releaser_user_id: dana.userId })] };
       case "insert_message":
@@ -187,11 +207,44 @@ const harness = (options: {
   };
   const logger = { warn: vi.fn() };
   const replies = { write: vi.fn(), announce: vi.fn() };
+  const { autoChannel } = options;
+  // Marks what the channel decides in the log; records a materialized send on the transaction it is bound to.
+  const autoRegistration: HeldReplyChannelRegistration | null = autoChannel
+    ? {
+        policyRefPrefix: "email_mailbox:",
+        bind: (trx): HeldReplyChannelScope => ({
+          lockPolicy: async () => {
+            log.push("lock_policy");
+            return { version: 4 };
+          },
+          enqueueRelease: async () => undefined,
+          reserveAutoSend: async () => {
+            log.push("reserve_auto_send");
+            return autoChannel.budgetLeft;
+          },
+          enqueueAutoSend: async (heldReply, outbox) => {
+            await outbox.enqueue({
+              type: EMAIL_SEND_ACTION_TYPE,
+              workspaceId,
+              payload: { trigger: "auto_reply", heldReplyId: heldReply.id, messageId: null },
+              idempotencyKey: `email:send:held:${heldReply.id}`,
+            });
+          },
+          authorizeAutoDispatch: async () => {
+            log.push("authorize_auto_dispatch");
+            return autoChannel.dispatch;
+          },
+          recordMaterialized: async (heldReply, messageId) => {
+            await sql`insert into "email_send_intents" ("held_reply_id", "message_id") values (${heldReply.id}, ${messageId})`.execute(trx);
+          },
+        }),
+      }
+    : null;
   const service = new HeldReplyService({
     conversations: { findByIdAndWorkspaceId: vi.fn(async () => conversation) },
     writes: createPostgresHeldReplyUnitOfWork({
       db,
-      channels: options.channels ?? [emailHeldReplyChannelRegistration],
+      channels: autoRegistration ? [autoRegistration] : options.channels ?? [emailHeldReplyChannelRegistration],
       activity,
       actionDrain,
       logger,
@@ -328,5 +381,93 @@ describe("createPostgresHeldReplyUnitOfWork", () => {
       expect.objectContaining({ event: "held_reply_release_drain_push_failed", workspaceId, conversationId }),
       expect.any(String),
     );
+  });
+
+  describe("automatic sends", () => {
+    const queueInput = {
+      workspaceId,
+      conversationId,
+      agentId: null,
+      answersMessageId,
+      ownershipVersion: 0,
+      policy: { ref: emailMailboxPolicyRef(mailboxId), version: 4 },
+      reviewRef: `email:${conversationId}:1`,
+      facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: false as const }, suppressedEffects: [], citationCount: 1 },
+      draft: { text: "Your order ships tomorrow.", presentation: { skillName: "retrieval.answer", skillOutcome: "grounded", metadata: { citations: [] } } },
+    };
+
+    it("queues in one transaction: locks, reservation, the queued held reply, then its send; the drain after commit", async () => {
+      const { service, statements, sent, enqueued } = harness({ autoChannel: { budgetLeft: true, dispatch: { authorized: true } } });
+
+      expect(await service.queueAuto(queueInput)).toEqual({ ok: true, heldReplyId, duplicate: false });
+      expect(sent()).toEqual([
+        "BEGIN",
+        "lock_conversation",
+        "lock_ownership",
+        "find_by_review_ref",
+        "lock_policy",
+        "latest_customer_message",
+        "reserve_auto_send",
+        "insert_held_reply",
+        "enqueue",
+        "COMMIT",
+        "drain",
+      ]);
+      expect(enqueued()?.parameters).toEqual(expect.arrayContaining([EMAIL_SEND_ACTION_TYPE, `email:send:held:${heldReplyId}`]));
+      expect(sent()).not.toContain("insert_message");
+      expect(new Set(statements.map((statement) => statement.transaction))).toEqual(new Set([1]));
+    });
+
+    it("records and enqueues nothing, and pushes no drain, when the channel reserves no send", async () => {
+      const { service, sent, actionDrain } = harness({ autoChannel: { budgetLeft: false, dispatch: { authorized: true } } });
+
+      expect(await service.queueAuto(queueInput)).toEqual({ ok: false, refused: "send_budget" });
+      expect(sent().slice(-2)).toEqual(["reserve_auto_send", "COMMIT"]);
+      expect(sent()).not.toContain("insert_held_reply");
+      expect(actionDrain.requestDrain).not.toHaveBeenCalled();
+    });
+
+    it("materializes in one transaction: locks, the authorization, the conditional update, the message and the send record", async () => {
+      const { service, statements, sent, messageId, actionDrain } = harness({
+        heldReply: { state: "queued_auto", hold_reason: "queued_auto" },
+        autoChannel: { budgetLeft: true, dispatch: { authorized: true } },
+      });
+
+      const materialized = await service.materializeAuto(heldReplyId);
+
+      expect(materialized).toEqual({ ok: true, messageId: messageId() });
+      expect(sent()).toEqual([
+        "BEGIN",
+        "read_held_reply",
+        "lock_conversation",
+        "lock_ownership",
+        "read_held_reply",
+        "lock_policy",
+        "authorize_auto_dispatch",
+        "materialize_held_reply",
+        "insert_message",
+        "touch_conversation",
+        "record_intent",
+        "attach_message",
+        "COMMIT",
+      ]);
+      const intent = statements.find((statement) => kindOf(statement.sql) === "record_intent");
+      expect(intent?.parameters).toEqual([heldReplyId, messageId()]);
+      expect(new Set(statements.map((statement) => statement.transaction))).toEqual(new Set([1]));
+      // The send was enqueued when it was queued; materializing pushes no drain of its own.
+      expect(actionDrain.requestDrain).not.toHaveBeenCalled();
+    });
+
+    it("returns an unauthorized send to pending in its transaction, writing no message and no send record", async () => {
+      const { service, sent } = harness({
+        heldReply: { state: "queued_auto", hold_reason: "queued_auto" },
+        autoChannel: { budgetLeft: true, dispatch: { authorized: false, code: "mode_changed" } },
+      });
+
+      expect(await service.materializeAuto(heldReplyId)).toEqual({ ok: false, reason: "returned_to_pending" });
+      expect(sent().slice(-3)).toEqual(["authorize_auto_dispatch", "materialize_held_reply", "COMMIT"]);
+      expect(sent()).not.toContain("insert_message");
+      expect(sent()).not.toContain("record_intent");
+    });
   });
 });

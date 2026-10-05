@@ -5,7 +5,7 @@ import { vi } from "vitest";
 
 import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
 import { EmailReviewRunner } from "../../src/modules/connectors/plugins/email/emailReviewRunner.js";
-import { emailMailboxPolicyRef, type EngagementMode } from "../../src/modules/emailChannel/public.js";
+import { EMAIL_MAILBOX_POLICY_REF_PREFIX, EmailHeldReplyChannelScope, type EngagementMode } from "../../src/modules/emailChannel/public.js";
 import type { EmailMailboxRecord } from "../../src/modules/emailChannel/persistence/emailMailboxRepository.js";
 import { HeldReplyService } from "../../src/modules/handoff/public.js";
 import { InMemoryConversationOwnershipRepository } from "./fakes.js";
@@ -62,23 +62,23 @@ export const createEmailReviewHarness = (options: {
       return { id: randomUUID(), duplicate: false };
     },
   };
+  // Email's real scope over the in-memory tables, granted automatic sending where the harness runs
+  // `auto`, as composition grants it. Dispatch runs in the send handler, never on the review path.
+  const supportedModes = options.supportedModes ?? ["operator_only", "draft"];
+  const channelScope = new EmailHeldReplyChannelScope({
+    mailboxes,
+    domains,
+    autoSend: supportedModes.includes("auto")
+      ? { threads, ownership, intents: { materialize: notOnTheReviewPath }, provider: "resend", createId: randomUUID }
+      : undefined,
+  });
   const heldReplies = new HeldReplyService({
     conversations: { findByIdAndWorkspaceId: async (id, workspaceId) => (conversations.get(id)?.workspaceId === workspaceId ? conversations.get(id)! : null) },
     writes: {
       run: (work) => work({
         conversations: { lockForUpdate: async (id, workspaceId) => conversations.get(id)?.workspaceId === workspaceId },
         ownership,
-        channelFor: (policyRef) => (policyRef.startsWith("email_mailbox:")
-          ? {
-              lockPolicy: async (ref) => {
-                const mailbox = [...mailboxes.records.values()].find((candidate) => emailMailboxPolicyRef(candidate.id) === ref);
-                return mailbox && mailbox.removedAt === null ? { version: mailbox.policyVersion } : null;
-              },
-              enqueueRelease: async (heldReply, messageId, onOutbox) => {
-                await onOutbox.enqueue({ type: "email.send", payload: { heldReplyId: heldReply.id }, idempotencyKey: `email:send:msg:${messageId}` });
-              },
-            }
-          : null),
+        channelFor: (policyRef) => (policyRef.startsWith(EMAIL_MAILBOX_POLICY_REF_PREFIX) ? channelScope : null),
         heldReplies: heldRows,
         reply: { messages: { create: notOnTheReviewPath }, conversations: { touch: notOnTheReviewPath }, outbox: outboxPort },
         drafts: { writeAgentMessage: notOnTheReviewPath },
@@ -92,6 +92,7 @@ export const createEmailReviewHarness = (options: {
     audit: { record: vi.fn(async () => undefined) },
   });
   const hold = vi.spyOn(heldReplies, "hold");
+  const queueAuto = vi.spyOn(heldReplies, "queueAuto");
 
   const respond = vi.fn<(input: ConnectorRespondInput) => Promise<ConnectorTurnResult>>();
   const requestDrain = vi.fn(async () => undefined);
@@ -113,6 +114,7 @@ export const createEmailReviewHarness = (options: {
     chat: { respond },
     heldReplies: {
       hold: (input) => heldReplies.hold(input),
+      queueAuto: (input) => heldReplies.queueAuto(input),
       findByReviewRef: (conversationId, reviewRef) => heldReplies.findByReviewRef(conversationId, reviewRef),
       supersedePendingForConversation: (conversationId, reason) => heldRows.supersedePendingForConversation(conversationId, reason),
     },
@@ -121,7 +123,7 @@ export const createEmailReviewHarness = (options: {
     metrics,
     logger,
     clock,
-    config: { supportedModes: options.supportedModes ?? ["operator_only", "draft"], maxAttempts: options.maxAttempts ?? 4 },
+    config: { supportedModes, maxAttempts: options.maxAttempts ?? 4 },
   });
 
   const domain = domains.seed({ workspaceId: WORKSPACE_ID, domain: "customer.test", sendingStatus: options.sendingStatus ?? "verified" });
@@ -202,6 +204,7 @@ export const createEmailReviewHarness = (options: {
     outbox,
     handoffs,
     hold,
+    queueAuto,
     respond,
     requestHumanOwnership,
     requestDrain,

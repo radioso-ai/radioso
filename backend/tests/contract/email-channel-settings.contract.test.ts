@@ -6,6 +6,7 @@ import { join } from "node:path";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
+import type { EngagementMode } from "../../src/modules/emailChannel/public.js";
 import { LocalEmailDomainProvisioner } from "../../src/modules/mail/adapters/localDomainProvisioner.js";
 import { forbidden } from "../../src/shared/domain/errors.js";
 import { createInMemoryEmailChannel } from "../support/inMemoryEmailChannel.js";
@@ -27,7 +28,7 @@ const RAW_MESSAGE = Buffer.from([
 
 type Harness = Awaited<ReturnType<typeof harness>>;
 
-const harness = async (options: { configured?: boolean } = {}) => {
+const harness = async (options: { configured?: boolean; supportedModes?: readonly EngagementMode[] } = {}) => {
   const audit = { record: vi.fn(async () => undefined) };
   const requestDrain = vi.fn(async () => undefined);
   const provisioner = new LocalEmailDomainProvisioner({ spoolDir: await mkdtemp(join(tmpdir(), "email-channel-contract-")) });
@@ -39,6 +40,7 @@ const harness = async (options: { configured?: boolean } = {}) => {
     audit,
     drains: { requestDrain },
     agents: { findByIdAndWorkspaceId: async (agentId, workspaceId) => (agents.get(agentId) === workspaceId ? { id: agentId } : null) },
+    supportedModes: options.supportedModes,
   });
   const { app, dependencies } = createTestApp({ emailChannel: options.configured === false ? undefined : channel.services });
   const signIn = async () => {
@@ -303,6 +305,26 @@ describe("email channel settings contract", () => {
       await request(h.app).delete(mailbox).set(h.owner.headers).expect(204);
       await request(h.app).get(mailbox).set(h.owner.headers).expect(404);
       await request(h.app).delete(mailbox).set(h.owner.headers).expect(404);
+    });
+
+    it("switches a mailbox to auto only with autoOptIn: true", async () => {
+      const h = await harness({ supportedModes: ["operator_only", "draft", "auto"] });
+      const created = await createMailbox(h).expect(201);
+      const mailbox = `${h.owner.settings}/mailboxes/${created.body.id}`;
+
+      const refused = await request(h.app).patch(mailbox).set(h.owner.headers).send({ engagementMode: "auto" }).expect(400);
+      expect(refused.body.error.code).toBe("auto_opt_in_required");
+      await request(h.app).patch(mailbox).set(h.owner.headers).send({ engagementMode: "auto", autoOptIn: "yes" }).expect(400);
+
+      const switched = await request(h.app).patch(mailbox).set(h.owner.headers)
+        .send({ engagementMode: "auto", autoOptIn: true, expectedPolicyVersion: 1 })
+        .expect(200);
+      expect(switched.body).toMatchObject({ engagementMode: "auto", policyVersion: 2 });
+      expect(switched.body).not.toHaveProperty("autoOptIn");
+
+      const createdAuto = await createMailbox(h, { address: "sales@customer.test", engagementMode: "auto" }).expect(400);
+      expect(createdAuto.body.error.code).toBe("auto_opt_in_required");
+      await createMailbox(h, { address: "sales@customer.test", engagementMode: "auto", autoOptIn: true }).expect(201);
     });
 
     it("starts a setup check that waits for mail written to the real address", async () => {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  autoSendBirth,
+  autoDispatchRefusal,
+  autoSendRefusal,
   heldBirth,
   HELD_REPLY_STATES,
   heldReplyEventSources,
@@ -44,20 +45,27 @@ describe("held reply birth", () => {
       .toEqual({ state: "superseded", reason: "newer_inbound" });
   });
 
-  it("queues a publish decision for an automatic send once the send budget is reserved", () => {
-    expect(autoSendBirth(current, true))
-      .toEqual({ state: "queued_auto" });
+  it("queues a publish decision for an automatic send only while its binding is current", () => {
+    expect(autoSendRefusal(current)).toBeNull();
   });
 
-  it("holds a refused publish decision for a teammate, saying why", () => {
-    expect(autoSendBirth({ ...current, ownership: { bound: 2, current: 3 } }, false))
-      .toEqual({ state: "pending", holdReason: "authority_changed" });
-    expect(autoSendBirth({ ...current, policy: { bound: 5, current: 6 } }, false))
-      .toEqual({ state: "pending", holdReason: "authority_changed" });
-    expect(autoSendBirth(current, false))
-      .toEqual({ state: "pending", holdReason: "send_budget" });
-    expect(autoSendBirth({ ...current, answersLatestCustomerMessage: false }, false))
-      .toEqual({ state: "superseded", reason: "newer_inbound" });
+  it("refuses a publish decision whose binding went stale, the newer inbound first", () => {
+    expect(autoSendRefusal({ ...current, ownership: { bound: 2, current: 3 } })).toBe("ownership_changed");
+    expect(autoSendRefusal({ ...current, policy: { bound: 5, current: 6 } })).toBe("policy_changed");
+    expect(autoSendRefusal({ ...current, policy: { bound: 5, current: null } })).toBe("policy_changed");
+    expect(autoSendRefusal({ ...current, ownership: { bound: 2, current: 3 }, answersLatestCustomerMessage: false }))
+      .toBe("superseded");
+  });
+
+  it("refuses an automatic send no channel policy vouches for", () => {
+    expect(autoSendRefusal({ ...current, policy: null })).toBe("policy_changed");
+    expect(autoDispatchRefusal({ ownership: current.ownership, policy: null })).toBe("policy_changed");
+  });
+
+  it("refuses to dispatch a queued send once its ownership or policy moved on", () => {
+    expect(autoDispatchRefusal({ ownership: current.ownership, policy: current.policy })).toBeNull();
+    expect(autoDispatchRefusal({ ownership: { bound: 2, current: 3 }, policy: current.policy })).toBe("ownership_changed");
+    expect(autoDispatchRefusal({ ownership: current.ownership, policy: { bound: 5, current: 6 } })).toBe("policy_changed");
   });
 });
 

@@ -1,10 +1,11 @@
 import type { ConnectorTurnFacts } from "@radioso/connector-api";
 
 /**
- * The spec's Engagement Outcome Table (specs/1403-email-channel/spec.md) for the modes S3 runs,
- * `operator_only` and `draft`, as structural rows: the typed turn result a review would return,
- * and what must follow from it. No model runs; `email-outcome-table.test.ts` drives the review
- * runner with a stub `respond` per row. The `auto` rows join in S6 (T225).
+ * The spec's Engagement Outcome Table (specs/1403-email-channel/spec.md), every mode, as structural
+ * rows: the typed turn result a review would return, and what must follow from it. No model runs;
+ * `email-outcome-table.test.ts` drives the review runner with a stub `respond` per row. On an
+ * `auto` mailbox only the grounded, complete, hand-off-free row with budget room publishes; every
+ * other row holds or hands off and queues no send (SC-005).
  */
 
 type OutcomeTurn =
@@ -20,16 +21,20 @@ type OutcomeAttention =
 
 export interface EmailOutcomeRow {
   id: string;
-  mode: "operator_only" | "draft";
+  mode: "operator_only" | "draft" | "auto";
   /** Who owns the conversation when its review falls due. */
   ownership: "ai_owned" | "human_owned";
+  /** Whether the thread's automatic-send budget is spent when its review falls due. */
+  sendBudget: "room" | "exhausted";
   /** The review's result; null when no turn may run. */
   turn: OutcomeTurn | null;
   expected: {
     /** Whether the runner asks the host for a review. The host runs no turn on a person's conversation. */
     reviewAsked: boolean;
     /** The publication decision as counted; null when no turn ran or a person owns the conversation. */
-    decision: { decision: "hold" | "no_reply"; reason: string } | null;
+    decision: { decision: "publish" | "hold" | "no_reply"; reason: string } | null;
+    /** Whether the reply is queued to send automatically: a `queued_auto` held reply and one `email.send`. */
+    queuedAuto: boolean;
     /** The held reply the operator sees, with the turn's outcome labels; null when none is held. */
     heldReply: {
       holdReason: string;
@@ -49,11 +54,10 @@ const GROUNDED_COMPLETE: ConnectorTurnFacts = {
   citationCount: 2,
 };
 
-const held = (facts: Partial<ConnectorTurnFacts>): NonNullable<EmailOutcomeRow["expected"]["heldReply"]> => {
+const held = (facts: Partial<ConnectorTurnFacts>, holdReason: string): NonNullable<EmailOutcomeRow["expected"]["heldReply"]> => {
   const all = { ...GROUNDED_COMPLETE, ...facts };
   return {
-    // A draft mailbox never publishes: the mode decides before the outcome does (ports §6e).
-    holdReason: "draft_mode",
+    holdReason,
     facts: {
       outcome: all.outcome,
       grounding: all.grounding,
@@ -64,26 +68,78 @@ const held = (facts: Partial<ConnectorTurnFacts>): NonNullable<EmailOutcomeRow["
   };
 };
 
-const draftRow = (id: string, facts: Partial<ConnectorTurnFacts>): EmailOutcomeRow => ({
+// A draft mailbox never publishes: the mode decides before the outcome does (ports §6e).
+const draftRow = (id: string, facts: Partial<ConnectorTurnFacts>): EmailOutcomeRow => heldRow(id, "draft", "room", facts, "draft_mode");
+
+const heldRow = (
+  id: string,
+  mode: "draft" | "auto",
+  sendBudget: EmailOutcomeRow["sendBudget"],
+  facts: Partial<ConnectorTurnFacts>,
+  holdReason: string,
+): EmailOutcomeRow => ({
   id,
-  mode: "draft",
+  mode,
   ownership: "ai_owned",
+  sendBudget,
   turn: { kind: "draft", facts },
   expected: {
     reviewAsked: true,
-    decision: { decision: "hold", reason: "draft_mode" },
-    heldReply: held(facts),
+    decision: { decision: "hold", reason: holdReason },
+    queuedAuto: false,
+    heldReply: held(facts, holdReason),
     attention: { kind: "approval" },
   },
 });
+
+/** The draftless and human-owned rows, the same in every mode that runs a review. */
+const handOffRows = (mode: "draft" | "auto"): EmailOutcomeRow[] => [
+  {
+    id: `${mode}-no-text-engine-reason`,
+    mode,
+    ownership: "ai_owned",
+    sendBudget: "room",
+    turn: { kind: "no_draft", facts: { outcome: "unavailable", grounding: "unknown", coverage: "not_assessed", handoff: { requested: true, reason: "customer_requested_human" } } },
+    expected: {
+      reviewAsked: true,
+      decision: { decision: "no_reply", reason: "customer_requested_human" },
+      queuedAuto: false,
+      heldReply: null,
+      attention: { kind: "human_owned", reason: "customer_requested_human" },
+    },
+  },
+  {
+    id: `${mode}-unavailable`,
+    mode,
+    ownership: "ai_owned",
+    sendBudget: "room",
+    turn: { kind: "no_draft", facts: { outcome: "unavailable", grounding: "unknown", coverage: "unavailable" } },
+    expected: {
+      reviewAsked: true,
+      decision: { decision: "no_reply", reason: "review_unavailable" },
+      queuedAuto: false,
+      heldReply: null,
+      attention: { kind: "human_owned", reason: "review_unavailable" },
+    },
+  },
+  {
+    id: `${mode}-human-owned-conversation`,
+    mode,
+    ownership: "human_owned",
+    sendBudget: "room",
+    turn: { kind: "human_owned" },
+    expected: { reviewAsked: true, decision: null, queuedAuto: false, heldReply: null, attention: { kind: "unchanged" } },
+  },
+];
 
 export const emailOutcomeTable: readonly EmailOutcomeRow[] = [
   {
     id: "operator_only-accepted",
     mode: "operator_only",
     ownership: "ai_owned",
+    sendBudget: "room",
     turn: null,
-    expected: { reviewAsked: false, decision: null, heldReply: null, attention: { kind: "human_owned", reason: "operator_only_mailbox" } },
+    expected: { reviewAsked: false, decision: null, queuedAuto: false, heldReply: null, attention: { kind: "human_owned", reason: "operator_only_mailbox" } },
   },
   draftRow("draft-grounded-complete", {}),
   draftRow("draft-partial", { coverage: "partial" }),
@@ -91,35 +147,27 @@ export const emailOutcomeTable: readonly EmailOutcomeRow[] = [
   draftRow("draft-out-of-scope", { outcome: "out_of_scope", grounding: "not_applicable", coverage: "not_assessed" }),
   draftRow("draft-handoff-with-text", { handoff: { requested: true, reason: "billing_dispute" } }),
   draftRow("draft-suppressed-effect", { suppressedEffects: [{ skillName: "issue_refund" }] }),
+  ...handOffRows("draft"),
   {
-    id: "draft-no-text-engine-reason",
-    mode: "draft",
+    id: "auto-grounded-complete",
+    mode: "auto",
     ownership: "ai_owned",
-    turn: { kind: "no_draft", facts: { outcome: "unavailable", grounding: "unknown", coverage: "not_assessed", handoff: { requested: true, reason: "customer_requested_human" } } },
+    sendBudget: "room",
+    turn: { kind: "draft", facts: {} },
     expected: {
       reviewAsked: true,
-      decision: { decision: "no_reply", reason: "customer_requested_human" },
+      decision: { decision: "publish", reason: "none" },
+      queuedAuto: true,
       heldReply: null,
-      attention: { kind: "human_owned", reason: "customer_requested_human" },
+      attention: { kind: "unchanged" },
     },
   },
-  {
-    id: "draft-unavailable",
-    mode: "draft",
-    ownership: "ai_owned",
-    turn: { kind: "no_draft", facts: { outcome: "unavailable", grounding: "unknown", coverage: "unavailable" } },
-    expected: {
-      reviewAsked: true,
-      decision: { decision: "no_reply", reason: "review_unavailable" },
-      heldReply: null,
-      attention: { kind: "human_owned", reason: "review_unavailable" },
-    },
-  },
-  {
-    id: "draft-human-owned-conversation",
-    mode: "draft",
-    ownership: "human_owned",
-    turn: { kind: "human_owned" },
-    expected: { reviewAsked: true, decision: null, heldReply: null, attention: { kind: "unchanged" } },
-  },
+  heldRow("auto-budget-exhausted-grounded-complete", "auto", "exhausted", {}, "send_budget"),
+  heldRow("auto-budget-exhausted-partial", "auto", "exhausted", { coverage: "partial" }, "send_budget"),
+  heldRow("auto-partial", "auto", "room", { coverage: "partial" }, "outcome_not_publishable"),
+  heldRow("auto-no-context", "auto", "room", { outcome: "no_context", grounding: "ungrounded", coverage: "unanswered" }, "outcome_not_publishable"),
+  heldRow("auto-out-of-scope", "auto", "room", { outcome: "out_of_scope", grounding: "not_applicable", coverage: "not_assessed" }, "outcome_not_publishable"),
+  heldRow("auto-handoff-with-text", "auto", "room", { handoff: { requested: true, reason: "billing_dispute" } }, "outcome_not_publishable"),
+  heldRow("auto-suppressed-effect", "auto", "room", { suppressedEffects: [{ skillName: "issue_refund" }] }, "outcome_not_publishable"),
+  ...handOffRows("auto"),
 ];

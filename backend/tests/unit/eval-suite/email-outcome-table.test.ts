@@ -1,6 +1,7 @@
 import type { ConnectorTurnResult } from "@radioso/connector-api";
 import { describe, expect, it } from "vitest";
 
+import { emailSendKey } from "../../../src/modules/emailChannel/public.js";
 import { emailOutcomeTable, type EmailOutcomeRow } from "../../fixtures/conversation-quality/emailOutcomeTable.js";
 import { createEmailReviewHarness, REVIEW_PUBLISHABLE_FACTS, type EmailReviewHarness } from "../../support/inMemoryEmailReview.js";
 
@@ -19,9 +20,13 @@ const turnFor = (row: EmailOutcomeRow, conversationId: string): ConnectorTurnRes
 
 /** One row's thread on a mailbox in the row's mode, reviewed once with the row's turn result. */
 const review = async (row: EmailOutcomeRow): Promise<{ h: EmailReviewHarness; conversationId: string }> => {
-  const h = createEmailReviewHarness({ supportedModes: ["operator_only", "draft"] });
+  const h = createEmailReviewHarness({ supportedModes: ["operator_only", "draft", "auto"] });
   const mailbox = h.seedMailbox({ engagementMode: row.mode });
   const { conversationId } = await h.openThread(mailbox);
+  if (row.sendBudget === "exhausted") {
+    const link = h.threads.links.get(conversationId)!;
+    h.threads.links.set(conversationId, { ...link, autoSendsSinceRenewal: mailbox.threadSendBudget });
+  }
   if (row.ownership === "human_owned") {
     await h.ownership.requestHandoff({ conversationId, workspaceId: mailbox.workspaceId, reason: "operator_takeover" });
   }
@@ -32,12 +37,13 @@ const review = async (row: EmailOutcomeRow): Promise<{ h: EmailReviewHarness; co
 };
 
 /**
- * The Engagement Outcome Table's `operator_only` and `draft` rows (spec.md), structurally: each row's
- * review runs against a stub `respond`, and the decision, the held reply an operator sees, the
- * attention it leaves, and the customer-visible history are checked. No model runs, so this gates
- * every PR; nothing here may ever reach the customer.
+ * The Engagement Outcome Table (spec.md), structurally: each row's review runs against a stub
+ * `respond`, and the decision, the held reply an operator sees, the send it queues, the attention it
+ * leaves, and the customer-visible history are checked. No model runs, so this gates every PR. Only
+ * the `auto` row that publishes queues a send, and even its draft stays out of history until the
+ * send is dispatched (research B9).
  */
-describe("Email engagement outcome table (operator_only and draft)", () => {
+describe("Email engagement outcome table", () => {
   it.each(emailOutcomeTable.map((row) => [row.id, row] as const))("%s", async (_id, row) => {
     const { h, conversationId } = await review(row);
     const { expected } = row;
@@ -50,11 +56,19 @@ describe("Email engagement outcome table (operator_only and draft)", () => {
       expect(open.items).toEqual([expect.objectContaining({ conversationId, state: "pending", attentionOpen: true, ...expected.heldReply })]);
     } else {
       expect(open.items).toEqual([]);
-      expect(h.heldRows.of(conversationId)).toEqual([]);
+      if (!expected.queuedAuto) expect(h.heldRows.of(conversationId)).toEqual([]);
     }
 
-    // Not one row publishes: no send is queued and no send intent exists.
-    expect(h.outbox).toEqual([]);
+    if (expected.queuedAuto) {
+      // Queued, not sent: the held reply waits for dispatch, asks no teammate, and one keyed send is queued.
+      const [queued, ...others] = h.heldRows.of(conversationId);
+      expect(others).toEqual([]);
+      expect(queued).toMatchObject({ state: "queued_auto", attentionClearedAt: null });
+      expect(h.outbox).toEqual([{ type: "email.send", idempotencyKey: emailSendKey.heldReply(queued.id) }]);
+    } else {
+      // No send is queued, so no send intent can exist.
+      expect(h.outbox).toEqual([]);
+    }
 
     const ownership = await h.ownership.load(conversationId);
     switch (expected.attention.kind) {
@@ -77,7 +91,16 @@ describe("Email engagement outcome table (operator_only and draft)", () => {
     expect(h.history.some((message) => message.content === DRAFT_TEXT)).toBe(false);
   });
 
-  it("covers every operator_only and draft row of the spec's table", () => {
+  it("holds or hands off every auto row that does not publish, and queues no send for it (SC-005)", () => {
+    const auto = emailOutcomeTable.filter((row) => row.mode === "auto");
+    expect(auto.filter((row) => row.expected.queuedAuto).map((row) => row.id)).toEqual(["auto-grounded-complete"]);
+    for (const row of auto.filter((candidate) => !candidate.expected.queuedAuto)) {
+      const heldOrHandedOff = row.expected.heldReply !== null || row.expected.attention.kind === "human_owned" || row.ownership === "human_owned";
+      expect(heldOrHandedOff, row.id).toBe(true);
+    }
+  });
+
+  it("covers every row of the spec's table", () => {
     expect(emailOutcomeTable.map((row) => row.id)).toEqual([
       "operator_only-accepted",
       "draft-grounded-complete",
@@ -89,6 +112,17 @@ describe("Email engagement outcome table (operator_only and draft)", () => {
       "draft-no-text-engine-reason",
       "draft-unavailable",
       "draft-human-owned-conversation",
+      "auto-grounded-complete",
+      "auto-budget-exhausted-grounded-complete",
+      "auto-budget-exhausted-partial",
+      "auto-partial",
+      "auto-no-context",
+      "auto-out-of-scope",
+      "auto-handoff-with-text",
+      "auto-suppressed-effect",
+      "auto-no-text-engine-reason",
+      "auto-unavailable",
+      "auto-human-owned-conversation",
     ]);
   });
 });

@@ -395,7 +395,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chat: createConnectorChatPort(chat.chatService, { ingest: (input) => conversationIngestService.ingest(input) }),
     heldReplies: {
       hold: (input) => heldReplies.hold(input),
+      queueAuto: (input) => heldReplies.queueAuto(input),
       findByReviewRef: (conversationId, reviewRef) => heldReplies.findByReviewRef(conversationId, reviewRef),
+      materializeAuto: (heldReplyId) => heldReplies.materializeAuto(heldReplyId),
     },
     ownership: { requestHumanOwnership: (scope, input) => conversationOwnershipService.requestHumanOwnership(scope, input) },
     publisher: realtimePublisherComposition.publisher,
@@ -552,7 +554,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversations: repositories.conversationRepository,
     writes: createPostgresHeldReplyUnitOfWork({
       db: infrastructure.database.kysely,
-      channels: [emailHeldReplyChannelRegistration],
+      // The channel's own registration grants automatic sending where it runs `auto`.
+      channels: [emailChannel?.heldReplyChannel ?? emailHeldReplyChannelRegistration],
       activity: conversationActivity.recorder,
       actionDrain: chat.actionDrainDispatcher,
       logger,

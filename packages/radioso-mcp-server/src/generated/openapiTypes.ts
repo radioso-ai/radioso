@@ -2336,7 +2336,7 @@ export interface paths {
         head?: never;
         /**
          * Update a mailbox's settings and engagement policy
-         * @description A change of engagement mode, enabled flag or agent writes the next `policyVersion`. With `expectedPolicyVersion`, the change applies only to that version.
+         * @description A change of engagement mode, enabled flag or agent writes the next `policyVersion`. With `expectedPolicyVersion`, the change applies only to that version. Switching to `auto` needs `autoOptIn: true`.
          */
         patch: operations["updateEmailMailbox"];
         trace?: never;
@@ -9629,6 +9629,7 @@ export interface components {
             threadContextMessages?: number;
             spamOptIn?: boolean;
             silenceThresholdHours?: number;
+            autoOptIn?: boolean;
         };
         UpdateEmailMailboxRequest: {
             displayName?: string;
@@ -9641,6 +9642,7 @@ export interface components {
             threadContextMessages?: number;
             spamOptIn?: boolean;
             silenceThresholdHours?: number;
+            autoOptIn?: boolean;
             enabled?: boolean;
             expectedPolicyVersion?: number;
         };
@@ -20397,7 +20399,7 @@ export interface operations {
                     "application/json": components["schemas"]["EmailMailbox"];
                 };
             };
-            /** @description `invalid_address`, or a setting outside its bounds */
+            /** @description `invalid_address`, `auto_opt_in_required`, or a setting outside its bounds */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -20585,7 +20587,7 @@ export interface operations {
                     "application/json": components["schemas"]["EmailMailbox"];
                 };
             };
-            /** @description A setting outside its bounds */
+            /** @description `auto_opt_in_required`, or a setting outside its bounds */
             400: {
                 headers: {
                     [name: string]: unknown;

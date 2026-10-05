@@ -17,7 +17,7 @@ import { ConversationRepository } from "../../db/repositories/conversationReposi
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
-import type { ActionDrainDispatcherPort } from "../../modules/chat/composition.js";
+import { NoopActionDrainDispatcher, type ActionDrainDispatcherPort } from "../../modules/chat/composition.js";
 import {
   createEmailChannelConnector,
   type EmailChannelWorker,
@@ -34,12 +34,14 @@ import {
 } from "../../modules/customerReplyDelivery/public.js";
 import {
   ConversationEmailFactsReader,
+  EMAIL_MAILBOX_POLICY_REF_PREFIX,
   EMAIL_SEND_ACTION_TYPE,
   EmailChannelCopilotView,
   EmailChannelSweep,
   EmailCustomerReplyDeliverer,
   EmailDeliveryFailureResolver,
   EmailDomainRepository,
+  EmailHeldReplyChannelScope,
   EmailInboundRepository,
   EmailMailboxRepository,
   EmailSendActionHandler,
@@ -60,7 +62,11 @@ import {
   type EngagementMode,
   type MailboxPolicyChangeUnitOfWork,
 } from "../../modules/emailChannel/public.js";
-import type { ConversationOwnershipService, HeldReplyService } from "../../modules/handoff/public.js";
+import {
+  HeldReplyService,
+  type ConversationOwnershipService,
+  type HeldReplyDispatchPort,
+} from "../../modules/handoff/public.js";
 import { LocalEmailDomainProvisioner } from "../../modules/mail/adapters/localDomainProvisioner.js";
 import { LocalEmailDriver } from "../../modules/mail/adapters/localEmailDriver.js";
 import { LocalInboundEmailReceiver } from "../../modules/mail/adapters/localInboundReceiver.js";
@@ -74,16 +80,19 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { pushActionDrainAfterCommit, type QueuedOutboxRow } from "./actionDrainAfterCommit.js";
 import type { ApplicationModule } from "./applicationModule.js";
+import { createPostgresHeldReplyUnitOfWork, type HeldReplyChannelRegistration } from "./heldReplyUnitOfWork.js";
 import { createPostgresMailboxPolicyChangeUnitOfWork } from "./mailboxPolicyChange.js";
 
 type EmailChannelConfig = NonNullable<ReturnType<typeof parseEmailChannelConfig>>;
 
 /**
  * The engagement modes this deployment runs (plan, Questions settled, item 4): mail is handed to
- * people, or the agent drafts a reply a teammate sends. `draft` is the default for new mailboxes;
- * existing ones keep their mode. Automatic sending arrives with `auto`, which widens it.
+ * people, the agent drafts a reply a teammate sends, or, on a mailbox an operator opted in, the
+ * agent answers automatically when the publication decision allows (research B9). `draft` is the
+ * default for new mailboxes; existing ones keep their mode. Without `auto` here, automatic sending
+ * is not granted to the held-reply scope and the sweep returns queued sends to a teammate.
  */
-const SUPPORTED_MODES: readonly EngagementMode[] = ["operator_only", "draft"];
+const SUPPORTED_MODES: readonly EngagementMode[] = ["operator_only", "draft", "auto"];
 
 /** What the operator surfaces call: the settings card, the event log and the inbox's email facts. */
 export interface EmailChannelOperatorServices {
@@ -109,6 +118,8 @@ interface EmailChannelComposition extends EmailChannelOperatorServices {
   policyChanges: MailboxPolicyChangeUnitOfWork;
   /** The token-free projection Ray's email channel tools read (ports §8). */
   copilotView: EmailChannelCopilotView;
+  /** Email's side of held-reply transactions, registered with the held-reply unit of work. */
+  heldReplyChannel: HeldReplyChannelRegistration;
   /** The email half of a teammate's decision on a failed reply: mark it sent, or resend it. */
   deliveryFailureResolver: DeliveryFailureResolverPort;
 }
@@ -124,8 +135,11 @@ interface EmailChannelCompositionInput {
    * draining, after the application is built.
    */
   chat: Pick<ConnectorChatPort, "ingest" | "respond">;
-  /** Where a review's draft is held for a teammate; called only while draining. */
-  heldReplies: Pick<HeldReplyService, "hold" | "findByReviewRef">;
+  /**
+   * Where a review's draft is held for a teammate or queued for an automatic send, and where the
+   * sweep's rollback step dispatches queued sends; called only while draining.
+   */
+  heldReplies: Pick<HeldReplyService, "hold" | "queueAuto" | "findByReviewRef" | "materializeAuto">;
   /** Hands a reviewed conversation to a person inside the review's hand-off transaction; called only while draining. */
   ownership: Pick<ConversationOwnershipService, "requestHumanOwnership">;
   /** Tells the dashboard of a hand-off once it commits. */
@@ -154,7 +168,17 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
   const clock = () => new Date();
   const randomBytesOf = (size: number): Uint8Array => randomBytes(size);
   const { receiver, provisioner } = providerAdapters(config);
-  const sends = createEmailSendServices({ config, db, activity: input.activity, drains: input.drains, audit: input.audit, metrics, logger, clock });
+  const sends = createEmailSendServices({
+    config,
+    db,
+    activity: input.activity,
+    drains: input.drains,
+    heldReplyDispatch: input.heldReplies,
+    audit: input.audit,
+    metrics,
+    logger,
+    clock,
+  });
 
   const domainRecords = new EmailDomainRepository(db);
   const mailboxRecords = new EmailMailboxRepository(db);
@@ -204,6 +228,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       },
       heldReplies: {
         hold: (hold) => input.heldReplies.hold(hold),
+        queueAuto: (queued) => input.heldReplies.queueAuto(queued),
         findByReviewRef: (conversationId, reviewRef) => input.heldReplies.findByReviewRef(conversationId, reviewRef),
         supersedePendingForConversation: (conversationId, reason) => heldReplyRecords.supersedePendingForConversation(conversationId, reason),
       },
@@ -230,6 +255,9 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       clock,
       logger,
       config: { eventRetentionDays: config.eventRetentionDays },
+      queuedAutoRollback: SUPPORTED_MODES.includes("auto")
+        ? undefined
+        : { queued: heldReplyRecords, dispatch: { materializeAuto: (heldReplyId) => input.heldReplies.materializeAuto(heldReplyId) } },
     }),
   });
 
@@ -276,6 +304,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       supportedModes: SUPPORTED_MODES,
       clock,
     }),
+    heldReplyChannel: createEmailHeldReplyChannelRegistration({ provider: config.provider.kind }),
     deliveryFailureResolver: new EmailDeliveryFailureResolver({
       intents: sends.intents,
       mailboxes: mailboxRecords,
@@ -310,20 +339,87 @@ export const createEmailChannelApplicationModule = (input: {
     context.registerActionHandler({
       type: EMAIL_SEND_ACTION_TYPE,
       emittableByRoutines: false,
-      handler: ({ database, env, logger, auditService, metrics }) =>
-        createEmailSendServices({
+      handler: ({ database, env, logger, auditService, metrics, errorReporter }) => {
+        const db = database.kysely;
+        const activity = new ConversationActivityRepository(db);
+        return createEmailSendServices({
           config,
-          db: database.kysely,
-          activity: new ConversationActivityRepository(database.kysely),
+          db,
+          activity,
           drains: input.drainDispatcherFor(env, config),
+          heldReplyDispatch: createHeldReplyDispatch({ config, db, activity, audit: auditService, metrics: metrics ?? null, logger, errorReporter }),
           audit: auditService,
           metrics: metrics ?? null,
           logger,
           clock: () => new Date(),
-        }).handler,
+        }).handler;
+      },
     });
   },
 });
+
+/**
+ * Email's side of held-reply transactions (research B1, B9): drafts bound to a mailbox's policy,
+ * locked and sent through the transaction's repositories. Automatic sending is granted only where
+ * the deployment runs `auto`: the thread's send budget, the queued send, its authorization at
+ * dispatch, and the send intent a materialization records.
+ */
+export const createEmailHeldReplyChannelRegistration = (input: { provider: string }): HeldReplyChannelRegistration => ({
+  policyRefPrefix: EMAIL_MAILBOX_POLICY_REF_PREFIX,
+  bind: (trx) => new EmailHeldReplyChannelScope({
+    mailboxes: new EmailMailboxRepository(trx),
+    domains: new EmailDomainRepository(trx),
+    autoSend: SUPPORTED_MODES.includes("auto")
+      ? {
+          threads: new EmailThreadRepository(trx),
+          ownership: new ConversationOwnershipRepository(trx),
+          intents: new EmailSendIntentRepository(trx),
+          provider: input.provider,
+          createId: randomUUID,
+        }
+      : undefined,
+  }),
+});
+
+/**
+ * The held-reply dispatch port the worker's `email.send` handler materializes automatic replies
+ * through (research B9), over Postgres. The handler is built before the application's held-reply
+ * service, so it gets its own. Materializing writes the agent's message and its send intent and
+ * queues nothing, so the teammate-facing ports a release needs are refused, and no drain is pushed.
+ */
+const createHeldReplyDispatch = (deps: {
+  config: EmailChannelConfig;
+  db: Kysely<DB>;
+  activity: ConversationActivityRecorder;
+  audit: Pick<AuditPort, "record">;
+  metrics: MetricsRegistry | null;
+  logger: AppLogger;
+  errorReporter?: Pick<ErrorReporter, "report">;
+}): Pick<HeldReplyDispatchPort, "materializeAuto"> => {
+  const notOnTheDispatchPath = (): never => {
+    throw new Error("held_reply_dispatch_releases_nothing");
+  };
+  const service = new HeldReplyService({
+    conversations: new ConversationRepository(deps.db),
+    writes: createPostgresHeldReplyUnitOfWork({
+      db: deps.db,
+      channels: [createEmailHeldReplyChannelRegistration({ provider: deps.config.provider.kind })],
+      activity: deps.activity,
+      actionDrain: new NoopActionDrainDispatcher(),
+      logger: deps.logger,
+      errorReporter: deps.errorReporter,
+    }),
+    reads: new HeldReplyRepository(deps.db),
+    operatorIdentities: { resolve: notOnTheDispatchPath },
+    customerReplyDelivery: { route: notOnTheDispatchPath },
+    replies: { write: notOnTheDispatchPath, announce: notOnTheDispatchPath },
+    audit: deps.audit,
+    metrics: deps.metrics,
+    logger: deps.logger,
+    errorReporter: deps.errorReporter,
+  });
+  return { materializeAuto: (heldReplyId) => service.materializeAuto(heldReplyId) };
+};
 
 /**
  * The send path (research B6, B18): the action handler, the reconciler and the provider-event
@@ -335,6 +431,7 @@ const createEmailSendServices = (input: {
   db: Kysely<DB>;
   activity: ConversationActivityRecorder;
   drains: EmailChannelDrainDispatcherPort;
+  heldReplyDispatch: Pick<HeldReplyDispatchPort, "materializeAuto">;
   audit: Pick<AuditPort, "record">;
   metrics: MetricsRegistry | null;
   logger: AppLogger;
@@ -346,6 +443,7 @@ const createEmailSendServices = (input: {
   const mailboxes = new EmailMailboxRepository(db);
   const domains = new EmailDomainRepository(db);
   const unitOfWork = createPostgresEmailSendUnitOfWork({ db, activity: input.activity });
+  const ownership = new ConversationOwnershipRepository(db);
   const writer = new SendIntentWriter({ unitOfWork, metrics, logger });
   const attempt = new ProviderSendAttempt({ driver, writer, unitOfWork, drains: input.drains, metrics, logger, clock });
   return {
@@ -357,6 +455,8 @@ const createEmailSendServices = (input: {
       mailboxes,
       domains,
       threads: new EmailThreadRepository(db),
+      ownership,
+      heldReplies: input.heldReplyDispatch,
       attempt,
       writer,
       failures: createPostgresDeliveryFailures({ db, activity: input.activity }),
@@ -365,7 +465,7 @@ const createEmailSendServices = (input: {
       logger,
       createId: randomUUID,
     }),
-    reconciler: new SendReconciler({ intents, mailboxes, domains, driver, attempt, writer, metrics, logger }),
+    reconciler: new SendReconciler({ intents, mailboxes, domains, ownership, driver, attempt, writer, metrics, logger }),
     deliveryEvents: new ProviderDeliveryEvents({ intents, writer, audit: input.audit, metrics, logger }),
   };
 };

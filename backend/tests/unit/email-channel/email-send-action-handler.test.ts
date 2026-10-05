@@ -72,15 +72,142 @@ describe("EmailSendActionHandler", () => {
         .rejects.toThrow("email_send_malformed_payload");
       expect(h.intents.rows.size).toBe(0);
     });
+  });
 
-    it("leaves automatic replies to the held-reply dispatch port", async () => {
+  describe("auto_reply (research B9)", () => {
+    /** The send path with its mailbox in `auto`, as the publish that queued the action found it. */
+    const autoHarness = () => {
       const h = createSendPathHarness();
+      h.mailboxes.seed({ ...h.mailbox, engagementMode: "auto" });
+      return h;
+    };
 
-      await expect(h.deliver({
-        payload: { trigger: "auto_reply", messageId: null, heldReplyId: SEND_IDS.heldReply },
-        context: { idempotencyKey: emailSendKey.heldReply(SEND_IDS.heldReply) },
-      })).rejects.toThrow("email_send_auto_reply_unavailable");
+    it("materializes the held reply through the dispatch port first, then sends the agent's message under the held key", async () => {
+      const h = autoHarness();
+
+      await h.deliverAuto();
+
+      expect(h.materializeAuto).toHaveBeenCalledExactlyOnceWith(SEND_IDS.heldReply);
+      expect(h.materializeAuto.mock.invocationCallOrder[0]).toBeLessThan(h.driver.send.mock.invocationCallOrder[0]);
+      expect(h.onlyIntent()).toMatchObject({
+        trigger: "auto_reply",
+        idempotencyKey: emailSendKey.heldReply(SEND_IDS.heldReply),
+        messageId: SEND_IDS.autoMessage,
+        heldReplyId: SEND_IDS.heldReply,
+        authorKind: "agent",
+        state: "accepted",
+      });
+      expect(h.sentMessages).toEqual([expect.objectContaining({
+        idempotencyKey: emailSendKey.heldReply(SEND_IDS.heldReply),
+        text: "Your order ships on Monday.",
+        threading: expect.objectContaining({ autoSubmitted: "auto-generated" }),
+      })]);
+      expect(h.counted("email_send_intents_total")).toContainEqual({ trigger: "auto_reply", state: "queued" });
+    });
+
+    it("spends no budget and renews none: the publish reserved its send", async () => {
+      const h = autoHarness();
+
+      await h.deliverAuto();
+
+      expect(h.threads.links.get(SEND_IDS.conversation)?.autoSendsSinceRenewal).toBe(2);
+    });
+
+    it("reuses the materialized intent on a redelivery and never materializes twice", async () => {
+      const h = autoHarness();
+      h.driver.send.mockRejectedValueOnce(new EmailSendError("retryable", "rate_limited"));
+      await expect(h.deliverAuto()).rejects.toThrow("email_send_retryable:rate_limited");
+
+      await h.deliverAuto(2);
+
+      expect(h.materializeAuto).toHaveBeenCalledOnce();
+      expect(h.onlyIntent()).toMatchObject({ trigger: "auto_reply", state: "accepted" });
+      const [[first], [second]] = h.driver.send.mock.calls;
+      expect(second).toEqual(first);
+    });
+
+    it.each([
+      ["superseded while queued: not_queued", "superseded", "not_queued"],
+      ["returned to pending by revoked authority", "queued_auto", "returned_to_pending"],
+    ] as const)("sends nothing when the held reply was %s", async (_label, state, reason) => {
+      const h = autoHarness();
+      h.autoReply.state = state;
+      if (reason === "returned_to_pending") h.owners.set(SEND_IDS.conversation, { state: "human_owned", version: 1 });
+
+      await h.deliverAuto();
+
+      expect(await h.materializeAuto.mock.results[0]?.value).toEqual({ ok: false, reason });
       expect(h.driver.send).not.toHaveBeenCalled();
+      expect(h.intents.rows.size).toBe(0);
+      expect(h.messages.has(SEND_IDS.autoMessage)).toBe(false);
+      expect(h.failures.rows).toEqual([]);
+    });
+
+    it("returns the held reply to pending, with no message, when a downgrade landed between publish and dispatch", async () => {
+      const h = autoHarness();
+      h.mailboxes.seed({ ...h.mailbox, engagementMode: "draft", policyVersion: h.mailbox.policyVersion + 1 });
+
+      await h.deliverAuto();
+
+      expect(h.autoReply.state).toBe("pending");
+      expect(h.driver.send).not.toHaveBeenCalled();
+      expect(h.intents.rows.size).toBe(0);
+    });
+
+    it("after materialization, a frozen request whose authority was then revoked becomes uncertain: never halted, never a draft again", async () => {
+      const h = autoHarness();
+      h.driver.send.mockRejectedValueOnce(new EmailSendError("retryable", "rate_limited"));
+      await expect(h.deliverAuto()).rejects.toThrow();
+
+      // A teammate takes the conversation over after the request may have reached the provider.
+      h.owners.set(SEND_IDS.conversation, { state: "human_owned", version: 1 });
+      await h.deliverAuto(2);
+
+      expect(h.onlyIntent()).toMatchObject({ trigger: "auto_reply", state: "uncertain", haltReason: null });
+      expect(h.driver.send).toHaveBeenCalledOnce();
+      expect(h.materializeAuto).toHaveBeenCalledOnce();
+      expect(h.autoReply.state).toBe("released");
+      expect(h.failures.openFor(SEND_IDS.autoMessage)).toMatchObject({ kind: "uncertain" });
+    });
+
+    it("after an unknown outcome and a downgrade, the reconciler makes the send uncertain instead of re-POSTing it", async () => {
+      const h = autoHarness();
+      h.driver.send.mockRejectedValueOnce(new EmailSendError("unknown", "timeout"));
+      await h.deliverAuto();
+      expect(h.onlyIntent()).toMatchObject({ state: "queued", outcomeUnknown: true });
+
+      h.mailboxes.seed({ ...h.mailbox, engagementMode: "draft", policyVersion: h.mailbox.policyVersion + 1 });
+      h.advance(5 * 60 * 1000);
+      expect(await h.reconciler.run({ maxJobs: 5 })).toMatchObject({ claimed: 1, uncertain: 1, reposted: 0 });
+
+      expect(h.onlyIntent()).toMatchObject({ state: "uncertain" });
+      expect(h.driver.send).toHaveBeenCalledOnce();
+      expect(h.materializeAuto).toHaveBeenCalledOnce();
+      expect(h.autoReply.state).toBe("released");
+      expect(h.failures.openFor(SEND_IDS.autoMessage)).toMatchObject({ kind: "uncertain" });
+    });
+
+    it("re-POSTs an automatic send after an unknown outcome while its automatic authority still holds", async () => {
+      const h = autoHarness();
+      h.driver.send.mockRejectedValueOnce(new EmailSendError("unknown", "timeout"));
+      await h.deliverAuto();
+
+      h.advance(5 * 60 * 1000);
+      expect(await h.reconciler.run({ maxJobs: 5 })).toMatchObject({ reposted: 1 });
+
+      expect(h.onlyIntent()).toMatchObject({ state: "accepted" });
+      expect(h.driver.send).toHaveBeenCalledTimes(2);
+    });
+
+    it("opens no failure when the outbox gives up on an automatic send that never materialized", async () => {
+      const h = autoHarness();
+      h.materializeAuto.mockRejectedValue(new Error("database unavailable"));
+      await expect(h.deliverAuto()).rejects.toThrow("database unavailable");
+
+      await h.handler.recordFailureOutcome({ ...h.autoAction(5), outcome: "failed", error: "database unavailable" });
+
+      expect(h.failures.rows).toEqual([]);
+      expect(h.intents.rows.size).toBe(0);
     });
   });
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { emailMailboxPolicyRef } from "../../../src/modules/emailChannel/public.js";
 import { createEmailReviewHarness, REVIEW_PUBLISHABLE_FACTS } from "../../support/inMemoryEmailReview.js";
@@ -184,6 +184,127 @@ describe("EmailReviewRunner", () => {
 
       expect(h.respond).not.toHaveBeenCalled();
       expect(h.handoffs).toEqual([{ conversationId, reason: "operator_only_mailbox" }]);
+    });
+  });
+
+  describe("automatic publication (research B9)", () => {
+    const ALL_MODES = ["operator_only", "draft", "auto"] as const;
+
+    /** An `auto` mailbox on a deployment that runs it, one thread, and the clock at its review. */
+    const autoThread = async () => {
+      const h = createEmailReviewHarness({ supportedModes: ALL_MODES });
+      const mailbox = h.seedMailbox({ engagementMode: "auto" });
+      const thread = await h.openThread(mailbox);
+      h.advance(MINUTE_MS);
+      return { h, mailbox, ...thread };
+    };
+
+    it("queues a publishable answer for an automatic send, bound to the policy and ownership the review ran under", async () => {
+      const { h, mailbox, conversationId, messageId } = await autoThread();
+      const turn = h.draftTurn(conversationId);
+      h.respond.mockResolvedValue(turn);
+
+      expect(await h.drain()).toMatchObject({ claimed: 1, queued_auto: 1, held: 0 });
+
+      expect(h.queueAuto).toHaveBeenCalledExactlyOnceWith({
+        workspaceId: mailbox.workspaceId,
+        conversationId,
+        agentId: mailbox.agentId,
+        answersMessageId: messageId,
+        ownershipVersion: 0,
+        policy: { ref: emailMailboxPolicyRef(mailbox.id), version: 1 },
+        reviewRef: `email:${conversationId}:1`,
+        facts: turn.kind === "draft" ? turn.facts : never(),
+        draft: turn.kind === "draft" ? turn.draft : never(),
+      });
+      expect(h.hold).not.toHaveBeenCalled();
+      const [queued] = h.heldRows.of(conversationId);
+      expect(h.heldRows.of(conversationId)).toEqual([expect.objectContaining({ state: "queued_auto", reviewRef: `email:${conversationId}:1` })]);
+      expect(h.outbox).toEqual([{ type: "email.send", idempotencyKey: `email:send:held:${queued.id}` }]);
+      expect(h.threads.links.get(conversationId)).toMatchObject({ autoSendsSinceRenewal: 1, reviewDueAt: null, reviewCompletedRevision: 1 });
+      expect(h.counted("email_publication_decisions_total")).toEqual([{ decision: "publish", reason: "none" }]);
+      // Nothing reaches the customer-visible history until the send is materialized at dispatch.
+      expect(h.history.map((message) => message.role)).toEqual(["user"]);
+    });
+
+    it.each([
+      ["ownership_changed", "authority_changed"],
+      ["policy_changed", "authority_changed"],
+      ["send_budget", "send_budget"],
+      ["superseded", "authority_changed"],
+    ] as const)("holds the answer for a teammate when queueing is refused with %s, as %s", async (refused, holdReason) => {
+      const { h, mailbox, conversationId, messageId } = await autoThread();
+      const turn = h.draftTurn(conversationId);
+      h.respond.mockResolvedValue(turn);
+      h.queueAuto.mockResolvedValueOnce({ ok: false, refused });
+
+      expect(await h.drain()).toMatchObject({ claimed: 1, held: 1, queued_auto: 0 });
+
+      expect(h.hold).toHaveBeenCalledExactlyOnceWith({
+        workspaceId: mailbox.workspaceId,
+        conversationId,
+        agentId: mailbox.agentId,
+        answersMessageId: messageId,
+        ownershipVersion: 0,
+        policy: { ref: emailMailboxPolicyRef(mailbox.id), version: 1 },
+        reviewRef: `email:${conversationId}:1`,
+        holdReason,
+        facts: turn.kind === "draft" ? turn.facts : never(),
+        draft: turn.kind === "draft" ? turn.draft : never(),
+      });
+      expect(h.outbox).toEqual([]);
+      expect(h.counted("email_auto_queue_refusals_total")).toEqual([{ refused }]);
+    });
+
+    it("holds as send_budget, with no send queued, once the thread's sends are spent", async () => {
+      const { h, mailbox, conversationId } = await autoThread();
+      h.threads.links.set(conversationId, { ...h.threads.links.get(conversationId)!, autoSendsSinceRenewal: mailbox.threadSendBudget });
+      h.respond.mockResolvedValue(h.draftTurn(conversationId));
+
+      await h.drain();
+
+      expect(h.queueAuto).not.toHaveBeenCalled();
+      expect(h.heldRows.of(conversationId)).toEqual([expect.objectContaining({ state: "pending", holdReason: "send_budget" })]);
+      expect(h.outbox).toEqual([]);
+    });
+
+    it("holds a result that is not publishable with its outcome labelled, and queues nothing", async () => {
+      const { h, conversationId } = await autoThread();
+      h.respond.mockResolvedValue(h.draftTurn(conversationId, { coverage: "partial" }));
+
+      await h.drain();
+
+      expect(h.queueAuto).not.toHaveBeenCalled();
+      expect(h.heldRows.of(conversationId)).toEqual([expect.objectContaining({ state: "pending", holdReason: "outcome_not_publishable" })]);
+      expect(h.outbox).toEqual([]);
+    });
+
+    it("never queues on a mailbox in auto while the deployment does not run auto", async () => {
+      const h = createEmailReviewHarness({ supportedModes: ["operator_only", "draft"] });
+      const mailbox = h.seedMailbox({ engagementMode: "auto" });
+      const { conversationId } = await h.openThread(mailbox);
+      h.advance(MINUTE_MS);
+      h.respond.mockResolvedValue(h.draftTurn(conversationId));
+
+      await h.drain();
+
+      expect(h.queueAuto).not.toHaveBeenCalled();
+      expect(h.heldRows.of(conversationId)).toEqual([expect.objectContaining({ state: "pending", holdReason: "draft_mode" })]);
+    });
+
+    it("completes a revision already queued without a second turn or a second send, after a crash before completion", async () => {
+      const { h, conversationId } = await autoThread();
+      h.respond.mockResolvedValue(h.draftTurn(conversationId));
+      const completeReview = vi.spyOn(h.threads, "completeReview").mockRejectedValueOnce(new Error("connection reset"));
+
+      expect(await h.drain()).toMatchObject({ retrying: 1 });
+      h.advance(30_000);
+      expect(await h.drain()).toMatchObject({ already_held: 1 });
+
+      expect(h.respond).toHaveBeenCalledOnce();
+      expect(h.outbox).toHaveLength(1);
+      expect(h.threads.links.get(conversationId)).toMatchObject({ autoSendsSinceRenewal: 1, reviewDueAt: null, reviewCompletedRevision: 1 });
+      expect(completeReview).toHaveBeenCalledTimes(2);
     });
   });
 

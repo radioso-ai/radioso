@@ -7,6 +7,7 @@ import {
 import {
   createEmailChannelApplicationModule,
   createEmailChannelComposition,
+  createEmailHeldReplyChannelRegistration,
   createPostgresEmailSendUnitOfWork,
 } from "../../../src/app/composition/emailChannel.js";
 import type { ApplicationModuleRegistrationContext } from "../../../src/app/composition/applicationModule.js";
@@ -16,6 +17,7 @@ import { CloudTasksEmailChannelDrainDispatcher } from "../../../src/modules/emai
 import {
   EmailCustomerReplyDeliverer,
   EmailDeliveryFailureResolver,
+  EmailHeldReplyChannelScope,
   EmailMailboxRepository,
   EmailSendActionHandler,
   EmailSendIntentRepository,
@@ -45,7 +47,7 @@ const fakeDb = () => {
 /** The host ports the channel reaches only while draining. */
 const hostPorts = () => ({
   chat: { ingest: vi.fn(), respond: vi.fn() },
-  heldReplies: { hold: vi.fn(), findByReviewRef: vi.fn() },
+  heldReplies: { hold: vi.fn(), queueAuto: vi.fn(), findByReviewRef: vi.fn(), materializeAuto: vi.fn() },
   ownership: { requestHumanOwnership: vi.fn() },
 });
 
@@ -97,11 +99,19 @@ describe("email channel composition", () => {
     expect(composition?.provisioner).toBeInstanceOf(ResendEmailDomainProvisioner);
   });
 
-  it("supports operator_only and draft, and defaults new mailboxes to draft", () => {
+  it("supports operator_only, draft and auto, and defaults new mailboxes to draft", () => {
     const composition = compose(localConfig());
 
-    expect(composition?.supportedModes).toEqual(["operator_only", "draft"]);
-    expect(composition?.mailboxes.modes()).toEqual({ supportedModes: ["operator_only", "draft"], defaultMode: "draft" });
+    expect(composition?.supportedModes).toEqual(["operator_only", "draft", "auto"]);
+    expect(composition?.mailboxes.modes()).toEqual({ supportedModes: ["operator_only", "draft", "auto"], defaultMode: "draft" });
+  });
+
+  it("registers email's side of held-reply transactions under the mailbox policy prefix", () => {
+    const registration = compose(localConfig())?.heldReplyChannel;
+
+    expect(registration?.policyRefPrefix).toBe("email_mailbox:");
+    expect(registration?.bind(fakeDb().db as never)).toBeInstanceOf(EmailHeldReplyChannelScope);
+    expect(createEmailHeldReplyChannelRegistration({ provider: "local" }).bind(fakeDb().db as never)).toBeInstanceOf(EmailHeldReplyChannelScope);
   });
 
   it("routes replies on email conversations through the email.send deliverer, and resolves their delivery failures", () => {

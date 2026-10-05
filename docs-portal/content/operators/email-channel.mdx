@@ -1,6 +1,6 @@
 ---
 title: Email channel
-description: Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log from operator settings.
+description: Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies, cap what the agent does on its own, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log from operator settings.
 ---
 
 # Email channel
@@ -18,6 +18,7 @@ You manage it from an agent's **Channels**, alongside Web chat, API, MCP, and Sl
 - Email conversations show up in the Inbox exactly like any other channel, and they never auto-close on their own. What decides whether one needs attention is whether a person has to act on it — not how long it's been quiet.
 - Replies go out as your real address — `support@customer.com`, not the relay — once you've verified sending for that domain.
 - An email that doesn't turn into a conversation (an autoresponder, a bounce, spam, a message to a mailbox you've disabled) is still recorded: you can see it in the mailbox's event log with its sender, subject, and why it stopped there.
+- Everything the agent does on its own has a limit — an hourly draft budget, a per-thread send budget, one draft per burst of emails — and hitting one hands the email to a person. See [Limits](#limits).
 
 ## Connect a mailbox
 
@@ -55,6 +56,35 @@ You have three moves on a draft:
 
 Sending or discarding never takes the conversation over — it stays with the agent, same as before the draft was written. Only a free-form reply or an explicit takeover hands it to a person. If a newer email arrives, a teammate replies, or someone takes the conversation over while a draft is still waiting, that draft is dropped in favor of the newer thing — you'll never see two drafts competing for the same reply.
 
+## Limits
+
+One autoresponder or one burst of new threads could run up model spend in minutes if nothing capped it. Each limit below hands the work to a person when it's hit, so nothing accepted is lost. Set them per mailbox through the mailbox API.
+
+| Mailbox setting | What it caps | Default |
+|---|---|---|
+| `hourlyGenerationBudget` | Drafts the mailbox writes per hour | 30 |
+| `threadSendBudget` | The agent's automatic sends on one thread before you renew it | 3 |
+| `threadContextMessages` | How many of the thread's newest messages a draft reads | 10 |
+
+**When the hourly budget runs out**, mail keeps arriving but stops getting drafts: each email opens or continues a conversation handed to a person with the reason `generation_budget`, in the Inbox like any other handoff. The hour is a fixed window that starts with the first draft after the previous window closed, and drafts resume when it rolls over. A conversation already handed to a person stays with them until you hand it back.
+
+**The thread send budget** counts the agent's automatic sends on a thread. Your reply on the thread renews it, and so does sending a draft, as written or edited. Customer mail never renews it. When it's full, the next reply waits for you with the reason `send_budget`. On a `draft` mailbox every reply goes through you, so the count stays at zero.
+
+**Bursts share one draft.** Emails on one thread inside the deployment's coalescing window (`EMAIL_CHANNEL_COALESCE_SECONDS`, 60 seconds by default) get a single draft answering all of them.
+
+**Automated mail never gets a reply.** Radioso reads the headers — never the subject or body — and keeps the agent away from any email with:
+
+- `Auto-Submitted` set to anything other than `no`
+- `Precedence: bulk`, `list`, or `junk`
+- `X-Auto-Response-Suppress`
+- `List-Id`
+- a delivery status report, where a bounce of something Radioso sent marks that reply `bounced`
+- a `From` that's one of your own mailboxes
+
+Each one shows in the mailbox's event log, and as a note on the conversation when it lands on a thread that already has one. A responder that sends none of these headers looks like a person; the budgets catch it instead.
+
+**Mail keeps the mode it arrived under, or a more cautious one.** An email runs under whichever gives the agent less autonomy: the mailbox's mode when the email arrived, or its mode now. Switch a mailbox from `draft` to `operator_only` and mail still waiting for a draft goes to a person; switch it back and only mail that arrives afterwards gets drafts.
+
 ## Direct receiving (advanced)
 
 Instead of forwarding, you can point an entire customer-owned domain or subdomain's MX record at Radioso. This is a deliberate trade-off: once you confirm it by typing the domain's name, *every* address on that domain routes to Radioso, not just the mailboxes you've connected. Forwarding is the default for a reason — reach for direct receiving only when you want Radioso to be the domain's mail server outright.
@@ -66,6 +96,8 @@ Instead of forwarding, you can point an entire customer-owned domain or subdomai
 - **A reply is refused with a missing-step message.** The mailbox's sending domain hasn't verified yet. Add the DKIM and SPF records shown on the domain and wait for them to resolve.
 - **Adding a domain is refused without an explanation of who has it.** Another workspace already claimed that domain for sending. Use a different domain or subdomain.
 - **An email you expected to see never shows up anywhere.** Check the mailbox's event log — automated-sender mail, bounces, spam, and mail from your own mailboxes are recorded there but never open a conversation, by design.
+- **Conversations arrive already handed to a person, with the reason `generation_budget`.** The mailbox wrote its hourly budget of drafts. Drafts resume when the hour rolls over; hand a conversation back to the agent and its next email gets one. If real traffic rather than a flood keeps hitting the budget, raise `hourlyGenerationBudget`.
+- **An email from a real customer never got a draft.** Check its disposition in the event log. `automated_sender` means the sender's mail service added an automation header such as `Precedence: bulk` or `List-Id`, often because the message passed through a mailing list. Reply to the customer yourself.
 - **A reply shows `bounced` or `failed`.** The customer's address rejected it or the provider couldn't deliver it — the reason is on the message. Acknowledge the flag once you've dealt with it, such as following up another way.
 - **A reply shows `halted`.** The mailbox's domain lost its sending verification after the reply was queued, so nothing went out. Re-verify the domain, then resend from the conversation's delivery failure.
 - **A reply has been `uncertain` for a while.** Its outcome never came back from the provider. Mark it sent if you've confirmed the customer got it some other way, or ask for a resend — both are recorded against you.

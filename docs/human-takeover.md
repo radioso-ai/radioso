@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations, suppressing AI while handling manual responses, and reading who did what to a conversation."
-last_updated: 2026-10-04
+last_updated: 2026-10-05
 ---
 
 # Human Takeover
@@ -50,6 +50,14 @@ There are two request triggers:
 
 In the agent's **Profile → Answers** settings, turn on **Hand off on retrieval
 miss** to enable this trigger.
+
+A channel can also put a conversation in a person's hands when the agent may
+not answer it. The [email channel](email-channel.md#bounds) does this with
+three reasons: `operator_only_mailbox` (the mailbox only operators answer),
+`generation_budget` (the mailbox's hourly review budget is spent), and
+`review_unavailable` (the review turn failed past its retries or produced
+nothing to review). The conversation is `human_owned` with that reason, the
+same as after any other handoff.
 
 Both triggers request human ownership and notify an operator through the existing
 contact-delivery transport with a `handoff.notify` action. They also record
@@ -168,7 +176,8 @@ ownership record you replied from; a stale value also returns `409` with the
 current record.
 
 On an email conversation, the reply goes out as an email in the same thread
-the customer wrote to — see [Email channel](email-channel.md#send-a-reply-and-track-delivery)
+the customer wrote to and renews the thread's
+[send budget](email-channel.md#budgets) — see [Email channel](email-channel.md#send-a-reply-and-track-delivery)
 for its headers and delivery states. On one whose sending domain has not
 verified, the reply is refused before anything is written at all.
 
@@ -438,7 +447,11 @@ it writes a **held reply**: the agent's draft text, its judgment of the turn
 on a skill effect that was suppressed. A held reply opens the same
 `approval` attention kind a routine's [approval](#approvals) gate uses and
 shows in the Inbox the same way, but it's a distinct resource with its own
-list, its own release, and no `routineId` or `stepId`. See
+list, its own release, and no `routineId` or `stepId`. Its `holdReason` is
+the channel's code for why it waited. On email that's `draft_mode` on a
+`draft` mailbox, `sending_not_verified` while the sending domain is
+unverified, or `send_budget` once the thread's
+[send budget](email-channel.md#budgets) is spent. See
 [Email channel](email-channel.md#draft-mode-review-before-it-sends) for what
 a review turn can and can't do, and what the operator's three choices mean.
 
@@ -470,7 +483,8 @@ Omit `editedText` to send the draft exactly as written: the delivered
 message is attributed to the agent. Include it to send your own wording
 instead: the delivered message is attributed to you, and the original
 draft stays on the held reply. Either way, release never changes who owns
-the conversation — it stays `ai_owned`, the same as before the review ran.
+the conversation — it stays `ai_owned`, the same as before the review ran —
+and it renews the thread's [send budget](email-channel.md#budgets).
 Returns `201` with the held reply, the new message's id, and
 `"delivery": "queued"`.
 
@@ -507,8 +521,9 @@ even called, or an outcome that never resolved. Each of these flags the
 conversation with a `delivery_failed` item, visible in the Inbox alongside
 handoffs and approvals, carrying the failed message and a sanitized reason.
 It changes no ownership; it is a flag that something meant for the customer
-might not have reached them. Today this is email-specific, through the
-[email channel](email-channel.md#send-a-reply-and-track-delivery); any
+might not have reached them. The
+[email channel](email-channel.md#send-a-reply-and-track-delivery) opens one
+for each failed send; the flag belongs to no single channel, so any
 channel's deliverer can open one.
 
 A `delivery_failed` flag clears itself when later evidence from the

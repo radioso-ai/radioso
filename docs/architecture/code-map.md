@@ -266,15 +266,21 @@ resolution, the mailbox event log, and raw-message access for a
 customer-owned mailbox forwarded to a Radioso-operated relay address. A
 mailbox's engagement mode gates whether an agent ever runs a turn on its
 mail, and whether that turn's reply is held for an operator or sent on its
-own; this release ships `operator_only` and `draft` (`draft` is the default
-for a new mailbox), with `auto` not yet in `supportedModes`.
+own. `operator_only` and `draft` run (`draft` is the default for a new
+mailbox); `auto` is outside the deployment's `supportedModes`, so setting it
+is refused.
 
 A `draft` mailbox's inbound stage 2 (`emailReviewRunner.ts`) runs one
 coalesced turn per thread revision through `ConnectorChatPort.respond`
 (`connectorChatPort.ts`, which calls `ChatService.review` in `review`
 execution mode — see [Assistant Turn Spine](assistant-turn-spine.md#execution-modes)),
 asks the pure `emailPublicationDecision.ts` what to do with the result, and
-hands it to the channel-neutral held-reply module below.
+hands it to the channel-neutral held-reply module below. Every automatic
+step is bounded: the mailbox generation budget (`generationBudget.ts`, a
+fixed one-hour window reserved once per review revision), the thread send
+budget, the coalescing window, the review's thread-context limit, and
+`effectiveMode.ts`, which runs accepted mail under the lower-autonomy of
+its accepted and current policy.
 
 Should not own conversation or routine behavior, and does not reuse
 `backend/src/modules/customerEmail/` — that module sends through a
@@ -290,14 +296,26 @@ Public surfaces and key files:
   `SendingDomainService`, `EventLogReader`, `ConversationEmailFactsReader`,
   `EmailChannelCopilotView`, and the `email_domains` / `email_mailboxes` /
   inbound / thread repositories.
-- `backend/src/modules/connectors/plugins/email/` — pure functions with no
-  I/O: `emailEngagementDisposition.ts`, `emailInboundClassification.ts`,
-  `emailThreadResolution.ts`, `emailPublicationDecision.ts` (FR-020: what a
-  review's typed result does next — publish, hold with a reason, or no
-  draft); `emailReviewRunner.ts` is stage 2's orchestration (claims a due
-  thread revision under a lease, runs the review, decides publication,
-  schedules retries and wakeups) and is the one impure file in the
-  directory.
+- `backend/src/modules/emailChannel/mailboxes/` — `mailboxService.ts`
+  (settings, defaults, and bounds), `generationBudget.ts`,
+  `effectiveMode.ts`, `mailboxPolicyChangeUnitOfWork.ts`, routing, relay
+  tokens, and receiving state.
+- `backend/src/modules/emailChannel/outbound/` — the `email.send` outbox
+  handler, send intents, authority checks, outbound headers, and
+  reconciliation.
+- `backend/src/modules/connectors/plugins/email/` — the pure decisions
+  `emailInboundClassification.ts` (RFC 3834 and delivery-status headers),
+  `emailEngagementDisposition.ts`, `emailThreadResolution.ts`, and
+  `emailPublicationDecision.ts` (FR-020: what a review's typed result does
+  next — publish, hold with a reason, or no draft); and the orchestration
+  around them: `emailWebhook.ts` (verify and persist),
+  `emailInboundProcessor.ts` (stage 1), `emailReviewRunner.ts` (stage 2:
+  claims a due thread revision under a lease, reserves a generation, runs
+  the review, decides publication, schedules retries and wakeups),
+  `emailChannelWorker.ts`, and `emailPlugin.ts`.
+- `backend/src/modules/handoff/heldReplies/` — `heldReplyService.ts` and
+  `heldReplyState.ts`: the channel-neutral held reply, its release,
+  discard, and supersede rules.
 - `backend/src/modules/emailChannel/README.md`
 
 Useful searches:
@@ -310,6 +328,7 @@ Focused checks:
 - `cd backend && pnpm exec vitest run tests/unit/email-channel tests/unit/mail`
 - `cd backend && pnpm exec vitest run tests/integration/email-channel-persistence.integration.test.ts tests/integration/email-channel-schema-migrations.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/email-channel/review-runner.test.ts tests/integration/email-review-revision.integration.test.ts tests/unit/eval-suite/email-outcome-table.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/email-channel/protocol-corpus.test.ts tests/integration/email-channel-budgets.integration.test.ts tests/integration/email-channel-flood.integration.test.ts tests/integration/email-policy-acceptance.integration.test.ts`
 
 Related docs:
 

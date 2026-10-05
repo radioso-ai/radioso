@@ -134,6 +134,33 @@ describe("routine slot filling (authoring → compile → runtime)", () => {
     expect(t3.trace?.terminalKind).toBe("complete");
   });
 
+  it("drops a key activation hands the engine that the routine's schema does not declare (#1388)", async () => {
+    // Mirrors what the turn planner / ranked activation produce: free-form field
+    // names alongside a real slot value, read from the opening message before the
+    // routine's own selector ever runs. `topic` names no declared slot.
+    const compiled = compileRoutineDefinition(authored);
+    const gateway: ConversationModelGateway = {
+      complete: vi.fn(async () => ({
+        text: '{"claimsAuthority": false, "condition": null, "offTopic": false, "variables": {}}',
+      })),
+    };
+    const runner = new DefaultRoutineRunner([compiled], new RoutineNextStepSelector(gateway), echoRenderer);
+
+    const result = await runner.resume({
+      turn: turnWith("I'd like to contact someone about pricing, alex@example.com"),
+      state: {
+        sessionId: "s1",
+        routineId: compiled.id,
+        path: [],
+        variables: { email: "alex@example.com", topic: "pricing" },
+        status: "active",
+      },
+      activationTurn: true,
+    });
+
+    expect(result.nextState?.variables).toEqual({ email: "alex@example.com" });
+  });
+
   it("captures a slot on a step that branches on it via a field guard (no llm edge)", async () => {
     // "Ask for budget, then route by budget in code." A natural authoring shape where
     // the slot is asked and branched on in the same step. Before the fix the selector

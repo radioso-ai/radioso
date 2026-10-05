@@ -1,4 +1,6 @@
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
+import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
+import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
 import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
@@ -1735,9 +1737,12 @@ export const createTestDependencies = (overrides: {
     skillCatalog: skillCatalogService,
     externalSkills: externalSkillDefinitionService,
   });
+  const actionComposition = createDefaultApplicationComposition({ logger });
   const routineDefinitionService = new RoutineDefinitionService({
     agentRepository,
     repository: routineDefinitionRepository,
+    actionCapabilities: actionComposition.routineActionCapabilityMap,
+    hostQueuedActionTypes: chatTurnQueuedActionTypes(actionComposition.actionHandlerRegistrations),
     skillAuthoringCatalog,
     contextVariableReader: contextVariableService,
     webhookDestinations: {
@@ -1747,8 +1752,8 @@ export const createTestDependencies = (overrides: {
     auditService,
   });
   // Real routine-servability wiring (matches src/app/server/dependencies.ts): a candidate or
-  // publish call rejects an enabled routine whose skill/capability/webhook reference cannot
-  // serve, on top of the repository's own structural (directive-scope) gate.
+  // publish call rejects an enabled routine whose skill, capability, webhook, or action reference
+  // cannot serve, on top of the repository's own structural (directive-scope) gate.
   const agentRevisionService = new AgentRevisionService(agentRevisionRepository, randomUUID, {
     validateForServing: routineDefinitionService.validateForServing.bind(routineDefinitionService),
   });

@@ -63,6 +63,8 @@ export interface TestExecution {
   skillEffects: SkillEffectPolicy;
   sides: readonly TestExecutionSide[];
   createdAt: Date;
+  /** What a seed copied in at start (`TestExecutionSeededSummary.turnCount`); 0 when this test started fresh. */
+  seededTurnCount: number;
 }
 
 export interface TestExecutionAttempt {
@@ -260,7 +262,7 @@ export interface TestExecutionSeedSource {
 
 export interface TestExecutionRepositoryPort {
   /** `idempotencyKey` fences a start: a repeated key for the same workspace/agent replays the execution it already created instead of starting a second one. */
-  create(input: Omit<TestExecution, "createdAt" | "state"> & { state?: TestExecutionState; idempotencyKey: string; seededSummary?: TestExecutionSeededSummary }): Promise<TestExecution>;
+  create(input: Omit<TestExecution, "createdAt" | "state" | "seededTurnCount"> & { state?: TestExecutionState; idempotencyKey: string; seededSummary?: TestExecutionSeededSummary }): Promise<TestExecution>;
   find(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecution | null>;
   /** Scoped by workspace alone: the read a caller with only an execution id, not yet an agent id, needs. Null for an id this workspace does not own. */
   findAgentId(input: { workspaceId: string; executionId: string }): Promise<string | null>;

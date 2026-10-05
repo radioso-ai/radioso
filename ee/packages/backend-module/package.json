@@ -17,7 +17,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/copy-prompts.mjs",
     "pretest": "pnpm --dir ../plan-catalog run build",
-    "test": "vitest run --passWithNoTests --testTimeout 20000"
+    "test": "vitest run --passWithNoTests --testTimeout 20000",
+    "stripe:sync": "pnpm --dir ../plan-catalog run build && pnpm run build && node dist/billing/stripeCatalogSyncCli.js"
   },
   "files": [
     "dist",

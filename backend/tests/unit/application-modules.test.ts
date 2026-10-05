@@ -56,6 +56,20 @@ describe("application modules", () => {
     expect(shutdown).toHaveBeenCalledOnce();
   });
 
+  it("rejects an action handler registration without a recognized queue source", () => {
+    const coordinator = new ApplicationModuleCoordinator({
+      logger: createLogger(),
+      registry: createApplicationExtensionRegistry(),
+    });
+
+    expect(() => coordinator.apply([{
+      id: "older-action-module",
+      register(context) {
+        context.registerActionHandler({ type: "legacy.action" } as never);
+      },
+    }])).toThrow('Action handler "legacy.action" needs queuedFrom set to one of: routine_action_step, chat_turn, outside_turn');
+  });
+
   it("logs initialization failures without losing the failing module id", async () => {
     const logger = createLogger();
     const registry = createApplicationExtensionRegistry();

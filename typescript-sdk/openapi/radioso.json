@@ -15862,7 +15862,7 @@
               "string",
               "null"
             ],
-            "description": "The handoff reason code on `handoff_requested`, for example `routine_handoff` or `retrieval_miss`."
+            "description": "The handoff reason code on `handoff_requested`, for example `routine_handoff`, `routine_stuck`, or `retrieval_miss`."
           },
           "decision": {
             "type": [
@@ -19990,6 +19990,56 @@
           "reasons"
         ]
       },
+      "AudiencePulseAnswerStatus": {
+        "type": "string",
+        "enum": [
+          "answered",
+          "partial",
+          "unanswered",
+          "unclear",
+          "out_of_scope",
+          "not_assessed"
+        ],
+        "description": "What happened to a visitor question. `out_of_scope` is a partly answered or unanswered verdict with the intentional scope boundary reason; a question with no assessment record reads from its retrieval content-gap grounding."
+      },
+      "AudiencePulseAnswerSummary": {
+        "type": "object",
+        "properties": {
+          "answered": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "partial": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unanswered": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unclear": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "outOfScope": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "notAssessed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "answered",
+          "partial",
+          "unanswered",
+          "unclear",
+          "outOfScope",
+          "notAssessed"
+        ],
+        "description": "Every topic member counted by its answer status."
+      },
       "AudiencePulseEvidence": {
         "type": "object",
         "properties": {
@@ -20014,6 +20064,9 @@
           },
           "answerCoverage": {
             "$ref": "#/components/schemas/AnswerCoverage"
+          },
+          "answerStatus": {
+            "$ref": "#/components/schemas/AudiencePulseAnswerStatus"
           }
         },
         "required": [
@@ -20227,6 +20280,9 @@
           "coverage": {
             "$ref": "#/components/schemas/AudiencePulseSemanticCoverage"
           },
+          "answers": {
+            "$ref": "#/components/schemas/AudiencePulseAnswerSummary"
+          },
           "evidence": {
             "type": "array",
             "items": {
@@ -20246,6 +20302,7 @@
           "distinctQuestionCount",
           "weeklyPulse",
           "grounding",
+          "answers",
           "evidence"
         ]
       },
@@ -24226,6 +24283,11 @@
                   ]
                 }
               },
+              "seededTurnCount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "User messages copied in from the real conversation this test continues; 0 when it started fresh."
+              },
               "testValues": {
                 "type": "array",
                 "items": {}
@@ -24238,6 +24300,7 @@
               }
             },
             "required": [
+              "seededTurnCount",
               "testValues",
               "attempts"
             ]

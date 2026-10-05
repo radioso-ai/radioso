@@ -354,6 +354,10 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
    * The composition-owned authoring coordinator calls this on the same Kysely transaction as an
    * owner CAS. It intentionally knows only the generic receipt fence and safe reference, never
    * the routine graph it accompanies.
+   *
+   * The `claimedAt` fence already names the receipt's attempt: a reviewed claim and its denied
+   * release move the proposal's start time and the receipt's attempt together, so only the attempt
+   * holding the receipt still matches it.
    */
   async settleMcpAppliedOn(input: {
     readonly proposalId: string;
@@ -452,25 +456,38 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
    * that receipt can reconcile it. With no such attempt the denied one changed nothing, so the
    * binding is dropped too; otherwise every later execution receipt would answer `not_prepared`
    * until the proposal expired.
+   *
+   * The receipt's attempt goes back to the request the claim took it from, in the same transaction,
+   * so the attempt whose start time is restored can also record its own outcome on the receipt.
    */
-  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date; previousAttemptStartedAt: Date | null }): Promise<boolean> {
-    const row = await this.db.updateTable("copilot_proposals")
-      .set({
-        apply_started_at: input.previousAttemptStartedAt,
-        ...(input.previousAttemptStartedAt ? {} : { execution_invocation_id: null }),
-        updated_at: new Date(),
-      })
-      .where("id", "=", input.id)
-      .where("workspace_id", "=", input.workspaceId)
-      .where("operator_user_id", "=", input.operatorUserId)
-      .where("status", "=", "pending")
-      .where("apply_started_at", "=", input.claimedAt)
-      .returning("id")
-      .executeTakeFirst();
-    return Boolean(row);
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date; previousAttemptStartedAt: Date | null; receiptAttempt?: CopilotProposalClaim["receiptAttempt"] }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx.updateTable("copilot_proposals")
+        .set({
+          apply_started_at: input.previousAttemptStartedAt,
+          ...(input.previousAttemptStartedAt ? {} : { execution_invocation_id: null }),
+          updated_at: new Date(),
+        })
+        .where("id", "=", input.id)
+        .where("workspace_id", "=", input.workspaceId)
+        .where("operator_user_id", "=", input.operatorUserId)
+        .where("status", "=", "pending")
+        .where("apply_started_at", "=", input.claimedAt)
+        .returning("id")
+        .executeTakeFirst();
+      if (!row) return false;
+      if (input.receiptAttempt) {
+        await trx.updateTable("operator_mcp_invocations")
+          .set({ attempt_invocation_id: input.receiptAttempt.previousAttemptInvocationId })
+          .where("id", "=", input.receiptAttempt.executionInvocationId)
+          .where("attempt_invocation_id", "=", input.receiptAttempt.attemptInvocationId)
+          .execute();
+      }
+      return true;
+    });
   }
 
-  async claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }): Promise<
+  async claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number; attemptInvocationId?: string }): Promise<
     | { readonly status: "claimed"; readonly claim: CopilotProposalClaim }
     /** The proposal already reached this terminal outcome through this same execution receipt. */
     | { readonly status: "settled"; readonly outcome: "applied" | "stale" | "failed"; readonly appliedRef: unknown; readonly reason?: string }
@@ -486,8 +503,10 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       const lockedNow = (await trx.selectNoFrom(sql<Date>`clock_timestamp()`.as("now")).executeTakeFirstOrThrow()).now;
       const prepared = await trx.selectFrom("operator_mcp_invocations").select(["grant_id", "client_id", "workspace_id", "user_id"])
         .where("id", "=", proposal.operator_mcp_invocation_id!).executeTakeFirst();
-      const execution = await trx.selectFrom("operator_mcp_invocations").select(["grant_id", "client_id", "workspace_id", "user_id"])
-        .where("id", "=", input.executionInvocationId).executeTakeFirst();
+      // Locked so the attempt read here is the one the reopen below replaces, and the one a denied
+      // release hands the receipt back to.
+      const execution = await trx.selectFrom("operator_mcp_invocations").select(["grant_id", "client_id", "workspace_id", "user_id", "attempt_invocation_id"])
+        .where("id", "=", input.executionInvocationId).forUpdate().executeTakeFirst();
       if (!prepared || !execution || prepared.grant_id !== input.grantId || prepared.client_id !== input.clientId
         || prepared.workspace_id !== input.workspaceId || prepared.user_id !== input.operatorUserId
         || execution.grant_id !== prepared.grant_id || execution.client_id !== prepared.client_id
@@ -504,6 +523,14 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       if (proposal.status !== "pending") return { status: "not_prepared" as const };
       if (proposal.execution_invocation_id && proposal.execution_invocation_id !== input.executionInvocationId) return { status: "not_prepared" as const };
       if (proposal.confirmation_requirement === "signed_in_approval" && (proposal.approved_at === null || proposal.approval_digest !== proposal.review_digest)) return { status: "approval_required" as const };
+      // A request whose receipt a retry took over never takes it back, even once that retry's lease
+      // lapses: only a later retry replaces the attempt. Each request then holds the receipt at most
+      // once, so a write fenced on the attempt it observed cannot land on a later run.
+      const attemptInvocationId = input.attemptInvocationId ?? input.executionInvocationId;
+      if (attemptInvocationId === input.executionInvocationId
+        && execution.attempt_invocation_id !== null && execution.attempt_invocation_id !== attemptInvocationId) {
+        return { status: "claim_held" as const };
+      }
       const claimedAt = lockedNow;
       const previousAttemptStartedAt = proposal.apply_started_at;
       const claimed = await trx.updateTable("copilot_proposals")
@@ -520,9 +547,11 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       // A retry owns the original, digest-bound receipt, not the fresh transport invocation.
       // Reopen only that receipt while its matching proposal is still pending and locked here.
       // This makes the owner transaction's existing admitted/running settlement fence usable
-      // after a lost response recorded the receipt as failed or completed-uncertain.
+      // after a lost response recorded the receipt as failed or completed-uncertain. The claiming
+      // request becomes the receipt's attempt, so whatever a request it replaced writes later is
+      // dropped instead of overwriting this run.
       const receipt = await trx.updateTable("operator_mcp_invocations")
-        .set({ status: "running", safe_outcome_code: null, result_reference: null, completed_at: null })
+        .set({ status: "running", safe_outcome_code: null, result_reference: null, completed_at: null, attempt_invocation_id: attemptInvocationId })
         .where("id", "=", input.executionInvocationId)
         .where("grant_id", "=", input.grantId)
         .where("client_id", "=", input.clientId)
@@ -533,7 +562,13 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         .where("status", "in", ["admitted", "running", "failed", "completed"])
         .returning("id").executeTakeFirst();
       if (!receipt) throw new Error("reviewed_proposal_execution_receipt_conflict");
-      return { status: "claimed" as const, claim: { proposal: mapProposal(claimed), claimedAt, previousAttemptStartedAt } };
+      return {
+        status: "claimed" as const,
+        claim: {
+          proposal: mapProposal(claimed), claimedAt, previousAttemptStartedAt,
+          receiptAttempt: { executionInvocationId: input.executionInvocationId, attemptInvocationId, previousAttemptInvocationId: execution.attempt_invocation_id },
+        },
+      };
     });
   }
 

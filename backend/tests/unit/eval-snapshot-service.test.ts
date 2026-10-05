@@ -398,6 +398,7 @@ describe("EvalSnapshotService.captureTestExecutionTurn", () => {
       mode: "single",
       state: "completed",
       skillEffects: "suppressed",
+      seededTurnCount: 0,
       testValues: [{
         contextVariableId: "context-1",
         name: "Customer tier",

@@ -20,7 +20,7 @@ export const createWebhookSendApplicationModule = (): ApplicationModule => ({
       // outbox conversation context. Keeping this empty prevents turn-time
       // authorization from blocking the visitor-facing reply.
       requiredCapabilities: [],
-      emittableByRoutines: true,
+      queuedFrom: "routine_action_step",
       handler: ({ database, logger, telemetryService, webhookDestinations, assertPublicWebsiteUrl }) => {
         return new WebhookSendActionHandler({
           destinations: webhookDestinations,

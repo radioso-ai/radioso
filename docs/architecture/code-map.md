@@ -1262,7 +1262,7 @@ Primary internals:
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward, re-ask limit)
 - `packages/conversation-engine/src/slotValue.ts` (the one per-type check every stored slot value passes)
-- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-step-reask-exhausted.md` (a step asked past the re-ask limit), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Before editing `routine-next-step.md` or `routine-step-reply.md` (or the fragments built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
+- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-step-reask-exhausted.md` (a step asked past the re-ask limit), `routine-step-stuck-handoff.md` (a routine that ends stuck and hands the visitor to a person), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Before editing `routine-next-step.md` or `routine-step-reply.md` (or the fragments built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
 - `frontend/lib/routine-flow.ts` (block document → canvas graph, guard provenance, slot collection)
 - `frontend/components/dashboard/settings/routine-canvas.tsx` (read-only map over that graph)
@@ -1488,7 +1488,7 @@ Public surfaces and contracts:
 - `frontend/components/dashboard/audience-pulse-view.tsx`
 - `frontend/lib/api-audience-pulse.ts`
 - `frontend/lib/audience-pulse-draft-seed.ts` and `frontend/lib/audience-pulse-evidence-handoff.ts`
-- `frontend/lib/audience-pulse-topic-viz.ts` (pure share-bar and sparkline math for the topic rows)
+- `frontend/lib/audience-pulse-answer-status.ts` (pure answer-status labels, counts line, and example ordering for the topic rows)
 
 Primary internals:
 
@@ -1847,7 +1847,8 @@ Primary paths:
 - relevant `backend/src/modules/*/composition.ts` files
 - `ee/packages/plan-catalog/` — the source of truth for Radioso Cloud plan numbers
   (prices, quotas, default plan, self-serve ceiling, usage-counting weights,
-  top-up, managed service, the managed-plan model set). Entry point `src/index.ts`
+  top-up, managed service, the managed-plan model set, whether prices include
+  VAT). Entry point `src/index.ts`
   (`PLAN_CATALOG`, `findPlan`, `formatPrice`); data in `src/plans.json`; focused
   test `tests/planCatalog.test.ts`.
 - `ee/packages/backend-module/src/billing/` — publishes the plan catalog over
@@ -1857,9 +1858,10 @@ Primary paths:
   `plansRoutes.ts` (`createPlansRoutes`, public `GET /api/v1/plans`) and
   `billingRoutes.ts` (`createBillingRoutes`, `GET/POST /api/v1/ee/billing/*`
   — `me`, `checkout`, `portal`, `webhook`; account-session gated except the
-  webhook). `stripeGateway.ts` is the narrow Stripe port every other file and
-  every test sees; `stripeSdkGateway.ts` is the only file that imports the
-  `stripe` SDK. `planPricing.ts` maps catalog plan ↔ Stripe lookup key /
+  webhook). `stripeGateway.ts` is the narrow Stripe port the runtime and its
+  tests see, and exports `STRIPE_WEBHOOK_EVENT_TYPES`, the event types billing
+  acts on; `stripeSdkGateway.ts` adapts it to the `stripe` SDK.
+  `planPricing.ts` maps catalog plan ↔ Stripe lookup key /
   product metadata (pure, no Stripe or DB import). `billingCustomerRepository.ts`
   owns `ee_billing_customers` and the `ee_billing_processed_events` webhook
   idempotency table via `db/eeSchema.ts`'s Kysely surface; migrator
@@ -1871,8 +1873,18 @@ Primary paths:
   `configured: false` rather than failing at boot — self-hosted installs run
   this way by default. Checkout and portal are user-initiated payment flows,
   not Ray actions, and are permanently excluded from the copilot coverage
-  map. Focused tests: `planPricing.test.ts`, `billingWebhookHandler.test.ts`,
+  map. The operator CLI `stripeCatalogSyncCli.ts` (package script
+  `stripe:sync`) makes a Stripe account match the catalog: products, lookup-keyed
+  prices, tax defaults, the customer portal, and the webhook endpoint.
+  `stripeCatalogSync.ts` is the pure planner (`desiredStripeCatalog`,
+  `planStripeCatalogSync`), `stripeCatalogSyncCommand.ts` runs it (flags,
+  live-mode guard, output, apply), `stripeCatalogAdmin.ts` is its narrow port, and
+  `stripeSdkCatalogAdmin.ts` adapts that port to the `stripe` SDK. The two SDK
+  adapters are the only files that import `stripe`. The sync is a deploy-time
+  CLI with no HTTP route, so it sits outside the copilot coverage map. Focused
+  tests: `planPricing.test.ts`, `billingWebhookHandler.test.ts`,
   `billingRoutes.test.ts`, `plansRoutes.test.ts`, `applicationModule.test.ts`,
+  `stripeCatalogSync.test.ts`, `stripeCatalogSyncCommand.test.ts`,
   `billingCustomerRepository.integration.test.ts` (also exercises the
   migrator). Operator setup doc:
   `docs-portal/content/operators/billing-setup.mdx`.

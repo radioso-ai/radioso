@@ -5,6 +5,8 @@ locals {
   slack_signing_secret_configured       = nonsensitive(try(length(trimspace(var.slack_signing_secret)) > 0, false))
   google_login_client_id_configured     = nonsensitive(try(length(trimspace(var.google_login_client_id)) > 0, false))
   google_login_client_secret_configured = nonsensitive(try(length(trimspace(var.google_login_client_secret)) > 0, false))
+  stripe_secret_key_configured          = nonsensitive(try(length(trimspace(var.stripe_secret_key)) > 0, false))
+  stripe_webhook_secret_configured      = nonsensitive(try(length(trimspace(var.stripe_webhook_secret)) > 0, false))
   ee_usage_admin_token_configured       = nonsensitive(try(length(trimspace(var.ee_usage_admin_token)) > 0, false))
   ops_event_webhook_secret_configured   = nonsensitive(try(length(trimspace(var.ops_event_webhook_secret)) > 0, false))
 
@@ -51,6 +53,12 @@ locals {
     } : {},
     local.google_login_client_secret_configured ? {
       "google-login-client-secret" = var.google_login_client_secret
+    } : {},
+    local.stripe_secret_key_configured ? {
+      "stripe-secret-key" = var.stripe_secret_key
+    } : {},
+    local.stripe_webhook_secret_configured ? {
+      "stripe-webhook-secret" = var.stripe_webhook_secret
     } : {},
     local.ee_usage_admin_token_configured ? {
       "ee-usage-admin-token" = var.ee_usage_admin_token
@@ -103,6 +111,12 @@ locals {
     } : {},
     local.google_login_client_secret_configured ? {
       "google-login-client-secret" = true
+    } : {},
+    local.stripe_secret_key_configured ? {
+      "stripe-secret-key" = true
+    } : {},
+    local.stripe_webhook_secret_configured ? {
+      "stripe-webhook-secret" = true
     } : {},
     local.ee_usage_admin_token_configured ? {
       "ee-usage-admin-token" = true

@@ -53,3 +53,6 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 .gstack/
+
+# Stripe webhook signing secrets written by `stripe:sync --webhook-secret-file`
+stripe-webhook-secret*

@@ -7,6 +7,7 @@ import {
   installDashboardApiMocks,
   nowIso,
   seedDashboardStorage,
+  testExecutionFixtureId,
   workspaceId,
   workspaceKey,
 } from "./dashboard-fixtures";
@@ -934,9 +935,13 @@ test("activity drawer continues a conversation in test chat", async ({ page }) =
   await expect(page.getByText("Original answer.", { exact: true })).toBeVisible();
   // Next's route announcer is also role="alert"; the page itself must carry none.
   await expect(testChatAlerts).toHaveCount(0);
-  // The open command is consumed on arrival so refresh and back do not re-open it.
-  await expect(page).toHaveURL(`/w/${workspaceKey}/agents/${defaultAgentId}`);
+  // The opened test's id stays in the URL as route state, so reload lands on the same test.
+  await expect(page).toHaveURL(`/w/${workspaceKey}/agents/${defaultAgentId}?testExecution=${testExecutionFixtureId(1)}`);
   await expect(page.getByText("Continuing a copy of the conversation. The original is untouched.")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("Original answer.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Continuing a copy of the conversation. The original is untouched.")).toBeVisible();
+  await expect(page).toHaveURL(`/w/${workspaceKey}/agents/${defaultAgentId}?testExecution=${testExecutionFixtureId(1)}`);
 
   // The seeded thread carries on from where the real conversation stopped.
   await page.getByPlaceholder("Ask a question...").fill("And one more thing?");

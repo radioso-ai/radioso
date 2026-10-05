@@ -50,13 +50,19 @@ const aiOwnedRecord = (version: number): ConversationOwnershipRecord => ownershi
   takenOverAt: null,
 });
 
-const blockPayload = (actionId: string, value: Record<string, unknown>, slackUserId = "U1") => ({
+const blockPayload = (
+  actionId: string,
+  value: Record<string, unknown>,
+  slackUserId = "U1",
+  message?: Record<string, unknown>,
+) => ({
   type: "block_actions" as const,
   team: { id: "T1" },
   user: { id: slackUserId },
   trigger_id: "trigger_1",
   response_url: "https://hooks.slack.com/actions/1",
   actions: [{ action_id: actionId, value: JSON.stringify(value) }],
+  ...(message ? { message } : {}),
 });
 
 const viewPayload = (value: string) => ({
@@ -354,6 +360,42 @@ describe("SlackInteractivityHandler ownership branch", () => {
     expect(responsePosts[0].body).toMatchObject({ replace_original: true });
     expect(JSON.stringify(responsePosts[0].body.blocks)).toContain("ownership_takeover");
     expect(JSON.stringify(responsePosts[0].body.blocks)).not.toContain("ownership_talk");
+    expect(JSON.stringify(responsePosts[0].body.blocks)).toContain("Conversation conv_1");
+  });
+
+  it("keeps the notice section selected by block id after take over", async () => {
+    const { handler, responsePosts } = createHandler();
+    const notice = "*Booking request*\nCollected:\n  Guest: Ada &amp; Bob";
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", {
+      conversationId: "conv_1",
+      workspaceId: "ws_conversation",
+    }, "U1", {
+      blocks: [{
+        type: "section",
+        block_id: "ownership_context",
+        text: { type: "mrkdwn", text: notice },
+      }],
+    }));
+
+    const context = (responsePosts[0].body.blocks as Array<Record<string, unknown>>)[0];
+    expect((context.text as { text: string }).text).toBe(notice);
+    expect(JSON.stringify(responsePosts[0].body.blocks)).not.toContain("&amp;amp;");
+  });
+
+  it("keeps a legacy card's notice section after hand back", async () => {
+    const { handler, responsePosts } = createHandler();
+    const notice = "*Booking request*\nCollected:\n  Guest: Ada";
+
+    await handler.handleBlockActions(blockPayload("ownership_handback", {
+      conversationId: "conv_1",
+      version: 3,
+    }, "U1", {
+      blocks: [{ type: "section", text: { type: "mrkdwn", text: notice } }],
+    }));
+
+    const context = (responsePosts[0].body.blocks as Array<Record<string, unknown>>)[0];
+    expect((context.text as { text: string }).text).toBe(notice);
   });
 
   it("tells a teammate who does not own the conversation who does, and leaves the card alone on hand back", async () => {

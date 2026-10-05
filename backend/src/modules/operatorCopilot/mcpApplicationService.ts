@@ -111,6 +111,13 @@ const contextFor = (
 const awaitApprovalMsFor = (approvalResponse: OperatorInvocationRequest["approvalResponse"]): number | undefined =>
   approvalResponse?.action === "accept" ? REVIEWED_APPROVAL_ACCEPT_WAIT_MS : undefined;
 
+/**
+ * A retry took this request's receipt over to reconcile it: the receipt now runs under that
+ * retry's attempt, and the outcome this request just tried to record did not land.
+ */
+const takenOverFrom = (receipt: OperatorMcpInvocationRecord | null | undefined, invocationId: string): boolean =>
+  Boolean(receipt?.attemptInvocationId) && receipt?.attemptInvocationId !== invocationId;
+
 const resultReference = (output: unknown, preferProposalId: boolean): string | null => {
   if (!output || typeof output !== "object" || Array.isArray(output)) return null;
   const record = output as Record<string, unknown>;
@@ -428,7 +435,6 @@ export class OperatorMcpApplicationService {
   async invoke(input: OperatorInvocationRequest): Promise<OperatorInvocationResponse> {
     const principal = await this.currentProofPrincipal(input.proof, "tools/call");
     let capabilityShape: "read" | "probe" | "act" | "propose" | null = null;
-    let receiptTakenOver = false;
     // Set once the descriptor resolves, so a refusal's audit record can name which ceiling a
     // budget_exhausted outcome charged against without recomputing it from a descriptor lookup
     // the catch block would otherwise have to repeat.
@@ -518,10 +524,13 @@ export class OperatorMcpApplicationService {
               throw new OperatorMcpApplicationError("invalid_result");
             }
             const reference = resultReference(reconciliation.output, disposition.retry.effect === "act");
-            // An unconfirmed answer leaves the earlier receipt for the owner to settle.
+            // An unconfirmed answer leaves the earlier receipt for the owner to settle. A recovered
+            // one closes it only while this request or the attempt seen at replay still holds it;
+            // a retry that took the receipt over since then records its own outcome.
             if (reconciliation.status === "recovered") {
               await this.dependencies.invocations.recordOutcome({
                 invocationId: replayed.id,
+                recoveredBy: { invocationId: input.proof.invocationId, observedAttemptInvocationId: replayed.attemptInvocationId },
                 status: "completed",
                 safeOutcomeCode: "completed",
                 ...(reference ? { resultReference: reference } : {}),
@@ -595,12 +604,10 @@ export class OperatorMcpApplicationService {
       }
       if (!readyToInvoke) throw new OperatorMcpApplicationError("operation_conflict");
       const claimed = await this.dependencies.invocations.claimRunning({ invocationId: input.proof.invocationId, now: this.now() });
-      if (!claimed) {
-        // Only another request moves an admitted receipt this one prepared: a retry that found it
-        // past the recovery lease and reopened it, and may be applying under it right now.
-        receiptTakenOver = true;
-        throw new OperatorMcpApplicationError("operation_conflict");
-      }
+      // Only another request moves an admitted receipt this one prepared: a retry that found it
+      // past the recovery lease, and may be applying under it right now. The refusal recorded
+      // below lands only if that retry has since handed the receipt back.
+      if (!claimed) throw new OperatorMcpApplicationError("operation_conflict");
       const output = await this.dependencies.catalog.invoke({
         name: input.name,
         arguments: parsed.data,
@@ -612,7 +619,7 @@ export class OperatorMcpApplicationService {
       if (Buffer.byteLength(serialized, "utf8") > MAX_RESULT_BYTES) throw new OperatorMcpApplicationError("result_too_large");
       if (!output || typeof output !== "object" || Array.isArray(output)) throw new OperatorMcpApplicationError("invalid_result");
       const reference = resultReference(output, disposition.retry.effect === "act");
-      await this.dependencies.invocations.recordOutcome({
+      const recorded = await this.dependencies.invocations.recordOutcome({
         invocationId: input.proof.invocationId, status: "completed", safeOutcomeCode: "completed",
         ...(reference ? { resultReference: reference } : {}), now: this.now(),
       });
@@ -624,7 +631,7 @@ export class OperatorMcpApplicationService {
         capabilityShape: descriptor.shape,
         eventStatus: "success",
         outcome: "completed",
-        reason: "completed",
+        reason: takenOverFrom(recorded, input.proof.invocationId) ? "operation_taken_over" : "completed",
       });
       return { structuredContent: output as Record<string, unknown>, content: [], safeOutcomeCode: "completed", ...(reference ? { resultReference: reference } : {}) };
     } catch (rawError) {
@@ -649,25 +656,24 @@ export class OperatorMcpApplicationService {
       // a stuck proposal-preparation attempt already relies on; the audit record below still carries
       // the real reason regardless.
       const abandonRefusalKey = refused && !refusalMayPinKey(this.dependencies.catalog.descriptor(input.name) ?? {});
-      // A receipt another request took over is that request's to settle; overwriting it here would
-      // free its key mid-apply and turn later replays of a successful apply into `not_prepared`.
-      if (!receiptTakenOver) {
-        await this.dependencies.invocations.recordOutcome({
-          invocationId: input.proof.invocationId,
-          status: refused ? "refused" : "failed",
-          safeOutcomeCode: abandonRefusalKey ? "abandoned_before_effect" : reason,
-          ...(error instanceof OperatorMcpApplicationError && error.code === "invalid_arguments" && error.details
-            ? { safeRejectionDetails: error.details }
-            : {}),
-          now: this.now(),
-        }).catch(() => undefined);
-      }
-      // The caller still sees operation_conflict, but support must be able to tell a receipt whose
+      // A receipt another request took over is that request's to settle; the repository drops this
+      // write rather than free its key mid-apply and turn later replays of a successful apply into
+      // `not_prepared`.
+      const recorded = await this.dependencies.invocations.recordOutcome({
+        invocationId: input.proof.invocationId,
+        status: refused ? "refused" : "failed",
+        safeOutcomeCode: abandonRefusalKey ? "abandoned_before_effect" : reason,
+        ...(error instanceof OperatorMcpApplicationError && error.code === "invalid_arguments" && error.details
+          ? { safeRejectionDetails: error.details }
+          : {}),
+        now: this.now(),
+      }).catch(() => null);
+      // The caller still sees its own error, but support must be able to tell a receipt whose
       // change the retry may be applying from an ordinary refusal.
       await this.audit({
         principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
         capabilityShape, eventStatus: "failure", outcome: refused ? "refused" : "failed",
-        reason: receiptTakenOver ? "operation_taken_over" : reason,
+        reason: takenOverFrom(recorded, input.proof.invocationId) ? "operation_taken_over" : reason,
         ...(reason === "budget_exhausted" && budgetKind ? { budgetKind } : {}),
       });
       throw error;

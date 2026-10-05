@@ -1254,7 +1254,7 @@ describe("WorkbenchReplayRunner", () => {
           trace: emptyTrace(),
           decision: { reason: "routine_completed" },
           actions: [{ type: "contact.send", payload: { email: "buyer@example.com" } }],
-          handoff: { routineId: "contact", stepId: "handoff" },
+          handoff: { routineId: "contact", stepId: "handoff", terminalKind: "handoff" },
           awaitingDecision: {
             stepId: "approval",
             captureKey: "approval_decision",
@@ -1296,7 +1296,7 @@ describe("WorkbenchReplayRunner", () => {
       stepId: "approval",
       options: [{ id: "approve", label: "Approve" }],
     });
-    expect(result.handoff).toEqual({ routineId: "contact", stepId: "handoff" });
+    expect(result.handoff).toEqual({ routineId: "contact", stepId: "handoff", terminalKind: "handoff" });
   });
 
   const slotValuesFakeEngine = (): ConversationEngine => ({
@@ -1391,6 +1391,7 @@ describe("WorkbenchReplayRunner", () => {
           handoff: {
             routineId: "contact",
             stepId: "handoff",
+            terminalKind: "handoff",
             collected: { program: "A stay at Ananda", guests: 2 },
           },
           ...(reportsNotice
@@ -1444,6 +1445,7 @@ describe("WorkbenchReplayRunner", () => {
     expect(result.handoff).toEqual({
       routineId: "contact",
       stepId: "handoff",
+      terminalKind: "handoff",
       collected: { program: "A stay at Ananda", guests: 2 },
     });
     // No actual delivery happens for a replayed turn — only the preview the trace carries.

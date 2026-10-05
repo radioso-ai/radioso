@@ -456,8 +456,10 @@ the channel's code for why it waited. On email that's `draft_mode` on a
 unverified, `send_budget` once the thread's
 [send budget](email-channel.md#budgets) is spent, `outcome_not_publishable`
 when an `auto` mailbox's turn wasn't a grounded, complete answer free of a
-hand-off, or `authority_changed` when ownership or the mailbox's policy
-moved before an automatic reply could send. See
+hand-off, `authority_changed` when ownership or the mailbox's policy
+moved before an automatic reply could send, or `policy_changed` when an
+operator switched the mailbox from `auto` to `draft` while the reply was
+queued. See
 [Email channel](email-channel.md#draft-mode-review-before-it-sends) for what
 a review turn can and can't do, and what the operator's three choices mean.
 
@@ -466,7 +468,9 @@ On an `auto` mailbox, a reply that qualifies to send is held in state
 which moves it to `released` with `releaseKind` `auto`. A queued reply
 opens no attention item and can't be released or discarded; when the
 re-check fails it returns to `pending` with `authority_changed` and opens
-`approval` like any other held reply. See
+`approval` like any other held reply. Switching the mailbox from `auto` to
+`draft` returns every queued reply to `pending` the same way, with
+`policy_changed`. See
 [Automatic mode](email-channel.md#automatic-mode-replies-that-send-themselves).
 
 ### List held replies
@@ -521,11 +525,14 @@ that's already settled returns `409` with code `held_reply_not_pending`.
 
 ### What replaces a draft
 
-A newer inbound message, a free-form operator reply, a takeover, or the
-mailbox's mode being downgraded all supersede a pending held reply before
-an operator acts on it: the draft is replaced, not released, and nothing is
-sent for it. Where there's a new customer message behind the supersede, a
-fresh review turn runs in its place.
+A newer inbound message, a free-form operator reply, a takeover, or a
+change to the mailbox's mode, agent, or enabled flag all supersede a
+pending held reply before an operator acts on it: the draft is replaced,
+not released, and nothing is sent for it. Where there's a new customer
+message behind the supersede, a fresh review turn runs in its place.
+Switching a mailbox from `auto` to `draft` keeps its drafts instead: queued
+replies return to `pending` and pending ones stay, all bound to the
+mailbox's new policy version so a release goes through.
 
 An automatic reply never gets around a takeover. The same events supersede
 a `queued_auto` reply, and the send worker writes the agent's message only

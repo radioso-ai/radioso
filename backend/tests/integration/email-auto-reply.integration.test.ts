@@ -26,8 +26,9 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 // US6 against Postgres (research B9, FR-032): on an `auto` mailbox a grounded, complete answer is
 // queued as `queued_auto` with its `email.send` keyed by the held reply, and no message is written
 // until dispatch materializes it — once, as the agent's mail, with `Auto-Submitted: auto-generated`.
-// A takeover or a downgrade between queue and materialize supersedes it, and authority that fails
-// without one (an unverified domain) returns it to a teammate, so neither sends. A headerless
+// A takeover or a downgrade to `operator_only` between queue and materialize supersedes it, a
+// downgrade to `draft` holds it for a teammate to release, and authority that fails without either
+// (an unverified domain) returns it to a teammate, so none of them sends on its own. A headerless
 // responder stops at the thread's send budget with one approval flag (SC-006, AS5.4); a human-owned
 // conversation runs no turn (AS6.3); and a queued reply whose `email.send` gave up before it
 // materialized returns to a teammate at the next sweep instead of staying queued forever.
@@ -135,6 +136,12 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
       [conversationId],
     )).auto_sends_since_renewal;
 
+  const reviewDueAtOf = async (conversationId: string): Promise<Date | null> =>
+    (await database.queryOne<{ review_due_at: Date | null }>(
+      "SELECT review_due_at FROM email_thread_links WHERE conversation_id = $1",
+      [conversationId],
+    )).review_due_at;
+
   /** Brings the thread's scheduled review due and runs it through `worker`. */
   const review = async (worker: WorkerNode, conversationId: string): Promise<void> => {
     await database.execute(
@@ -229,15 +236,54 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
     expect(counterValue(worker.metrics, "email_auto_dispatch_total", { result: "not_queued" })).toBe(1);
   });
 
-  it("sends nothing for a reply a downgrade superseded between queue and materialize (AS5.8)", async () => {
+  it("holds a reply a downgrade to draft halted between queue and materialize for a teammate, who releases it (AS5.8)", async () => {
+    const queued = await queuedAutoReply();
+    const { conversationId, worker, heldReplyId, key, teammate, workspaceId, mailbox } = queued;
+
+    // The settings path: the policy change holds the mailbox's live drafts for review in its own transaction.
+    await api.channel.mailboxes.update({ userId: teammate.userId }, workspaceId, mailbox.id, { engagementMode: "draft" });
+    expect(await heldRepliesOf(conversationId)).toEqual([expect.objectContaining({
+      id: heldReplyId,
+      state: "pending",
+      hold_reason: "policy_changed",
+      release_kind: null,
+      superseded_reason: null,
+      released_message_id: null,
+    })]);
+    expect(await approvalsOf(queued)).toEqual([expect.objectContaining({ id: heldReplyId, state: "pending", holdReason: "policy_changed" })]);
+    // Held, not replaced: no review is scheduled in its place.
+    expect(await reviewDueAtOf(conversationId)).toBeNull();
+
+    // Its queued `email.send` finds nothing queued to materialize.
+    expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    await expectNothingSent(conversationId, key);
+    expect(counterValue(worker.metrics, "email_auto_dispatch_total", { result: "not_queued" })).toBe(1);
+    expect(await heldRepliesOf(conversationId)).toEqual([expect.objectContaining({ id: heldReplyId, state: "pending" })]);
+
+    // Re-bound to the new policy version, so a teammate's release is not refused and goes out.
+    const released = await api.releaseHeldReply(teammate, { conversationId, heldReplyId });
+    expect(released.status, JSON.stringify(released.body)).toBe(201);
+    expect(await heldRepliesOf(conversationId)).toEqual([
+      expect.objectContaining({ id: heldReplyId, state: "released", release_kind: "operator" }),
+    ]);
+    expect(await approvalsOf(queued)).toEqual([]);
+    expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    const [accept, ...otherAccepts] = await acceptsOf(conversationId);
+    expect(otherAccepts).toEqual([]);
+    expect(accept.message.text).toContain(ANSWER);
+    expect(await providerAcceptsUnder(spool.dir, key)).toEqual([]);
+  });
+
+  it("sends nothing for a reply a downgrade to operator_only superseded between queue and materialize (AS5.8)", async () => {
     const queued = await queuedAutoReply();
     const { conversationId, worker, heldReplyId, key, teammate, workspaceId, mailbox } = queued;
 
     // The settings path: the policy change supersedes the mailbox's live drafts in its own transaction.
-    await api.channel.mailboxes.update({ userId: teammate.userId }, workspaceId, mailbox.id, { engagementMode: "draft" });
+    await api.channel.mailboxes.update({ userId: teammate.userId }, workspaceId, mailbox.id, { engagementMode: "operator_only" });
     expect(await heldRepliesOf(conversationId)).toEqual([
       expect.objectContaining({ id: heldReplyId, state: "superseded", superseded_reason: "policy_changed" }),
     ]);
+    expect(await approvalsOf(queued)).toEqual([]);
 
     expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
 

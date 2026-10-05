@@ -718,6 +718,27 @@ describe("HeldReplyService", () => {
       expect(sent.messages).toHaveLength(1);
     });
 
+    it("sends nothing for a queued send a policy change held for review, which a teammate then releases under the new version", async () => {
+      const harness = createService();
+      const { service, heldReplies, channelScope, channelState, drafts, audit } = harness;
+      const heldReplyId = await queued(harness);
+      // As the policy change leaves it: pending for a teammate, re-bound to the version it wrote.
+      const held = heldReplyEventTarget({ kind: "return_queued", reason: "policy_changed" });
+      const row = heldReplies.rows.get(heldReplyId)!;
+      heldReplies.rows.set(heldReplyId, { ...row, state: held.state, holdReason: held.holdReason!, policy: { ref: policyRef, version: 6 } });
+      channelState.lockedPolicyVersion = 6;
+
+      expect(await service.materializeAuto(heldReplyId)).toEqual({ ok: false, reason: "not_queued" });
+      expect(channelScope.authorizeAutoDispatch).not.toHaveBeenCalled();
+      expect(drafts.writeAgentMessage).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+      expect(heldReplies.rows.get(heldReplyId)).toMatchObject({ state: "pending", holdReason: "policy_changed", releasedMessageId: null });
+      expect(isHeldReplyAttentionOpen(heldReplies.rows.get(heldReplyId)!)).toBe(true);
+
+      expect(await service.release(dana, { conversationId, heldReplyId, editedText: null })).toMatchObject({ ok: true });
+      expect(heldReplies.rows.get(heldReplyId)).toMatchObject({ state: "released", releaseKind: "operator" });
+    });
+
     it("writes nothing when a change superseded the queued send while it waited for the policy lock", async () => {
       const harness = createService();
       const { service, heldReplies, drafts, channelScope } = harness;

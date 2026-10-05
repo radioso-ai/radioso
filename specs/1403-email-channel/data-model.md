@@ -348,11 +348,13 @@ type EmailChannelContext = {
 | (none) | decision `publish`, `queueAuto` refused (stale policy or ownership, budget) | `pending` | hold reason `authority_changed` or `send_budget` |
 | `queued_auto` | materialize authorized | `released` (`release_kind auto`) | agent message + send intent written together |
 | `queued_auto` | materialize not authorized | `pending` | hold reason `authority_changed`; `approval`; no message |
+| `queued_auto` | policy change `auto` → `draft`, nothing else changed (`return_queued`, `policy_changed`) | `pending` | hold reason `policy_changed`; re-bound to the new `policy_version`; `approval` stays open; no message; no review scheduled; its `email.send` materializes nothing (`not_queued`) |
+| `pending` | policy change `auto` → `draft`, nothing else changed (`rebind_policy`) | `pending` | hold reason kept; re-bound to the new `policy_version`, so a later release passes `lockPolicy` |
 | `pending` | operator release, unchanged (state, ownership and policy all current) | `released` (`operator`) | agent message; `email.send` (`msg:` key); activity `held_reply_released`; audit names releaser |
 | `pending` | operator release, edited | `edited` | operator message from `edited_text`; original retained; audit names editor and releaser |
 | `pending` | discard | `discarded` | attention stays open; activity `held_reply_discarded` |
 | `discarded` | operator reply or takeover | `discarded` | `attention_cleared_at` set |
-| `pending`, `queued_auto` | newer inbound, operator reply, takeover or transfer, policy change | `superseded` (reason) | |
+| `pending`, `queued_auto` | newer inbound, operator reply, takeover or transfer, any other policy change (to `operator_only`, disable, agent change, upgrade) | `superseded` (reason) | |
 | `released`, `edited`, `superseded`, `discarded` | release, discard or materialize | unchanged | conditional update matches nothing → `409 held_reply_not_pending` |
 
 ### Send intent (every transition fenced on `version`, B18)

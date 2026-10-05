@@ -243,6 +243,29 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
     return this.supersede(reason, "policy_ref", policyRef);
   }
 
+  async holdLiveForPolicy(policyRef: string, policyVersion: number, reason: "policy_changed"): Promise<{ returned: number; rebound: number }> {
+    // The pending drafts first, so the queued sends returned to pending after them are not re-bound twice.
+    const rebound = await this.db
+      .updateTable("held_replies")
+      .set({ ...transitionColumns(heldReplyEventTarget({ kind: "rebind_policy" })), policy_version: policyVersion })
+      .where("policy_ref", "=", policyRef)
+      .where("state", "in", heldReplyEventSources("rebind_policy"))
+      .executeTakeFirst();
+    const target = heldReplyEventTarget({ kind: "return_queued", reason });
+    // Returned undecided, as an unauthorized materialization returns it: its attention opens.
+    const returned = await this.db
+      .updateTable("held_replies")
+      .set({
+        ...transitionColumns(target),
+        ...(target.holdReason === undefined ? {} : { hold_reason: target.holdReason }),
+        policy_version: policyVersion,
+      })
+      .where("policy_ref", "=", policyRef)
+      .where("state", "in", heldReplyEventSources("return_queued"))
+      .executeTakeFirst();
+    return { returned: Number(returned.numUpdatedRows), rebound: Number(rebound.numUpdatedRows) };
+  }
+
   async clearDiscardedAttention(conversationId: string, reason: "operator_reply" | "takeover"): Promise<number> {
     const result = await this.db
       .updateTable("held_replies")

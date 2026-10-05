@@ -250,7 +250,7 @@ The single source of truth for what happens to an accepted inbound message. "Tur
 
 ## State Machines
 
-- **Review (held reply)**: `pending` → `released` | `edited` | `discarded` | `superseded`. Release is conditional on the record still being `pending` and on the conversation's ownership version and the mailbox policy version matching those the draft was bound to. A newer inbound, an operator free-form reply, a takeover, or a mode downgrade moves `pending` to `superseded`.
+- **Review (held reply)**: `pending` → `released` | `edited` | `discarded` | `superseded`. Release is conditional on the record still being `pending` and on the conversation's ownership version and the mailbox policy version matching those the draft was bound to. A newer inbound, an operator free-form reply, a takeover, a downgrade to `operator_only`, or any agent or enabled change moves `pending` or `queued_auto` to `superseded`. A downgrade from `auto` to `draft` returns `queued_auto` to `pending` with reason `policy_changed` and re-binds pending drafts to the new policy version, so they stay reviewable.
 - **Ownership**: existing `ai_owned` | `human_owned`. Operator-only mailboxes create conversations `human_owned` with reason `operator_only_mailbox`. Releasing a held reply, edited or not, does not change ownership. A free-form operator reply or takeover does, as today.
 - **Delivery (send intent)**: `queued` → `accepted` → `delivered` | `bounced`; `queued` → `failed` | `halted`; `accepted` → `uncertain` when no provider event settles it inside the reconciliation window. `uncertain` resolves only by reconciliation against the provider or an audited operator decision.
 - **Sending domain**: readiness `pending` | `verified` | `failed`, refreshed on a bounded cadence and on provider events. Removal revokes authority first, halts queued sends, preserves history, and reconciles provider state asynchronously. A receiving domain (advanced) tracks the same states for receiving.
@@ -294,7 +294,7 @@ The single source of truth for what happens to an accepted inbound message. "Tur
 - **FR-022**: Each thread MUST have an automatic send budget, defaulting to three, that customer input never resets and that an operator reply or a held-reply release on the thread renews; reaching it MUST hold the next candidate reply with reason `send_budget`.
 - **FR-023**: Each mailbox MUST have a generation budget over a fixed one-hour window anchored at its first generation; when reached, accepted inbound MUST be ingested as human-owned with reason `generation_budget`.
 - **FR-024**: Inbound messages on one thread inside a deployment-configured coalescing window MUST produce one review turn; the review turn's thread context MUST be bounded by the mailbox setting; a terminal review failure MUST hand off with reason `review_unavailable`.
-- **FR-025**: A mode downgrade MUST halt unsent automatic sends and supersede pending drafts' publish eligibility; an upgrade MUST apply only to inbound accepted after the change.
+- **FR-025**: A downgrade from `auto` to `draft` MUST halt unsent automatic sends and hold them for review, re-binding pending drafts to the new policy version; a downgrade to `operator_only` MUST supersede them; an upgrade MUST apply only to inbound accepted after the change and supersedes drafts bound to the old policy.
 - **FR-026**: Operators MUST be able to author finer engagement rules as directives; no email-specific rule text MUST exist in code or prompts.
 
 **Held replies**
@@ -302,7 +302,7 @@ The single source of truth for what happens to an accepted inbound message. "Tur
 - **FR-027**: A held reply MUST be visible to operators with the turn outcome, reasoning, and any suppressed-action dependency, and MUST NOT appear in customer-visible history.
 - **FR-028**: Operators MUST be able to release, edit-and-release, or discard a held reply; release MUST be an atomic conditional operation that creates at most one send intent and MUST emit an audit event naming the operator; author, editor, and releaser MUST be recorded separately.
 - **FR-029**: Release, edited or not, MUST NOT change conversation ownership; an unchanged release delivers as an agent message, an edited release as an operator message with the original retained.
-- **FR-030**: A newer inbound, a free-form operator reply, a takeover, or a mode downgrade MUST supersede a pending held reply.
+- **FR-030**: A newer inbound, a free-form operator reply, a takeover, or a downgrade to `operator_only` MUST supersede a pending held reply; a downgrade from `auto` to `draft` MUST keep it reviewable per FR-025.
 
 **Outbound**
 

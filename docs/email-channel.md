@@ -205,13 +205,15 @@ chat API, or a conversation transcript, in any of its states.
 
 **What replaces a draft.** A held reply is live only while it's pending (or,
 on an `auto` mailbox, queued to send), and exactly one thing happens to it
-next. A newer inbound message, a free-form
-operator reply, a takeover, or the mailbox's mode being downgraded all
-*supersede* a pending draft: it's replaced rather than released, and nothing
-is sent for it. Where there's a new customer message behind the supersede, a
-fresh review turn runs in its place. Two operators releasing the same draft
-at the same instant produce exactly one send; the other sees that it was
-already handled. See [Human Takeover](human-takeover.md#held-replies) for
+next. A newer inbound message, a free-form operator reply, a takeover, or a
+change to the mailbox's mode, agent, or enabled flag all *supersede* a
+pending draft: it's replaced rather than released, and nothing is sent for
+it. Where there's a new customer message behind the supersede, a fresh
+review turn runs in its place. The one policy change that keeps drafts is
+switching an `auto` mailbox to `draft`: they stay with your team for review
+(see [What hands a reply back to a person](#what-hands-a-reply-back-to-a-person)).
+Two operators releasing the same draft at the same instant produce exactly
+one send; the other sees that it was already handled. See [Human Takeover](human-takeover.md#held-replies) for
 the operator API this runs on.
 
 Several emails on one thread in quick succession get one draft between them
@@ -281,10 +283,17 @@ is flagged `approval`, and no message or send intent is written.
 ### What hands a reply back to a person
 
 - **The decision holds it**, for any reason in the table above.
+- **The mailbox drops to `draft`.** Switching an `auto` mailbox to `draft`
+  halts every reply still queued to send: each returns to `pending` with
+  hold reason `policy_changed`, the conversation is flagged `approval`, and
+  a teammate sends, edits, or discards it from the Inbox. Drafts already
+  pending stay pending under their own hold reason. Both are bound to the
+  mailbox's new policy version, so a release goes through. The `email.send`
+  queued for a halted reply finds nothing to send.
 - **Something replaces it while it's queued.** A newer customer message, a
-  free-form operator reply, a takeover, or a change to the mailbox's mode,
-  agent, or enabled flag supersedes a `queued_auto` reply the same way it
-  supersedes a pending draft. Nothing is sent for it, and a newer customer
+  free-form operator reply, a takeover, or any other change to the mailbox's
+  mode, agent, or enabled flag supersedes a `queued_auto` reply the same way
+  it supersedes a pending draft. Nothing is sent for it, and a newer customer
   message gets a fresh review. A takeover always wins over a queued reply —
   see [Human Takeover](human-takeover.md#what-replaces-a-draft).
 - **Authority fails at dispatch.** The reply returns to `pending` with
@@ -326,10 +335,12 @@ replies." — and confirming records the opt-in. Through the API, setting
 
 Without it the request is refused with `400` and code
 `auto_opt_in_required`. The switch applies to mail accepted afterwards;
-mail accepted earlier keeps the mode it arrived under. Any change to the
-mailbox's mode, agent, or enabled flag supersedes the replies it has
-pending or queued, so switching away from `auto` stops every automatic
-send that hasn't gone out.
+mail accepted earlier keeps the mode it arrived under, and drafts already
+pending are superseded. Switching away from `auto` stops every automatic
+send that hasn't gone out: to `draft`, the queued replies come back to your
+team for review; to `operator_only`, they're superseded along with pending
+drafts. Changing the mailbox's agent or enabled flag supersedes its pending
+and queued replies too.
 
 ### Rollout and rollback
 
@@ -455,6 +466,9 @@ must have been enabled at acceptance and still be enabled. In practice:
 - Switch a mailbox from `draft` to `operator_only`, and mail still waiting
   for review goes to a person with handoff reason `operator_only_mailbox`;
   pending drafts are superseded.
+- Switch it from `auto` to `draft`, and replies still queued to send come
+  back to your team as drafts with hold reason `policy_changed`, beside the
+  drafts already pending. Nothing goes out until a teammate releases one.
 - Switch it from `operator_only` to `draft`, and only mail accepted after
   the change gets a review. Mail accepted before it stays with a person.
 - A review already running when the policy changes can't hold a draft under

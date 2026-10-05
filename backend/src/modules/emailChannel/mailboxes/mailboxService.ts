@@ -13,7 +13,7 @@ import type {
   SetupCheckStep,
 } from "../persistence/emailMailboxRepository.js";
 import type { EngagementMode } from "./effectiveMode.js";
-import type { MailboxPolicyChangeUnitOfWork } from "./mailboxPolicyChangeUnitOfWork.js";
+import type { MailboxPolicyChangeUnitOfWork, PolicyChangeHeldReplies } from "./mailboxPolicyChangeUnitOfWork.js";
 import { deriveReceivingState } from "./receivingState.js";
 import { generateOpaqueToken, parsePlusToken, splitPlusAddress } from "./relayTokens.js";
 
@@ -52,6 +52,42 @@ const SETTING_KEYS: readonly (keyof MailboxSettings)[] = [
 ];
 
 type PolicyField = "engagementMode" | "enabled" | "agentId";
+
+/** What a policy change did to the drafts bound to the version it replaced, as its audit counts it. */
+interface HeldReplyChanges {
+  supersededHeldReplies: number;
+  /** Queued automatic replies halted and held for review. */
+  returnedHeldReplies: number;
+  /** Pending drafts kept for review, re-bound to the new version. */
+  reboundHeldReplies: number;
+}
+
+const NO_HELD_REPLY_CHANGES: HeldReplyChanges = { supersededHeldReplies: 0, returnedHeldReplies: 0, reboundHeldReplies: 0 };
+
+/**
+ * Whether a policy change keeps the live drafts bound to the version it replaces for a teammate to
+ * review, rather than superseding them (FR-025): only a move from `auto` to `draft` that changes
+ * nothing else does, so unsent automatic replies are halted and held. Any other change supersedes
+ * them: `operator_only` drafts nothing, a disabled mailbox or another agent no longer stands behind
+ * them, and an upgrade applies to new mail only.
+ */
+const keepsDraftsForReview = (from: EngagementMode, to: EngagementMode, changed: readonly PolicyField[]): boolean =>
+  from === "auto" && to === "draft" && changed.length === 1;
+
+/** Supersedes the drafts bound to `before`'s policy version, or holds them for review under `after`'s. */
+const settleHeldReplies = async (
+  heldReplies: PolicyChangeHeldReplies,
+  before: EmailMailboxRecord,
+  after: EmailMailboxRecord,
+  changed: readonly PolicyField[],
+): Promise<HeldReplyChanges> => {
+  const policyRef = emailMailboxPolicyRef(before.id);
+  if (keepsDraftsForReview(before.engagementMode, after.engagementMode, changed)) {
+    const held = await heldReplies.holdLiveForPolicy(policyRef, after.policyVersion, "policy_changed");
+    return { ...NO_HELD_REPLY_CHANGES, returnedHeldReplies: held.returned, reboundHeldReplies: held.rebound };
+  }
+  return { ...NO_HELD_REPLY_CHANGES, supersededHeldReplies: await heldReplies.supersedePendingForPolicy(policyRef, "policy_changed") };
+};
 
 /** The operator's explicit consent to automatic sending, required to put a mailbox into `auto`. */
 interface AutoOptIn {
@@ -250,8 +286,10 @@ export class MailboxService {
   /**
    * Updates settings and policy together. Mode, enabled and agent changes go through the
    * policy-change unit of work: the row is locked, a stale `expectedPolicyVersion` is refused, and
-   * a real change writes the next version with its history row and supersedes the drafts bound to
-   * the version it replaced, which no release could send any more (FR-025, FR-030).
+   * a real change writes the next version with its history row. The drafts bound to the version it
+   * replaced, which no release could send any more, are superseded (FR-025, FR-030) — or, when
+   * `auto` drops to `draft`, held for review and re-bound to the new version, queued automatic
+   * replies included.
    */
   async update(
     actor: EmailChannelActor,
@@ -283,7 +321,7 @@ export class MailboxService {
       const settingChanges = SETTING_KEYS.filter((key) => settings[key] !== undefined && settings[key] !== current[key]);
 
       let after = current;
-      let supersededHeldReplies = 0;
+      let heldReplyChanges = NO_HELD_REPLY_CHANGES;
       if (policyChanges.length > 0) {
         after = this.written(await mailboxes.appendPolicyVersion({
           mailboxId: current.id,
@@ -291,13 +329,13 @@ export class MailboxService {
           ...next,
           changedByUserId: actor.userId,
         }));
-        supersededHeldReplies = await heldReplies.supersedePendingForPolicy(emailMailboxPolicyRef(current.id), "policy_changed");
+        heldReplyChanges = await settleHeldReplies(heldReplies, current, after, policyChanges);
       }
       if (settingChanges.length > 0) {
         const changedSettings = Object.fromEntries(settingChanges.map((key) => [key, settings[key]])) as Partial<MailboxSettings>;
         after = this.written(await mailboxes.updateSettings(workspaceId, current.id, changedSettings));
       }
-      return { kind: "updated" as const, before: current, after, policyChanges, settingChanges, supersededHeldReplies };
+      return { kind: "updated" as const, before: current, after, policyChanges, settingChanges, heldReplyChanges };
     });
 
     if (outcome.kind === "not_found") throw notFound("Mailbox was not found");
@@ -378,7 +416,7 @@ export class MailboxService {
       after: EmailMailboxRecord;
       policyChanges: PolicyField[];
       settingChanges: (keyof MailboxSettings)[];
-      supersededHeldReplies: number;
+      heldReplyChanges: HeldReplyChanges;
     },
   ): Promise<void> {
     const { before, after } = outcome;
@@ -394,7 +432,7 @@ export class MailboxService {
           toMode: after.engagementMode,
           enabled: after.enabled,
           policyVersion: after.policyVersion,
-          supersededHeldReplies: outcome.supersededHeldReplies,
+          ...outcome.heldReplyChanges,
         },
       });
     }

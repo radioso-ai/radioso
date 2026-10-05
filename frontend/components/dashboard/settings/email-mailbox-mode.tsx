@@ -13,35 +13,39 @@ export const MODE_LABELS: Record<EmailEngagementMode, string> = {
   auto: 'Automatic',
 }
 
-// How much the agent does on its own; a change to a lower rank is a downgrade.
+// How much the agent does on its own; a change to a higher rank is an upgrade.
 const AUTONOMY: Record<EmailEngagementMode, number> = { operator_only: 0, draft: 1, auto: 2 }
 
-// What a downgrade away from each mode does to work already in flight (FR-025).
-const DOWNGRADE_CONSEQUENCE: Record<EmailEngagementMode, string> = {
-  operator_only: '',
-  draft: 'Pending drafts are discarded.',
-  auto: 'Unsent automatic replies are held for review.',
+/**
+ * What a change does to work already in flight (FR-025): dropping from `auto` to `draft` holds
+ * queued automatic replies for review; `operator_only` discards everything waiting; an upgrade
+ * applies to new mail only and discards drafts already waiting.
+ */
+const consequenceOf = (current: EmailEngagementMode, next: EmailEngagementMode): string => {
+  if (next === 'operator_only') return 'Pending and queued replies are discarded.'
+  if (AUTONOMY[next] > AUTONOMY[current]) return 'Applies to new mail only; pending drafts are discarded.'
+  return 'Queued automatic replies are held for your review.'
 }
 
 /**
- * What the operator confirms before a change, or null when it needs no confirmation: a downgrade
- * names what happens to work in flight, and `auto` names the thread send budget it runs within.
+ * What the operator confirms before a change: what happens to work in flight, and for `auto` the
+ * thread send budget it runs within first.
  */
-const confirmationFor = (current: EmailEngagementMode, next: EmailEngagementMode, threadSendBudget: number): string | null => {
-  if (next === 'auto') {
-    return `The agent sends grounded replies on its own, up to ${threadSendBudget} per thread until an operator replies.`
-  }
-  return AUTONOMY[next] < AUTONOMY[current] ? DOWNGRADE_CONSEQUENCE[current] : null
+const confirmationFor = (current: EmailEngagementMode, next: EmailEngagementMode, threadSendBudget: number): string => {
+  const consequence = consequenceOf(current, next)
+  return next === 'auto'
+    ? `The agent sends grounded replies on its own, up to ${threadSendBudget} per thread until an operator replies. ${consequence}`
+    : consequence
 }
 
 type FocusTarget = 'mode' | 'confirm'
 
 /**
  * An existing mailbox's engagement mode, offering only what the server supports (plus the current
- * mode if it no longer does). A downgrade asks one confirmation that states what happens to work in
- * flight; switching to `auto` asks one that states its send budget and carries the opt-in. An
- * upgrade applies to new mail only. A change saved elsewhere meanwhile is refused and the mailbox
- * reloaded. Focus stays on the mode, and the card announces the result.
+ * mode if it no longer does). Every change asks one confirmation that states what happens to work
+ * in flight; switching to `auto` also states its send budget and carries the opt-in. A change saved
+ * elsewhere meanwhile is refused and the mailbox reloaded. Focus stays on the mode, and the card
+ * announces the result.
  */
 export function EmailMailboxMode({
   workspaceId,
@@ -94,13 +98,9 @@ export function EmailMailboxMode({
       setConfirming(null)
       return
     }
-    if (confirmationFor(current, mode, mailbox.threadSendBudget) !== null) {
-      clearNotice()
-      setConfirming(mode)
-      focusAfterRender.current = 'confirm'
-      return
-    }
-    void changeTo(mode)
+    clearNotice()
+    setConfirming(mode)
+    focusAfterRender.current = 'confirm'
   }
 
   const cancel = () => {
@@ -122,7 +122,7 @@ export function EmailMailboxMode({
       {confirming ? (
         <div className="space-y-2" role="group" aria-label="Confirm mode change">
           <p className="text-sm text-foreground">
-            {`Change to ${MODE_LABELS[confirming]}? ${confirmationFor(current, confirming, mailbox.threadSendBudget) ?? ''}`.trim()}
+            {`Change to ${MODE_LABELS[confirming]}? ${confirmationFor(current, confirming, mailbox.threadSendBudget)}`}
           </p>
           <div className="flex flex-wrap gap-2">
             <Button ref={confirmRef} type="button" size="sm" disabled={isSaving} onClick={() => void changeTo(confirming)}>

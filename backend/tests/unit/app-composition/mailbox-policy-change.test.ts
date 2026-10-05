@@ -45,15 +45,23 @@ const kindOf = (sql: string): string | null => {
   if (/^select .* from "email_mailboxes" .*for update$/u.test(sql)) return "lock_mailbox";
   if (/^with "bumped" as \(update "email_mailboxes" .*insert into "email_mailbox_policies"/u.test(sql)) return "bump_policy_with_history";
   if (/^update "email_mailboxes" set "display_name"/u.test(sql)) return "update_settings";
-  if (/^update "held_replies"/u.test(sql)) return "supersede_held_replies";
+  if (/^update "held_replies" set .*"superseded_reason"/u.test(sql)) return "supersede_held_replies";
+  if (/^update "held_replies" set .*"hold_reason"/u.test(sql)) return "return_queued_held_replies";
+  if (/^update "held_replies"/u.test(sql)) return "rebind_held_replies";
   return null;
 };
 
-const harness = (options: { superseded?: number; supersedeFails?: boolean } = {}) => {
+const harness = (options: {
+  mode?: "operator_only" | "draft" | "auto";
+  superseded?: number;
+  supersedeFails?: boolean;
+  returned?: number;
+  rebound?: number;
+} = {}) => {
   const { db, statements, log } = createRecordingKysely(({ sql, parameters }): RecordedAnswer => {
     switch (kindOf(sql)) {
       case "lock_mailbox":
-        return { rows: [mailboxRow()] };
+        return { rows: [mailboxRow({ engagement_mode: options.mode ?? "draft" })] };
       case "bump_policy_with_history":
         return { rows: [mailboxRow({ engagement_mode: parameters[0], enabled: parameters[1], policy_version: 5 })] };
       case "update_settings":
@@ -61,6 +69,10 @@ const harness = (options: { superseded?: number; supersedeFails?: boolean } = {}
       case "supersede_held_replies":
         if (options.supersedeFails) throw new Error("held replies unavailable");
         return { changed: options.superseded ?? 0 };
+      case "return_queued_held_replies":
+        return { changed: options.returned ?? 0 };
+      case "rebind_held_replies":
+        return { changed: options.rebound ?? 0 };
       default:
         return undefined;
     }
@@ -76,12 +88,13 @@ const harness = (options: { superseded?: number; supersedeFails?: boolean } = {}
     logger: { warn: vi.fn() },
     randomBytes: (size) => new Uint8Array(size),
     clock: () => createdAt,
-    config: { inboundDomain: "in.radioso.test", supportedModes: ["operator_only", "draft"] },
+    config: { inboundDomain: "in.radioso.test", supportedModes: ["operator_only", "draft", "auto"] },
   });
   /** What the database received: BEGIN, COMMIT and ROLLBACK, and each statement by its kind. */
   const sent = () => log.map((entry) => (["BEGIN", "COMMIT", "ROLLBACK"].includes(entry) ? entry : kindOf(entry) ?? entry));
-  const supersede = () => statements.find((statement) => kindOf(statement.sql) === "supersede_held_replies");
-  return { service, statements, sent, supersede, audit };
+  const statementOf = (kind: string) => statements.find((statement) => kindOf(statement.sql) === kind);
+  const supersede = () => statementOf("supersede_held_replies");
+  return { service, statements, sent, supersede, statementOf, audit };
 };
 
 describe("createPostgresMailboxPolicyChangeUnitOfWork", () => {
@@ -112,6 +125,44 @@ describe("createPostgresMailboxPolicyChangeUnitOfWork", () => {
         supersededHeldReplies: 2,
       }),
     }));
+  });
+
+  it("holds the mailbox's live drafts for review under the new version when auto drops to draft, in the same transaction", async () => {
+    const { service, statements, sent, statementOf, audit } = harness({ mode: "auto", returned: 2, rebound: 1 });
+
+    const view = await service.update(actor, workspaceId, mailboxId, { engagementMode: "draft" });
+
+    expect(view).toMatchObject({ engagementMode: "draft", policyVersion: 5 });
+    // Pending drafts are re-bound first, so the queued sends returned after them are counted once.
+    expect(sent()).toEqual(["BEGIN", "lock_mailbox", "bump_policy_with_history", "rebind_held_replies", "return_queued_held_replies", "COMMIT"]);
+    expect(new Set(statements.map((statement) => statement.transaction))).toEqual(new Set([1]));
+    const rebind = statementOf("rebind_held_replies");
+    expect(rebind?.sql).toMatch(/"policy_version" = \$\d+.* where "policy_ref" = \$\d+ and "state" in \(\$\d+\)$/u);
+    expect(rebind?.parameters).toEqual(expect.arrayContaining([5, emailMailboxPolicyRef(mailboxId), "pending"]));
+    const returned = statementOf("return_queued_held_replies");
+    expect(returned?.sql).toMatch(/where "policy_ref" = \$\d+ and "state" in \(\$\d+\)$/u);
+    expect(returned?.parameters).toEqual(expect.arrayContaining(["pending", "policy_changed", 5, emailMailboxPolicyRef(mailboxId), "queued_auto"]));
+    expect(returned?.parameters).not.toContain("superseded");
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({
+        action: "mode_changed",
+        fromMode: "auto",
+        toMode: "draft",
+        policyVersion: 5,
+        supersededHeldReplies: 0,
+        returnedHeldReplies: 2,
+        reboundHeldReplies: 1,
+      }),
+    }));
+  });
+
+  it("supersedes the live drafts, queued sends included, when auto drops to operator_only", async () => {
+    const { service, sent, supersede } = harness({ mode: "auto", superseded: 1 });
+
+    await service.update(actor, workspaceId, mailboxId, { engagementMode: "operator_only" });
+
+    expect(sent()).toEqual(["BEGIN", "lock_mailbox", "bump_policy_with_history", "supersede_held_replies", "COMMIT"]);
+    expect(supersede()?.parameters).toEqual(expect.arrayContaining(["superseded", "policy_changed", "pending", "queued_auto"]));
   });
 
   it("leaves drafts alone for a settings change that is not policy, and for a stale policy version", async () => {

@@ -143,6 +143,7 @@ Revised on 2026-10-03 after the principal-engineer review (`.context/email-chann
 |---|---|---|---|
 | `HeldReplySupersedeScope.supersedePendingForConversation(conversationId, reason: "newer_inbound" \| "takeover" \| "operator_reply")` | handoff | `OwnershipChangeUnitOfWork` (takeover, transfer), `OwnershipReplyUnitOfWork` (reply), `ConversationIngestUnitOfWork` (newer inbound) | `HeldReplyRepository(trx)` |
 | `HeldReplySupersedeScope.supersedePendingForPolicy(policyRef, "policy_changed")` | handoff | `MailboxPolicyChangeUnitOfWork` | `HeldReplyRepository(trx)` |
+| `HeldReplySupersedeScope.holdLiveForPolicy(policyRef, policyVersion, "policy_changed")` | handoff (email chooses it for `auto` → `draft`) | `MailboxPolicyChangeUnitOfWork` | `HeldReplyRepository(trx)` |
 | `HeldReplyChannelScope.lockPolicy(policyRef): { version } \| null` | email keystone (reads and locks its mailbox row `FOR SHARE`) | `HeldReplyUnitOfWork` (release, discard, queue-auto, materialize) | `EmailMailboxRepository(trx)` via `emailChannel/heldReplyChannelScope.ts` |
 | `HeldReplyChannelScope.reserveAutoSend(conversationId): boolean` | email keystone (send budget) | `HeldReplyUnitOfWork` (queue-auto only) | `EmailThreadRepository(trx)` |
 | `HeldReplyChannelScope.enqueueAutoSend(heldReply, outbox)` | email keystone (outbox key and payload) | `HeldReplyUnitOfWork` (queue-auto only) | the transaction's `ActionRequestRepository` |
@@ -157,7 +158,7 @@ Revised on 2026-10-03 after the principal-engineer review (`.context/email-chann
   5. Enqueue the channel route on the transaction's outbox.
 
   After commit, push a drain. Concurrent releases serialize on the row and the loser gets `held_reply_not_pending` (AS4.8). Release never calls `takeOver` (FR-029).
-- **Policy change**: `MailboxPolicyChangeUnitOfWork` locks the mailbox row `FOR UPDATE`, bumps `policy_version`, appends a policy history row (B16) and calls `supersedePendingForPolicy` in the same transaction. A release that locked the policy `FOR SHARE` first wins and sends. A release that comes later sees the new version and refuses with `policy_changed`. There is no window.
+- **Policy change**: `MailboxPolicyChangeUnitOfWork` locks the mailbox row `FOR UPDATE`, bumps `policy_version`, appends a policy history row (B16) and calls `supersedePendingForPolicy` in the same transaction. The one exception is a change from `auto` to `draft` that changes nothing else (FR-025, AS5.8): it calls `holdLiveForPolicy` instead, which returns each `queued_auto` row to `pending` with hold reason `policy_changed` and re-binds it and every `pending` row to the new version, so the operator can still release them; no review is scheduled, and the queued `email.send` materializes nothing. A release that locked the policy `FOR SHARE` first wins and sends. A release that comes later sees the new version and refuses with `policy_changed`. There is no window.
 - **Budget renewal (FR-022)**: the thread send budget is renewed when an operator-authorized send (operator reply, unchanged release or edited release) is materialized by the `email.send` handler, in the handler's own transaction. `OperatorReplyService` stays untouched, which the "registration only" rule requires. Between commit and dispatch, a review that sees the old budget can only hold, so the delay errs toward safety.
 - **Alternatives considered**: (a) `approvals` / `pending_decisions` (`104_pending_decisions.sql`). Rejected: it is a routine-step gate with `routine_id`/`step_id NOT NULL`. (b) `emailChannel/`. Rejected on dependency direction. (c) Widen `CustomerReplyRoute`. Rejected: it changes `OperatorReplyService`.
 
@@ -278,7 +279,7 @@ The new reasons join the open union (`ownershipState.ts:5-9`). The reason column
 ### B8. Budgets
 
 - **Generation (FR-023)**: a fixed one-hour window on the mailbox row, reserved with a single conditional `UPDATE … RETURNING` at turn start and keyed by `(conversation_id, review_revision)` through `email_thread_links.generation_reserved_revision`. A retried turn for the same revision does not charge twice. A failed reservation applies the `generation_budget` hand-off.
-- **Thread send (FR-022)**: `reserveAutoSend` increments `auto_sends_since_renewal` inside the queue-auto transaction, which serializes on the thread link row. If the reservation is refused, the reply is held with `send_budget`. Renewal happens at materialization of operator-authorized sends (B1). Customer input never renews it. If an auto send later returns to `pending` (B9), the reservation is not refunded, which errs toward holding.
+- **Thread send (FR-022)**: `reserveAutoSend` increments `auto_sends_since_renewal` inside the queue-auto transaction, which serializes on the thread link row. If the reservation is refused, the reply is held with `send_budget`. Renewal happens at materialization of operator-authorized sends (B1). Customer input never renews it. If an auto send later returns to `pending` (B9, or an `auto` → `draft` downgrade), the reservation is not refunded, which errs toward holding.
 
 ### B9. Auto publish keeps held content out of message rows (review #12, #10)
 

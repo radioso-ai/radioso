@@ -38,7 +38,8 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Research B9, FR-027, SC-004 against Postgres: a held reply is operator-only. Its text, in every
 // state a teammate has not sent it from — pending, discarded, superseded, queued for an automatic
-// send, and returned to pending when that send's authority failed — never reaches a surface a
+// send, returned to pending when that send's authority failed, and held for review when its mailbox
+// dropped from `auto` to `draft` — never reaches a surface a
 // customer, a model turn or a conversation reader sees: the message rows and their readers, the
 // conversation history and its API, the public conversation events, the next review's model
 // context, conversation summaries, and Ray's transcript. Each review here also records the audit
@@ -55,8 +56,13 @@ const CUSTOMER_PHRASE = "update my billing address";
 
 /** The states of the draft mailbox's thread, in the order its reviews write them. */
 const DRAFT_STATES = ["discarded", "superseded", "pending"] as const;
-/** `returned` is a queued automatic send its dispatch returned to pending; it is reviewed before `queued_auto`. */
-const HELD_STATES = [...DRAFT_STATES, "returned", "queued_auto"] as const;
+/**
+ * `returned` is a queued automatic send its dispatch returned to pending; it is reviewed before
+ * `queued_auto`. `downgraded` is a queued automatic send its mailbox's drop to `draft` held for review.
+ */
+const HELD_STATES = [...DRAFT_STATES, "returned", "queued_auto", "downgraded"] as const;
+/** The states a teammate decides as pending. */
+const PENDING_STATES: readonly HeldState[] = ["pending", "returned", "downgraded"];
 type HeldState = (typeof HELD_STATES)[number];
 
 /** One email conversation of the workspace and how many customer messages it holds. */
@@ -96,8 +102,9 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
     pending: `Held draft, still pending ${randomUUID()}`,
     returned: `Automatic reply, returned to pending ${randomUUID()}`,
     queued_auto: `Automatic reply, still queued ${randomUUID()}`,
+    downgraded: `Automatic reply, held for review by a downgrade ${randomUUID()}`,
   };
-  const heldReplyIds: Record<HeldState, string> = { discarded: "", superseded: "", pending: "", returned: "", queued_auto: "" };
+  const heldReplyIds: Record<HeldState, string> = { discarded: "", superseded: "", pending: "", returned: "", queued_auto: "", downgraded: "" };
 
   /** Fails naming the surface and the state whose draft text it shows. */
   const expectNoHeldText = (surface: string, value: unknown): void => {
@@ -185,7 +192,7 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
     await receive(await readFixture(FIRST_CONTACT, { relayToken: mailbox.relayToken, domain: domain.domain }), mailbox);
     const [opened, ...others] = await conversationsOfMailbox(database, mailbox);
     expect(others).toEqual([]);
-    return { domain, conversationId: opened };
+    return { domain, mailbox, conversationId: opened };
   };
 
   const customerMessages = (thread: string) =>
@@ -199,7 +206,8 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
    * discards the first; her third message supersedes the second; the third waits, pending. She
    * also writes once to each of two `auto` mailboxes of the workspace, and each review publishes:
    * one send's domain stops being verified before it is dispatched, so dispatch returns it to
-   * pending; the other is never dispatched, and stays queued.
+   * pending; the other is never dispatched, and stays queued. A third `auto` mailbox's send is held
+   * for review when a teammate switches the mailbox to `draft` before it is dispatched.
    */
   beforeAll(async () => {
     suite = await createEmailChannelDatabase(integrationDatabaseUrl, "held_visibility");
@@ -231,10 +239,15 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
     const queued = await openAutoThread();
     heldReplyIds.queued_auto = await review(queued.conversationId, "queued_auto");
 
+    const downgraded = await openAutoThread();
+    heldReplyIds.downgraded = await review(downgraded.conversationId, "queued_auto");
+    await api.channel.mailboxes.update({ userId: scenario.teammate.userId }, workspaceId(), downgraded.mailbox.id, { engagementMode: "draft" });
+
     threads = [
       { name: "draft thread", conversationId: conversationId(), customerMessages: 3 },
       { name: "returned auto thread", conversationId: returned.conversationId, customerMessages: 1 },
       { name: "queued auto thread", conversationId: queued.conversationId, customerMessages: 1 },
+      { name: "downgraded auto thread", conversationId: downgraded.conversationId, customerMessages: 1 },
     ];
     const states = await database.query<{ id: string; state: string; hold_reason: string; draft_text: string }>(
       "SELECT id, state, hold_reason, draft_text FROM held_replies WHERE workspace_id = $1 ORDER BY created_at, id",
@@ -242,10 +255,11 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
     );
     expect(states).toEqual(HELD_STATES.map((state) => expect.objectContaining({
       id: heldReplyIds[state],
-      state: state === "returned" ? "pending" : state,
+      state: PENDING_STATES.includes(state) ? "pending" : state,
       draft_text: heldText[state],
     })));
     expect(states.find((row) => row.id === heldReplyIds.returned)?.hold_reason).toBe("authority_changed");
+    expect(states.find((row) => row.id === heldReplyIds.downgraded)?.hold_reason).toBe("policy_changed");
     // The leak source the readers must exclude: each review's audit row carries its draft.
     const reviewAudits = await database.query<{ metadata_json: unknown }>(
       "SELECT metadata_json FROM audit_events WHERE workspace_id = $1 AND event_type = 'chat.answer' ORDER BY created_at",
@@ -440,9 +454,9 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
     }
   });
 
-  it("shows a queued_auto draft, and one returned to pending, only on the teammate's held-reply surface", async () => {
+  it("shows a queued_auto draft, and ones returned to pending, only on the teammate's held-reply surface", async () => {
     // The positive control: the text the readers above exclude is there for a teammate to decide on.
-    const [, returned, queued] = threads;
+    const [, returned, queued, downgraded] = threads;
     const teammate = scenario.teammate;
     expect(await api.heldReplies.current(teammate, returned.conversationId)).toEqual({ heldReply: expect.objectContaining({
       id: heldReplyIds.returned,
@@ -457,11 +471,18 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
       draftText: heldText.queued_auto,
       attentionOpen: false,
     }) });
-    // A queued send waits for no one, so it asks for no attention; the returned one does.
+    expect(await api.heldReplies.current(teammate, downgraded.conversationId)).toEqual({ heldReply: expect.objectContaining({
+      id: heldReplyIds.downgraded,
+      state: "pending",
+      holdReason: "policy_changed",
+      draftText: heldText.downgraded,
+      attentionOpen: true,
+    }) });
+    // A queued send waits for no one, so it asks for no attention; the returned ones do.
     const open = (await api.heldReplies.list(teammate, { attention: "open", limit: 50 })).items.map((item) => item.id);
-    expect(open).toContain(heldReplyIds.returned);
+    expect(open).toEqual(expect.arrayContaining([heldReplyIds.returned, heldReplyIds.downgraded]));
     expect(open).not.toContain(heldReplyIds.queued_auto);
     const all = (await api.heldReplies.list(teammate, { attention: "all", limit: 50 })).items.map((item) => item.id);
-    expect(all).toEqual(expect.arrayContaining([heldReplyIds.returned, heldReplyIds.queued_auto]));
+    expect(all).toEqual(expect.arrayContaining([heldReplyIds.returned, heldReplyIds.queued_auto, heldReplyIds.downgraded]));
   });
 });

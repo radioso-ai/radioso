@@ -22,9 +22,13 @@ import type { OwnershipActor } from "../conversationOwnershipService.js";
 import type { OperatorIdentity, OperatorIdentityResolver } from "../operatorIdentity.js";
 import type { OperatorReplyService, OperatorReplyWriteScope } from "../operatorReplyService.js";
 import {
+  autoDispatchRefusal,
+  autoSendRefusal,
   heldBirth,
+  heldReplyEventSources,
   isHeldReplyAttentionOpen,
   releaseRefusal,
+  type AutoSendRefusal,
   type HeldReplyDraft,
   type HeldReplyRecord,
   type HeldReplyReleaseRefusal,
@@ -57,10 +61,31 @@ type HoldReplyResult =
   /** The review was held before; its held reply as it is now. */
   | { heldReplyId: string; state: HeldReplyState; duplicate: true };
 
-/** How a channel's review runner hands its results over to wait for a teammate. */
-interface HeldReplyProducerPort {
+/** A review's result to publish: as one to hold, without a hold reason, since it waits for no one. */
+export type QueueAutoInput = Omit<HoldReplyInput, "holdReason">;
+
+type QueueAutoResult =
+  | { ok: true; heldReplyId: string; duplicate: boolean }
+  /** Nothing was recorded; the producer holds the result for a teammate instead. */
+  | { ok: false; refused: AutoSendRefusal };
+
+/**
+ * How a channel's review runner hands its results over: to wait for a teammate, or queued for an
+ * automatic send the channel dispatches later.
+ */
+export interface HeldReplyProducerPort {
   hold(input: HoldReplyInput): Promise<HoldReplyResult>;
+  queueAuto(input: QueueAutoInput): Promise<QueueAutoResult>;
   findByReviewRef(conversationId: string, reviewRef: string): Promise<{ heldReplyId: string; state: HeldReplyState } | null>;
+}
+
+/** How a channel's send handler turns a queued automatic send into the message it delivers. */
+export interface HeldReplyDispatchPort {
+  materializeAuto(heldReplyId: string): Promise<
+    | { ok: true; messageId: string }
+    /** No message was written: the send was no longer queued, or went back to a teammate. */
+    | { ok: false; reason: "not_queued" | "returned_to_pending" }
+  >;
 }
 
 /**
@@ -99,6 +124,17 @@ export interface HeldReplyChannelScope {
    * this held reply under its bound authority, keyed by the message so it goes out once.
    */
   enqueueRelease(heldReply: HeldReplyAuthorityView, messageId: string, outbox: CustomerReplyOutboxPort): Promise<void>;
+  /** Reserves one automatic send against the conversation's send budget; false when the budget is spent. */
+  reserveAutoSend(conversationId: string): Promise<boolean>;
+  /**
+   * Queues the automatic send of a held reply just queued, on the caller's outbox, keyed by the held
+   * reply: no message exists until the send is materialized at dispatch.
+   */
+  enqueueAutoSend(heldReply: HeldReplyAuthorityView, outbox: CustomerReplyOutboxPort): Promise<void>;
+  /** Whether the channel can still send automatically under the held reply's bound authority; when not, its code. */
+  authorizeAutoDispatch(heldReply: HeldReplyAuthorityView): Promise<{ authorized: true } | { authorized: false; code: string }>;
+  /** Records the send of the message a materialization wrote, in the same transaction. */
+  recordMaterialized(heldReply: HeldReplyAuthorityView, messageId: string): Promise<void>;
 }
 
 /**
@@ -114,15 +150,19 @@ interface HeldReplyDraftMessageWriter {
   }): Promise<MessageRecord>;
 }
 
-/** A held reply to record, born pending or, once its binding went stale, superseded. */
+/**
+ * A held reply to record: born pending or, once its binding went stale, superseded; or queued for
+ * an automatic send.
+ */
 export interface HeldReplyInsert extends HoldReplyInput {
-  born: { state: "pending" } | { state: "superseded"; reason: SupersedeReason };
+  born: { state: "pending" } | { state: "superseded"; reason: SupersedeReason } | { state: "queued_auto" };
 }
 
 /** The held replies' rows, bound to the transaction of the unit of work that writes them. */
-export interface HeldReplyWriteStore {
+export interface HeldReplyWriteStore extends Pick<HeldReplyReadStore, "findByReviewRef"> {
   /** Records the held reply; with a review ref already held on the conversation, finds that one instead. */
   insert(input: HeldReplyInsert): Promise<{ record: HeldReplyRecord; created: boolean }>;
+  findById(heldReplyId: string): Promise<HeldReplyRecord | null>;
   findInConversation(conversationId: string, heldReplyId: string): Promise<HeldReplyRecord | null>;
   /** The id of the conversation's newest customer message; null when it has none. */
   latestCustomerMessageId(conversationId: string): Promise<string | null>;
@@ -141,6 +181,11 @@ export interface HeldReplyWriteStore {
   attachReleasedMessage(heldReplyId: string, messageId: string): Promise<HeldReplyRecord>;
   /** Discards the draft only while it is pending; null when it is not. */
   discard(input: { id: string; conversationId: string; userId: string }): Promise<HeldReplyRecord | null>;
+  /**
+   * Settles a queued automatic send only while it is queued: released as automatic when
+   * `authorized`, and otherwise back to pending for a teammate; null when it is no longer queued.
+   */
+  materialize(input: { id: string; conversationId: string; authorized: boolean }): Promise<HeldReplyRecord | null>;
 }
 
 /** Where a page of held replies ends: newest first, so the next page holds the ones before it. */
@@ -239,6 +284,14 @@ type HeldReplyAuditMetadata = Record<string, unknown> & { action: string; conver
 
 const heldReplyNotFound = () => notFound("Held reply not found");
 
+/** A queued send waits for no one; it is given a reason to be held only if it returns to a teammate. */
+const QUEUED_AUTO_HOLD_REASON = "queued_auto";
+
+type MaterializeOutcome =
+  | { kind: "not_queued" }
+  | { kind: "returned"; heldReply: HeldReplyRecord; code: string }
+  | { kind: "materialized"; heldReply: HeldReplyRecord; messageId: string };
+
 const authorityView = (record: HeldReplyRecord): HeldReplyAuthorityView => ({
   id: record.id,
   conversationId: record.conversationId,
@@ -298,7 +351,7 @@ const decodePosition = (cursor: string): HeldReplyPosition => {
  * goes ahead only while the draft is pending and its ownership and policy are still current, under
  * the conversation, ownership and policy locks, so concurrent releases send it once.
  */
-export class HeldReplyService implements HeldReplyProducerPort, HeldReplyOperatorPort {
+export class HeldReplyService implements HeldReplyProducerPort, HeldReplyDispatchPort, HeldReplyOperatorPort {
   constructor(private readonly deps: {
     conversations: Pick<ConversationRepositoryPort, "findByIdAndWorkspaceId">;
     writes: HeldReplyUnitOfWork;
@@ -362,6 +415,124 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyOperato
       reason: record.supersededReason,
     });
     return { heldReplyId: record.id, state: "superseded", duplicate: false };
+  }
+
+  /**
+   * Queues a review's result for an automatic send (research B9). Under the conversation, ownership
+   * and policy locks it is queued only while it answers the newest customer message at the bound
+   * ownership and policy, and the channel reserves a send; the channel enqueues the send in the same
+   * transaction, and no message is written until it is materialized at dispatch. A refusal records
+   * nothing. Queueing a review ref again finds the first held reply, whatever its state, and changes
+   * nothing.
+   */
+  async queueAuto(input: QueueAutoInput): Promise<QueueAutoResult> {
+    const outcome = await this.deps.writes.run(async (scope): Promise<QueueAutoResult> => {
+      if (!(await scope.conversations.lockForUpdate(input.conversationId, input.workspaceId))) {
+        throw notFound("Conversation not found");
+      }
+      const ownership = await scope.ownership.loadForUpdate(input.conversationId);
+      const held = input.reviewRef === null ? null : await scope.heldReplies.findByReviewRef(input.conversationId, input.reviewRef);
+      if (held) {
+        return { ok: true, heldReplyId: held.id, duplicate: true };
+      }
+      const channel = input.policy ? scope.channelFor(input.policy.ref) : null;
+      const refused = autoSendRefusal({
+        ownership: { bound: input.ownershipVersion, current: ownership?.version ?? 0 },
+        policy: input.policy && channel
+          ? { bound: input.policy.version, current: (await channel.lockPolicy(input.policy.ref))?.version ?? null }
+          : null,
+        answersLatestCustomerMessage: (await scope.heldReplies.latestCustomerMessageId(input.conversationId)) === input.answersMessageId,
+      });
+      // No channel means no policy vouched for, which the refusal already names.
+      if (refused || !channel) {
+        return { ok: false, refused: refused ?? "policy_changed" };
+      }
+      if (!(await channel.reserveAutoSend(input.conversationId))) {
+        return { ok: false, refused: "send_budget" };
+      }
+      const { record, created } = await scope.heldReplies.insert({
+        ...input,
+        holdReason: QUEUED_AUTO_HOLD_REASON,
+        born: { state: "queued_auto" },
+      });
+      if (created) {
+        await channel.enqueueAutoSend(authorityView(record), scope.reply.outbox);
+      }
+      return { ok: true, heldReplyId: record.id, duplicate: !created };
+    });
+    if (outcome.ok && !outcome.duplicate) {
+      this.countTransition("queued_auto");
+    }
+    return outcome;
+  }
+
+  /**
+   * Turns a queued automatic send into the agent's message (research B9). Under the conversation,
+   * ownership and policy locks, only while it is still queued, it re-authorizes the send — the
+   * bound ownership and policy still current, and the channel still able to send automatically —
+   * and then writes the message from the draft's presentation, releases the held reply as
+   * automatic, and has the channel record the send, together. A send no longer authorized goes back
+   * to a teammate as pending, with no message; one superseded while queued changes nothing.
+   */
+  async materializeAuto(heldReplyId: string): Promise<{ ok: true; messageId: string } | { ok: false; reason: "not_queued" | "returned_to_pending" }> {
+    const outcome = await this.deps.writes.run(async (scope): Promise<MaterializeOutcome> => {
+      const found = await scope.heldReplies.findById(heldReplyId);
+      // Lock order: the conversation row, then its ownership row, then the producing channel's policy.
+      if (!found || !(await scope.conversations.lockForUpdate(found.conversationId, found.workspaceId))) {
+        return { kind: "not_queued" };
+      }
+      const ownership = await scope.ownership.loadForUpdate(found.conversationId);
+      // Read again under the locks: a supersede that committed meanwhile leaves nothing to send.
+      const heldReply = await scope.heldReplies.findInConversation(found.conversationId, found.id);
+      if (!heldReply || !heldReplyEventSources("materialize").includes(heldReply.state)) {
+        return { kind: "not_queued" };
+      }
+      const verdict = await this.autoDispatchVerdict(scope, heldReply, ownership?.version ?? 0);
+      // Conditional on the state: a policy change can supersede it while the policy lock waits.
+      const settled = await scope.heldReplies.materialize({
+        id: heldReply.id,
+        conversationId: heldReply.conversationId,
+        authorized: verdict.authorized,
+      });
+      if (!settled) {
+        return { kind: "not_queued" };
+      }
+      if (!verdict.authorized) {
+        return { kind: "returned", heldReply: settled, code: verdict.code };
+      }
+      const message = await this.writeDraft(scope, settled, null);
+      await verdict.channel.recordMaterialized(authorityView(settled), message.id);
+      const linked = await scope.heldReplies.attachReleasedMessage(settled.id, message.id);
+      return { kind: "materialized", heldReply: linked, messageId: message.id };
+    });
+
+    if (outcome.kind === "not_queued") {
+      return { ok: false, reason: "not_queued" };
+    }
+    const { heldReply } = outcome;
+    if (outcome.kind === "returned") {
+      this.notifyDashboard(heldReply, null, "hitl.decision_created");
+      this.countTransition("returned_to_pending");
+      await this.recordAudit(heldReply, null, {
+        action: "returned_to_pending",
+        actorUserId: null,
+        heldReplyId: heldReply.id,
+        conversationId: heldReply.conversationId,
+        holdReason: heldReply.holdReason,
+        code: outcome.code,
+      });
+      return { ok: false, reason: "returned_to_pending" };
+    }
+    this.notifyDashboard(heldReply, null, "conversation.turn_committed");
+    this.countTransition("auto_released");
+    await this.recordAudit(heldReply, null, {
+      action: "auto_released",
+      actorUserId: null,
+      heldReplyId: heldReply.id,
+      conversationId: heldReply.conversationId,
+      messageId: outcome.messageId,
+    });
+    return { ok: true, messageId: outcome.messageId };
   }
 
   async findByReviewRef(conversationId: string, reviewRef: string): Promise<{ heldReplyId: string; state: HeldReplyState } | null> {
@@ -544,6 +715,29 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyOperato
     return { ok: true, heldReply: presentHeldReply(heldReply) };
   }
 
+  /**
+   * Whether a queued send may still go out: its bound ownership and policy current — the policy
+   * locked by its channel — and then the channel's own verdict. With the code why not when it may not.
+   */
+  private async autoDispatchVerdict(
+    scope: HeldReplyWriteScope,
+    heldReply: HeldReplyRecord,
+    ownershipVersion: number,
+  ): Promise<{ authorized: true; channel: HeldReplyChannelScope } | { authorized: false; code: string }> {
+    const channel = heldReply.policy ? scope.channelFor(heldReply.policy.ref) : null;
+    const refusal = autoDispatchRefusal({
+      ownership: { bound: heldReply.ownershipVersion, current: ownershipVersion },
+      policy: heldReply.policy && channel
+        ? { bound: heldReply.policy.version, current: (await channel.lockPolicy(heldReply.policy.ref))?.version ?? null }
+        : null,
+    });
+    if (refusal || !channel) {
+      return { authorized: false, code: refusal ?? "policy_changed" };
+    }
+    const verdict = await channel.authorizeAutoDispatch(authorityView(heldReply));
+    return verdict.authorized ? { authorized: true, channel } : verdict;
+  }
+
   /** The policy's version as its channel locked it; null when no channel claims the policy or it is gone. */
   private async lockedPolicyVersion(scope: HeldReplyWriteScope, policyRef: string): Promise<number | null> {
     const channel = scope.channelFor(policyRef);
@@ -595,7 +789,9 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyOperato
     });
   }
 
-  private countTransition(transition: "created" | "released" | "edited" | "discarded" | "superseded"): void {
+  private countTransition(
+    transition: "created" | "released" | "edited" | "discarded" | "superseded" | "queued_auto" | "auto_released" | "returned_to_pending",
+  ): void {
     this.deps.metrics?.incrementCounter("held_replies_total", {
       help: "Held reply transitions",
       labels: { transition },

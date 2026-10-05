@@ -185,6 +185,7 @@ const runThroughChannel = async (fixture: string, verdict: AdapterVerdict, mailb
     chat: { respond },
     heldReplies: {
       hold: async () => ({ heldReplyId: randomUUID(), state: "pending", duplicate: false }),
+      queueAuto: async () => ({ ok: true, heldReplyId: randomUUID(), duplicate: false }),
       findByReviewRef: async () => null,
       supersedePendingForConversation: async () => 0,
     },

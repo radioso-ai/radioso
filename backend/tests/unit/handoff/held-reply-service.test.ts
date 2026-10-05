@@ -59,6 +59,8 @@ class InMemoryHeldReplies implements HeldReplyWriteStore, HeldReplyReadStore {
   readonly latestCustomerMessage = new Map<string, string>([[conversationId, inboundId]]);
   /** Makes the next conditional release lose to a concurrent one that committed first. */
   loseNextReleaseTo: "released" | null = null;
+  /** Makes the next conditional materialization lose to a change that superseded the queued send first. */
+  loseNextMaterializeTo: "superseded" | null = null;
   private sequence = 0;
   private clock = Date.parse("2026-10-04T10:00:00.000Z");
 
@@ -84,7 +86,7 @@ class InMemoryHeldReplies implements HeldReplyWriteStore, HeldReplyReadStore {
           attentionClearedReason: heldReplyEventTarget({ kind: "supersede", reason: input.born.reason }).attentionCleared,
           decidedAt: new Date(this.clock),
         }
-      : {};
+      : input.born.state === "queued_auto" ? { state: "queued_auto" as const } : {};
     const record = this.newRecord(input, superseded);
     this.rows.set(record.id, record);
     return { record, created: true };
@@ -93,6 +95,35 @@ class InMemoryHeldReplies implements HeldReplyWriteStore, HeldReplyReadStore {
   async findInConversation(inConversation: string, id: string): Promise<HeldReplyRecord | null> {
     const row = this.rows.get(id);
     return row?.conversationId === inConversation ? row : null;
+  }
+
+  async findById(id: string): Promise<HeldReplyRecord | null> {
+    return this.rows.get(id) ?? null;
+  }
+
+  async materialize(input: Parameters<HeldReplyWriteStore["materialize"]>[0]): Promise<HeldReplyRecord | null> {
+    this.steps.push("materialize_held_reply");
+    const row = await this.findInConversation(input.conversationId, input.id);
+    if (row && this.loseNextMaterializeTo) {
+      this.rows.set(row.id, { ...row, state: this.loseNextMaterializeTo, supersededReason: "takeover" });
+      this.loseNextMaterializeTo = null;
+      return null;
+    }
+    if (!row || !heldReplyEventSources("materialize").includes(row.state)) {
+      return null;
+    }
+    const target = heldReplyEventTarget({ kind: "materialize", authorized: input.authorized });
+    const settled: HeldReplyRecord = {
+      ...row,
+      state: target.state,
+      releaseKind: target.releaseKind,
+      holdReason: target.holdReason ?? row.holdReason,
+      attentionClearedAt: target.attentionCleared === null ? null : new Date(this.clock),
+      attentionClearedReason: target.attentionCleared,
+      decidedAt: input.authorized ? new Date(this.clock) : null,
+    };
+    this.rows.set(row.id, settled);
+    return settled;
   }
 
   async latestCustomerMessageId(inConversation: string): Promise<string | null> {
@@ -204,6 +235,13 @@ class InMemoryHeldReplies implements HeldReplyWriteStore, HeldReplyReadStore {
   }
 }
 
+/** What the fake channel answers: its locked policy version, whether a send fits the budget, and its dispatch verdict. */
+interface FakeChannelState {
+  lockedPolicyVersion: number | null;
+  sendBudgetLeft: boolean;
+  dispatch: { authorized: true } | { authorized: false; code: string };
+}
+
 const createService = (options: {
   route?: "email" | "none";
   channel?: "registered" | "unregistered";
@@ -213,11 +251,33 @@ const createService = (options: {
   const heldReplies = new InMemoryHeldReplies(steps);
   const ownership = new InMemoryConversationOwnershipRepository();
   const takeOver = vi.spyOn(ownership, "takeOver");
-  const lockedPolicyVersion = options.lockedPolicyVersion === undefined ? 5 : options.lockedPolicyVersion;
+  const channelState: FakeChannelState = {
+    lockedPolicyVersion: options.lockedPolicyVersion === undefined ? 5 : options.lockedPolicyVersion,
+    sendBudgetLeft: true,
+    dispatch: { authorized: true },
+  };
   const channelScope: HeldReplyChannelScope = {
     lockPolicy: vi.fn(async () => {
       steps.push("lock_policy");
-      return lockedPolicyVersion === null ? null : { version: lockedPolicyVersion };
+      return channelState.lockedPolicyVersion === null ? null : { version: channelState.lockedPolicyVersion };
+    }),
+    reserveAutoSend: vi.fn(async () => {
+      steps.push("reserve_auto_send");
+      return channelState.sendBudgetLeft;
+    }),
+    enqueueAutoSend: vi.fn(async (heldReply, onOutbox) => {
+      await onOutbox.enqueue({
+        type: "email.send",
+        payload: { trigger: "auto_reply", heldReplyId: heldReply.id, messageId: null },
+        idempotencyKey: `email:send:held:${heldReply.id}`,
+      });
+    }),
+    authorizeAutoDispatch: vi.fn(async () => {
+      steps.push("authorize_auto_dispatch");
+      return channelState.dispatch;
+    }),
+    recordMaterialized: vi.fn(async () => {
+      steps.push("record_materialized");
     }),
     enqueueRelease: vi.fn(async (heldReply, messageId, onOutbox) => {
       await onOutbox.enqueue({
@@ -335,7 +395,7 @@ const createService = (options: {
     metrics,
   });
   return {
-    service, steps, heldReplies, ownership, takeOver, channelScope, channelFor, outbox, route, customerReplyDelivery,
+    service, steps, heldReplies, ownership, takeOver, channelScope, channelState, channelFor, outbox, route, customerReplyDelivery,
     replyScope, drafts, messages, activityEvents, audit, publisher, publicConversationEventBus, metrics,
   };
 };
@@ -448,6 +508,226 @@ describe("HeldReplyService", () => {
       expect(await service.findByReviewRef(conversationId, `email:${conversationId}:1`))
         .toEqual({ heldReplyId: held.heldReplyId, state: "pending" });
       expect(await service.findByReviewRef(conversationId, `email:${conversationId}:2`)).toBeNull();
+    });
+  });
+
+  describe("queueAuto", () => {
+    const queueInput = (overrides: Partial<HoldReplyInput> = {}) => {
+      const { holdReason: _holdReason, ...input } = holdInput(overrides);
+      return input;
+    };
+
+    it("queues a current result to publish as queued_auto, reserving a send and enqueueing it under the locks", async () => {
+      const { service, steps, heldReplies, channelScope, outbox, drafts, publisher, metrics } = createService();
+
+      const queued = await service.queueAuto(queueInput());
+
+      expect(queued).toEqual({ ok: true, heldReplyId: "held-1", duplicate: false });
+      expect(steps).toEqual([
+        "lock_conversation",
+        "lock_ownership",
+        "lock_policy",
+        "reserve_auto_send",
+        "enqueue:email:send:held:held-1",
+      ]);
+      expect(channelScope.reserveAutoSend).toHaveBeenCalledWith(conversationId);
+      expect(channelScope.enqueueAutoSend).toHaveBeenCalledWith(
+        { id: "held-1", conversationId, policyRef, policyVersion: 5, ownershipVersion: 0 },
+        outbox,
+      );
+      const row = heldReplies.rows.get("held-1");
+      expect(row).toMatchObject({ state: "queued_auto", releaseKind: null, draft: { text: draftText, presentation: draftPresentation } });
+      expect(isHeldReplyAttentionOpen(row!)).toBe(false);
+      // Held content stays out of message rows until the send is authorized at dispatch.
+      expect(drafts.writeAgentMessage).not.toHaveBeenCalled();
+      expect(publisher.enqueue).not.toHaveBeenCalled();
+      expect(metrics.incrementCounter).toHaveBeenCalledWith("held_replies_total", expect.objectContaining({
+        labels: { transition: "queued_auto" },
+      }));
+    });
+
+    it("is idempotent on the review ref: queueing the same review again finds the first and reserves nothing", async () => {
+      const { service, heldReplies, channelScope, outbox } = createService();
+
+      const first = await service.queueAuto(queueInput());
+      const again = await service.queueAuto(queueInput({ draft: { text: "A different draft", presentation: {} } }));
+
+      expect(again).toEqual({ ok: true, heldReplyId: first.ok ? first.heldReplyId : "", duplicate: true });
+      expect(heldReplies.rows.size).toBe(1);
+      expect(channelScope.reserveAutoSend).toHaveBeenCalledTimes(1);
+      expect(outbox.enqueue).toHaveBeenCalledTimes(1);
+    });
+
+    it("refuses with ownership_changed once the ownership moved since the review ran, recording nothing", async () => {
+      const { service, heldReplies, ownership, channelScope } = createService();
+      await ownership.requestHandoff({ conversationId, workspaceId, reason: "review_unavailable" });
+
+      expect(await service.queueAuto(queueInput({ ownershipVersion: 0 }))).toEqual({ ok: false, refused: "ownership_changed" });
+      expect(heldReplies.rows.size).toBe(0);
+      expect(channelScope.reserveAutoSend).not.toHaveBeenCalled();
+    });
+
+    it("refuses with policy_changed when the policy moved on, or no channel policy vouches for the send", async () => {
+      for (const setup of [
+        { options: { lockedPolicyVersion: 6 }, input: {} },
+        { options: { lockedPolicyVersion: null }, input: {} },
+        { options: { channel: "unregistered" as const }, input: {} },
+        { options: {}, input: { policy: null } },
+      ]) {
+        const { service, heldReplies, channelScope, outbox } = createService(setup.options);
+
+        expect(await service.queueAuto(queueInput(setup.input))).toEqual({ ok: false, refused: "policy_changed" });
+        expect(heldReplies.rows.size).toBe(0);
+        expect(channelScope.reserveAutoSend).not.toHaveBeenCalled();
+        expect(outbox.enqueue).not.toHaveBeenCalled();
+      }
+    });
+
+    it("refuses with superseded when a newer customer message arrived after the one it answers", async () => {
+      const { service, heldReplies, channelScope } = createService();
+      heldReplies.latestCustomerMessage.set(conversationId, "message-inbound-2");
+
+      expect(await service.queueAuto(queueInput())).toEqual({ ok: false, refused: "superseded" });
+      expect(heldReplies.rows.size).toBe(0);
+      expect(channelScope.reserveAutoSend).not.toHaveBeenCalled();
+    });
+
+    it("refuses with send_budget when the channel reserves no send, recording and enqueueing nothing", async () => {
+      const { service, heldReplies, channelState, outbox } = createService();
+      channelState.sendBudgetLeft = false;
+
+      expect(await service.queueAuto(queueInput())).toEqual({ ok: false, refused: "send_budget" });
+      expect(heldReplies.rows.size).toBe(0);
+      expect(outbox.enqueue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("materializeAuto", () => {
+    const queued = async (harness: ReturnType<typeof createService>): Promise<string> => {
+      const { holdReason: _holdReason, ...input } = holdInput();
+      const result = await harness.service.queueAuto(input);
+      if (!result.ok) throw new Error(`queueAuto refused: ${result.refused}`);
+      harness.steps.length = 0;
+      harness.outbox.enqueue.mockClear();
+      harness.metrics.incrementCounter.mockClear();
+      return result.heldReplyId;
+    };
+
+    it("writes the agent message from the draft presentation, releases it as auto and records the send, in one unit", async () => {
+      const harness = createService();
+      const { service, steps, heldReplies, drafts, replyScope, channelScope, outbox, audit, publisher, metrics } = harness;
+      const heldReplyId = await queued(harness);
+
+      const materialized = await service.materializeAuto(heldReplyId);
+
+      expect(materialized).toEqual({ ok: true, messageId: "message-out-1" });
+      // Lock order: the conversation, its ownership, the producing channel's policy, then the conditional update.
+      expect(steps).toEqual([
+        "lock_conversation",
+        "lock_ownership",
+        "lock_policy",
+        "authorize_auto_dispatch",
+        "materialize_held_reply",
+        "write_message",
+        "record_materialized",
+      ]);
+      const authority = { id: heldReplyId, conversationId, policyRef, policyVersion: 5, ownershipVersion: 0 };
+      expect(channelScope.authorizeAutoDispatch).toHaveBeenCalledWith(authority);
+      expect(drafts.writeAgentMessage).toHaveBeenCalledWith({
+        workspaceId,
+        conversationId,
+        agentId: "agent-1",
+        draft: { text: draftText, presentation: draftPresentation },
+      });
+      expect(replyScope.conversations.touch).toHaveBeenCalledWith(conversationId, workspaceId);
+      expect(channelScope.recordMaterialized).toHaveBeenCalledWith(authority, "message-out-1");
+      // The send was enqueued when it was queued; materializing queues nothing more.
+      expect(outbox.enqueue).not.toHaveBeenCalled();
+      const row = heldReplies.rows.get(heldReplyId);
+      expect(row).toMatchObject({ state: "released", releaseKind: "auto", releasedMessageId: "message-out-1", attentionClearedReason: "released" });
+      expect(auditCalls(audit).map((event) => event.metadata)).toEqual([
+        { action: "auto_released", actorUserId: null, heldReplyId, conversationId, messageId: "message-out-1" },
+      ]);
+      expect(JSON.stringify(audit.record.mock.calls)).not.toContain(draftText);
+      expect(publisher.enqueue).toHaveBeenCalledWith(workspaceId, ["conversation.turn_committed"]);
+      expect(metrics.incrementCounter).toHaveBeenCalledWith("held_replies_total", expect.objectContaining({
+        labels: { transition: "auto_released" },
+      }));
+    });
+
+    it("returns a send the channel no longer authorizes to pending with authority_changed, writing no message", async () => {
+      const harness = createService();
+      const { service, heldReplies, drafts, channelScope, channelState, audit, publisher, messages } = harness;
+      const heldReplyId = await queued(harness);
+      channelState.dispatch = { authorized: false, code: "mode_changed" };
+
+      expect(await service.materializeAuto(heldReplyId)).toEqual({ ok: false, reason: "returned_to_pending" });
+
+      const row = heldReplies.rows.get(heldReplyId);
+      expect(row).toMatchObject({ state: "pending", releaseKind: null, holdReason: "authority_changed", releasedMessageId: null, decidedAt: null });
+      expect(isHeldReplyAttentionOpen(row!)).toBe(true);
+      expect(drafts.writeAgentMessage).not.toHaveBeenCalled();
+      expect(messages).toEqual([]);
+      expect(channelScope.recordMaterialized).not.toHaveBeenCalled();
+      expect(auditCalls(audit).map((event) => event.metadata)).toEqual([{
+        action: "returned_to_pending",
+        actorUserId: null,
+        heldReplyId,
+        conversationId,
+        holdReason: "authority_changed",
+        code: "mode_changed",
+      }]);
+      expect(publisher.enqueue).toHaveBeenCalledWith(workspaceId, ["hitl.decision_created"]);
+    });
+
+    it("returns it to pending without asking the channel once its ownership or policy moved on", async () => {
+      const moved = createService();
+      const movedId = await queued(moved);
+      await moved.ownership.requestHandoff({ conversationId, workspaceId, reason: "review_unavailable" });
+
+      expect(await moved.service.materializeAuto(movedId)).toEqual({ ok: false, reason: "returned_to_pending" });
+      expect(moved.channelScope.authorizeAutoDispatch).not.toHaveBeenCalled();
+      expect(moved.messages).toEqual([]);
+
+      const changed = createService();
+      const changedId = await queued(changed);
+      changed.channelState.lockedPolicyVersion = 6;
+
+      expect(await changed.service.materializeAuto(changedId)).toEqual({ ok: false, reason: "returned_to_pending" });
+      expect(changed.channelScope.authorizeAutoDispatch).not.toHaveBeenCalled();
+      expect(changed.heldReplies.rows.get(changedId)).toMatchObject({ state: "pending", holdReason: "authority_changed" });
+    });
+
+    it("does nothing for a send superseded while queued, already materialized, or unknown", async () => {
+      const harness = createService();
+      const { service, heldReplies, channelScope, drafts, audit } = harness;
+      const heldReplyId = await queued(harness);
+      const row = heldReplies.rows.get(heldReplyId)!;
+      heldReplies.rows.set(heldReplyId, { ...row, state: "superseded", supersededReason: "takeover" });
+
+      expect(await service.materializeAuto(heldReplyId)).toEqual({ ok: false, reason: "not_queued" });
+      expect(await service.materializeAuto("held-unknown")).toEqual({ ok: false, reason: "not_queued" });
+      expect(channelScope.authorizeAutoDispatch).not.toHaveBeenCalled();
+      expect(drafts.writeAgentMessage).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+
+      const sent = createService();
+      const sentId = await queued(sent);
+      await sent.service.materializeAuto(sentId);
+      expect(await sent.service.materializeAuto(sentId)).toEqual({ ok: false, reason: "not_queued" });
+      expect(sent.messages).toHaveLength(1);
+    });
+
+    it("writes nothing when a change superseded the queued send while it waited for the policy lock", async () => {
+      const harness = createService();
+      const { service, heldReplies, drafts, channelScope } = harness;
+      const heldReplyId = await queued(harness);
+      heldReplies.loseNextMaterializeTo = "superseded";
+
+      expect(await service.materializeAuto(heldReplyId)).toEqual({ ok: false, reason: "not_queued" });
+      expect(heldReplies.rows.get(heldReplyId)?.state).toBe("superseded");
+      expect(drafts.writeAgentMessage).not.toHaveBeenCalled();
+      expect(channelScope.recordMaterialized).not.toHaveBeenCalled();
     });
   });
 

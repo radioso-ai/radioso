@@ -53,14 +53,19 @@ const SETTING_KEYS: readonly (keyof MailboxSettings)[] = [
 
 type PolicyField = "engagementMode" | "enabled" | "agentId";
 
-interface CreateMailboxRequest extends Partial<Omit<MailboxSettings, "displayName">> {
+/** The operator's explicit consent to automatic sending, required to put a mailbox into `auto`. */
+interface AutoOptIn {
+  autoOptIn?: boolean;
+}
+
+interface CreateMailboxRequest extends Partial<Omit<MailboxSettings, "displayName">>, AutoOptIn {
   address: string;
   displayName: string;
   agentId?: string | null;
   engagementMode?: EngagementMode;
 }
 
-interface UpdateMailboxRequest extends Partial<MailboxSettings> {
+interface UpdateMailboxRequest extends Partial<MailboxSettings>, AutoOptIn {
   agentId?: string | null;
   engagementMode?: EngagementMode;
   enabled?: boolean;
@@ -114,6 +119,10 @@ interface MailboxServiceDependencies extends EmailChannelAuditDependencies {
     supportedModes: readonly EngagementMode[];
   };
 }
+
+/** Automatic sending answers customers with no teammate in the loop, so it is never a default or a side effect. */
+const autoOptInRequired = (): AppError =>
+  new AppError(400, "auto_opt_in_required", "Switching a mailbox to auto needs autoOptIn: true, confirming that replies may go out without review.");
 
 /** `draft` once it is supported (FR-005), `operator_only` until then. */
 export const defaultEngagementMode = (supportedModes: readonly EngagementMode[]): EngagementMode =>
@@ -203,6 +212,7 @@ export class MailboxService {
     const settings: MailboxSettings = { ...MAILBOX_DEFAULTS, ...requested, displayName };
     const engagementMode = request.engagementMode ?? this.modes().defaultMode;
     this.requireSupportedMode(engagementMode);
+    if (engagementMode === "auto" && request.autoOptIn !== true) throw autoOptInRequired();
     const agentId = request.agentId ?? null;
     if (agentId) await this.requireAgent(workspaceId, agentId);
 
@@ -266,6 +276,9 @@ export class MailboxService {
       if (next.engagementMode !== current.engagementMode && !this.deps.config.supportedModes.includes(next.engagementMode)) {
         return { kind: "mode_unavailable" as const };
       }
+      if (next.engagementMode === "auto" && current.engagementMode !== "auto" && request.autoOptIn !== true) {
+        return { kind: "auto_opt_in_required" as const };
+      }
       const policyChanges = (["engagementMode", "enabled", "agentId"] as const).filter((field) => next[field] !== current[field]);
       const settingChanges = SETTING_KEYS.filter((key) => settings[key] !== undefined && settings[key] !== current[key]);
 
@@ -294,6 +307,7 @@ export class MailboxService {
       });
     }
     if (outcome.kind === "mode_unavailable") throw this.modeUnavailable();
+    if (outcome.kind === "auto_opt_in_required") throw autoOptInRequired();
 
     await this.auditUpdate(actor, workspaceId, outcome);
     return this.viewOf(outcome.after);

@@ -18,6 +18,7 @@ const createWorker = () => ({
     purgedDeliveries: 2,
     purgedEvents: 1,
     reconciledSends: 0,
+    returnedQueuedAutoSends: 0,
     drained: 0,
   })),
 });

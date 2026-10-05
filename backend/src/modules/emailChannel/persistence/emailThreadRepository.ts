@@ -204,6 +204,21 @@ export class EmailThreadRepository {
   }
 
   /**
+   * Spends one of the thread's automatic sends, only while fewer than `limit` were spent since the
+   * last renewal (FR-022, research B8); false when the budget is spent. One conditional update, so
+   * concurrent reservations serialize on the link row and never pass the limit together.
+   */
+  async reserveAutoSend(conversationId: string, limit: number): Promise<boolean> {
+    const result = await this.db
+      .updateTable("email_thread_links")
+      .set((eb) => ({ auto_sends_since_renewal: eb("auto_sends_since_renewal", "+", 1), updated_at: currentTimestamp() }))
+      .where("conversation_id", "=", conversationId)
+      .where("auto_sends_since_renewal", "<", limit)
+      .execute();
+    return changed(result);
+  }
+
+  /**
    * Restarts the thread's automatic-send budget: an operator-authorized send renews it when its
    * intent materializes (research B8). Customer input never does.
    */

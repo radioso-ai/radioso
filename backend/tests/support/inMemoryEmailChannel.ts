@@ -186,6 +186,7 @@ export class InMemoryEmailMailboxes implements Pick<
   | "recordReceipt"
   | "markRemoved"
   | "lockForPolicyChange"
+  | "lockPolicy"
   | "appendPolicyVersion"
   | "reserveGeneration"
 > {
@@ -334,6 +335,11 @@ export class InMemoryEmailMailboxes implements Pick<
   async lockForPolicyChange(workspaceId: string, mailboxId: string) {
     this.calls.push("lockForPolicyChange");
     return this.findActive(workspaceId, mailboxId);
+  }
+
+  async lockPolicy(mailboxId: string) {
+    this.calls.push("lockPolicy");
+    return this.findActiveById(mailboxId);
   }
 
   async appendPolicyVersion(input: Args<EmailMailboxRepository["appendPolicyVersion"]>[0]) {
@@ -790,6 +796,7 @@ export class InMemoryEmailThreads implements Pick<
   | "findOutboundMessageIds"
   | "listIndexedMessages"
   | "renewSendBudget"
+  | "reserveAutoSend"
   | "findLatestInboundThreading"
   | "scheduleReview"
   | "claimDueReviews"
@@ -806,6 +813,14 @@ export class InMemoryEmailThreads implements Pick<
   readonly referencesByDelivery = new Map<string, string[]>();
 
   constructor(private readonly log: string[] = [], private readonly clock: Clock = () => new Date()) {}
+
+  async reserveAutoSend(conversationId: string, limit: number) {
+    const link = this.links.get(conversationId);
+    if (!link || link.autoSendsSinceRenewal >= limit) return false;
+    this.links.set(conversationId, { ...link, autoSendsSinceRenewal: link.autoSendsSinceRenewal + 1 });
+    this.log.push("reserveAutoSend");
+    return true;
+  }
 
   async renewSendBudget(conversationId: string) {
     const link = this.links.get(conversationId);

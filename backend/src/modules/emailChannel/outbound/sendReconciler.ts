@@ -5,7 +5,7 @@ import type { EmailDomainRepository } from "../persistence/emailDomainRepository
 import type { EmailMailboxRepository } from "../persistence/emailMailboxRepository.js";
 import type { EmailSendIntentRecord, EmailSendIntentRepository } from "../persistence/emailSendIntentRepository.js";
 import { EmailSendRetryableError, type ProviderSendAttempt } from "./providerSendAttempt.js";
-import { operatorSendAuthority } from "./sendAuthority.js";
+import { ownershipFactsOf, repostAuthorized, type EmailSendOwnershipReader } from "./sendAuthority.js";
 import type { SendIntentWriter } from "./sendIntentWriter.js";
 
 /**
@@ -33,8 +33,9 @@ const emptyRun = (): SendReconcileRun => ({ claimed: 0, reposted: 0, settled: 0,
  * Settles the sends no provider event has settled (research B6, B18). It claims due intents with
  * `reconcile_lease_until`, so two sweeps never work the same one, and for each:
  *
- * - a send whose outcome was unknown is re-POSTed with its key and frozen request while it is
- *   still authorized and inside the key's 23-hour window, and otherwise becomes `uncertain`;
+ * - a send whose outcome was unknown is re-POSTed with its key and frozen request while the
+ *   authority its trigger needs still holds and the key is inside its 23-hour window, and
+ *   otherwise becomes `uncertain`;
  * - an accepted send is looked up 24 hours on: provider evidence settles it, and a send the
  *   lookup cannot settle becomes `uncertain`.
  *
@@ -45,6 +46,8 @@ export class SendReconciler {
     intents: Pick<EmailSendIntentRepository, "claimDueForReconcile">;
     mailboxes: Pick<EmailMailboxRepository, "findById">;
     domains: Pick<EmailDomainRepository, "findById">;
+    /** Read for an automatic send's authority before a re-POST. */
+    ownership: EmailSendOwnershipReader;
     driver: Pick<EmailDriver, "lookup">;
     attempt: Pick<ProviderSendAttempt, "send" | "withinRepostWindow" | "recordDeliveredMessageId">;
     writer: Pick<SendIntentWriter, "apply">;
@@ -90,7 +93,8 @@ export class SendReconciler {
     if (!intent.outcomeUnknown || intent.request === null) return "skipped";
     const mailbox = await this.deps.mailboxes.findById(intent.mailboxId);
     const domain = mailbox ? await this.deps.domains.findById(mailbox.domainId) : null;
-    const authorityValid = operatorSendAuthority({ mailbox, domain }).verdict === "allow";
+    const ownership = intent.trigger === "auto_reply" ? await this.deps.ownership.load(intent.conversationId) : null;
+    const authorityValid = repostAuthorized(intent, { mailbox, domain, ownership: ownershipFactsOf(ownership) });
     const withinWindow = this.deps.attempt.withinRepostWindow(intent);
     if (!authorityValid || !withinWindow) {
       await this.deps.writer.apply(intent, { kind: "outcome_unknown", authorityValid, withinWindow }, { writer: "reconciler" });

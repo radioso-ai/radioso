@@ -3,7 +3,9 @@ import { vi } from "vitest";
 import type { ActionHandlerContext } from "../../src/modules/chat/contracts/index.js";
 import type { DeliveryFailureRecorderPort } from "../../src/modules/customerReplyDelivery/public.js";
 import {
+  EmailHeldReplyChannelScope,
   EmailSendActionHandler,
+  emailMailboxPolicyRef,
   emailSendKey,
   ProviderDeliveryEvents,
   ProviderSendAttempt,
@@ -316,6 +318,8 @@ export const SEND_IDS = {
   conversation: "66666666-6666-4666-8666-666666666666",
   message: "77777777-7777-4777-8777-777777777777",
   heldReply: "88888888-8888-4888-8888-888888888888",
+  /** The agent message an automatic send's materialization writes. */
+  autoMessage: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
 } as const;
 
 interface FakeMessage {
@@ -400,6 +404,40 @@ export const createSendPathHarness = (options: { now?: Date; sendingStatus?: "pe
   const writer = new SendIntentWriter({ unitOfWork, metrics, logger });
   const attempt = new ProviderSendAttempt({ driver, writer, unitOfWork, drains, metrics, logger, clock });
   let ids = 0;
+  const createId = () => `aaaaaaaa-aaaa-4aaa-8aaa-${String(++ids).padStart(12, "0")}`;
+  /** Conversation ownership; a conversation missing here is the AI's, at version 0. */
+  const owners = new Map<string, { state: "ai_owned" | "human_owned"; version: number }>();
+  const ownership = { load: async (conversationId: string) => owners.get(conversationId) ?? null };
+
+  // Stands in for handoff's materialize transaction (research B9) over email's real scope: a held
+  // reply still `queued_auto` is authorized, then written as the agent's message with its intent;
+  // an unauthorized one returns to `pending` with no message.
+  const autoReply = { state: "queued_auto" as "queued_auto" | "pending" | "released" | "superseded", text: "Your order ships on Monday." };
+  const channelScope = new EmailHeldReplyChannelScope({
+    mailboxes,
+    domains,
+    autoSend: { threads, ownership, intents, provider: "resend", createId },
+  });
+  const autoReplyView = () => ({
+    id: SEND_IDS.heldReply,
+    conversationId: SEND_IDS.conversation,
+    policyRef: emailMailboxPolicyRef(mailbox.id),
+    policyVersion: mailbox.policyVersion,
+    ownershipVersion: 0,
+  });
+  const materializeAuto = vi.fn(async (_heldReplyId: string): Promise<{ ok: true; messageId: string } | { ok: false; reason: "not_queued" | "returned_to_pending" }> => {
+    if (autoReply.state !== "queued_auto") return { ok: false, reason: "not_queued" };
+    const verdict = await channelScope.authorizeAutoDispatch(autoReplyView());
+    if (!verdict.authorized) {
+      autoReply.state = "pending";
+      return { ok: false, reason: "returned_to_pending" };
+    }
+    messages.set(SEND_IDS.autoMessage, { id: SEND_IDS.autoMessage, conversationId: SEND_IDS.conversation, content: autoReply.text, source: "ai_agent" });
+    await channelScope.recordMaterialized(autoReplyView(), SEND_IDS.autoMessage);
+    autoReply.state = "released";
+    return { ok: true, messageId: SEND_IDS.autoMessage };
+  });
+
   const handler = new EmailSendActionHandler({
     intents,
     unitOfWork,
@@ -407,15 +445,17 @@ export const createSendPathHarness = (options: { now?: Date; sendingStatus?: "pe
     mailboxes,
     domains,
     threads,
+    ownership,
+    heldReplies: { materializeAuto },
     attempt,
     writer,
     failures,
     provider: "resend",
     metrics,
     logger,
-    createId: () => `aaaaaaaa-aaaa-4aaa-8aaa-${String(++ids).padStart(12, "0")}`,
+    createId,
   });
-  const reconciler = new SendReconciler({ intents, mailboxes, domains, driver, attempt, writer, metrics, logger });
+  const reconciler = new SendReconciler({ intents, mailboxes, domains, ownership, driver, attempt, writer, metrics, logger });
   const deliveryEvents = new ProviderDeliveryEvents({ intents, writer, audit, metrics, logger });
 
   const payload = (overrides: Partial<EmailSendActionPayload> = {}): EmailSendActionPayload => ({
@@ -441,6 +481,19 @@ export const createSendPathHarness = (options: { now?: Date; sendingStatus?: "pe
   /** Delivers the default operator reply's action, as the outbox worker does. */
   const deliver = (overrides: { payload?: Partial<EmailSendActionPayload>; context?: Partial<ActionHandlerContext> } = {}) =>
     handler.handle({ payload: { ...payload(overrides.payload) }, context: context(overrides.context) });
+  /** The action an `auto` mailbox's publish queued for the held reply (research B9), as the outbox worker delivers it. */
+  const autoAction = (attemptNumber = 1) => ({
+    payload: {
+      ...payload({
+        trigger: "auto_reply",
+        messageId: null,
+        heldReplyId: SEND_IDS.heldReply,
+        authority: { policyVersion: mailbox.policyVersion, ownershipVersion: 0, mode: "auto", domainId: domain.id },
+      }),
+    },
+    context: context({ idempotencyKey: emailSendKey.heldReply(SEND_IDS.heldReply), attempt: attemptNumber }),
+  });
+  const deliverAuto = (attemptNumber = 1) => handler.handle(autoAction(attemptNumber));
   const onlyIntent = (): EmailSendIntentRecord => {
     const rows = [...intents.rows.values()];
     if (rows.length !== 1) throw new Error(`expected one send intent, found ${rows.length}`);
@@ -479,6 +532,11 @@ export const createSendPathHarness = (options: { now?: Date; sendingStatus?: "pe
     payload,
     context,
     deliver,
+    autoAction,
+    deliverAuto,
+    autoReply,
+    materializeAuto,
+    owners,
     onlyIntent,
     counted,
   };

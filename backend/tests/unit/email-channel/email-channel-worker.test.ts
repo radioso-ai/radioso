@@ -18,7 +18,7 @@ const harness = (options: { enabled?: boolean } = {}) => {
   const sweep = new EmailChannelSweep({ inbound, domains, sends, clock, logger, config: { eventRetentionDays: 30 } });
   const reviews = {
     runDue: vi.fn(async (_request: { maxJobs: number }) => ({
-      claimed: 0, held: 0, already_held: 0, no_draft: 0, human_owned: 0, not_runnable: 0, retrying: 0, failed: 0, errored: 0,
+      claimed: 0, held: 0, queued_auto: 0, already_held: 0, no_draft: 0, human_owned: 0, not_runnable: 0, budget_exhausted: 0, retrying: 0, failed: 0, errored: 0,
     })),
   };
   const worker = new EmailChannelWorker({
@@ -125,7 +125,7 @@ describe("EmailChannelWorker", () => {
     });
     h.reviews.runDue.mockImplementation(async () => {
       order.push("review");
-      return { claimed: 2, held: 2, already_held: 0, no_draft: 0, human_owned: 0, not_runnable: 0, retrying: 0, failed: 0, errored: 0 };
+      return { claimed: 2, held: 2, queued_auto: 0, already_held: 0, no_draft: 0, human_owned: 0, not_runnable: 0, budget_exhausted: 0, retrying: 0, failed: 0, errored: 0 };
     });
 
     expect(await h.worker.drain({ maxJobs: 3, stage: "review" })).toMatchObject({ reviewed: 2, claimed: 0 });
@@ -257,5 +257,51 @@ describe("EmailChannelSweep", () => {
     const result = await h.sweep.run({ maxJobs: 10 });
 
     expect(result).toMatchObject({ purgedDeliveries: 0, purgedEvents: 0 });
+  });
+});
+
+describe("EmailChannelSweep, where the deployment does not run auto (plan, Rollout and Rollback)", () => {
+  const QUEUED = ["aaaaaaaa-0000-4000-8000-000000000001", "aaaaaaaa-0000-4000-8000-000000000002", "aaaaaaaa-0000-4000-8000-000000000003"];
+
+  const rollbackHarness = () => {
+    const h = harness();
+    const queued = { listQueuedAutoBefore: vi.fn(async (_input: { policyRefPrefix: string; before: Date; limit: number }) => QUEUED) };
+    const dispatch = {
+      materializeAuto: vi.fn(async (heldReplyId: string) => (heldReplyId === QUEUED[1]
+        ? { ok: false as const, reason: "not_queued" as const }
+        : { ok: false as const, reason: "returned_to_pending" as const })),
+    };
+    const sweep = new EmailChannelSweep({
+      inbound: h.inbound,
+      domains: h.domains,
+      sends: h.sends,
+      clock: () => START,
+      logger: h.logger,
+      config: { eventRetentionDays: 30 },
+      queuedAutoRollback: { queued, dispatch },
+    });
+    return { ...h, sweep, queued, dispatch };
+  };
+
+  it("returns automatic sends still queued past the action lease to a teammate, through dispatch's authorization", async () => {
+    const h = rollbackHarness();
+
+    const result = await h.sweep.run({ maxJobs: 10 });
+
+    expect(h.queued.listQueuedAutoBefore).toHaveBeenCalledWith({
+      policyRefPrefix: "email_mailbox:",
+      before: new Date(START.getTime() - 5 * 60 * 1000),
+      limit: 10,
+    });
+    expect(h.dispatch.materializeAuto.mock.calls.map(([id]) => id)).toEqual(QUEUED);
+    // One was settled by its own dispatch meanwhile; the others went back to pending.
+    expect(result.returnedQueuedAutoSends).toBe(2);
+    expect(h.logger.warn).toHaveBeenCalledWith({ returnedQueuedAutoSends: 2 }, "email_queued_auto_sends_returned");
+  });
+
+  it("returns nothing where the deployment runs auto, since no rollback step is composed", async () => {
+    const h = harness();
+
+    expect((await h.sweep.run({ maxJobs: 10 })).returnedQueuedAutoSends).toBe(0);
   });
 });

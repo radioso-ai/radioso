@@ -12,7 +12,7 @@ import {
   type EmailThreadRepository,
   type EngagementMode,
 } from "../../../emailChannel/public.js";
-import type { HeldReplyService, HeldReplySupersedeScope } from "../../../handoff/public.js";
+import type { HeldReplyProducerPort, HeldReplySupersedeScope, QueueAutoInput } from "../../../handoff/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../../../shared/observability/tracing/operations.js";
 import { decidePublication, type HoldReason, type PublicationDecision } from "./emailPublicationDecision.js";
@@ -38,6 +38,7 @@ type Mailbox = NonNullable<Awaited<ReturnType<EmailMailboxRepository["findActive
 
 type EmailReviewOutcome =
   | "held"
+  | "queued_auto"
   | "already_held"
   | "no_draft"
   | "human_owned"
@@ -69,8 +70,23 @@ interface EmailReviewHandoffPort {
 }
 
 /** The held-reply ports a review produces through: the producer, and the supersede of the last draft. */
-type EmailReviewHeldReplies = Pick<HeldReplyService, "hold" | "findByReviewRef">
+type EmailReviewHeldReplies = Pick<HeldReplyProducerPort, "hold" | "queueAuto" | "findByReviewRef">
   & Pick<HeldReplySupersedeScope, "supersedePendingForConversation">;
+
+type QueueAutoRefusal = Extract<Awaited<ReturnType<HeldReplyProducerPort["queueAuto"]>>, { ok: false }>["refused"];
+
+/**
+ * Why an answer the decision published waits for a teammate once queueing it was refused (research
+ * B9, B16): the ownership or the policy it was bound to moved, a newer customer message replaced
+ * it, or the thread's sends were spent meanwhile. The hold records it under the same binding, so a
+ * moved binding is born superseded and a moved policy is reviewed again.
+ */
+const HOLD_REASON_FOR_REFUSAL: Record<QueueAutoRefusal, HoldReason> = {
+  ownership_changed: "authority_changed",
+  policy_changed: "authority_changed",
+  superseded: "authority_changed",
+  send_budget: "send_budget",
+};
 
 export interface EmailReviewRunnerDependencies {
   links: Pick<EmailThreadRepository, "claimDueReviews" | "scheduleReview" | "completeReview" | "releaseReview" | "retryReviewLater">;
@@ -97,6 +113,7 @@ export interface EmailReviewRunnerDependencies {
 const emptyResult = (): EmailReviewDrainResult => ({
   claimed: 0,
   held: 0,
+  queued_auto: 0,
   already_held: 0,
   no_draft: 0,
   human_owned: 0,
@@ -128,8 +145,10 @@ const decisionReason = (decision: PublicationDecision): string => {
  *    thread to a person as `generation_budget`, running nothing, when the budget is spent (B8);
  * 4. supersedes the draft an earlier revision left pending, so the thread keeps one current draft;
  * 5. runs `respond` as a review of the newest customer message, within the mailbox's history window;
- * 6. decides publication: a draft is held bound to the policy and ownership the review ran under,
- *    a draftless turn hands off, and a person's conversation is left alone;
+ * 6. decides publication: a draft is queued for an automatic send or held, either bound to the
+ *    policy and ownership the review ran under; a draftless turn hands off, and a person's
+ *    conversation is left alone. A queued send writes no message: it is materialized at dispatch
+ *    (research B9), and a send the held-reply service refuses to queue is held instead;
  * 7. completes revision R only, so mail that made R+1 meanwhile keeps its due time and runs next.
  *
  * A failure retries at a backoff, and the last attempt hands the thread off as `review_unavailable`.
@@ -206,10 +225,7 @@ export class EmailReviewRunner {
       return { outcome: turn.kind, reviewAgainUnder: null };
     }
 
-    // Automatic publication arrives with the `auto` mode (research B9); the supported-mode cap keeps
-    // every decision a hold until then, and a draft is never published from here.
-    const holdReason: HoldReason = decision.kind === "hold" ? decision.reason : "draft_mode";
-    const held = await this.deps.heldReplies.hold({
+    const result: QueueAutoInput = {
       workspaceId: claim.workspaceId,
       conversationId,
       agentId: mailbox.agentId,
@@ -217,10 +233,29 @@ export class EmailReviewRunner {
       ownershipVersion: turn.ownershipVersion,
       policy: { ref: emailMailboxPolicyRef(mailbox.id), version: mailbox.policyVersion },
       reviewRef,
-      holdReason,
       facts: turn.facts,
       draft: turn.draft,
-    });
+    };
+    if (decision.kind === "publish") {
+      const queued = await this.deps.heldReplies.queueAuto(result);
+      if (queued.ok) return { outcome: "queued_auto", reviewAgainUnder: null };
+      this.count("email_auto_queue_refusals_total", "Automatic sends the held-reply service refused to queue, by refusal.", {
+        refused: queued.refused,
+      });
+      return this.holdResult(claim, mailbox, result, HOLD_REASON_FOR_REFUSAL[queued.refused]);
+    }
+    // A draft always decides publish or hold; anything else fails closed as a hold.
+    return this.holdResult(claim, mailbox, result, decision.kind === "hold" ? decision.reason : "outcome_not_publishable");
+  }
+
+  /** Holds the review's result for a teammate, and asks for a fresh review when its policy moved under it. */
+  private async holdResult(
+    claim: ClaimedReview,
+    mailbox: Mailbox,
+    result: QueueAutoInput,
+    holdReason: HoldReason,
+  ): Promise<RevisionResult> {
+    const held = await this.deps.heldReplies.hold({ ...result, holdReason });
     if (held.state === "pending" && !held.duplicate) this.observeReceiptToHeldReply(claim);
     // Born superseded because the policy moved under the review: it runs again under the new one.
     const reviewAgain = held.state === "superseded" && await this.policyMoved(mailbox);

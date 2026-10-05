@@ -41,9 +41,9 @@ const steppingClock = (): (() => Date) => {
 /**
  * `held_replies` in memory, with the rules the Postgres repository keeps: the table's two unique
  * indexes (one live draft per conversation, one held reply per review ref), so a producer that
- * holds without superseding the last draft fails here as it would against Postgres; a release or a
- * discard applies only from the states the held-reply machine allows (a release only at the bound
- * ownership version); the current held reply is the conversation's newest, and pages run newest
+ * holds without superseding the last draft fails here as it would against Postgres; a release, a
+ * discard or a materialization applies only from the states the held-reply machine allows (a release
+ * only at the bound ownership version); the current held reply is the conversation's newest, and pages run newest
  * first with the agent filter over the held reply's author.
  */
 export class InMemoryHeldReplyRows
@@ -103,12 +103,12 @@ implements HeldReplyWriteStore, HeldReplyReadStore, Pick<HeldReplySupersedeScope
   async insert(input: HeldReplyInsert): Promise<{ record: HeldReplyRecord; created: boolean }> {
     const held = input.reviewRef === null ? null : await this.findByReviewRef(input.conversationId, input.reviewRef);
     if (held) return { record: held, created: false };
-    if (input.born.state === "pending" && this.of(input.conversationId).some(isLive)) {
+    if (input.born.state !== "superseded" && this.of(input.conversationId).some(isLive)) {
       throw new Error("duplicate key value violates unique constraint \"held_replies_live_conversation_uniq\"");
     }
     const born = input.born.state === "superseded"
       ? { ...this.decided(heldReplyEventTarget({ kind: "supersede", reason: input.born.reason })), supersededReason: input.born.reason }
-      : { state: "pending" as const, releaseKind: null, attentionClearedAt: null, attentionClearedReason: null, decidedAt: null, supersededReason: null };
+      : { state: input.born.state, releaseKind: null, attentionClearedAt: null, attentionClearedReason: null, decidedAt: null, supersededReason: null };
     const record: HeldReplyRecord = {
       id: randomUUID(),
       workspaceId: input.workspaceId,
@@ -131,6 +131,10 @@ implements HeldReplyWriteStore, HeldReplyReadStore, Pick<HeldReplySupersedeScope
     };
     this.rows.set(record.id, record);
     return { record, created: true };
+  }
+
+  async findById(id: string): Promise<HeldReplyRecord | null> {
+    return this.rows.get(id) ?? null;
   }
 
   async findInConversation(conversationId: string, id: string): Promise<HeldReplyRecord | null> {
@@ -172,6 +176,18 @@ implements HeldReplyWriteStore, HeldReplyReadStore, Pick<HeldReplySupersedeScope
       return null;
     }
     return this.update(row, { state: "discarded", discardedByUserId: input.userId, decidedAt: this.clock() });
+  }
+
+  async materialize(input: Parameters<HeldReplyWriteStore["materialize"]>[0]): Promise<HeldReplyRecord | null> {
+    const row = await this.findInConversation(input.conversationId, input.id);
+    if (!row || !heldReplyEventSources("materialize").includes(row.state)) {
+      return null;
+    }
+    const target = heldReplyEventTarget({ kind: "materialize", authorized: input.authorized });
+    const settled = input.authorized
+      ? this.decided(target)
+      : { state: target.state, releaseKind: target.releaseKind, attentionClearedAt: null, attentionClearedReason: null };
+    return this.update(row, { ...settled, holdReason: target.holdReason ?? row.holdReason });
   }
 
   async findByReviewRef(conversationId: string, reviewRef: string): Promise<HeldReplyRecord | null> {
@@ -247,6 +263,8 @@ export const createInMemoryHeldReplyService = (options: {
   route?: ChannelRoute;
   /** The policy version the channel locks now; null when the channel cannot vouch for the policy. */
   lockedPolicyVersion?: number | null;
+  /** Whether the fake channel reserves an automatic send (default yes) and authorizes its dispatch (default yes). */
+  autoSend?: { budgetLeft?: boolean; dispatch?: { authorized: true } | { authorized: false; code: string } };
   /** A real channel's scope and reply delivery, in place of the fakes `route` and `lockedPolicyVersion` describe. */
   channel?: {
     scope: HeldReplyChannelScope;
@@ -275,6 +293,16 @@ export const createInMemoryHeldReplyService = (options: {
         idempotencyKey: `email:send:msg:${messageId}`,
       });
     },
+    reserveAutoSend: async () => options.autoSend?.budgetLeft ?? true,
+    enqueueAutoSend: async (heldReply, onOutbox) => {
+      await onOutbox.enqueue({
+        type: "email.send",
+        payload: { trigger: "auto_reply", heldReplyId: heldReply.id, messageId: null },
+        idempotencyKey: `email:send:held:${heldReply.id}`,
+      });
+    },
+    authorizeAutoDispatch: async () => options.autoSend?.dispatch ?? { authorized: true },
+    recordMaterialized: async () => undefined,
   };
   const route: CustomerReplyRoute = {
     enqueue: async (onOutbox, message) => {

@@ -21537,6 +21537,9 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 2160
+          },
+          "autoOptIn": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -21589,6 +21592,9 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 2160
+          },
+          "autoOptIn": {
+            "type": "boolean"
           },
           "enabled": {
             "type": "boolean"
@@ -42486,7 +42492,7 @@
             }
           },
           "400": {
-            "description": "`invalid_address`, or a setting outside its bounds",
+            "description": "`invalid_address`, `auto_opt_in_required`, or a setting outside its bounds",
             "content": {
               "application/json": {
                 "schema": {
@@ -42628,7 +42634,7 @@
           "Email Channel"
         ],
         "summary": "Update a mailbox's settings and engagement policy",
-        "description": "A change of engagement mode, enabled flag or agent writes the next `policyVersion`. With `expectedPolicyVersion`, the change applies only to that version.",
+        "description": "A change of engagement mode, enabled flag or agent writes the next `policyVersion`. With `expectedPolicyVersion`, the change applies only to that version. Switching to `auto` needs `autoOptIn: true`.",
         "operationId": "updateEmailMailbox",
         "security": [
           {
@@ -42677,7 +42683,7 @@
             }
           },
           "400": {
-            "description": "A setting outside its bounds",
+            "description": "`auto_opt_in_required`, or a setting outside its bounds",
             "content": {
               "application/json": {
                 "schema": {

@@ -174,27 +174,33 @@ export const heldBirth = (
   return stale ? { state: "superseded", reason: stale } : { state: "pending" };
 };
 
+/** Why a result to publish was not queued for an automatic send; its producer holds it for a teammate instead. */
+export type AutoSendRefusal = "ownership_changed" | "policy_changed" | "send_budget" | "superseded";
+
 /**
- * What a result to publish is born as: queued for an automatic send only with its binding current
- * and a send reserved (reserved only once the binding is known current); otherwise it waits for a
- * teammate with the reason, unless a newer customer message replaced it.
+ * Why an automatic send may not go out under the authority it was bound to; null when it may. It
+ * needs the ownership it was bound at and a channel's policy that still vouches for it at the bound
+ * version, so a send no channel policy vouches for never goes out unreviewed.
  */
-export const autoSendBirth = (
-  binding: HeldReplyBindingCheck,
-  sendBudgetReserved: boolean,
-):
-  | { state: "queued_auto" }
-  | { state: "pending"; holdReason: "authority_changed" | "send_budget" }
-  | { state: "superseded"; reason: "newer_inbound" } => {
-  const stale = staleBinding(binding);
-  if (stale === "newer_inbound") {
-    return { state: "superseded", reason: stale };
+export const autoDispatchRefusal = (
+  binding: Pick<HeldReplyBindingCheck, "ownership" | "policy">,
+): "ownership_changed" | "policy_changed" | null => {
+  if (binding.ownership.bound !== binding.ownership.current) {
+    return "ownership_changed";
   }
-  if (stale) {
-    return { state: "pending", holdReason: "authority_changed" };
+  if (binding.policy === null || binding.policy.bound !== binding.policy.current) {
+    return "policy_changed";
   }
-  return sendBudgetReserved ? { state: "queued_auto" } : { state: "pending", holdReason: "send_budget" };
+  return null;
 };
+
+/**
+ * Why a result to publish may not be queued for an automatic send; null when it may. A newer
+ * customer message replaced it first; otherwise its authority must still hold. The send budget is
+ * reserved only after this, so a stale result reserves nothing.
+ */
+export const autoSendRefusal = (binding: HeldReplyBindingCheck): Exclude<AutoSendRefusal, "send_budget"> | null =>
+  binding.answersLatestCustomerMessage ? autoDispatchRefusal(binding) : "superseded";
 
 /**
  * Why a teammate's release must change nothing; null when it may go ahead. It goes ahead only from

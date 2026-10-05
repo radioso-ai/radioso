@@ -34,3 +34,76 @@ export const operatorSendAuthority = (facts: OperatorSendAuthorityFacts): SendAu
   if (sending === "not_verified") return halt("sending_not_verified");
   return { verdict: "allow" };
 };
+
+/** Why an automatic send may no longer go out (FR-032, research B9). */
+export type AutoSendAuthorityRefusal =
+  | "mailbox_removed"
+  | "policy_changed"
+  | "mailbox_disabled"
+  | "mode_not_auto"
+  | "human_owned"
+  | "ownership_changed"
+  | "domain_removed"
+  | "sending_not_verified";
+
+export type AutoSendVerdict = { authorized: true } | { authorized: false; code: AutoSendAuthorityRefusal };
+
+/** The conversation's ownership as a send reads it; a conversation with no ownership row is the AI's, at version 0. */
+export interface SendOwnershipFacts {
+  state: "ai_owned" | "human_owned";
+  version: number;
+}
+
+/** Reads a conversation's ownership for the send path; null while it has no ownership row. */
+export interface EmailSendOwnershipReader {
+  load(conversationId: string): Promise<SendOwnershipFacts | null>;
+}
+
+export const ownershipFactsOf = (record: SendOwnershipFacts | null): SendOwnershipFacts =>
+  record ? { state: record.state, version: record.version } : { state: "ai_owned", version: 0 };
+
+interface AutoSendAuthorityFacts {
+  /** The mailbox as it is now; null when it no longer exists. */
+  mailbox: Pick<EmailMailboxRecord, "removedAt" | "enabled" | "engagementMode" | "policyVersion"> | null;
+  domain: Pick<EmailDomainRecord, "sendingStatus" | "removedAt"> | null;
+  ownership: SendOwnershipFacts;
+  /** The policy and ownership versions the review published the reply under. */
+  bound: { policyVersion: number | null; ownershipVersion: number };
+}
+
+const refuse = (code: AutoSendAuthorityRefusal): AutoSendVerdict => ({ authorized: false, code });
+
+/**
+ * Whether an automatic send may still go out (FR-032, research B9): the mailbox exists, is enabled
+ * and in `auto` at the policy version the reply was published under; the AI owns the conversation
+ * at the ownership version it was published under; and the domain is verified for sending. Every
+ * policy change writes a new version, so a downgrade or a disable since the publish refuses as
+ * `policy_changed`, as does a send bound to no policy.
+ */
+export const autoSendAuthority = (facts: AutoSendAuthorityFacts): AutoSendVerdict => {
+  const { mailbox } = facts;
+  if (!mailbox || mailbox.removedAt !== null) return refuse("mailbox_removed");
+  if (facts.bound.policyVersion !== mailbox.policyVersion) return refuse("policy_changed");
+  if (!mailbox.enabled) return refuse("mailbox_disabled");
+  if (mailbox.engagementMode !== "auto") return refuse("mode_not_auto");
+  if (facts.ownership.state !== "ai_owned") return refuse("human_owned");
+  if (facts.ownership.version !== facts.bound.ownershipVersion) return refuse("ownership_changed");
+  const sending = sendingStateOf(facts.domain);
+  if (sending === "domain_removed") return refuse("domain_removed");
+  if (sending === "not_verified") return refuse("sending_not_verified");
+  return { authorized: true };
+};
+
+/**
+ * Whether a send whose earlier attempt has an unknown outcome may be re-POSTed under its key
+ * (research B6): while the authority its trigger needs still holds. An automatic send needs the
+ * automatic authority it was dispatched under; an operator-authorized one only the mailbox's
+ * ability to send as its address. Otherwise it becomes `uncertain`, and is never queued again.
+ */
+export const repostAuthorized = (
+  intent: { trigger: string; authority: { policyVersion: number; ownershipVersion: number } },
+  facts: Omit<AutoSendAuthorityFacts, "bound">,
+): boolean =>
+  intent.trigger === "auto_reply"
+    ? autoSendAuthority({ ...facts, bound: intent.authority }).authorized
+    : operatorSendAuthority(facts).verdict === "allow";

@@ -1,5 +1,6 @@
 import type { ActionHandler, ActionHandlerContext } from "../../chat/contracts/index.js";
 import type { DeliveryFailureRecorderPort } from "../../customerReplyDelivery/public.js";
+import type { HeldReplyDispatchPort } from "../../handoff/public.js";
 import { parseRfcMessageId, type RfcMessageId } from "../../mail/public.js";
 import { isHumanAuthoredMessageSource } from "../../../shared/domain/messageAuthorship.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
@@ -16,7 +17,7 @@ import type { EmailThreadRepository } from "../persistence/emailThreadRepository
 import { readEmailSendAction, type EmailSendActionPayload } from "./emailSendAction.js";
 import { buildOutboundHeaders, outboundMessageId, replySubject, replyToAddress } from "./outboundHeaders.js";
 import type { ProviderSendAttempt } from "./providerSendAttempt.js";
-import { operatorSendAuthority } from "./sendAuthority.js";
+import { operatorSendAuthority, ownershipFactsOf, repostAuthorized, type EmailSendOwnershipReader } from "./sendAuthority.js";
 import {
   countEmailSendIntentState,
   EMAIL_DELIVERY_PROVIDER,
@@ -36,6 +37,7 @@ interface EmailSendMessageReader {
 }
 
 type SendFacts = { mailbox: EmailMailboxRecord | null; domain: EmailDomainRecord | null };
+type AutoMaterialization = Awaited<ReturnType<HeldReplyDispatchPort["materializeAuto"]>>;
 type FrozenRequest = SendRequestSnapshot & { body: NonNullable<SendRequestSnapshot["body"]> };
 
 const isRfcMessageId = (value: RfcMessageId | null): value is RfcMessageId => value !== null;
@@ -51,11 +53,16 @@ const isRfcMessageId = (value: RfcMessageId | null): value is RfcMessageId => va
  * 5. applies the outcome through the fenced transition (research B18);
  * 6. fetches the delivered Message-ID.
  *
- * After an unknown outcome the reconciler owns re-POSTs. It delivers the operator-authorized
- * triggers: an operator reply, a held reply's release, and an audited resend. The author is the
- * message's: an unchanged release is the agent's message and carries `Auto-Submitted:
- * auto-generated`, an edited one is the teammate's and does not (FR-034). `auto_reply` materializes
- * through the held-reply dispatch port (research B9).
+ * After an unknown outcome the reconciler owns re-POSTs. The author is the message's: an unchanged
+ * release is the agent's message and carries `Auto-Submitted: auto-generated`, an edited one is the
+ * teammate's and does not (FR-034).
+ *
+ * The operator-authorized triggers — an operator reply, a held reply's release, an audited resend —
+ * name their message, and step 1 writes their intent. An automatic reply names its held reply
+ * instead (research B9): step 1 asks the held-reply dispatch port to materialize it, which
+ * re-authorizes the send (FR-032) and writes the agent's message with its intent in one
+ * transaction, or returns the draft to a teammate with nothing written. Once materialized it is
+ * never a draft again: after an unknown outcome a revoked authority makes it `uncertain`.
  */
 export class EmailSendActionHandler implements ActionHandler {
   constructor(private readonly deps: {
@@ -65,6 +72,10 @@ export class EmailSendActionHandler implements ActionHandler {
     mailboxes: Pick<EmailMailboxRepository, "findById">;
     domains: Pick<EmailDomainRepository, "findById">;
     threads: Pick<EmailThreadRepository, "findLink" | "findLatestInboundThreading">;
+    /** Read for an automatic send's authority before a re-POST. */
+    ownership: EmailSendOwnershipReader;
+    /** Turns a queued automatic reply into the message it sends (research B9). */
+    heldReplies: Pick<HeldReplyDispatchPort, "materializeAuto">;
     attempt: Pick<ProviderSendAttempt, "send" | "withinRepostWindow" | "fetchDeliveredMessageId">;
     writer: Pick<SendIntentWriter, "apply">;
     /** In its own transaction: a send that never materialized has no intent to fence on. */
@@ -77,12 +88,11 @@ export class EmailSendActionHandler implements ActionHandler {
   }) {}
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
-    const action = readEmailSendAction(input.payload, input.context.idempotencyKey);
-    if (action.payload.trigger === "auto_reply") {
-      throw new Error("email_send_auto_reply_unavailable");
-    }
-    const intent = await this.loadOrMaterialize(action.payload, action.idempotencyKey, input.context.workspaceId);
-    await this.advance(intent, input.context.attempt, true);
+    const { payload, idempotencyKey } = readEmailSendAction(input.payload, input.context.idempotencyKey);
+    const intent = payload.trigger === "auto_reply"
+      ? await this.loadOrMaterializeAuto(payload, idempotencyKey)
+      : await this.loadOrMaterialize(payload, idempotencyKey, input.context.workspaceId);
+    if (intent) await this.advance(intent, input.context.attempt, true);
   }
 
   /**
@@ -175,6 +185,38 @@ export class EmailSendActionHandler implements ActionHandler {
     return intent;
   }
 
+  /**
+   * Step 1 of an automatic reply: the intent under the held reply's key, materialized on the first
+   * claim through the dispatch port. Null when nothing is to be sent: the held reply was superseded
+   * while queued, or its authority had changed and it went back to a teammate.
+   */
+  private async loadOrMaterializeAuto(payload: EmailSendActionPayload, idempotencyKey: string): Promise<EmailSendIntentRecord | null> {
+    const existing = await this.deps.intents.findByIdempotencyKey(idempotencyKey);
+    if (existing) return existing;
+    const { heldReplyId } = payload;
+    if (heldReplyId === null) throw new Error("email_send_held_reply_missing");
+    const materialized = await traceOperation({
+      name: "email.send.materialize_auto",
+      attributes: { "radioso.conversation_id": payload.conversationId },
+      run: () => this.deps.heldReplies.materializeAuto(heldReplyId),
+      resultAttributes: (result: AutoMaterialization) => ({ result: result.ok ? "materialized" : result.reason }),
+    });
+    this.deps.metrics?.incrementCounter("email_auto_dispatch_total", {
+      help: "Automatic email replies at dispatch, by whether they were materialized.",
+      labels: { result: materialized.ok ? "materialized" : materialized.reason },
+    });
+    if (!materialized.ok) {
+      if (materialized.reason === "returned_to_pending") {
+        this.deps.logger.warn({ conversationId: payload.conversationId, mailboxId: payload.mailboxId }, "email_auto_send_returned_to_pending");
+      }
+      return null;
+    }
+    const intent = await this.deps.intents.findByIdempotencyKey(idempotencyKey);
+    if (!intent) throw new Error("email_send_intent_missing");
+    countEmailSendIntentState(this.deps.metrics, intent);
+    return intent;
+  }
+
   private async advance(intent: EmailSendIntentRecord, attempt: number, mayRetryFreeze: boolean): Promise<void> {
     if (intent.state === "accepted") {
       // A redelivery after a crash between the acceptance and step 6.
@@ -216,7 +258,9 @@ export class EmailSendActionHandler implements ActionHandler {
    * the key inside its window; otherwise it is `uncertain` and goes to an operator.
    */
   private async resume(intent: EmailSendIntentRecord, attempt: number): Promise<void> {
-    const authorityValid = operatorSendAuthority(await this.sendFacts(intent)).verdict === "allow";
+    const facts = await this.sendFacts(intent);
+    const ownership = intent.trigger === "auto_reply" ? await this.deps.ownership.load(intent.conversationId) : null;
+    const authorityValid = repostAuthorized(intent, { ...facts, ownership: ownershipFactsOf(ownership) });
     const withinWindow = this.deps.attempt.withinRepostWindow(intent);
     if (!authorityValid || !withinWindow) {
       await this.deps.writer.apply(intent, { kind: "outcome_unknown", authorityValid, withinWindow }, { writer: "handler" });

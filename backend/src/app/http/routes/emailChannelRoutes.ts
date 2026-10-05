@@ -26,6 +26,8 @@ const mailboxSettingsShape = {
   threadContextMessages: boundedSetting("threadContextMessages").optional(),
   spamOptIn: z.boolean().optional(),
   silenceThresholdHours: boundedSetting("silenceThresholdHours").optional(),
+  /** Required as `true` to put a mailbox into `auto`; the service answers `auto_opt_in_required` without it. */
+  autoOptIn: z.boolean().optional(),
 };
 
 export const createEmailMailboxRequestSchema = z.object({

@@ -1,4 +1,4 @@
-import type { Selectable } from "kysely";
+import { sql, type Selectable } from "kysely";
 
 // The handoff module owns the held-reply machine, its record and its store ports; this repository is
 // their Postgres adapter, reading every state rule from the machine rather than restating it.
@@ -109,7 +109,7 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
   constructor(private readonly db: Db) {}
 
   async insert(input: HeldReplyInsert): Promise<{ record: HeldReplyRecord; created: boolean }> {
-    const superseded = input.born.state === "superseded" ? input.born.reason : null;
+    const { born } = input;
     const row = await this.db
       .insertInto("held_replies")
       .values({
@@ -126,9 +126,9 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
         suppressed_effects: toJsonb(input.facts.suppressedEffects.map(({ skillName }) => ({ skillName }))),
         draft_text: input.draft.text,
         draft_presentation: toJsonb(input.draft.presentation),
-        ...(superseded === null
-          ? { state: "pending" }
-          : { ...decisionColumns({ kind: "supersede", reason: superseded }), superseded_reason: superseded }),
+        ...(born.state === "superseded"
+          ? { ...decisionColumns({ kind: "supersede", reason: born.reason }), superseded_reason: born.reason }
+          : { state: born.state }),
       })
       .onConflict((oc) => oc.columns(["conversation_id", "review_ref"]).where("review_ref", "is not", null).doNothing())
       .returningAll()
@@ -142,6 +142,15 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
       throw new Error("Held reply insert skipped without a held review ref");
     }
     return { record: existing, created: false };
+  }
+
+  async findById(heldReplyId: string): Promise<HeldReplyRecord | null> {
+    const row = await this.db
+      .selectFrom("held_replies")
+      .selectAll()
+      .where("id", "=", heldReplyId)
+      .executeTakeFirst();
+    return row ? mapHeldReply(row) : null;
   }
 
   async findInConversation(conversationId: string, heldReplyId: string): Promise<HeldReplyRecord | null> {
@@ -208,6 +217,24 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
     return row ? mapHeldReply(row) : null;
   }
 
+  async materialize(input: Parameters<HeldReplyWriteStore["materialize"]>[0]): Promise<HeldReplyRecord | null> {
+    const event = { kind: "materialize", authorized: input.authorized } as const;
+    const target = heldReplyEventTarget(event);
+    const row = await this.db
+      .updateTable("held_replies")
+      // An authorized send is decided; one returned to a teammate is pending again, undecided.
+      .set({
+        ...(input.authorized ? decisionColumns(event) : transitionColumns(target)),
+        ...(target.holdReason === undefined ? {} : { hold_reason: target.holdReason }),
+      })
+      .where("id", "=", input.id)
+      .where("conversation_id", "=", input.conversationId)
+      .where("state", "in", heldReplyEventSources("materialize"))
+      .returningAll()
+      .executeTakeFirst();
+    return row ? mapHeldReply(row) : null;
+  }
+
   supersedePendingForConversation(conversationId: string, reason: Exclude<SupersedeReason, "policy_changed">): Promise<number> {
     return this.supersede(reason, "conversation_id", conversationId);
   }
@@ -256,6 +283,24 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
 
   listAll(workspaceId: string, query: ListQuery): Promise<HeldReplyRecord[]> {
     return this.list(workspaceId, query, { attentionOpenOnly: false });
+  }
+
+  /**
+   * The automatic sends still queued since before `before` under policies with the prefix, oldest
+   * first: the rollback sweep returns them to a teammate where `auto` is not run.
+   */
+  async listQueuedAutoBefore(input: { policyRefPrefix: string; before: Date; limit: number }): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom("held_replies")
+      .select("id")
+      .where("state", "=", "queued_auto")
+      .where(sql<boolean>`starts_with(policy_ref, ${input.policyRefPrefix})`)
+      .where("created_at", "<", input.before)
+      .orderBy("created_at")
+      .orderBy("id")
+      .limit(input.limit)
+      .execute();
+    return rows.map((row) => row.id);
   }
 
   private async supersede(

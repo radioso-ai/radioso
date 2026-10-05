@@ -26,7 +26,8 @@ export type {
   ConversationOwnershipScope,
 } from "./ownershipState.js";
 export {
-  autoSendBirth,
+  autoDispatchRefusal,
+  autoSendRefusal,
   heldBirth,
   HELD_REPLY_STATES,
   heldReplyEventSources,
@@ -39,17 +40,21 @@ export {
   type HeldReplyRecord,
   type HeldReplyState,
 } from "./heldReplies/heldReplyState.js";
+// Producers call hold or queueAuto; a channel's send handler calls materializeAuto on a queued send.
 export {
   HeldReplyService,
   type HeldReplyAuthorityView,
   type HeldReplyChannelScope,
+  type HeldReplyDispatchPort,
   type HeldReplyInsert,
+  type HeldReplyProducerPort,
   type HeldReplyReadStore,
   type HeldReplySupersedeScope,
   type HeldReplyUnitOfWork,
   type HeldReplyView,
   type HeldReplyWriteStore,
   type HoldReplyInput,
+  type QueueAutoInput,
 } from "./heldReplies/heldReplyService.js";
 
 export interface ConversationOwnershipReader {

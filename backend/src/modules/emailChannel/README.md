@@ -56,8 +56,16 @@ It does not own:
   compare, and `enqueueRelease` queues a released message as a
   `held_release` `email.send` under `email:send:msg:<messageId>`, refusing
   `409 email_sending_not_verified` when the mailbox can no longer send.
-  Composition registers it under the `email_mailbox:` prefix
-  (`backend/src/app/composition/heldReplyUnitOfWork.ts`).
+  Automatic sends (research B9) are a capability composition grants only
+  where the deployment runs `auto`: `reserveAutoSend` spends the thread's
+  send budget, `enqueueAutoSend` queues an `auto_reply` `email.send` under
+  `email:send:held:<heldReplyId>` with no message, `authorizeAutoDispatch`
+  rechecks FR-032 at materialization (`outbound/sendAuthority.ts`), and
+  `recordMaterialized` writes the send intent with the message. Without the
+  capability every automatic send is refused (`auto_unsupported`).
+  `createEmailHeldReplyChannelRegistration` in
+  `backend/src/app/composition/emailChannel.ts` registers it under the
+  `email_mailbox:` prefix.
 - `domains/` — sending-domain registration and readiness
   (`sendingDomainService.ts`, `sendingState.ts`).
 - `content/` — the quoted-history stripper (`quotedHistory.ts`), the
@@ -71,7 +79,9 @@ It does not own:
   call; `infra/` holds the Cloud Tasks drain dispatcher built on the shared
   `scheduleAt` dispatcher.
 - `maintenance/` — the sweep: lease recovery, the send reconciler's claim
-  step, domain readiness refresh, and retention.
+  step, domain readiness refresh, and retention. Where the deployment does
+  not run `auto`, it also returns stale `queued_auto` held replies to
+  `pending` through the held-reply dispatch port (the rollback path).
 - `operator/` — the `email` customer reply deliverer registered in the
   shared reply dispatcher. It refuses `409 email_sending_not_verified`
   (naming the missing step) before anything is written, and otherwise
@@ -81,11 +91,13 @@ It does not own:
   queues a new `email.send` under `email:send:msg:<id>:resend:<n>`.
 - `outbound/` — the send path. `emailSendAction.ts` owns the `email.send`
   payload (v1, ids and authority only) and the three key formats;
-  `emailSendActionHandler.ts` materializes the intent by key, revalidates on
-  the first attempt only, freezes the request and sends through
+  `emailSendActionHandler.ts` materializes the intent by key (an
+  `auto_reply` through the held-reply dispatch port's `materializeAuto`),
+  revalidates on the first attempt only, freezes the request and sends through
   `providerSendAttempt.ts` with no transaction held across the provider
-  call; `sendReconciler.ts` re-POSTs unknown outcomes inside 23 hours and
-  looks accepted sends up after 24; `providerDeliveryEvents.ts` applies
+  call; `sendReconciler.ts` re-POSTs unknown outcomes inside 23 hours while
+  the trigger's authority holds (`repostAuthorized`) and looks accepted sends
+  up after 24; `providerDeliveryEvents.ts` applies
   provider delivery events and inbound DSN bounces. Every writer applies
   `sendIntentTransitions.ts` through `sendIntentWriter.ts`, whose unit of
   work (bound in `backend/src/app/composition/emailChannel.ts`) commits the

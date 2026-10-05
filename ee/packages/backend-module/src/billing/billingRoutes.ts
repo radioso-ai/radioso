@@ -10,7 +10,7 @@ import { createEeKysely } from "../db/eeSchema.js";
 import { EnterpriseUsageLimitService } from "../usageLimits/usageLimitService.js";
 import type { BillingCustomerRepository, BillingCustomerRow } from "./billingCustomerRepository.js";
 import { PostgresBillingCustomerRepository } from "./billingCustomerRepository.js";
-import { lookupKeyFor, upgradePlanIdFor } from "./planPricing.js";
+import { isTopUpEligible, lookupKeyFor, upgradePlanIdFor } from "./planPricing.js";
 import { handleBillingWebhookEvent } from "./billingWebhookHandler.js";
 import { StripeSignatureVerificationError, type StripeGateway } from "./stripeGateway.js";
 
@@ -154,6 +154,10 @@ export const createBillingRoutes = (
         interval: row?.interval ?? null,
         currentPeriodEnd: row?.currentPeriodEnd ? row.currentPeriodEnd.toISOString() : null,
         upgradePlanId: upgradePlanIdFor(plan.id),
+        // Resolved against the account's real (possibly catalog-unknown) plan id, not the
+        // display fallback above — a legacy or hand-assigned profile must read ineligible rather
+        // than inheriting the free plan's display fallback.
+        topUpAvailable: isTopUpEligible(planId),
       });
     } catch (error) {
       next(error);
@@ -168,6 +172,16 @@ export const createBillingRoutes = (
       const user = await dependencies.userRepository.findById(userId);
 
       if ("pack" in body) {
+        const usage = await usageService.getAccountUsage(accountId);
+        const planId = usage.profile?.key ?? PLAN_CATALOG.defaultPlanId;
+        if (!isTopUpEligible(planId)) {
+          throw new HttpError(
+            409,
+            "top_up_unavailable",
+            "Prepaid top-up packs are only available on a paid plan.",
+          );
+        }
+
         const priceRef = await activeGateway.findPriceByLookupKey(PLAN_CATALOG.topUp.stripeLookupKey);
         if (!priceRef) {
           throw new HttpError(503, "billing_not_configured", "The top-up price is not configured in Stripe.");

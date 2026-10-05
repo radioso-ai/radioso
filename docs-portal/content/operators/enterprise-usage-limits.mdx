@@ -1,7 +1,7 @@
 ---
 title: "Enterprise usage limits"
 description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers or conversations per account, and enforces the caps before work begins."
-last_updated: 2026-09-17
+last_updated: 2026-10-05
 ---
 
 # Enterprise usage limits
@@ -102,7 +102,7 @@ Every kind of work that reserves against the account counts toward the conversat
 |---|---|
 | A conversation reaching a block of `repliesPerConversation` replies | 1 |
 | A standalone answer over the API or MCP | 1 |
-| A Ray turn | 1 |
+| A Ray turn | 0.5 |
 | A test run (dashboard test chat, Workbench replay, eval run, or test execution) | 0.5 |
 | An Audience Pulse report | 10 |
 | The widget greeting on open | 0 |
@@ -125,7 +125,7 @@ The account usage response breaks this down under `monthlyConversations`:
 }
 ```
 
-`used` and the `byKind` breakdown can land on a half, since a test run counts as 0.5. `credits` is the account's prepaid balance on top of `monthlyConversationLimit` — see [Prepaid credits](#prepaid-credits). `monthlyConversations` is absent (`null`) on an account whose profile meters answers instead.
+`used` and the `byKind` breakdown can land on a half, since a test run and a Ray turn each count as 0.5. `credits` is the account's prepaid balance on top of `monthlyConversationLimit` — see [Prepaid credits](#prepaid-credits). `monthlyConversations` is absent (`null`) on an account whose profile meters answers instead.
 
 ## Prepaid credits
 
@@ -157,7 +157,7 @@ On a conversation-metered account, the dashboard's Usage page shows a plan card 
 At 80% of capacity the card adds a banner naming whichever kind is driving that month's usage. At 100% the banner also carries the **Upgrade** and **Buy** buttons described below.
 
 - **Upgrade** starts a subscription checkout for the next self-serve plan above the account's current one. It is absent once the account already holds the catalog's `selfServeCeilingPlanId`.
-- **Buy 300 more** starts a one-time checkout for the catalog's top-up pack.
+- **Buy 300 more** starts a one-time checkout for the catalog's top-up pack. It only appears on a paid plan (Satellite or Planet): Comet, the free plan, doesn't sell top-ups, since a free account plus a few packs would undercut Satellite. `GET /api/v1/ee/billing/me`'s `topUpAvailable` field carries this, and `POST /api/v1/ee/billing/checkout` rejects a pack request from an ineligible account with `409 top_up_unavailable` before it reaches Stripe.
 - **Manage billing** opens the Stripe customer portal. It appears once the account has a Stripe customer, which the first checkout creates.
 
 A deployment without Stripe credentials configured skips the card; see [Billing setup](/operators/billing-setup) for the Stripe environment variables and webhook registration.

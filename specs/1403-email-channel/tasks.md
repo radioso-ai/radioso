@@ -762,44 +762,45 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Tests first
 
-- [ ] T219 [P] [US6] Extend `backend/tests/unit/email-channel/publication-decision.test.ts` with every auto row of the outcome table.
-- [ ] T220 [P] [US6] Extend `backend/tests/unit/handoff/held-reply-service.test.ts` for `queueAuto` and `materializeAuto` (fake channel scope):
+- [x] T219 [P] [US6] Extend `backend/tests/unit/email-channel/publication-decision.test.ts` with every auto row of the outcome table.
+- [x] T220 [P] [US6] Extend `backend/tests/unit/handoff/held-reply-service.test.ts` for `queueAuto` and `materializeAuto` (fake channel scope):
   - queued idempotently on `reviewRef`;
   - refused with `ownership_changed`, `policy_changed`, `send_budget` or `superseded`;
   - materialize authorized → `released` (`auto`), the message from the draft and `recordMaterialized`;
   - unauthorized → back to `pending` (`authority_changed`) with no message;
   - superseded while queued → `not_queued`.
-- [ ] T221 [P] [US6] Write `backend/tests/unit/email-channel/held-reply-channel-scope.test.ts`: `reserveAutoSend` against `thread_send_budget`; `enqueueAutoSend` key `email:send:held:<id>` with a payload whose `messageId` is null; `authorizeAutoDispatch` (enabled, mode `auto` at the bound version, ownership `ai_owned` at the bound version, domain verified); `recordMaterialized` writes the intent.
-- [ ] T222 [P] [US6] Extend `backend/tests/unit/email-channel/email-send-action-handler.test.ts` for `auto_reply`:
+- [x] T221 [P] [US6] Write `backend/tests/unit/email-channel/held-reply-channel-scope.test.ts`: `reserveAutoSend` against `thread_send_budget`; `enqueueAutoSend` key `email:send:held:<id>` with a payload whose `messageId` is null; `authorizeAutoDispatch` (enabled, mode `auto` at the bound version, ownership `ai_owned` at the bound version, domain verified); `recordMaterialized` writes the intent.
+- [x] T222 [P] [US6] Extend `backend/tests/unit/email-channel/email-send-action-handler.test.ts` for `auto_reply`:
   - `materializeAuto` is called first;
   - `not_queued` and `returned_to_pending` → no send;
   - after materialization, an unknown outcome followed by revoked authority → `uncertain` (not halted, never re-queued as a draft).
-- [ ] T223 [P] [US6] Extend `backend/tests/unit/email-channel/review-runner.test.ts`: `publish` → `queueAuto`; refusals → hold with the mapped reason.
-- [ ] T224 [P] [US6] Extend `backend/tests/unit/email-channel/mailbox-service.test.ts`: `supportedModes` includes `auto`; switching to `auto` requires an explicit opt-in flag in the request.
-- [ ] T225 [P] [US6] Add the auto rows to `backend/tests/fixtures/conversation-quality/emailOutcomeTable.ts` and `email-outcome-table.test.ts` (SC-005).
-- [ ] T226 [US6] Write `backend/tests/integration/email-auto-reply.integration.test.ts`:
+- [x] T223 [P] [US6] Extend `backend/tests/unit/email-channel/review-runner.test.ts`: `publish` → `queueAuto`; refusals → hold with the mapped reason.
+- [x] T224 [P] [US6] Extend `backend/tests/unit/email-channel/mailbox-service.test.ts`: `supportedModes` includes `auto`; switching to `auto` requires an explicit opt-in flag in the request.
+- [x] T225 [P] [US6] Add the auto rows to `backend/tests/fixtures/conversation-quality/emailOutcomeTable.ts` and `email-outcome-table.test.ts` (SC-005).
+- [x] T226 [US6] Write `backend/tests/integration/email-auto-reply.integration.test.ts`:
   - publish → materialize → one send with `Auto-Submitted`;
   - a takeover between queue and materialize → no message, `superseded`;
   - a downgrade → back to `pending`, no message;
   - a headerless responder stops at the thread budget with one `approval` flag (the SC-006 thread half);
   - a human-owned conversation runs no turn (AS6.3).
-- [ ] T227 [US6] Extend `backend/tests/integration/email-channel-crash-recovery.integration.test.ts` with crashes after `queueAuto` before the drain, inside materialize, and after provider accept: at most one message and one accept.
-- [ ] T228 [US6] Extend `backend/tests/integration/held-reply-visibility.integration.test.ts`: `queued_auto` and returned-to-`pending` content is invisible on every listed surface.
+- [x] T227 [US6] Extend `backend/tests/integration/email-channel-crash-recovery.integration.test.ts` with crashes after `queueAuto` before the drain, inside materialize, and after provider accept: at most one message and one accept.
+- [x] T228 [US6] Extend `backend/tests/integration/held-reply-visibility.integration.test.ts`: `queued_auto` and returned-to-`pending` content is invisible on every listed surface.
 
 ### Implementation
 
-- [ ] T229 [US6] Add `queueAuto`, `materializeAuto` and the `HeldReplyDispatchPort` to `heldReplyService.ts`, and the queue and materialize transactions to `heldReplyUnitOfWork.ts` (after T220).
-- [ ] T230 [US6] Add `reserveAutoSend`, `enqueueAutoSend`, `authorizeAutoDispatch` and `recordMaterialized` to `backend/src/modules/emailChannel/heldReplyChannelScope.ts` (after T221, T229).
-- [ ] T231 [US6] Add the `auto_reply` trigger to `emailSendActionHandler.ts` (after T222, T230).
-- [ ] T232 [US6] Add the publish path to `emailReviewRunner.ts` (after T223, T229).
-- [ ] T233 [US6] Composition: add `auto` to `supportedModes`. Add a sweep step that returns stale `queued_auto` rows to `pending` when `auto` is unsupported, which is the rollback path in plan.md (after T224, T229–T232).
+- [x] T229 [US6] Add `queueAuto`, `materializeAuto` and the `HeldReplyDispatchPort` to `heldReplyService.ts`, and the queue and materialize transactions to `heldReplyUnitOfWork.ts` (after T220).
+- [x] T230 [US6] Add `reserveAutoSend`, `enqueueAutoSend`, `authorizeAutoDispatch` and `recordMaterialized` to `backend/src/modules/emailChannel/heldReplyChannelScope.ts` (after T221, T229).
+- [x] T231 [US6] Add the `auto_reply` trigger to `emailSendActionHandler.ts` (after T222, T230).
+- [x] T232 [US6] Add the publish path to `emailReviewRunner.ts` (after T223, T229).
+- [x] T233 [US6] Composition: add `auto` to `supportedModes`. Add a sweep step that returns stale `queued_auto` rows to `pending` when `auto` is unsupported, which is the rollback path in plan.md (after T224, T229–T232).
 
 ### Frontend, docs, verification
 
-- [ ] T234 [US6] Extend `frontend/tests/e2e/email-channel-setup.spec.ts` first: enabling `auto` needs a confirmation that shows the send budget.
-- [ ] T235 [US6] Offer `auto` in `email-channel-card.tsx` with a confirmation dialog and the budget display (after T234).
-- [ ] T236 [P] [US6] Docs: auto mode, publication rules, the queued-auto lifecycle, budget renewal and rollout gates in `docs/email-channel.md` and the portal mdx; corpus resync.
-- [ ] T237 [US6] Verification: suites, lint, dead code, build, e2e. Record the message-queue review in the PR (`auto_reply` trigger, `held:` key, no new queue). Run `pnpm run ci:local -- origin/main`.
+- [x] T234 [US6] Extend `frontend/tests/e2e/email-channel-setup.spec.ts` first: enabling `auto` needs a confirmation that shows the send budget.
+- [x] T235 [US6] Offer `auto` in `email-channel-card.tsx` with a confirmation dialog and the budget display (after T234).
+- [x] T236 [P] [US6] Docs: auto mode, publication rules, the queued-auto lifecycle, budget renewal and rollout gates in `docs/email-channel.md` and the portal mdx; corpus resync.
+- [x] T237 [US6] Verification: suites, lint, dead code, build, e2e. Record the message-queue review in the PR (`auto_reply` trigger, `held:` key, no new queue). Run `pnpm run ci:local -- origin/main`.
+  - **Result (2026-10-05)**: unit 8922 passed; contract 609 passed; integration 1450 passed on a fresh database (six parallel-run flakes in auth, chat streaming, walk-in converse, reply envelope, ownership routes, workspace management all pass 2/2 in isolation); frontend unit 1773 passed; production build and the three email journeys 28/28; SDK and MCP build and test; lint, dead-code ratchet, snapshots, docs sync, backend build pass. Message-queue review for the PR: `auto_reply` trigger on the existing outbox with key `email:send:held:<id>` and a null messageId until materialization; no new queue; the sweep returns abandoned queued replies to pending. `ci:local` left for the PR stage.
 
 ---
 
@@ -836,6 +837,9 @@ Not fixed in S1; each needs a small decision before it is tasked.
 11. **Mailbox removed before a release** refuses with `email_sending_not_verified` (step `add_mailbox`) rather than `channel_not_ready`, because delivery is checked before the transaction; the panel shows both.
 
 12. **Budgets are API-only**: the settings card exposes engagement mode but not the thread send budget, hourly generation budget, thread context bound, or silence threshold; the docs point to the mailbox API. Add the fields to the card when the next frontend pass touches it.
+
+13. **E2E stub for the auto opt-in error** returns `validation_error` while the backend returns `400 auto_opt_in_required`; the UI always sends the flag so nothing is user-visible. Align the stub when the journey is next touched.
+14. **Status in spec.md** still reads Draft; the direction was approved in conversation on 2026-10-03 and the spec was amended twice since (relay topology; downgrade rules). Flip to Approved in the PR.
 
 ## Dependencies & Execution Order
 

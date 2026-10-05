@@ -841,6 +841,8 @@ Not fixed in S1; each needs a small decision before it is tasked.
 13. **E2E stub for the auto opt-in error** returns `validation_error` while the backend returns `400 auto_opt_in_required`; the UI always sends the flag so nothing is user-visible. Align the stub when the journey is next touched.
 14. **Status in spec.md** still reads Draft; the direction was approved in conversation on 2026-10-03 and the spec was amended twice since (relay topology; downgrade rules). Flip to Approved in the PR.
 
+15. **Walkthrough findings (2026-10-05, live local stack, `.context/local-e2e/walkthrough.md`)**: the history API drops the `channel_exception` detail (`automated_sender`), so the inbox note reads only "Channel exception"; the held-reply API view does not expose the release kind (auto vs operator), only the DB does; `POST /agents/{id}/revisions/null/publish` answers 500 (unhandled ZodError) instead of 400, unrelated to email; `backend/scripts/migrate.ts` does not load `.env`; after a supersede the replacement draft answers only the newest message. The downgrade-to-`operator_only` orphaning defect from step 12 is fixed on this branch.
+
 ## Dependencies & Execution Order
 
 ### Phase dependencies

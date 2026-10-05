@@ -309,7 +309,7 @@ const runStep = async (
       const settle = await mailbox.settle();
       const outcome = await mailbox.outcome(thread.lastReceipt);
       rememberSent(thread, outcome);
-      return scoreStep({ step, outcome, settle, turnRan: settle.reviewsRun > 0, question: thread.subject ?? "", context, finish, emailsBefore });
+      return scoreStep({ step, outcome, settle, turnRan: settle.turnsRun > 0, question: thread.subject ?? "", context, finish, emailsBefore });
     }
     case "customer": {
       const subject = step.subject ?? (thread.subject ? `Re: ${thread.subject}` : "Question");
@@ -327,7 +327,7 @@ const runStep = async (
       const settle = await mailbox.settle();
       const outcome = await mailbox.outcome(receipt);
       rememberSent(thread, outcome);
-      return scoreStep({ step, outcome, settle, turnRan: settle.reviewsRun > 0, question: step.text, context, finish, emailsBefore });
+      return scoreStep({ step, outcome, settle, turnRan: settle.turnsRun > 0, question: step.text, context, finish, emailsBefore });
     }
   }
 };
@@ -378,7 +378,7 @@ export const evidenceOf = (result: CaseResult): string => {
       ? `labels ${outcome.heldReply.labels.outcome}/${outcome.heldReply.labels.grounding}/${outcome.heldReply.labels.coverage}${outcome.heldReply.labels.handoffReason ? ` handoff=${outcome.heldReply.labels.handoffReason}` : ""}`
       : null,
     `owner=${outcome.ownership.state}${outcome.ownership.reason ? `(${outcome.ownership.reason})` : ""}`,
-    `turn=${last.settle && last.settle.reviewsRun > 0 ? "yes" : "no"}`,
+    `turn=${last.settle && last.settle.turnsRun > 0 ? "yes" : "no"}`,
   ].filter((fact): fact is string => fact !== null);
   const problems = result.steps.flatMap((step) => step.checks.filter((check) => check.status === "fail" || check.status === "error")
     .map((check) => `step${step.index + 1} ${check.name}: ${oneLine(check.detail, 80)}`));

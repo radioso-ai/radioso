@@ -6,9 +6,11 @@ import { SlackPlugin } from "./slack/slackPlugin.js";
 import { WordpressConnector } from "./wordpress/wordpressConnector.js";
 import { WhatsAppPlugin } from "./whatsapp/whatsappPlugin.js";
 
-export { createEmailChannelConnector } from "./email/emailPlugin.js";
+export { createEmailChannelConnector, createEmailReviewChecks } from "./email/emailPlugin.js";
 export type { EmailChannelWorker } from "./email/emailChannelWorker.js";
 export type { EmailThreadProtocolUnitOfWork } from "./email/emailInboundProcessor.js";
+export type { EmailReviewChecks } from "./email/emailReviewRunner.js";
+export type { EmailReviewInferenceFactory, EmailTranscriptMessage } from "./email/emailReviewChecks.js";
 
 interface BuiltInConnectorOptions {
   slack?: Partial<Record<RequiredSlackEnvVar, string | undefined>> & {

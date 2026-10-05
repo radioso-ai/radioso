@@ -318,7 +318,7 @@ One per outbound send attempt-chain. It always references a written message (B6,
 
 - New kinds: `channel_exception`, `delivery_failed`, `delivery_failure_cleared`, `held_reply_released`, `held_reply_discarded`.
 - New closing kinds: `held_reply_released`, `delivery_failure_cleared`.
-- `channel_exception` carries `detail: { code: "participant_mismatch" | "automated_sender" | "thread_conflict", deliveryId }`.
+- `channel_exception` carries `detail: { code: "participant_mismatch" | "automated_sender" | "thread_conflict" | "no_reply_needed", deliveryId }`.
 - The replacement closing index `conversation_activity_workspace_closed_v2_idx` extends the predicate of `205_conversation_activity.sql:50-52`.
 
 ---

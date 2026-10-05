@@ -1,9 +1,16 @@
 import type { ConnectorTurnFacts, ConnectorTurnResult } from "@radioso/connector-api";
 
 import type { EngagementMode } from "../../../emailChannel/public.js";
+import type { ReplyCompleteness } from "./emailReplyCompleteness.js";
 
 /** Why a drafted reply waits for a teammate instead of going out. */
-export type HoldReason = "sending_not_verified" | "draft_mode" | "send_budget" | "outcome_not_publishable" | "authority_changed";
+export type HoldReason =
+  | "sending_not_verified"
+  | "draft_mode"
+  | "send_budget"
+  | "outcome_not_publishable"
+  | "incomplete_answer"
+  | "authority_changed";
 
 export interface PublicationDecisionInput {
   /** The lower-autonomy mode of the accepted and the current policy (research B16), capped to the deployment's modes. */
@@ -17,10 +24,17 @@ export interface PublicationDecisionInput {
   current: { ownershipVersion: number; policyVersion: number };
   /** Whether the mailbox's sending domain is verified. */
   sendingReady: boolean;
+  /**
+   * The email completeness check's verdict on the draft; null until it has run. It runs only once
+   * every other gate lets the draft publish, which the decision asks for with `check_completeness`.
+   */
+  completeness: ReplyCompleteness | null;
 }
 
 export type PublicationDecision =
   | { kind: "publish" }
+  /** Every other gate lets the draft publish; decide again with the completeness check's verdict. */
+  | { kind: "check_completeness" }
   | { kind: "hold"; reason: HoldReason }
   /** No draft to publish or hold. `handoffReason` hands the conversation to a person; null leaves it as it is. */
   | { kind: "no_draft"; handoffReason: string | null };
@@ -47,9 +61,12 @@ const isPublishable = (facts: ConnectorTurnFacts): boolean =>
  * 5. a mailbox that is not `auto`: hold (`draft_mode`);
  * 6. the thread's send budget spent: hold;
  * 7. a result that is not grounded, fully answered, free of a hand-off and of suppressed effects: hold;
- * 8. otherwise publish.
+ * 8. no completeness verdict yet: ask for the check (`check_completeness`);
+ * 9. a verdict other than `complete`: hold (`incomplete_answer`);
+ * 10. otherwise publish.
  *
- * Decided on the turn's typed facts alone; the draft's text is never read.
+ * Decided on typed facts alone; the draft's text is never read here. The completeness check reads it
+ * once, only for a draft every other gate would publish, and hands back an enum.
  */
 export const decidePublication = (input: PublicationDecisionInput): PublicationDecision => {
   const { turn } = input;
@@ -64,5 +81,7 @@ export const decidePublication = (input: PublicationDecisionInput): PublicationD
   if (input.effectiveMode !== "auto") return hold("draft_mode");
   if (input.sendBudget.used >= input.sendBudget.limit) return hold("send_budget");
   if (!isPublishable(turn.facts)) return hold("outcome_not_publishable");
+  if (input.completeness === null) return { kind: "check_completeness" };
+  if (input.completeness !== "complete") return hold("incomplete_answer");
   return { kind: "publish" };
 };

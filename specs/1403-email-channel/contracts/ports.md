@@ -408,7 +408,7 @@ export const resolveEngagementDisposition: (input: EngagementDispositionInput) =
 ### 6e. Publication decision (`plugins/email/emailPublicationDecision.ts`, NB-4)
 
 ```ts
-export type HoldReason = "sending_not_verified" | "draft_mode" | "send_budget" | "outcome_not_publishable" | "authority_changed";
+export type HoldReason = "sending_not_verified" | "draft_mode" | "send_budget" | "outcome_not_publishable" | "incomplete_answer" | "authority_changed";
 export interface PublicationDecisionInput {
   effectiveMode: EngagementMode;
   turn: ConnectorTurnResult;
@@ -416,25 +416,52 @@ export interface PublicationDecisionInput {
   bound: { ownershipVersion: number; policyVersion: number };
   current: { ownershipVersion: number; policyVersion: number };
   sendingReady: boolean;
+  completeness: ReplyCompleteness | null;               // null: the completeness check has not run yet
 }
 export type PublicationDecision =
   | { kind: "publish" }
+  | { kind: "check_completeness" }                       // every other gate would publish; decide again with a verdict
   | { kind: "hold"; reason: HoldReason }
-  | { kind: "no_draft"; handoffReason: string };
+  | { kind: "no_draft"; handoffReason: string | null };  // null only for the human-owned no-op
 export const decidePublication: (input: PublicationDecisionInput) => PublicationDecision;
 ```
 
 Order:
-1. `human_owned` → `no_draft` (no-op).
+1. `human_owned` → `no_draft` with `handoffReason: null` (no-op).
 2. `no_draft` → `no_draft` with `facts.handoff.reason` or `review_unavailable`.
 3. Bound ≠ current (ownership or policy) → `hold` / `authority_changed`.
 4. `!sendingReady` → `hold` / `sending_not_verified` (FR-004 wins over mode).
 5. `effectiveMode !== "auto"` → `hold` / `draft_mode`.
 6. Budget used ≥ limit → `hold` / `send_budget`.
 7. Not (grounded ∧ coverage `answered` ∧ no hand-off ∧ no suppressed effects) → `hold` / `outcome_not_publishable`.
-8. Otherwise `publish`.
+8. `completeness === null` → `check_completeness`.
+9. `completeness !== "complete"` → `hold` / `incomplete_answer`.
+10. Otherwise `publish`.
 
-No text is read.
+The decision reads no text. Only the completeness check, run once the first seven rules would publish, reads the draft and returns an enum.
+
+### 6e-1. Review model checks (`plugins/email/emailReplyTriage.ts`, `emailReplyCompleteness.ts`)
+
+Two structured model calls sit in the review path, each with its own prompt, verdict and fail-safe direction; the pure `decidePublication` above reads only their enums.
+
+```ts
+export interface EmailReviewSubject { workspaceId: string; agentId: string; conversationId: string; revision: number; attempt: number }
+
+export type ReplyTriageVerdict = "yes" | "no" | "unsure" | "unavailable";
+export interface EmailReplyTriagePort {
+  assess(subject: EmailReviewSubject): Promise<ReplyTriageVerdict>;
+}
+
+export type ReplyCompleteness = "complete" | "partial" | "not_answered" | "unavailable";
+export interface ReplyCompletenessResult { completeness: ReplyCompleteness; unansweredAsks: number | null }
+export interface EmailReplyCompletenessPort {
+  assess(subject: EmailReviewSubject & { draft: ConnectorReplyDraft }): Promise<ReplyCompletenessResult>;
+}
+```
+
+`EmailReplyTriagePort.assess` runs before a review turn, on `backend/prompts/email-reply-needed.md`, which returns `reply_needed: "yes" | "no" | "unsure"`; the port adds `unavailable` for a model error, a 30s timeout, invalid output, or no incoming customer mail, and fails open — `unavailable` runs the review exactly as `yes` or `unsure` would.
+
+`EmailReplyCompletenessPort.assess` runs only when `decidePublication` asks for `check_completeness`, on `backend/prompts/email-reply-completeness.md`, which returns `completeness: "complete" | "partial" | "not_answered"` plus `unanswered_asks`; the port adds `unavailable` for the same failure modes plus unreadable passages, and fails closed — anything but `complete` holds the reply.
 
 ### 6f. Outbound headers (`emailChannel/outbound/outboundHeaders.ts`)
 
@@ -513,3 +540,4 @@ export interface EmailEventLogCopilotSummary { mailboxId: string; window: string
 | `heldReplyUnitOfWork.ts` | release, discard, queue-auto and materialize-auto transactions: conversation lock → ownership lock → channel scope (policy lock, budget, authority) → held-reply conditional update → message → route enqueue or send-intent record; drain push after commit |
 | `mailboxPolicyChange.ts` | mailbox row lock + policy history row + `supersedePendingForPolicy` |
 | `conversationOwnershipReplies.ts` (modified) | binds `HeldReplyRepository(trx)` into the reply and change scopes |
+| `emailChannel.ts` (review checks) | injects `reviewInference` (the workspace's answer-tier `ContextualStructuredInferenceFactory`), a transcript reader over the conversation's messages, and a grounding reader over the draft's recorded chunks into `ModelEmailReplyTriage` and `ModelEmailReplyCompleteness`; the review runner records a silenced triage's `no_reply_needed` note as a `channel_exception` activity. |

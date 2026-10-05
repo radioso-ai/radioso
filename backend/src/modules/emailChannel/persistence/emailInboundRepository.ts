@@ -714,6 +714,19 @@ export class EmailInboundRepository {
     return row ? mapDelivery(row) : null;
   }
 
+  /** The delivery a customer message on a conversation was ingested from; null when none was. */
+  async findDeliveryIdForMessage(conversationId: string, messageId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom("email_inbound_deliveries")
+      .select("id")
+      .where("conversation_id", "=", conversationId)
+      .where("message_id", "=", messageId)
+      .orderBy("created_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
+    return row?.id ?? null;
+  }
+
   /** One mailbox delivery of the workspace as its event log shows it; null when there is none. */
   async findLogEntry(workspaceId: string, deliveryId: string): Promise<(EventLogEntry & { mailboxId: string }) | null> {
     const row = await this.selectLogEntries()

@@ -326,6 +326,152 @@ describe("EmailReviewRunner", () => {
     });
   });
 
+  describe("the reply triage (FR-017a)", () => {
+    it("asks before the turn whether the revision's mail needs a reply, with the revision's ids", async () => {
+      const { h, mailbox, conversationId } = await dueThread();
+      h.respond.mockResolvedValue(h.draftTurn(conversationId));
+
+      await h.drain();
+
+      expect(h.replyTriage).toHaveBeenCalledExactlyOnceWith({
+        workspaceId: mailbox.workspaceId,
+        agentId: mailbox.agentId,
+        conversationId,
+        revision: 1,
+        attempt: 1,
+      });
+      expect(h.replyTriage.mock.invocationCallOrder[0]).toBeLessThan(h.respond.mock.invocationCallOrder[0]);
+    });
+
+    it.each(["draft", "auto"] as const)(
+      "runs no turn, holds nothing and asks no teammate on a %s mailbox when the mail needs no reply, and notes the thread",
+      async (engagementMode) => {
+        const h = createEmailReviewHarness({ supportedModes: ["operator_only", "draft", "auto"] });
+        const mailbox = h.seedMailbox({ engagementMode });
+        const { conversationId, messageId } = await h.openThread(mailbox);
+        h.advance(MINUTE_MS);
+        h.replyTriage.mockResolvedValue("no");
+
+        expect(await h.drain()).toMatchObject({ claimed: 1, no_reply_needed: 1, held: 0, queued_auto: 0 });
+
+        expect(h.respond).not.toHaveBeenCalled();
+        expect(h.replyCompleteness).not.toHaveBeenCalled();
+        expect(h.heldRows.of(conversationId)).toEqual([]);
+        expect(h.handoffs).toEqual([]);
+        expect(await h.ownership.load(conversationId)).toBeNull();
+        expect(h.outbox).toEqual([]);
+        expect(h.notes).toEqual([{ conversationId, messageId, code: "no_reply_needed" }]);
+        // The revision is done, and the thread's automatic sends are untouched.
+        expect(h.threads.links.get(conversationId)).toMatchObject({ reviewDueAt: null, reviewCompletedRevision: 1, autoSendsSinceRenewal: 0 });
+        expect(h.logger.info).toHaveBeenCalledWith(expect.objectContaining({ conversationId, outcome: "no_reply_needed" }), "email_review_completed");
+      },
+    );
+
+    it.each(["yes", "unsure", "unavailable"] as const)("runs the review as before when the triage says %s", async (verdict) => {
+      const { h, conversationId } = await dueThread();
+      h.replyTriage.mockResolvedValue(verdict);
+      h.respond.mockResolvedValue(h.draftTurn(conversationId));
+
+      expect(await h.drain()).toMatchObject({ claimed: 1, held: 1, no_reply_needed: 0 });
+
+      expect(h.respond).toHaveBeenCalledOnce();
+      expect(h.notes).toEqual([]);
+    });
+
+    it("does not triage a conversation a person owns, and leaves it to them", async () => {
+      const { h, mailbox, conversationId } = await dueThread();
+      await h.ownership.requestHandoff({ conversationId, workspaceId: mailbox.workspaceId, reason: "operator_takeover" });
+      h.respond.mockResolvedValue({ kind: "human_owned", conversationId, ownershipVersion: 1 });
+      h.replyTriage.mockResolvedValue("no");
+
+      expect(await h.drain()).toMatchObject({ claimed: 1, human_owned: 1 });
+
+      expect(h.replyTriage).not.toHaveBeenCalled();
+      expect(h.notes).toEqual([]);
+    });
+
+    it("does not triage mail on a mailbox that no longer lets the agent answer", async () => {
+      const h = createEmailReviewHarness();
+      const mailbox = h.seedMailbox({ engagementMode: "operator_only" });
+      await h.openThread(mailbox);
+      h.advance(MINUTE_MS);
+
+      await h.drain();
+
+      expect(h.replyTriage).not.toHaveBeenCalled();
+      expect(h.respond).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("the completeness check (FR-020)", () => {
+    const autoThread = async () => {
+      const h = createEmailReviewHarness({ supportedModes: ["operator_only", "draft", "auto"] });
+      const mailbox = h.seedMailbox({ engagementMode: "auto" });
+      const thread = await h.openThread(mailbox);
+      h.advance(MINUTE_MS);
+      return { h, mailbox, ...thread };
+    };
+
+    it("checks a reply every other gate would publish, once, with the draft, and publishes it when complete", async () => {
+      const { h, mailbox, conversationId } = await autoThread();
+      const turn = h.draftTurn(conversationId);
+      h.respond.mockResolvedValue(turn);
+
+      expect(await h.drain()).toMatchObject({ queued_auto: 1 });
+
+      expect(h.replyCompleteness).toHaveBeenCalledExactlyOnceWith({
+        workspaceId: mailbox.workspaceId,
+        agentId: mailbox.agentId,
+        conversationId,
+        revision: 1,
+        attempt: 1,
+        draft: turn.kind === "draft" ? turn.draft : never(),
+      });
+    });
+
+    it.each([
+      ["partial", "partial"],
+      ["not_answered", "unanswered"],
+      ["unavailable", "unavailable"],
+    ] as const)("holds a %s reply as incomplete_answer, its coverage shown as %s, and queues nothing", async (completeness, coverage) => {
+      const { h, conversationId } = await autoThread();
+      h.respond.mockResolvedValue(h.draftTurn(conversationId));
+      h.replyCompleteness.mockResolvedValue({ completeness, unansweredAsks: completeness === "unavailable" ? null : 1 });
+
+      expect(await h.drain()).toMatchObject({ held: 1, queued_auto: 0 });
+
+      expect(h.queueAuto).not.toHaveBeenCalled();
+      expect(h.heldRows.of(conversationId)).toEqual([expect.objectContaining({
+        state: "pending",
+        holdReason: "incomplete_answer",
+        facts: expect.objectContaining({ grounding: "grounded", coverage }),
+      })]);
+      expect(h.outbox).toEqual([]);
+      expect(h.counted("email_publication_decisions_total")).toEqual([{ decision: "hold", reason: "incomplete_answer" }]);
+    });
+
+    it("never checks a draft mailbox's reply: the mode holds it first", async () => {
+      const { h, conversationId } = await dueThread({ supportedModes: ["operator_only", "draft", "auto"] });
+      h.respond.mockResolvedValue(h.draftTurn(conversationId));
+
+      await h.drain();
+
+      expect(h.replyCompleteness).not.toHaveBeenCalled();
+      expect(h.heldRows.of(conversationId)).toEqual([expect.objectContaining({ holdReason: "draft_mode", facts: expect.objectContaining({ coverage: "answered" }) })]);
+    });
+
+    it("never checks an auto reply an earlier gate holds", async () => {
+      const { h, mailbox, conversationId } = await autoThread();
+      h.threads.links.set(conversationId, { ...h.threads.links.get(conversationId)!, autoSendsSinceRenewal: mailbox.threadSendBudget });
+      h.respond.mockResolvedValue(h.draftTurn(conversationId));
+
+      await h.drain();
+
+      expect(h.replyCompleteness).not.toHaveBeenCalled();
+      expect(h.heldRows.of(conversationId)).toEqual([expect.objectContaining({ holdReason: "send_budget" })]);
+    });
+  });
+
   describe("results without a draft", () => {
     it("hands a draftless turn to a person with the engine's reason", async () => {
       const { h, conversationId } = await dueThread();

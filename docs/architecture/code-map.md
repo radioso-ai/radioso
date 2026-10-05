@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-25
+last_updated: 2026-10-05
 ---
 
 # Code Map
@@ -307,12 +307,17 @@ Public surfaces and key files:
   `emailInboundClassification.ts` (RFC 3834 and delivery-status headers),
   `emailEngagementDisposition.ts`, `emailThreadResolution.ts`, and
   `emailPublicationDecision.ts` (FR-020: what a review's typed result does
-  next — publish, hold with a reason, or no draft); and the orchestration
-  around them: `emailWebhook.ts` (verify and persist),
-  `emailInboundProcessor.ts` (stage 1), `emailReviewRunner.ts` (stage 2:
-  claims a due thread revision under a lease, reserves a generation, runs
-  the review, decides publication, schedules retries and wakeups),
-  `emailChannelWorker.ts`, and `emailPlugin.ts`.
+  next — publish, hold with a reason, check completeness, or no draft);
+  the two review model checks, `emailReplyTriage.ts` (FR-017a, prompt
+  `backend/prompts/email-reply-needed.md`) and `emailReplyCompleteness.ts`
+  (prompt `backend/prompts/email-reply-completeness.md`), built on the
+  shared `emailReviewChecks.ts`; and the orchestration around them:
+  `emailWebhook.ts` (verify and persist), `emailInboundProcessor.ts`
+  (stage 1), `emailReviewRunner.ts` (stage 2: claims a due thread revision
+  under a lease, reserves a generation, runs the reply triage, the
+  review, and the completeness check before an automatic send, decides
+  publication, schedules retries and wakeups), `emailChannelWorker.ts`,
+  and `emailPlugin.ts`.
 - `backend/src/modules/handoff/heldReplies/` — `heldReplyService.ts` and
   `heldReplyState.ts`: the channel-neutral held reply, its release,
   discard, and supersede rules.

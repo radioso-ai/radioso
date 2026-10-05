@@ -68,6 +68,8 @@ Counters use `metricsRegistry.incrementCounter`, like `agentSkillTurnSkillProvid
 | `email_receipt_to_inbox_seconds` | histogram | `mode` (SC-008) |
 | `email_receipt_to_held_reply_seconds` | histogram | none (SC-008) |
 | `email_review_turns_total` | counter | `result` (`reply`/`no_reply`/`human_owned`/`error`), `grounding`, `coverage` |
+| `email_reply_triage_total` | counter | `verdict` (`yes`/`no`/`unsure`/`unavailable`) |
+| `email_completeness_checks_total` | counter | `verdict` (`complete`/`partial`/`not_answered`/`unavailable`) |
 | `email_publication_decisions_total` | counter | `decision` (`publish`/`hold`/`no_reply`), `reason` |
 | `email_budget_hits_total` | counter | `budget` (`thread_send`/`mailbox_generation`) |
 | `email_send_intents_total` | counter | `trigger`, `state` |
@@ -90,6 +92,8 @@ Counters use `metricsRegistry.incrementCounter`, like `agentSkillTurnSkillProvid
 | `email.inbound.thread_resolve` | inbound processor | `matched_by`, `conflict` |
 | `email.inbound.disposition` | inbound processor | `classification`, `disposition`, `reason` |
 | `email.review.turn` | review runner (wraps the chat turn span) | `radioso.conversation_id`, `radioso.workspace_id`, `execution_mode=review` |
+| `email.review.reply_triage` | reply triage (`ModelEmailReplyTriage`) | `radioso.workspace_id`, `radioso.conversation_id`, `verdict` |
+| `email.review.completeness` | completeness check (`ModelEmailReplyCompleteness`) | `radioso.workspace_id`, `radioso.conversation_id`, `verdict` |
 | `email.review.publication` | review runner | `decision`, `reason` |
 | `email.send.revalidate` | `EmailSendActionHandler` | `trigger`, `result` |
 | `email.send.provider` | `EmailSendActionHandler` | `provider`, `result`, `attempt` |
@@ -103,6 +107,10 @@ These are emitted only on failure, skip or degradation paths, never per successf
 - `email_inbound_fetch_failed` (code, attempt, retryable)
 - `email_inbound_terminal_failure`
 - `email_review_turn_failed`
+- `email_reply_triaged` (info, ids and verdict only)
+- `email_reply_triage_failed` (warn, ids only)
+- `email_completeness_checked` (info, ids, verdict, unansweredAsks)
+- `email_completeness_check_failed` (warn, ids only)
 - `email_send_halted` (halt reason)
 - `email_send_outcome_unknown`
 - `email_send_uncertain`

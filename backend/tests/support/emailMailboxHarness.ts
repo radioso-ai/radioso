@@ -43,8 +43,10 @@ export { EmailOutcomeUnsettled } from "./emailMailboxOutcome.js";
  * deliver it (a raw message in the local receiver's spool and a signed `email.received` webhook to
  * the channel's plugin), the channel's stages are drained in-process (inbound, the coalesced
  * review, the `email.send` outbox), and each email's business outcome is read back from Postgres
- * and the local driver's outbound spool. The review turn is the host's real one, the model
- * included, unless a deterministic suite passes `reviewTurn`.
+ * and the local driver's outbound spool. The review turn and the review's model checks (the reply
+ * triage and the completeness check) are the real ones, the model included, unless a deterministic
+ * suite passes `reviewTurn`: then the turn is scripted, every mail needs a reply, and every reply is
+ * complete.
  */
 
 const WEBHOOK_PATH = "/api/connectors/email/webhook";
@@ -119,7 +121,10 @@ export interface SpooledEmail extends SentEmailSummary {
 export interface SettleReport {
   rounds: number;
   inboundClaimed: number;
+  /** Reviews the channel claimed, including those that ended without a turn. */
   reviewsRun: number;
+  /** Review turns the host ran. */
+  turnsRun: number;
   actionsDispatched: number;
 }
 
@@ -281,6 +286,25 @@ const installReviewTurn = (deps: Deps, script: ReviewTurnScript): void => {
   };
 };
 
+/** Scripts the review's model checks alongside a scripted turn: every mail needs a reply, every reply is complete. */
+const installReviewChecks = (deps: Deps): void => {
+  const checks = deps.emailReviewChecks;
+  if (!checks) throw new Error("The email channel's review checks are not composed");
+  checks.replyTriage = { assess: async () => "yes" };
+  checks.replyCompleteness = { assess: async () => ({ completeness: "complete", unansweredAsks: 0 }) };
+};
+
+/** Counts the host's review turns, scripted or real, so a step can tell whether a turn ran. */
+const countReviewTurns = (deps: Deps): { count: number } => {
+  const turns = { count: 0 };
+  const review = deps.chatService.review.bind(deps.chatService);
+  deps.chatService.review = async (input: ChatReviewInput): Promise<ChatReviewResult> => {
+    turns.count += 1;
+    return review(input);
+  };
+  return turns;
+};
+
 export class EmailMailboxHarness {
   private readonly postedEmailIds = new Set<string>();
   private readonly mailboxIds = new Set<string>();
@@ -292,6 +316,7 @@ export class EmailMailboxHarness {
     readonly domain: { id: string; name: string },
     private readonly channel: { spoolDir: string; webhookSecret: string; inboundDomain: string },
     private readonly webhook: express.Express,
+    private readonly turns: { count: number },
   ) {}
 
   /** Boots the composition, seeds the workspace, operator, agent and corpus, and verifies the sending domain. */
@@ -299,7 +324,11 @@ export class EmailMailboxHarness {
     const channel = requireLocalChannel(options.env);
     const deps = buildDependencies(options.env);
     try {
-      if (options.reviewTurn) installReviewTurn(deps, options.reviewTurn);
+      if (options.reviewTurn) {
+        installReviewTurn(deps, options.reviewTurn);
+        installReviewChecks(deps);
+      }
+      const turns = countReviewTurns(deps);
       await deps.applicationModules.initializeAll();
       const operator = await ensureOperator(deps, options.company);
       const agentId = await ensurePublishedAgent(deps, operator.workspaceId, options.agent);
@@ -310,7 +339,7 @@ export class EmailMailboxHarness {
       const plugin = deps.connectorRegistry.getPlugin("email");
       if (!plugin) throw new Error("The email channel's plugin is not registered; is the email channel configured?");
       const webhook = await mountWebhook(plugin, deps.logger);
-      return new EmailMailboxHarness(deps, operator, agentId, domain, channel, webhook);
+      return new EmailMailboxHarness(deps, operator, agentId, domain, channel, webhook, turns);
     } catch (error) {
       await shutdown(deps);
       throw error;
@@ -346,7 +375,8 @@ export class EmailMailboxHarness {
    */
   async settle(options: { timeoutMs?: number } = {}): Promise<SettleReport> {
     const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_SETTLE_TIMEOUT_MS);
-    const report: SettleReport = { rounds: 0, inboundClaimed: 0, reviewsRun: 0, actionsDispatched: 0 };
+    const report: SettleReport = { rounds: 0, inboundClaimed: 0, reviewsRun: 0, turnsRun: 0, actionsDispatched: 0 };
+    const turnsBefore = this.turns.count;
     const worker = this.deps.emailChannelWorker;
     if (!worker) throw new Error("The email channel worker is not composed");
     for (;;) {
@@ -355,6 +385,7 @@ export class EmailMailboxHarness {
       const actions = await this.deps.actionDispatchWorker.drain();
       report.inboundClaimed += drained.claimed;
       report.reviewsRun += drained.reviewed;
+      report.turnsRun = this.turns.count - turnsBefore;
       report.actionsDispatched += actions?.dispatched ?? 0;
       const worked = drained.claimed + drained.reviewed + drained.reconciled + (actions?.dispatched ?? 0) + (actions?.retried ?? 0) > 0;
       const outstanding = await this.outstanding();
@@ -588,6 +619,7 @@ export class EmailMailbox {
     return this.harness.db.selectFrom("email_inbound_deliveries as d")
       .innerJoin("email_inbound_events as e", "e.id", "d.inbound_event_id")
       .select([
+        "d.id",
         "d.state",
         "d.disposition",
         "d.disposition_reason",
@@ -636,6 +668,7 @@ export class EmailMailbox {
       ownership: ownershipSummaryOf(null),
       attentionOpen: false,
       openDeliveryFailure: false,
+      setAside: null,
     };
     if (!delivery || !isDisposition(delivery.disposition)) return { delivery: null, ...noConversation };
     const settled = (SETTLED_EVENT_STATES as readonly string[]).includes(delivery.event_state) && SETTLED_DELIVERY_STATES.has(delivery.state);
@@ -649,12 +682,13 @@ export class EmailMailbox {
     if (!conversationId) return { delivery: recorded, ...noConversation };
 
     const db = this.harness.db;
-    const [link, heldReply, ownership, heldRows, failures] = await Promise.all([
+    const [link, heldReply, ownership, heldRows, failures, setAside] = await Promise.all([
       db.selectFrom("email_thread_links").select(["review_revision", "review_completed_revision"]).where("conversation_id", "=", conversationId).executeTakeFirst(),
       this.heldReplyAnswering(conversationId, delivery.message_id),
       this.harness.deps.conversationOwnershipService.load(conversationId),
       db.selectFrom("held_replies").select(["state", "attention_cleared_at"]).where("conversation_id", "=", conversationId).execute(),
       db.selectFrom("conversation_delivery_failures").select("id").where("conversation_id", "=", conversationId).where("cleared_at", "is", null).execute(),
+      this.setAsideNote(conversationId, delivery.id),
     ]);
     return {
       delivery: recorded,
@@ -664,7 +698,20 @@ export class EmailMailbox {
       ownership: ownershipSummaryOf(ownership),
       attentionOpen: heldRows.some((row) => isHeldReplyState(row.state) && isHeldReplyAttentionOpen({ state: row.state, attentionClearedAt: row.attention_cleared_at })),
       openDeliveryFailure: failures.length > 0,
+      setAside,
     };
+  }
+
+  /** The code of the thread note the channel left on this delivery when it set the email aside, if any. */
+  private async setAsideNote(conversationId: string, deliveryId: string): Promise<string | null> {
+    const notes = await this.harness.db.selectFrom("conversation_activity")
+      .select("detail")
+      .where("conversation_id", "=", conversationId)
+      .where("kind", "=", "channel_exception")
+      .execute();
+    const note = notes.map((row) => row.detail as { code?: unknown; deliveryId?: unknown })
+      .find((detail) => detail.deliveryId === deliveryId && typeof detail.code === "string");
+    return typeof note?.code === "string" ? note.code : null;
   }
 
   /** The newest held reply answering this customer message or a later one on the thread. */

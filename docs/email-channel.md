@@ -26,6 +26,14 @@ loop; everything else is held as in `draft` — see
 human-owned conversation, and the agent never runs a turn on it. In every
 mode, the limits under [Bounds](#bounds) cap what runs without a person.
 
+Not every accepted email gets a reply. On a `draft` or `auto` mailbox,
+before the review turn starts, a brief check reads the customer's mail
+since the business last wrote and decides whether it calls for a reply at
+all. A thank-you or an acknowledgement that asks nothing gets neither a
+reply nor a draft — the conversation shows a note instead, and the
+thread's send budget stays untouched. A thank-you that also asks something
+is answered the usual way.
+
 Email conversations never auto-close. Like any other channel, what decides
 whether a conversation needs attention is whether a person must act on it —
 not how long it's been quiet.
@@ -235,9 +243,10 @@ accepted email runs the same review turn as in
 [draft mode](#draft-mode-review-before-it-sends), under the same
 restrictions: no skill with an outward effect runs and no routine
 activates. What differs is what happens to the result. A *publication
-decision* reads the turn's typed facts, never the draft's text, and either
-sends the reply or holds it for an operator exactly as a `draft` mailbox
-would.
+decision* reads the turn's typed facts and either sends the reply or holds
+it for an operator exactly as a `draft` mailbox would — with one exception,
+the last check below, which reads the candidate reply itself once every
+other check has passed.
 
 ### What qualifies a reply for sending
 
@@ -251,15 +260,23 @@ reply, with that check's reason:
 | The mailbox runs `auto`, both when the email was accepted and now (see [Policy at acceptance](#policy-at-acceptance)) | `draft_mode` |
 | The thread's [send budget](#budgets) has room | `send_budget` |
 | The turn is grounded, fully answered, asked for no person, and needed no suppressed skill effect | `outcome_not_publishable` |
+| A model check reading the customer's email and the candidate reply finds the reply covers everything asked | `incomplete_answer` |
 
-Only a reply that passes all five is sent. A partial answer, no matching
-documents, an out-of-scope question, a hand-off request, or an answer that
-depended on a suppressed skill effect each becomes a held reply with its
-outcome labelled and an `approval` flag in the Inbox, where an operator
-sends, edits, or discards it as on a `draft` mailbox. A turn with no usable
-text creates no held reply; the conversation goes to a person with the
-engine's hand-off reason, or `review_unavailable`. A human-owned
-conversation never gets a review turn at all.
+Only a reply that passes all six is sent. Replies are sent automatically
+only when they answer everything asked: that last check runs once every
+other one has passed, reading the customer's unanswered email alongside the
+candidate reply, and a reply that leaves any part of the question
+unanswered waits for an operator instead, labelled Partly answered or Not
+answered in the Inbox so a teammate can see at a glance what's missing; one
+the check itself couldn't judge is labelled Coverage unavailable. A partial
+answer, no matching documents, an out-of-scope question, a hand-off
+request, or an answer that depended on a suppressed skill effect each
+becomes a held reply with its outcome labelled and an `approval` flag in
+the Inbox, where an operator sends, edits, or discards it as on a `draft`
+mailbox. A turn with no usable text creates no held reply; the conversation
+goes to a person with the engine's hand-off reason, or
+`review_unavailable`. A human-owned conversation never gets a review turn
+at all.
 
 ### From queued to sent
 

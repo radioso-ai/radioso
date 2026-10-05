@@ -15,13 +15,16 @@ It does not own:
 - **Transport.** `backend/src/modules/connectors/plugins/email/` holds the
   webhook mount and the pure functions that decide what an inbound message
   means — `emailInboundClassification.ts`, `emailThreadResolution.ts`,
-  `emailEngagementDisposition.ts`, `emailPublicationDecision.ts` — and the
-  worker's two stages: `emailInboundProcessor.ts` (stage 1, which schedules a
+  `emailEngagementDisposition.ts`, `emailPublicationDecision.ts` — the two
+  review model checks built on the shared `emailReviewChecks.ts`,
+  `emailReplyTriage.ts` and `emailReplyCompleteness.ts` — and the worker's
+  two stages: `emailInboundProcessor.ts` (stage 1, which schedules a
   thread's coalesced review) and `emailReviewRunner.ts` (stage 2, which runs
-  the review through the host's `respond` and holds its draft through
-  handoff's producer port). Both call down into this module's repositories
-  and services. This module knows nothing about HTTP, the webhook signature,
-  or the worker that drains inbound events.
+  the reply triage before the turn, the review through the host's
+  `respond`, the completeness check before an automatic send, and holds
+  its draft through handoff's producer port). Both call down into this
+  module's repositories and services. This module knows nothing about
+  HTTP, the webhook signature, or the worker that drains inbound events.
 - **Provider calls.** `backend/src/modules/mail/` is the only place that
   talks to Resend or the `local` driver (`EmailDriver`,
   `InboundEmailReceiver`, `EmailDomainProvisioner`). This module calls those

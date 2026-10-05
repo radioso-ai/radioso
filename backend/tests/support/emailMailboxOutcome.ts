@@ -83,6 +83,8 @@ export interface EmailOutcomeEvidence {
   /** Any held reply on the conversation still waits for a teammate. */
   attentionOpen: boolean;
   openDeliveryFailure: boolean;
+  /** Why the channel's review set this email aside without a turn, as its thread note says; null when it did not. */
+  setAside: string | null;
 }
 
 export interface EmailBusinessOutcome {
@@ -162,14 +164,15 @@ const reviewedOutcome = (evidence: EmailOutcomeEvidence): Pick<EmailBusinessOutc
     if (RELEASED_STATES.has(heldReply.state)) throw new EmailOutcomeUnsettled(`held reply ${heldReply.id} released without a send`);
   }
   if (ownership.state === "human_owned") return { kind: "handed_off", reason: ownership.reason ?? "human_owned" };
-  return { kind: "silent", reason: "no_reply" };
+  return { kind: "silent", reason: evidence.setAside ?? "no_reply" };
 };
 
 /**
  * The business outcome of one inbound email. Mail set aside before a turn (dropped, or ingested
  * for a person) is `silent` with its disposition reason. A reviewed email is `sent` once the
  * provider accepted a reply to it, `drafted` while a draft waits (reason: the hold reason),
- * `handed_off` when the review left a person owning the conversation, and `silent` otherwise.
+ * `handed_off` when the review left a person owning the conversation, and `silent` otherwise, with
+ * the reason its review's thread note gives (`no_reply_needed`) or `no_reply`.
  */
 export const classifyEmailOutcome = (evidence: EmailOutcomeEvidence): EmailBusinessOutcome => {
   const { delivery } = evidence;

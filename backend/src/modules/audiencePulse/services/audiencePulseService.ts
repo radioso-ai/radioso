@@ -146,9 +146,10 @@ const createHydratedEvidence = (evidence: AudiencePulseEvidence[]): Map<string, 
 
 type AudiencePulseThemeResponse = AudiencePulseHydratedReport["themes"][number];
 type AudiencePulseEvidenceResponse = AudiencePulseThemeResponse["evidence"][number];
+type AudiencePulseStoredCoverageSummary = NonNullable<AudiencePulseStoredReport["themes"][number]["coverage"]>;
 type LegacyAudiencePulseStoredTheme = Omit<
   AudiencePulseStoredReport["themes"][number],
-  "memberCount" | "previousMemberCount" | "previousShare" | "transition" | "share"
+  "memberCount" | "previousMemberCount" | "previousShare" | "transition" | "share" | "coverage"
 > & {
   memberCount?: number;
   previousMemberCount?: number | null;
@@ -156,6 +157,8 @@ type LegacyAudiencePulseStoredTheme = Omit<
   transition?: AudiencePulseStoredReport["themes"][number]["transition"];
   sampleCount?: number;
   share?: number;
+  /** Snapshots saved before scope-boundary declines had their own bucket counted them as partial or unanswered. */
+  coverage?: Omit<AudiencePulseStoredCoverageSummary, "outOfScope"> & { outOfScope?: number };
 };
 type LegacyAudiencePulseStoredReport = Omit<
   AudiencePulseStoredReport,
@@ -272,7 +275,9 @@ const hydrateReport = (
         ...hydrateThemeEvidence(theme.evidenceIds, resolve, theme.coverageByEvidenceId),
         weeklyPulse: theme.weeklyPulse,
         grounding: theme.grounding,
-        ...(theme.coverage ? { coverage: theme.coverage } : {}),
+        ...(legacyTheme.coverage
+          ? { coverage: { ...legacyTheme.coverage, outOfScope: legacyTheme.coverage.outOfScope ?? 0 } }
+          : {}),
       };
     }),
     contentGaps: report.contentGaps,

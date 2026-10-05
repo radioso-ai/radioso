@@ -52,7 +52,7 @@ const completedReport: AudiencePulseHydratedReport = {
         { weekStart: "2026-04-22T00:00:00.000Z", count: 3 },
       ],
       grounding: { grounded: 2, degraded: 4, noSupport: 3, unknown: 3, contentGapEligible: 6 },
-      coverage: { answered: 2, partial: 4, unanswered: 3, unclear: 1, unassessed: 2, legacy: 2, reasons: { insufficient_evidence: 3 } },
+      coverage: { answered: 2, partial: 4, unanswered: 3, unclear: 1, outOfScope: 0, unassessed: 2, legacy: 2, reasons: { insufficient_evidence: 3 } },
       evidence: [
         {
           reference: "ev-1",
@@ -1036,6 +1036,7 @@ test.describe("Audience Pulse dashboard", () => {
       ...completedReport,
       themes: [{
         ...completedReport.themes[0],
+        coverage: { ...completedReport.themes[0].coverage, outOfScope: 1 },
         evidence: [
           {
             ...unansweredEvidence,
@@ -1044,6 +1045,12 @@ test.describe("Audience Pulse dashboard", () => {
             answerCoverage: { availability: "assessed", coverage: "answered", reason: "sufficient_evidence" },
           },
           notCheckedEvidence,
+          {
+            ...unansweredEvidence,
+            reference: "ev-declined",
+            question: "Can you refund a gift card from another shop?",
+            answerCoverage: { availability: "assessed", coverage: "unanswered", reason: "intentional_scope_boundary" },
+          },
           {
             ...unansweredEvidence,
             reference: "ev-partial",
@@ -1070,9 +1077,11 @@ test.describe("Audience Pulse dashboard", () => {
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
 
     const topicRow = page.getByTestId("audience-pulse-topic-row").first();
+    // Out-of-scope declines stay out of the collapsed row's shortfalls.
+    await expect(topicRow).toContainText("30 questions · 3 unanswered · 4 partly answered");
     await topicRow.getByRole("button", { name: /Show examples/ }).click();
     await expect(topicRow.getByText(
-      "2 answered · 4 partly answered · 3 unanswered · 1 needs clarification · 4 not assessed",
+      "2 answered · 4 partly answered · 3 unanswered · 1 needs clarification · 1 out of scope · 4 not assessed",
       { exact: true },
     )).toBeVisible();
     await expect(topicRow.getByRole("listitem")).toHaveText([
@@ -1080,6 +1089,7 @@ test.describe("Audience Pulse dashboard", () => {
       /Can I get a refund in store credit\?\s*Partly answered$/,
       /Do you refund shipping costs\?\s*Answered$/,
       /When does a refund show up on my card\?\s*Not assessed$/,
+      /Can you refund a gift card from another shop\?\s*Out of scope$/,
     ]);
     // Screen readers hear each example's verdict as part of the link to its conversation.
     await expect(topicRow.getByRole("button", { name: "Can I get a refund in store credit? Partly answered", exact: true }))

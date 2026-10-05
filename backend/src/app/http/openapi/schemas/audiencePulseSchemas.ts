@@ -41,7 +41,11 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     reason: z.enum(["sufficient_evidence", "insufficient_evidence", "conflicting_evidence", "ambiguous_request", "intentional_scope_boundary"]).optional(),
   }).openapi({ description: "Recorded semantic coverage. Unresolved request text is intentionally excluded from Pulse." }));
   const AudiencePulseSemanticCoverageSchema = registry.register("AudiencePulseSemanticCoverage", z.object({
-    answered: z.number().int().min(0), partial: z.number().int().min(0), unanswered: z.number().int().min(0), unclear: z.number().int().min(0),
+    answered: z.number().int().min(0),
+    partial: z.number().int().min(0).openapi({ description: "Partly answered for a reason other than an intentional scope boundary." }),
+    unanswered: z.number().int().min(0).openapi({ description: "Unanswered for a reason other than an intentional scope boundary." }),
+    unclear: z.number().int().min(0),
+    outOfScope: z.number().int().min(0).openapi({ description: "Partly answered or unanswered because the request was outside the agent's intended scope." }),
     unassessed: z.number().int().min(0), legacy: z.number().int().min(0), reasons: z.record(z.string(), z.number().int().min(0)),
   }));
   const AudiencePulseEvidenceSchema = registry.register("AudiencePulseEvidence", z.object({

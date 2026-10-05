@@ -8,6 +8,7 @@ import {
   normalizeAnswerCoverageHeadStageFields,
   normalizeAnswerCoverageInteractionTrace,
   compatibleAnswerCoverageReasons,
+  isScopeBoundaryDecline,
 } from '@/lib/answer-coverage'
 import type { DiagnosticPresentation } from '@/lib/activity-diagnostics'
 
@@ -53,6 +54,14 @@ describe('answer coverage wire normalization', () => {
       .toEqual(['sufficient_evidence', 'insufficient_evidence', 'conflicting_evidence', 'intentional_scope_boundary'])
     expect(compatibleAnswerCoverageReasons(['unanswered', 'unclear']))
       .toEqual(['insufficient_evidence', 'conflicting_evidence', 'intentional_scope_boundary', 'ambiguous_request'])
+  })
+
+  it('treats only a partial or unanswered scope-boundary verdict as a decline', () => {
+    expect(isScopeBoundaryDecline('unanswered', 'intentional_scope_boundary')).toBe(true)
+    expect(isScopeBoundaryDecline('partial', 'intentional_scope_boundary')).toBe(true)
+    expect(isScopeBoundaryDecline('unanswered', 'insufficient_evidence')).toBe(false)
+    expect(isScopeBoundaryDecline('answered', 'intentional_scope_boundary')).toBe(false)
+    expect(isScopeBoundaryDecline(undefined, undefined)).toBe(false)
   })
 
   it('represents invalid or absent values as unavailable', () => {

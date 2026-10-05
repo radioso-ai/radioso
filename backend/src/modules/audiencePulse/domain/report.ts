@@ -68,17 +68,44 @@ interface AudiencePulseGroundingSummary {
 
 export interface AudiencePulseCoverageSummary {
   answered: number;
+  /** Partly answered for a reason other than an intentional scope boundary. */
   partial: number;
+  /** Unanswered for a reason other than an intentional scope boundary. */
   unanswered: number;
   unclear: number;
+  /** Partly answered or unanswered because the request was outside the agent's intended scope. */
+  outOfScope: number;
   unassessed: number;
   legacy: number;
   reasons: Record<string, number>;
 }
 
+type AssessedAnswerCoverage = Extract<AnswerCoverageAssessment, { availability: "assessed" }>;
+
+/** A deliberate decline of an out-of-scope request: the agent behaved as authored, so it is no shortfall. */
+const isScopeBoundaryDecline = (assessment: AssessedAnswerCoverage): boolean =>
+  assessment.reason === "intentional_scope_boundary"
+  && (assessment.coverage === "partial" || assessment.coverage === "unanswered");
+
+/**
+ * Whether a question is one the agent fell short on: an assessed partial or
+ * unanswered verdict that is not a scope-boundary decline, or, for a question
+ * with no assessment record at all, a degraded or unsupported answer.
+ */
+const isAnswerShortfall = (item: AudiencePulseEvidence): boolean => {
+  const assessment = item.answerCoverage;
+  if (assessment) {
+    return assessment.availability === "assessed"
+      && (assessment.coverage === "partial" || assessment.coverage === "unanswered")
+      && !isScopeBoundaryDecline(assessment);
+  }
+  // A pending assessment (`legacyCoverage === false`) stays unassessed, never grounding-derived.
+  return item.legacyCoverage !== false && (item.grounding === "no_support" || item.grounding === "degraded");
+};
+
 const coverageSummary = (items: AudiencePulseEvidence[]): AudiencePulseCoverageSummary => {
   const summary: AudiencePulseCoverageSummary = {
-    answered: 0, partial: 0, unanswered: 0, unclear: 0, unassessed: 0, legacy: 0, reasons: {},
+    answered: 0, partial: 0, unanswered: 0, unclear: 0, outOfScope: 0, unassessed: 0, legacy: 0, reasons: {},
   };
   for (const item of items) {
     const assessment = item.answerCoverage;
@@ -91,7 +118,8 @@ const coverageSummary = (items: AudiencePulseEvidence[]): AudiencePulseCoverageS
       continue;
     }
     if (assessment.availability !== "assessed") { summary.unassessed += 1; continue; }
-    summary[assessment.coverage] += 1;
+    if (isScopeBoundaryDecline(assessment)) summary.outOfScope += 1;
+    else summary[assessment.coverage] += 1;
     summary.reasons[assessment.reason] = (summary.reasons[assessment.reason] ?? 0) + 1;
   }
   return summary;
@@ -313,6 +341,15 @@ const AUDIENCE_PULSE_THEME_DISPLAY_EVIDENCE_MAX = 12;
 const requiredEligibleCount = (topicMemberCount: number): number =>
   Math.max(CONTENT_GAP_MIN_ELIGIBLE_ABSOLUTE, Math.ceil(topicMemberCount * CONTENT_GAP_MIN_ELIGIBLE_SHARE));
 
+/**
+ * The bounded examples an operator sees for a topic: its shortfalls first, then
+ * the rest, each group in the census's member order.
+ */
+const selectDisplayEvidence = (items: AudiencePulseEvidence[]): AudiencePulseEvidence[] => [
+  ...items.filter(isAnswerShortfall),
+  ...items.filter((item) => !isAnswerShortfall(item)),
+].slice(0, AUDIENCE_PULSE_THEME_DISPLAY_EVIDENCE_MAX);
+
 /** Evaluates the recurring content-gap gate against a topic's full membership. */
 export const evaluateTopicContentGap = (items: AudiencePulseEvidence[], memberCount: number): {
   eligibleEvidenceCount: number;
@@ -407,11 +444,12 @@ export const buildAudiencePulseCensusReport = (input: {
     const memberCount = items.length;
     const memberEvidenceIds = [...topic.evidenceIds];
     memberEvidenceIdsByTopicId.set(topic.id, memberEvidenceIds);
+    const displayEvidence = selectDisplayEvidence(items);
     return {
       id: topic.id,
       title: topic.title,
       description: topic.description,
-      evidenceIds: memberEvidenceIds.slice(0, AUDIENCE_PULSE_THEME_DISPLAY_EVIDENCE_MAX),
+      evidenceIds: displayEvidence.map((item) => item.id),
       memberCount,
       previousMemberCount: input.previousThemeMemberCounts?.get(topic.id) ?? null,
       previousShare: input.previousThemeShares?.get(topic.id) ?? null,
@@ -423,7 +461,7 @@ export const buildAudiencePulseCensusReport = (input: {
       // Keep the per-evidence snapshot bounded to the same operator-visible
       // examples as evidenceIds. The aggregate counts above still cover all
       // members of the topic.
-      coverageByEvidenceId: coverageByEvidenceId(items.slice(0, AUDIENCE_PULSE_THEME_DISPLAY_EVIDENCE_MAX)),
+      coverageByEvidenceId: coverageByEvidenceId(displayEvidence),
     };
   });
 

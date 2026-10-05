@@ -590,6 +590,44 @@ describe("Audience Pulse report domain", () => {
     expect(report.themes[0]?.evidenceIds).toEqual(population.map((item) => item.id).reverse().slice(0, 12));
   });
 
+  it("shows a topic's shortfalls before its other questions, even past the twelfth member", () => {
+    const assessed = (
+      coverage: "answered" | "partial" | "unanswered",
+      reason: "sufficient_evidence" | "insufficient_evidence" | "intentional_scope_boundary",
+    ): Partial<AudiencePulseEvidence> => ({
+      grounding: "grounded",
+      contentGapEligible: false,
+      legacyCoverage: false,
+      answerCoverage: { availability: "assessed", coverage, reason, schemaVersion: 1, producer: "answer_head" },
+    });
+    // Members arrive nearest-first. Every shortfall sits past the display cap.
+    const population = buildPopulation(20, (index) => {
+      if (index === 13) return assessed("unanswered", "insufficient_evidence");
+      if (index === 15) return { grounding: "degraded", legacyCoverage: true, contentGapEligible: true };
+      if (index === 17) return assessed("partial", "insufficient_evidence");
+      // A scope-boundary decline and a pending assessment are not shortfalls.
+      if (index === 14) return assessed("unanswered", "intentional_scope_boundary");
+      if (index === 16) return { grounding: "no_support", legacyCoverage: false, contentGapEligible: false };
+      return assessed("answered", "sufficient_evidence");
+    });
+    const memberIds = population.map((item) => item.id);
+
+    const report = buildAudiencePulseReport({
+      ...baseInput,
+      coverage: { populationSize: 20, sampleSize: 20, sampled: false, facetReadyQuestionCount: 20 },
+      population,
+      topics: [{ id: "topic-1", title: "Topic", description: "Description", evidenceIds: memberIds }],
+      model: emptyModel,
+    });
+
+    const shortfallIds = ["evidence-14", "evidence-16", "evidence-18"];
+    const expected = [...shortfallIds, ...memberIds.filter((id) => !shortfallIds.includes(id)).slice(0, 9)];
+    expect(report.themes[0]?.evidenceIds).toEqual(expected);
+    expect(Object.keys(report.themes[0]?.coverageByEvidenceId ?? {}).sort()).toEqual(
+      expected.filter((id) => id !== "evidence-16").sort(),
+    );
+  });
+
   it("applies model narrative to one precomputed census report with current gap evidence", () => {
     const population = buildPopulation(4, (index) => ({ contentGapEligible: index < 2 }));
     const census = buildAudiencePulseCensusReport({

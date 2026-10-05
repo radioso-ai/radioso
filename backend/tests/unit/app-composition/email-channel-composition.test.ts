@@ -131,7 +131,7 @@ describe("email channel composition", () => {
     expect(registrations).toEqual([]);
 
     createEmailChannelApplicationModule({ config: localConfig(), drainDispatcherFor }).register?.(context as never);
-    expect(registrations).toEqual([expect.objectContaining({ type: "email.send", emittableByRoutines: false })]);
+    expect(registrations).toEqual([expect.objectContaining({ type: "email.send", queuedFrom: "outside_turn" })]);
     const factory = registrations[0].handler;
     if (typeof factory !== "function") throw new Error("expected a handler factory");
     const handler = factory({

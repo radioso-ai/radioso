@@ -179,12 +179,16 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
     - the recently-closed query uses it (`EXPLAIN`).
   - `backend/tests/unit/conversation-activity-kinds.test.ts`: presentation for `channel_exception`, `delivery_failed`, `delivery_failure_cleared`, `held_reply_released`, `held_reply_discarded`, and the closing-kinds list.
 - [x] T025 [US1] Create `backend/src/db/migrations/209_email_channel_keystone.sql`: `email_domains`, `email_mailboxes`, `email_mailbox_policies`, `email_thread_links`, `email_thread_messages`, with no FK on `inbound_delivery_id` or `send_intent_id` (data-model.md matrix).
+  - **Squashed (2026-10-05)**: the unreleased migrations were squashed and renumbered; these tables are now in `210_email_channel.sql`, every FK declared with its column.
 - [x] T026 [US2] Create `backend/src/db/migrations/210_email_inbound_events.sql`: `email_inbound_events`, `email_inbound_deliveries` (including the GIN on `reference_ids` and the reservation index), plus `ALTER TABLE email_thread_messages ADD CONSTRAINT … FOREIGN KEY (inbound_delivery_id)`.
+  - **Squashed (2026-10-05)**: the unreleased migrations were squashed and renumbered; these tables and the thread-index FK are now in `210_email_channel.sql`.
 - [x] T027 [US2] Create the three-phase widening (research B19):
   - `backend/src/db/migrations/211_conversation_activity_kind_v2_add.sql`: `SET LOCAL lock_timeout='3s'`, `ADD CONSTRAINT conversation_activity_kind_v2_check … NOT VALID` with all five new kinds;
   - `212_conversation_activity_kind_v2_validate.sql`: `VALIDATE CONSTRAINT`;
   - `213_conversation_activity_kind_drop_v1.sql`: `SET LOCAL lock_timeout='3s'`, `DROP CONSTRAINT conversation_activity_kind_check`.
+  - **Squashed (2026-10-05)**: the unreleased migrations were squashed and renumbered; 211 and 212 keep their names, and the drop is now `213_conversation_activity_kind_v2_finish.sql`, with T028's index.
 - [x] T028 [US2] Create `backend/src/db/migrations/214_conversation_activity_closed_idx_v2.sql` (`SET LOCAL lock_timeout='3s'`; `CREATE INDEX IF NOT EXISTS … WHERE kind IN (…, 'held_reply_released', 'delivery_failure_cleared')`). Extend `CONVERSATION_ACTIVITY_KINDS` and `CLOSING_ACTIVITY_KINDS` in `backend/src/modules/conversationActivity/contracts/index.ts:8-26`, the presentation in `backend/src/modules/conversationActivity/presentation.ts`, and the recently-closed query in `backend/src/modules/conversationActivity/readService.ts` to match the v2 predicate (after T024).
+  - **Squashed (2026-10-05)**: the unreleased migrations were squashed and renumbered; this index is now built in `213_conversation_activity_kind_v2_finish.sql`, after the v1 CHECK drop.
 - [x] T029 Regenerate `backend/src/shared/infra/kysely/schema.ts` (`db:types`) and `backend/src/db/schema.sql` (`db:schema`), then run `db:schema:check` (after T025–T028).
 
 ### Tests first: pure decisions and content
@@ -449,10 +453,14 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 ### Schema
 
 - [x] T110 [US3] Create `backend/src/db/migrations/215_conversation_delivery_failures.sql`.
+  - **Squashed (2026-10-05)**: the unreleased migrations were squashed and renumbered; this table is now in `210_email_channel.sql`.
 - [x] T111 [US3] Create `backend/src/db/migrations/216_email_send_intents.sql` (with `version` and `reconcile_lease_until`), plus `ALTER TABLE email_thread_messages ADD CONSTRAINT … FOREIGN KEY (send_intent_id)`.
+  - **Squashed (2026-10-05)**: the unreleased migrations were squashed and renumbered; this table and the thread-index FK are now in `210_email_channel.sql`.
 - [ ] T112 [US3] Create `backend/src/db/migrations/217_conversation_activity_closed_idx_v1_drop.sql` (`SET LOCAL lock_timeout='3s'`; `DROP INDEX IF EXISTS conversation_activity_workspace_closed_idx`). It ships only after S1's query switch is live in every region.
   - **Deferred (2026-10-04)**: not created in this release; ship after the S1 query switch is live in every region.
+  - **Squashed (2026-10-05)**: the unreleased migrations were squashed and renumbered; this drop takes the next free number when it is created.
 - [x] T113 [US3] Regenerate and check both snapshots (after T110–T112).
+  - **Squashed (2026-10-05)**: the unreleased migrations were squashed and renumbered into 210–213; both snapshots regenerated unchanged.
 
 ### Tests first
 
@@ -569,6 +577,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 ### Schema
 
 - [x] T154 [US4] Create `backend/src/db/migrations/218_held_replies.sql` (states including `queued_auto`, unique live draft, unique `review_ref`), plus `ALTER TABLE email_send_intents ADD CONSTRAINT … FOREIGN KEY (held_reply_id)`.
+  - **Squashed (2026-10-05)**: the unreleased migrations were squashed and renumbered; this table and the send-intent FK are now in `210_email_channel.sql`.
 - [x] T155 [US4] Regenerate and check both snapshots (after T154).
 
 ### Tests first: review mode
@@ -808,11 +817,11 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 - [ ] T238 Apply Terraform per region (staging, then live and live-eu) **before** the image that needs it, and confirm the `email_channel` queue and the sweep job exist.
 - [ ] T239 Register the relay domain with receiving in each region's provider account, point the webhook at `/api/connectors/email/webhook`, and store the secrets in Secret Manager. Rehearse signing-key rotation with `EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS`.
-- [ ] T240 Before deploying migration 214: count `conversation_activity` rows per region, and above 100k pre-create `conversation_activity_workspace_closed_v2_idx` `CONCURRENTLY` (runbook in `docs/email-channel.md#operations`).
+- [ ] T240 Before deploying migration 213: count `conversation_activity` rows per region, and above 100k pre-create `conversation_activity_workspace_closed_v2_idx` `CONCURRENTLY` (runbook in `docs/email-channel.md#operations`).
 - [ ] T241 Deploy with `EMAIL_CHANNEL_PROVIDER` set and workers disabled. Smoke on staging: a signed webhook gives 200 and one row. Then enable workers on staging.
 - [ ] T242 Provision the contracts/events.md alerts in `infra/terraform/monitoring.tf`, after confirming the metrics export path. If the counters are not exported, use log-based metrics on the failure log lines.
 - [ ] T243 Run the `operator_only` pilot: one forwarded mailbox, one workspace, US region first, one week watching the backlog, stuck-event and auth alerts.
-- [ ] T244 Enable operator sending on the pilot once its domain verifies (S2 deployed, and migration 217 applied after the S1 query switch is live everywhere).
+- [ ] T244 Enable operator sending on the pilot once its domain verifies (S2 deployed, and the T112 closing-index drop applied after the S1 query switch is live everywhere).
 - [ ] T245 Enable `draft` for the pilot once SC-004, the outcome table, the visibility suite, the journeys and the SC-006 flood in staging all pass, and T008 is go.
 - [ ] T246 EU rollout, only after T012 is go or a written residency decision exists.
 - [ ] T247 Enable `auto` only after reviewed drafts, every non-publish outcome-table row green, and explicit owner opt-in. Rehearse rollback: workers off, webhooks still persisting, no `uncertain` replay, stale `queued_auto` rows returned to `pending`.
@@ -858,7 +867,7 @@ Not fixed in S1; each needs a small decision before it is tasked.
 - **S0 (Phase 2)**: needs only Setup. Its gate T014 blocks adapter merges, and its go/no-go can stop S1 (T007) or agent sending (T008).
 - **R3** blocks T088. **R1 and R2** block Phase 6 and can run in parallel with Phases 4–5.
 - **S1 (Phase 4)**: after Setup and R3. T054, T055 and T067/T068 wait on S0 answers.
-- **S2 (Phase 5)**: after S1. Migration 217 ships after S1's query switch is live in every region.
+- **S2 (Phase 5)**: after S1. The T112 closing-index drop ships after S1's query switch is live in every region.
 - **S3 (Phase 6)**: after S2 (release needs `email.send`), R1 and R2.
 - **S4 (Phase 7)**: after S3, and ships with it.
 - **S5 (Phase 8)**: after S3.

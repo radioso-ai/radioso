@@ -11,8 +11,8 @@ const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
 const addV2Check = "211_conversation_activity_kind_v2_add.sql";
 const validateV2Check = "212_conversation_activity_kind_v2_validate.sql";
-const dropV1Check = "213_conversation_activity_kind_drop_v1.sql";
-const closedIndexV2 = "214_conversation_activity_closed_idx_v2.sql";
+// Drops the v1 CHECK, then builds the v2 closing index, in one transaction.
+const finishV2 = "213_conversation_activity_kind_v2_finish.sql";
 
 const NEW_KINDS = [
   "channel_exception",
@@ -77,7 +77,7 @@ const errorCode = async (work: Promise<unknown>): Promise<string | undefined> =>
 
 const describeIfDatabase = await canReach(integrationDatabaseUrl) ? describe : describe.skip;
 
-describeIfDatabase("conversation activity kinds, widened online (211–214)", () => {
+describeIfDatabase("conversation activity kinds, widened online (211–213)", () => {
   const databaseName = `mig211_${randomUUID().replaceAll("-", "")}`;
   const workspaceId = randomUUID();
   const conversationId = randomUUID();
@@ -142,7 +142,7 @@ describeIfDatabase("conversation activity kinds, widened online (211–214)", ()
   });
 
   it("bounds the lock wait of each exclusive phase, and of the index build, to three seconds", async () => {
-    for (const file of [addV2Check, dropV1Check, closedIndexV2]) {
+    for (const file of [addV2Check, finishV2]) {
       expect(await migrationSql(file), file).toMatch(/SET LOCAL lock_timeout = '3s';/);
     }
     // VALIDATE takes SHARE UPDATE EXCLUSIVE, which writers never wait for: it needs no bound.
@@ -180,11 +180,17 @@ describeIfDatabase("conversation activity kinds, widened online (211–214)", ()
     expect(await constraint("conversation_activity_kind_v2_check")).toEqual({ convalidated: true });
   });
 
-  it("phase 3 fails fast behind a reader, then drops the v1 CHECK so the five new kinds insert", async () => {
-    expect(await applyWhileLocked(dropV1Check, "ACCESS SHARE")).toBe(LOCK_NOT_AVAILABLE);
-    expect(await constraint("conversation_activity_kind_check")).toEqual({ convalidated: true });
+  it("phase 3 fails fast behind a reader or a writer, leaving nothing behind, then drops the v1 CHECK so the five new kinds insert", async () => {
+    for (const mode of ["ACCESS SHARE", "ROW EXCLUSIVE"]) {
+      expect(await applyWhileLocked(finishV2, mode), mode).toBe(LOCK_NOT_AVAILABLE);
+      expect(await constraint("conversation_activity_kind_check"), mode).toEqual({ convalidated: true });
+      const index = await database.queryOptional<{ name: string | null }>(
+        "SELECT to_regclass('conversation_activity_workspace_closed_v2_idx')::text AS name",
+      );
+      expect(index?.name ?? null, mode).toBeNull();
+    }
 
-    await applyAsRunner(database, dropV1Check);
+    await applyAsRunner(database, finishV2);
 
     expect(await constraint("conversation_activity_kind_check")).toBeNull();
     for (const kind of NEW_KINDS) {
@@ -203,19 +209,14 @@ describeIfDatabase("conversation activity kinds, widened online (211–214)", ()
   });
 
   it("re-applying any phase changes nothing", async () => {
-    for (const file of [addV2Check, validateV2Check, dropV1Check]) {
+    for (const file of [addV2Check, validateV2Check, finishV2]) {
       await applyAsRunner(database, file);
     }
     expect(await constraint("conversation_activity_kind_v2_check")).toEqual({ convalidated: true });
     expect(await constraint("conversation_activity_kind_check")).toBeNull();
   });
 
-  it("builds the v2 closing index, bounded behind a writer, over the extended closing kinds", async () => {
-    expect(await applyWhileLocked(closedIndexV2, "ROW EXCLUSIVE")).toBe(LOCK_NOT_AVAILABLE);
-
-    await applyAsRunner(database, closedIndexV2);
-    await applyAsRunner(database, closedIndexV2);
-
+  it("builds the v2 closing index over the extended closing kinds", async () => {
     const index = await database.queryOne<{ definition: string; predicate: string; valid: boolean }>(
       `SELECT pg_get_indexdef(i.indexrelid) AS definition,
               pg_get_expr(i.indpred, i.indrelid) AS predicate,

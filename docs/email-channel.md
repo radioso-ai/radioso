@@ -598,13 +598,16 @@ affected mailboxes while you sort out the domain, so nothing queues against
 it in the meantime, then acknowledge the cleared failures once you've
 confirmed the cause.
 
-**Pre-creating the closing index before migration 214, on large tables.**
-Migration 214 adds `conversation_activity_workspace_closed_v2_idx`, a
-`CREATE INDEX IF NOT EXISTS` guarded by a three-second lock timeout. On a
-`conversation_activity` table over 100k rows, that's cutting it close:
-build the same index `CONCURRENTLY` under the same name and predicate before
-running the migration, so the migration finds it already there and does
-nothing. A concurrent build that fails leaves an invalid index of that name
+**Pre-creating the closing index before migration 213, on large tables.**
+Migration 213 drops the original `conversation_activity` kind CHECK and then
+adds `conversation_activity_workspace_closed_v2_idx`, a
+`CREATE INDEX IF NOT EXISTS`, in one transaction guarded by a three-second
+lock timeout. The exclusive lock the CHECK drop takes lasts until the
+migration commits, so Inbox reads and activity writes wait for the whole
+index build. On a `conversation_activity` table over 100k rows, build the
+same index `CONCURRENTLY` under the same name and predicate before running
+the migration, so the migration finds it already there and only drops the
+CHECK. A concurrent build that fails leaves an invalid index of that name
 behind — drop it before trying again or before deploying the migration.
 
 ## How this differs from the customer-email skill

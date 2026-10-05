@@ -101,7 +101,7 @@ export class EmailPlugin implements ConnectorPlugin {
   }
 
   async migrate(): Promise<void> {
-    // Email channel tables are created by numbered backend migrations from 209.
+    // Email channel tables are created by the backend migration 210_email_channel.sql.
   }
 
   async initialize(context: ConnectorContext): Promise<void> {

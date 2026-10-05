@@ -85,7 +85,7 @@ A customer-owned domain verified for sending on behalf of one workspace. Its rec
 - Unique: (`relay_token`); (`previous_relay_token`) WHERE NOT NULL; (`workspace_id`, `address`) WHERE `removed_at IS NULL`; (`address`) WHERE `removed_at IS NULL` (direct-rule lookup must be unambiguous).
 - The service checks that `address`'s domain equals the domain of `domain_id`; a unit test covers this.
 - Receiving state is derived, never stored (see State machines).
-- Migration 219 drops `thread_context_messages` and `spam_opt_in`: the review's thread-context window is a fixed 10 messages, and spam is always a bounded event with no opt-in (see `email_inbound_deliveries.disposition_reason`, below).
+- The mailbox holds no thread-context window or spam opt-in: the review's thread-context window is a fixed 10 messages, and spam is always a bounded event with no opt-in (see `email_inbound_deliveries.disposition_reason`, below).
 
 ## `email_mailbox_policies` (append-only, B16)
 
@@ -219,8 +219,8 @@ The committed thread index: every RFC Message-Id seen, generated or referenced f
 | `subject` | text | yes | |
 | `cc_addresses` | text[] | no | default `'{}'` |
 | `attachments` | jsonb | no | default `'[]'` |
-| `inbound_delivery_id` | uuid | yes | FK added in **210** (table created there) |
-| `send_intent_id` | uuid | yes | FK added in **216** (table created there) |
+| `inbound_delivery_id` | uuid | yes | FK `email_inbound_deliveries(id)` ON DELETE SET NULL |
+| `send_intent_id` | uuid | yes | FK `email_send_intents(id)` ON DELETE SET NULL |
 | `created_at` | timestamptz | no | |
 
 - Unique: (`mailbox_id`, `rfc_message_id`).
@@ -238,7 +238,7 @@ One per outbound send attempt-chain. It always references a written message (B6,
 | `mailbox_id` | uuid | no | FK `email_mailboxes(id)` ON DELETE RESTRICT |
 | `conversation_id` | uuid | no | FK `conversations(id)` ON DELETE CASCADE |
 | `message_id` | uuid | no | FK `messages(id)` ON DELETE CASCADE |
-| `held_reply_id` | uuid | yes | FK added in **218** |
+| `held_reply_id` | uuid | yes | FK `held_replies(id)` ON DELETE SET NULL |
 | `idempotency_key` | text | no | unique; equals the outbox key; at most 256 characters |
 | `author_kind` | text | no | CHECK IN (`agent`,`operator`) |
 | `trigger` | text | no | CHECK IN (`operator_reply`,`held_release`,`auto_reply`,`audited_resend`) |
@@ -424,23 +424,17 @@ type EmailChannelContext = {
 
 ## Migrations
 
-Numbers continue from `208_test_execution_seed_summary_backfill.sql` and are renumbered at merge time if `main` moves. Every FK targets a table that already exists when its migration runs. Forward references are added in the migration that creates the target table.
+Numbers continue from `209_operator_mcp_invocation_attempt.sql` on `main`. One migration creates every table of the feature, in dependency order, so each FK is declared with its column. The activity widening stays three migrations: the runner applies each file in one transaction, and the validate scan must start after the `NOT VALID` add has committed and released its exclusive lock.
 
 | # | File | Purpose | FKs added here | Slice |
 |---|---|---|---|---|
-| 209 | `209_email_channel_keystone.sql` | `email_domains`, `email_mailboxes`, `email_mailbox_policies`, `email_thread_links`, `email_thread_messages` (no FK on `inbound_delivery_id` / `send_intent_id` yet) | to `workspaces`, `agents`, `conversations`, `messages` and the new keystone tables | S1 |
-| 210 | `210_email_inbound_events.sql` | `email_inbound_events`, `email_inbound_deliveries` | `email_thread_messages.inbound_delivery_id → email_inbound_deliveries` | S1 |
+| 210 | `210_email_channel.sql` | `email_domains`, `email_mailboxes`, `email_mailbox_policies`, `email_thread_links`, `email_inbound_events`, `email_inbound_deliveries`, `held_replies`, `email_send_intents`, `email_thread_messages`, `conversation_delivery_failures` | to `workspaces`, `agents`, `conversations`, `messages`, and between the new tables, including `email_thread_messages.inbound_delivery_id → email_inbound_deliveries`, `email_thread_messages.send_intent_id → email_send_intents` and `email_send_intents.held_reply_id → held_replies` | S1 |
 | 211 | `211_conversation_activity_kind_v2_add.sql` | `SET LOCAL lock_timeout='3s'`; `ADD CONSTRAINT conversation_activity_kind_v2_check … NOT VALID` with every kind this feature needs | none | S1 |
 | 212 | `212_conversation_activity_kind_v2_validate.sql` | `VALIDATE CONSTRAINT conversation_activity_kind_v2_check` | none | S1 |
-| 213 | `213_conversation_activity_kind_drop_v1.sql` | `SET LOCAL lock_timeout='3s'`; `DROP CONSTRAINT conversation_activity_kind_check` | none | S1 |
-| 214 | `214_conversation_activity_closed_idx_v2.sql` | `SET LOCAL lock_timeout='3s'`; `CREATE INDEX IF NOT EXISTS conversation_activity_workspace_closed_v2_idx … WHERE kind IN (… + 'held_reply_released','delivery_failure_cleared')` (pre-create `CONCURRENTLY` per runbook when large) | none | S1 |
-| 215 | `215_conversation_delivery_failures.sql` | `conversation_delivery_failures` | to `conversations`, `messages` | S2 |
-| 216 | `216_email_send_intents.sql` | `email_send_intents` | `email_thread_messages.send_intent_id → email_send_intents` | S2 |
-| 217 | `217_conversation_activity_closed_idx_v1_drop.sql` | `SET LOCAL lock_timeout='3s'`; `DROP INDEX IF EXISTS conversation_activity_workspace_closed_idx` (after S1's query switch is deployed everywhere) | none | S2 |
-| 218 | `218_held_replies.sql` | `held_replies` | `email_send_intents.held_reply_id → held_replies` | S3 |
-| 219 | `219_email_mailboxes_drop_context_and_spam.sql` | drops `email_mailboxes.thread_context_messages` and `email_mailboxes.spam_opt_in` | none | — |
+| 213 | `213_conversation_activity_kind_v2_finish.sql` | `SET LOCAL lock_timeout='3s'`; `DROP CONSTRAINT conversation_activity_kind_check`, then `CREATE INDEX IF NOT EXISTS conversation_activity_workspace_closed_v2_idx … WHERE kind IN (… + 'held_reply_released','delivery_failure_cleared')` (pre-create `CONCURRENTLY` per runbook when large) | none | S1 |
+| next free | `<n>_conversation_activity_closed_idx_v1_drop.sql` | `SET LOCAL lock_timeout='3s'`; `DROP INDEX IF EXISTS conversation_activity_workspace_closed_idx` (created once S1's query switch is deployed everywhere) | none | S2 |
 
-That makes eleven migration files, one activity widening done in three phases, and one index replacement.
+That makes four migration files now, one activity widening done in three phases, and one index replacement whose old index is dropped later. On 2026-10-05 the eleven unreleased files `209`–`219` were squashed into these four and renumbered after `main` took 209; the resulting schema is unchanged.
 
 ## Generated artifacts
 

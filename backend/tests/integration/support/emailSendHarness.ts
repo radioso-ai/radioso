@@ -11,11 +11,7 @@ import { createConversationActivityComposition } from "../../../src/app/composit
 import { createPostgresOwnershipChangeUnitOfWork } from "../../../src/app/composition/conversationOwnershipChanges.js";
 import { createPostgresOwnershipReplyUnitOfWork } from "../../../src/app/composition/conversationOwnershipReplies.js";
 import { createEmailChannelComposition, createPostgresDeliveryFailures } from "../../../src/app/composition/emailChannel.js";
-import {
-  createPostgresHeldReplyUnitOfWork,
-  emailHeldReplyChannelRegistration,
-  type HeldReplyChannelRegistration,
-} from "../../../src/app/composition/heldReplyUnitOfWork.js";
+import { createPostgresHeldReplyUnitOfWork, type HeldReplyChannelRegistration } from "../../../src/app/composition/heldReplyUnitOfWork.js";
 import { createTeammateLabelReader } from "../../../src/app/composition/teammateLabelReader.js";
 import { parseEmailChannelConfig } from "../../../src/app/config/env.js";
 import { createErrorHandler } from "../../../src/app/http/middleware/errorHandler.js";
@@ -140,7 +136,7 @@ export const createApiNode = (
   database: Database,
   options: {
     spoolDir: string;
-    /** The held-reply channel registrations; email's as the server registers it unless a test wraps it. */
+    /** The held-reply channel registrations; the channel composition's, as the server registers it, unless a test wraps it. */
     heldReplyChannels?: readonly HeldReplyChannelRegistration[];
   },
 ) => {
@@ -162,7 +158,13 @@ export const createApiNode = (
     activity,
     // The API node never drains: it neither records inbound mail nor reviews it.
     chat: { ingest: apiNodeDrains, respond: apiNodeDrains },
-    heldReplies: { hold: apiNodeDrains, findByReviewRef: apiNodeDrains },
+    heldReplies: {
+      hold: apiNodeDrains,
+      queueAuto: apiNodeDrains,
+      findByReviewRef: apiNodeDrains,
+      materializeAuto: apiNodeDrains,
+      returnAbandonedAuto: apiNodeDrains,
+    },
     ownership: { requestHumanOwnership: apiNodeDrains },
     agents: { findByIdAndWorkspaceId: async (agentId) => ({ id: agentId }) },
     audit,
@@ -197,7 +199,7 @@ export const createApiNode = (
     conversations: new ConversationRepository(db),
     writes: createPostgresHeldReplyUnitOfWork({
       db,
-      channels: options.heldReplyChannels ?? [emailHeldReplyChannelRegistration],
+      channels: options.heldReplyChannels ?? [channel.heldReplyChannel],
       activity,
       actionDrain,
       logger,
@@ -277,6 +279,13 @@ export const createApiNode = (
         .set("Cookie", signIn(teammate))
         .set("x-workspace-id", teammate.workspaceId)
         .send(body),
+    /** `POST /api/v1/conversations/{id}/takeover` as the signed-in teammate. */
+    takeOver: (teammate: Teammate, conversationId: string) =>
+      request(app)
+        .post(`/api/v1/conversations/${conversationId}/takeover`)
+        .set("Cookie", signIn(teammate))
+        .set("x-workspace-id", teammate.workspaceId)
+        .send({}),
     /** `POST /api/v1/conversations/{id}/held-replies/{heldReplyId}/release` as the signed-in teammate; an edit with `editedText`. */
     releaseHeldReply: (teammate: Teammate, target: { conversationId: string; heldReplyId: string }, body: { editedText?: string } = {}) =>
       request(app)

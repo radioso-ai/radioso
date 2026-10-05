@@ -731,6 +731,64 @@ describe("HeldReplyService", () => {
     });
   });
 
+  describe("returnAbandonedAuto", () => {
+    const queued = async (harness: ReturnType<typeof createService>): Promise<string> => {
+      const { holdReason: _holdReason, ...input } = holdInput();
+      const result = await harness.service.queueAuto(input);
+      if (!result.ok) throw new Error(`queueAuto refused: ${result.refused}`);
+      harness.steps.length = 0;
+      harness.metrics.incrementCounter.mockClear();
+      return result.heldReplyId;
+    };
+
+    it("returns a send whose dispatch was abandoned to pending with authority_changed, under the locks, without authorizing it", async () => {
+      const harness = createService();
+      const { service, steps, heldReplies, drafts, channelScope, audit, publisher, metrics, messages } = harness;
+      const heldReplyId = await queued(harness);
+
+      expect(await service.returnAbandonedAuto(heldReplyId)).toBe(true);
+
+      expect(steps).toEqual(["lock_conversation", "lock_ownership", "materialize_held_reply"]);
+      const row = heldReplies.rows.get(heldReplyId);
+      expect(row).toMatchObject({ state: "pending", releaseKind: null, holdReason: "authority_changed", releasedMessageId: null });
+      expect(isHeldReplyAttentionOpen(row!)).toBe(true);
+      expect(channelScope.authorizeAutoDispatch).not.toHaveBeenCalled();
+      expect(drafts.writeAgentMessage).not.toHaveBeenCalled();
+      expect(messages).toEqual([]);
+      expect(auditCalls(audit).map((event) => event.metadata)).toEqual([{
+        action: "returned_to_pending",
+        actorUserId: null,
+        heldReplyId,
+        conversationId,
+        holdReason: "authority_changed",
+        code: "dispatch_abandoned",
+      }]);
+      expect(publisher.enqueue).toHaveBeenCalledWith(workspaceId, ["hitl.decision_created"]);
+      expect(metrics.incrementCounter).toHaveBeenCalledWith("held_replies_total", expect.objectContaining({
+        labels: { transition: "returned_to_pending" },
+      }));
+    });
+
+    it("changes nothing for a send no longer queued, or unknown", async () => {
+      const harness = createService();
+      const { service, heldReplies, audit } = harness;
+      const heldReplyId = await queued(harness);
+      const row = heldReplies.rows.get(heldReplyId)!;
+      heldReplies.rows.set(heldReplyId, { ...row, state: "superseded", supersededReason: "takeover" });
+
+      expect(await service.returnAbandonedAuto(heldReplyId)).toBe(false);
+      expect(await service.returnAbandonedAuto("held-unknown")).toBe(false);
+      expect(heldReplies.rows.get(heldReplyId)?.state).toBe("superseded");
+      expect(audit.record).not.toHaveBeenCalled();
+
+      const sent = createService();
+      const sentId = await queued(sent);
+      await sent.service.materializeAuto(sentId);
+      expect(await sent.service.returnAbandonedAuto(sentId)).toBe(false);
+      expect(sent.heldReplies.rows.get(sentId)?.state).toBe("released");
+    });
+  });
+
   describe("release", () => {
     it("releases an unchanged draft as the agent's message, written from the draft presentation", async () => {
       const {

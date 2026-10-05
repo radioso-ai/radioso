@@ -91,7 +91,7 @@ describeIntegration("email inbound end to end (Postgres, local receiver)", () =>
       activity: new ConversationActivityRepository(database.kysely),
       // This suite drains stage 1 only; no review turn runs here.
       chat: { ingest: (input) => host.ingest(input), respond: unused },
-      heldReplies: { hold: unused, findByReviewRef: unused },
+      heldReplies: { hold: unused, queueAuto: unused, findByReviewRef: unused, materializeAuto: unused, returnAbandonedAuto: unused },
       ownership: { requestHumanOwnership: unused },
       agents: { findByIdAndWorkspaceId: async (agentId) => ({ id: agentId }) },
       audit: { record: async () => undefined },

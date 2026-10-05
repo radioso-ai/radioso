@@ -13,11 +13,12 @@ import { createPostgresConversationIngestUnitOfWork } from "../../../src/app/com
 import { createPostgresOwnershipChangeUnitOfWork } from "../../../src/app/composition/conversationOwnershipChanges.js";
 import { createPostgresOwnershipReplyUnitOfWork } from "../../../src/app/composition/conversationOwnershipReplies.js";
 import {
+  createEmailHeldReplyChannelRegistration,
   createPostgresDeliveryFailures,
   createPostgresEmailSendUnitOfWork,
   createPostgresThreadProtocolUnitOfWork,
 } from "../../../src/app/composition/emailChannel.js";
-import { createPostgresHeldReplyUnitOfWork, emailHeldReplyChannelRegistration } from "../../../src/app/composition/heldReplyUnitOfWork.js";
+import { createPostgresHeldReplyUnitOfWork } from "../../../src/app/composition/heldReplyUnitOfWork.js";
 import { createPostgresMailboxPolicyChangeUnitOfWork } from "../../../src/app/composition/mailboxPolicyChange.js";
 import { ActionRequestRepository } from "../../../src/db/repositories/actionRequestRepository.js";
 import { ConversationActivityRepository } from "../../../src/db/repositories/conversationActivityRepository.js";
@@ -377,21 +378,21 @@ const noReviewTurn: ConnectorChatPort["respond"] = async () => {
 };
 
 /**
- * Stage 2's host ports over Postgres, as the channel composition binds them: the held-reply
- * producer (the held-reply service and its unit of work), the conversation reads, and the hand-off
- * to a person in its own transaction.
+ * A worker's held-reply service over Postgres, with email's registration as the channel composition
+ * builds it, automatic sending granted: the review's producer, the send handler's dispatch port and
+ * the sweep's. The service and the channel's scope go through `guard`, so a test can pause or kill
+ * the worker inside a queue or a materialization, and a dead worker calls neither again.
  */
-const createReviewPorts = (database: Database): EmailChannelConnectorDependencies["review"] => {
+const createWorkerHeldReplies = (database: Database, guard: Guard) => {
   const db = database.kysely;
-  const activity = new ConversationActivityRepository(db);
   const records = new HeldReplyRepository(db);
-  const ownershipRules = createHostOwnership(database);
-  const heldReplies = new HeldReplyService({
+  const email = createEmailHeldReplyChannelRegistration({ provider: "local" });
+  const service = new HeldReplyService({
     conversations: new ConversationRepository(db),
     writes: createPostgresHeldReplyUnitOfWork({
       db,
-      channels: [emailHeldReplyChannelRegistration],
-      activity,
+      channels: [{ policyRefPrefix: email.policyRefPrefix, bind: (trx) => guard("heldReplyChannel", email.bind(trx)) }],
+      activity: new ConversationActivityRepository(db),
       actionDrain: { requestDrain: async () => undefined },
       logger: { warn: () => undefined },
     }),
@@ -401,14 +402,30 @@ const createReviewPorts = (database: Database): EmailChannelConnectorDependencie
     replies: { write: unused, announce: unused },
     audit: { record: async () => undefined },
   });
+  return { service: guard("heldReplies", service), records };
+};
+
+type WorkerHeldReplies = ReturnType<typeof createWorkerHeldReplies>;
+
+/**
+ * Stage 2's host ports over Postgres, as the channel composition binds them: the held-reply
+ * producer (the held-reply service and its unit of work), the conversation reads, and the hand-off
+ * to a person in its own transaction.
+ */
+const createReviewPorts = (database: Database, heldReplies: WorkerHeldReplies): EmailChannelConnectorDependencies["review"] => {
+  const db = database.kysely;
+  const activity = new ConversationActivityRepository(db);
+  const { service, records } = heldReplies;
+  const ownershipRules = createHostOwnership(database);
   return {
     conversations: {
       latestCustomerMessageId: (conversationId) => records.latestCustomerMessageId(conversationId),
       ownershipVersionOf: async (conversationId) => (await new ConversationOwnershipRepository(db).load(conversationId))?.version ?? 0,
     },
     heldReplies: {
-      hold: (input) => heldReplies.hold(input),
-      findByReviewRef: (conversationId, reviewRef) => heldReplies.findByReviewRef(conversationId, reviewRef),
+      hold: (input) => service.hold(input),
+      queueAuto: (input) => service.queueAuto(input),
+      findByReviewRef: (conversationId, reviewRef) => service.findByReviewRef(conversationId, reviewRef),
       supersedePendingForConversation: (conversationId, reason) => records.supersedePendingForConversation(conversationId, reason),
     },
     handoffs: {
@@ -467,6 +484,7 @@ const createConnectorDependencies = (
     metrics: MetricsRegistry;
     drains: EmailChannelDrainDispatcherPort;
     sends: Pick<SendPath, "deliveryEvents" | "reconciler">;
+    heldReplies: WorkerHeldReplies;
   },
 ): EmailChannelConnectorDependencies => {
   const db = database.kysely;
@@ -499,7 +517,7 @@ const createConnectorDependencies = (
     deliveryEvents: options.sends.deliveryEvents,
     threadProtocol: createPostgresThreadProtocolUnitOfWork({ db, activity: new ConversationActivityRepository(db) }),
     chat: { ingest: (input) => hostIngest.ingest(input), respond: options.respond ?? noReviewTurn },
-    review: createReviewPorts(database),
+    review: createReviewPorts(database, options.heldReplies),
     drains: options.drains,
     metrics,
     logger,
@@ -516,6 +534,11 @@ const createConnectorDependencies = (
       clock,
       logger,
       config: { eventRetentionDays: 30 },
+      abandonedAutoSends: {
+        queued: options.heldReplies.records,
+        outbox: new ActionRequestRepository(db),
+        dispatch: options.heldReplies.service,
+      },
     }),
   };
 };
@@ -574,7 +597,14 @@ type Guard = <T extends object>(owner: string, target: T) => T;
  */
 const createSendPath = (
   database: Database,
-  options: { driver: EmailDriver; guard: Guard; drains: EmailChannelDrainDispatcherPort; metrics: MetricsRegistry; logger: RecordingLogger },
+  options: {
+    driver: EmailDriver;
+    guard: Guard;
+    drains: EmailChannelDrainDispatcherPort;
+    heldReplies: WorkerHeldReplies;
+    metrics: MetricsRegistry;
+    logger: RecordingLogger;
+  },
 ) => {
   const db = database.kysely;
   const { guard, metrics, logger } = options;
@@ -582,6 +612,7 @@ const createSendPath = (
   const intents = guard("intents", new EmailSendIntentRepository(db));
   const mailboxes = guard("mailboxes", new EmailMailboxRepository(db));
   const domains = guard("domains", new EmailDomainRepository(db));
+  const ownership = guard("ownership", new ConversationOwnershipRepository(db));
   const driver = guard("driver", options.driver);
   const unitOfWork = guard("sends", createPostgresEmailSendUnitOfWork({ db, activity }));
   const writer = guard("writer", new SendIntentWriter({ unitOfWork, metrics, logger }));
@@ -593,6 +624,8 @@ const createSendPath = (
     mailboxes,
     domains,
     threads: guard("threads", new EmailThreadRepository(db)),
+    ownership,
+    heldReplies: options.heldReplies.service,
     attempt,
     writer,
     failures: guard("failures", createPostgresDeliveryFailures({ db, activity })),
@@ -606,7 +639,7 @@ const createSendPath = (
       guard("outbox", new ActionRequestRepository(db)),
       new ActionHandlerRegistry([{ type: EMAIL_SEND_ACTION_TYPE, handler }]),
     ),
-    reconciler: new SendReconciler({ intents, mailboxes, domains, driver, attempt, writer, metrics, logger }),
+    reconciler: new SendReconciler({ intents, mailboxes, domains, ownership, driver, attempt, writer, metrics, logger }),
     deliveryEvents: new ProviderDeliveryEvents({ intents, writer, audit: { record: async () => undefined }, metrics, logger }),
   };
 };
@@ -625,6 +658,9 @@ const SEAMS = [
   "threads.completeReview",
   "inbound.settleEvent",
   "outbox.claimPending",
+  "heldReplies.queueAuto",
+  "heldReplies.materializeAuto",
+  "heldReplyChannel.recordMaterialized",
   "driver.send",
   "driver.lookup",
   "writer.apply",
@@ -785,9 +821,10 @@ export const createWorkerNode = (
     rewritesMessageId: options.rewritesMessageId ?? false,
   });
   const guard: Guard = (owner, target) => seams.guard(owner, target);
-  const sends = createSendPath(database, { driver: provider, guard, drains, metrics, logger });
+  const heldReplies = createWorkerHeldReplies(database, guard);
+  const sends = createSendPath(database, { driver: provider, guard, drains, heldReplies, metrics, logger });
   const connector = createEmailChannelConnector(
-    seams.wrap(createConnectorDependencies(database, { ...options, logger, metrics, drains, sends })),
+    seams.wrap(createConnectorDependencies(database, { ...options, logger, metrics, drains, sends, heldReplies })),
   );
   // A plugin mounts its router once, at initialization.
   let webhook: Promise<express.Express> | null = null;
@@ -799,6 +836,8 @@ export const createWorkerNode = (
     drains,
     provider,
     worker: connector.worker,
+    /** The worker's held-reply service: its review's producer and its sends' dispatch port. */
+    heldReplies: heldReplies.service,
     /** One outbox drain, as the action dispatch worker runs it. */
     dispatch: () => sends.dispatcher.dispatchPending(),
     webhook: () => (webhook ??= mountWebhook(connector.plugin)),

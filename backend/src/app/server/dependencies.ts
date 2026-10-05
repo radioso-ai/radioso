@@ -398,6 +398,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       queueAuto: (input) => heldReplies.queueAuto(input),
       findByReviewRef: (conversationId, reviewRef) => heldReplies.findByReviewRef(conversationId, reviewRef),
       materializeAuto: (heldReplyId) => heldReplies.materializeAuto(heldReplyId),
+      returnAbandonedAuto: (heldReplyId) => heldReplies.returnAbandonedAuto(heldReplyId),
     },
     ownership: { requestHumanOwnership: (scope, input) => conversationOwnershipService.requestHumanOwnership(scope, input) },
     publisher: realtimePublisherComposition.publisher,

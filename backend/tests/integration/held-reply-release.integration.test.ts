@@ -3,7 +3,8 @@ import { randomBytes } from "node:crypto";
 import type { ConnectorRespondInput, ConnectorTurnResult } from "@radioso/connector-api";
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 
-import { emailHeldReplyChannelRegistration, type HeldReplyChannelRegistration } from "../../src/app/composition/heldReplyUnitOfWork.js";
+import { createEmailHeldReplyChannelRegistration } from "../../src/app/composition/emailChannel.js";
+import type { HeldReplyChannelRegistration } from "../../src/app/composition/heldReplyUnitOfWork.js";
 import { createPostgresMailboxPolicyChangeUnitOfWork } from "../../src/app/composition/mailboxPolicyChange.js";
 import {
   EMAIL_SEND_ACTION_TYPE,
@@ -78,20 +79,27 @@ const gate = () => {
 type Gate = ReturnType<typeof gate>;
 
 /** Email's held-reply registration, holding a release's transaction once it has locked the mailbox's policy. */
-const gatedAfterPolicyLock = (held: Gate): HeldReplyChannelRegistration => ({
-  policyRefPrefix: emailHeldReplyChannelRegistration.policyRefPrefix,
-  bind: (trx) => {
-    const scope = emailHeldReplyChannelRegistration.bind(trx);
-    return {
-      lockPolicy: async (policyRef) => {
-        const locked = await scope.lockPolicy(policyRef);
-        await held.hold();
-        return locked;
-      },
-      enqueueRelease: (heldReply, messageId, outbox) => scope.enqueueRelease(heldReply, messageId, outbox),
-    };
-  },
-});
+const gatedAfterPolicyLock = (held: Gate): HeldReplyChannelRegistration => {
+  const email = createEmailHeldReplyChannelRegistration({ provider: "local" });
+  return {
+    policyRefPrefix: email.policyRefPrefix,
+    bind: (trx) => {
+      const scope = email.bind(trx);
+      return {
+        lockPolicy: async (policyRef) => {
+          const locked = await scope.lockPolicy(policyRef);
+          await held.hold();
+          return locked;
+        },
+        enqueueRelease: (heldReply, messageId, outbox) => scope.enqueueRelease(heldReply, messageId, outbox),
+        reserveAutoSend: (conversationId) => scope.reserveAutoSend(conversationId),
+        enqueueAutoSend: (heldReply, outbox) => scope.enqueueAutoSend(heldReply, outbox),
+        authorizeAutoDispatch: (heldReply) => scope.authorizeAutoDispatch(heldReply),
+        recordMaterialized: (heldReply, messageId) => scope.recordMaterialized(heldReply, messageId),
+      };
+    },
+  };
+};
 
 describeIntegration("held reply release (Postgres, research B1)", () => {
   let suite: Awaited<ReturnType<typeof createEmailChannelDatabase>>;

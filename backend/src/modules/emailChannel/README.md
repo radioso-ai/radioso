@@ -79,9 +79,12 @@ It does not own:
   call; `infra/` holds the Cloud Tasks drain dispatcher built on the shared
   `scheduleAt` dispatcher.
 - `maintenance/` — the sweep: lease recovery, the send reconciler's claim
-  step, domain readiness refresh, and retention. Where the deployment does
-  not run `auto`, it also returns stale `queued_auto` held replies to
-  `pending` through the held-reply dispatch port (the rollback path).
+  step, domain readiness refresh, and retention. It returns stale
+  `queued_auto` held replies whose `email.send` action is no longer pending
+  or in progress (the outbox gave up before materializing) to `pending`
+  through the held-reply dispatch port's `returnAbandonedAuto`. Where the
+  deployment does not run `auto`, it also returns every stale `queued_auto`
+  held reply to `pending` (the rollback path).
 - `operator/` — the `email` customer reply deliverer registered in the
   shared reply dispatcher. It refuses `409 email_sending_not_verified`
   (naming the missing step) before anything is written, and otherwise

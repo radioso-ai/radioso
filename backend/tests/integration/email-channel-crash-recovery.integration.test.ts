@@ -1,6 +1,7 @@
+import type { ConnectorRespondInput, ConnectorTurnResult } from "@radioso/connector-api";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { emailSendKey } from "../../src/modules/emailChannel/public.js";
+import { EMAIL_SEND_ACTION_TYPE, emailSendKey } from "../../src/modules/emailChannel/public.js";
 import type { Database } from "../../src/shared/infra/database.js";
 import {
   activityOf,
@@ -28,6 +29,7 @@ import {
 import {
   createApiNode,
   expireOutboxClaims,
+  messagesOf,
   openEmailConversation,
   outboxActionsOf,
   providerAcceptsUnder,
@@ -40,8 +42,11 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 // SC-007: a worker killed at each stage boundary, then recovered once its lease runs out, records
 // exactly one message per inbound delivery and splits no thread — even when the follow-up is
 // processed by another worker while the first lies dead — and makes at most one provider accept
-// per outbound send intent. The kill is a fault hook on the worker's own dependencies: after it
-// fires, the dead worker makes no further call, so nothing is retried or settled on its behalf.
+// per outbound send intent. An automatic reply killed after it is queued, inside its
+// materialization, or after the provider accepted it is written as one message and accepted once.
+// The kill is a fault hook on the worker's own dependencies: after it fires, the dead worker makes
+// no further call, so nothing is retried or settled on its behalf; one inside a transaction rolls
+// it back, as a dead connection does.
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -280,6 +285,171 @@ describeIntegration("email channel crash recovery (Postgres, SC-007)", () => {
         "SELECT rfc_message_id FROM email_thread_messages WHERE message_id = $1 ORDER BY origin DESC",
         [messageId],
       )).toEqual([...new Set([supplied, delivered])].map((rfcMessageId) => ({ rfc_message_id: rfcMessageId })));
+    });
+  });
+
+  describe("automatic replies: at most one message and one provider accept (research B9)", () => {
+    const AUTO = ["operator_only", "draft", "auto"] as const;
+    const ANSWER = "Hi Alice, you can update your billing address under Settings > Billing.";
+    /** The conversation of every review turn the host ran. */
+    const reviewed: string[] = [];
+
+    const answering = async (input: ConnectorRespondInput): Promise<ConnectorTurnResult> => {
+      reviewed.push(input.conversationId);
+      return {
+        kind: "draft",
+        conversationId: input.conversationId,
+        ownershipVersion: 0,
+        facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: false }, suppressedEffects: [], citationCount: 1 },
+        draft: { text: ANSWER, presentation: { citations: [] } },
+      };
+    };
+
+    const autoNode = (): WorkerNode => {
+      const node = createWorkerNode(suite.url, { spoolDir: spool.dir, supportedModes: AUTO, respond: answering });
+      nodes.push(node);
+      return node;
+    };
+
+    const heldRepliesOf = (conversationId: string) =>
+      database.query<{ id: string; state: string; release_kind: string | null; released_message_id: string | null }>(
+        "SELECT id, state, release_kind, released_message_id FROM held_replies WHERE conversation_id = $1 ORDER BY created_at, id",
+        [conversationId],
+      );
+
+    const agentMessagesOf = async (conversationId: string) =>
+      (await messagesOf(database, conversationId)).filter((message) => message.role === "assistant");
+
+    const emailSendsOf = async (conversationId: string) =>
+      (await outboxActionsOf(database, conversationId)).filter((action) => action.type === EMAIL_SEND_ACTION_TYPE);
+
+    const reviewLinkOf = (conversationId: string) =>
+      database.queryOne<{ review_revision: number; review_completed_revision: number; review_due_at: Date | null; lease_live: boolean }>(
+        `SELECT review_revision, review_completed_revision, review_due_at, COALESCE(review_lease_until > now(), false) AS lease_live
+           FROM email_thread_links WHERE conversation_id = $1`,
+        [conversationId],
+      );
+
+    /** Brings the thread's review due and drains it through `node`. */
+    const drainReview = async (node: WorkerNode, conversationId: string) => {
+      await database.execute(
+        "UPDATE email_thread_links SET review_due_at = now() - interval '1 second' WHERE conversation_id = $1 AND review_due_at IS NOT NULL",
+        [conversationId],
+      );
+      return node.worker.drain({ maxJobs: 5, stage: "review" });
+    };
+
+    /** Alice's first contact on an `auto` mailbox, reviewed through `reviewer` and queued: its send not yet dispatched. */
+    const queuedAutoReply = async (reviewer: WorkerNode) => {
+      const { conversationId } = await openEmailConversation(database, { node: reviewer, spool }, { engagementMode: "auto", withAgent: true });
+      expect(await drainReview(reviewer, conversationId)).toMatchObject({ reviewed: 1 });
+      const [held, ...others] = await heldRepliesOf(conversationId);
+      expect(others).toEqual([]);
+      expect(held).toMatchObject({ state: "queued_auto" });
+      return { conversationId, heldReplyId: held.id, key: emailSendKey.heldReply(held.id) };
+    };
+
+    /** One agent message, released from the held reply as automatic and accepted once under its key. */
+    const expectSentOnce = async (sent: { conversationId: string; heldReplyId: string; key: string }) => {
+      const [message, ...otherMessages] = await agentMessagesOf(sent.conversationId);
+      expect(otherMessages).toEqual([]);
+      expect(message).toMatchObject({ content: ANSWER });
+      expect(await heldRepliesOf(sent.conversationId)).toEqual([
+        { id: sent.heldReplyId, state: "released", release_kind: "auto", released_message_id: message.id },
+      ]);
+      expect(await sendIntentOf(database, message.id)).toMatchObject({ idempotencyKey: sent.key, trigger: "auto_reply", state: "accepted" });
+      expect(await providerAcceptsUnder(spool.dir, sent.key)).toHaveLength(1);
+      return message;
+    };
+
+    it("kills the reviewer after queueAuto commits, before the drain, and sends the reply once without a second turn", async () => {
+      const [doomed, survivor] = [autoNode(), autoNode()];
+      doomed.seams.crashAt({ seam: "heldReplies.queueAuto", when: "after" });
+      const { conversationId } = await openEmailConversation(database, { node: doomed, spool }, { engagementMode: "auto", withAgent: true });
+
+      expect(await drainReview(doomed, conversationId)).toMatchObject({ reviewed: 1 });
+      expect(doomed.seams.hasCrashed).toBe(true);
+      // The reply and its send are queued; the review is still the dead worker's, leased and incomplete.
+      const [held] = await heldRepliesOf(conversationId);
+      expect(held).toMatchObject({ state: "queued_auto" });
+      const key = emailSendKey.heldReply(held.id);
+      expect(await emailSendsOf(conversationId)).toEqual([expect.objectContaining({ idempotency_key: key, status: "pending", attempts: 0 })]);
+      expect(await agentMessagesOf(conversationId)).toEqual([]);
+      const left = await reviewLinkOf(conversationId);
+      expect(left).toMatchObject({ lease_live: true });
+      expect(left.review_completed_revision).toBeLessThan(left.review_revision);
+
+      expect(await survivor.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+      await expectSentOnce({ conversationId, heldReplyId: held.id, key });
+
+      // Once the dead worker's claim runs out the review completes from its queued reply, without a second turn.
+      expect(await survivor.worker.drain({ maxJobs: 5, stage: "review" })).toMatchObject({ reviewed: 0 });
+      await database.execute("UPDATE email_thread_links SET review_lease_until = now() - interval '1 second' WHERE conversation_id = $1", [conversationId]);
+      expect(await survivor.worker.drain({ maxJobs: 5, stage: "review" })).toMatchObject({ reviewed: 1 });
+      expect(reviewed.filter((id) => id === conversationId)).toHaveLength(1);
+      const completed = await reviewLinkOf(conversationId);
+      expect(completed).toMatchObject({ review_completed_revision: completed.review_revision, review_due_at: null, lease_live: false });
+      expect(await survivor.dispatch()).toMatchObject({ dispatched: 0 });
+      await expectSentOnce({ conversationId, heldReplyId: held.id, key });
+      expect(survivor.provider.sendKeys).toEqual([key]);
+    });
+
+    interface AutoSendBoundary {
+      name: string;
+      crash: { seam: Seam; when: "before" | "after" };
+      /** What the crash left: the held reply's state, the message and its intent, and the provider's accepts. */
+      leftAs: { held: "queued_auto" | "released"; message: boolean; frozen: boolean; accepts: number };
+    }
+
+    const AUTO_SEND_BOUNDARIES: readonly AutoSendBoundary[] = [
+      {
+        name: "inside the materialization, after its message is written",
+        crash: { seam: "heldReplyChannel.recordMaterialized", when: "before" },
+        leftAs: { held: "queued_auto", message: false, frozen: false, accepts: 0 },
+      },
+      {
+        name: "after the materialization commits, before the send",
+        crash: { seam: "heldReplies.materializeAuto", when: "after" },
+        leftAs: { held: "released", message: true, frozen: false, accepts: 0 },
+      },
+      {
+        name: "after the provider accepted, before the acceptance is recorded",
+        crash: { seam: "driver.send", when: "after" },
+        leftAs: { held: "released", message: true, frozen: true, accepts: 1 },
+      },
+    ];
+
+    it.each(AUTO_SEND_BOUNDARIES)("kills the sender $name and recovers to one message and one provider accept", async (boundary) => {
+      const queued = await queuedAutoReply(autoNode());
+      const { conversationId, key } = queued;
+      const [doomed, survivor] = [autoNode(), autoNode()];
+      doomed.seams.crashAt(boundary.crash);
+
+      await expect(doomed.dispatch()).rejects.toThrow("worker crashed");
+      expect(doomed.seams.hasCrashed).toBe(true);
+      expect(await emailSendsOf(conversationId)).toEqual([expect.objectContaining({ status: "in_progress", attempts: 1 })]);
+      expect((await heldRepliesOf(conversationId)).map((held) => held.state)).toEqual([boundary.leftAs.held]);
+      const leftMessages = await agentMessagesOf(conversationId);
+      expect(leftMessages).toHaveLength(boundary.leftAs.message ? 1 : 0);
+      if (boundary.leftAs.message) {
+        const left = await sendIntentOf(database, leftMessages[0].id);
+        expect(left).toMatchObject({ state: "queued", outcomeUnknown: false, providerMessageId: null });
+        expect(left.request !== null).toBe(boundary.leftAs.frozen);
+      } else {
+        expect(await database.query("SELECT id FROM email_send_intents WHERE conversation_id = $1", [conversationId])).toEqual([]);
+      }
+      expect(await providerAcceptsUnder(spool.dir, key)).toHaveLength(boundary.leftAs.accepts);
+
+      // The survivor reclaims the action only once the dead worker's claim runs out.
+      expect(await survivor.dispatch()).toMatchObject({ dispatched: 0 });
+      await expireOutboxClaims(database, conversationId);
+      expect(await survivor.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+
+      const sent = await expectSentOnce(queued);
+      if (boundary.leftAs.message) expect(sent.id).toBe(leftMessages[0].id);
+      // One provider call: the first send, or the re-POST under the same key the provider answers once.
+      expect(survivor.provider.sendKeys).toEqual([key]);
+      expect(await emailSendsOf(conversationId)).toEqual([expect.objectContaining({ status: "dispatched", attempts: 2 })]);
     });
   });
 });

@@ -1,11 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EmailChannelWorker } from "../../../src/modules/connectors/plugins/email/emailChannelWorker.js";
-import { EmailChannelSweep, type InboundEventRecord } from "../../../src/modules/emailChannel/public.js";
+import { EmailChannelSweep, emailSendKey, type InboundEventRecord } from "../../../src/modules/emailChannel/public.js";
 import { InMemoryEmailInbound } from "../../support/inMemoryEmailChannel.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const START = new Date("2026-10-03T12:00:00.000Z");
+
+/** The abandoned-send step with no queued sends to look at. */
+const noAbandonedAutoSends = () => ({
+  queued: { listQueuedAutoBefore: vi.fn(async (_input: { policyRefPrefix: string; before: Date; limit: number }): Promise<string[]> => []) },
+  outbox: { liveIdempotencyKeys: vi.fn(async (_keys: readonly string[]): Promise<ReadonlySet<string>> => new Set<string>()) },
+  dispatch: { returnAbandonedAuto: vi.fn(async (_heldReplyId: string) => true) },
+});
 
 const harness = (options: { enabled?: boolean } = {}) => {
   let now = START;
@@ -15,7 +22,8 @@ const harness = (options: { enabled?: boolean } = {}) => {
   const domains = { refreshDue: vi.fn(async () => 2), cleanupRemoved: vi.fn(async () => 1) };
   const logger = { warn: vi.fn(), error: vi.fn() };
   const sends = { run: vi.fn(async (_request: { maxJobs: number }) => ({ claimed: 0, reposted: 0, settled: 0, uncertain: 0, deferred: 0, skipped: 0, errored: 0 })) };
-  const sweep = new EmailChannelSweep({ inbound, domains, sends, clock, logger, config: { eventRetentionDays: 30 } });
+  const abandonedAutoSends = noAbandonedAutoSends();
+  const sweep = new EmailChannelSweep({ inbound, domains, sends, clock, logger, config: { eventRetentionDays: 30 }, abandonedAutoSends });
   const reviews = {
     runDue: vi.fn(async (_request: { maxJobs: number }) => ({
       claimed: 0, held: 0, queued_auto: 0, already_held: 0, no_draft: 0, human_owned: 0, not_runnable: 0, budget_exhausted: 0, retrying: 0, failed: 0, errored: 0,
@@ -39,6 +47,7 @@ const harness = (options: { enabled?: boolean } = {}) => {
     domains,
     sends,
     logger,
+    abandonedAutoSends,
     sweep,
     worker,
     advance: (ms: number) => {
@@ -278,6 +287,7 @@ describe("EmailChannelSweep, where the deployment does not run auto (plan, Rollo
       clock: () => START,
       logger: h.logger,
       config: { eventRetentionDays: 30 },
+      abandonedAutoSends: noAbandonedAutoSends(),
       queuedAutoRollback: { queued, dispatch },
     });
     return { ...h, sweep, queued, dispatch };
@@ -303,5 +313,57 @@ describe("EmailChannelSweep, where the deployment does not run auto (plan, Rollo
     const h = harness();
 
     expect((await h.sweep.run({ maxJobs: 10 })).returnedQueuedAutoSends).toBe(0);
+  });
+});
+
+describe("EmailChannelSweep, automatic sends whose outbox action gave up before they were materialized (research B9)", () => {
+  const QUEUED = ["bbbbbbbb-0000-4000-8000-000000000001", "bbbbbbbb-0000-4000-8000-000000000002", "bbbbbbbb-0000-4000-8000-000000000003"];
+
+  const abandonedHarness = () => {
+    const h = harness();
+    const abandoned = noAbandonedAutoSends();
+    abandoned.queued.listQueuedAutoBefore.mockResolvedValue(QUEUED);
+    // The first is still being dispatched; the third went back to a teammate meanwhile.
+    abandoned.outbox.liveIdempotencyKeys.mockResolvedValue(new Set([emailSendKey.heldReply(QUEUED[0])]));
+    abandoned.dispatch.returnAbandonedAuto.mockImplementation(async (heldReplyId: string) => heldReplyId !== QUEUED[2]);
+    const sweep = new EmailChannelSweep({
+      inbound: h.inbound,
+      domains: h.domains,
+      sends: h.sends,
+      clock: () => START,
+      logger: h.logger,
+      config: { eventRetentionDays: 30 },
+      abandonedAutoSends: abandoned,
+    });
+    return { ...h, sweep, abandoned };
+  };
+
+  it("returns queued sends past the action lease with no live outbox action to a teammate, and leaves live ones to their dispatch", async () => {
+    const h = abandonedHarness();
+
+    const result = await h.sweep.run({ maxJobs: 10 });
+
+    expect(h.abandoned.queued.listQueuedAutoBefore).toHaveBeenCalledWith({
+      policyRefPrefix: "email_mailbox:",
+      before: new Date(START.getTime() - 5 * 60 * 1000),
+      limit: 10,
+    });
+    expect(h.abandoned.outbox.liveIdempotencyKeys).toHaveBeenCalledWith(QUEUED.map((id) => emailSendKey.heldReply(id)));
+    expect(h.abandoned.dispatch.returnAbandonedAuto.mock.calls.map(([id]) => id)).toEqual([QUEUED[1], QUEUED[2]]);
+    expect(result.returnedAbandonedAutoSends).toBe(1);
+    expect(h.logger.warn).toHaveBeenCalledWith({ returnedAbandonedAutoSends: 1 }, "email_abandoned_auto_sends_returned");
+  });
+
+  it("keeps sweeping when one return fails, and looks no further when nothing is queued", async () => {
+    const h = abandonedHarness();
+    h.abandoned.dispatch.returnAbandonedAuto.mockRejectedValueOnce(new Error("connection reset"));
+
+    expect((await h.sweep.run({ maxJobs: 10 })).returnedAbandonedAutoSends).toBe(0);
+    expect(h.abandoned.dispatch.returnAbandonedAuto).toHaveBeenCalledTimes(2);
+    expect(h.logger.warn).toHaveBeenCalledWith({ heldReplyId: QUEUED[1], errorName: "Error" }, "email_abandoned_auto_send_return_failed");
+
+    const idle = harness();
+    expect((await idle.sweep.run({ maxJobs: 10 })).returnedAbandonedAutoSends).toBe(0);
+    expect(idle.abandonedAutoSends.outbox.liveIdempotencyKeys).not.toHaveBeenCalled();
   });
 });

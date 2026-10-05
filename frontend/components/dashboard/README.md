@@ -129,6 +129,7 @@ services.
   list keeps revoked access in a collapsed history disclosure.
 - Documents UI: `documents-view.tsx`, `document-sources-view.tsx`, `documents/`.
 - Audience Pulse: `audience-pulse-view.tsx`, `frontend/lib/api-audience-pulse.ts`,
+  `frontend/lib/audience-pulse-answer-status.ts`,
   `frontend/lib/audience-pulse-draft-seed.ts`,
   `frontend/lib/audience-pulse-evidence-handoff.ts`, `dashboard-routes.ts`, and
   `documents-view.tsx` / `conversation-drawer.tsx` for handoffs.

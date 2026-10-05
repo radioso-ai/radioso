@@ -637,7 +637,6 @@
   "types|frontend/lib/api-slack-skills.ts|UpdateSlackSkillInput",
   "types|frontend/lib/api-workbench.ts|WorkbenchOverride",
   "types|frontend/lib/api-workbench.ts|WorkbenchReplayInput",
-  "types|frontend/lib/audience-pulse-topic-viz.ts|SparklinePoint",
   "types|frontend/lib/color.ts|Rgb",
   "types|frontend/lib/conversation-title.ts|ConversationTitleSource",
   "types|frontend/lib/copilot-context.tsx|CopilotEntityType",

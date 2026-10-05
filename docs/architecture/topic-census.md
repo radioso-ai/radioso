@@ -1,7 +1,7 @@
 ---
 title: "Topic Census"
 description: "How Audience Pulse computes an exact, deterministic topic distribution over visitor questions and tracks topic identity across analyses."
-last_updated: 2026-09-06
+last_updated: 2026-10-05
 ---
 
 # Topic Census
@@ -10,9 +10,13 @@ Every eligible visitor question in an analysis window counts toward exactly
 one topic or the unclassified total. The count is exact: a whole-population
 clustering computed from scratch for the window, not a projection from a
 subset. Because the pipeline tracks which topic is which from one analysis to
-the next, a topic on the dashboard can grow, shrink, split into two, absorb
-another, or disappear and come back — and the report can say which of those
-happened, not just show two snapshots and leave the reader to guess.
+the next, a topic can grow, shrink, split into two, absorb another, or
+disappear and come back — and the report records which of those happened, not
+just two snapshots that leave the reader to guess. The dashboard turns that
+record into plain words: a topic row reads **new** when the topic emerged
+since the previous analysis, and **up from N** or **down from N** when an
+exactly matched topic's count and share both moved materially. Topics that
+disappeared are listed under the topic rows.
 
 The work runs in Postgres and the workspace's own model tiers. `@radioso/census`
 (`packages/census`), the clustering and identity-matching library it depends

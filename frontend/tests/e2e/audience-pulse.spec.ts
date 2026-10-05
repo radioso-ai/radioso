@@ -207,10 +207,13 @@ test.describe("Audience Pulse dashboard", () => {
     const topicsSection = page.locator('section[aria-labelledby="audience-pulse-topics"]');
     await expect(topicsSection.getByText("Refund timing", { exact: true })).toBeVisible();
     await expect(page.getByText("Explain refund timelines end-to-end")).toBeVisible();
+    const refundTopic = topicsSection.getByTestId("audience-pulse-topic-row").filter({ hasText: "Refund timing" });
+    await expect(refundTopic).toContainText("30 questions · 3 unanswered · 4 partly answered");
     await topicsSection.getByRole("button", { name: /Refund timing/ }).click();
-    await expect(page.getByLabel("Answer coverage summary")).toContainText("Unanswered");
-    await expect(page.getByLabel("Answer coverage summary")).toContainText("Not assessed");
-    await expect(page.getByText("Legacy evidence 2")).toBeVisible();
+    await expect(refundTopic.getByText(
+      "2 answered · 4 partly answered · 3 unanswered · 1 needs clarification · 4 not assessed",
+      { exact: true },
+    )).toBeVisible();
     // Census coverage line states plainly that every question in the window was read.
     await expect(page.getByText("Read all 240 questions.")).toBeVisible();
     // The sampling caveat is specific to the legacy sampled path and must not appear for a census report.
@@ -726,7 +729,7 @@ test.describe("Audience Pulse dashboard", () => {
       .toBeNull();
   });
 
-  test("collapsed topic row shows the exact member count and its share of the window", async ({ page }) => {
+  test("collapsed topic row shows the exact member count", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
@@ -754,16 +757,49 @@ test.describe("Audience Pulse dashboard", () => {
 
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
 
-    // Collapsed row shows the exact census member count and its share of the window.
-    await expect(page.getByText(/asked 24× · 10% of questions/)).toBeVisible();
+    // Collapsed row shows the exact census member count.
+    const topicRow = page.getByTestId("audience-pulse-topic-row").first();
+    await expect(topicRow).toContainText("24 questions · 3 unanswered · 4 partly answered");
 
     // Expanding reveals per-evidence occurrence count.
-    await page.getByTestId("audience-pulse-topic-row").first()
-      .getByRole("button", { name: /Show examples/ }).click();
+    await topicRow.getByRole("button", { name: /Show examples/ }).click();
     await expect(page.getByText(/asked 3×/)).toBeVisible();
   });
 
-  test("content-gap evidence counts stay visible when the gap has no recommendation", async ({ page }) => {
+  test("a collapsed row repeats the shortfall counts of its expanded answer line", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    // The content-gap count covers only shortfalls for lack of material; the row must not use it.
+    const narrowGapReport = {
+      ...completedReport,
+      themes: [{
+        ...completedReport.themes[0],
+        grounding: { ...completedReport.themes[0].grounding, contentGapEligible: 1 },
+      }],
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: narrowGapReport }) });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    const topicRow = page.getByTestId("audience-pulse-topic-row").first();
+    await expect(topicRow).toContainText("30 questions · 3 unanswered · 4 partly answered");
+    await expect(topicRow).not.toContainText("1 unanswered");
+    await topicRow.getByRole("button", { name: /Show examples/ }).click();
+    await expect(topicRow.getByText(
+      "2 answered · 4 partly answered · 3 unanswered · 1 needs clarification · 4 not assessed",
+      { exact: true },
+    )).toBeVisible();
+  });
+
+  test("a topic with unanswered questions but no content opportunity offers no draft", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
@@ -787,11 +823,14 @@ test.describe("Audience Pulse dashboard", () => {
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
 
     const topicRow = page.getByTestId("audience-pulse-topic-row").first();
-    await expect(topicRow.getByText("asked 6× in 4 conversations", { exact: true })).toBeVisible();
+    await expect(topicRow).toContainText("30 questions · 3 unanswered · 4 partly answered");
+    await topicRow.getByRole("button", { name: /Show examples/ }).click();
+    await expect(topicRow.getByText(completedReport.themes[0].description)).toBeVisible();
+    await expect(topicRow.getByRole("button", { name: "Start draft" })).toHaveCount(0);
     await expect(page.getByText("Explain refund timelines end-to-end")).toHaveCount(0);
   });
 
-  test("topic transitions badge each row and show a delta only when count and share agree", async ({ page }) => {
+  test("topic rows say new or show a count change only for an exact match whose count and share agree", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
@@ -913,47 +952,33 @@ test.describe("Audience Pulse dashboard", () => {
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
 
     const topics = page.locator('section[aria-labelledby="audience-pulse-topics"]');
-    const newTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "New interest" });
-    await expect(newTopic.getByText("New", { exact: true })).toBeVisible();
-
-    const splitTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Split interest" });
-    await expect(splitTopic.getByText("Split from prior topic", { exact: true })).toBeVisible();
-
-    const mergedTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Merged interest" });
-    await expect(mergedTopic.getByText("Merged from 2 topics", { exact: true })).toBeVisible();
-
-    // A direction renders only when the raw count and the topic's share moved the same way.
-    for (const title of ["Growing interest", "Just above threshold"]) {
-      const topic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: title });
-      await expect(topic.getByText(/up from 40/)).toBeVisible();
-    }
-
-    const decliningTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Declining interest" });
-    await expect(decliningTopic.getByText(/down from 40/)).toBeVisible();
-
-    for (const title of [
+    for (const [title, statsLine] of [
+      ["New interest", "30 questions · new · 3 unanswered · 4 partly answered"],
+      // A direction renders only when the raw count and the topic's share moved the same way.
+      ["Growing interest", "96 questions · up from 40 · 3 unanswered · 4 partly answered"],
+      ["Just above threshold", "49 questions · up from 40 · 3 unanswered · 4 partly answered"],
+      ["Declining interest", "32 questions · down from 40 · 3 unanswered · 4 partly answered"],
       // below the 20% materiality bar
-      "Just below threshold",
-      // identity for this run is unknown, so continuity cannot be claimed
-      "Unknown history",
+      ["Just below threshold", "47 questions · 3 unanswered · 4 partly answered"],
       // count rose while share fell -- reporting "up" would invert what happened
-      "Diluted interest",
-    ]) {
+      ["Diluted interest", "96 questions · 3 unanswered · 4 partly answered"],
+      // a match by estimate, or no recorded identity, cannot claim continuity
+      ["Estimated interest", "60 questions · 3 unanswered · 4 partly answered"],
+      ["Unknown history", "96 questions · 3 unanswered · 4 partly answered"],
+      ["Split interest", "30 questions · 3 unanswered · 4 partly answered"],
+      ["Merged interest", "30 questions · 3 unanswered · 4 partly answered"],
+    ] as const) {
       const topic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: title });
-      await expect(topic.getByText(/up from|down from/)).toHaveCount(0);
+      await expect(topic).toContainText(statsLine);
     }
-
-    const estimatedTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Estimated interest" });
-    await expect(estimatedTopic.getByText("Match estimate", { exact: true })).toBeVisible();
-
-    const unknownHistoryTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Unknown history" });
-    await expect(unknownHistoryTopic.getByText("Prior identity unknown", { exact: true })).toBeVisible();
+    await expect(topics.getByText(/Prior identity unknown|Split from prior topic|Merged from|Match estimate/))
+      .toHaveCount(0);
 
     const dissolvedTopics = page.locator('section[aria-label="Topics that stopped appearing"]');
     await expect(dissolvedTopics.getByText("Stopped appearing: Shipping delays.", { exact: true })).toBeVisible();
   });
 
-  test("New badges follow the first-census flag", async ({ page }) => {
+  test("topics read as new only after the first census", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
@@ -990,7 +1015,7 @@ test.describe("Audience Pulse dashboard", () => {
     const topics = page.locator('section[aria-labelledby="audience-pulse-topics"]');
     for (const title of ["Refund timing", "Shipping updates"]) {
       const topic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: title });
-      await expect(topic.getByText("New", { exact: true })).toBeVisible();
+      await expect(topic).toContainText("30 questions · new · 3 unanswered · 4 partly answered");
     }
 
     audiencePulseMocks.state.report = { ...allEmergedReport, isFirstCensus: true };
@@ -998,22 +1023,34 @@ test.describe("Audience Pulse dashboard", () => {
 
     for (const title of ["Refund timing", "Shipping updates"]) {
       const topic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: title });
-      await expect(topic.getByText("New", { exact: true })).toHaveCount(0);
+      await expect(topic).toContainText("30 questions · 3 unanswered · 4 partly answered");
     }
   });
 
-  test("topic sparkline announces every weekly value when the trend is non-monotonic", async ({ page }) => {
+  test("an expanded topic counts its answers and lists the questions the agent fell short on first", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
-    const nonMonotonicReport = {
+    const [unansweredEvidence, notCheckedEvidence] = completedReport.themes[0].evidence;
+    const mixedEvidenceReport = {
       ...completedReport,
       themes: [{
         ...completedReport.themes[0],
-        weeklyPulse: [
-          { weekStart: "2026-04-01T00:00:00.000Z", count: 2 },
-          { weekStart: "2026-04-08T00:00:00.000Z", count: 100 },
-          { weekStart: "2026-04-15T00:00:00.000Z", count: 2 },
+        evidence: [
+          {
+            ...unansweredEvidence,
+            reference: "ev-answered",
+            question: "Do you refund shipping costs?",
+            answerCoverage: { availability: "assessed", coverage: "answered", reason: "sufficient_evidence" },
+          },
+          notCheckedEvidence,
+          {
+            ...unansweredEvidence,
+            reference: "ev-partial",
+            question: "Can I get a refund in store credit?",
+            answerCoverage: { availability: "assessed", coverage: "partial", reason: "insufficient_evidence" },
+          },
+          unansweredEvidence,
         ],
       }],
     };
@@ -1023,7 +1060,7 @@ test.describe("Audience Pulse dashboard", () => {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ kind: "completed", report: nonMonotonicReport }),
+          body: JSON.stringify({ kind: "completed", report: mixedEvidenceReport }),
         });
         return;
       }
@@ -1032,9 +1069,37 @@ test.describe("Audience Pulse dashboard", () => {
 
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
 
-    const topicToggle = page.getByTestId("audience-pulse-topic-row").first()
-      .getByRole("button", { name: /Show examples/ });
-    await expect(topicToggle).toHaveAccessibleName(/Weekly questions by week: 2, 100, 2\./);
+    const topicRow = page.getByTestId("audience-pulse-topic-row").first();
+    await topicRow.getByRole("button", { name: /Show examples/ }).click();
+    await expect(topicRow.getByText(
+      "2 answered · 4 partly answered · 3 unanswered · 1 needs clarification · 4 not assessed",
+      { exact: true },
+    )).toBeVisible();
+    await expect(topicRow.getByRole("listitem")).toHaveText([
+      /How long until I get my refund after returning\?\s*Unanswered$/,
+      /Can I get a refund in store credit\?\s*Partly answered$/,
+      /Do you refund shipping costs\?\s*Answered$/,
+      /When does a refund show up on my card\?\s*Not assessed$/,
+    ]);
+    // Screen readers hear each example's verdict as part of the link to its conversation.
+    await expect(topicRow.getByRole("button", { name: "Can I get a refund in store credit? Partly answered", exact: true }))
+      .toBeVisible();
+  });
+
+  test("Start draft in a topic row opens the composer with that topic's recommendation", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installAudiencePulseMocks(page, { read: "completed" });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    const topicRow = page.getByTestId("audience-pulse-topic-row").filter({ hasText: "Refund timing" });
+    await topicRow.getByRole("button", { name: /Show examples/ }).click();
+    await topicRow.getByRole("button", { name: "Start draft" }).click();
+
+    await expect(page).toHaveURL(/\/knowledge/);
+    await expect(page.getByRole("dialog", { name: "Add Document" })).toBeVisible();
+    await expect(page.getByLabel("Title")).toHaveValue("Refund timelines: after approval, at the bank, and reconciliations");
   });
 
   test("ungrouped majority notice appears when most questions were not grouped into a topic", async ({ page }) => {
@@ -1143,32 +1208,40 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(page.getByText(/Most questions weren/)).toBeVisible();
   });
 
-  test("expanding a topic whose grounding is entirely unknown still renders the grounding-summary strip", async ({ page }) => {
+  test("a topic saved before answers were checked counts its answers from grounding", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
-    const unknownGroundingReport = {
+    // Undefined fields drop out of the JSON body, as they would from an older saved report.
+    const groundingOnlyReport = {
       ...completedReport,
       themes: [{
         ...completedReport.themes[0],
-        grounding: { grounded: 0, degraded: 0, noSupport: 0, unknown: 12, contentGapEligible: 0 },
+        coverage: undefined,
+        grounding: { grounded: 5, degraded: 2, noSupport: 1, unknown: 4, contentGapEligible: 3 },
+        evidence: completedReport.themes[0].evidence.map((evidence) => ({ ...evidence, answerCoverage: undefined })),
       }],
     };
 
     await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
       if (route.request().method() === "GET") {
-        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: unknownGroundingReport }) });
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: groundingOnlyReport }) });
         return;
       }
       await route.fallback();
     });
 
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
-    await page.getByTestId("audience-pulse-topic-row").first()
-      .getByRole("button", { name: /Show examples/ }).click();
-    const groundingSummary = page.getByLabel("Grounding summary");
-    await expect(groundingSummary).toBeVisible();
-    await expect(groundingSummary.getByText("Not recorded")).toBeVisible();
+    const topicRow = page.getByTestId("audience-pulse-topic-row").first();
+    await expect(topicRow).toContainText("30 questions · 1 unanswered · 2 partly answered");
+    await topicRow.getByRole("button", { name: /Show examples/ }).click();
+    await expect(topicRow.getByText("5 answered · 2 partly answered · 1 unanswered · 4 not assessed", { exact: true }))
+      .toBeVisible();
+    // No example carries a check of its own, so none is labelled.
+    await expect(topicRow.getByRole("listitem")).toHaveText([
+      "How long until I get my refund after returning?",
+      "When does a refund show up on my card?",
+    ]);
   });
 
   test("a seed keyed to a different workspace is discarded and never leaks into the composer", async ({ page }) => {

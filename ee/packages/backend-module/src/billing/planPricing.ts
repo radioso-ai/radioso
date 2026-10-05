@@ -49,6 +49,16 @@ export const planIdForProduct = (
 export const isTopUpPrice = (price: StripePriceLookupKeySource): boolean =>
   price.lookup_key === PLAN_CATALOG.topUp.stripeLookupKey;
 
+/**
+ * Whether an account on this plan id may buy the prepaid top-up pack (CFO-approved 2026-09-15):
+ * sold on paid plans only, never on the free plan, so a free account plus a few packs can't
+ * undercut the cheapest paid plan. A plan id the catalog does not list — a legacy plan
+ * (`starter_100`, `starter_250`) or a hand-assigned profile — is ineligible too, since the
+ * catalog carries no `topUps` fact for it.
+ */
+export const isTopUpEligible = (planId: string): boolean =>
+  PLAN_CATALOG.plans.find((plan) => plan.id === planId)?.topUps ?? false;
+
 /** The next self-serve plan above `planId`, in catalog order. `null` at the self-serve ceiling
  *  plan or for a plan id the catalog does not recognize. */
 export const upgradePlanIdFor = (planId: string): PlanId | null => {

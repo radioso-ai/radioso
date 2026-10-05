@@ -234,7 +234,6 @@
   "types|backend/src/app/http/middleware/requireApiToken.ts|ApiTokenDependencies",
   "types|backend/src/app/http/presenters/documentSourcePresenter.ts|WebsiteSourceCrawlSettings",
   "types|backend/src/app/http/routes/settingsCredentialsRoutes.ts|ProviderNameInput",
-  "types|backend/src/db/repositories/actionRequestRepository.ts|ActionOutboxDepthSnapshot",
   "types|backend/src/db/repositories/chunkEmbeddingRepository.ts|CanonicalChunkEmbeddingPublication",
   "types|backend/src/db/repositories/chunkEmbeddingRepository.ts|CanonicalChunkEmbeddingTransactionClient",
   "types|backend/src/db/repositories/userFederatedIdentityRepository.ts|UserFederatedIdentityRecord",

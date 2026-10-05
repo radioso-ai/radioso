@@ -86,6 +86,11 @@ export interface HeldReplyDispatchPort {
     /** No message was written: the send was no longer queued, or went back to a teammate. */
     | { ok: false; reason: "not_queued" | "returned_to_pending" }
   >;
+  /**
+   * Returns a queued automatic send whose dispatch was abandoned, its outbox action given up before
+   * it materialized, to a teammate as pending; false when it was no longer queued.
+   */
+  returnAbandonedAuto(heldReplyId: string): Promise<boolean>;
 }
 
 /**
@@ -286,6 +291,8 @@ const heldReplyNotFound = () => notFound("Held reply not found");
 
 /** A queued send waits for no one; it is given a reason to be held only if it returns to a teammate. */
 const QUEUED_AUTO_HOLD_REASON = "queued_auto";
+/** Why a queued send returned to a teammate when its dispatch gave up before it materialized. */
+const DISPATCH_ABANDONED = "dispatch_abandoned";
 
 type MaterializeOutcome =
   | { kind: "not_queued" }
@@ -511,16 +518,7 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyDispatc
     }
     const { heldReply } = outcome;
     if (outcome.kind === "returned") {
-      this.notifyDashboard(heldReply, null, "hitl.decision_created");
-      this.countTransition("returned_to_pending");
-      await this.recordAudit(heldReply, null, {
-        action: "returned_to_pending",
-        actorUserId: null,
-        heldReplyId: heldReply.id,
-        conversationId: heldReply.conversationId,
-        holdReason: heldReply.holdReason,
-        code: outcome.code,
-      });
+      await this.announceReturned(heldReply, outcome.code);
       return { ok: false, reason: "returned_to_pending" };
     }
     this.notifyDashboard(heldReply, null, "conversation.turn_committed");
@@ -533,6 +531,29 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyDispatc
       messageId: outcome.messageId,
     });
     return { ok: true, messageId: outcome.messageId };
+  }
+
+  /**
+   * Returns a queued automatic send whose outbox action gave up before it materialized to a
+   * teammate (research B9). Under the conversation and ownership locks, only while it is still
+   * queued, it goes back to pending as a send whose authority changed, with no message; it is not
+   * authorized again, since nothing is left to send it.
+   */
+  async returnAbandonedAuto(heldReplyId: string): Promise<boolean> {
+    const returned = await this.deps.writes.run(async (scope) => {
+      const found = await scope.heldReplies.findById(heldReplyId);
+      // The materialization's lock order, so a supersede or a late dispatch serializes with it.
+      if (!found || !(await scope.conversations.lockForUpdate(found.conversationId, found.workspaceId))) {
+        return null;
+      }
+      await scope.ownership.loadForUpdate(found.conversationId);
+      return scope.heldReplies.materialize({ id: found.id, conversationId: found.conversationId, authorized: false });
+    });
+    if (!returned) {
+      return false;
+    }
+    await this.announceReturned(returned, DISPATCH_ABANDONED);
+    return true;
   }
 
   async findByReviewRef(conversationId: string, reviewRef: string): Promise<{ heldReplyId: string; state: HeldReplyState } | null> {
@@ -786,6 +807,20 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyDispatc
       conversationId: heldReply.conversationId,
     }, () => {
       this.deps.publisher?.enqueue(heldReply.workspaceId, [kind]);
+    });
+  }
+
+  /** A queued send back with a teammate: the dashboard is told, and the audit names why, never the draft. */
+  private async announceReturned(heldReply: HeldReplyRecord, code: string): Promise<void> {
+    this.notifyDashboard(heldReply, null, "hitl.decision_created");
+    this.countTransition("returned_to_pending");
+    await this.recordAudit(heldReply, null, {
+      action: "returned_to_pending",
+      actorUserId: null,
+      heldReplyId: heldReply.id,
+      conversationId: heldReply.conversationId,
+      holdReason: heldReply.holdReason,
+      code,
     });
   }
 

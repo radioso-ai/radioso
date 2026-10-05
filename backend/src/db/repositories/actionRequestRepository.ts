@@ -9,7 +9,7 @@ export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "fa
  */
 export type ActionFailureOutcome = "retry" | "failed" | "superseded";
 
-export interface ActionOutboxDepthSnapshot {
+interface ActionOutboxDepthSnapshot {
   pendingCount: number;
   inProgressCount: number;
   oldestPendingCreatedAt: Date | null;
@@ -106,6 +106,20 @@ export class ActionRequestRepository {
       .where("idempotency_key", "=", input.idempotencyKey!)
       .executeTakeFirstOrThrow();
     return { id: existing.id, duplicate: true };
+  }
+
+  /** The idempotency keys among `keys` whose request is still due or being dispatched. */
+  async liveIdempotencyKeys(keys: readonly string[]): Promise<ReadonlySet<string>> {
+    if (keys.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom("routine_action_requests")
+      .select("idempotency_key")
+      .where("idempotency_key", "in", keys)
+      .where("status", "in", ["pending", "in_progress"])
+      .execute();
+    return new Set(rows.flatMap((row) => (row.idempotency_key === null ? [] : [row.idempotency_key])));
   }
 
   /**

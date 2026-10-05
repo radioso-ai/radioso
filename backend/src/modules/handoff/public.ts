@@ -40,7 +40,8 @@ export {
   type HeldReplyRecord,
   type HeldReplyState,
 } from "./heldReplies/heldReplyState.js";
-// Producers call hold or queueAuto; a channel's send handler calls materializeAuto on a queued send.
+// Producers call hold or queueAuto; a channel's send handler calls materializeAuto on a queued send,
+// and its sweep returnAbandonedAuto on one whose dispatch gave up.
 export {
   HeldReplyService,
   type HeldReplyAuthorityView,

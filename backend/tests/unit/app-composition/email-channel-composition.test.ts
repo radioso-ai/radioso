@@ -47,7 +47,7 @@ const fakeDb = () => {
 /** The host ports the channel reaches only while draining. */
 const hostPorts = () => ({
   chat: { ingest: vi.fn(), respond: vi.fn() },
-  heldReplies: { hold: vi.fn(), queueAuto: vi.fn(), findByReviewRef: vi.fn(), materializeAuto: vi.fn() },
+  heldReplies: { hold: vi.fn(), queueAuto: vi.fn(), findByReviewRef: vi.fn(), materializeAuto: vi.fn(), returnAbandonedAuto: vi.fn() },
   ownership: { requestHumanOwnership: vi.fn() },
 });
 

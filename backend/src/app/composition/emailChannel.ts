@@ -137,9 +137,9 @@ interface EmailChannelCompositionInput {
   chat: Pick<ConnectorChatPort, "ingest" | "respond">;
   /**
    * Where a review's draft is held for a teammate or queued for an automatic send, and where the
-   * sweep's rollback step dispatches queued sends; called only while draining.
+   * sweep dispatches queued sends or returns abandoned ones; called only while draining.
    */
-  heldReplies: Pick<HeldReplyService, "hold" | "queueAuto" | "findByReviewRef" | "materializeAuto">;
+  heldReplies: Pick<HeldReplyService, "hold" | "queueAuto" | "findByReviewRef" | "materializeAuto" | "returnAbandonedAuto">;
   /** Hands a reviewed conversation to a person inside the review's hand-off transaction; called only while draining. */
   ownership: Pick<ConversationOwnershipService, "requestHumanOwnership">;
   /** Tells the dashboard of a hand-off once it commits. */
@@ -255,6 +255,11 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       clock,
       logger,
       config: { eventRetentionDays: config.eventRetentionDays },
+      abandonedAutoSends: {
+        queued: heldReplyRecords,
+        outbox: new ActionRequestRepository(db),
+        dispatch: { returnAbandonedAuto: (heldReplyId) => input.heldReplies.returnAbandonedAuto(heldReplyId) },
+      },
       queuedAutoRollback: SUPPORTED_MODES.includes("auto")
         ? undefined
         : { queued: heldReplyRecords, dispatch: { materializeAuto: (heldReplyId) => input.heldReplies.materializeAuto(heldReplyId) } },

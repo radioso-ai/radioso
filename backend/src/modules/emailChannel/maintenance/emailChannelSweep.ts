@@ -4,6 +4,7 @@ import type { EmailChannelLogger } from "../emailChannelAudit.js";
 import type { SendReconciler } from "../outbound/sendReconciler.js";
 import type { EmailInboundRepository } from "../persistence/emailInboundRepository.js";
 import { EMAIL_MAILBOX_POLICY_REF_PREFIX } from "../heldReplyChannelScope.js";
+import { emailSendKey } from "../outbound/emailSendAction.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Rows one sweep may delete; the retention backlog drains over successive sweeps. */
@@ -11,13 +12,30 @@ const PURGE_BATCH = 1_000;
 /** The action outbox's lease: a send queued more recently may still be in its own dispatch. */
 const QUEUED_AUTO_STALE_MS = 5 * 60 * 1000;
 
+/** The automatic sends still queued since before `before` under policies with the prefix, oldest first. */
+interface QueuedAutoSends {
+  listQueuedAutoBefore(input: { policyRefPrefix: string; before: Date; limit: number }): Promise<string[]>;
+}
+
+/**
+ * Returns queued automatic sends whose outbox action gave up before they were materialized to a
+ * teammate, in every deployment: nothing else would ever settle them (research B9). A send whose
+ * action is still due or being dispatched is left to that dispatch.
+ */
+interface AbandonedAutoSends {
+  queued: QueuedAutoSends;
+  /** The outbox keys among `keys` whose action is still due or being dispatched. */
+  outbox: { liveIdempotencyKeys(keys: readonly string[]): Promise<ReadonlySet<string>> };
+  dispatch: Pick<HeldReplyDispatchPort, "returnAbandonedAuto">;
+}
+
 /**
  * Returns queued automatic sends to a teammate where the deployment does not run `auto`. Each goes
  * through dispatch, whose authorization refuses there, so it moves back to `pending` under the same
  * locks and conditional update as a send whose authority changed, and nothing is sent.
  */
 interface QueuedAutoRollback {
-  queued: { listQueuedAutoBefore(input: { policyRefPrefix: string; before: Date; limit: number }): Promise<string[]> };
+  queued: QueuedAutoSends;
   dispatch: Pick<HeldReplyDispatchPort, "materializeAuto">;
 }
 
@@ -28,6 +46,7 @@ interface EmailChannelSweepResult {
   purgedDeliveries: number;
   purgedEvents: number;
   reconciledSends: number;
+  returnedAbandonedAutoSends: number;
   returnedQueuedAutoSends: number;
 }
 
@@ -35,9 +54,10 @@ interface EmailChannelSweepResult {
  * The channel's periodic recovery and maintenance (research B7): it recovers inbound events a dead
  * worker left leased, claims and reconciles the sends due a re-POST or a lookup (research B18),
  * refreshes due domain readiness and cleans up removed domains with the provider, and enforces
- * event-log retention (research B10). Where the deployment does not run `auto`, it also returns
- * automatic sends left queued to a teammate (plan, Rollout and Rollback). Draining the recovered
- * work is the worker's job, after this runs.
+ * event-log retention (research B10). It returns to a teammate the automatic sends whose outbox
+ * action gave up before they were materialized and, where the deployment does not run `auto`,
+ * every automatic send left queued (plan, Rollout and Rollback). Draining the recovered work is the
+ * worker's job, after this runs.
  */
 export class EmailChannelSweep {
   constructor(private readonly deps: {
@@ -47,6 +67,7 @@ export class EmailChannelSweep {
     clock: () => Date;
     logger: EmailChannelLogger;
     config: { eventRetentionDays: number };
+    abandonedAutoSends: AbandonedAutoSends;
     /** Composed only where the deployment does not run `auto`. */
     queuedAutoRollback?: QueuedAutoRollback;
   }) {}
@@ -62,6 +83,7 @@ export class EmailChannelSweep {
     const cleanedDomains = await this.deps.domains.cleanupRemoved(request.maxJobs);
     const cutoff = new Date(this.deps.clock().getTime() - this.deps.config.eventRetentionDays * DAY_MS);
     const purged = await this.deps.inbound.purgeUnattachedBefore(cutoff, PURGE_BATCH);
+    const returnedAbandonedAutoSends = await this.returnAbandonedAutoSends(request);
     const returnedQueuedAutoSends = await this.returnQueuedAutoSends(request);
     return {
       recoveredLeases,
@@ -70,8 +92,34 @@ export class EmailChannelSweep {
       purgedDeliveries: purged.deliveries,
       purgedEvents: purged.events,
       reconciledSends,
+      returnedAbandonedAutoSends,
       returnedQueuedAutoSends,
     };
+  }
+
+  private async returnAbandonedAutoSends(request: { maxJobs: number }): Promise<number> {
+    const { queued, outbox, dispatch } = this.deps.abandonedAutoSends;
+    const stale = await queued.listQueuedAutoBefore({
+      policyRefPrefix: EMAIL_MAILBOX_POLICY_REF_PREFIX,
+      before: new Date(this.deps.clock().getTime() - QUEUED_AUTO_STALE_MS),
+      limit: request.maxJobs,
+    });
+    if (stale.length === 0) return 0;
+    const live = await outbox.liveIdempotencyKeys(stale.map((heldReplyId) => emailSendKey.heldReply(heldReplyId)));
+    let returned = 0;
+    for (const heldReplyId of stale) {
+      if (live.has(emailSendKey.heldReply(heldReplyId))) continue;
+      try {
+        if (await dispatch.returnAbandonedAuto(heldReplyId)) returned += 1;
+      } catch (error) {
+        // The next sweep tries again; one held reply never stops the others.
+        this.deps.logger.warn({ heldReplyId, errorName: error instanceof Error ? error.name : "unknown" }, "email_abandoned_auto_send_return_failed");
+      }
+    }
+    if (returned > 0) {
+      this.deps.logger.warn({ returnedAbandonedAutoSends: returned }, "email_abandoned_auto_sends_returned");
+    }
+    return returned;
   }
 
   private async returnQueuedAutoSends(request: { maxJobs: number }): Promise<number> {

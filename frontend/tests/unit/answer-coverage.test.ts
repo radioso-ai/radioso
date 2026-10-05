@@ -8,6 +8,8 @@ import {
   normalizeAnswerCoverageHeadStageFields,
   normalizeAnswerCoverageInteractionTrace,
   compatibleAnswerCoverageReasons,
+  answerCoverageReasonLabel,
+  answerStatusLabel,
 } from '@/lib/answer-coverage'
 import type { DiagnosticPresentation } from '@/lib/activity-diagnostics'
 
@@ -53,6 +55,28 @@ describe('answer coverage wire normalization', () => {
       .toEqual(['sufficient_evidence', 'insufficient_evidence', 'conflicting_evidence', 'intentional_scope_boundary'])
     expect(compatibleAnswerCoverageReasons(['unanswered', 'unclear']))
       .toEqual(['insufficient_evidence', 'conflicting_evidence', 'intentional_scope_boundary', 'ambiguous_request'])
+  })
+
+  it('names each reason, with the scope boundary read as out of scope', () => {
+    expect(answerCoverageReasonLabel('sufficient_evidence')).toBe('Sufficient evidence')
+    expect(answerCoverageReasonLabel('insufficient_evidence')).toBe('Insufficient evidence')
+    expect(answerCoverageReasonLabel('conflicting_evidence')).toBe('Conflicting evidence')
+    expect(answerCoverageReasonLabel('ambiguous_request')).toBe('Ambiguous request')
+    expect(answerCoverageReasonLabel('intentional_scope_boundary')).toBe('Out of scope')
+    expect(answerCoverageReasonLabel(undefined)).toBe('Not recorded')
+  })
+
+  it('spells out a reason code it does not know', () => {
+    expect(answerCoverageReasonLabel('policy_hold')).toBe('Policy hold')
+  })
+
+  it('labels every Audience Pulse answer status in the coverage vocabulary', () => {
+    expect(answerStatusLabel('answered')).toBe('Answered')
+    expect(answerStatusLabel('partial')).toBe('Partly answered')
+    expect(answerStatusLabel('unanswered')).toBe('Unanswered')
+    expect(answerStatusLabel('unclear')).toBe('Needs clarification')
+    expect(answerStatusLabel('out_of_scope')).toBe('Out of scope')
+    expect(answerStatusLabel('not_assessed')).toBe('Not assessed')
   })
 
   it('represents invalid or absent values as unavailable', () => {

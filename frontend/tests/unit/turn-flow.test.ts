@@ -339,7 +339,7 @@ describe('envelopeToFlowGraph', () => {
     })
     expect(node(graph, 'spine:answer_coverage_head')).toMatchObject({
       label: 'Coverage verdict',
-      sublabel: 'Unanswered · insufficient evidence',
+      sublabel: 'Unanswered · Insufficient evidence',
       tone: 'bad',
       durationMs: 700,
     })
@@ -400,6 +400,16 @@ describe('envelopeToFlowGraph', () => {
       sublabel: 'Request remains unanswered',
       tone: 'bad',
       detail: { kind: 'spine', spineStageId: 'compose' },
+    })
+  })
+
+  it('names a scope-boundary verdict out of scope on the coverage verdict node', () => {
+    const base = retrievalTurn()
+    const coverage = base.spine.stages.find((stage) => stage.kind === 'answer_coverage_head')!
+    coverage.outputs = { availability: 'assessed', coverage: 'unanswered', reason: 'intentional_scope_boundary' }
+
+    expect(node(envelopeToFlowGraph(base), 'spine:answer_coverage_head')).toMatchObject({
+      sublabel: 'Unanswered · Out of scope',
     })
   })
 

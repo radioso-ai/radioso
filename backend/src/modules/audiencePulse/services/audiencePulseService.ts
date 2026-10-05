@@ -22,6 +22,11 @@ import {
   evaluateTopicContentGap,
   parseAudiencePulseModelOutput,
 } from "../domain/report.js";
+import {
+  isShortfallStatus,
+  type AudiencePulseAnswerStatus,
+  type AudiencePulseAnswerSummary,
+} from "../domain/answerStatus.js";
 import type {
   AudiencePulseAuditPort,
   AudiencePulseEvidenceAnchor,
@@ -178,22 +183,83 @@ type LegacyAudiencePulseStoredReport = Omit<
   themes: LegacyAudiencePulseStoredTheme[];
 };
 
+interface ThemeAnswers {
+  answers: AudiencePulseAnswerSummary;
+  /** Undefined when the snapshot stored nothing an example's status could be read from. */
+  statusOf: (evidenceId: string) => AudiencePulseAnswerStatus | undefined;
+}
+
+/**
+ * Snapshots saved before topics carried `answers` stored neither the summary nor a
+ * per-example status. One rule reads both from what they did store, so the counts
+ * and the labels agree. With a coverage summary, the recorded verdicts decide, and a
+ * scope-boundary decline stays in the partly answered or unanswered count where that
+ * snapshot put it. Without one, the topic's grounding counts decide; no per-example
+ * grounding was stored, so those examples carry no status.
+ */
+const legacyThemeAnswers = (theme: LegacyAudiencePulseStoredTheme): ThemeAnswers => {
+  const { coverage, coverageByEvidenceId } = theme;
+  if (coverage) {
+    return {
+      answers: {
+        answered: coverage.answered,
+        partial: coverage.partial,
+        unanswered: coverage.unanswered,
+        unclear: coverage.unclear,
+        outOfScope: 0,
+        notAssessed: coverage.unassessed + coverage.legacy,
+      },
+      statusOf: (evidenceId) => {
+        const assessment = coverageByEvidenceId?.[evidenceId];
+        return assessment?.availability === "assessed" ? assessment.coverage : "not_assessed";
+      },
+    };
+  }
+  const { grounding } = theme;
+  return {
+    answers: {
+      answered: grounding.grounded,
+      partial: grounding.degraded,
+      unanswered: grounding.noSupport,
+      unclear: 0,
+      outOfScope: 0,
+      notAssessed: grounding.unknown,
+    },
+    statusOf: () => undefined,
+  };
+};
+
+const themeAnswers = (theme: LegacyAudiencePulseStoredTheme): ThemeAnswers => {
+  if (!theme.answers) return legacyThemeAnswers(theme);
+  const statuses = theme.answerStatusByEvidenceId;
+  return { answers: theme.answers, statusOf: (evidenceId) => statuses?.[evidenceId] };
+};
+
 const normalizeQuestionForDisplay = (question: string): string => question
   .trim()
   .replace(/\s+/gu, " ");
 
 const questionDisplayKey = (question: string): string => normalizeQuestionForDisplay(question).toLowerCase();
 
+/**
+ * Merges repeated occurrences of a question into one example, but only within one
+ * answer status: a question answered twice and unanswered once shows as two examples.
+ * Shortfalls lead, keeping the stored order otherwise.
+ */
 const hydrateThemeEvidence = (
   evidenceIds: string[],
   resolve: (evidenceId: string) => AudiencePulseHydratedEvidence,
+  statusOf: ThemeAnswers["statusOf"],
   coverageByEvidenceId?: AudiencePulseStoredTheme["coverageByEvidenceId"],
 ): Pick<AudiencePulseThemeResponse, "distinctQuestionCount" | "evidence"> => {
   const occurrences = new Map<string, AudiencePulseEvidenceResponse>();
+  const distinctQuestions = new Set<string>();
   for (const evidenceId of evidenceIds) {
     const source = resolve(evidenceId);
     const question = normalizeQuestionForDisplay(source.question);
-    const key = questionDisplayKey(question);
+    const status = statusOf(evidenceId);
+    distinctQuestions.add(questionDisplayKey(question));
+    const key = `${questionDisplayKey(question)}\u0000${status ?? ""}`;
     const existing = occurrences.get(key);
     if (existing) {
       existing.occurrenceCount += 1;
@@ -206,11 +272,14 @@ const hydrateThemeEvidence = (
       question,
       occurrenceCount: 1,
       ...(coverageByEvidenceId?.[source.evidenceId] ? { answerCoverage: coverageByEvidenceId[source.evidenceId] } : {}),
+      ...(status ? { answerStatus: status } : {}),
     });
   }
+  const shortfallsFirst = (example: AudiencePulseEvidenceResponse): number =>
+    example.answerStatus && isShortfallStatus(example.answerStatus) ? 0 : 1;
   return {
-    distinctQuestionCount: occurrences.size,
-    evidence: [...occurrences.values()],
+    distinctQuestionCount: distinctQuestions.size,
+    evidence: [...occurrences.values()].sort((left, right) => shortfallsFirst(left) - shortfallsFirst(right)),
   };
 };
 
@@ -255,6 +324,7 @@ const hydrateReport = (
     dissolvedTopics: (legacyReport.dissolvedTopics ?? []).map((topic) => ({ ...topic })),
     themes: legacyReport.themes.map((theme) => {
       const legacyTheme: LegacyAudiencePulseStoredTheme = theme;
+      const { answers, statusOf } = themeAnswers(legacyTheme);
       const memberCount = legacyTheme.memberCount ?? legacyTheme.sampleCount ?? theme.evidenceIds.length;
       const share = legacyTheme.share ?? (populationSize === 0 ? 0 : memberCount / populationSize);
       return {
@@ -269,10 +339,11 @@ const hydrateReport = (
           membershipOverlap: theme.transition.membershipOverlap ?? null,
         } : null,
         share,
-        ...hydrateThemeEvidence(theme.evidenceIds, resolve, theme.coverageByEvidenceId),
+        ...hydrateThemeEvidence(theme.evidenceIds, resolve, statusOf, theme.coverageByEvidenceId),
         weeklyPulse: theme.weeklyPulse,
         grounding: theme.grounding,
         ...(theme.coverage ? { coverage: theme.coverage } : {}),
+        answers,
       };
     }),
     contentGaps: report.contentGaps,
@@ -905,7 +976,8 @@ export class AudiencePulseService implements AudiencePulsePort {
         };
         const boundedSummaryInput = boundAudiencePulseSummaryInputForPrompt(summaryInput);
         const prompt = buildAudiencePulsePrompt(boundedSummaryInput);
-        // Qualifying topics beyond the narrative cap retain their badge but cannot receive model copy.
+        // Qualifying topics beyond the narrative cap keep their content gap, which their row shows
+        // through its shortfall counts, but cannot receive model copy.
         const shownQualifyingTopicIndexes = shown.flatMap((topic, index) =>
           topic.contentGapQualifies ? [index] : []);
         const responseFormat = buildAudiencePulseResponseFormat(shownQualifyingTopicIndexes);

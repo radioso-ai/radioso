@@ -72,9 +72,16 @@ type CreateEmailMailboxRequest = {
   engagementMode?: EmailEngagementMode
 }
 
+type EmailMailboxLimits = Pick<
+  EmailMailbox,
+  'threadSendBudget' | 'hourlyGenerationBudget' | 'threadContextMessages' | 'spamOptIn' | 'silenceThresholdHours'
+>
+
 /** A settings change; `expectedPolicyVersion` refuses it when someone saved the mailbox since it was read. */
-type UpdateEmailMailboxRequest = {
+export type UpdateEmailMailboxRequest = Partial<EmailMailboxLimits> & {
   engagementMode?: EmailEngagementMode
+  /** The owner's explicit opt-in; switching an existing mailbox to `auto` is refused without it. */
+  autoOptIn?: true
   expectedPolicyVersion?: number
 }
 

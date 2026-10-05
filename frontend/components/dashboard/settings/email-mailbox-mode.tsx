@@ -2,11 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-import { emailChannelErrorMessage } from '@/components/dashboard/settings/email-domain-records'
+import { useMailboxSettingsSave } from '@/components/dashboard/settings/use-mailbox-settings-save'
 import { Button } from '@/components/ui/button'
 import { SegmentedControl } from '@/components/ui/segmented-control'
-import { getApiErrorCode } from '@/lib/api-error'
-import { emailChannelApi, type EmailEngagementMode, type EmailMailbox } from '@/lib/api-email-channel'
+import type { EmailEngagementMode, EmailMailbox } from '@/lib/api-email-channel'
 
 export const MODE_LABELS: Record<EmailEngagementMode, string> = {
   operator_only: 'Operator only',
@@ -24,17 +23,25 @@ const DOWNGRADE_CONSEQUENCE: Record<EmailEngagementMode, string> = {
   auto: 'Unsent automatic replies are held for review.',
 }
 
-const STALE_NOTICE = 'Settings changed elsewhere, reloaded.'
-const STALE_RELOAD_FAILED = 'Settings changed elsewhere. Reload the page.'
+/**
+ * What the operator confirms before a change, or null when it needs no confirmation: a downgrade
+ * names what happens to work in flight, and `auto` names the thread send budget it runs within.
+ */
+const confirmationFor = (current: EmailEngagementMode, next: EmailEngagementMode, threadSendBudget: number): string | null => {
+  if (next === 'auto') {
+    return `The agent sends grounded replies on its own, up to ${threadSendBudget} per thread until an operator replies.`
+  }
+  return AUTONOMY[next] < AUTONOMY[current] ? DOWNGRADE_CONSEQUENCE[current] : null
+}
 
 type FocusTarget = 'mode' | 'confirm'
 
 /**
  * An existing mailbox's engagement mode, offering only what the server supports (plus the current
  * mode if it no longer does). A downgrade asks one confirmation that states what happens to work in
- * flight; an upgrade applies to new mail only. Each change carries the policy version it was read
- * at, so a change saved elsewhere meanwhile is refused and the mailbox reloaded. Focus stays on the
- * mode, and the card announces the result.
+ * flight; switching to `auto` asks one that states its send budget and carries the opt-in. An
+ * upgrade applies to new mail only. A change saved elsewhere meanwhile is refused and the mailbox
+ * reloaded. Focus stays on the mode, and the card announces the result.
  */
 export function EmailMailboxMode({
   workspaceId,
@@ -50,8 +57,7 @@ export function EmailMailboxMode({
   announce: (message: string) => void
 }) {
   const [confirming, setConfirming] = useState<EmailEngagementMode | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
+  const { isSaving, notice, clearNotice, save } = useMailboxSettingsSave({ workspaceId, mailbox, onMailboxChanged })
   const modeRef = useRef<HTMLDivElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
   const focusAfterRender = useRef<FocusTarget | null>(null)
@@ -68,33 +74,18 @@ export function EmailMailboxMode({
   const modes = supportedModes.includes(current) ? supportedModes : [current, ...supportedModes]
   if (modes.length < 2) return null
 
-  const save = async (mode: EmailEngagementMode) => {
-    setIsSaving(true)
-    setNotice(null)
-    try {
-      const updated = await emailChannelApi.updateMailbox(workspaceId, mailbox.id, {
-        engagementMode: mode,
-        expectedPolicyVersion: mailbox.policyVersion,
-      })
-      onMailboxChanged(updated)
+  const changeTo = async (mode: EmailEngagementMode) => {
+    focusAfterRender.current = 'mode'
+    const outcome = await save(
+      mode === 'auto' ? { engagementMode: mode, autoOptIn: true } : { engagementMode: mode },
+      'Failed to change the mode.',
+    )
+    if (outcome === 'saved') {
       announce(AUTONOMY[mode] > AUTONOMY[current]
         ? `Mode changed to ${MODE_LABELS[mode]}. It applies to new mail.`
         : `Mode changed to ${MODE_LABELS[mode]}.`)
-    } catch (error) {
-      if (getApiErrorCode(error) === 'stale_policy_version') {
-        const reloaded = await emailChannelApi.getMailbox(workspaceId, mailbox.id).then((fresh) => {
-          onMailboxChanged(fresh)
-          return true
-        }, () => false)
-        setNotice(reloaded ? STALE_NOTICE : STALE_RELOAD_FAILED)
-      } else {
-        setNotice(emailChannelErrorMessage(error, 'Failed to change the mode.'))
-      }
-    } finally {
-      setConfirming(null)
-      setIsSaving(false)
-      focusAfterRender.current = 'mode'
     }
+    setConfirming(null)
   }
 
   const choose = (mode: EmailEngagementMode) => {
@@ -103,13 +94,13 @@ export function EmailMailboxMode({
       setConfirming(null)
       return
     }
-    if (AUTONOMY[mode] < AUTONOMY[current]) {
-      setNotice(null)
+    if (confirmationFor(current, mode, mailbox.threadSendBudget) !== null) {
+      clearNotice()
       setConfirming(mode)
       focusAfterRender.current = 'confirm'
       return
     }
-    void save(mode)
+    void changeTo(mode)
   }
 
   const cancel = () => {
@@ -131,10 +122,10 @@ export function EmailMailboxMode({
       {confirming ? (
         <div className="space-y-2" role="group" aria-label="Confirm mode change">
           <p className="text-sm text-foreground">
-            {`Change to ${MODE_LABELS[confirming]}? ${DOWNGRADE_CONSEQUENCE[current]}`.trim()}
+            {`Change to ${MODE_LABELS[confirming]}? ${confirmationFor(current, confirming, mailbox.threadSendBudget) ?? ''}`.trim()}
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button ref={confirmRef} type="button" size="sm" disabled={isSaving} onClick={() => void save(confirming)}>
+            <Button ref={confirmRef} type="button" size="sm" disabled={isSaving} onClick={() => void changeTo(confirming)}>
               Confirm
             </Button>
             <Button type="button" size="sm" variant="ghost" disabled={isSaving} onClick={cancel}>

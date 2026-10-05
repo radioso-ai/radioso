@@ -723,31 +723,34 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 **Goal**: generation budget per revision, coalescing, the policy-at-acceptance cap, and automated-mail gating, proven under flood.
 
-- [ ] T202 [P] [US5] Write `backend/tests/integration/email-channel-budgets.integration.test.ts`: 20 concurrent reservations never exceed the budget; the window rolls (injected clock); one charge per `(conversation, revision)` across retries.
-- [ ] T203 [P] [US5] Extend `backend/tests/unit/email-channel/review-runner.test.ts`: a reservation failure applies the `generation_budget` hand-off and increments `email_budget_hits_total{budget="mailbox_generation"}`.
-- [ ] T204 [P] [US5] Extend `backend/tests/unit/email-channel/inbound-processor.test.ts`: three inbound messages inside the window give one due time and one turn over all three (AS5.6).
-- [ ] T205 [P] [US5] Write `backend/tests/integration/email-policy-acceptance.integration.test.ts`: mail accepted under `draft` and processed after an upgrade to `auto` runs as `draft`; mail accepted under `draft` and processed after a downgrade to `operator_only` runs as `operator_only` (FR-025, research B16).
-- [ ] T206 [US5] Add `reserveGeneration` to `emailMailboxRepository.ts`, the reservation to `emailReviewRunner.ts`, and the exhausted check to `emailInboundProcessor.ts` (after T202–T205).
-- [ ] T207 [US5] Write `backend/tests/integration/email-channel-flood.integration.test.ts` (the SC-006 generation half): 200 unique first-contact messages in a minute on a `draft` mailbox. Generations stop at the budget, the rest become human-owned `generation_budget`, and nothing is lost.
-- [ ] T208 [P] [US5] Write `backend/tests/unit/email-channel/protocol-corpus.test.ts`, the SC-003 CI gate over every `protocol/` fixture and adapter verdict through the processor with fakes: no turn, and visible in the event log.
-- [ ] T209 [US5] Extend `backend/tests/integration/held-reply-release.integration.test.ts` (AS5.7): every agent-authored release carries `Auto-Submitted: auto-generated` in the driver request.
-- [ ] T210 [P] [US5] Docs: budgets, coalescing, automated-mail handling (RFC 3834 signal list), and policy-at-acceptance in `docs/email-channel.md` and the portal mdx; corpus resync.
-- [ ] T211 [US5] Verification: suites, the flood test, metrics emitted, `pnpm run ci:local -- origin/main`.
+- [x] T202 [P] [US5] Write `backend/tests/integration/email-channel-budgets.integration.test.ts`: 20 concurrent reservations never exceed the budget; the window rolls (injected clock); one charge per `(conversation, revision)` across retries.
+- [x] T203 [P] [US5] Extend `backend/tests/unit/email-channel/review-runner.test.ts`: a reservation failure applies the `generation_budget` hand-off and increments `email_budget_hits_total{budget="mailbox_generation"}`.
+- [x] T204 [P] [US5] Extend `backend/tests/unit/email-channel/inbound-processor.test.ts`: three inbound messages inside the window give one due time and one turn over all three (AS5.6).
+- [x] T205 [P] [US5] Write `backend/tests/integration/email-policy-acceptance.integration.test.ts`: mail accepted under `draft` and processed after an upgrade to `auto` runs as `draft`; mail accepted under `draft` and processed after a downgrade to `operator_only` runs as `operator_only` (FR-025, research B16).
+- [x] T206 [US5] Add `reserveGeneration` to `emailMailboxRepository.ts`, the reservation to `emailReviewRunner.ts`, and the exhausted check to `emailInboundProcessor.ts` (after T202–T205).
+- [x] T207 [US5] Write `backend/tests/integration/email-channel-flood.integration.test.ts` (the SC-006 generation half): 200 unique first-contact messages in a minute on a `draft` mailbox. Generations stop at the budget, the rest become human-owned `generation_budget`, and nothing is lost.
+- [x] T208 [P] [US5] Write `backend/tests/unit/email-channel/protocol-corpus.test.ts`, the SC-003 CI gate over every `protocol/` fixture and adapter verdict through the processor with fakes: no turn, and visible in the event log.
+- [x] T209 [US5] Extend `backend/tests/integration/held-reply-release.integration.test.ts` (AS5.7): every agent-authored release carries `Auto-Submitted: auto-generated` in the driver request.
+- [x] T210 [P] [US5] Docs: budgets, coalescing, automated-mail handling (RFC 3834 signal list), and policy-at-acceptance in `docs/email-channel.md` and the portal mdx; corpus resync.
+- [x] T211 [US5] Verification: suites, the flood test, metrics emitted, `pnpm run ci:local -- origin/main`.
+  - **Result (2026-10-05)**: unit 8796 passed; contract 608 passed; all 17 email, held-reply, and delivery-failure integration suites 140 passed on a fresh database incl. the flood test; `email_budget_hits_total` emitted; lint, dead-code, docs sync pass. `ci:local` left for the PR stage.
 
 ---
 
 ## Phase 8: S5 Ray and docs completion (FR-047, FR-044)
 
-- [ ] T212 [P] Add Ray deterministic rows to `backend/tests/fixtures/copilot-evals/cases.ts`:
+- [x] T212 [P] Add Ray deterministic rows to `backend/tests/fixtures/copilot-evals/cases.ts`:
   - mailbox configuration, the event-log summary and held replies → the expected read tools;
   - "send this held reply" → refusal with the never-list reason;
   - "switch the mailbox to auto" → the deferred-exclusion explanation.
-- [ ] T213 Run `backend/tests/unit/operatorCopilot/copilot-eval-suite.test.ts`. Re-record `backend/tests/fixtures/copilot-evals/baseline.json` with `pnpm run evals:copilot:update-baseline` only for intended changes (live, on demand).
-- [ ] T214 [P] Update `docs-portal/content/operators/copilot.mdx`: Ray's email read tools and its excluded mutations.
-- [ ] T215 [P] Confirm `operator-mcp-doc-parity.test.ts` and `operator-mcp-catalog.test.ts` pass with the four email tools, and update the operator MCP docs they check.
-- [ ] T216 [P] Final docs pass (after reading `docs/document-writer-prompt.md`): `docs/email-channel.md` complete for every mode except `auto`; `code-map.md`; `readme.md`; `human-takeover.md`.
-- [ ] T217 Run `pnpm --dir packages/product-docs run sync` and `sync:check`.
-- [ ] T218 Verification: `test:unit`, `test:contract`, lint, dead code.
+- [x] T213 Run `backend/tests/unit/operatorCopilot/copilot-eval-suite.test.ts`. Re-record `backend/tests/fixtures/copilot-evals/baseline.json` with `pnpm run evals:copilot:update-baseline` only for intended changes (live, on demand).
+  - **Result (2026-10-05)**: deterministic suite 48/48 with the five new rows; `baseline.json` untouched; the live re-record is on demand.
+- [x] T214 [P] Update `docs-portal/content/operators/copilot.mdx`: Ray's email read tools and its excluded mutations.
+- [x] T215 [P] Confirm `operator-mcp-doc-parity.test.ts` and `operator-mcp-catalog.test.ts` pass with the four email tools, and update the operator MCP docs they check.
+- [x] T216 [P] Final docs pass (after reading `docs/document-writer-prompt.md`): `docs/email-channel.md` complete for every mode except `auto`; `code-map.md`; `readme.md`; `human-takeover.md`.
+- [x] T217 Run `pnpm --dir packages/product-docs run sync` and `sync:check`.
+- [x] T218 Verification: `test:unit`, `test:contract`, lint, dead code.
+  - **Result (2026-10-05)**: unit, contract, root and backend lint, dead-code ratchet, docs sync all pass.
 
 ---
 
@@ -831,6 +834,8 @@ Not fixed in S1; each needs a small decision before it is tasked.
 9. **Live eval runner has no review path**: `backend/scripts/evalRunnerAdapter.ts` and `runEvals.ts` need a `review` implementation before the nightly run can score the two `email` cases; the deterministic harness covers them today.
 10. **Supersedes through the ownership, ingest, and policy scopes write no per-draft `hitl.held_reply` audit**, because the supersede port returns counts only.
 11. **Mailbox removed before a release** refuses with `email_sending_not_verified` (step `add_mailbox`) rather than `channel_not_ready`, because delivery is checked before the transaction; the panel shows both.
+
+12. **Budgets are API-only**: the settings card exposes engagement mode but not the thread send budget, hourly generation budget, thread context bound, or silence threshold; the docs point to the mailbox API. Add the fields to the card when the next frontend pass touches it.
 
 ## Dependencies & Execution Order
 

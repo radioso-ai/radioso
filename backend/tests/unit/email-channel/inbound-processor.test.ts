@@ -1,12 +1,13 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
-import type { ConnectorIngestInput, ConnectorIngestResult } from "@radioso/connector-api";
+import type { ConnectorIngestInput, ConnectorIngestResult, ConnectorRespondInput, ConnectorTurnResult } from "@radioso/connector-api";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   EmailInboundProcessor,
   type EmailThreadProtocolScope,
 } from "../../../src/modules/connectors/plugins/email/emailInboundProcessor.js";
+import { EmailReviewRunner } from "../../../src/modules/connectors/plugins/email/emailReviewRunner.js";
 import type { ConversationActivityEvent } from "../../../src/modules/conversationActivity/contracts/index.js";
 import type { EmailMailboxRecord } from "../../../src/modules/emailChannel/persistence/emailMailboxRepository.js";
 import { generateOpaqueToken, MailboxService, type EngagementMode } from "../../../src/modules/emailChannel/public.js";
@@ -97,6 +98,7 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
     config: { inboundDomain: INBOUND_DOMAIN, supportedModes: ["operator_only"] },
   });
   const logger = { warn: vi.fn() };
+  const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
   const deliveryEvents = {
     applyStatus: vi.fn(async (): Promise<"applied" | "ignored" | "foreign"> => "applied"),
     applyDsnBounce: vi.fn(async () => 0),
@@ -112,7 +114,7 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
     threadProtocol,
     chat: { ingest },
     drains: { requestDrain },
-    metrics: null,
+    metrics,
     logger,
     clock,
     createId: randomUUID,
@@ -123,6 +125,36 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
       supportedModes: options.supportedModes ?? ["operator_only"],
       coalesceSeconds: COALESCE_SECONDS,
     },
+  });
+
+  // Stage 2 over the same tables, so a test can follow scheduled mail into its review turn.
+  const respond = vi.fn(async (input: ConnectorRespondInput): Promise<ConnectorTurnResult> => ({
+    kind: "draft",
+    conversationId: input.conversationId,
+    ownershipVersion: 0,
+    facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: false }, suppressedEffects: [], citationCount: 1 },
+    draft: { text: "Your order ships on Monday.", presentation: {} },
+  }));
+  const reviews = new EmailReviewRunner({
+    links: threads,
+    mailboxes,
+    domains,
+    conversations: {
+      latestCustomerMessageId: async (conversationId) => conversations.get(conversationId)?.messageIds.at(-1) ?? null,
+      ownershipVersionOf: async (conversationId) => (conversations.get(conversationId)?.ownership === "human_owned" ? 1 : 0),
+    },
+    chat: { respond },
+    heldReplies: {
+      hold: async () => ({ heldReplyId: randomUUID(), state: "pending", duplicate: false }),
+      findByReviewRef: async () => null,
+      supersedePendingForConversation: async () => 0,
+    },
+    handoffs: { requestHumanOwnership: vi.fn(async () => undefined) },
+    drains: { requestDrain },
+    metrics,
+    logger,
+    clock,
+    config: { supportedModes: options.supportedModes ?? ["operator_only"], maxAttempts: 4 },
   });
 
   const domain = domains.seed({ workspaceId, domain: "customer.test" });
@@ -199,6 +231,9 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
     fetchFailures,
     ingestFailures,
     requestDrain,
+    metrics,
+    respond,
+    reviews,
     seedMailbox,
     relayAddressOf,
     message,
@@ -764,6 +799,42 @@ describe("EmailInboundProcessor: review scheduling (stage 2)", () => {
     expect(h.requestDrain).toHaveBeenLastCalledWith({ maxJobs: expect.any(Number), stage: "review", scheduleAt: firstDue });
   });
 
+  it("runs one review turn over three messages that arrive inside the coalescing window (AS5.6)", async () => {
+    const h = harness({ supportedModes: DRAFTING });
+    const mailbox = h.seedMailbox({ engagementMode: "draft", agentId });
+    const opening = h.message({ deliveredTo: [h.relayAddressOf(mailbox)] });
+    const first = await h.receive(opening);
+    const conversationId = first.deliveries[0].conversationId!;
+    const dueAt = h.threads.links.get(conversationId)!.reviewDueAt!;
+    const followUp = () => h.message({ deliveredTo: [h.relayAddressOf(mailbox)], inReplyTo: opening.rfcMessageId, references: [opening.rfcMessageId!] });
+    h.advance(20_000);
+    const second = await h.receive(followUp());
+    h.advance(20_000);
+    const third = await h.receive(followUp());
+
+    // One due time: the first message's, which the later two joined.
+    expect(h.threads.links.get(conversationId)).toMatchObject({ reviewRevision: 3, reviewDueAt: dueAt });
+    expect(h.requestDrain.mock.calls).toEqual(Array.from({ length: 3 }, () => [{ maxJobs: expect.any(Number), stage: "review", scheduleAt: dueAt }]));
+    expect(await h.reviews.runDue({ maxJobs: 10 })).toMatchObject({ claimed: 0 });
+
+    h.setNow(dueAt);
+    expect(await h.reviews.runDue({ maxJobs: 10 })).toMatchObject({ claimed: 1, held: 1 });
+
+    // One turn, answering the newest message with all three in the conversation it reads.
+    expect(h.respond).toHaveBeenCalledOnce();
+    expect(h.respond).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId,
+      respondToMessageId: third.deliveries[0].messageId,
+      executionMode: "review",
+      historyWindow: { maxMessages: mailbox.threadContextMessages },
+    }));
+    expect(h.conversations.get(conversationId)?.messageIds).toEqual(
+      [first, second, third].map((received) => received.deliveries[0].messageId),
+    );
+    expect(h.threads.links.get(conversationId)).toMatchObject({ reviewDueAt: null, reviewCompletedRevision: 3 });
+    expect(await h.reviews.runDue({ maxJobs: 10 })).toMatchObject({ claimed: 0 });
+  });
+
   it("binds the newest delivery's accepted policy version, not the one in force when it is processed", async () => {
     const h = harness({ supportedModes: DRAFTING });
     const mailbox = h.seedMailbox({ engagementMode: "draft", agentId });
@@ -811,5 +882,53 @@ describe("EmailInboundProcessor: review scheduling (stage 2)", () => {
     expect(h.ingest.mock.calls[1][0].conversation.conversationId).toBe(first.deliveries[0].conversationId);
     expect(await h.ingest.mock.results[1].value).toMatchObject({ conversationCreated: false, messageCreated: true });
     expect(h.threads.links.get(first.deliveries[0].conversationId!)?.reviewRevision).toBe(1);
+  });
+});
+
+describe("EmailInboundProcessor: the mailbox generation budget (FR-023)", () => {
+  const DRAFTING: readonly EngagementMode[] = ["operator_only", "draft"];
+  const budgetHits = (h: ReturnType<typeof harness>) =>
+    h.metrics.incrementCounter.mock.calls.filter(([name]) => name === "email_budget_hits_total").map(([, options]) => options.labels);
+
+  it("ingests accepted mail as human-owned generation_budget while the mailbox's window is full, until the window rolls", async () => {
+    const h = harness({ supportedModes: DRAFTING });
+    const windowStartedAt = new Date(h.now().getTime() - 10 * MINUTE_MS);
+    const mailbox = h.seedMailbox({
+      engagementMode: "draft",
+      agentId,
+      hourlyGenerationBudget: 2,
+      generationWindowStartedAt: windowStartedAt,
+      generationWindowCount: 2,
+    });
+
+    const held = await h.receive(h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
+
+    expect(held.deliveries[0]).toMatchObject({ state: "done", disposition: "ingest_only", dispositionReason: "generation_budget" });
+    expect(h.ingest.mock.calls[0][0]).toMatchObject({ agentId, humanOwnership: { reason: "generation_budget" } });
+    expect(h.threads.links.get(held.deliveries[0].conversationId!)).toMatchObject({ reviewRevision: 0, reviewDueAt: null });
+    expect(budgetHits(h)).toEqual([{ budget: "mailbox_generation" }]);
+
+    // The window is an hour from its first generation, whatever came after it.
+    h.setNow(new Date(windowStartedAt.getTime() + 60 * MINUTE_MS));
+    const accepted = await h.receive(h.message({ from: { address: "bob@example.test", displayName: "Bob" }, deliveredTo: [h.relayAddressOf(mailbox)] }));
+
+    expect(accepted.deliveries[0]).toMatchObject({ disposition: "run_review_turn", dispositionReason: "accepted" });
+    expect(budgetHits(h)).toHaveLength(1);
+  });
+
+  it("accepts mail for a review while the window has room", async () => {
+    const h = harness({ supportedModes: DRAFTING });
+    const mailbox = h.seedMailbox({
+      engagementMode: "draft",
+      agentId,
+      hourlyGenerationBudget: 2,
+      generationWindowStartedAt: new Date(h.now().getTime() - MINUTE_MS),
+      generationWindowCount: 1,
+    });
+
+    const { deliveries } = await h.receive(h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
+
+    expect(deliveries[0]).toMatchObject({ disposition: "run_review_turn", dispositionReason: "accepted" });
+    expect(budgetHits(h)).toEqual([]);
   });
 });

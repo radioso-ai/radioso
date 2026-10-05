@@ -1,4 +1,5 @@
 export { capToSupportedMode, effectiveEngagementMode, type EngagementMode } from "./mailboxes/effectiveMode.js";
+export { isGenerationBudgetExhausted } from "./mailboxes/generationBudget.js";
 export type { MailboxPolicyChangeUnitOfWork } from "./mailboxes/mailboxPolicyChangeUnitOfWork.js";
 export {
   EMAIL_MAILBOX_POLICY_REF_PREFIX,

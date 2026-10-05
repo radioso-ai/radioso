@@ -29,7 +29,8 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 // Releasing a held reply against Postgres (research B1, AS4.8, FR-029, SC-004): concurrent releases
 // serialize on the conversation row and send the draft once, the loser is refused with the held
 // reply as it is now, a release never changes who owns the conversation, a policy change racing a
-// release has exactly one winner, and a pending draft never has a send queued for it.
+// release has exactly one winner, a pending draft never has a send queued for it, and an unedited
+// release goes out as the agent's mail, with `Auto-Submitted: auto-generated` (AS5.7).
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -380,6 +381,33 @@ describeIntegration("held reply release (Postgres, research B1)", () => {
       }
     }
   }, 120_000);
+
+  it("sends every agent-authored release with Auto-Submitted: auto-generated, and an edited one without it (AS5.7, FR-034)", async () => {
+    const edit = "Hi Alice, a teammate's own words about your invoice.";
+    const releases = [
+      { scenario: await pendingDraft(), editedText: null },
+      { scenario: await pendingDraft(), editedText: null },
+      { scenario: await pendingDraft(), editedText: edit },
+    ];
+
+    const sent: { text: string; autoSubmitted: string | null }[] = [];
+    for (const { scenario, editedText } of releases) {
+      const response = await apiNode().releaseHeldReply(scenario.teammate, scenario.target, editedText === null ? {} : { editedText });
+      expect(response.status).toBe(201);
+      const messageId = (response.body as { messageId: string }).messageId;
+      await scenario.worker.dispatch();
+      // The driver request the provider accepted for the release: one email, with its threading headers.
+      const [accept, ...others] = await providerAcceptsUnder(spool.dir, emailSendKey.message(messageId));
+      expect(others).toEqual([]);
+      sent.push({ text: accept.message.text, autoSubmitted: accept.message.threading?.autoSubmitted ?? null });
+    }
+
+    expect(sent).toEqual([
+      { text: expect.stringContaining(DRAFT_TEXT), autoSubmitted: "auto-generated" },
+      { text: expect.stringContaining(DRAFT_TEXT), autoSubmitted: "auto-generated" },
+      { text: expect.stringContaining(edit), autoSubmitted: null },
+    ]);
+  }, 90_000);
 
   it("never queues a send for a pending draft (SC-004)", async () => {
     const scenario = await pendingDraft();

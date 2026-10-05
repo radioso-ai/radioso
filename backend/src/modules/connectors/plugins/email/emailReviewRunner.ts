@@ -27,6 +27,8 @@ const REVIEW_FAILED = "review_failed";
 const REVIEW_UNAVAILABLE = "review_unavailable";
 /** The hand-off when the mailbox no longer lets the agent answer, as at ingest (FR-018). */
 const OPERATOR_ONLY_MAILBOX = "operator_only_mailbox";
+/** The hand-off when the mailbox's hourly generation budget is spent, as at ingest (FR-023). */
+const GENERATION_BUDGET = "generation_budget";
 /** No policy version is ever this: a removed mailbox's policy matches no bound version. */
 const REMOVED_POLICY_VERSION = -1;
 const RECEIPT_TO_HELD_REPLY_BUCKETS = [5, 10, 30, 60, 120, 300, 600, 1_800, 3_600];
@@ -40,6 +42,7 @@ type EmailReviewOutcome =
   | "no_draft"
   | "human_owned"
   | "not_runnable"
+  | "budget_exhausted"
   | "retrying"
   | "failed"
   | "errored";
@@ -71,7 +74,7 @@ type EmailReviewHeldReplies = Pick<HeldReplyService, "hold" | "findByReviewRef">
 
 export interface EmailReviewRunnerDependencies {
   links: Pick<EmailThreadRepository, "claimDueReviews" | "scheduleReview" | "completeReview" | "releaseReview" | "retryReviewLater">;
-  mailboxes: Pick<EmailMailboxRepository, "findActiveById" | "findPolicyVersion">;
+  mailboxes: Pick<EmailMailboxRepository, "findActiveById" | "findPolicyVersion" | "reserveGeneration">;
   domains: Pick<EmailDomainRepository, "findById">;
   conversations: EmailReviewConversationReader;
   chat: Pick<ConnectorChatPort, "respond">;
@@ -98,6 +101,7 @@ const emptyResult = (): EmailReviewDrainResult => ({
   no_draft: 0,
   human_owned: 0,
   not_runnable: 0,
+  budget_exhausted: 0,
   retrying: 0,
   failed: 0,
   errored: 0,
@@ -120,11 +124,13 @@ const decisionReason = (decision: PublicationDecision): string => {
  * 1. finishes at once when R's review ref is already held, because an earlier claim got that far;
  * 2. hands the thread to a person, running nothing, when the mailbox no longer lets the agent
  *    answer — the lower-autonomy mode of the accepted and the current policy (research B16);
- * 3. supersedes the draft an earlier revision left pending, so the thread keeps one current draft;
- * 4. runs `respond` as a review of the newest customer message, within the mailbox's history window;
- * 5. decides publication: a draft is held bound to the policy and ownership the review ran under,
+ * 3. charges revision R to the mailbox's generation budget, once across attempts, and hands the
+ *    thread to a person as `generation_budget`, running nothing, when the budget is spent (B8);
+ * 4. supersedes the draft an earlier revision left pending, so the thread keeps one current draft;
+ * 5. runs `respond` as a review of the newest customer message, within the mailbox's history window;
+ * 6. decides publication: a draft is held bound to the policy and ownership the review ran under,
  *    a draftless turn hands off, and a person's conversation is left alone;
- * 6. completes revision R only, so mail that made R+1 meanwhile keeps its due time and runs next.
+ * 7. completes revision R only, so mail that made R+1 meanwhile keeps its due time and runs next.
  *
  * A failure retries at a backoff, and the last attempt hands the thread off as `review_unavailable`.
  */
@@ -185,6 +191,10 @@ export class EmailReviewRunner {
     if (respondToMessageId === null) {
       throw new Error("email_review_without_customer_message");
     }
+    if (!(await this.reserveGeneration(claim))) {
+      await this.handOff(claim, GENERATION_BUDGET);
+      return { outcome: "budget_exhausted", reviewAgainUnder: null };
+    }
 
     await this.deps.heldReplies.supersedePendingForConversation(conversationId, "newer_inbound");
     const turn = await this.respond(claim, mailbox.agentId, respondToMessageId, mailbox.threadContextMessages);
@@ -218,6 +228,19 @@ export class EmailReviewRunner {
       outcome: "held",
       reviewAgainUnder: reviewAgain ? { policyVersion: claim.reviewPolicyVersion ?? mailbox.policyVersion } : null,
     };
+  }
+
+  /** Charges revision R to the mailbox's generation budget (research B8); false when the budget is spent. */
+  private async reserveGeneration(claim: ClaimedReview): Promise<boolean> {
+    const reservation = await this.deps.mailboxes.reserveGeneration({
+      mailboxId: claim.mailboxId,
+      conversationId: claim.conversationId,
+      revision: claim.reviewRevision,
+      at: this.deps.clock(),
+    });
+    if (reservation !== "exhausted") return true;
+    this.count("email_budget_hits_total", "Automatic email behavior a budget stopped, by budget.", { budget: "mailbox_generation" });
+    return false;
   }
 
   /** The accepted policy of the newest coalesced delivery against the current one, capped to the deployment's modes. */

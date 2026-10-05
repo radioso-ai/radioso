@@ -44,7 +44,9 @@ It does not own:
   `backend/src/modules/operatorCopilot/tools/emailChannel.ts`.
 - `mailboxes/` — relay-token issuance and rotation (`relayTokens.ts`),
   routing (`mailboxRouting.ts`), engagement-mode ordering
-  (`effectiveMode.ts`), receiving-state derivation
+  (`effectiveMode.ts`), the hourly generation window
+  (`generationBudget.ts`, which `EmailMailboxRepository.reserveGeneration`
+  charges once per thread review revision), receiving-state derivation
   (`receivingState.ts`), and the policy change-of-record
   (`mailboxPolicyChangeUnitOfWork.ts`), which supersedes the drafts bound
   to the version it replaces.

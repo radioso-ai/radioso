@@ -52,7 +52,8 @@ const completedReport: AudiencePulseHydratedReport = {
         { weekStart: "2026-04-22T00:00:00.000Z", count: 3 },
       ],
       grounding: { grounded: 2, degraded: 4, noSupport: 3, unknown: 3, contentGapEligible: 6 },
-      coverage: { answered: 2, partial: 4, unanswered: 3, unclear: 1, outOfScope: 0, unassessed: 2, legacy: 2, reasons: { insufficient_evidence: 3 } },
+      coverage: { answered: 18, partial: 4, unanswered: 3, unclear: 1, unassessed: 2, legacy: 2, reasons: { insufficient_evidence: 3 } },
+      answers: { answered: 18, partial: 4, unanswered: 3, unclear: 1, outOfScope: 0, notAssessed: 4 },
       evidence: [
         {
           reference: "ev-1",
@@ -61,6 +62,7 @@ const completedReport: AudiencePulseHydratedReport = {
           question: "How long until I get my refund after returning?",
           occurrenceCount: 1,
           answerCoverage: { availability: "assessed", coverage: "unanswered", reason: "insufficient_evidence" },
+          answerStatus: "unanswered",
         },
         {
           reference: "ev-2",
@@ -68,6 +70,7 @@ const completedReport: AudiencePulseHydratedReport = {
           messageId: evidenceMessageTwo,
           question: "When does a refund show up on my card?",
           occurrenceCount: 1,
+          answerStatus: "not_assessed",
         },
       ],
     },
@@ -211,7 +214,7 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(refundTopic).toContainText("30 questions · 3 unanswered · 4 partly answered");
     await topicsSection.getByRole("button", { name: /Refund timing/ }).click();
     await expect(refundTopic.getByText(
-      "2 answered · 4 partly answered · 3 unanswered · 1 needs clarification · 4 not assessed",
+      "18 answered · 3 unanswered · 4 partly answered · 1 needs clarification · 4 not assessed",
       { exact: true },
     )).toBeVisible();
     // Census coverage line states plainly that every question in the window was read.
@@ -766,22 +769,23 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(page.getByText(/asked 3×/)).toBeVisible();
   });
 
-  test("a collapsed row repeats the shortfall counts of its expanded answer line", async ({ page }) => {
+  test("a topic row and its expanded line both read the topic's answer summary", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
-    // The content-gap count covers only shortfalls for lack of material; the row must not use it.
-    const narrowGapReport = {
+    // The grounding and coverage diagnostics disagree with the summary on purpose; the row reads only the summary.
+    const summaryReport = {
       ...completedReport,
       themes: [{
         ...completedReport.themes[0],
         grounding: { ...completedReport.themes[0].grounding, contentGapEligible: 1 },
+        answers: { answered: 22, partial: 1, unanswered: 2, unclear: 0, outOfScope: 3, notAssessed: 2 },
       }],
     };
 
     await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
       if (route.request().method() === "GET") {
-        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: narrowGapReport }) });
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: summaryReport }) });
         return;
       }
       await route.fallback();
@@ -790,21 +794,23 @@ test.describe("Audience Pulse dashboard", () => {
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
 
     const topicRow = page.getByTestId("audience-pulse-topic-row").first();
-    await expect(topicRow).toContainText("30 questions · 3 unanswered · 4 partly answered");
-    await expect(topicRow).not.toContainText("1 unanswered");
+    // Out-of-scope declines stay out of the collapsed row's shortfalls.
+    await expect(topicRow).toContainText("30 questions · 2 unanswered · 1 partly answered");
+    await expect(topicRow).not.toContainText("out of scope");
     await topicRow.getByRole("button", { name: /Show examples/ }).click();
     await expect(topicRow.getByText(
-      "2 answered · 4 partly answered · 3 unanswered · 1 needs clarification · 4 not assessed",
+      "22 answered · 2 unanswered · 1 partly answered · 3 out of scope · 2 not assessed",
       { exact: true },
     )).toBeVisible();
   });
 
-  test("a topic with unanswered questions but no content opportunity offers no draft", async ({ page }) => {
+  test("a content gap without a recommendation shows its shortfalls in the row and offers no draft", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
     const gapWithoutRecommendationReport = {
       ...completedReport,
+      contentGaps: [{ themeId: "theme-1", eligibleEvidenceCount: 6, distinctConversationCount: 4 }],
       recommendations: [],
     };
 
@@ -1027,37 +1033,33 @@ test.describe("Audience Pulse dashboard", () => {
     }
   });
 
-  test("an expanded topic counts its answers and lists the questions the agent fell short on first", async ({ page }) => {
+  test("an expanded topic labels each example with its answer status, in the report's order", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
-    const [unansweredEvidence, notCheckedEvidence] = completedReport.themes[0].evidence;
+    const [unansweredEvidence, notAssessedEvidence] = completedReport.themes[0].evidence;
+    const example = (reference: string, question: string, answerStatus: string) => ({
+      ...unansweredEvidence,
+      reference,
+      question,
+      answerCoverage: undefined,
+      answerStatus,
+    });
     const mixedEvidenceReport = {
       ...completedReport,
       themes: [{
         ...completedReport.themes[0],
-        coverage: { ...completedReport.themes[0].coverage, outOfScope: 1 },
+        answers: { answered: 18, partial: 4, unanswered: 3, unclear: 1, outOfScope: 1, notAssessed: 3 },
+        // The report puts shortfalls first; the dashboard keeps its order.
         evidence: [
-          {
-            ...unansweredEvidence,
-            reference: "ev-answered",
-            question: "Do you refund shipping costs?",
-            answerCoverage: { availability: "assessed", coverage: "answered", reason: "sufficient_evidence" },
-          },
-          notCheckedEvidence,
-          {
-            ...unansweredEvidence,
-            reference: "ev-declined",
-            question: "Can you refund a gift card from another shop?",
-            answerCoverage: { availability: "assessed", coverage: "unanswered", reason: "intentional_scope_boundary" },
-          },
-          {
-            ...unansweredEvidence,
-            reference: "ev-partial",
-            question: "Can I get a refund in store credit?",
-            answerCoverage: { availability: "assessed", coverage: "partial", reason: "insufficient_evidence" },
-          },
           unansweredEvidence,
+          example("ev-partial", "Can I get a refund in store credit?", "partial"),
+          example("ev-answered", "Do you refund shipping costs?", "answered"),
+          // The same question answered on other occasions is its own example.
+          { ...example("ev-1-answered", unansweredEvidence.question, "answered"), occurrenceCount: 2 },
+          example("ev-clarify", "Can I return it?", "unclear"),
+          notAssessedEvidence,
+          example("ev-declined", "Can you refund a gift card from another shop?", "out_of_scope"),
         ],
       }],
     };
@@ -1077,17 +1079,18 @@ test.describe("Audience Pulse dashboard", () => {
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
 
     const topicRow = page.getByTestId("audience-pulse-topic-row").first();
-    // Out-of-scope declines stay out of the collapsed row's shortfalls.
     await expect(topicRow).toContainText("30 questions · 3 unanswered · 4 partly answered");
     await topicRow.getByRole("button", { name: /Show examples/ }).click();
     await expect(topicRow.getByText(
-      "2 answered · 4 partly answered · 3 unanswered · 1 needs clarification · 1 out of scope · 4 not assessed",
+      "18 answered · 3 unanswered · 4 partly answered · 1 needs clarification · 1 out of scope · 3 not assessed",
       { exact: true },
     )).toBeVisible();
     await expect(topicRow.getByRole("listitem")).toHaveText([
       /How long until I get my refund after returning\?\s*Unanswered$/,
       /Can I get a refund in store credit\?\s*Partly answered$/,
       /Do you refund shipping costs\?\s*Answered$/,
+      /How long until I get my refund after returning\? · asked 2×\s*Answered$/,
+      /Can I return it\?\s*Needs clarification$/,
       /When does a refund show up on my card\?\s*Not assessed$/,
       /Can you refund a gift card from another shop\?\s*Out of scope$/,
     ]);
@@ -1218,24 +1221,35 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(page.getByText(/Most questions weren/)).toBeVisible();
   });
 
-  test("a topic saved before answers were checked counts its answers from grounding", async ({ page }) => {
+  test("an older report counts a scope decline where it was saved, in its row and its examples alike", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
-    // Undefined fields drop out of the JSON body, as they would from an older saved report.
-    const groundingOnlyReport = {
+    // What the API sends for a snapshot saved before declines were set apart: the decline
+    // stays unanswered in both the summary and the example's status.
+    const [unansweredEvidence, notAssessedEvidence] = completedReport.themes[0].evidence;
+    const olderReport = {
       ...completedReport,
       themes: [{
         ...completedReport.themes[0],
-        coverage: undefined,
-        grounding: { grounded: 5, degraded: 2, noSupport: 1, unknown: 4, contentGapEligible: 3 },
-        evidence: completedReport.themes[0].evidence.map((evidence) => ({ ...evidence, answerCoverage: undefined })),
+        answers: { answered: 26, partial: 0, unanswered: 2, unclear: 0, outOfScope: 0, notAssessed: 2 },
+        evidence: [
+          {
+            ...unansweredEvidence,
+            reference: "ev-declined",
+            question: "Can you refund a gift card from another shop?",
+            answerCoverage: { availability: "assessed", coverage: "unanswered", reason: "intentional_scope_boundary" },
+            answerStatus: "unanswered",
+          },
+          unansweredEvidence,
+          notAssessedEvidence,
+        ],
       }],
     };
 
     await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
       if (route.request().method() === "GET") {
-        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: groundingOnlyReport }) });
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: olderReport }) });
         return;
       }
       await route.fallback();
@@ -1243,11 +1257,45 @@ test.describe("Audience Pulse dashboard", () => {
 
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
     const topicRow = page.getByTestId("audience-pulse-topic-row").first();
-    await expect(topicRow).toContainText("30 questions · 1 unanswered · 2 partly answered");
+    await expect(topicRow).toContainText("30 questions · 2 unanswered");
     await topicRow.getByRole("button", { name: /Show examples/ }).click();
-    await expect(topicRow.getByText("5 answered · 2 partly answered · 1 unanswered · 4 not assessed", { exact: true }))
-      .toBeVisible();
-    // No example carries a check of its own, so none is labelled.
+    await expect(topicRow.getByText("26 answered · 2 unanswered · 2 not assessed", { exact: true })).toBeVisible();
+    await expect(topicRow.getByRole("listitem")).toHaveText([
+      /Can you refund a gift card from another shop\?\s*Unanswered$/,
+      /How long until I get my refund after returning\?\s*Unanswered$/,
+      /When does a refund show up on my card\?\s*Not assessed$/,
+    ]);
+    await expect(topicRow.getByText(/out of scope/i)).toHaveCount(0);
+  });
+
+  test("a topic from an API without answer summaries shows only its question count", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    // Undefined fields drop out of the JSON body, as they would from an older API deploy.
+    const noSummaryReport = {
+      ...completedReport,
+      themes: [{
+        ...completedReport.themes[0],
+        answers: undefined,
+        evidence: completedReport.themes[0].evidence.map((evidence) => ({ ...evidence, answerStatus: undefined })),
+      }],
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: noSummaryReport }) });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+    const topicRow = page.getByTestId("audience-pulse-topic-row").first();
+    await expect(topicRow).toContainText("30 questions");
+    await expect(topicRow).not.toContainText("unanswered");
+    await topicRow.getByRole("button", { name: /Show examples/ }).click();
+    await expect(topicRow.getByText(completedReport.themes[0].description)).toBeVisible();
     await expect(topicRow.getByRole("listitem")).toHaveText([
       "How long until I get my refund after returning?",
       "When does a refund show up on my card?",

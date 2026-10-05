@@ -1697,16 +1697,15 @@ describe("AudiencePulseService", () => {
     });
   });
 
-  it("reads a saved topic coverage summary without an out-of-scope count as zero declines", () => {
-    const savedCoverage = { answered: 1, partial: 1, unanswered: 0, unclear: 0, unassessed: 0, legacy: 0, reasons: { sufficient_evidence: 1, insufficient_evidence: 1 } };
-    const report = {
+  describe("topic answers on read", () => {
+    const savedReport = (theme: Record<string, unknown>): AudiencePulseStoredReport => ({
       period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
       generatedAt: "2026-08-01T00:00:00.000Z",
       isFirstCensus: false,
       narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
       narrativeReuseCount: 0,
       narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
-      coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 },
+      coverage: { populationSize: 5, sampleSize: 5, sampled: false, facetReadyQuestionCount: 5 },
       weeklyVolume: [],
       summary: "Summary",
       unclassifiedQuestionCount: 0,
@@ -1715,31 +1714,91 @@ describe("AudiencePulseService", () => {
         id: "theme-1",
         title: "Plans",
         description: "Visitors ask about plans.",
-        evidenceIds: ["evidence-1"],
-        memberCount: 2,
+        memberCount: 5,
         previousMemberCount: null,
         previousShare: null,
         transition: null,
         share: 1,
         weeklyPulse: [],
-        grounding: { grounded: 1, degraded: 1, noSupport: 0, unknown: 0, contentGapEligible: 1 },
-        coverage: savedCoverage,
+        grounding: { grounded: 1, degraded: 1, noSupport: 2, unknown: 1, contentGapEligible: 3 },
+        ...theme,
       }],
       contentGaps: [],
       recommendations: [],
       caveats: [],
-    } as unknown as AudiencePulseStoredReport;
+    } as unknown as AudiencePulseStoredReport);
 
-    const hydrated = hydrateReport(report, new Map([
-      ["evidence-1", {
-        evidenceId: "evidence-1",
-        conversationId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-        messageId: "11111111-1111-1111-1111-111111111111",
-        question: "How do I change my plan?",
-      }],
+    const sources = (questions: Record<string, string>) => new Map(Object.entries(questions).map(([evidenceId, question], index) => [
+      evidenceId,
+      {
+        evidenceId,
+        conversationId: `aaaaaaaa-aaaa-aaaa-aaaa-00000000000${index}`,
+        messageId: `11111111-1111-1111-1111-00000000000${index}`,
+        question,
+      },
     ]));
 
-    expect(hydrated.themes[0]?.coverage).toEqual({ ...savedCoverage, outOfScope: 0 });
+    it("passes the stored answers through and merges a repeated question only within one status", () => {
+      const answers = { answered: 2, partial: 0, unanswered: 1, unclear: 0, outOfScope: 1, notAssessed: 1 };
+      const hydrated = hydrateReport(savedReport({
+        evidenceIds: ["e-1", "e-2", "e-3", "e-4", "e-5"],
+        answers,
+        answerStatusByEvidenceId: {
+          "e-1": "unanswered", "e-2": "answered", "e-3": "answered", "e-4": "out_of_scope", "e-5": "not_assessed",
+        },
+      }), sources({
+        "e-1": "Is there parking?",
+        "e-2": "Is there parking?",
+        "e-3": "  is there   parking? ",
+        "e-4": "Can you read my tarot cards?",
+        "e-5": "Do you open late?",
+      }));
+
+      expect(hydrated.themes[0]?.answers).toEqual(answers);
+      expect(hydrated.themes[0]?.evidence.map(({ question, occurrenceCount, answerStatus }) => ({ question, occurrenceCount, answerStatus })))
+        .toEqual([
+          { question: "Is there parking?", occurrenceCount: 1, answerStatus: "unanswered" },
+          { question: "Is there parking?", occurrenceCount: 2, answerStatus: "answered" },
+          { question: "Can you read my tarot cards?", occurrenceCount: 1, answerStatus: "out_of_scope" },
+          { question: "Do you open late?", occurrenceCount: 1, answerStatus: "not_assessed" },
+        ]);
+      expect(hydrated.themes[0]?.distinctQuestionCount).toBe(3);
+    });
+
+    it("reads an older snapshot's answers and examples from the same coverage verdicts, scope declines included", () => {
+      const hydrated = hydrateReport(savedReport({
+        evidenceIds: ["e-3", "e-1", "e-2"],
+        coverage: {
+          answered: 1, partial: 0, unanswered: 2, unclear: 0, unassessed: 1, legacy: 1,
+          reasons: { sufficient_evidence: 1, intentional_scope_boundary: 1, insufficient_evidence: 1 },
+        },
+        coverageByEvidenceId: {
+          "e-1": { availability: "assessed", coverage: "unanswered", reason: "intentional_scope_boundary", schemaVersion: 1, producer: "answer_head" },
+          "e-2": { availability: "assessed", coverage: "unanswered", reason: "insufficient_evidence", schemaVersion: 1, producer: "answer_head" },
+        },
+      }), sources({
+        "e-1": "Can you read my tarot cards?",
+        "e-2": "Is there parking?",
+        "e-3": "Do you open late?",
+      }));
+
+      expect(hydrated.themes[0]?.answers).toEqual({ answered: 1, partial: 0, unanswered: 2, unclear: 0, outOfScope: 0, notAssessed: 2 });
+      expect(hydrated.themes[0]?.evidence.map(({ reference, answerStatus }) => [reference, answerStatus])).toEqual([
+        ["e-1", "unanswered"],
+        ["e-2", "unanswered"],
+        ["e-3", "not_assessed"],
+      ]);
+    });
+
+    it("reads a snapshot saved before answer coverage from its grounding and leaves its examples unlabelled", () => {
+      const hydrated = hydrateReport(savedReport({ evidenceIds: ["e-1", "e-2"] }), sources({
+        "e-1": "Is there parking?",
+        "e-2": "Do you open late?",
+      }));
+
+      expect(hydrated.themes[0]?.answers).toEqual({ answered: 1, partial: 1, unanswered: 2, unclear: 0, outOfScope: 0, notAssessed: 1 });
+      expect(hydrated.themes[0]?.evidence.map((item) => "answerStatus" in item)).toEqual([false, false]);
+    });
   });
 
   it("normalizes legacy saved reports that predate census coverage fields", () => {

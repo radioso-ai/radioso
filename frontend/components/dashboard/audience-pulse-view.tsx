@@ -29,11 +29,8 @@ import {
   type AudiencePulseDraftSeed,
 } from '@/lib/audience-pulse-draft-seed'
 import { writeAudiencePulseEvidenceHandoff } from '@/lib/audience-pulse-evidence-handoff'
-import {
-  formatTopicAnswerCounts,
-  getTopicExamples,
-  getTopicShortfalls,
-} from '@/lib/audience-pulse-answer-status'
+import { answerStatusLabel } from '@/lib/answer-coverage'
+import { formatTopicAnswerCounts, getTopicShortfalls } from '@/lib/audience-pulse-answer-status'
 
 interface AudiencePulseViewProps {
   accountId: string
@@ -765,7 +762,7 @@ function TopicRow({
   const lineage = theme.transition?.kind === 'emerged'
     ? markEmergedAsNew ? 'new' : null
     : getMemberCountDelta(theme, theme.previousShare, materialityThreshold)
-  const shortfalls = getTopicShortfalls(theme)
+  const shortfalls = theme.answers ? getTopicShortfalls(theme.answers) : []
 
   return (
     <div className="border-b last:border-b-0" data-testid="audience-pulse-topic-row">
@@ -826,8 +823,8 @@ function TopicDetails({
   onStartDraft: (recommendation: AudiencePulseRecommendation) => void
   canStartDraft: boolean
 }) {
-  const answerCounts = formatTopicAnswerCounts(theme)
-  const examples = getTopicExamples(theme)
+  const answerCounts = theme.answers ? formatTopicAnswerCounts(theme.answers) : ''
+  const examples = theme.evidence
 
   return (
     <div id={id} className="space-y-3">
@@ -840,7 +837,7 @@ function TopicDetails({
             {theme.memberCount === 1 ? 'question' : 'questions'}
           </p>
           <ul className="flex flex-col gap-1 text-sm">
-            {examples.map(({ evidence, label }) => (
+            {examples.map((evidence) => (
               <li key={evidence.reference} className="flex items-start gap-2">
                 <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
                 {/* The status sits inside the button so it is part of the example's accessible name. */}
@@ -855,10 +852,12 @@ function TopicDetails({
                       ? ` · asked ${numberFormat.format(evidence.occurrenceCount)}×`
                       : null}
                   </span>
-                  {label ? (
+                  {evidence.answerStatus ? (
                     <>
                       {' '}
-                      <span className="ml-auto shrink-0 pl-4 text-xs leading-5 text-muted-foreground">{label}</span>
+                      <span className="ml-auto shrink-0 pl-4 text-xs leading-5 text-muted-foreground">
+                        {answerStatusLabel(evidence.answerStatus)}
+                      </span>
                     </>
                   ) : null}
                 </button>

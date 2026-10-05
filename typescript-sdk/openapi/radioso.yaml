@@ -13531,18 +13531,12 @@ components:
         partial:
           type: integer
           minimum: 0
-          description: Partly answered for a reason other than an intentional scope boundary.
         unanswered:
           type: integer
           minimum: 0
-          description: Unanswered for a reason other than an intentional scope boundary.
         unclear:
           type: integer
           minimum: 0
-        outOfScope:
-          type: integer
-          minimum: 0
-          description: Partly answered or unanswered because the request was outside the agent's intended scope.
         unassessed:
           type: integer
           minimum: 0
@@ -13559,10 +13553,48 @@ components:
         - partial
         - unanswered
         - unclear
-        - outOfScope
         - unassessed
         - legacy
         - reasons
+    AudiencePulseAnswerStatus:
+      type: string
+      enum:
+        - answered
+        - partial
+        - unanswered
+        - unclear
+        - out_of_scope
+        - not_assessed
+      description: What happened to a visitor question. `out_of_scope` is a partly answered or unanswered verdict with the intentional scope boundary reason; a question with no assessment record reads from its retrieval content-gap grounding.
+    AudiencePulseAnswerSummary:
+      type: object
+      properties:
+        answered:
+          type: integer
+          minimum: 0
+        partial:
+          type: integer
+          minimum: 0
+        unanswered:
+          type: integer
+          minimum: 0
+        unclear:
+          type: integer
+          minimum: 0
+        outOfScope:
+          type: integer
+          minimum: 0
+        notAssessed:
+          type: integer
+          minimum: 0
+      required:
+        - answered
+        - partial
+        - unanswered
+        - unclear
+        - outOfScope
+        - notAssessed
+      description: Every topic member counted by its answer status.
     AudiencePulseEvidence:
       type: object
       properties:
@@ -13582,6 +13614,8 @@ components:
           minimum: 1
         answerCoverage:
           $ref: "#/components/schemas/AnswerCoverage"
+        answerStatus:
+          $ref: "#/components/schemas/AudiencePulseAnswerStatus"
       required:
         - reference
         - conversationId
@@ -13727,6 +13761,8 @@ components:
           $ref: "#/components/schemas/AudiencePulseGrounding"
         coverage:
           $ref: "#/components/schemas/AudiencePulseSemanticCoverage"
+        answers:
+          $ref: "#/components/schemas/AudiencePulseAnswerSummary"
         evidence:
           type: array
           items:
@@ -13743,6 +13779,7 @@ components:
         - distinctQuestionCount
         - weeklyPulse
         - grounding
+        - answers
         - evidence
     AudiencePulseContentGap:
       type: object

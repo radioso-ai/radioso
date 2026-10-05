@@ -60,6 +60,27 @@ describeDb("test execution repository", () => {
     await expect(repository.listAttempts({ workspaceId: randomUUID(), agentId, executionId })).resolves.toEqual([]);
   });
 
+  it("lists a test only once a message is sent or copied in, not while it holds just a greeting", async () => {
+    const listAgentId = randomUUID();
+    await database.query("INSERT INTO agents (id,workspace_id,name) VALUES ($1,$2,$3)", [listAgentId, workspaceId, "listing"]);
+    const greetingSide = (executionId: string) => ({ id: randomUUID(), executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready" as const, retryable: false, history: [{ turnId: randomUUID(), attemptId: randomUUID(), role: "assistant" as const, content: "Hi!", createdAt: new Date(0) }], continuation: null });
+    const greetingOnlyId = randomUUID(), sentId = randomUUID(), seededId = randomUUID();
+    await repository.create({ id: greetingOnlyId, workspaceId, agentId: listAgentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: greetingOnlyId, sides: [greetingSide(greetingOnlyId)] });
+    const sentSide = greetingSide(sentId);
+    await repository.create({ id: sentId, workspaceId, agentId: listAgentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: sentId, sides: [sentSide] });
+    await repository.create({ id: seededId, workspaceId, agentId: listAgentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: seededId, seededSummary: { turnCount: 1, firstMessage: "a customer's question" }, sides: [greetingSide(seededId)] });
+
+    await expect(repository.list({ workspaceId, agentId: listAgentId, limit: 50 }).then((page) => page.executions.map((execution) => execution.id).sort())).resolves.toEqual([seededId]);
+
+    const claim = await repository.claimTurn({ workspaceId, agentId: listAgentId, executionId: sentId, sideIds: [sentSide.id], generation: 1, turnId: randomUUID(), attemptId: randomUUID(), message: "hello", inputFingerprint: "hello", now: new Date(1_000), leaseMs: 30_000, retry: false });
+    if (typeof claim === "string") throw new Error(claim);
+    const page = await repository.list({ workspaceId, agentId: listAgentId, limit: 1 });
+    expect(page).toMatchObject({ hasMore: true, nextCursor: expect.any(String) });
+    const rest = await repository.list({ workspaceId, agentId: listAgentId, limit: 1, cursor: page.nextCursor! });
+    expect([...page.executions, ...rest.executions].map((execution) => execution.id).sort()).toEqual([seededId, sentId].sort());
+    expect(rest.hasMore).toBe(false);
+  });
+
   it("resolves an execution's agent id by workspace alone, and reads a cross-workspace id as absent", async () => {
     const executionId = randomUUID();
     await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [{ id: randomUUID(), executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
@@ -360,6 +381,8 @@ describeDb("test execution repository", () => {
     const retained = await repository.retainSide({ workspaceId, agentId, executionId, sideId: leftId, retainedExecutionId: randomUUID(), retainedSideId: randomUUID(), retainedConversationId: randomUUID() });
     if (typeof retained === "string") throw new Error(retained);
     const retainedSideId = retained.sides[0].id;
+    // Its copied turns are sent messages, so the retained test is history straight away.
+    await expect(repository.list({ workspaceId, agentId, limit: 50 }).then((page) => page.executions.map((execution) => execution.id))).resolves.toContain(retained.id);
 
     await expect(repository.listAttempts({ workspaceId, agentId, executionId: retained.id })).resolves.toEqual([
       expect.objectContaining({ sideId: retainedSideId, turnId: failedTurn, attemptId: failedAttempt, state: "failed", failureCode: "runner_failed" }),

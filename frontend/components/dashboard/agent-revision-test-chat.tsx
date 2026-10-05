@@ -84,6 +84,7 @@ import {
   hydrateTestExecutionState,
   initializeTestExecutionState,
   reduceTestExecutionEvent,
+  sideHasSentMessage,
   type TestExecutionState,
 } from "@/lib/agent-test-execution-state";
 import { evalsApi, type EvalCaseListItem } from "@/lib/api-eval";
@@ -1391,10 +1392,11 @@ export function AgentRevisionTestChat({
           (candidate) => candidate.revisionId === selected[index],
         )
       : undefined;
-  // The side's conversation exists from the moment the execution starts, so the
-  // id is copyable before the first reply lands.
+  // A test holding only a proactive greeting is not recorded history yet, so its
+  // id appears with the first sent message, before that message's reply lands.
   const conversationIdChip = (index: number) => {
-    const conversationId = sideForIndex(index)?.conversationId;
+    const side = sideForIndex(index);
+    const conversationId = side && sideHasSentMessage(side) ? side.conversationId : undefined;
     return conversationId ? (
       <div className="min-w-0">
         <CompactIdField label="Conversation" value={conversationId} />
@@ -1507,7 +1509,7 @@ export function AgentRevisionTestChat({
         >
           Conversation history
         </DropdownMenuItem>
-        {execution && testExecutionHref && view === "chat" ? (
+        {execution && testExecutionHref && view === "chat" && Object.values(execution.sides).some(sideHasSentMessage) ? (
           <DropdownMenuItem onSelect={() => void executionLink.copy(execution.executionId, testExecutionHref(execution.executionId))}>
             <Link2 className="mr-2 h-4 w-4" />
             Copy link to this chat

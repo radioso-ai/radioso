@@ -301,6 +301,52 @@ describe("MailboxService", () => {
       expect(await createSupport(service, { engagementMode: "auto", autoOptIn: true })).toMatchObject({ engagementMode: "auto", policyVersion: 1 });
     });
 
+    it("holds unsent automatic replies for review when auto drops to draft: re-bound to the new version, nothing superseded (FR-025)", async () => {
+      const { service, policyChanges, mailboxes, audits } = harness(ALL_MODES);
+      const created = await createSupport(service, { engagementMode: "auto", autoOptIn: true });
+      vi.spyOn(policyChanges.heldReplies, "holdLiveForPolicy").mockImplementation(async (policyRef, policyVersion) => {
+        policyChanges.heldReplies.held.push({ policyRef, policyVersion });
+        // Inside the policy change: the new version is already written.
+        expect(mailboxes.records.get(created.id)?.policyVersion).toBe(2);
+        return { returned: 2, rebound: 1 };
+      });
+
+      const downgraded = await service.update(actor, workspaceId, created.id, { engagementMode: "draft", expectedPolicyVersion: 1 });
+
+      expect(downgraded).toMatchObject({ engagementMode: "draft", policyVersion: 2 });
+      expect(policyChanges.runs).toBe(1);
+      expect(policyChanges.heldReplies.held).toEqual([{ policyRef: emailMailboxPolicyRef(created.id), policyVersion: 2 }]);
+      expect(policyChanges.heldReplies.superseded).toEqual([]);
+      expect(audits().filter((event) => event.metadata.action === "mode_changed").at(-1)?.metadata).toMatchObject({
+        fromMode: "auto",
+        toMode: "draft",
+        policyVersion: 2,
+        supersededHeldReplies: 0,
+        returnedHeldReplies: 2,
+        reboundHeldReplies: 1,
+      });
+    });
+
+    it.each([
+      ["auto drops to operator_only", "auto", { engagementMode: "operator_only" }],
+      ["auto drops to draft as the mailbox is disabled", "auto", { engagementMode: "draft", enabled: false }],
+      ["auto drops to draft under a new agent", "auto", { engagementMode: "draft", agentId }],
+      ["an auto mailbox is disabled", "auto", { enabled: false }],
+      ["an auto mailbox changes its agent", "auto", { agentId }],
+      ["draft drops to operator_only", "draft", { engagementMode: "operator_only" }],
+      ["draft is upgraded to auto", "draft", { engagementMode: "auto", autoOptIn: true }],
+      ["operator_only is upgraded to auto", "operator_only", { engagementMode: "auto", autoOptIn: true }],
+      ["operator_only is upgraded to draft", "operator_only", { engagementMode: "draft" }],
+    ] as const)("supersedes the live drafts, holding none, when %s", async (_label, mode, change) => {
+      const { service, policyChanges } = harness(ALL_MODES);
+      const created = await createSupport(service, { engagementMode: mode, autoOptIn: mode === "auto" });
+
+      await service.update(actor, workspaceId, created.id, change);
+
+      expect(policyChanges.heldReplies.superseded).toEqual([emailMailboxPolicyRef(created.id)]);
+      expect(policyChanges.heldReplies.held).toEqual([]);
+    });
+
     it("still refuses auto where the deployment does not run it, opt-in or not", async () => {
       const { service, mailboxes } = harness(["operator_only", "draft"]);
       const created = await createSupport(service);

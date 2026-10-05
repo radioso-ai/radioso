@@ -15,6 +15,7 @@ import {
   type EmailSendScope,
   type EmailSendUnitOfWork,
 } from "../../src/modules/emailChannel/public.js";
+import { heldReplyEventSources, type HeldReplyState } from "../../src/modules/handoff/public.js";
 import type { EmailMessage, EmailSendResult, SentEmailStatus } from "../../src/modules/mail/public.js";
 import type {
   EmailSendIntentRecord,
@@ -410,9 +411,9 @@ export const createSendPathHarness = (options: { now?: Date; sendingStatus?: "pe
   const ownership = { load: async (conversationId: string) => owners.get(conversationId) ?? null };
 
   // Stands in for handoff's materialize transaction (research B9) over email's real scope: a held
-  // reply still `queued_auto` is authorized, then written as the agent's message with its intent;
-  // an unauthorized one returns to `pending` with no message.
-  const autoReply = { state: "queued_auto" as "queued_auto" | "pending" | "released" | "superseded", text: "Your order ships on Monday." };
+  // reply still in a state the held-reply machine materializes from is authorized, then written as
+  // the agent's message with its intent; an unauthorized one returns to `pending` with no message.
+  const autoReply = { state: "queued_auto" as HeldReplyState, text: "Your order ships on Monday." };
   const channelScope = new EmailHeldReplyChannelScope({
     mailboxes,
     domains,
@@ -426,7 +427,7 @@ export const createSendPathHarness = (options: { now?: Date; sendingStatus?: "pe
     ownershipVersion: 0,
   });
   const materializeAuto = vi.fn(async (_heldReplyId: string): Promise<{ ok: true; messageId: string } | { ok: false; reason: "not_queued" | "returned_to_pending" }> => {
-    if (autoReply.state !== "queued_auto") return { ok: false, reason: "not_queued" };
+    if (!heldReplyEventSources("materialize").includes(autoReply.state)) return { ok: false, reason: "not_queued" };
     const verdict = await channelScope.authorizeAutoDispatch(autoReplyView());
     if (!verdict.authorized) {
       autoReply.state = "pending";

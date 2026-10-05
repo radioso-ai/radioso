@@ -397,7 +397,7 @@ test("operator adds a mailbox, forwards to its relay address, and passes the set
   await expect(announcer(page)).toHaveText("Setup check passed.");
 });
 
-test("an existing mailbox moves from Operator only to Draft for review, keeping focus and saying it applies to new mail", async ({ page }) => {
+test("upgrading an existing mailbox from Operator only to Draft for review asks once, says it applies to new mail, and keeps focus", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);
   const backend = await installEmailChannelBackend(page, {
@@ -412,6 +412,12 @@ test("an existing mailbox moves from Operator only to Draft for review, keeping 
   await expect(mode.getByRole("button", { name: "Operator only" })).toHaveAttribute("aria-pressed", "true");
 
   await mode.getByRole("button", { name: "Draft for review" }).click();
+  // An upgrade reaches new mail only, and drafts already waiting are discarded.
+  const confirmation = mailbox.getByRole("group", { name: "Confirm mode change" });
+  await expect(confirmation).toHaveText(/^Change to Draft for review\? Applies to new mail only; pending drafts are discarded\./);
+  await expect(confirmation.getByRole("button", { name: "Confirm" })).toBeFocused();
+  expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([]);
+  await confirmation.getByRole("button", { name: "Confirm" }).click();
 
   await expect(announcer(page)).toHaveText("Mode changed to Draft for review. It applies to new mail.");
   await expect(mode.getByRole("button", { name: "Draft for review" })).toHaveAttribute("aria-pressed", "true");
@@ -422,7 +428,7 @@ test("an existing mailbox moves from Operator only to Draft for review, keeping 
   ]);
 });
 
-test("downgrading a draft mailbox asks once, says pending drafts are discarded, then keeps focus on the mode", async ({ page }) => {
+test("downgrading a draft mailbox asks once, says pending and queued replies are discarded, then keeps focus on the mode", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);
   const backend = await installEmailChannelBackend(page, {
@@ -436,7 +442,7 @@ test("downgrading a draft mailbox asks once, says pending drafts are discarded, 
   await mode.getByRole("button", { name: "Operator only" }).click();
 
   const confirmation = mailbox.getByRole("group", { name: "Confirm mode change" });
-  await expect(confirmation.getByText("Change to Operator only? Pending drafts are discarded.")).toBeVisible();
+  await expect(confirmation.getByText("Change to Operator only? Pending and queued replies are discarded.")).toBeVisible();
   await expect(confirmation.getByRole("button", { name: "Confirm" })).toBeFocused();
   expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([]);
 
@@ -469,14 +475,17 @@ test("a mode change against settings saved elsewhere is refused, reloads the mai
   const mode = mailbox.getByRole("group", { name: "Mailbox mode" });
   await expect(mode).toBeVisible();
   backend.changePolicyElsewhere();
+  const confirm = mailbox.getByRole("group", { name: "Confirm mode change" }).getByRole("button", { name: "Confirm" });
 
   await mode.getByRole("button", { name: "Draft for review" }).click();
+  await confirm.click();
 
   await expect(mailbox.getByRole("alert")).toHaveText("Settings changed elsewhere, reloaded.");
   await expect(mode.getByRole("button", { name: "Operator only" })).toHaveAttribute("aria-pressed", "true");
   await expect(mode.getByRole("button", { name: "Operator only" })).toBeFocused();
 
   await mode.getByRole("button", { name: "Draft for review" }).click();
+  await confirm.click();
   await expect(announcer(page)).toHaveText("Mode changed to Draft for review. It applies to new mail.");
   await expect(mailbox.getByRole("alert")).toHaveCount(0);
   expect(backend.requests.filter((request) => request.method === "PATCH").map((request) => request.body)).toEqual([
@@ -503,9 +512,10 @@ test("turning on Automatic asks once with the thread send budget, and cancelling
 
   await mode.getByRole("button", { name: "Automatic" }).click();
   const confirmation = mailbox.getByRole("group", { name: "Confirm mode change" });
-  await expect(confirmation).toHaveText(
-    /Change to Automatic\? The agent sends grounded replies on its own, up to 3 per thread until an operator replies\./,
-  );
+  await expect(confirmation).toHaveText(new RegExp(
+    "^Change to Automatic\\? The agent sends grounded replies on its own, up to 3 per thread until an operator replies\\. "
+      + "Applies to new mail only; pending drafts are discarded\\.",
+  ));
   await expect(confirmation.getByRole("button", { name: "Confirm" })).toBeFocused();
 
   await confirmation.getByRole("button", { name: "Cancel" }).click();
@@ -527,6 +537,40 @@ test("turning on Automatic asks once with the thread send budget, and cancelling
       path: `/mailboxes/${mailboxId}`,
       body: { engagementMode: "auto", expectedPolicyVersion: 1, [AUTO_OPT_IN_FIELD]: true },
     },
+  ]);
+});
+
+test("leaving Automatic says queued replies are held for review under Draft for review, and discarded under Operator only", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page, {
+    supportedModes: ["operator_only", "draft", "auto"],
+    existingMailbox: { engagementMode: "auto" },
+  });
+
+  await openEmailChannel(page);
+  const mailbox = page.locator("#email-channel").getByRole("region", { name: "support@customer.test" });
+  const mode = mailbox.getByRole("group", { name: "Mailbox mode" });
+  const confirmation = mailbox.getByRole("group", { name: "Confirm mode change" });
+  await expect(mode.getByRole("button", { name: "Automatic" })).toHaveAttribute("aria-pressed", "true");
+
+  await mode.getByRole("button", { name: "Operator only" }).click();
+  await expect(confirmation.getByText("Change to Operator only? Pending and queued replies are discarded.")).toBeVisible();
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(mode.getByRole("button", { name: "Automatic" })).toBeFocused();
+
+  await mode.getByRole("button", { name: "Draft for review" }).click();
+  await expect(confirmation.getByText("Change to Draft for review? Queued automatic replies are held for your review.")).toBeVisible();
+  await expect(confirmation.getByRole("button", { name: "Confirm" })).toBeFocused();
+  expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([]);
+  await confirmation.getByRole("button", { name: "Confirm" }).click();
+
+  await expect(announcer(page)).toHaveText("Mode changed to Draft for review.");
+  await expect(mode.getByRole("button", { name: "Draft for review" })).toHaveAttribute("aria-pressed", "true");
+  await expect(mode.getByRole("button", { name: "Draft for review" })).toBeFocused();
+  expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([
+    { method: "PATCH", path: `/mailboxes/${mailboxId}`, body: { engagementMode: "draft", expectedPolicyVersion: 1 } },
   ]);
 });
 

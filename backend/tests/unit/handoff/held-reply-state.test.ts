@@ -80,6 +80,16 @@ describe("held reply transitions", () => {
       .toEqual({ state: "pending", releaseKind: null, attentionCleared: null, holdReason: "authority_changed" });
   });
 
+  it("queued_auto: a policy change that keeps drafts for review halts it and holds it for a teammate, opening attention", () => {
+    expect(heldReplyTransition("queued_auto", { kind: "return_queued", reason: "policy_changed" }))
+      .toEqual({ state: "pending", releaseKind: null, attentionCleared: null, holdReason: "policy_changed" });
+  });
+
+  it("pending: a policy change that keeps drafts for review re-binds it, still pending under its own hold reason", () => {
+    expect(heldReplyTransition("pending", { kind: "rebind_policy" }))
+      .toEqual({ state: "pending", releaseKind: null, attentionCleared: null });
+  });
+
   it("pending: an unchanged release sends it as the agent's, released by a teammate", () => {
     expect(heldReplyTransition("pending", { kind: "release", edited: false }))
       .toEqual({ state: "released", releaseKind: "operator", attentionCleared: "released" });
@@ -116,13 +126,15 @@ describe("held reply transitions", () => {
     }
   });
 
-  it("released, edited, superseded and discarded: release, discard and materialize change nothing", () => {
+  it("released, edited, superseded and discarded: release, discard, materialize and a policy hold change nothing", () => {
     const decisions: HeldReplyEvent[] = [
       { kind: "release", edited: false },
       { kind: "release", edited: true },
       { kind: "discard" },
       { kind: "materialize", authorized: true },
       { kind: "materialize", authorized: false },
+      { kind: "return_queued", reason: "policy_changed" },
+      { kind: "rebind_policy" },
     ];
     for (const state of decidedStates) {
       for (const event of decisions) {
@@ -149,6 +161,13 @@ describe("held reply transitions", () => {
     expect(heldReplyEventSources("materialize")).toEqual(["queued_auto"]);
     expect(heldReplyEventSources("supersede")).toEqual(["pending", "queued_auto"]);
     expect(heldReplyEventSources("clear_discarded_attention")).toEqual(["discarded"]);
+  });
+
+  it("a policy hold returns only a queued send and re-binds only a pending draft", () => {
+    expect(heldReplyEventSources("return_queued")).toEqual(["queued_auto"]);
+    expect(heldReplyEventSources("rebind_policy")).toEqual(["pending"]);
+    expect(heldReplyTransition("pending", { kind: "return_queued", reason: "policy_changed" })).toBeNull();
+    expect(heldReplyTransition("queued_auto", { kind: "rebind_policy" })).toBeNull();
   });
 });
 

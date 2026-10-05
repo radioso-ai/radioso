@@ -154,6 +154,23 @@ describe("EmailSendActionHandler", () => {
       expect(h.intents.rows.size).toBe(0);
     });
 
+    it("sends nothing for a queued reply a downgrade to draft held for review first, leaving it pending for a teammate (AS5.8)", async () => {
+      const h = autoHarness();
+      // The policy change returned it to pending, re-bound to the version it wrote, before dispatch.
+      h.mailboxes.seed({ ...h.mailbox, engagementMode: "draft", policyVersion: h.mailbox.policyVersion + 1 });
+      h.autoReply.state = "pending";
+
+      await h.deliverAuto();
+
+      expect(await h.materializeAuto.mock.results[0]?.value).toEqual({ ok: false, reason: "not_queued" });
+      expect(h.autoReply.state).toBe("pending");
+      expect(h.driver.send).not.toHaveBeenCalled();
+      expect(h.intents.rows.size).toBe(0);
+      expect(h.messages.has(SEND_IDS.autoMessage)).toBe(false);
+      expect(h.failures.rows).toEqual([]);
+      expect(h.counted("email_auto_dispatch_total")).toEqual([{ result: "not_queued" }]);
+    });
+
     it("after materialization, a frozen request whose authority was then revoked becomes uncertain: never halted, never a draft again", async () => {
       const h = autoHarness();
       h.driver.send.mockRejectedValueOnce(new EmailSendError("retryable", "rate_limited"));

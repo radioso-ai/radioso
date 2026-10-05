@@ -397,6 +397,12 @@ export const inMemoryPolicyChanges = (mailboxes: InMemoryEmailMailboxes) => {
       heldReplies.superseded.push(policyRef);
       return 0;
     },
+    /** The policy refs whose drafts a change held for review, with the version each was re-bound to, in order. */
+    held: [] as { policyRef: string; policyVersion: number }[],
+    holdLiveForPolicy: async (policyRef: string, policyVersion: number) => {
+      heldReplies.held.push({ policyRef, policyVersion });
+      return { returned: 0, rebound: 0 };
+    },
   };
   const unit = {
     runs: 0,

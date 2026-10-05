@@ -60,7 +60,7 @@ Sending or discarding never takes the conversation over — it stays with the ag
 
 Once a mailbox's drafts have earned your trust, you can let the agent send the easy ones itself. On an `auto` mailbox the agent drafts exactly as in `draft` mode, and a reply goes straight to the customer only when the turn is grounded in your documents, answers the whole question, asks for no person, and needed no action that couldn't run. It's sent with `Auto-Submitted: auto-generated` and the usual delivery states.
 
-To turn it on, choose **Automatic** under the mailbox's **Mode**. The card asks you to confirm and names the limit it runs within — "The agent sends grounded replies on its own, up to 3 per thread until an operator replies." Nothing switches to automatic without that confirmation. Through the API, send `"autoOptIn": true` alongside `"engagementMode": "auto"`; without it the change is refused with `auto_opt_in_required`. The switch applies to mail that arrives afterwards.
+To turn it on, choose **Automatic** under the mailbox's **Mode**. The card asks you to confirm, naming the limit it runs within and what happens to drafts already waiting — "The agent sends grounded replies on its own, up to 3 per thread until an operator replies. Applies to new mail only; pending drafts are discarded." Nothing switches to automatic without that confirmation. Through the API, send `"autoOptIn": true` alongside `"engagementMode": "auto"`; without it the change is refused with `auto_opt_in_required`. The switch applies to mail that arrives afterwards.
 
 Before you switch, run the mailbox in `draft` long enough to read real drafts, and check that the replies that shouldn't go out — partial answers, questions your documents don't cover, hand-offs — are coming back to you as drafts.
 
@@ -73,11 +73,11 @@ Before you switch, run the mailbox in `draft` long enough to read real drafts, a
 
 A turn with no usable answer goes to a person with its hand-off reason instead of a draft.
 
-**It checks again before it sends.** An automatic reply waits in a short queue before it goes out, and right before sending Radioso checks that the mailbox is still `auto` and enabled, the domain is still verified, and the conversation still belongs to the agent. If any of that changed, the reply comes back to you as a draft with the reason `authority_changed`, and the customer sees nothing. A newer email, your reply, a takeover, or a change to the mailbox's settings replaces a queued reply outright — taking a conversation over always stops a reply the agent hasn't sent yet.
+**It checks again before it sends.** An automatic reply waits in a short queue before it goes out, and right before sending Radioso checks that the mailbox is still `auto` and enabled, the domain is still verified, and the conversation still belongs to the agent. If any of that changed, the reply comes back to you as a draft with the reason `authority_changed`, and the customer sees nothing. A newer email, your reply, a takeover, or a change to the mailbox's agent, its on/off switch, or its mode to anything but `draft` replaces a queued reply outright — taking a conversation over always stops a reply the agent hasn't sent yet.
 
 **The send budget.** Each thread allows `threadSendBudget` automatic replies in a row — 3 by default. Your reply on the thread, or sending one of its drafts, resets the count. Customer mail never does, so even an autoresponder that slips past the automated-mail check can draw at most three replies before a person steps in. The fourth waits for you with the reason `send_budget`.
 
-To stop automatic replies, switch the mailbox back to `draft` or `operator_only`; any reply still queued is replaced and nothing more goes out on its own.
+To stop automatic replies, switch the mailbox back to `draft` or `operator_only`, and nothing more goes out on its own. Switch to `draft` and any reply still queued comes back to you as a draft with the reason `policy_changed`, ready to send, edit, or discard — the card says so before you confirm: "Queued automatic replies are held for your review." Switch to `operator_only` and queued replies are discarded along with pending drafts.
 
 ## Limits
 
@@ -125,7 +125,7 @@ Instead of forwarding, you can point an entire customer-owned domain or subdomai
 - **A reply shows `halted`.** The mailbox's domain lost its sending verification after the reply was queued, so nothing went out. Re-verify the domain, then resend from the conversation's delivery failure.
 - **A reply has been `uncertain` for a while.** Its outcome never came back from the provider. Mark it sent if you've confirmed the customer got it some other way, or ask for a resend — both are recorded against you.
 - **Sending a draft says "This mailbox cannot send yet."** The mailbox's sending domain isn't verified. See Verify sending, above — nothing was lost, the draft is still there once it is.
-- **A reply you expected to go out automatically is waiting as a draft.** Its hold reason says why: `outcome_not_publishable` means the answer wasn't grounded, complete, and free of a hand-off; `send_budget` means the thread used its automatic replies; `authority_changed` means the mailbox, its domain, or the conversation's owner changed before it sent. Send or edit it from the Inbox.
+- **A reply you expected to go out automatically is waiting as a draft.** Its hold reason says why: `outcome_not_publishable` means the answer wasn't grounded, complete, and free of a hand-off; `send_budget` means the thread used its automatic replies; `authority_changed` means the mailbox, its domain, or the conversation's owner changed before it sent; `policy_changed` means the mailbox was switched from Automatic to Draft for review while the reply was queued. Send or edit it from the Inbox.
 - **Switching a mailbox to `auto` through the API is refused with `auto_opt_in_required`.** Add `"autoOptIn": true` to the same request; the mailbox card does this when you confirm.
 - **Sending a draft says the conversation changed hands, or the mailbox settings changed.** Someone took the conversation over, or the mailbox's mode or agent changed, after the draft was written. Nothing was sent; re-open the conversation to see what's current.
 

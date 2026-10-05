@@ -71,10 +71,17 @@ export interface HeldReplyRecord {
 /** The states a draft is live in: undecided, and at most one per conversation. */
 const LIVE_HELD_REPLY_STATES = ["pending", "queued_auto"] as const satisfies readonly HeldReplyState[];
 
+/**
+ * A policy change that keeps its live drafts for review, rather than superseding them, moves each
+ * with two events: a queued automatic send is returned to a teammate (`return_queued`), and a
+ * pending draft stays pending, re-bound to the new version (`rebind_policy`).
+ */
 export type HeldReplyEvent =
   | { kind: "release"; edited: boolean }
   | { kind: "discard" }
   | { kind: "materialize"; authorized: boolean }
+  | { kind: "return_queued"; reason: "policy_changed" }
+  | { kind: "rebind_policy" }
   | { kind: "supersede"; reason: SupersedeReason }
   | { kind: "clear_discarded_attention"; reason: "operator_reply" | "takeover" };
 
@@ -87,7 +94,7 @@ export interface HeldReplyTransition {
   /** Why attention closed; null while it stays open. */
   attentionCleared: HeldReplyAttentionClearReason | null;
   /** A queued send returned to a teammate is held anew, for this reason. */
-  holdReason?: "authority_changed";
+  holdReason?: "authority_changed" | "policy_changed";
 }
 
 const supersededAttention = (reason: SupersedeReason): HeldReplyAttentionClearReason =>
@@ -113,6 +120,14 @@ const MACHINE: {
     to: (event) => event.authorized
       ? { state: "released", releaseKind: "auto", attentionCleared: "released" }
       : { state: "pending", releaseKind: null, attentionCleared: null, holdReason: "authority_changed" },
+  },
+  return_queued: {
+    from: ["queued_auto"],
+    to: (event) => ({ state: "pending", releaseKind: null, attentionCleared: null, holdReason: event.reason }),
+  },
+  rebind_policy: {
+    from: ["pending"],
+    to: () => ({ state: "pending", releaseKind: null, attentionCleared: null }),
   },
   supersede: {
     from: LIVE_HELD_REPLY_STATES,

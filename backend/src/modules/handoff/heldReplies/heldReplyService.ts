@@ -96,11 +96,19 @@ export interface HeldReplyDispatchPort {
 /**
  * Supersedes live drafts inside another unit of work's transaction — an ownership change, an
  * operator reply, a customer's newer message, a policy change — so the draft is replaced with the
- * change that replaced it, or not at all. Each returns how many held replies it changed.
+ * change that replaced it, or not at all; or, for a policy change its producer says keeps drafts for
+ * review, holds them for a teammate instead. Each returns how many held replies it changed.
  */
 export interface HeldReplySupersedeScope {
   supersedePendingForConversation(conversationId: string, reason: Exclude<SupersedeReason, "policy_changed">): Promise<number>;
   supersedePendingForPolicy(policyRef: string, reason: "policy_changed"): Promise<number>;
+  /**
+   * Holds the policy's live drafts for a teammate under `policyVersion`, the version the change
+   * wrote: each queued automatic send returns to pending, held for `reason`, and each pending draft
+   * stays pending under its own reason. Both are re-bound to the new version, so a release that
+   * locks the policy afterwards finds the version it was bound to.
+   */
+  holdLiveForPolicy(policyRef: string, policyVersion: number, reason: "policy_changed"): Promise<{ returned: number; rebound: number }>;
   /** Closes the attention a discarded draft left open, once a teammate replied or took over. */
   clearDiscardedAttention(conversationId: string, reason: "operator_reply" | "takeover"): Promise<number>;
 }

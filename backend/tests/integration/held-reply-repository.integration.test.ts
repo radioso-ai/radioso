@@ -4,7 +4,7 @@ import pg from "pg";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { HeldReplyRepository } from "../../src/db/repositories/heldReplyRepository.js";
-import type { HeldReplyInsert, HeldReplyRecord } from "../../src/modules/handoff/public.js";
+import { isHeldReplyAttentionOpen, type HeldReplyInsert, type HeldReplyRecord } from "../../src/modules/handoff/public.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -269,6 +269,45 @@ describeIntegration("held replies (Postgres)", () => {
     expect(await heldReplies.findInConversation(unrelated.conversationId, elsewhere.id)).toMatchObject({
       state: "superseded", supersededReason: "takeover", attentionClearedReason: "takeover",
     });
+  });
+
+  it("holds a policy's live drafts for review under its new version: a queued send returns to pending, nothing decided moves", async () => {
+    const scope = await seedScope();
+    const policy = { ref: `email_mailbox:${randomUUID()}`, version: 1 };
+    const pending = (await heldReplies.insert(holdInput(scope, { policy, holdReason: "send_budget" }))).record;
+    const other = await seedConversation(scope.workspaceId);
+    const queued = (await heldReplies.insert(holdInput({ ...scope, ...other }, { policy, born: { state: "queued_auto" } }))).record;
+    const decided = await seedConversation(scope.workspaceId);
+    const discarded = (await heldReplies.insert(holdInput({ ...scope, ...decided }, { policy }))).record;
+    await heldReplies.discard({ id: discarded.id, conversationId: decided.conversationId, userId: randomUUID() });
+    const unrelated = await seedConversation(scope.workspaceId);
+    const elsewhere = (await heldReplies.insert(holdInput({ ...scope, ...unrelated }, { born: { state: "queued_auto" } }))).record;
+
+    expect(await heldReplies.holdLiveForPolicy(policy.ref, 2, "policy_changed")).toEqual({ returned: 1, rebound: 1 });
+
+    // The queued send waits for a teammate now, bound to the version a release locks.
+    const returned = await heldReplies.findInConversation(other.conversationId, queued.id);
+    expect(returned).toMatchObject({
+      state: "pending",
+      releaseKind: null,
+      holdReason: "policy_changed",
+      policy: { ref: policy.ref, version: 2 },
+      supersededReason: null,
+      attentionClearedAt: null,
+      decidedAt: null,
+    });
+    expect(isHeldReplyAttentionOpen(returned!)).toBe(true);
+    // A pending draft stays pending under its own reason, re-bound.
+    expect(await heldReplies.findInConversation(scope.conversationId, pending.id)).toMatchObject({
+      state: "pending", holdReason: "send_budget", policy: { ref: policy.ref, version: 2 }, attentionClearedAt: null,
+    });
+    expect(await heldReplies.findInConversation(decided.conversationId, discarded.id)).toMatchObject({
+      state: "discarded", policy: { ref: policy.ref, version: 1 },
+    });
+    expect((await heldReplies.findInConversation(unrelated.conversationId, elsewhere.id))?.state).toBe("queued_auto");
+
+    // Held again under the same version: only re-bound, nothing returned twice.
+    expect(await heldReplies.holdLiveForPolicy(policy.ref, 2, "policy_changed")).toEqual({ returned: 0, rebound: 2 });
   });
 
   it("keeps a discarded draft's attention open until a teammate replies or takes over", async () => {

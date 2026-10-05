@@ -419,7 +419,9 @@ export const createEmailChannelApplicationModule = (input: {
     if (!config) return;
     context.registerActionHandler({
       type: EMAIL_SEND_ACTION_TYPE,
-      emittableByRoutines: false,
+      // Host code queues every send in its own transaction: the operator reply deliverer, a
+      // held-reply release, or an auto reply. Neither routine authoring nor a chat turn admits it.
+      queuedFrom: "outside_turn",
       handler: ({ database, env, logger, auditService, metrics, errorReporter }) => {
         const db = database.kysely;
         const activity = new ConversationActivityRepository(db);

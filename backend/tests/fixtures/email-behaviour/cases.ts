@@ -70,7 +70,7 @@ export const emailBehaviourCases: readonly EmailBehaviourCase[] = [
   },
   {
     id: "auto-partly-covered",
-    title: "Two questions, one covered: nothing is sent, and the draft does not invent the uncovered answer.",
+    title: "Two questions, one covered: nothing is sent (the completeness check holds it), and the draft does not invent the uncovered answer.",
     mode: "auto",
     gate: "assert",
     customer: { name: "Sofia Rossi", address: "sofia.rossi@mail.example" },
@@ -180,17 +180,46 @@ export const emailBehaviourCases: readonly EmailBehaviourCase[] = [
   },
   {
     id: "auto-thanks-after-answer",
-    title: "A bare 'Thanks!' after an answered thread: what does the product do? (recorded, not asserted)",
+    title: "A bare 'Thanks!' after an answered thread stays silent: no turn, no draft, no attention item, a thread note.",
     mode: "auto",
-    gate: "record",
+    gate: "assert",
     customer: { name: "Nina Keller", address: "nina.keller@mail.example" },
     steps: [
       {
         kind: "customer",
         subject: "Shipping to Switzerland",
         text: "Hello, do you ship to Switzerland, and what does it cost?\n\nNina",
+        // Setup: the thanks below is the subject, and it only closes an exchange that was answered.
+        expect: { outcome: { kind: "sent" }, turnRan: true },
       },
-      { kind: "customer", replyTo: "thread", text: "Thanks!" },
+      {
+        kind: "customer",
+        replyTo: "thread",
+        text: "Thanks!",
+        expect: { outcome: { kind: "silent", reason: "no_reply_needed" }, ownership: "ai_owned", attentionKind: "none", turnRan: false },
+      },
+    ],
+  },
+  {
+    id: "auto-thanks-with-question",
+    title: "A thank-you that also asks something new is not silent: the review turn runs.",
+    mode: "auto",
+    gate: "assert",
+    customer: { name: "Oliver Smith", address: "oliver.smith@mail.example" },
+    steps: [
+      {
+        kind: "customer",
+        subject: "Shipping to the UK",
+        text: "Hi, do you ship to the United Kingdom, and how long does delivery take?\n\nOliver",
+        expect: { outcome: { kind: "sent" }, turnRan: true },
+      },
+      {
+        kind: "customer",
+        replyTo: "thread",
+        text: "Thanks, that's great! Will I get a tracking link for my parcel?",
+        expect: { outcome: [{ kind: "sent" }, { kind: "drafted" }], turnRan: true },
+        reply: { mentions: [/track/iu] },
+      },
     ],
   },
   {

@@ -31,6 +31,8 @@ const review = async (row: EmailOutcomeRow): Promise<{ h: EmailReviewHarness; co
     await h.ownership.requestHandoff({ conversationId, workspaceId: mailbox.workspaceId, reason: "operator_takeover" });
   }
   if (row.turn !== null) h.respond.mockResolvedValue(turnFor(row, conversationId));
+  h.replyTriage.mockResolvedValue(row.replyNeeded ?? "yes");
+  h.replyCompleteness.mockResolvedValue({ completeness: row.completeness ?? "complete", unansweredAsks: row.completeness === "unavailable" ? null : 1 });
   h.advance(60_000);
   await h.drain();
   return { h, conversationId };
@@ -49,7 +51,11 @@ describe("Email engagement outcome table", () => {
     const { expected } = row;
 
     expect(h.respond).toHaveBeenCalledTimes(expected.reviewAsked ? 1 : 0);
+    // Every mailbox that lets the agent answer triages the mail first, unless a person owns the conversation.
+    expect(h.replyTriage).toHaveBeenCalledTimes(row.mode !== "operator_only" && row.ownership === "ai_owned" ? 1 : 0);
+    expect(h.replyCompleteness).toHaveBeenCalledTimes(expected.completenessChecked ? 1 : 0);
     expect(h.counted("email_publication_decisions_total")).toEqual(expected.decision ? [expected.decision] : []);
+    expect(h.notes).toEqual(expected.setAside ? [expect.objectContaining({ conversationId, code: expected.setAside })] : []);
 
     const open = await h.heldReplies.list(operator, { attention: "open", limit: 10 });
     if (expected.heldReply) {
@@ -93,10 +99,10 @@ describe("Email engagement outcome table", () => {
 
   it("holds or hands off every auto row that does not publish, and queues no send for it (SC-005)", () => {
     const auto = emailOutcomeTable.filter((row) => row.mode === "auto");
-    expect(auto.filter((row) => row.expected.queuedAuto).map((row) => row.id)).toEqual(["auto-grounded-complete"]);
+    expect(auto.filter((row) => row.expected.queuedAuto).map((row) => row.id)).toEqual(["auto-grounded-complete", "auto-reply-triage-unsure"]);
     for (const row of auto.filter((candidate) => !candidate.expected.queuedAuto)) {
       const heldOrHandedOff = row.expected.heldReply !== null || row.expected.attention.kind === "human_owned" || row.ownership === "human_owned";
-      expect(heldOrHandedOff, row.id).toBe(true);
+      expect(heldOrHandedOff || row.expected.setAside !== undefined, row.id).toBe(true);
     }
   });
 
@@ -112,7 +118,12 @@ describe("Email engagement outcome table", () => {
       "draft-no-text-engine-reason",
       "draft-unavailable",
       "draft-human-owned-conversation",
+      "draft-no-reply-needed",
       "auto-grounded-complete",
+      "auto-reply-triage-unsure",
+      "auto-incomplete-partial",
+      "auto-incomplete-not-answered",
+      "auto-completeness-unavailable",
       "auto-budget-exhausted-grounded-complete",
       "auto-budget-exhausted-partial",
       "auto-partial",
@@ -123,6 +134,7 @@ describe("Email engagement outcome table", () => {
       "auto-no-text-engine-reason",
       "auto-unavailable",
       "auto-human-owned-conversation",
+      "auto-no-reply-needed",
     ]);
   });
 });

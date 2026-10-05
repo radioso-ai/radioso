@@ -11,18 +11,24 @@ import type { Kysely } from "kysely";
 
 import type { Env, parseEmailChannelConfig } from "../config/env.js";
 import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
+import { ChunkPassageRepository } from "../../db/repositories/chunkPassageRepository.js";
 import { ConversationActivityRepository } from "../../db/repositories/conversationActivityRepository.js";
 import { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
-import { MessageRepository } from "../../db/repositories/messageRepository.js";
+import { MessageRepository, type MessageRecord } from "../../db/repositories/messageRepository.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { NoopActionDrainDispatcher, type ActionDrainDispatcherPort } from "../../modules/chat/composition.js";
 import {
   createEmailChannelConnector,
+  createEmailReviewChecks,
   type EmailChannelWorker,
+  type EmailReviewChecks,
+  type EmailReviewInferenceFactory,
   type EmailThreadProtocolUnitOfWork,
+  type EmailTranscriptMessage,
 } from "../../modules/connectors/plugins/index.js";
+import { reviewDraftRetrievedChunkIds } from "../../modules/connectors/services/reviewDraftGrounding.js";
 import type { ConversationActivityRecorder } from "../../modules/conversationActivity/contracts/index.js";
 import {
   bindDeliveryFailureRecorder,
@@ -94,6 +100,8 @@ type EmailChannelConfig = NonNullable<ReturnType<typeof parseEmailChannelConfig>
  */
 const SUPPORTED_MODES: readonly EngagementMode[] = ["operator_only", "draft", "auto"];
 
+export type { EmailReviewChecks };
+
 /** What the operator surfaces call: the settings card, the event log and the inbox's email facts. */
 export interface EmailChannelOperatorServices {
   /** The deployment's relay domain, shown in the settings overview. */
@@ -122,6 +130,8 @@ interface EmailChannelComposition extends EmailChannelOperatorServices {
   heldReplyChannel: HeldReplyChannelRegistration;
   /** The email half of a teammate's decision on a failed reply: mark it sent, or resend it. */
   deliveryFailureResolver: DeliveryFailureResolverPort;
+  /** The review's model checks (reply triage, completeness), which the review runner reads on each call. */
+  reviewChecks: EmailReviewChecks;
 }
 
 interface EmailChannelCompositionInput {
@@ -147,6 +157,11 @@ interface EmailChannelCompositionInput {
   ownership: Pick<ConversationOwnershipService, "requestHumanOwnership">;
   /** Tells the dashboard of a hand-off once it commits. */
   publisher?: WorkspaceInvalidationPublisher;
+  /**
+   * The structured inference the review's model checks call: the reply triage before a turn and
+   * the completeness check before an automatic send. Called only while draining.
+   */
+  reviewInference: EmailReviewInferenceFactory;
   agents: { findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{ id: string } | null> };
   audit: Pick<AuditPort, "record">;
   /** Pushed once a resolution that queued a resend commits. */
@@ -191,6 +206,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
   const heldReplyRecords = new HeldReplyRepository(db);
   const ownership = new ConversationOwnershipRepository(db);
   const ownershipVersions = { versionOf: async (conversationId: string) => (await ownership.load(conversationId))?.version ?? 0 };
+  const humanOwned = async (conversationId: string) => (await ownership.load(conversationId))?.state === "human_owned";
   const sendingDomains = new SendingDomainService({
     domains: domainRecords,
     mailboxes: mailboxRecords,
@@ -214,6 +230,22 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
     logger,
   });
 
+  const messages = new MessageRepository(db);
+  const chunkPassages = new ChunkPassageRepository(db);
+  const reviewChecks = createEmailReviewChecks({
+    inference: input.reviewInference,
+    transcript: {
+      recentMessages: async ({ workspaceId, conversationId, limit }) =>
+        transcriptOf(await messages.listRecentByConversationId(workspaceId, conversationId, limit)),
+    },
+    grounding: {
+      passagesFor: async ({ workspaceId, draft }) =>
+        (await chunkPassages.findPassages(workspaceId, reviewDraftRetrievedChunkIds(draft))).map((passage) => ({ title: passage.title, text: passage.content })),
+    },
+    metrics,
+    logger,
+  });
+
   const connector = createEmailChannelConnector({
     receiver,
     inbound,
@@ -228,6 +260,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       conversations: {
         latestCustomerMessageId: (conversationId) => heldReplyRecords.latestCustomerMessageId(conversationId),
         ownershipVersionOf: ownershipVersions.versionOf,
+        humanOwned,
       },
       heldReplies: {
         hold: (hold) => input.heldReplies.hold(hold),
@@ -236,6 +269,8 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
         supersedePendingForConversation: (conversationId, reason) => heldReplyRecords.supersedePendingForConversation(conversationId, reason),
       },
       handoffs: createPostgresReviewHandoffs({ db, activity: input.activity, ownership: input.ownership, publisher: input.publisher }),
+      checks: reviewChecks,
+      notes: createPostgresReviewNotes({ db, inbound, activity: input.activity }),
       maxAttempts: config.reviewMaxAttempts,
     },
     drains: input.drains,
@@ -289,6 +324,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       ownership: ownershipVersions,
     }),
     policyChanges,
+    reviewChecks,
     inboundDomain: config.inboundDomain,
     sendingDomains,
     mailboxes,
@@ -592,6 +628,32 @@ export const createPostgresThreadProtocolUnitOfWork = (deps: {
  * change with the activity it records, through the ownership rules, and the dashboard told once it
  * commits. Only binds; whether to hand off is the review runner's decision.
  */
+/** The conversation as the review's model checks read it: the customer's messages and the business's, never a system row. */
+const transcriptOf = (records: readonly MessageRecord[]): EmailTranscriptMessage[] =>
+  records.flatMap((record) => {
+    if (record.role === "system") return [];
+    return [{ author: record.role === "user" ? "customer" as const : "business" as const, text: record.content }];
+  });
+
+/** A review's note on the thread: a `channel_exception` naming why the customer's newest email was set aside. */
+const createPostgresReviewNotes = (deps: {
+  db: Kysely<DB>;
+  inbound: Pick<EmailInboundRepository, "findDeliveryIdForMessage">;
+  activity: ConversationActivityRecorder;
+}) => ({
+  async recordSetAside(input: { workspaceId: string; conversationId: string; messageId: string; code: string }): Promise<void> {
+    const deliveryId = await deps.inbound.findDeliveryIdForMessage(input.conversationId, input.messageId);
+    if (!deliveryId) throw new Error("email_review_note_without_delivery");
+    await deps.activity.record(deps.db, {
+      conversationId: input.conversationId,
+      workspaceId: input.workspaceId,
+      kind: "channel_exception",
+      actorUserId: null,
+      detail: { code: input.code, deliveryId },
+    });
+  },
+});
+
 const createPostgresReviewHandoffs = (deps: {
   db: Kysely<DB>;
   activity: ConversationActivityRecorder;

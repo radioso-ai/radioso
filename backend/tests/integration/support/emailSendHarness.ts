@@ -176,6 +176,7 @@ export const createApiNode = (
     // ownership rules below are built, as the server binds it.
     ownership: { requestHumanOwnership: (scope, input) => ownership.requestHumanOwnership(scope, input) },
     publisher,
+    reviewInference: { create: apiNodeDrains },
     agents: { findByIdAndWorkspaceId: async (agentId) => ({ id: agentId }) },
     audit,
     actionDrain,

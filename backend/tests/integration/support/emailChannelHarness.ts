@@ -62,6 +62,7 @@ import {
 import { Database } from "../../../src/shared/infra/database.js";
 import { MetricsRegistry } from "../../../src/shared/observability/metrics/metricsRegistry.js";
 import { runAllTestMigrations } from "../../support/databaseMigrations.js";
+import { passingReviewChecks } from "../../support/inMemoryEmailReview.js";
 
 // Shared by the email channel's Postgres suites (thread protocol, inbound end to end, crash
 // recovery): a disposable database per file, seeded workspaces and mailboxes, the committed `.eml`
@@ -433,6 +434,7 @@ const createReviewPorts = (database: Database, heldReplies: WorkerHeldReplies): 
     conversations: {
       latestCustomerMessageId: (conversationId) => records.latestCustomerMessageId(conversationId),
       ownershipVersionOf: async (conversationId) => (await new ConversationOwnershipRepository(db).load(conversationId))?.version ?? 0,
+      humanOwned: async (conversationId) => (await new ConversationOwnershipRepository(db).load(conversationId))?.state === "human_owned",
     },
     heldReplies: {
       hold: (input) => service.hold(input),
@@ -446,6 +448,13 @@ const createReviewPorts = (database: Database, heldReplies: WorkerHeldReplies): 
           ownership: new ConversationOwnershipRepository(trx),
           activity: { record: (event) => activity.record(trx, event) },
         }, input));
+      },
+    },
+    // No model here: every mail needs a reply and every reply is complete, so no review sets mail aside.
+    checks: passingReviewChecks(),
+    notes: {
+      recordSetAside: async () => {
+        throw new Error("No review in this suite sets mail aside");
       },
     },
     maxAttempts: 4,

@@ -458,10 +458,11 @@ the channel's code for why it waited. On email that's `draft_mode` on a
 unverified, `send_budget` once the thread's
 [send budget](email-channel.md#budgets) is spent, `outcome_not_publishable`
 when an `auto` mailbox's turn wasn't a grounded, complete answer free of a
-hand-off, `authority_changed` when ownership or the mailbox's policy
-moved before an automatic reply could send, or `policy_changed` when an
-operator switched the mailbox from `auto` to `draft` while the reply was
-queued. See
+hand-off, `incomplete_answer` when a completeness check found the reply
+left part of the question unanswered, `authority_changed` when ownership
+or the mailbox's policy moved before an automatic reply could send, or
+`policy_changed` when an operator switched the mailbox from `auto` to
+`draft` while the reply was queued. See
 [Email channel](email-channel.md#draft-mode-review-before-it-sends) for what
 a review turn can and can't do, and what the operator's three choices mean.
 

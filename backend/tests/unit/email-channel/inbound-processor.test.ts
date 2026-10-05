@@ -19,6 +19,7 @@ import {
   InMemoryEmailThreads,
   inMemoryPolicyChanges,
 } from "../../support/inMemoryEmailChannel.js";
+import { passingReviewChecks } from "../../support/inMemoryEmailReview.js";
 
 const INBOUND_DOMAIN = "in.radioso.test";
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -142,6 +143,7 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
     conversations: {
       latestCustomerMessageId: async (conversationId) => conversations.get(conversationId)?.messageIds.at(-1) ?? null,
       ownershipVersionOf: async (conversationId) => (conversations.get(conversationId)?.ownership === "human_owned" ? 1 : 0),
+      humanOwned: async (conversationId) => conversations.get(conversationId)?.ownership === "human_owned",
     },
     chat: { respond },
     heldReplies: {
@@ -151,6 +153,8 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
       supersedePendingForConversation: async () => 0,
     },
     handoffs: { requestHumanOwnership: vi.fn(async () => undefined) },
+    checks: passingReviewChecks(),
+    notes: { recordSetAside: async () => undefined },
     drains: { requestDrain },
     metrics,
     logger,

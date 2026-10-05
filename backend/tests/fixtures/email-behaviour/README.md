@@ -25,7 +25,10 @@ The harness has two deterministic checks that run in CI without a model:
 `tests/unit/eval-suite/email-mailbox-outcome.test.ts` (the outcome mapping, driven by the review
 runner with a stub `respond` for every row of the spec's Engagement Outcome Table) and
 `tests/integration/email-mailbox-harness.integration.test.ts` (the harness end to end over
-Postgres, with a scripted review turn).
+Postgres, with a scripted review turn). A scripted turn scripts the review's model checks with it:
+every email needs a reply, and every reply is complete. A live run calls the real reply triage and
+completeness check, and a step's `turnRan` counts the host's review turns, so mail the triage sets
+aside reads as `silent` with reason `no_reply_needed` and no turn.
 
 ## Running it
 

@@ -44,6 +44,8 @@ const reviewedEvidence = async (row: EmailOutcomeRow): Promise<EmailOutcomeEvide
     await h.ownership.requestHandoff({ conversationId, workspaceId: mailbox.workspaceId, reason: "operator_takeover" });
   }
   if (row.turn !== null) h.respond.mockResolvedValue(turnFor(row, conversationId));
+  h.replyTriage.mockResolvedValue(row.replyNeeded ?? "yes");
+  h.replyCompleteness.mockResolvedValue({ completeness: row.completeness ?? "complete", unansweredAsks: null });
   h.advance(60_000);
   await h.drain();
 
@@ -56,12 +58,14 @@ const reviewedEvidence = async (row: EmailOutcomeRow): Promise<EmailOutcomeEvide
     ownership: ownershipSummaryOf(await h.ownership.load(conversationId)),
     attentionOpen: h.heldRows.of(conversationId).some((record) => heldReplySummaryOf(record).attentionOpen),
     openDeliveryFailure: false,
+    setAside: h.notes.find((note) => note.conversationId === conversationId)?.code ?? null,
   };
 };
 
 /** What the row's own expectation means for the business: the harness must report exactly this. */
 const businessOutcomeOf = (row: EmailOutcomeRow): Pick<EmailBusinessOutcome, "kind" | "reason" | "attentionKind"> => {
   const { expected } = row;
+  if (expected.setAside) return { kind: "silent", reason: expected.setAside, attentionKind: "none" };
   if (expected.heldReply) return { kind: "drafted", reason: expected.heldReply.holdReason, attentionKind: "approval" };
   if (expected.attention.kind === "human_owned") return { kind: "handed_off", reason: expected.attention.reason, attentionKind: "handoff" };
   if (row.ownership === "human_owned") return { kind: "handed_off", reason: "operator_takeover", attentionKind: "handoff" };
@@ -86,6 +90,7 @@ const settledEvidence = (overrides: Partial<EmailOutcomeEvidence>): EmailOutcome
   ownership: { state: "ai_owned", reason: null },
   attentionOpen: false,
   openDeliveryFailure: false,
+  setAside: null,
   ...overrides,
 });
 
@@ -166,6 +171,12 @@ describe("email mailbox harness: business outcome of an inbound email", () => {
       ownership: { state: "human_owned", reason: "operator_only_mailbox" },
       attentionKind: "handoff",
     });
+  });
+
+  it("reports reviewed mail the channel set aside without a turn as silent, with the note's reason", () => {
+    expect(classifyEmailOutcome(settledEvidence({ setAside: "no_reply_needed" })))
+      .toMatchObject({ kind: "silent", reason: "no_reply_needed", ownership: { state: "ai_owned" }, attentionKind: "none" });
+    expect(classifyEmailOutcome(settledEvidence({}))).toMatchObject({ kind: "silent", reason: "no_reply" });
   });
 
   it("refuses to report before the delivery or its review has settled", () => {

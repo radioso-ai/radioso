@@ -11,6 +11,7 @@ import type { ConversationActivityEvent } from "../../../src/modules/conversatio
 import { EventLogReader, type EngagementMode } from "../../../src/modules/emailChannel/public.js";
 import { normalizeInboundMime, type InboundEmailMessage } from "../../../src/modules/mail/public.js";
 import { InMemoryEmailDomains, InMemoryEmailInbound, InMemoryEmailMailboxes, InMemoryEmailThreads } from "../../support/inMemoryEmailChannel.js";
+import { passingReviewChecks } from "../../support/inMemoryEmailReview.js";
 
 // SC-003, the CI gate: every committed `protocol/` fixture, under every verdict a provider adapter
 // can attach to it, goes through the inbound processor and then the review runner over in-memory
@@ -181,6 +182,7 @@ const runThroughChannel = async (fixture: string, verdict: AdapterVerdict, mailb
     conversations: {
       latestCustomerMessageId: async (conversationId) => conversations.get(conversationId)?.messageIds.at(-1) ?? null,
       ownershipVersionOf: async (conversationId) => (conversations.get(conversationId)?.ownership === "human_owned" ? 1 : 0),
+      humanOwned: async (conversationId) => conversations.get(conversationId)?.ownership === "human_owned",
     },
     chat: { respond },
     heldReplies: {
@@ -190,6 +192,8 @@ const runThroughChannel = async (fixture: string, verdict: AdapterVerdict, mailb
       supersedePendingForConversation: async () => 0,
     },
     handoffs: { requestHumanOwnership: async () => undefined },
+    checks: passingReviewChecks(),
+    notes: { recordSetAside: async () => undefined },
     drains,
     metrics: null,
     logger,

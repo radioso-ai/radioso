@@ -16,6 +16,9 @@ import type { HeldReplyProducerPort, HeldReplySupersedeScope, QueueAutoInput } f
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../../../shared/observability/tracing/operations.js";
 import { decidePublication, type HoldReason, type PublicationDecision } from "./emailPublicationDecision.js";
+import { factsWithCompleteness, type EmailReplyCompletenessPort, type ReplyCompleteness } from "./emailReplyCompleteness.js";
+import type { EmailReplyTriagePort } from "./emailReplyTriage.js";
+import type { EmailReviewSubject } from "./emailReviewChecks.js";
 
 /** Waits before attempts 2, 3 and 4 of a failed review (research B7); later ones wait the longest. */
 const RETRY_DELAYS_SECONDS: readonly number[] = [30, 120, 600];
@@ -29,6 +32,8 @@ const REVIEW_UNAVAILABLE = "review_unavailable";
 const OPERATOR_ONLY_MAILBOX = "operator_only_mailbox";
 /** The hand-off when the mailbox's hourly generation budget is spent, as at ingest (FR-023). */
 const GENERATION_BUDGET = "generation_budget";
+/** The thread note when the reply triage found that the customer's mail needs no reply (FR-017a). */
+const NO_REPLY_NEEDED = "no_reply_needed";
 /** No policy version is ever this: a removed mailbox's policy matches no bound version. */
 const REMOVED_POLICY_VERSION = -1;
 const RECEIPT_TO_HELD_REPLY_BUCKETS = [5, 10, 30, 60, 120, 300, 600, 1_800, 3_600];
@@ -40,6 +45,7 @@ type EmailReviewOutcome =
   | "held"
   | "queued_auto"
   | "already_held"
+  | "no_reply_needed"
   | "no_draft"
   | "human_owned"
   | "not_runnable"
@@ -62,11 +68,31 @@ interface EmailReviewConversationReader {
   latestCustomerMessageId(conversationId: string): Promise<string | null>;
   /** The conversation's ownership version now; 0 while it has no ownership row. */
   ownershipVersionOf(conversationId: string): Promise<number>;
+  /** Whether a person owns the conversation now. */
+  humanOwned(conversationId: string): Promise<boolean>;
 }
 
 /** Hands the conversation to a person with the reason, recording it, when the AI owns it. */
 interface EmailReviewHandoffPort {
   requestHumanOwnership(input: { workspaceId: string; conversationId: string; reason: string }): Promise<void>;
+}
+
+/**
+ * The model checks around a review turn, read on each call: whether the customer's mail calls for a
+ * reply at all, and whether a reply about to be sent automatically answers everything asked.
+ */
+export interface EmailReviewChecks {
+  replyTriage: EmailReplyTriagePort;
+  replyCompleteness: EmailReplyCompletenessPort;
+}
+
+/** Why a review set the customer's mail aside without a turn, as the thread note's code. */
+type EmailReviewSetAsideCode = "no_reply_needed";
+
+/** Records on the thread what the review decided without a turn, so the customer's mail is not invisible. */
+interface EmailReviewNotePort {
+  /** An operator-visible note on the conversation that its newest customer message was set aside, and why. */
+  recordSetAside(input: { workspaceId: string; conversationId: string; messageId: string; code: EmailReviewSetAsideCode }): Promise<void>;
 }
 
 /** The held-reply ports a review produces through: the producer, and the supersede of the last draft. */
@@ -96,6 +122,8 @@ export interface EmailReviewRunnerDependencies {
   chat: Pick<ConnectorChatPort, "respond">;
   heldReplies: EmailReviewHeldReplies;
   handoffs: EmailReviewHandoffPort;
+  checks: EmailReviewChecks;
+  notes: EmailReviewNotePort;
   drains: EmailChannelDrainDispatcherPort;
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
   /** A line per completed review, and failure and degradation lines; ids and codes only. */
@@ -118,6 +146,7 @@ const emptyResult = (): EmailReviewDrainResult => ({
   held: 0,
   queued_auto: 0,
   already_held: 0,
+  no_reply_needed: 0,
   no_draft: 0,
   human_owned: 0,
   not_runnable: 0,
@@ -146,13 +175,17 @@ const decisionReason = (decision: PublicationDecision): string => {
  *    answer — the lower-autonomy mode of the accepted and the current policy (research B16);
  * 3. charges revision R to the mailbox's generation budget, once across attempts, and hands the
  *    thread to a person as `generation_budget`, running nothing, when the budget is spent (B8);
- * 4. supersedes the draft an earlier revision left pending, so the thread keeps one current draft;
- * 5. runs `respond` as a review of the newest customer message, within the mailbox's history window;
- * 6. decides publication: a draft is queued for an automatic send or held, either bound to the
+ * 4. asks the reply triage whether the customer's unanswered mail calls for a reply; a clear `no`
+ *    runs no turn, holds nothing and asks no teammate, and leaves a note on the thread (FR-017a);
+ * 5. supersedes the draft an earlier revision left pending, so the thread keeps one current draft;
+ * 6. runs `respond` as a review of the newest customer message, within the mailbox's history window;
+ * 7. decides publication: a draft is queued for an automatic send or held, either bound to the
  *    policy and ownership the review ran under; a draftless turn hands off, and a person's
- *    conversation is left alone. A queued send writes no message: it is materialized at dispatch
- *    (research B9), and a send the held-reply service refuses to queue is held instead;
- * 7. completes revision R only, so mail that made R+1 meanwhile keeps its due time and runs next.
+ *    conversation is left alone. A draft every other gate would publish is first checked for
+ *    completeness, once, and held as `incomplete_answer` unless it answers everything asked. A
+ *    queued send writes no message: it is materialized at dispatch (research B9), and a send the
+ *    held-reply service refuses to queue is held instead;
+ * 8. completes revision R only, so mail that made R+1 meanwhile keeps its due time and runs next.
  *
  * A failure retries at a backoff, and the last attempt hands the thread off as `review_unavailable`.
  */
@@ -228,10 +261,14 @@ export class EmailReviewRunner {
       await this.handOff(claim, GENERATION_BUDGET);
       return { outcome: "budget_exhausted", reviewAgainUnder: null };
     }
+    const subject = this.subjectOf(claim, mailbox.agentId);
+    if (await this.setAsideWithoutReply(subject, respondToMessageId)) {
+      return { outcome: "no_reply_needed", reviewAgainUnder: null };
+    }
 
     await this.deps.heldReplies.supersedePendingForConversation(conversationId, "newer_inbound");
     const turn = await this.respond(claim, mailbox.agentId, respondToMessageId, mailbox.threadContextMessages);
-    const decision = await this.decide(claim, mailbox, mode, turn);
+    const { decision, completeness } = await this.decide(claim, mailbox, mode, turn, subject);
     if (turn.kind !== "draft") {
       if (decision.kind === "no_draft" && decision.handoffReason !== null) {
         await this.handOff(claim, decision.handoffReason);
@@ -247,7 +284,8 @@ export class EmailReviewRunner {
       ownershipVersion: turn.ownershipVersion,
       policy: { ref: emailMailboxPolicyRef(mailbox.id), version: mailbox.policyVersion },
       reviewRef,
-      facts: turn.facts,
+      // An incomplete verdict shows as the held reply's coverage, so a teammate reads why it waits.
+      facts: factsWithCompleteness(turn.facts, completeness),
       draft: turn.draft,
     };
     if (decision.kind === "publish") {
@@ -260,6 +298,18 @@ export class EmailReviewRunner {
     }
     // A draft always decides publish or hold; anything else fails closed as a hold.
     return this.holdResult(claim, mailbox, result, decision.kind === "hold" ? decision.reason : "outcome_not_publishable");
+  }
+
+  /**
+   * Sets the customer's mail aside, with a note on the thread, when the reply triage finds it needs
+   * no reply. Only a clear `no` silences: `unsure` and a failed triage run the review. A person's
+   * conversation is not triaged: no model reads it, and the host runs no turn on it either.
+   */
+  private async setAsideWithoutReply(subject: EmailReviewSubject, messageId: string): Promise<boolean> {
+    if (await this.deps.conversations.humanOwned(subject.conversationId)) return false;
+    if ((await this.deps.checks.replyTriage.assess(subject)) !== "no") return false;
+    await this.deps.notes.recordSetAside({ workspaceId: subject.workspaceId, conversationId: subject.conversationId, messageId, code: NO_REPLY_NEEDED });
+    return true;
   }
 
   /** Holds the review's result for a teammate, and asks for a fresh review when its policy moved under it. */
@@ -325,14 +375,24 @@ export class EmailReviewRunner {
     return turn;
   }
 
-  /** The publication decision on what the turn produced, against the ownership and policy as they are now. */
-  private async decide(claim: ClaimedReview, mailbox: Mailbox, mode: EngagementMode, turn: ConnectorTurnResult): Promise<PublicationDecision> {
+  /**
+   * The publication decision on what the turn produced, against the ownership and policy as they
+   * are now. A draft every other gate would publish is checked for completeness, at most once, and
+   * decided again on the verdict; no other draft is checked.
+   */
+  private async decide(
+    claim: ClaimedReview,
+    mailbox: Mailbox,
+    mode: EngagementMode,
+    turn: ConnectorTurnResult,
+    subject: EmailReviewSubject,
+  ): Promise<{ decision: PublicationDecision; completeness: ReplyCompleteness | null }> {
     const [mailboxNow, ownershipVersion, domain] = await Promise.all([
       this.deps.mailboxes.findActiveById(mailbox.id),
       this.deps.conversations.ownershipVersionOf(claim.conversationId),
       this.deps.domains.findById(mailbox.domainId),
     ]);
-    const decision = await traceOperation({
+    const decideWith = (completeness: ReplyCompleteness | null) => traceOperation({
       name: "email.review.publication",
       attributes: this.correlation(claim),
       run: () => decidePublication({
@@ -342,16 +402,23 @@ export class EmailReviewRunner {
         bound: { ownershipVersion: turn.ownershipVersion, policyVersion: mailbox.policyVersion },
         current: { ownershipVersion, policyVersion: mailboxNow?.policyVersion ?? REMOVED_POLICY_VERSION },
         sendingReady: sendingStateOf(domain) === "ok",
+        completeness,
       }),
       resultAttributes: (decided) => ({ decision: decided.kind, reason: decisionReason(decided) }),
     });
+    let completeness: ReplyCompleteness | null = null;
+    let decision = await decideWith(null);
+    if (decision.kind === "check_completeness" && turn.kind === "draft") {
+      ({ completeness } = await this.deps.checks.replyCompleteness.assess({ ...subject, draft: turn.draft }));
+      decision = await decideWith(completeness);
+    }
     if (turn.kind !== "human_owned") {
       this.count("email_publication_decisions_total", "Email publication decisions by decision and reason.", {
         decision: decision.kind === "no_draft" ? "no_reply" : decision.kind,
         reason: decisionReason(decision),
       });
     }
-    return decision;
+    return { decision, completeness };
   }
 
   private async policyMoved(mailbox: Mailbox): Promise<boolean> {
@@ -407,6 +474,16 @@ export class EmailReviewRunner {
       value: Math.max(0, (this.deps.clock().getTime() - claim.latestInboundAt.getTime()) / 1000),
       buckets: RECEIPT_TO_HELD_REPLY_BUCKETS,
     });
+  }
+
+  private subjectOf(claim: ClaimedReview, agentId: string): EmailReviewSubject {
+    return {
+      workspaceId: claim.workspaceId,
+      agentId,
+      conversationId: claim.conversationId,
+      revision: claim.reviewRevision,
+      attempt: claim.reviewAttempts,
+    };
   }
 
   private ids(claim: ClaimedReview): { conversationId: string; workspaceId: string } {

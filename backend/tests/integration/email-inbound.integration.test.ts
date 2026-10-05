@@ -93,6 +93,7 @@ describeIntegration("email inbound end to end (Postgres, local receiver)", () =>
       chat: { ingest: (input) => host.ingest(input), respond: unused },
       heldReplies: { hold: unused, queueAuto: unused, findByReviewRef: unused, materializeAuto: unused, returnAbandonedAuto: unused },
       ownership: { requestHumanOwnership: unused },
+      reviewInference: { create: unused },
       agents: { findByIdAndWorkspaceId: async (agentId) => ({ id: agentId }) },
       audit: { record: async () => undefined },
       actionDrain: { requestDrain: async () => undefined },

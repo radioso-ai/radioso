@@ -39,7 +39,7 @@ import { ProductDocsService } from "../../modules/productDocs/public.js";
 import { MetadataRuleFieldReferenceService } from "../../modules/retrieval/public.js";
 import { MetadataFieldSuggestionService } from "../../modules/settings/composition.js";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
-import { createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
+import { ContextualStructuredInferenceFactory, createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { EvalRunOverrides } from "../../modules/eval/composition.js";
 import { CopilotReplayEvidenceRepository } from "../../db/repositories/copilotReplayEvidenceRepository.js";
 import { OperatorMcpAuthorizationRepository } from "../../db/repositories/operatorMcpAuthorizationRepository.js";
@@ -402,6 +402,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
     ownership: { requestHumanOwnership: (scope, input) => conversationOwnershipService.requestHumanOwnership(scope, input) },
     publisher: realtimePublisherComposition.publisher,
+    // The answer tier the review turn resolves through: the checks judge a reply before it can be sent.
+    reviewInference: new ContextualStructuredInferenceFactory({ resolver: llmCapabilityResolver }, infrastructure.usageEventRecorder),
     agents: repositories.agentRepository,
     audit: infrastructure.auditService,
     actionDrain: chat.actionDrainDispatcher,
@@ -1235,6 +1237,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     actionDispatchWorker: chat.actionDispatchWorker,
     emailChannel: emailChannel ?? undefined,
     emailChannelWorker: emailChannel?.worker,
+    emailReviewChecks: emailChannel?.reviewChecks,
     evalSnapshotService,
     evalMessageCaseService,
     evalCaseService,

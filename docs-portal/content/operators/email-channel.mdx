@@ -15,6 +15,7 @@ You manage it from an agent's **Channels**, alongside Web chat, API, MCP, and Sl
 
 - Each mailbox you add gets its own opaque relay address on an inbound domain Radioso operates. Forwarding your real address to it is the only setup receiving needs — no DNS at all.
 - A new mailbox runs in `draft` mode: the agent writes a reply to every accepted email, and it waits in the Inbox for you to send, edit, or discard — nothing goes to the customer without that review. Switch a mailbox to `auto` and a grounded, complete answer goes out on its own, while everything else still waits for you. Switch it to `operator_only` and the agent is out of the loop entirely: every accepted email opens or continues a human-owned conversation, and no turn ever runs on it.
+- Messages that need no reply, like a thank-you, stay silent. On a `draft` or `auto` mailbox, a check looks at what the customer actually wrote before the agent drafts anything: a thank-you or acknowledgement that asks nothing gets no reply and no draft, just a note on the conversation. A thank-you that also asks something is answered as usual.
 - Email conversations show up in the Inbox exactly like any other channel, and they never auto-close on their own. What decides whether one needs attention is whether a person has to act on it — not how long it's been quiet.
 - Replies go out as your real address — `support@customer.com`, not the relay — once you've verified sending for that domain.
 - An email that doesn't turn into a conversation (an autoresponder, a bounce, spam, a message to a mailbox you've disabled) is still recorded: you can see it in the mailbox's event log with its sender, subject, and why it stopped there.
@@ -60,6 +61,8 @@ Sending or discarding never takes the conversation over — it stays with the ag
 
 Once a mailbox's drafts have earned your trust, you can let the agent send the easy ones itself. On an `auto` mailbox the agent drafts exactly as in `draft` mode, and a reply goes straight to the customer only when the turn is grounded in your documents, answers the whole question, asks for no person, and needed no action that couldn't run. It's sent with `Auto-Submitted: auto-generated` and the usual delivery states.
 
+Replies are sent automatically only when they answer everything asked. Right before a reply would go out, a check reads the customer's email and the draft reply together; one that leaves any part of the question unanswered waits for you instead, labelled Partly answered or Not answered so you know what's missing.
+
 To turn it on, choose **Automatic** under the mailbox's **Mode**. The card asks you to confirm, naming the limit it runs within and what happens to drafts already waiting — "The agent sends grounded replies on its own, up to 3 per thread until an operator replies. Applies to new mail only; pending drafts are discarded." Nothing switches to automatic without that confirmation. Through the API, send `"autoOptIn": true` alongside `"engagementMode": "auto"`; without it the change is refused with `auto_opt_in_required`. The switch applies to mail that arrives afterwards.
 
 Before you switch, run the mailbox in `draft` long enough to read real drafts, and check that the replies that shouldn't go out — partial answers, questions your documents don't cover, hand-offs — are coming back to you as drafts.
@@ -68,6 +71,7 @@ Before you switch, run the mailbox in `draft` long enough to read real drafts, a
 
 - a partial answer, no matching documents, an out-of-scope question, or a request for a person;
 - an answer that depended on an action that didn't run;
+- an answer the completeness check found left part of the question unanswered;
 - a thread that has used up its send budget;
 - a mailbox whose sending domain isn't verified.
 
@@ -125,7 +129,7 @@ Instead of forwarding, you can point an entire customer-owned domain or subdomai
 - **A reply shows `halted`.** The mailbox's domain lost its sending verification after the reply was queued, so nothing went out. Re-verify the domain, then resend from the conversation's delivery failure.
 - **A reply has been `uncertain` for a while.** Its outcome never came back from the provider. Mark it sent if you've confirmed the customer got it some other way, or ask for a resend — both are recorded against you.
 - **Sending a draft says "This mailbox cannot send yet."** The mailbox's sending domain isn't verified. See Verify sending, above — nothing was lost, the draft is still there once it is.
-- **A reply you expected to go out automatically is waiting as a draft.** Its hold reason says why: `outcome_not_publishable` means the answer wasn't grounded, complete, and free of a hand-off; `send_budget` means the thread used its automatic replies; `authority_changed` means the mailbox, its domain, or the conversation's owner changed before it sent; `policy_changed` means the mailbox was switched from Automatic to Draft for review while the reply was queued. Send or edit it from the Inbox.
+- **A reply you expected to go out automatically is waiting as a draft.** Its hold reason says why: `outcome_not_publishable` means the answer wasn't grounded, complete, and free of a hand-off; `incomplete_answer` means a check found the reply left part of the question unanswered; `send_budget` means the thread used its automatic replies; `authority_changed` means the mailbox, its domain, or the conversation's owner changed before it sent; `policy_changed` means the mailbox was switched from Automatic to Draft for review while the reply was queued. Send or edit it from the Inbox.
 - **Switching a mailbox to `auto` through the API is refused with `auto_opt_in_required`.** Add `"autoOptIn": true` to the same request; the mailbox card does this when you confirm.
 - **Sending a draft says the conversation changed hands, or the mailbox settings changed.** Someone took the conversation over, or the mailbox's mode or agent changed, after the draft was written. Nothing was sent; re-open the conversation to see what's current.
 

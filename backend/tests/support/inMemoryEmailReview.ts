@@ -4,7 +4,10 @@ import type { ConnectorRespondInput, ConnectorTurnFacts, ConnectorTurnResult } f
 import { vi } from "vitest";
 
 import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
-import { EmailReviewRunner } from "../../src/modules/connectors/plugins/email/emailReviewRunner.js";
+import type { ReplyCompletenessResult } from "../../src/modules/connectors/plugins/email/emailReplyCompleteness.js";
+import type { ReplyTriageVerdict } from "../../src/modules/connectors/plugins/email/emailReplyTriage.js";
+import type { EmailReviewSubject } from "../../src/modules/connectors/plugins/email/emailReviewChecks.js";
+import { EmailReviewRunner, type EmailReviewChecks } from "../../src/modules/connectors/plugins/email/emailReviewRunner.js";
 import { EMAIL_MAILBOX_POLICY_REF_PREFIX, EmailHeldReplyChannelScope, type EngagementMode } from "../../src/modules/emailChannel/public.js";
 import type { EmailMailboxRecord } from "../../src/modules/emailChannel/persistence/emailMailboxRepository.js";
 import { HeldReplyService } from "../../src/modules/handoff/public.js";
@@ -27,6 +30,12 @@ export const REVIEW_PUBLISHABLE_FACTS: ConnectorTurnFacts = {
   suppressedEffects: [],
   citationCount: 1,
 };
+
+/** The review's model checks with no model: every mail needs a reply, and every reply is complete. */
+export const passingReviewChecks = (): EmailReviewChecks => ({
+  replyTriage: { assess: async () => "yes" },
+  replyCompleteness: { assess: async () => ({ completeness: "complete", unansweredAsks: 0 }) },
+});
 
 /**
  * Stage 2 of the email channel over in-memory tables: the real review runner and the real held-reply
@@ -95,6 +104,16 @@ export const createEmailReviewHarness = (options: {
   const queueAuto = vi.spyOn(heldReplies, "queueAuto");
 
   const respond = vi.fn<(input: ConnectorRespondInput) => Promise<ConnectorTurnResult>>();
+  // The model checks, stubbed: every mail needs a reply and every reply is complete unless a test says otherwise.
+  const replyTriage = vi.fn<(subject: EmailReviewSubject) => Promise<ReplyTriageVerdict>>(async () => "yes");
+  const replyCompleteness = vi.fn<(input: EmailReviewSubject & { draft: { text: string } }) => Promise<ReplyCompletenessResult>>(
+    async () => ({ completeness: "complete", unansweredAsks: 0 }),
+  );
+  /** Thread notes a review left: mail it set aside without a turn. */
+  const notes: { conversationId: string; messageId: string; code: string }[] = [];
+  const recordSetAside = vi.fn(async (input: { workspaceId: string; conversationId: string; messageId: string; code: string }) => {
+    notes.push({ conversationId: input.conversationId, messageId: input.messageId, code: input.code });
+  });
   const requestDrain = vi.fn(async () => undefined);
   const logger = { info: vi.fn(), warn: vi.fn() };
   const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
@@ -110,6 +129,7 @@ export const createEmailReviewHarness = (options: {
     conversations: {
       latestCustomerMessageId: (conversationId) => heldRows.latestCustomerMessageId(conversationId),
       ownershipVersionOf: async (conversationId) => (await ownership.load(conversationId))?.version ?? 0,
+      humanOwned: async (conversationId) => (await ownership.load(conversationId))?.state === "human_owned",
     },
     chat: { respond },
     heldReplies: {
@@ -119,6 +139,8 @@ export const createEmailReviewHarness = (options: {
       supersedePendingForConversation: (conversationId, reason) => heldRows.supersedePendingForConversation(conversationId, reason),
     },
     handoffs: { requestHumanOwnership },
+    checks: { replyTriage: { assess: replyTriage }, replyCompleteness: { assess: replyCompleteness } },
+    notes: { recordSetAside },
     drains: { requestDrain },
     metrics,
     logger,
@@ -206,6 +228,10 @@ export const createEmailReviewHarness = (options: {
     hold,
     queueAuto,
     respond,
+    replyTriage,
+    replyCompleteness,
+    notes,
+    recordSetAside,
     requestHumanOwnership,
     requestDrain,
     logger,

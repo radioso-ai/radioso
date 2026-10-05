@@ -10,7 +10,10 @@ import type { EmailChannelSweep, EmailInboundRepository } from "../../../emailCh
 import type { InboundEmailReceiver } from "../../../mail/public.js";
 import { EmailChannelWorker } from "./emailChannelWorker.js";
 import { EmailInboundProcessor, type EmailInboundProcessorDependencies } from "./emailInboundProcessor.js";
-import { EmailReviewRunner, type EmailReviewRunnerDependencies } from "./emailReviewRunner.js";
+import { ModelEmailReplyCompleteness, type EmailReviewGroundingReader } from "./emailReplyCompleteness.js";
+import { ModelEmailReplyTriage } from "./emailReplyTriage.js";
+import type { EmailReviewCheckDependencies } from "./emailReviewChecks.js";
+import { EmailReviewRunner, type EmailReviewChecks, type EmailReviewRunnerDependencies } from "./emailReviewRunner.js";
 import { createEmailWebhookRouter, type EmailWebhookRouterOptions } from "./emailWebhook.js";
 
 interface EmailChannelConnectorDependencies
@@ -23,7 +26,7 @@ interface EmailChannelConnectorDependencies
   /** The host port: `ingest` records inbound mail (stage 1), `respond` runs its review (stage 2). */
   chat: Pick<ConnectorChatPort, "ingest" | "respond">;
   /** Stage 2's own ports, and `EMAIL_CHANNEL_REVIEW_MAX_ATTEMPTS`. */
-  review: Pick<EmailReviewRunnerDependencies, "conversations" | "heldReplies" | "handoffs"> & { maxAttempts: number };
+  review: Pick<EmailReviewRunnerDependencies, "conversations" | "heldReplies" | "handoffs" | "checks" | "notes"> & { maxAttempts: number };
   logger: {
     info(fields: Record<string, unknown>, message: string): void;
     warn(fields: Record<string, unknown>, message: string): void;
@@ -55,6 +58,8 @@ export const createEmailChannelConnector = (
       chat: deps.chat,
       heldReplies: deps.review.heldReplies,
       handoffs: deps.review.handoffs,
+      checks: deps.review.checks,
+      notes: deps.review.notes,
       drains: deps.drains,
       metrics: deps.metrics,
       logger: deps.logger,
@@ -64,6 +69,18 @@ export const createEmailChannelConnector = (
     sweep: deps.sweep,
     logger: deps.logger,
   }),
+});
+
+/**
+ * The review's model checks over the structured inference composition hands in: the reply triage
+ * before a turn and the completeness check before an automatic send. One object, read by the runner
+ * on each call.
+ */
+export const createEmailReviewChecks = (
+  deps: EmailReviewCheckDependencies & { grounding: EmailReviewGroundingReader },
+): EmailReviewChecks => ({
+  replyTriage: new ModelEmailReplyTriage(deps),
+  replyCompleteness: new ModelEmailReplyCompleteness(deps),
 });
 
 /**

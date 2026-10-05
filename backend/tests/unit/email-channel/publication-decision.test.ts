@@ -26,7 +26,10 @@ const draftTurn = (facts: Partial<ConnectorTurnFacts> = {}): ConnectorTurnResult
   draft: { text: "Your order ships on Monday.", presentation: {} },
 });
 
-/** Every gate open: an `auto` mailbox, a publishable turn, budget room, sending ready, authority unchanged. */
+/**
+ * Every gate open: an `auto` mailbox, a publishable turn, budget room, sending ready, authority
+ * unchanged, and a reply the completeness check found complete.
+ */
 const input = (overrides: Partial<PublicationDecisionInput> = {}): PublicationDecisionInput => ({
   effectiveMode: "auto",
   turn: draftTurn(),
@@ -34,6 +37,7 @@ const input = (overrides: Partial<PublicationDecisionInput> = {}): PublicationDe
   bound: { ownershipVersion: 3, policyVersion: 7 },
   current: { ownershipVersion: 3, policyVersion: 7 },
   sendingReady: true,
+  completeness: "complete",
   ...overrides,
 });
 
@@ -176,6 +180,41 @@ describe("decidePublication", () => {
         { turn: draftTurn({ coverage: "not_assessed" }) },
       ];
       for (const gate of closed) expect(decidePublication(input(gate)).kind).not.toBe("publish");
+    });
+  });
+
+  describe("the completeness check (FR-020)", () => {
+    it("asks for the check once every other gate would publish, and only then", () => {
+      expect(decidePublication(input({ completeness: null }))).toEqual({ kind: "check_completeness" });
+    });
+
+    it.each([
+      ["ownership moved", { current: { ownershipVersion: 4, policyVersion: 7 } }, "authority_changed"],
+      ["sending is not verified", { sendingReady: false }, "sending_not_verified"],
+      ["the mailbox drafts", { effectiveMode: "draft" as EngagementMode }, "draft_mode"],
+      ["the thread budget is spent", { sendBudget: { used: 3, limit: 3 } }, "send_budget"],
+      ["the turn is not publishable", { turn: draftTurn({ coverage: "partial" }) }, "outcome_not_publishable"],
+    ] as const)("does not ask for the check when %s: the earlier gate holds", (_label, closed, reason) => {
+      expect(decidePublication(input({ ...closed, completeness: null }))).toEqual({ kind: "hold", reason });
+    });
+
+    it("does not ask for the check on a result without a draft", () => {
+      const noDraft: ConnectorTurnResult = { kind: "no_draft", conversationId, ownershipVersion: 3, facts: { ...publishableFacts, outcome: "unavailable" } };
+      expect(decidePublication(input({ turn: noDraft, completeness: null }))).toEqual({ kind: "no_draft", handoffReason: "review_unavailable" });
+    });
+
+    it("publishes a reply the check found complete", () => {
+      expect(decidePublication(input({ completeness: "complete" }))).toEqual({ kind: "publish" });
+    });
+
+    it.each(["partial", "not_answered", "unavailable"] as const)("holds a %s verdict as incomplete_answer, failing closed", (completeness) => {
+      expect(decidePublication(input({ completeness }))).toEqual({ kind: "hold", reason: "incomplete_answer" });
+    });
+
+    it("lets every earlier gate win over an incomplete verdict", () => {
+      expect(decidePublication(input({ effectiveMode: "draft", completeness: "partial" }))).toEqual({ kind: "hold", reason: "draft_mode" });
+      expect(decidePublication(input({ turn: draftTurn({ coverage: "unanswered" }), completeness: "not_answered" })))
+        .toEqual({ kind: "hold", reason: "outcome_not_publishable" });
     });
   });
 

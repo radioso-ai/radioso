@@ -1,7 +1,7 @@
 ---
 title: "Answer Coverage Signals"
 description: "Read semantic answer coverage in turn diagnostics and Audience Pulse, and use it to steer directives and routines."
-last_updated: 2026-09-16
+last_updated: 2026-10-05
 ---
 
 # Answer Coverage Signals
@@ -30,9 +30,18 @@ retrieval answer path actually declined the request.
 
 ## Read Audience Pulse
 
-Expanded topic details show exclusive semantic buckets for answered, partly answered, unanswered, needs clarification, and not assessed questions. Grounding counts remain a separate diagnostic. Pulse evidence carries the recorded assessment; unresolved request text and routine reaction details stay in authorized turn diagnostics.
+Each topic row answers two questions: what visitors ask, and where the agent falls short. The topic's title sits on the first line and its counts on the second:
 
-Reports preserve records created before answer coverage was measured. Those records appear as legacy evidence and remain readable without manufacturing a new assessment.
+```text
+Book, ebook, and audiobook details and access
+19 questions · 2 unanswered · 2 partly answered
+```
+
+That row says 19 questions landed in the topic, 2 went unanswered, and 2 got only part of an answer. A topic where nothing went unanswered or partly answered shows only its question count.
+
+Expand a topic for one line of answer counts across all its questions, such as **11 answered · 2 partly answered · 2 unanswered · 4 not assessed** for the 19 above. The collapsed row repeats the unanswered and partly answered numbers from this line, so the two always agree. The counts and the example questions under them use the turn inspector's labels: **Answered**, **Partly answered**, **Unanswered**, **Needs clarification**, and **Not assessed**. **Not assessed** covers every question without a recorded assessment, whether the assessment was unavailable, failed, or absent from the stored record. When a saved report carries no answer coverage at all, the counts come from retrieval grounding instead: grounded answers count as answered, degraded ones as partly answered, unsupported ones as unanswered, and the rest as not assessed. That report's examples carry no label, because none of them has a verdict of its own.
+
+The examples are a sample of the topic's questions, and their heading says how many are shown, such as **Examples · 3 of 9 questions**. Among the examples shown, unanswered and partly answered questions come first, and each one opens its conversation in Activity. When the topic has a content opportunity, **Start draft** opens the document composer seeded with its questions. Unresolved request text and routine reaction details stay in authorized turn diagnostics.
 
 ## Shadow assessor
 

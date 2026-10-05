@@ -43,6 +43,18 @@ describe('getMemberCountDelta', () => {
     expect(getMemberCountDelta(theme({ memberCount: 96, share: 0.4, transition: null }), 0.2, 0.2)).toBeNull()
   })
 
+  it('reports no delta when the prior topic was only matched by estimate', () => {
+    expect(getMemberCountDelta(
+      theme({
+        memberCount: 60,
+        share: 0.25,
+        transition: { kind: 'survived', parentTopicIds: ['prior-theme-1'], viaCentroidFallback: true },
+      }),
+      0.2,
+      0.2,
+    )).toBeNull()
+  })
+
   it('reports no delta when the report carries no materiality threshold', () => {
     expect(getMemberCountDelta(theme({ memberCount: 96, share: 0.4 }), 0.2, undefined)).toBeNull()
   })

@@ -37,14 +37,6 @@ export interface AudiencePulseGroundingSummary {
 
 export type AudiencePulseCoverageSummary = ApiSchemas['AudiencePulseSemanticCoverage']
 
-export interface AudiencePulseCoverageReasonSummary {
-  sufficient_evidence: number
-  insufficient_evidence: number
-  conflicting_evidence: number
-  ambiguous_request: number
-  intentional_scope_boundary: number
-}
-
 export interface AudiencePulseTopicTransition {
   kind: 'survived' | 'split' | 'merged' | 'emerged' | 'dissolved'
   parentTopicIds: string[]
@@ -62,8 +54,6 @@ export interface AudiencePulseThemeEvidence {
   messageId: string
   question: string
   occurrenceCount: number
-  coverage?: 'answered' | 'partial' | 'unanswered' | 'unclear'
-  coverageReason?: keyof AudiencePulseCoverageReasonSummary
   answerCoverage?: ApiSchemas['AnswerCoverage']
 }
 

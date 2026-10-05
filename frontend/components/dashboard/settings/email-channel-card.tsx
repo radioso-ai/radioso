@@ -5,6 +5,7 @@ import { CheckCircle2, Loader2, Mail, MailCheck } from 'lucide-react'
 
 import { EmailDomainRecords, emailChannelErrorMessage } from '@/components/dashboard/settings/email-domain-records'
 import { EmailMailboxEvents } from '@/components/dashboard/settings/email-mailbox-events'
+import { EmailMailboxLimits } from '@/components/dashboard/settings/email-mailbox-limits'
 import { EmailMailboxMode, MODE_LABELS } from '@/components/dashboard/settings/email-mailbox-mode'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Badge } from '@/components/ui/badge'
@@ -67,8 +68,8 @@ const replaceById = <T extends { id: string }>(items: T[], next: T) =>
   items.some((item) => item.id === next.id) ? items.map((item) => (item.id === next.id ? next : item)) : [...items, next]
 
 /**
- * The email channel for one agent: its mailboxes with relay address, forwarding
- * steps, mode, setup check and event log, and the workspace's sending domains.
+ * The email channel for one agent: its mailboxes with mode, limits, relay address,
+ * forwarding steps, setup check and event log, and the workspace's sending domains.
  * Modes come from what the server supports, never from a list kept here.
  */
 export function EmailChannelCard({ workspaceId, agentId }: EmailChannelCardProps) {
@@ -130,10 +131,12 @@ export function EmailChannelCard({ workspaceId, agentId }: EmailChannelCardProps
   const overview = load.status === 'ready' ? load.overview : null
   const agentMailboxes = overview?.mailboxes.filter((mailbox) => mailbox.agentId === agentId) ?? []
   const supportedModes = overview?.supportedModes ?? []
+  // A mailbox reaches `auto` only through the existing mailbox's opt-in, which shows its send budget.
+  const creatableModes: readonly EmailEngagementMode[] = supportedModes.filter((mode) => mode !== 'auto')
   const defaultMode = overview?.defaultMode ?? null
-  const selectedMode = [modeDraft, defaultMode, supportedModes[0]]
-    .find((mode): mode is EmailEngagementMode => mode != null && supportedModes.includes(mode)) ?? null
-  const modeOptions: SegmentedControlOption<EmailEngagementMode>[] = supportedModes.map((mode) => ({ value: mode, label: MODE_LABELS[mode] }))
+  const selectedMode = [modeDraft, defaultMode, creatableModes[0]]
+    .find((mode): mode is EmailEngagementMode => mode != null && creatableModes.includes(mode)) ?? null
+  const modeOptions: SegmentedControlOption<EmailEngagementMode>[] = creatableModes.map((mode) => ({ value: mode, label: MODE_LABELS[mode] }))
   const canCreate = Boolean(workspaceId && agentId && selectedMode && addressDraft.trim() && displayNameDraft.trim())
 
   const badge = load.status === 'loading'
@@ -317,6 +320,8 @@ function EmailMailboxPanel({ workspaceId, mailbox, supportedModes, headingRef, o
         onMailboxChanged={onMailboxChanged}
         announce={announce}
       />
+
+      <EmailMailboxLimits workspaceId={workspaceId} mailbox={mailbox} onMailboxChanged={onMailboxChanged} announce={announce} />
 
       <CopyValueField label="Relay address" value={mailbox.relayAddress} ariaLabel="Copy relay address" />
 

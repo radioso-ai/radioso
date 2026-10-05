@@ -82,6 +82,20 @@ const refuse = (route: Route, status: number, code: string, message: string) =>
 
 type EngagementMode = "operator_only" | "draft" | "auto";
 
+// The request field that opts a mailbox into `auto`; the backend refuses the switch without it.
+const AUTO_OPT_IN_FIELD = "autoOptIn";
+
+type MailboxLimits = {
+  threadSendBudget: number;
+  hourlyGenerationBudget: number;
+  threadContextMessages: number;
+  spamOptIn: boolean;
+  silenceThresholdHours: number;
+};
+const LIMIT_FIELDS = ["threadSendBudget", "hourlyGenerationBudget", "threadContextMessages", "spamOptIn", "silenceThresholdHours"] as const;
+// Mode, enabled and agent are the mailbox's policy; only a change to one of them writes a new version.
+const POLICY_FIELDS = ["engagementMode", "enabled", "agentId"] as const;
+
 /**
  * In-memory email channel backend; `deliver` stands in for mail arriving through the relay, and
  * `changePolicyElsewhere` for a teammate saving this mailbox's settings in another tab.
@@ -225,10 +239,14 @@ const installEmailChannelBackend = async (
       if (typeof body?.engagementMode === "string" && !supportedModes.includes(body.engagementMode as EngagementMode)) {
         return refuse(route, 409, "engagement_mode_unavailable", "That mode is not available");
       }
-      Object.assign(mailbox, {
-        engagementMode: body?.engagementMode ?? mailbox.engagementMode,
-        policyVersion: (mailbox.policyVersion as number) + 1,
-      });
+      if (body?.engagementMode === "auto" && mailbox.engagementMode !== "auto" && body[AUTO_OPT_IN_FIELD] !== true) {
+        return refuse(route, 400, "auto_opt_in_required", "Switching to auto needs an explicit opt-in");
+      }
+      const policyChanged = POLICY_FIELDS.some((field) => body?.[field] !== undefined && body[field] !== mailbox[field]);
+      for (const field of [...POLICY_FIELDS, ...LIMIT_FIELDS]) {
+        if (body?.[field] !== undefined) mailbox[field] = body[field];
+      }
+      if (policyChanged) mailbox.policyVersion = (mailbox.policyVersion as number) + 1;
       return json(route, mailbox);
     }
 
@@ -296,8 +314,9 @@ const installEmailChannelBackend = async (
     return refuse(route, 404, "not_found", `Unhandled email channel route: ${method} ${path}`);
   });
 
-  const changePolicyElsewhere = () => {
+  const changePolicyElsewhere = (limits: Partial<MailboxLimits> = {}) => {
     const mailbox = mailboxes[0];
+    Object.assign(mailbox, limits);
     mailbox.policyVersion = (mailbox.policyVersion as number) + 1;
   };
 
@@ -463,6 +482,126 @@ test("a mode change against settings saved elsewhere is refused, reloads the mai
   expect(backend.requests.filter((request) => request.method === "PATCH").map((request) => request.body)).toEqual([
     { engagementMode: "draft", expectedPolicyVersion: 1 },
     { engagementMode: "draft", expectedPolicyVersion: 2 },
+  ]);
+});
+
+test("turning on Automatic asks once with the thread send budget, and cancelling changes nothing", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page, {
+    supportedModes: ["operator_only", "draft", "auto"],
+    existingMailbox: { engagementMode: "draft" },
+  });
+
+  await openEmailChannel(page);
+  const card = page.locator("#email-channel");
+  const mailbox = card.getByRole("region", { name: "support@customer.test" });
+  const mode = mailbox.getByRole("group", { name: "Mailbox mode" });
+  await expect(mode.getByRole("button")).toHaveText(["Operator only", "Draft for review", "Automatic"]);
+  // A new mailbox never starts in Automatic: the opt-in happens on an existing one.
+  await expect(card.getByRole("group", { name: "Mode", exact: true }).getByRole("button")).toHaveText(["Operator only", "Draft for review"]);
+
+  await mode.getByRole("button", { name: "Automatic" }).click();
+  const confirmation = mailbox.getByRole("group", { name: "Confirm mode change" });
+  await expect(confirmation).toHaveText(
+    /Change to Automatic\? The agent sends grounded replies on its own, up to 3 per thread until an operator replies\./,
+  );
+  await expect(confirmation.getByRole("button", { name: "Confirm" })).toBeFocused();
+
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(mode.getByRole("button", { name: "Draft for review" })).toHaveAttribute("aria-pressed", "true");
+  await expect(mode.getByRole("button", { name: "Draft for review" })).toBeFocused();
+  expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([]);
+
+  await mode.getByRole("button", { name: "Automatic" }).click();
+  await mailbox.getByRole("group", { name: "Confirm mode change" }).getByRole("button", { name: "Confirm" }).click();
+
+  await expect(announcer(page)).toHaveText("Mode changed to Automatic. It applies to new mail.");
+  await expect(mode.getByRole("button", { name: "Automatic" })).toHaveAttribute("aria-pressed", "true");
+  await expect(mode.getByRole("button", { name: "Automatic" })).toBeFocused();
+  await expect(mailbox.getByText("Support · Mode: Automatic")).toBeVisible();
+  expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([
+    {
+      method: "PATCH",
+      path: `/mailboxes/${mailboxId}`,
+      body: { engagementMode: "auto", expectedPolicyVersion: 1, [AUTO_OPT_IN_FIELD]: true },
+    },
+  ]);
+});
+
+test("operator edits a mailbox's limits, keeping focus, and the Automatic confirmation shows the new send budget", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page, {
+    supportedModes: ["operator_only", "draft", "auto"],
+    existingMailbox: { engagementMode: "draft" },
+  });
+
+  await openEmailChannel(page);
+  const mailbox = page.locator("#email-channel").getByRole("region", { name: "support@customer.test" });
+  const limits = mailbox.getByRole("form", { name: "Limits" });
+  const sendBudget = limits.getByLabel("Replies per thread");
+  await expect(sendBudget).toHaveValue("3");
+  await expect(limits.getByLabel("Agent runs per hour")).toHaveValue("30");
+  await expect(limits.getByLabel("Context messages")).toHaveValue("10");
+  await expect(limits.getByLabel("Silence alert (hours)")).toHaveValue("72");
+  await expect(limits.getByRole("switch", { name: "Spam to inbox" })).toHaveAttribute("aria-checked", "false");
+
+  // Out of the contract's bounds: named inline, and nothing is sent.
+  const save = limits.getByRole("button", { name: "Save limits" });
+  await sendBudget.fill("25");
+  await expect(sendBudget).toHaveAttribute("aria-invalid", "true");
+  await expect(limits.getByText("Enter a whole number from 1 to 20.")).toBeVisible();
+  await save.click();
+  await expect(sendBudget).toBeFocused();
+  expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([]);
+
+  await sendBudget.fill("5");
+  await limits.getByRole("switch", { name: "Spam to inbox" }).click();
+  await save.click();
+
+  await expect(announcer(page)).toHaveText("Limits saved.");
+  await expect(save).toBeFocused();
+  await expect(sendBudget).toHaveValue("5");
+  await expect(sendBudget).not.toHaveAttribute("aria-invalid", "true");
+  await expect(limits.getByRole("switch", { name: "Spam to inbox" })).toHaveAttribute("aria-checked", "true");
+  expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([
+    {
+      method: "PATCH",
+      path: `/mailboxes/${mailboxId}`,
+      body: { threadSendBudget: 5, spamOptIn: true, expectedPolicyVersion: 1 },
+    },
+  ]);
+
+  await mailbox.getByRole("group", { name: "Mailbox mode" }).getByRole("button", { name: "Automatic" }).click();
+  await expect(mailbox.getByRole("group", { name: "Confirm mode change" })).toContainText("up to 5 per thread until an operator replies.");
+});
+
+test("a limits save against settings saved elsewhere is refused and reloads the mailbox", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page, {
+    supportedModes: ["operator_only", "draft", "auto"],
+    existingMailbox: { engagementMode: "draft" },
+  });
+
+  await openEmailChannel(page);
+  const mailbox = page.locator("#email-channel").getByRole("region", { name: "support@customer.test" });
+  const limits = mailbox.getByRole("form", { name: "Limits" });
+  await expect(limits.getByLabel("Replies per thread")).toHaveValue("3");
+  backend.changePolicyElsewhere({ threadSendBudget: 4 });
+
+  await limits.getByLabel("Agent runs per hour").fill("60");
+  const save = limits.getByRole("button", { name: "Save limits" });
+  await save.click();
+
+  await expect(limits.getByRole("alert")).toHaveText("Settings changed elsewhere, reloaded.");
+  await expect(limits.getByLabel("Replies per thread")).toHaveValue("4");
+  await expect(limits.getByLabel("Agent runs per hour")).toHaveValue("30");
+  await expect(save).toBeFocused();
+  expect(backend.requests.filter((request) => request.method === "PATCH").map((request) => request.body)).toEqual([
+    { hourlyGenerationBudget: 60, expectedPolicyVersion: 1 },
   ]);
 });
 

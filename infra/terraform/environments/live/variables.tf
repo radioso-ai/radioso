@@ -470,3 +470,17 @@ variable "google_login_client_secret" {
   sensitive   = true
   default     = null
 }
+
+variable "stripe_secret_key" {
+  description = "Stripe secret API key for Enterprise billing in live."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "stripe_webhook_secret" {
+  description = "Stripe webhook signing secret for Enterprise billing in live."
+  type        = string
+  sensitive   = true
+  default     = null
+}

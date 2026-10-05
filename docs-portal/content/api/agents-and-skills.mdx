@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-10-02
+last_updated: 2026-10-03
 ---
 
 # Agents and skills
@@ -51,7 +51,9 @@ turn is still running is refused with `409` and the error code
 `test_turn_in_progress`; send it again once that turn settles.
 
 Use `GET /api/v1/agents/{agentId}/test-executions?limit=50` to page through
-private Test Chat history. Each row carries `turnCount`, the number of user
+private Test Chat history. An execution is listed once it has a user message,
+sent by the operator or copied from a real conversation, so one holding only its
+proactive greeting stays off the page. Each row carries `turnCount`, the number of user
 messages in the test, counting both those copied from a real conversation it
 continues and those the operator sent, and `firstMessage`, the first of them
 with text, as a label of at most 200 characters ending in `…` when it is longer;
@@ -59,8 +61,10 @@ with text, as a label of at most 200 characters ending in `…` when it is longe
 `…` reads as whole. A greeting is
 not counted, and `firstMessage` is `null` until there is a user message with text. Then use `GET /api/v1/agents/{agentId}/test-executions/{executionId}`
 to reopen one execution with its frozen values, side transcripts, and retry
-evidence. These endpoints require `workspace.agents.manage` and never add test
-conversations to public or visitor history.
+evidence. The detail also carries `seededTurnCount`, the user messages a seed
+conversation copied in; it is `0` for a test that started fresh. These
+endpoints require `workspace.agents.manage` and never add test conversations
+to public or visitor history.
 
 To continue a real conversation as a private test, start a `single` execution with
 `seedConversationId` set to a conversation in the same workspace and agent. The
@@ -356,7 +360,7 @@ Each notice is emailed to the resolved recipients as plain text and, when a webh
 }
 ```
 
-`reason` says what raised the notice: `routine_handoff` or `retrieval_miss` for a handoff, `routine_completed` for a routine that finished and kept the conversation with the agent. `routine` names the routine whose ending raised the notice, with `name` set to `null` when the routine has since been deleted; it is `null` for a retrieval-miss handoff. `collected` holds the routine's declared values keyed by slot key, in the order the routine declares them (in storage order once the routine has been deleted), and is empty for a retrieval-miss handoff. Text, number, and boolean values are included; a slot holding a structured value is left out. The email version of the notice reads as plain prose: it lists the same values under a `Collected:` heading and, when the conversation has one, the page it started on. The JSON body carries `collected` as structured data instead of that heading, and has no field for the entry page.
+`reason` says what raised the notice: `routine_handoff` when a routine reached its hand-off ending, `routine_stuck` when a routine ended on a step its visitor stayed stuck on, or `retrieval_miss` — all three for a handoff — and `routine_completed` for a routine that finished and kept the conversation with the agent. `routine` names the routine whose ending raised the notice, with `name` set to `null` when the routine has since been deleted; it is `null` for a retrieval-miss handoff. `collected` holds the routine's declared values keyed by slot key, in the order the routine declares them (in storage order once the routine has been deleted), and is empty for a retrieval-miss handoff. Text, number, and boolean values are included; a slot holding a structured value is left out. The email version of the notice reads as plain prose: it lists the same values under a `Collected:` heading and, when the conversation has one, the page it started on. The JSON body carries `collected` as structured data instead of that heading, and has no field for the entry page.
 
 `subject` and `intro` are the text the routine's author wrote for that ending, with each `{{slot.<key>}}` replaced by the collected value, or `—` when the routine did not collect it. Each is `null` when the author wrote none; the email then uses the default subject (`Book accommodation: completed`, or `Book accommodation: needs a human` for a handoff) and no intro.
 

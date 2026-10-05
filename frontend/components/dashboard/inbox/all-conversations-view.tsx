@@ -103,6 +103,7 @@ export function AllConversationsView({
     setSelectedItem,
     pushHistoryRoute,
     onSelectItem,
+    onSelectedItemNotFound,
     onConversationPageChange,
     onSearchPageChange,
     onContactPageChange,
@@ -110,6 +111,12 @@ export function AllConversationsView({
   } = useHistoryListState({ accountId, routeState, serverSearchParams })
 
   const [debugConversationId, setDebugConversationId] = useState<string | null>(null)
+  // Set when the reading pane's selected conversation 404s (deleted, or aged
+  // out by retention) — rendered as the pane's empty-state placeholder once
+  // `onSelectedItemNotFound` has cleared the dead id, so the operator still
+  // sees why the pane went back to "nothing selected" instead of a silent
+  // redirect. Cleared by picking any other row.
+  const [notFoundNotice, setNotFoundNotice] = useState<string | null>(null)
   // Which of the drawer's two purposes triggered the close in progress —
   // read by onAfterClose, which fires after debugConversationId may already
   // have been cleared by onSelectedItemChange, so it can't re-derive the mode
@@ -192,7 +199,19 @@ export function AllConversationsView({
 
   const handleSelectRow = (nextSelection: Parameters<typeof onSelectItem>[0]) => {
     setAudiencePulseEvidence(null)
+    setNotFoundNotice(null)
     onSelectItem(nextSelection)
+  }
+
+  // The reading pane's conversation 404s (a permalink to a conversation that's
+  // since been deleted or aged out by retention — see #1225). Clearing back to
+  // the list is the operator-facing answer: a dead id left in the URL would
+  // re-404 on refresh or re-share, and silently landing on an empty pane with
+  // no explanation reads as broken rather than as "that's gone."
+  const handleReadingPaneItemNotFound = () => {
+    setAudiencePulseEvidence(null)
+    setNotFoundNotice('This conversation is no longer available.')
+    onSelectedItemNotFound()
   }
 
   // A reply or Done acting in place on an actionable row changes conversation
@@ -395,8 +414,10 @@ export function AllConversationsView({
               onOperatorChanged={handleOperatorChanged}
               onRequestFeedbackClose={() => {}}
               onOpenDebugView={setDebugConversationId}
+              onItemNotFound={handleReadingPaneItemNotFound}
               anchorMessageId={anchorMessageId}
               isAudiencePulseEvidence={isAudiencePulseEvidenceSelection}
+              emptyPlaceholder={notFoundNotice ?? undefined}
             />
           </div>
         )}

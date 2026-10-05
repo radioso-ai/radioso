@@ -80,6 +80,15 @@ interface InboxResponseViewProps {
   onRequestFeedbackClose: (item: InboxItem, anchor: HTMLElement) => void
   onOpenDebugView: (conversationId: string) => void
   /**
+   * Fires when the selected conversation's detail fetch 404s (deleted, or
+   * aged out by retention) — the same `onItemNotFound` seam
+   * `useHistoryDetailState` already offers the builder drawer. A caller whose
+   * selection is URL-addressable (the All lens's permalink-shaped deep link)
+   * should use this to clear the dead id instead of leaving it live in the
+   * URL for a refresh or re-share to walk straight back into.
+   */
+  onItemNotFound?: () => void
+  /**
    * Scrolls the thread to this message once it loads (e.g. a Usage Details
    * "open message" deep link, or an Audience Pulse evidence handoff). Only
    * meaningful alongside a `readonly` selection; the Needs-you lens never
@@ -98,8 +107,9 @@ interface InboxResponseViewProps {
    * prompt when nothing is selected. The Needs-you lens uses this to show its
    * confidence/empty-queue summary once the queue has zero open items —
    * "select an item from the queue" is not actionable advice when there's
-   * nothing in the queue to select. The All lens never passes one, so its
-   * "nothing selected" state is unchanged.
+   * nothing in the queue to select. The All lens uses it for the inverse
+   * case: a selection that *was* made but 404'd (see `onItemNotFound`), so
+   * the operator still sees why the pane is empty instead of a silent reset.
    */
   emptyPlaceholder?: ReactNode
 }
@@ -119,6 +129,7 @@ export function InboxResponseView({
   onOperatorChanged,
   onRequestFeedbackClose,
   onOpenDebugView,
+  onItemNotFound,
   anchorMessageId = null,
   isAudiencePulseEvidence = false,
   emptyPlaceholder,
@@ -159,6 +170,7 @@ export function InboxResponseView({
   } = useHistoryDetailState({
     selectedItem,
     setSelectedItem: noop,
+    onItemNotFound,
     additionalConversationMessages: conversationTail.messages,
     anchorMessageId,
     isAudiencePulseEvidence,

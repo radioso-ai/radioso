@@ -148,11 +148,38 @@ const COVERAGE_LABELS: Record<AnswerCoverageValue, string> = {
   answered: 'Answered', partial: 'Partly answered', unanswered: 'Unanswered', unclear: 'Needs clarification',
 }
 
-export const answerCoverageLabel = (value: AnswerCoverageValue | undefined): string =>
-  value ? COVERAGE_LABELS[value] : 'Not assessed'
+const NOT_ASSESSED_LABEL = 'Not assessed'
 
-export const answerCoverageReasonLabel = (value: AnswerCoverageReason | undefined): string =>
-  value ? value.replaceAll('_', ' ').replace(/^./, (char) => char.toUpperCase()) : 'Not recorded'
+export const answerCoverageLabel = (value: AnswerCoverageValue | undefined): string =>
+  value ? COVERAGE_LABELS[value] : NOT_ASSESSED_LABEL
+
+const REASON_LABELS: Record<AnswerCoverageReason, string> = {
+  sufficient_evidence: 'Sufficient evidence',
+  insufficient_evidence: 'Insufficient evidence',
+  conflicting_evidence: 'Conflicting evidence',
+  ambiguous_request: 'Ambiguous request',
+  intentional_scope_boundary: 'Out of scope',
+}
+
+const isAnswerCoverageReason = (value: string): value is AnswerCoverageReason => Object.hasOwn(REASON_LABELS, value)
+
+/** Accepts raw trace strings too; a code outside the contract is spelled out as written. */
+export const answerCoverageReasonLabel = (value: string | undefined): string => {
+  if (!value) return 'Not recorded'
+  if (isAnswerCoverageReason(value)) return REASON_LABELS[value]
+  return value.replaceAll('_', ' ').replace(/^./, (char) => char.toUpperCase())
+}
+
+/** What happened to a visitor question, as Audience Pulse reports it. */
+export type AnswerStatus = AnswerCoverageValue | 'out_of_scope' | 'not_assessed'
+
+const ANSWER_STATUS_LABELS: Record<AnswerStatus, string> = {
+  ...COVERAGE_LABELS,
+  out_of_scope: REASON_LABELS.intentional_scope_boundary,
+  not_assessed: NOT_ASSESSED_LABEL,
+}
+
+export const answerStatusLabel = (status: AnswerStatus): string => ANSWER_STATUS_LABELS[status]
 
 /** Short, operator-facing label for which classifier produced the verdict (#1260). */
 const PRODUCER_LABELS: Record<AnswerCoverageProducer, string> = {

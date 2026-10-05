@@ -18,6 +18,7 @@ import type { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
 import { buildChatTurnContext } from "./chatTurnAssembly.js";
 import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
+import { routineEndingEffectsForTurn } from "./routineEndingEffects.js";
 import { RoutineChatModelGateway } from "./routines/routineChatModelGateway.js";
 import {
   createRoutineGroundedAnswerRenderer,
@@ -187,6 +188,11 @@ export class ApprovalResumeTurn {
       ? { kind: "save", state: result.nextState }
       : { kind: "clear", sessionId: input.record.sessionId };
     const presentation = presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, result.response);
+    const routineEnding = routineEndingEffectsForTurn({
+      session,
+      workspaceId: input.record.workspaceId,
+      turn: { handoff: result.handoff, operatorNotice: result.operatorNotice, actions: result.actions },
+    });
 
     this.beginTurnEmission(coordination);
     const completed = await this.options.chatTurnLifecycle.completeAssistantTurn({
@@ -198,7 +204,8 @@ export class ApprovalResumeTurn {
       stream: false,
       engineTrace: result.trace ? conversationTraceWithRoutineTrace(session.turnTrace, result.trace) : session.turnTrace,
       modelCallTrace,
-      actions: result.actions,
+      actions: routineEnding.actions,
+      ownershipHandoff: routineEnding.ownershipHandoff,
       routineStateTransition,
       additionalAuditEvent: {
         accountId: input.decidedBy,

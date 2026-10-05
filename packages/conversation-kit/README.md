@@ -244,6 +244,13 @@ const runLookup = {
 };
 ```
 
+A handler a routine step calls also receives `inputOrigins`, keyed like `input`:
+`literal` for a value the author wrote, `slot` for a routine variable, and
+`context` for a turn context variable. A routine variable counts as `slot` even
+when a tool output filled it, so treat `slot` and `context` values as visitor
+input, for example by escaping them before they go into HTML. A skill executor
+port gets the same map as `collectedOrigins`.
+
 Pass `routineSkillDispatcher` to run routine skill steps through your own executor
 instead of the local handlers.
 
@@ -263,6 +270,11 @@ also owns routine expiry and TTL. The selector and renderer feed the default run
 When a turn renders the same chat step the user was answering, their reply did not
 satisfy it, and the runner passes the renderer `reask.missingSlots` — the step's slots
 still unfilled — so a renderer of your own can ask again for what is missing.
+Past the re-ask limit it adds `reask.exhausted`, and the reply asks differently. On a
+routine with a hand-off end, a step still unanswered a turn later ends the routine
+`stuck`: the runner passes the renderer `stuckHandoff: true` with no steering, the
+reply tells the visitor a person continues the conversation, and the turn's
+`handoff` carries `terminalKind: "stuck"`.
 When you supply `routineRunner`, it owns its routine list instead.
 
 The kit also accepts engine capability ports for steering, turn interpretation,

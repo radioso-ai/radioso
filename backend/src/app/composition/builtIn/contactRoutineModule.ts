@@ -145,7 +145,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
     context.registerActionHandler({
       type: CONTACT_SEND_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
-      emittableByRoutines: true,
+      queuedFrom: "routine_action_step",
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl, errorReporter }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
           new WorkspaceRepository(database.kysely),
@@ -174,7 +174,8 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       context.registerActionHandler({
         type: ending.type,
         requiredCapabilities: [capabilityNames.humanContact.request],
-        emittableByRoutines: true,
+        // The turn that reaches the ending queues it; an author sets the notice on the ending.
+        queuedFrom: "chat_turn",
         handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => new RoutineEndingNotifyActionHandler({
           ending,
           dispatcher: buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
@@ -189,10 +190,12 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
     context.registerActionHandler({
       type: APPROVAL_REQUEST_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
-      emittableByRoutines: true,
+      // The turn that reaches an approval step queues it.
+      queuedFrom: "chat_turn",
       handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
         return new ApprovalRequestActionHandler(
           buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
+          new ConversationRepository(database.kysely),
         );
       },
     });

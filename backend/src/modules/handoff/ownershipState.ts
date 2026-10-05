@@ -4,6 +4,7 @@ export type ConversationOwnershipState = "ai_owned" | "human_owned";
 export type ConversationOwnershipScope = "human_owned";
 export type ConversationOwnershipReason =
   | "routine_handoff"
+  | "routine_stuck"
   | "retrieval_miss"
   | "operator_takeover"
   /** The conversation arrived at a mailbox that only operators answer. */

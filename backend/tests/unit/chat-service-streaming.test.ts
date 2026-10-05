@@ -2246,6 +2246,129 @@ describe("chat service streaming", () => {
       })]);
   });
 
+  it.each([
+    {
+      ending: "hand-off",
+      decision: {
+        terminal: { kind: "handoff" as const, stepId: "escalate", collected: { order: "A-17" } },
+        handoff: { routineId: "refund-flow", stepId: "escalate", terminalKind: "handoff" as const, collected: { order: "A-17" } },
+      },
+      ownershipHandoff: { reason: "routine_handoff", routineId: "refund-flow", stepId: "escalate" },
+      notifyType: HANDOFF_NOTIFY_ACTION_TYPE,
+      reason: "routine_handoff",
+    },
+    {
+      ending: "completion with a notice",
+      decision: {
+        terminal: { kind: "complete" as const, stepId: "refunded", collected: { order: "A-17" }, operatorNotice: { subject: "Refund issued" } },
+        operatorNotice: {
+          routineId: "refund-flow",
+          stepId: "refunded",
+          terminalKind: "complete" as const,
+          collected: { order: "A-17" },
+          subject: "Refund issued",
+        },
+      },
+      ownershipHandoff: null,
+      notifyType: COMPLETION_NOTIFY_ACTION_TYPE,
+      reason: "routine_completed",
+    },
+  ])("applies a $ending ending reached after an approval like any other turn", async ({ decision, ownershipHandoff, notifyType, reason }) => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("workspace-1", { name: "Support" });
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1", agentId: agent.id });
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Please refund order A-17.",
+    });
+    const assistantTurnPersistence = createCapturingAssistantTurnPersistence();
+    const conversationEngine = createConversationEngine();
+    vi.spyOn(conversationEngine, "resumeAwaitingDecision").mockResolvedValue({
+      resumed: true,
+      response: { answer: "Resumed." },
+      nextState: null,
+      ...decision,
+    });
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "unused"; }, async *streamAnswer() { yield "unused"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined,
+      { resolve: vi.fn(async () => agent) },
+      undefined, undefined, undefined, undefined, undefined,
+      conversationEngine,
+      {
+        routineStore: undefined,
+        routineProvider: {
+          forTurn: vi.fn(async () => ({
+            activator: { activate: vi.fn(async () => null) },
+            runner: {} as never,
+          })),
+        },
+        suspendedRoutineReader: { loadSuspended: vi.fn(async () => null) },
+        assistantTurnPersistence,
+      },
+    );
+    const now = new Date("2026-07-19T12:00:00.000Z");
+    const decisionTransaction = {} as never;
+
+    await service.resumeAwaitingDecisionTurn({
+      record: {
+        id: "decision-1",
+        handle: "refund-approval",
+        conversationId: conversation.id,
+        sessionId: conversation.id,
+        workspaceId: "workspace-1",
+        agentId: agent.id,
+        routineId: "refund-flow",
+        stepId: "await-approval",
+        reason: "refund_review",
+        options: [{ id: "approve", label: "Approve" }],
+        deciderScope: {},
+        contentHash: "hash-1",
+        status: "resolved",
+        decision: { optionId: "approve" },
+        decidedBy: "account-1",
+        decidedByUserId: null,
+        decidedAt: now,
+        deadline: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      optionId: "approve",
+      decidedBy: "account-1",
+      transaction: decisionTransaction,
+    });
+
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+    // The ending's effects commit in the decision's own transaction, never a separate one.
+    expect(persisted.transaction).toBe(decisionTransaction);
+    expect(persisted.ownershipHandoff ?? null).toEqual(ownershipHandoff);
+    if (ownershipHandoff) {
+      expect(persisted.ownershipAuditEvent).toMatchObject({ eventType: "hitl.ownership" });
+    } else {
+      expect(persisted.ownershipAuditEvent ?? null).toBeNull();
+    }
+    expect(persisted.actions).toContainEqual({
+      type: notifyType,
+      payload: expect.objectContaining({
+        conversationId: conversation.id,
+        workspaceId: "workspace-1",
+        agentId: agent.id,
+        reason,
+        routineId: "refund-flow",
+        collected: { order: "A-17" },
+      }),
+    });
+  });
+
   it("skips routine activation when a suspended routine exists for the conversation", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
@@ -3427,6 +3550,86 @@ describe("chat service streaming", () => {
         workspaceId: "workspace-1",
         routineId: "routine_support",
         stepId: "handoff_terminal",
+      },
+    });
+  });
+
+  it("threads a visitor stuck past the re-ask limit (#1384) into ownership handoff with reason routine_stuck", async () => {
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => null,
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async () => ({
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: "routine_support" }) },
+        runner: {
+          resume: async () => ({
+            response: { answer: "A person will continue from here." },
+            nextState: null,
+            terminal: {
+              kind: "stuck" as const,
+              stepId: "ask_contact",
+              collected: { topic: "billing" },
+            },
+          }),
+        },
+      }),
+    };
+    const assistantTurnPersistence: NonNullable<ChatServiceOptions["assistantTurnPersistence"]> = {
+      completeAssistantTurn: vi.fn(async (input) => ({ message: {
+        id: input.assistantMessage.id!,
+        conversationId: input.assistantMessage.conversationId,
+        workspaceId: input.assistantMessage.workspaceId,
+        role: "assistant" as const,
+        content: input.assistantMessage.content,
+        metadata: input.assistantMessage.metadata,
+        skillName: input.assistantMessage.skillName,
+        skillOutcome: input.assistantMessage.skillOutcome,
+        skillStatus: input.assistantMessage.skillStatus,
+        createdAt: new Date(),
+      }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
+    };
+    const service = makeChatService(
+      new InMemoryConversationRepository(),
+      new InMemoryMessageRepository(),
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "x"; }, async *streamAnswer() { yield "x"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider, assistantTurnPersistence },
+    );
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "still stuck", stream: false });
+
+    expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+    expect(persisted.ownershipHandoff).toEqual({
+      reason: "routine_stuck",
+      routineId: "routine_support",
+      stepId: "ask_contact",
+    });
+    expect(persisted.actions).toContainEqual({
+      type: HANDOFF_NOTIFY_ACTION_TYPE,
+      payload: expect.objectContaining({
+        conversationId: response.conversationId,
+        workspaceId: "workspace-1",
+        agentId: response.agentId,
+        reason: "routine_stuck",
+        routineId: "routine_support",
+        stepId: "ask_contact",
+        collected: { topic: "billing" },
+      }),
+    });
+    expect(persisted.ownershipAuditEvent).toMatchObject({
+      eventType: "hitl.ownership",
+      metadata: {
+        action: "handoff_requested",
+        reason: "routine_stuck",
+        routineId: "routine_support",
+        stepId: "ask_contact",
       },
     });
   });

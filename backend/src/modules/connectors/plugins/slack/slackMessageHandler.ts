@@ -21,6 +21,7 @@ import {
   slackPostIdempotencyKey,
   type SlackPostOutboxPort,
   buildOwnershipMessage,
+  escapeMrkdwn,
 } from "../../../slack/public.js";
 import { toSuggestedPrompts, type SlackStarterPromptsPort } from "./slackAgentSession.js";
 import {
@@ -559,7 +560,9 @@ export class SlackMessageHandler {
       conversationId: input.conversationId,
       workspaceId: input.workspaceId,
       state: "ai_owned",
-      contextText: input.query,
+      // Escaped, the visitor's question posts literally: it cannot mention the channel or add a
+      // link, and Take over carries the card's text forward as is.
+      contextText: escapeMrkdwn(input.query),
       dashboardUrl: await resolveConversationLink(
         this.options.conversationLinks,
         { workspaceId: input.workspaceId, conversationId: input.conversationId },

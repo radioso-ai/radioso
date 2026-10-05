@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { CopilotRepository } from "../../../src/db/repositories/copilotRepository.js";
+import { OperatorMcpInvocationRepository } from "../../../src/db/repositories/operatorMcpInvocationRepository.js";
 import { RoutineDefinitionRepository } from "../../../src/db/repositories/routineDefinitionRepository.js";
 import { createRoutineMcpApplyPort } from "../../../src/app/composition/copilotRoutineAtomicApply.js";
 import { createAgentSkillMcpApplyPort } from "../../../src/app/composition/copilotAgentSkillAtomicApply.js";
@@ -15,6 +16,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 describeIntegration("operator MCP proposal origin", () => {
   const database = new Database(integrationDatabaseUrl);
   const proposals = new CopilotRepository(database.kysely);
+  const invocations = new OperatorMcpInvocationRepository(database.kysely);
   const routines = new RoutineDefinitionRepository(database.kysely);
   const structuralApply = createRoutineMcpApplyPort(database.kysely, { validateScopedReferences: async () => undefined });
   const agentSkillApply = createAgentSkillMcpApplyPort(database.kysely);
@@ -169,6 +171,63 @@ describeIntegration("operator MCP proposal origin", () => {
     await expect(proposals.cancelPendingProposal({ id: proposal.id, workspaceId, operatorUserId: userId })).resolves.toBeNull();
     await expect(proposals.claimMcpReviewedProposalApply({ ...input, executionInvocationId: otherExecutionId, now: new Date() })).resolves.toEqual({ status: "not_prepared" });
     await expect(proposals.claimMcpReviewedProposalApply({ ...input, now: new Date() })).resolves.toMatchObject({ status: "claimed", claim: { previousAttemptStartedAt: interruptedAt } });
+  });
+
+  const createReviewedIngestionProposal = async (summary: string) => proposals.createProposal({
+    workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: await createReview() },
+    targetType: "ingestion_settings", targetRef: { workspaceId }, payload: { summary },
+    versionToken: "v1", evidence: null, reviewDigest: "m".repeat(64), reviewSnapshot: {}, expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
+  });
+
+  it("hands the receipt back to the attempt a released retry replaced, so that attempt can still record what it applied", async () => {
+    const executionId = await createExecution();
+    const retryId = randomUUID();
+    const proposal = await createReviewedIngestionProposal("Slow first attempt");
+    const input = { proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "m".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 };
+    await expect(invocations.claimRunning({ invocationId: executionId, now: new Date() })).resolves.toMatchObject({ attemptInvocationId: executionId });
+    await expect(proposals.claimMcpReviewedProposalApply(input)).resolves.toMatchObject({
+      status: "claimed", claim: { receiptAttempt: { executionInvocationId: executionId, attemptInvocationId: executionId, previousAttemptInvocationId: executionId } },
+    });
+    // The first attempt is slow mid-apply past its lease, and an identical retry takes the receipt over.
+    const slowStartedAt = new Date(Date.now() - 600_000);
+    await database.query("UPDATE copilot_proposals SET apply_started_at = $1 WHERE id = $2", [slowStartedAt, proposal.id]);
+    const takeover = await proposals.claimMcpReviewedProposalApply({ ...input, attemptInvocationId: retryId, now: new Date() });
+    if (takeover.status !== "claimed") throw new Error(`expected claim, got ${takeover.status}`);
+    expect(takeover.claim.receiptAttempt).toEqual({ executionInvocationId: executionId, attemptInvocationId: retryId, previousAttemptInvocationId: executionId });
+    await expect(invocations.recordOutcome({ invocationId: executionId, status: "completed", safeOutcomeCode: "completed", now: new Date() }))
+      .resolves.toMatchObject({ status: "running", attemptInvocationId: retryId });
+
+    // The retry's permission recheck is denied before it changes anything.
+    await expect(proposals.releaseProposalApplyClaim({
+      id: proposal.id, workspaceId, operatorUserId: userId, claimedAt: takeover.claim.claimedAt,
+      previousAttemptStartedAt: takeover.claim.previousAttemptStartedAt, receiptAttempt: takeover.claim.receiptAttempt,
+    })).resolves.toBe(true);
+    await expect(invocations.findById(executionId)).resolves.toMatchObject({ status: "running", attemptInvocationId: executionId });
+    await expect(invocations.recordOutcome({ invocationId: executionId, status: "completed", safeOutcomeCode: "completed", resultReference: proposal.id, now: new Date() }))
+      .resolves.toMatchObject({ status: "completed", resultReference: proposal.id, attemptInvocationId: executionId });
+  });
+
+  it("never hands a receipt a retry took over back to its own request, even after the retry's lease lapses", async () => {
+    const executionId = await createExecution();
+    const retryId = randomUUID();
+    const laterRetryId = randomUUID();
+    const proposal = await createReviewedIngestionProposal("Stalled before running");
+    const input = { proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "m".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 };
+    // The receipt's own request stalled before it started running; a retry took the receipt over.
+    await expect(proposals.claimMcpReviewedProposalApply({ ...input, attemptInvocationId: retryId })).resolves.toMatchObject({
+      status: "claimed", claim: { receiptAttempt: { attemptInvocationId: retryId, previousAttemptInvocationId: null } },
+    });
+    await expect(invocations.claimRunning({ invocationId: executionId, now: new Date() })).resolves.toBeNull();
+    await expect(invocations.recordOutcome({ invocationId: executionId, status: "refused", safeOutcomeCode: "abandoned_before_effect", now: new Date() }))
+      .resolves.toMatchObject({ status: "running", attemptInvocationId: retryId });
+
+    // The retry stalls past its lease too. Only a later retry takes the receipt over from it.
+    await database.query("UPDATE copilot_proposals SET apply_started_at = $1 WHERE id = $2", [new Date(Date.now() - 600_000), proposal.id]);
+    await expect(proposals.claimMcpReviewedProposalApply({ ...input, now: new Date() })).resolves.toEqual({ status: "claim_held" });
+    await expect(proposals.claimMcpReviewedProposalApply({ ...input, attemptInvocationId: laterRetryId, now: new Date() })).resolves.toMatchObject({
+      status: "claimed", claim: { receiptAttempt: { attemptInvocationId: laterRetryId, previousAttemptInvocationId: retryId } },
+    });
+    await expect(invocations.findById(executionId)).resolves.toMatchObject({ status: "running", attemptInvocationId: laterRetryId });
   });
 
   it("reads an expired applied review only through its originating grant and client without changing its stored snapshot", async () => {

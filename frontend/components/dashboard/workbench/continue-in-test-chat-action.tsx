@@ -60,7 +60,6 @@ export function ContinueInTestChatAction({
           agentId,
           agentTab: 'chat',
           agentTestExecutionId: execution.id,
-          agentTestExecutionFromConversation: true,
           workspaceId: activeWorkspaceId ?? undefined,
           workspacePublicRouteKey,
         }),

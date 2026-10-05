@@ -55,8 +55,9 @@ import type { DirectiveMatcherPort } from "../../modules/directives/public.js";
 import type { DirectiveMatchGatewayFactory } from "../../shared/infra/llm/contextualGateways.js";
 import {
   ApplicationModuleCoordinator,
+  chatTurnQueueableActionHandlers,
   createApplicationExtensionRegistry,
-  routineEmittableActionHandlers,
+  routineAuthorableActionHandlers,
   type ApplicationDirectiveRegistration,
   type ApplicationModule,
 } from "./applicationModule.js";
@@ -93,7 +94,10 @@ import {
 
 export interface ApplicationComposition {
   capabilityPolicy: CapabilityPolicy;
+  /** What a chat turn may queue — an author's action step or a host-queued notice. */
   actionCapabilityMap: ActionCapabilityMap;
+  /** The actions an author may write as a routine action step; validation and publishing admit these. */
+  routineActionCapabilityMap: ActionCapabilityMap;
   connectors: ReturnType<typeof createApplicationExtensionRegistry>["connectors"];
   telemetrySinks: ReturnType<typeof createApplicationExtensionRegistry>["telemetrySinks"];
   productAnalyticsSinks: ReturnType<typeof createApplicationExtensionRegistry>["productAnalyticsSinks"];
@@ -117,7 +121,7 @@ export interface ApplicationComposition {
   publishedRoutineRegistrationSource: ReturnType<typeof createApplicationExtensionRegistry>["publishedRoutineRegistrationSource"];
   /** Every registered handler; the worker dispatches all of them. */
   actionHandlerRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["actionHandlerRegistrations"];
-  /** The handlers a routine step may emit: what routine authoring offers and serving admits. */
+  /** The handlers routine authoring offers. */
   routineActionHandlerRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["actionHandlerRegistrations"];
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
   answerFeedbackHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["answerFeedbackHistoryProviderRegistration"];
@@ -182,11 +186,13 @@ export const createDefaultApplicationComposition = (options: {
     ...(options.modules ?? []),
   ]);
 
-  const routineActionHandlerRegistrations = routineEmittableActionHandlers(registry.actionHandlerRegistrations);
+  const routineActionHandlerRegistrations = routineAuthorableActionHandlers(registry.actionHandlerRegistrations);
+  const chatTurnActionHandlerRegistrations = chatTurnQueueableActionHandlers(registry.actionHandlerRegistrations);
 
   return {
     capabilityPolicy: registry.capabilityPolicy ?? new DefaultAllowCapabilityPolicy(),
-    actionCapabilityMap: new StaticActionCapabilityMap(routineActionHandlerRegistrations),
+    actionCapabilityMap: new StaticActionCapabilityMap(chatTurnActionHandlerRegistrations),
+    routineActionCapabilityMap: new StaticActionCapabilityMap(routineActionHandlerRegistrations),
     connectors: registry.connectors,
     telemetrySinks: registry.telemetrySinks,
     productAnalyticsSinks: registry.productAnalyticsSinks,

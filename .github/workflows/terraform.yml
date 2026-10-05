@@ -69,6 +69,8 @@ jobs:
       TF_VAR_slack_signing_secret: ${{ secrets.SLACK_SIGNING_SECRET }}
       TF_VAR_google_login_client_id: ${{ secrets.GOOGLE_LOGIN_CLIENT_ID }}
       TF_VAR_google_login_client_secret: ${{ secrets.GOOGLE_LOGIN_CLIENT_SECRET }}
+      TF_VAR_stripe_secret_key: ${{ secrets.STRIPE_SECRET_KEY }}
+      TF_VAR_stripe_webhook_secret: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
       TF_VAR_ee_usage_admin_token: ${{ secrets.EE_USAGE_ADMIN_TOKEN }}
 
     steps:
@@ -108,6 +110,23 @@ jobs:
             fi
             if [ -z "${GOOGLE_LOGIN_CLIENT_SECRET_SET}" ]; then
               echo "Missing required GitHub environment value: GOOGLE_LOGIN_CLIENT_SECRET because GOOGLE_LOGIN_CLIENT_ID is set" >&2
+              exit 1
+            fi
+          fi
+
+          # Enterprise billing degrades to {configured:false} until both Stripe
+          # credentials resolve, so half a pair plans clean, applies clean, and
+          # leaves billing exactly as it was. Stop the run instead, the same way
+          # the Google login pair is enforced above.
+          STRIPE_SECRET_KEY_SET="${TF_VAR_stripe_secret_key//[[:space:]]/}"
+          STRIPE_WEBHOOK_SECRET_SET="${TF_VAR_stripe_webhook_secret//[[:space:]]/}"
+          if [ -n "${STRIPE_SECRET_KEY_SET}${STRIPE_WEBHOOK_SECRET_SET}" ]; then
+            if [ -z "${STRIPE_SECRET_KEY_SET}" ]; then
+              echo "Missing required GitHub environment value: STRIPE_SECRET_KEY because STRIPE_WEBHOOK_SECRET is set" >&2
+              exit 1
+            fi
+            if [ -z "${STRIPE_WEBHOOK_SECRET_SET}" ]; then
+              echo "Missing required GitHub environment value: STRIPE_WEBHOOK_SECRET because STRIPE_SECRET_KEY is set" >&2
               exit 1
             fi
           fi

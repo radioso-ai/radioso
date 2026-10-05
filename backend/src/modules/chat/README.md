@@ -297,16 +297,27 @@ imports from `services/`.
   `PostgresAssistantTurnPersistence` records a turn's `handoff_requested` event in
   the turn's transaction when the handoff changed ownership.
 - Routine endings: `services/routineEndingEffects.ts` is the one place every chat
-  path (routine, coverage, rendered; streaming or not) turns the engine's ending
-  report into effects. `ProcessTurnResult.handoff` becomes the ownership change;
+  path (routine, coverage, rendered; streaming or not; a resume after an approval in
+  `services/approvalResumeTurn.ts`) turns the engine's ending report into effects.
+  `ProcessTurnResult.handoff` (and the same field on
+  `ConversationRoutineDecisionResult`) becomes the ownership change;
   `ProcessTurnResult.operatorNotice` queues `handoff.notify` for a hand-off and
   `completion.notify` for a completion with an operator notice, with the authored
   `notice` text on the payload. A hand-off reported without an `operatorNotice`
   still queues `handoff.notify` with the default text (`operatorNoticeForTurn`),
-  and without authored text its payload is the same bytes it always was. A completion notice never changes ownership and
+  and without authored text its payload is the same bytes it always was. A visitor
+  stuck past the re-ask limit (`terminalKind: "stuck"` on `handoff`, #1384) is
+  never authored and so never carries an `operatorNotice` either, and so always
+  takes this same default path — queued with its own reason, `routine_stuck`, so
+  it stays distinguishable from an authored hand-off's `routine_handoff`. A
+  completion notice never changes ownership and
   creates no Inbox item. `services/operatorNoticeAction.ts` owns the notice payload
-  and `ROUTINE_ENDING_NOTICE_ACTIONS`, the one table from an ending's kind to its
-  action type, reason code, and notification kind. Both action types dispatch
+  and `ROUTINE_ENDING_NOTICE_ACTIONS`, the table from each *authored* ending kind
+  to its own action type, reason code, and notification kind, plus
+  `routineEndingNoticeAction`, which resolves any terminal kind — stuck included —
+  to the row it queues and delivers through: stuck shares the hand-off row's type
+  and notification kind (never its own registered type, which would collide at
+  registration) but keeps its own reason. Both action types dispatch
   through one `RoutineEndingNotifyActionHandler`, registered once per row in
   `app/composition/builtIn/contactRoutineModule.ts`, which resolves the agent and
   routine names, the routine's slot order, and the conversation's entry page at

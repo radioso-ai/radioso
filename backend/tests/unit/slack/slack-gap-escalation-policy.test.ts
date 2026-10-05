@@ -227,6 +227,17 @@ describe("Slack gap escalation policy", () => {
     expect(outbox.enqueue).not.toHaveBeenCalled();
   });
 
+  it("posts the visitor's question as literal text, so it cannot mention the channel or add a link", async () => {
+    const { handler, outbox } = makeHandler({ outcome: "no_context", gapEscalationEnabled: true });
+
+    await handler.handleMessageIm({ ...event, event: { ...event.event, text: "<!channel> see <https://evil.example|docs>" } });
+
+    const payload = vi.mocked(outbox.enqueue).mock.calls[0]?.[0].payload as { blocks: unknown[] };
+    const posted = JSON.stringify(payload.blocks);
+    expect(posted).toContain("&lt;!channel&gt; see &lt;https://evil.example|docs&gt;");
+    expect(posted).not.toContain("<!channel>");
+  });
+
   it("does not auto-escalate no_context turns when gap escalation is disabled", async () => {
     const { handler, outbox } = makeHandler({
       outcome: "no_context",

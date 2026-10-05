@@ -721,7 +721,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       subject: activityPerson("The teammate who holds a `reassigned` conversation now."),
       from: activityPerson("Who held a `reassigned` conversation before. Null when nobody had claimed the handoff."),
       handoffReason: z.string().nullable().openapi({
-        description: "The handoff reason code on `handoff_requested`, for example `routine_handoff` or `retrieval_miss`.",
+        description: "The handoff reason code on `handoff_requested`, for example `routine_handoff`, `routine_stuck`, or `retrieval_miss`.",
       }),
       decision: activityDecision.openapi({ description: "The option chosen on `approval_decided`." }),
       resolution: z.string().nullable().openapi({

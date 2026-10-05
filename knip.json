@@ -90,7 +90,8 @@
         "src/**/__tests__/**/*.ts",
         "*.ts",
         "src/index.ts",
-        "src/featureManifest.ts"
+        "src/featureManifest.ts",
+        "src/billing/stripeCatalogSyncCli.ts"
       ]
     }
   }

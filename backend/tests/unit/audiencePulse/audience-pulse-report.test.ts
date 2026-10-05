@@ -590,6 +590,68 @@ describe("Audience Pulse report domain", () => {
     expect(report.themes[0]?.evidenceIds).toEqual(population.map((item) => item.id).reverse().slice(0, 12));
   });
 
+  it("shows a topic's shortfalls before its other questions, even past the twelfth member", () => {
+    const assessed = (
+      coverage: "answered" | "partial" | "unanswered",
+      reason: "sufficient_evidence" | "insufficient_evidence" | "intentional_scope_boundary",
+    ): Partial<AudiencePulseEvidence> => ({
+      grounding: "grounded",
+      contentGapEligible: false,
+      legacyCoverage: false,
+      answerCoverage: { availability: "assessed", coverage, reason, schemaVersion: 1, producer: "answer_head" },
+    });
+    // Members arrive nearest-first. Every shortfall sits past the display cap.
+    const population = buildPopulation(20, (index) => {
+      if (index === 13) return assessed("unanswered", "insufficient_evidence");
+      if (index === 14) return assessed("unanswered", "intentional_scope_boundary");
+      if (index === 15) return { grounding: "degraded", legacyCoverage: true, contentGapEligible: true };
+      if (index === 16) return { grounding: "no_support", legacyCoverage: false, contentGapEligible: false };
+      if (index === 17) return assessed("partial", "insufficient_evidence");
+      if (index === 18) return { grounding: "no_support", legacyCoverage: true, contentGapEligible: false };
+      if (index === 19) return { grounding: "no_support", legacyCoverage: true, contentGapEligible: true };
+      return assessed("answered", "sufficient_evidence");
+    });
+    const memberIds = population.map((item) => item.id);
+
+    const report = buildAudiencePulseReport({
+      ...baseInput,
+      coverage: { populationSize: 20, sampleSize: 20, sampled: false, facetReadyQuestionCount: 20 },
+      population,
+      topics: [{ id: "topic-1", title: "Topic", description: "Description", evidenceIds: memberIds }],
+      model: emptyModel,
+    });
+
+    const shortfallIds = ["evidence-14", "evidence-16", "evidence-18", "evidence-20"];
+    const otherIds = memberIds.filter((id) => !shortfallIds.includes(id)).slice(0, 8);
+    expect(report.themes[0]?.evidenceIds).toEqual([...shortfallIds, ...otherIds]);
+    expect(report.themes[0]?.answerStatusByEvidenceId).toEqual({
+      "evidence-14": "unanswered",
+      "evidence-16": "partial",
+      "evidence-18": "partial",
+      "evidence-20": "unanswered",
+      ...Object.fromEntries(otherIds.map((id) => [id, "answered"])),
+    });
+    expect(report.themes[0]?.answers).toEqual({
+      answered: 13, partial: 2, unanswered: 2, unclear: 0, outOfScope: 1, notAssessed: 2,
+    });
+  });
+
+  it("fills the display cap with shortfalls when a topic has more than twelve", () => {
+    const population = buildPopulation(15, (index) => (index === 0
+      ? { grounding: "grounded", contentGapEligible: false, legacyCoverage: true }
+      : { grounding: "no_support", contentGapEligible: true, legacyCoverage: true }));
+
+    const report = buildAudiencePulseReport({
+      ...baseInput,
+      coverage: { populationSize: 15, sampleSize: 15, sampled: false, facetReadyQuestionCount: 15 },
+      population,
+      topics: [{ id: "topic-1", title: "Topic", description: "Description", evidenceIds: population.map((item) => item.id) }],
+      model: emptyModel,
+    });
+
+    expect(report.themes[0]?.evidenceIds).toEqual(population.slice(1, 13).map((item) => item.id));
+  });
+
   it("applies model narrative to one precomputed census report with current gap evidence", () => {
     const population = buildPopulation(4, (index) => ({ contentGapEligible: index < 2 }));
     const census = buildAudiencePulseCensusReport({

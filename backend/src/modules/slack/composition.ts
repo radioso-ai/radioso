@@ -26,7 +26,7 @@ export const createSlackApplicationModule = (env?: Partial<SlackOauthEnv>): Appl
     context.registerActionHandler({
       type: SLACK_POST_ACTION_TYPE,
       // Host code queues most posts, but the Slack escalation skill posts from a routine step.
-      emittableByRoutines: true,
+      queuedFrom: "routine_action_step",
       handler: ({ database, env: runtimeEnv, logger }) =>
         new SlackPostActionHandler({
           credentials: new SlackPostActionCredentialResolver({

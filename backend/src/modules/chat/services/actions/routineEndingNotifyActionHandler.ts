@@ -16,7 +16,6 @@ import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js"
 export interface RoutineEndingNotificationSubjectResolver {
   resolve(input: {
     workspaceId: string;
-    agentId: string;
     routineId: string | null;
     conversationId: string;
   }): Promise<RoutineEndingNotificationSubject>;
@@ -32,12 +31,12 @@ export interface RoutineEndingNotificationSubjectResolver {
 export class RoutineEndingNotifyActionHandler implements ActionHandler {
   private readonly ending: Pick<RoutineEndingNoticeAction, "notificationKind" | "reason">;
   private readonly dispatcher: Pick<OperatorNotificationDispatcher, "dispatch">;
-  private readonly subjects?: RoutineEndingNotificationSubjectResolver;
+  private readonly subjects: RoutineEndingNotificationSubjectResolver;
 
   constructor(options: {
     ending: Pick<RoutineEndingNoticeAction, "notificationKind" | "reason">;
     dispatcher: Pick<OperatorNotificationDispatcher, "dispatch">;
-    subjects?: RoutineEndingNotificationSubjectResolver;
+    subjects: RoutineEndingNotificationSubjectResolver;
   }) {
     this.ending = options.ending;
     this.dispatcher = options.dispatcher;
@@ -45,17 +44,18 @@ export class RoutineEndingNotifyActionHandler implements ActionHandler {
   }
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
-    // The queued row is the trusted source for its own workspace and conversation. `routineId`
-    // and `agentId` have no row-level column, so they still come from the payload.
+    // The queued row is the trusted source for its workspace and conversation; `routineId` is
+    // payload data, but the resolver scopes it through that conversation's agent.
     const conversationId = input.context.conversationId ?? "unknown";
     const workspaceId = input.context.workspaceId ?? "unknown";
-    const agentId = asString(input.payload.agentId) ?? "unknown";
     const routineId = asString(input.payload.routineId);
-    const subject = await this.subjects?.resolve({ workspaceId, agentId, routineId, conversationId });
+    const subject = input.context.workspaceId && input.context.conversationId
+      ? await this.subjects.resolve({ workspaceId, routineId, conversationId })
+      : null;
     const notification = routineEndingNotificationFromAction({
       kind: this.ending.notificationKind,
       payload: input.payload,
-      ids: { conversationId, workspaceId },
+      ids: { conversationId, workspaceId, agentId: subject?.agentId ?? null },
       fallback: { reason: this.ending.reason },
       ...(subject ? { subject } : {}),
     });

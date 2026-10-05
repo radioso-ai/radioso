@@ -32,6 +32,10 @@ export interface TestExecutionState {
   sides: Record<string, TestExecutionSideState>
 }
 
+/** A side holding only its proactive greeting is not recorded history yet; a sent message makes it so. */
+export const sideHasSentMessage = (side: TestExecutionSideState): boolean =>
+  side.messages.some((message) => message.role === 'user')
+
 /**
  * Aggregate independent side outcomes into one execution status. A side still
  * running keeps the whole execution running; once none are, a side failure

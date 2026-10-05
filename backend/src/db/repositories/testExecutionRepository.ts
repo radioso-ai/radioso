@@ -160,6 +160,11 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       .select(["id", "created_at", "mode", "generation", "state", "skill_effects"])
       .where("workspace_id", "=", input.workspaceId)
       .where("agent_id", "=", input.agentId)
+      // A test holding only a proactive greeting is not history yet: it lists once a message is sent or copied in.
+      .where((eb) => eb.or([
+        eb("seeded_turn_count", ">", 0),
+        eb.exists(eb.selectFrom("agent_test_execution_turns as turn").select(sql.lit(1).as("sent")).whereRef("turn.execution_id", "=", "agent_test_executions.id")),
+      ]))
       .$if(Boolean(cursor), (qb) => qb.where((eb) => eb.or([
         eb("created_at", "<", new Date(cursor!.keys.createdAt)),
         eb.and([eb("created_at", "=", new Date(cursor!.keys.createdAt)), eb("id", "<", cursor!.keys.id)]),

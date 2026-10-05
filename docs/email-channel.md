@@ -1,7 +1,7 @@
 ---
 title: "Email Channel"
-description: "Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
-last_updated: 2026-10-04
+description: "Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies, bound what runs without a person, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
+last_updated: 2026-10-05
 ---
 
 # Email Channel
@@ -14,15 +14,16 @@ couple of DNS records. Every email the channel accepts is visible to an
 operator somewhere — as a conversation in the Inbox, or as an event in the
 mailbox's event log when it never becomes one.
 
-This release ships two engagement modes. `draft` is the default for a new
-mailbox: the agent runs a review turn on every accepted email and writes a
-reply, which stays held until an operator sends it, edits it, or discards
-it — see [Draft mode](#draft-mode-review-before-it-sends) below.
-`operator_only` remains available: every accepted email opens or continues a
+A mailbox runs in one of two engagement modes. `draft` is the default for a
+new mailbox: the agent runs a review turn on every accepted email and writes
+a reply, which stays held until an operator sends it, edits it, or discards
+it — see [Draft mode](#draft-mode-review-before-it-sends) below. On an
+`operator_only` mailbox every accepted email opens or continues a
 human-owned conversation, and the agent never runs a turn on it. The API's
-`engagementMode` field also accepts `auto`; setting it on a mailbox is
-refused with `engagement_mode_unavailable`, because `auto` is not in the
-deployment's `supportedModes`.
+`engagementMode` field also accepts `auto`, which sends the agent's reply
+without review; the deployment's `supportedModes` leaves it out, so setting
+it on a mailbox is refused with `engagement_mode_unavailable`. In either
+mode, the limits under [Bounds](#bounds) cap what runs without a person.
 
 Email conversations never auto-close. Like any other channel, what decides
 whether a conversation needs attention is whether a person must act on it —
@@ -30,8 +31,7 @@ not how long it's been quiet.
 
 ## Topology
 
-Radioso does not take over a customer's domain to receive their mail. Each
-connected mailbox gets an opaque relay address on an inbound domain Radioso
+Each connected mailbox gets an opaque relay address on an inbound domain Radioso
 operates — `EMAIL_CHANNEL_INBOUND_DOMAIN`, for example `in.eu.radioso.ai` on
 Radioso Cloud's EU stack. You forward your existing address to that relay
 address from whatever mail service you already use, and your mailbox never
@@ -212,12 +212,119 @@ at the same instant produce exactly one send; the other sees that it was
 already handled. See [Human Takeover](human-takeover.md#held-replies) for
 the operator API this runs on.
 
-**One turn per burst.** Several inbound messages on the same thread inside
-the deployment's coalescing window collapse into a single review turn, so a
-customer who sends three follow-ups in as many minutes gets one draft
-answering all of them, not three. Each inbound message bumps the thread to a
-new review revision; a review still running when a newer message arrives
-finishes as a superseded draft, and the newer revision runs in its place.
+Several emails on one thread in quick succession get one draft between them
+— see [Coalescing](#coalescing).
+
+## Bounds
+
+One vacation responder, one mailing list, or one burst of new threads could
+run up model spend and outbound mail in minutes if nothing capped it. Every
+automatic behavior on a mailbox has a limit, and hitting one hands the work
+to a person: nothing accepted is dropped.
+
+### Budgets
+
+Each mailbox carries three limits. Set any of them when you create the
+mailbox, or later with `PATCH
+/api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}`:
+
+| Setting | What it bounds | Default | Range |
+|---|---|---|---|
+| `hourlyGenerationBudget` | Review turns the mailbox runs per hour | 30 | 1–1000 |
+| `threadSendBudget` | The agent's automatic sends on one thread between renewals | 3 | 1–20 |
+| `threadContextMessages` | How many of the thread's newest messages a review turn reads | 10 | 1–50 |
+
+**Generation budget.** The hour is a fixed window: it opens at the first
+review turn after the previous window closed and runs sixty minutes from
+there. Each review revision is charged once, so a review that retries after
+a failure doesn't pay twice. Once the window is full, mail keeps arriving
+but stops getting reviews: each accepted email opens or continues a
+human-owned conversation with handoff reason `generation_budget`, shown in
+the Inbox like any other handoff, and the event log records the same reason
+on the delivery. Reviews resume when the window rolls over. A conversation
+already handed to a person stays with them until someone hands it back.
+
+**Thread send budget.** This counts the agent's automatic sends on a thread
+since the last renewal. An operator's reply on the thread renews it, and so
+does an operator releasing a held reply, as written or edited. Customer
+mail never renews it, so an autoresponder that answers every reply can't
+keep the agent talking. When the count reaches the budget, the next reply
+is held for an operator with hold reason `send_budget`, as an `approval`
+item in the Inbox. On a `draft` mailbox every reply goes out through an
+operator's release, which renews the budget, so the count stays at zero.
+`GET /api/v1/conversations/{conversationId}/email` returns the count, the
+limit, and the last renewal time under `sendBudget`.
+
+**Thread context.** A review turn reads only the thread's newest
+`threadContextMessages` messages, so with the default of 10 a forty-message
+thread costs a review no more than a ten-message one.
+
+**Review retries.** A review that fails retries after 30 seconds, 2
+minutes, and 10 minutes. After `EMAIL_CHANNEL_REVIEW_MAX_ATTEMPTS` attempts
+(4 by default) the conversation goes to a person with handoff reason
+`review_unavailable`, and the failure shows on the delivery in the event
+log.
+
+### Coalescing
+
+All the mail on one thread inside `EMAIL_CHANNEL_COALESCE_SECONDS` (60 by
+default) shares a single review turn. The first message starts the window;
+anything that arrives on the same thread before it closes joins the same
+review. A customer who sends three follow-ups in a minute gets one draft
+answering all of them, and the mailbox spends one generation on it.
+
+Each inbound message bumps the thread to a new review revision. A review
+still running when a newer message arrives finishes as a superseded draft,
+and the newer revision runs in its place.
+
+### Automated mail
+
+Mail sent by a machine never gets an agent reply. Radioso decides this from
+headers alone, compared as protocol tokens — case-insensitive, parameters
+ignored — and never from the subject or body. A message is held back from
+the agent when any of these is true:
+
+- `From` is one of the workspace's own mailboxes or relay addresses
+  (disposition `self_sender`).
+- It's a delivery status report (`multipart/report;
+  report-type=delivery-status`). When it names a message Radioso sent, that
+  send is marked `bounced` and its conversation gets a `delivery_failed`
+  flag (disposition `bounce`); any other report is `automated_sender`.
+- `Auto-Submitted` is present with any value other than `no`.
+- `Precedence` is `bulk`, `list`, or `junk`.
+- `X-Auto-Response-Suppress` is present.
+- `List-Id` is present.
+
+The last four give disposition `automated_sender`. None of these runs a turn
+or opens a conversation. Each appears in the mailbox's event log with its
+disposition, and when it lands on a thread that already has a conversation,
+it also shows there as a note in the conversation's activity, outside the
+message history. The provider's SPF, DKIM, and DMARC results are recorded
+on the event and never decide anything on their own, because forwarding
+routinely breaks SPF.
+
+A responder that sends none of these headers looks like a person, and the
+budgets are what stop it: the thread send budget caps the automatic replies
+it can draw, and the generation budget caps what a flood of them costs.
+Agent-authored mail carries `Auto-Submitted: auto-generated`, so a
+well-behaved responder on the other end leaves it alone.
+
+### Policy at acceptance
+
+Every accepted email records the mailbox's policy — mode, enabled, agent —
+as it stood when the webhook accepted it. When the email's turn comes, it
+runs under whichever of the accepted mode and the current mode gives the
+agent less autonomy (`operator_only` is below `draft`), and the mailbox
+must have been enabled at acceptance and still be enabled. In practice:
+
+- Switch a mailbox from `draft` to `operator_only`, and mail still waiting
+  for review goes to a person with handoff reason `operator_only_mailbox`;
+  pending drafts are superseded.
+- Switch it from `operator_only` to `draft`, and only mail accepted after
+  the change gets a review. Mail accepted before it stays with a person.
+- A review already running when the policy changes can't hold a draft under
+  the new policy: its draft is superseded the moment it's created, and the
+  thread is reviewed again under the current one.
 
 ## The event log, retention, and raw access
 
@@ -225,11 +332,12 @@ Every accepted email is recorded as an event on the mailbox with its
 disposition, sender, subject, and time, whether or not it becomes a
 conversation. Automated-sender mail, a bounce, spam, a message from one of
 your own mailboxes, an unresolved relay token, and a message to a disabled
-mailbox never open or continue a conversation at all — the event is all
-there is. A reply whose sender doesn't match the conversation's participant
-*is* attached to that conversation, but only as a flagged exception: no
-turn runs and the message doesn't join the conversation's history. Nothing
-in any of these runs a turn. A failed event — one whose content fetch
+mailbox never open a conversation, and neither does a reply whose sender
+doesn't match the conversation's participant. When one of these lands on a
+thread that already has a conversation, it shows there as a flagged note in
+the conversation's activity; it never joins the message history. Nothing in
+any of these runs a turn. A mailbox with `spamOptIn` on is the one
+exception for spam: it opens an operator-only conversation instead. A failed event — one whose content fetch
 didn't succeed after retrying — carries a retry action.
 
 Events that never opened a conversation are purged after
@@ -256,10 +364,11 @@ makes two deliveries, each its own conversation). Each delivery runs the
 thread-resolution protocol and the engagement disposition, then is ingested.
 
 **Stage 2 — per conversation.** A disposition that calls for a review turn
-schedules one after a short coalescing window, so a burst of messages on one
-thread gets a single turn instead of one per message. `operator_only`'s
-disposition never calls for a review turn, so this stage is dormant for
-every mailbox running in it today.
+schedules one at the end of the [coalescing](#coalescing) window. When it's
+due, the worker claims the thread under a lease, reserves a generation
+against the mailbox's [budget](#budgets), runs the review, and holds the
+result. An `operator_only` mailbox never calls for a review turn, so stage 2
+runs only for `draft` mailboxes.
 
 **Scheduled drains.** Each stage pushes its own wakeup — right after the
 webhook commits, at a review's due time, at a failed job's next retry time —
@@ -320,5 +429,4 @@ conversations and events. [Customer email skills](customer-email-skills.md)
 are the opposite direction — an agent skill that drafts or sends mail
 *through a mailbox your workspace connected over OAuth* (Gmail or Microsoft
 Graph), invoked as an action inside a routine. One is a channel customers
-write to; the other is a tool an agent uses to write out. They share no
-code: the email channel never reuses `backend/src/modules/customerEmail/`.
+write to; the other is a tool an agent uses to write out.

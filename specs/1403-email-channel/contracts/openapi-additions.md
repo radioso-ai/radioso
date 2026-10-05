@@ -47,8 +47,7 @@ EmailMailbox = {
   relayAddress: string;                      // <relayToken>@<inboundDomain>; shown only to settings readers
   engagementMode: "operator_only" | "draft" | "auto";
   enabled: boolean; policyVersion: number;
-  threadSendBudget: number; hourlyGenerationBudget: number; threadContextMessages: number;
-  spamOptIn: boolean; silenceThresholdHours: number;
+  threadSendBudget: number; hourlyGenerationBudget: number; silenceThresholdHours: number;
   receiving: { state: "waiting_for_first_message" | "ok" | "silent"; lastReceivedAt: string | null };
   sending: { state: "ok" | "not_verified" | "domain_removed" };
   plusAddressVerified: boolean;
@@ -56,8 +55,7 @@ EmailMailbox = {
 }
 CreateEmailMailboxRequest = { address: string; displayName: string; agentId?: string | null;
   engagementMode?: "operator_only" | "draft" | "auto";   // default = overview.defaultMode; must be in supportedModes
-  threadSendBudget?: number; hourlyGenerationBudget?: number; threadContextMessages?: number;
-  spamOptIn?: boolean; silenceThresholdHours?: number }
+  threadSendBudget?: number; hourlyGenerationBudget?: number; silenceThresholdHours?: number }
 UpdateEmailMailboxRequest = Partial<Omit<CreateEmailMailboxRequest, "address">> & { enabled?: boolean; expectedPolicyVersion?: number }
 EmailMailboxSetupCheck = { step: "base" | "plus_address"; startedAt: string; status: "waiting" | "passed"; passedAt: string | null;
   instructions: { sendTo: string } }      // the real address, or a plus-addressed variant for step plus_address

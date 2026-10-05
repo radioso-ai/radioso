@@ -52,6 +52,11 @@ records Radioso shows for your domain, replies go out `From` your real
 address, not the relay. Those records are additive — they don't touch
 anything else on your domain.
 
+The channel reaches Resend with `RESEND_CHANNEL_API_KEY`, or with
+`RESEND_MAIL_API_KEY`, the key transactional mail uses, when the channel has
+none of its own. With `EMAIL_CHANNEL_PROVIDER=resend` and neither key set,
+the backend refuses to start.
+
 **Direct receiving** is an advanced option for a customer-owned domain or
 subdomain: you point its MX record at Radioso instead of forwarding. Typing
 the domain to confirm turns this on, because it means *all* mail for that
@@ -396,16 +401,18 @@ to a person: nothing accepted is dropped.
 
 ### Budgets
 
-Each mailbox carries three limits. Edit them in the **Limits** section of
+Each mailbox carries two limits. Edit them in the **Limits** section of
 the mailbox's card, which saves only the fields you changed, or set them
 through the API when you create the mailbox or with `PATCH
-/api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}`:
+/api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}`.
+**Replies per thread** sits with the mailbox's other settings; **Agent
+runs per hour** sits behind a collapsed **Advanced** disclosure, alongside
+the silence alert threshold:
 
 | Setting | In the card | What it bounds | Default | Range |
 |---|---|---|---|---|
 | `hourlyGenerationBudget` | Agent runs per hour | Review turns the mailbox runs per hour | 30 | 1–1000 |
 | `threadSendBudget` | Replies per thread | The agent's automatic sends on one thread between renewals | 3 | 1–20 |
-| `threadContextMessages` | Context messages | How many of the thread's newest messages a review turn reads | 10 | 1–50 |
 
 **Generation budget.** The hour is a fixed window: it opens at the first
 review turn after the previous window closed and runs sixty minutes from
@@ -429,23 +436,22 @@ On an `auto` mailbox, see [Send budget renewal](#send-budget-renewal).
 `GET /api/v1/conversations/{conversationId}/email` returns the count, the
 limit, and the last renewal time under `sendBudget`.
 
-**Thread context.** A review turn reads only the thread's newest
-`threadContextMessages` messages, so with the default of 10 a forty-message
-thread costs a review no more than a ten-message one.
+**Thread context.** A review turn reads only the thread's 10 newest
+messages, so a forty-message thread costs a review no more than a
+ten-message one.
 
 **Review retries.** A review that fails retries after 30 seconds, 2
-minutes, and 10 minutes. After `EMAIL_CHANNEL_REVIEW_MAX_ATTEMPTS` attempts
-(4 by default) the conversation goes to a person with handoff reason
-`review_unavailable`, and the failure shows on the delivery in the event
-log.
+minutes, and 10 minutes. After four attempts the conversation goes to a
+person with handoff reason `review_unavailable`, and the failure shows on
+the delivery in the event log.
 
 ### Coalescing
 
-All the mail on one thread inside `EMAIL_CHANNEL_COALESCE_SECONDS` (60 by
-default) shares a single review turn. The first message starts the window;
-anything that arrives on the same thread before it closes joins the same
-review. A customer who sends three follow-ups in a minute gets one draft
-answering all of them, and the mailbox spends one generation on it.
+All the mail on one thread inside a 60-second window shares a single
+review turn. The first message starts the window; anything that arrives
+on the same thread before it closes joins the same review. A customer who
+sends three follow-ups in a minute gets one draft answering all of them,
+and the mailbox spends one generation on it.
 
 Each inbound message bumps the thread to a new review revision. A review
 still running when a newer message arrives finishes as a superseded draft,
@@ -515,14 +521,12 @@ mailbox never open a conversation, and neither does a reply whose sender
 doesn't match the conversation's participant. When one of these lands on a
 thread that already has a conversation, it shows there as a flagged note in
 the conversation's activity; it never joins the message history. Nothing in
-any of these runs a turn. A mailbox with `spamOptIn` on is the one
-exception for spam: it opens an operator-only conversation instead. A failed event — one whose content fetch
-didn't succeed after retrying — carries a retry action.
+any of these runs a turn, and spam never opens a conversation. A failed event — one whose content fetch didn't succeed after
+retrying — carries a retry action.
 
-Events that never opened a conversation are purged after
-`EMAIL_CHANNEL_EVENT_RETENTION_DAYS` (30 days by default). The raw MIME
-behind an event is capped at `EMAIL_CHANNEL_RAW_MAX_BYTES` (2 MB by default)
-and kept under the conversation's own retention otherwise, with narrower
+Events that never opened a conversation are purged after 30 days. The raw
+MIME behind an event is capped at 2 MB and kept under the conversation's
+own retention otherwise, with narrower
 access: reading a raw message needs the takeover permission in addition to
 settings read, and opening one is audited. The plain-text body is what's
 shown by default; the sanitized HTML view strips scripts, forms, and remote

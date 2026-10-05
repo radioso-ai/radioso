@@ -8,8 +8,8 @@ import { WhatsAppPlugin } from "./whatsapp/whatsappPlugin.js";
 
 export { createEmailChannelConnector, createEmailReviewChecks } from "./email/emailPlugin.js";
 export type { EmailChannelWorker } from "./email/emailChannelWorker.js";
-export type { EmailThreadProtocolUnitOfWork } from "./email/emailInboundProcessor.js";
-export type { EmailReviewChecks } from "./email/emailReviewRunner.js";
+export { EMAIL_COALESCE_SECONDS, EMAIL_RAW_MAX_BYTES, type EmailThreadProtocolUnitOfWork } from "./email/emailInboundProcessor.js";
+export { EMAIL_REVIEW_MAX_ATTEMPTS, type EmailReviewChecks } from "./email/emailReviewRunner.js";
 export type { EmailReviewInferenceFactory, EmailTranscriptMessage } from "./email/emailReviewChecks.js";
 
 interface BuiltInConnectorOptions {

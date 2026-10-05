@@ -214,8 +214,6 @@ export class InMemoryEmailMailboxes implements Pick<
       hourlyGenerationBudget: 30,
       generationWindowStartedAt: null,
       generationWindowCount: 0,
-      threadContextMessages: 10,
-      spamOptIn: false,
       silenceThresholdHours: 72,
       plusAddressVerifiedAt: null,
       setupCheckStep: null,

@@ -20889,12 +20889,6 @@
           "hourlyGenerationBudget": {
             "type": "integer"
           },
-          "threadContextMessages": {
-            "type": "integer"
-          },
-          "spamOptIn": {
-            "type": "boolean"
-          },
           "silenceThresholdHours": {
             "type": "integer"
           },
@@ -20967,8 +20961,6 @@
           "policyVersion",
           "threadSendBudget",
           "hourlyGenerationBudget",
-          "threadContextMessages",
-          "spamOptIn",
           "silenceThresholdHours",
           "receiving",
           "sending",
@@ -21525,14 +21517,6 @@
             "minimum": 1,
             "maximum": 1000
           },
-          "threadContextMessages": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 50
-          },
-          "spamOptIn": {
-            "type": "boolean"
-          },
           "silenceThresholdHours": {
             "type": "integer",
             "minimum": 1,
@@ -21579,14 +21563,6 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 1000
-          },
-          "threadContextMessages": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 50
-          },
-          "spamOptIn": {
-            "type": "boolean"
           },
           "silenceThresholdHours": {
             "type": "integer",

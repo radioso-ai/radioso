@@ -28,14 +28,12 @@ const LOCAL_PART_MAX_LENGTH = 64;
 // RFC 5322 dot-atom text without `+`, which is reserved for thread tokens.
 const LOCAL_PART = /^[a-z0-9!#$%&'*/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*/=?^_`{|}~-]+)*$/;
 
-type NumericSetting = "threadSendBudget" | "hourlyGenerationBudget" | "threadContextMessages" | "silenceThresholdHours";
+type NumericSetting = "threadSendBudget" | "hourlyGenerationBudget" | "silenceThresholdHours";
 
 /** Safe defaults (FR-001); the same as the column defaults. */
 const MAILBOX_DEFAULTS: Omit<MailboxSettings, "displayName"> = {
   threadSendBudget: 3,
   hourlyGenerationBudget: 30,
-  threadContextMessages: 10,
-  spamOptIn: false,
   silenceThresholdHours: 72,
 };
 
@@ -43,7 +41,6 @@ const MAILBOX_DEFAULTS: Omit<MailboxSettings, "displayName"> = {
 export const MAILBOX_SETTING_BOUNDS: Readonly<Record<NumericSetting, readonly [number, number]>> = {
   threadSendBudget: [1, 20],
   hourlyGenerationBudget: [1, 1000],
-  threadContextMessages: [1, 50],
   silenceThresholdHours: [1, 2160],
 };
 
@@ -51,8 +48,6 @@ const SETTING_KEYS: readonly (keyof MailboxSettings)[] = [
   "displayName",
   "threadSendBudget",
   "hourlyGenerationBudget",
-  "threadContextMessages",
-  "spamOptIn",
   "silenceThresholdHours",
 ];
 
@@ -243,7 +238,6 @@ const validatedSettings = (request: Partial<MailboxSettings>): Partial<MailboxSe
     if (!Number.isInteger(value) || value < min || value > max) throw badRequest(`${key} must be an integer from ${min} to ${max}`);
     settings[key] = value;
   }
-  if (request.spamOptIn !== undefined) settings.spamOptIn = request.spamOptIn;
   return settings;
 };
 
@@ -536,8 +530,6 @@ export class MailboxService {
       policyVersion: mailbox.policyVersion,
       threadSendBudget: mailbox.threadSendBudget,
       hourlyGenerationBudget: mailbox.hourlyGenerationBudget,
-      threadContextMessages: mailbox.threadContextMessages,
-      spamOptIn: mailbox.spamOptIn,
       silenceThresholdHours: mailbox.silenceThresholdHours,
       receiving: {
         state: deriveReceivingState({

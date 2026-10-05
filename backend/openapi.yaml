@@ -14234,10 +14234,6 @@ components:
           type: integer
         hourlyGenerationBudget:
           type: integer
-        threadContextMessages:
-          type: integer
-        spamOptIn:
-          type: boolean
         silenceThresholdHours:
           type: integer
         receiving:
@@ -14287,8 +14283,6 @@ components:
         - policyVersion
         - threadSendBudget
         - hourlyGenerationBudget
-        - threadContextMessages
-        - spamOptIn
         - silenceThresholdHours
         - receiving
         - sending
@@ -14677,12 +14671,6 @@ components:
           type: integer
           minimum: 1
           maximum: 1000
-        threadContextMessages:
-          type: integer
-          minimum: 1
-          maximum: 50
-        spamOptIn:
-          type: boolean
         silenceThresholdHours:
           type: integer
           minimum: 1
@@ -14715,12 +14703,6 @@ components:
           type: integer
           minimum: 1
           maximum: 1000
-        threadContextMessages:
-          type: integer
-          minimum: 1
-          maximum: 50
-        spamOptIn:
-          type: boolean
         silenceThresholdHours:
           type: integer
           minimum: 1

@@ -38,7 +38,7 @@ frontend/public/enterprise-agent-creation-actions.json
 # Agent scratch coordination notes
 .context/
 
-# Local email channel spool (EMAIL_CHANNEL_LOCAL_SPOOL_DIR)
+# Local email channel spool (LOCAL_EMAIL_SPOOL_DIR)
 backend/.email-spool/
 
 # Terraform

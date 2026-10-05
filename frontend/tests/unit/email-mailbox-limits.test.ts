@@ -10,8 +10,6 @@ import {
 const saved = {
   threadSendBudget: 3,
   hourlyGenerationBudget: 30,
-  threadContextMessages: 10,
-  spamOptIn: false,
   silenceThresholdHours: 72,
 }
 
@@ -20,7 +18,6 @@ describe('parseMailboxLimit', () => {
     expect(parseMailboxLimit('threadSendBudget', '1')).toEqual({ ok: true, value: 1 })
     expect(parseMailboxLimit('threadSendBudget', ' 20 ')).toEqual({ ok: true, value: 20 })
     expect(parseMailboxLimit('hourlyGenerationBudget', '1000')).toEqual({ ok: true, value: 1000 })
-    expect(parseMailboxLimit('threadContextMessages', '50')).toEqual({ ok: true, value: 50 })
     expect(parseMailboxLimit('silenceThresholdHours', '2160')).toEqual({ ok: true, value: 2160 })
   })
 
@@ -28,7 +25,6 @@ describe('parseMailboxLimit', () => {
     expect(parseMailboxLimit('threadSendBudget', '0')).toEqual({ ok: false, error: 'Enter a whole number from 1 to 20.' })
     expect(parseMailboxLimit('threadSendBudget', '21')).toEqual({ ok: false, error: 'Enter a whole number from 1 to 20.' })
     expect(parseMailboxLimit('hourlyGenerationBudget', '1001').ok).toBe(false)
-    expect(parseMailboxLimit('threadContextMessages', '51').ok).toBe(false)
     expect(parseMailboxLimit('silenceThresholdHours', '2161').ok).toBe(false)
   })
 
@@ -42,7 +38,6 @@ describe('parseMailboxLimit', () => {
     expect(MAILBOX_LIMIT_BOUNDS).toEqual({
       threadSendBudget: [1, 20],
       hourlyGenerationBudget: [1, 1000],
-      threadContextMessages: [1, 50],
       silenceThresholdHours: [1, 2160],
     })
   })
@@ -54,8 +49,8 @@ describe('mailboxLimitsChange', () => {
   })
 
   it('carries only the fields that differ, as numbers', () => {
-    const draft = { ...mailboxLimitsDraft(saved), threadSendBudget: '5', threadContextMessages: '10', spamOptIn: true }
-    expect(mailboxLimitsChange(saved, draft)).toEqual({ change: { threadSendBudget: 5, spamOptIn: true }, errors: {} })
+    const draft = { ...mailboxLimitsDraft(saved), threadSendBudget: '5' }
+    expect(mailboxLimitsChange(saved, draft)).toEqual({ change: { threadSendBudget: 5 }, errors: {} })
   })
 
   it('treats a re-typed equal value as unchanged', () => {
@@ -64,12 +59,12 @@ describe('mailboxLimitsChange', () => {
   })
 
   it('reports each invalid field and leaves it out of the change', () => {
-    const draft = { ...mailboxLimitsDraft(saved), threadSendBudget: '0', silenceThresholdHours: '48', threadContextMessages: 'x' }
+    const draft = { ...mailboxLimitsDraft(saved), threadSendBudget: '0', hourlyGenerationBudget: '2000', silenceThresholdHours: '48' }
     expect(mailboxLimitsChange(saved, draft)).toEqual({
       change: { silenceThresholdHours: 48 },
       errors: {
         threadSendBudget: 'Enter a whole number from 1 to 20.',
-        threadContextMessages: 'Enter a whole number from 1 to 50.',
+        hourlyGenerationBudget: 'Enter a whole number from 1 to 1000.',
       },
     })
   })

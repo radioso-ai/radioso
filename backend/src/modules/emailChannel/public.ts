@@ -32,7 +32,7 @@ export {
   type EmailChannelDrainDispatcherPort,
   type EmailChannelDrainStage,
 } from "./drains.js";
-export { EmailChannelSweep } from "./maintenance/emailChannelSweep.js";
+export { EMAIL_EVENT_RETENTION_DAYS, EmailChannelSweep } from "./maintenance/emailChannelSweep.js";
 export { EmailCustomerReplyDeliverer } from "./operator/emailCustomerReplyDeliverer.js";
 export {
   EmailDeliveryFailureResolver,

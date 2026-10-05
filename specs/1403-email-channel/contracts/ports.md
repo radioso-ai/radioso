@@ -391,13 +391,13 @@ export const effectiveEngagementMode: (accepted: { mode: EngagementMode; enabled
   { mode: EngagementMode; enabled: boolean };              // lower autonomy wins; enabled requires both
 
 export interface EngagementDispositionInput {
-  mailbox: { effectiveMode: EngagementMode; enabled: boolean; hasAgent: boolean; spamOptIn: boolean } | null;
+  mailbox: { effectiveMode: EngagementMode; enabled: boolean; hasAgent: boolean } | null;
   classification: InboundClassification;
   thread: { kind: "new" } | { kind: "existing"; ownership: "ai_owned" | "human_owned" } | { kind: "participant_mismatch" };
   generationBudgetExhausted: boolean;
 }
 export type DropReason = "no_mailbox" | "mailbox_disabled" | "automated_sender" | "self_sender" | "bounce" | "spam" | "participant_mismatch";
-export type IngestOnlyReason = "operator_only_mailbox" | "human_owned" | "generation_budget" | "spam_opt_in" | "no_agent";
+export type IngestOnlyReason = "operator_only_mailbox" | "human_owned" | "generation_budget" | "no_agent";
 export type EngagementDisposition =
   | { kind: "drop"; reason: DropReason; noteOnThread: boolean }
   | { kind: "ingest_only"; reason: IngestOnlyReason; humanOwnershipReason: "operator_only_mailbox" | "generation_budget" | null }

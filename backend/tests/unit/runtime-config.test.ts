@@ -950,7 +950,7 @@ describe("runtime configuration", () => {
     it("leaves the channel unconfigured when EMAIL_CHANNEL_PROVIDER is unset or blank", () => {
       expect(emailChannelOf({ ...baseEnv })).toBeUndefined();
 
-      // Tuning and secrets provisioned ahead of the provider do not switch the channel on.
+      // Secrets provisioned ahead of the provider do not switch the channel on.
       const blankProvider = emailChannelOf({
         ...baseEnv,
         EMAIL_CHANNEL_PROVIDER: "",
@@ -962,17 +962,18 @@ describe("runtime configuration", () => {
       expect(blankProvider).toBeUndefined();
     });
 
-    it("refuses to start the resend provider without RESEND_CHANNEL_API_KEY", () => {
+    it("refuses to start the resend provider without a Resend key of its own or transactional mail's", () => {
       expect(() => getEnv({
         ...localChannelEnv,
         EMAIL_CHANNEL_PROVIDER: "resend",
-      })).toThrow(/RESEND_CHANNEL_API_KEY/);
+      })).toThrow(/RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY/);
 
       expect(() => getEnv({
         ...localChannelEnv,
         EMAIL_CHANNEL_PROVIDER: "resend",
         RESEND_CHANNEL_API_KEY: "",
-      })).toThrow(/RESEND_CHANNEL_API_KEY/);
+        RESEND_MAIL_API_KEY: "",
+      })).toThrow(/RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY/);
 
       const env = emailChannelOf({
         ...localChannelEnv,
@@ -981,6 +982,23 @@ describe("runtime configuration", () => {
         RESEND_CHANNEL_REGION: "eu-west-1",
       });
       expect(env?.provider).toEqual({ kind: "resend", apiKey: "re_test", region: "eu-west-1" });
+    });
+
+    it("uses transactional mail's Resend key when the channel has none of its own", () => {
+      const shared = emailChannelOf({
+        ...localChannelEnv,
+        EMAIL_CHANNEL_PROVIDER: "resend",
+        RESEND_MAIL_API_KEY: "re_mail",
+      });
+      expect(shared?.provider).toEqual({ kind: "resend", apiKey: "re_mail", region: "us-east-1" });
+
+      const own = emailChannelOf({
+        ...localChannelEnv,
+        EMAIL_CHANNEL_PROVIDER: "resend",
+        RESEND_CHANNEL_API_KEY: "re_channel",
+        RESEND_MAIL_API_KEY: "re_mail",
+      });
+      expect(own?.provider).toEqual({ kind: "resend", apiKey: "re_channel", region: "us-east-1" });
     });
 
     it("requires the inbound domain and webhook secret once a provider is chosen", () => {
@@ -1013,15 +1031,11 @@ describe("runtime configuration", () => {
       const env = emailChannelOf({ ...localChannelEnv });
 
       expect(env).toEqual({
-        provider: { kind: "local", spoolDir: "./.email-spool" },
+        provider: { kind: "local" },
         inboundDomain: "in.localhost.test",
         webhookSecret: "whsec_bG9jYWwtZGV2LXNlY3JldC0wMDAwMDAwMDAwMDA=",
         previousWebhookSecret: undefined,
         workersEnabled: false,
-        coalesceSeconds: 60,
-        rawMaxBytes: 2_097_152,
-        eventRetentionDays: 30,
-        reviewMaxAttempts: 4,
         taskQueueName: undefined,
       });
 
@@ -1038,24 +1052,15 @@ describe("runtime configuration", () => {
         ...localChannelEnv,
         EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS: "whsec_cHJldmlvdXM=",
         EMAIL_CHANNEL_WORKERS_ENABLED: "true",
-        EMAIL_CHANNEL_LOCAL_SPOOL_DIR: "/tmp/radioso-spool",
-        EMAIL_CHANNEL_COALESCE_SECONDS: "5",
-        EMAIL_CHANNEL_RAW_MAX_BYTES: "1048576",
-        EMAIL_CHANNEL_EVENT_RETENTION_DAYS: "7",
-        EMAIL_CHANNEL_REVIEW_MAX_ATTEMPTS: "2",
         EMAIL_CHANNEL_TASK_QUEUE_NAME: "email-channel",
       });
 
       expect(env).toEqual({
-        provider: { kind: "local", spoolDir: "/tmp/radioso-spool" },
+        provider: { kind: "local" },
         inboundDomain: "in.localhost.test",
         webhookSecret: "whsec_bG9jYWwtZGV2LXNlY3JldC0wMDAwMDAwMDAwMDA=",
         previousWebhookSecret: "whsec_cHJldmlvdXM=",
         workersEnabled: true,
-        coalesceSeconds: 5,
-        rawMaxBytes: 1_048_576,
-        eventRetentionDays: 7,
-        reviewMaxAttempts: 2,
         taskQueueName: "email-channel",
       });
     });
@@ -1069,11 +1074,6 @@ describe("runtime configuration", () => {
         "EMAIL_CHANNEL_WEBHOOK_SECRET",
         "EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS",
         "EMAIL_CHANNEL_WORKERS_ENABLED",
-        "EMAIL_CHANNEL_LOCAL_SPOOL_DIR",
-        "EMAIL_CHANNEL_COALESCE_SECONDS",
-        "EMAIL_CHANNEL_RAW_MAX_BYTES",
-        "EMAIL_CHANNEL_EVENT_RETENTION_DAYS",
-        "EMAIL_CHANNEL_REVIEW_MAX_ATTEMPTS",
         "EMAIL_CHANNEL_TASK_QUEUE_NAME",
         "RESEND_CHANNEL_API_KEY",
         "RESEND_CHANNEL_REGION",

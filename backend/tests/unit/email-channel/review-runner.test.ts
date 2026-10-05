@@ -63,7 +63,7 @@ describe("EmailReviewRunner", () => {
   });
 
   describe("the turn", () => {
-    it("asks respond for a review of the newest customer message with the mailbox's history window", async () => {
+    it("asks respond for a review of the newest customer message with the thread's ten newest messages", async () => {
       const { h, mailbox, conversationId } = await dueThread();
       const newest = await h.receive(conversationId, "Also, can I change the address?");
       h.respond.mockResolvedValue(h.draftTurn(conversationId));
@@ -76,7 +76,7 @@ describe("EmailReviewRunner", () => {
         conversationId,
         respondToMessageId: newest,
         executionMode: "review",
-        historyWindow: { maxMessages: mailbox.threadContextMessages },
+        historyWindow: { maxMessages: 10 },
       });
     });
 

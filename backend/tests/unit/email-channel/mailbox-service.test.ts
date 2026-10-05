@@ -94,8 +94,6 @@ describe("MailboxService", () => {
         policyVersion: 1,
         threadSendBudget: 3,
         hourlyGenerationBudget: 30,
-        threadContextMessages: 10,
-        spamOptIn: false,
         silenceThresholdHours: 72,
         receiving: { state: "waiting_for_first_message", lastReceivedAt: null },
         sending: { state: "not_verified" },
@@ -128,10 +126,10 @@ describe("MailboxService", () => {
 
     it("applies requested settings within their bounds and refuses values outside them", async () => {
       const { service } = harness();
-      const view = await createSupport(service, { threadSendBudget: 20, hourlyGenerationBudget: 1, spamOptIn: true, silenceThresholdHours: 2160 });
-      expect(view).toMatchObject({ threadSendBudget: 20, hourlyGenerationBudget: 1, spamOptIn: true, silenceThresholdHours: 2160 });
+      const view = await createSupport(service, { threadSendBudget: 20, hourlyGenerationBudget: 1, silenceThresholdHours: 2160 });
+      expect(view).toMatchObject({ threadSendBudget: 20, hourlyGenerationBudget: 1, silenceThresholdHours: 2160 });
       await expectAppError(createSupport(service, { address: "a@customer.test", threadSendBudget: 21 }), 400, "bad_request");
-      await expectAppError(createSupport(service, { address: "b@customer.test", threadContextMessages: 0 }), 400, "bad_request");
+      await expectAppError(createSupport(service, { address: "b@customer.test", hourlyGenerationBudget: 0 }), 400, "bad_request");
       await expectAppError(createSupport(service, { address: "c@customer.test", displayName: "  " }), 400, "bad_request");
     });
 
@@ -242,7 +240,7 @@ describe("MailboxService", () => {
       const { service, policyChanges } = harness(DRAFTING);
       const created = await createSupport(service);
 
-      await service.update(actor, workspaceId, created.id, { threadContextMessages: 5 });
+      await service.update(actor, workspaceId, created.id, { threadSendBudget: 5 });
 
       expect(policyChanges.heldReplies.superseded).toEqual([]);
     });

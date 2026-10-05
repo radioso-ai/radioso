@@ -278,9 +278,14 @@ asks the pure `emailPublicationDecision.ts` what to do with the result, and
 hands it to the channel-neutral held-reply module below. Every automatic
 step is bounded: the mailbox generation budget (`generationBudget.ts`, a
 fixed one-hour window reserved once per review revision), the thread send
-budget, the coalescing window, the review's thread-context limit, and
+budget, the coalescing window (`EMAIL_COALESCE_SECONDS`, 60s,
+`emailInboundProcessor.ts`), the review's thread-context limit
+(`EMAIL_REVIEW_HISTORY_MESSAGES`, 10 messages, `emailReviewRunner.ts`), and
 `effectiveMode.ts`, which runs accepted mail under the lower-autonomy of
-its accepted and current policy.
+its accepted and current policy. Tests and the behaviour harness override
+the coalescing window, the raw-MIME cap, event retention, the review retry
+limit and the local spool directory through `EmailChannelOptions`
+(`backend/src/app/composition/emailChannel.ts`), not env.
 
 Should not own conversation or routine behavior, and does not reuse
 `backend/src/modules/customerEmail/` — that module sends through a

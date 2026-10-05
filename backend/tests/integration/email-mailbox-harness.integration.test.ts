@@ -52,11 +52,10 @@ describeIntegration("email mailbox harness (Postgres, scripted review turn)", ()
       EMAIL_CHANNEL_INBOUND_DOMAIN: "in.harness.test",
       EMAIL_CHANNEL_WEBHOOK_SECRET: "whsec_bG9jYWwtZGV2LXNlY3JldC0wMDAwMDAwMDAwMDA=",
       EMAIL_CHANNEL_WORKERS_ENABLED: "true",
-      EMAIL_CHANNEL_LOCAL_SPOOL_DIR: spoolDir,
-      EMAIL_CHANNEL_COALESCE_SECONDS: "0",
     });
     harness = await EmailMailboxHarness.boot({
       env,
+      emailChannel: { localSpoolDir: spoolDir, coalesceSeconds: 0 },
       company: { name: "Fernhill Tea", domain: "fernhill.test", operatorEmail: "olivia@fernhill.test", operatorName: "Olivia" },
       agent: { name: "Fernhill Support", instruction: "Answer from the documents." },
       reviewTurn: script(turns),

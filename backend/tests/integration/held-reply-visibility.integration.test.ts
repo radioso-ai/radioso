@@ -387,11 +387,11 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
       await database.execute("UPDATE conversations SET agent_revision_id = $1 WHERE id = $2", [revisionId, id]);
       const latest = (await customerMessages(id)).at(-1)!;
 
-      // As `ChatService.review` prepares a review: on the recorded message, within the mailbox's window.
+      // As `ChatService.review` prepares a review: on the recorded message, within the review's ten-message window.
       const message = await preparer.loadExistingUserMessage({ workspaceId: workspaceId(), conversationId: id, messageId: latest.id });
       const session = await preparer.prepare(
         { workspaceId: workspaceId(), conversationId: id, query: message.content, executionMode: "review" },
-        { skipRetrieval: true, existingUserMessage: { message, historyWindow: { maxMessages: scenario.mailbox.threadContextMessages } } },
+        { skipRetrieval: true, existingUserMessage: { message, historyWindow: { maxMessages: 10 } } },
       );
 
       expect(session.history.map((entry) => entry.role), name).toEqual(Array.from({ length: count - 1 }, () => "user"));

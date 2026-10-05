@@ -474,7 +474,7 @@ resource "google_cloud_run_v2_service" "backend" {
       }
       env {
         name  = "RESEND_CHANNEL_REGION"
-        value = var.resend_channel_region
+        value = local.resend_channel_region
       }
       env {
         name  = "EMAIL_CHANNEL_WORKERS_ENABLED"
@@ -1236,7 +1236,7 @@ resource "google_cloud_run_v2_service" "document_worker" {
       }
       env {
         name  = "RESEND_CHANNEL_REGION"
-        value = var.resend_channel_region
+        value = local.resend_channel_region
       }
       env {
         name  = "EMAIL_CHANNEL_WORKERS_ENABLED"

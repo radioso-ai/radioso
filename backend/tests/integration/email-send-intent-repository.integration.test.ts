@@ -89,8 +89,6 @@ describeIntegration("email send intent repository (Postgres)", () => {
       enabled: true,
       threadSendBudget: 3,
       hourlyGenerationBudget: 30,
-      threadContextMessages: 10,
-      spamOptIn: false,
       silenceThresholdHours: 72,
       createdByUserId: null,
     });

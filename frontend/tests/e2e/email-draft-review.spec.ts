@@ -503,8 +503,6 @@ test("the email card offers Draft for review when the server supports it, and cr
         policyVersion: 1,
         threadSendBudget: 3,
         hourlyGenerationBudget: 30,
-        threadContextMessages: 10,
-        spamOptIn: false,
         silenceThresholdHours: 72,
         receiving: { state: "waiting_for_first_message", lastReceivedAt: null },
         sending: { state: "not_verified" },

@@ -893,8 +893,6 @@ export interface EmailMailboxes {
   setup_check_started_at: Timestamp | null;
   setup_check_step: string | null;
   silence_threshold_hours: Generated<number>;
-  spam_opt_in: Generated<boolean>;
-  thread_context_messages: Generated<number>;
   thread_send_budget: Generated<number>;
   updated_at: Generated<Timestamp>;
   workspace_id: string;

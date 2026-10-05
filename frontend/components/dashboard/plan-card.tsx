@@ -166,13 +166,15 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
           </Button>
         </>
       ) : null}
-      <Button
-        variant="outline"
-        onClick={() => void runCheckout({ pack: true, returnPath: pathname }, 'pack')}
-        disabled={pendingAction !== null}
-      >
-        Buy {plans.topUp.conversations} more for {formatPlanPriceCents(plans.topUp.priceCents, plans.currency)}
-      </Button>
+      {billing.topUpAvailable ? (
+        <Button
+          variant="outline"
+          onClick={() => void runCheckout({ pack: true, returnPath: pathname }, 'pack')}
+          disabled={pendingAction !== null}
+        >
+          Buy {plans.topUp.conversations} more for {formatPlanPriceCents(plans.topUp.priceCents, plans.currency)}
+        </Button>
+      ) : null}
     </div>
   )
 

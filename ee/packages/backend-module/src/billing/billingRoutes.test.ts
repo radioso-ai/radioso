@@ -138,9 +138,18 @@ const createDependencies = (
 
 const createApp = (
   config: BillingConfig,
-  overrides: { gateway?: StripeGateway; repository?: BillingCustomerRepository; dependencyOptions?: Parameters<typeof createDependencies>[1] } = {},
+  overrides: {
+    gateway?: StripeGateway;
+    repository?: BillingCustomerRepository;
+    dependencyOptions?: Parameters<typeof createDependencies>[1];
+    /** The account's assigned usage-limit profile key. `null` (the default) mirrors an
+     *  unassigned account, which `getAccountUsage` reports with `profile: null`, and the
+     *  routes resolve to the catalog's default plan (comet). */
+    profileKey?: string | null;
+  } = {},
 ) => {
   const dependencies = createDependencies(inertPool as unknown as RouteDependencies["connectorDb"], overrides.dependencyOptions);
+  const profileKey = overrides.profileKey ?? null;
   const app = express();
   app.use(express.json());
   // The real app captures the raw body ahead of route mounts (`createApp.ts`'s
@@ -167,7 +176,10 @@ const createApp = (
       repository: overrides.repository ?? new FakeBillingCustomerRepository(),
       usageService: {
         async getAccountUsage() {
-          return { accountId: sessionAccountId, profile: null } as never;
+          return {
+            accountId: sessionAccountId,
+            profile: profileKey === null ? null : { key: profileKey },
+          } as never;
         },
         async assignProfile() {
           return {} as never;
@@ -232,6 +244,30 @@ describe("GET /api/v1/ee/billing/me", () => {
   it("requires a session", async () => {
     await request(createApp(configuredConfig)).get("/api/v1/ee/billing/me").expect(401);
   });
+
+  it("reports topUpAvailable:false for a comet (free plan) account (CFO-approved 2026-09-15)", async () => {
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig)).get("/api/v1/ee/billing/me"),
+    ).expect(200);
+
+    expect(response.body).toEqual(expect.objectContaining({ topUpAvailable: false }));
+  });
+
+  it("reports topUpAvailable:true for a satellite (paid plan) account", async () => {
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig, { profileKey: "satellite" })).get("/api/v1/ee/billing/me"),
+    ).expect(200);
+
+    expect(response.body).toEqual(expect.objectContaining({ topUpAvailable: true }));
+  });
+
+  it("reports topUpAvailable:false for an account on a plan the catalog does not recognize (legacy/hand-assigned)", async () => {
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig, { profileKey: "starter_100" })).get("/api/v1/ee/billing/me"),
+    ).expect(200);
+
+    expect(response.body).toEqual(expect.objectContaining({ topUpAvailable: false }));
+  });
 });
 
 describe("POST /api/v1/ee/billing/checkout", () => {
@@ -283,10 +319,10 @@ describe("POST /api/v1/ee/billing/checkout", () => {
     );
   });
 
-  it("returns a checkout URL for the top-up pack", async () => {
+  it("returns a checkout URL for the top-up pack on a paid plan", async () => {
     const gateway = createFakeGateway();
     const response = await withSessionCookie(
-      request(createApp(configuredConfig, { gateway }))
+      request(createApp(configuredConfig, { gateway, profileKey: "satellite" }))
         .post("/api/v1/ee/billing/checkout")
         .send({ pack: true, returnPath: "/usage" }),
     ).expect(200);
@@ -295,6 +331,32 @@ describe("POST /api/v1/ee/billing/checkout", () => {
     expect(gateway.createCheckoutSession).toHaveBeenCalledWith(
       expect.objectContaining({ mode: "payment" }),
     );
+  });
+
+  it("returns 409 top_up_unavailable for a pack on a comet (free plan) account, without touching Stripe (CFO-approved 2026-09-15)", async () => {
+    const gateway = createFakeGateway();
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig, { gateway }))
+        .post("/api/v1/ee/billing/checkout")
+        .send({ pack: true, returnPath: "/usage" }),
+    ).expect(409);
+
+    expect(response.body.error.code).toBe("top_up_unavailable");
+    expect(gateway.findPriceByLookupKey).not.toHaveBeenCalled();
+    expect(gateway.createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 top_up_unavailable for a pack on an account whose plan the catalog does not recognize", async () => {
+    const gateway = createFakeGateway();
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig, { gateway, profileKey: "starter_100" }))
+        .post("/api/v1/ee/billing/checkout")
+        .send({ pack: true, returnPath: "/usage" }),
+    ).expect(409);
+
+    expect(response.body.error.code).toBe("top_up_unavailable");
+    expect(gateway.findPriceByLookupKey).not.toHaveBeenCalled();
+    expect(gateway.createCheckoutSession).not.toHaveBeenCalled();
   });
 });
 

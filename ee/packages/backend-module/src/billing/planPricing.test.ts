@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { PLAN_CATALOG } from "@radioso/plan-catalog";
 
 import {
+  isTopUpEligible,
   isTopUpPrice,
   lookupKeyFor,
   planIdForProduct,
@@ -82,6 +83,22 @@ describe("upgradePlanIdFor", () => {
 
   it("returns null for an unknown plan id", () => {
     expect(upgradePlanIdFor("not-a-plan")).toBeNull();
+  });
+});
+
+describe("isTopUpEligible", () => {
+  it("is false for the free plan", () => {
+    expect(isTopUpEligible(PLAN_CATALOG.defaultPlanId)).toBe(false);
+  });
+
+  it("is true for a paid self-serve plan", () => {
+    expect(isTopUpEligible("satellite")).toBe(true);
+    expect(isTopUpEligible("planet")).toBe(true);
+  });
+
+  it("is false for a plan id the catalog does not recognize (legacy or hand-assigned profiles)", () => {
+    expect(isTopUpEligible("starter_100")).toBe(false);
+    expect(isTopUpEligible("not-a-plan")).toBe(false);
   });
 });
 

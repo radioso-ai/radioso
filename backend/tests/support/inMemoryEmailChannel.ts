@@ -393,9 +393,13 @@ export const inMemoryPolicyChanges = (mailboxes: InMemoryEmailMailboxes) => {
   const heldReplies = {
     /** The policy refs whose drafts a change superseded, in order. */
     superseded: [] as string[],
-    supersedePendingForPolicy: async (policyRef: string) => {
+    /** The conversations with a live draft under each policy ref, which the next supersede finds; none unless a test seeds them. */
+    live: new Map<string, string[]>(),
+    supersedePendingForPolicy: async (policyRef: string): Promise<string[]> => {
       heldReplies.superseded.push(policyRef);
-      return 0;
+      const conversationIds = heldReplies.live.get(policyRef) ?? [];
+      heldReplies.live.delete(policyRef);
+      return conversationIds;
     },
     /** The policy refs whose drafts a change held for review, with the version each was re-bound to, in order. */
     held: [] as { policyRef: string; policyVersion: number }[],
@@ -404,12 +408,30 @@ export const inMemoryPolicyChanges = (mailboxes: InMemoryEmailMailboxes) => {
       return { returned: 0, rebound: 0 };
     },
   };
+  const handoffs = {
+    /** The hand-offs a change asked for, in order, each with whether it ran inside the unit. */
+    requested: [] as { workspaceId: string; conversationId: string; reason: string; inUnit: boolean }[],
+    /** Conversations a person already owns: a hand-off leaves them as they are. */
+    humanOwned: new Set<string>(),
+    requestHumanOwnership: async (input: { workspaceId: string; conversationId: string; reason: string }): Promise<{ changed: boolean }> => {
+      handoffs.requested.push({ ...input, inUnit: unit.open });
+      return { changed: !handoffs.humanOwned.has(input.conversationId) };
+    },
+  };
   const unit = {
     runs: 0,
+    /** True while a unit's work runs. */
+    open: false,
     heldReplies,
-    run<T>(work: (scope: { mailboxes: InMemoryEmailMailboxes; heldReplies: typeof heldReplies }) => Promise<T>): Promise<T> {
+    handoffs,
+    async run<T>(work: (scope: { mailboxes: InMemoryEmailMailboxes; heldReplies: typeof heldReplies; handoffs: typeof handoffs }) => Promise<T>): Promise<T> {
       unit.runs += 1;
-      return work({ mailboxes, heldReplies });
+      unit.open = true;
+      try {
+        return await work({ mailboxes, heldReplies, handoffs });
+      } finally {
+        unit.open = false;
+      }
     },
   };
   return unit;

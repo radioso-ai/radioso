@@ -5,7 +5,6 @@ import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 
 import { createEmailHeldReplyChannelRegistration } from "../../src/app/composition/emailChannel.js";
 import type { HeldReplyChannelRegistration } from "../../src/app/composition/heldReplyUnitOfWork.js";
-import { createPostgresMailboxPolicyChangeUnitOfWork } from "../../src/app/composition/mailboxPolicyChange.js";
 import {
   EMAIL_SEND_ACTION_TYPE,
   EmailDomainRepository,
@@ -15,7 +14,7 @@ import {
   type MailboxPolicyChangeUnitOfWork,
 } from "../../src/modules/emailChannel/public.js";
 import { Database } from "../../src/shared/infra/database.js";
-import { INBOUND_DOMAIN, createEmailChannelDatabase, createSpool, createWorkerNode } from "./support/emailChannelHarness.js";
+import { INBOUND_DOMAIN, createEmailChannelDatabase, createPolicyChanges, createSpool, createWorkerNode } from "./support/emailChannelHarness.js";
 import {
   createApiNode,
   messagesOf,
@@ -216,7 +215,7 @@ describeIntegration("held reply release (Postgres, research B1)", () => {
 
   /** A policy change that holds its transaction open, mailbox locked and drafts superseded, until `held` opens. */
   const gatedPolicyChange = (held: Gate): MailboxService => {
-    const changes = createPostgresMailboxPolicyChangeUnitOfWork({ db: database.kysely });
+    const changes = createPolicyChanges(database);
     return mailboxSettings({
       run: (work) => changes.run(async (scope) => {
         const result = await work(scope);
@@ -304,7 +303,6 @@ describeIntegration("held reply release (Postgres, research B1)", () => {
   it("refuses a release with policy_changed when a policy change locked the mailbox first, and sends nothing", async () => {
     const scenario = await pendingDraft();
     const versionBefore = await policyVersionOf(scenario.mailbox.id);
-    const ownershipBefore = await ownershipRowOf(scenario.conversationId);
     const messagesBefore = await messagesOf(database, scenario.conversationId);
 
     // The policy change holds the mailbox FOR UPDATE with the draft superseded but uncommitted;
@@ -331,7 +329,8 @@ describeIntegration("held reply release (Postgres, research B1)", () => {
     ]);
     expect(await messagesOf(database, scenario.conversationId)).toEqual(messagesBefore);
     expect(await emailSendsOf(scenario.conversationId)).toEqual([]);
-    expect(await ownershipRowOf(scenario.conversationId)).toEqual(ownershipBefore);
+    // The change that won handed the waiting customer to a person, unclaimed.
+    expect(await ownershipRowOf(scenario.conversationId)).toMatchObject({ state: "human_owned", owner_user_id: null });
   }, 60_000);
 
   it("sends a release that locked the mailbox first; the policy change waits and then finds nothing to supersede", async () => {
@@ -342,7 +341,7 @@ describeIntegration("held reply release (Postgres, research B1)", () => {
     const held = gate();
     const release = apiNode({ heldReplyChannels: [gatedAfterPolicyLock(held)] }).releaseHeldReply(scenario.teammate, scenario.target).then((response) => response);
     await held.reached;
-    const change = downgradeToOperatorOnly(mailboxSettings(createPostgresMailboxPolicyChangeUnitOfWork({ db: database.kysely })), scenario);
+    const change = downgradeToOperatorOnly(mailboxSettings(createPolicyChanges(database)), scenario);
     await lockWaiters(1);
     held.open();
     const [sent, changed] = await Promise.all([release, change]);
@@ -369,7 +368,7 @@ describeIntegration("held reply release (Postgres, research B1)", () => {
   it("gives an unforced race between a release and a policy change exactly one winner", async () => {
     for (let trial = 0; trial < 3; trial += 1) {
       const scenario = await pendingDraft();
-      const settings = mailboxSettings(createPostgresMailboxPolicyChangeUnitOfWork({ db: database.kysely }));
+      const settings = mailboxSettings(createPolicyChanges(database));
 
       const [response] = await Promise.all([
         apiNode().releaseHeldReply(scenario.teammate, scenario.target).then((result) => result),

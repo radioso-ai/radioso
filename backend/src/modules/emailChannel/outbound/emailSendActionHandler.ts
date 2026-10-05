@@ -5,7 +5,7 @@ import { parseRfcMessageId, type RfcMessageId } from "../../mail/public.js";
 import { isHumanAuthoredMessageSource } from "../../../shared/domain/messageAuthorship.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
-import type { EmailChannelLogger } from "../emailChannelAudit.js";
+import type { EmailChannelJobLogger } from "../emailChannelAudit.js";
 import type { EmailDomainRecord, EmailDomainRepository } from "../persistence/emailDomainRepository.js";
 import type { EmailMailboxRecord, EmailMailboxRepository } from "../persistence/emailMailboxRepository.js";
 import type {
@@ -83,7 +83,8 @@ export class EmailSendActionHandler implements ActionHandler {
     /** The provider name intents record and provider events are correlated by. */
     provider: string;
     metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
-    logger: EmailChannelLogger;
+    /** Logs each send the provider accepted, with ids only. */
+    logger: EmailChannelJobLogger;
     createId: () => string;
   }) {}
 
@@ -249,7 +250,7 @@ export class EmailSendActionHandler implements ActionHandler {
       if (mayRetryFreeze) await this.advance(frozen.current, attempt, false);
       return;
     }
-    await this.deps.attempt.send(frozen.intent, { writer: "handler", attempt });
+    await this.send(frozen.intent, attempt);
   }
 
   /**
@@ -266,7 +267,24 @@ export class EmailSendActionHandler implements ActionHandler {
       await this.deps.writer.apply(intent, { kind: "outcome_unknown", authorityValid, withinWindow }, { writer: "handler" });
       return;
     }
-    await this.deps.attempt.send(intent, { writer: "handler", attempt });
+    await this.send(intent, attempt);
+  }
+
+  /** POSTs the frozen request, and logs the send when the provider accepted it. */
+  private async send(intent: EmailSendIntentRecord, attempt: number): Promise<void> {
+    const sent = await this.deps.attempt.send(intent, { writer: "handler", attempt });
+    if (sent.state !== "accepted") return;
+    this.deps.logger.info(
+      {
+        sendIntentId: sent.id,
+        workspaceId: sent.workspaceId,
+        mailboxId: sent.mailboxId,
+        conversationId: sent.conversationId,
+        trigger: sent.trigger,
+        attempt,
+      },
+      "email_send_accepted",
+    );
   }
 
   private async sendFacts(intent: EmailSendIntentRecord): Promise<SendFacts> {

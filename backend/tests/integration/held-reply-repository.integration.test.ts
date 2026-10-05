@@ -257,8 +257,10 @@ describeIntegration("held replies (Postgres)", () => {
     const unrelated = await seedConversation(scope.workspaceId);
     const elsewhere = (await heldReplies.insert(holdInput({ ...scope, ...unrelated }))).record;
 
-    expect(await heldReplies.supersedePendingForPolicy(policy.ref, "policy_changed")).toBe(2);
-    expect(await heldReplies.supersedePendingForPolicy(policy.ref, "policy_changed")).toBe(0);
+    // The conversations whose live draft it superseded, for the policy change to hand to a person.
+    expect((await heldReplies.supersedePendingForPolicy(policy.ref, "policy_changed")).sort())
+      .toEqual([scope.conversationId, other.conversationId].sort());
+    expect(await heldReplies.supersedePendingForPolicy(policy.ref, "policy_changed")).toEqual([]);
     expect(await heldReplies.findInConversation(other.conversationId, queued.id)).toMatchObject({
       state: "superseded", supersededReason: "policy_changed", attentionClearedReason: "superseded",
     });

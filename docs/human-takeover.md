@@ -53,10 +53,12 @@ miss** to enable this trigger.
 
 A channel can also put a conversation in a person's hands when the agent may
 not answer it. The [email channel](email-channel.md#bounds) does this with
-three reasons: `operator_only_mailbox` (the mailbox only operators answer),
-`generation_budget` (the mailbox's hourly review budget is spent), and
+four reasons: `operator_only_mailbox` (the mailbox only operators answer,
+including one disabled or left without an agent while a draft waited),
+`generation_budget` (the mailbox's hourly review budget is spent),
 `review_unavailable` (the review turn failed past its retries or produced
-nothing to review). The conversation is `human_owned` with that reason, the
+nothing to review), and `policy_changed` (a change to the mailbox's mode or
+agent superseded the draft the customer was waiting on). The conversation is `human_owned` with that reason, the
 same as after any other handoff.
 
 Both triggers request human ownership and notify an operator through the existing
@@ -465,7 +467,7 @@ a review turn can and can't do, and what the operator's three choices mean.
 
 On an `auto` mailbox, a reply that qualifies to send is held in state
 `queued_auto` until the send worker re-checks its authority and sends it,
-which moves it to `released` with `releaseKind` `auto`. A queued reply
+which moves it to `released` with the agent as the releaser. A queued reply
 opens no attention item and can't be released or discarded; when the
 re-check fails it returns to `pending` with `authority_changed` and opens
 `approval` like any other held reply. Switching the mailbox from `auto` to

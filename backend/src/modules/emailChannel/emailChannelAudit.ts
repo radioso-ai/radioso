@@ -11,6 +11,11 @@ export interface EmailChannelLogger {
   warn(fields: Record<string, unknown>, message: string): void;
 }
 
+/** A worker job's logger: its failure lines, and an info line when the job reaches its milestone. */
+export interface EmailChannelJobLogger extends EmailChannelLogger {
+  info(fields: Record<string, unknown>, message: string): void;
+}
+
 type EmailChannelAuditEvent =
   | { eventType: "email_channel.domain"; action: "registered" | "readiness_changed" | "receiving_enabled" | "removed" }
   | {

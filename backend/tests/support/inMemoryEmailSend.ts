@@ -345,7 +345,7 @@ export const createSendPathHarness = (options: { now?: Date; sendingStatus?: "pe
   const failures = new InMemoryDeliveryFailures();
   const unitOfWork = inMemoryEmailSendUnitOfWork({ intents, threads, failures });
   const metrics = { incrementCounter: vi.fn() };
-  const logger = { warn: vi.fn() };
+  const logger = { info: vi.fn(), warn: vi.fn() };
   const audit = { record: vi.fn(async () => undefined) };
   const drains = { requestDrain: vi.fn(async () => undefined) };
   const openUnitsAtSend: number[] = [];

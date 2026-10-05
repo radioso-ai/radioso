@@ -140,7 +140,10 @@ interface EmailChannelCompositionInput {
    * sweep dispatches queued sends or returns abandoned ones; called only while draining.
    */
   heldReplies: Pick<HeldReplyService, "hold" | "queueAuto" | "findByReviewRef" | "materializeAuto" | "returnAbandonedAuto">;
-  /** Hands a reviewed conversation to a person inside the review's hand-off transaction; called only while draining. */
+  /**
+   * Hands a conversation to a person inside the caller's transaction: a review's hand-off, while
+   * draining, and a mailbox policy change's hand-off of the conversations whose draft it superseded.
+   */
   ownership: Pick<ConversationOwnershipService, "requestHumanOwnership">;
   /** Tells the dashboard of a hand-off once it commits. */
   publisher?: WorkspaceInvalidationPublisher;
@@ -184,7 +187,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
   const mailboxRecords = new EmailMailboxRepository(db);
   const inbound = new EmailInboundRepository(db);
   const threads = new EmailThreadRepository(db);
-  const policyChanges = createPostgresMailboxPolicyChangeUnitOfWork({ db });
+  const policyChanges = createPostgresMailboxPolicyChangeUnitOfWork({ db, activity: input.activity, ownership: input.ownership, publisher: input.publisher });
   const heldReplyRecords = new HeldReplyRepository(db);
   const ownership = new ConversationOwnershipRepository(db);
   const ownershipVersions = { versionOf: async (conversationId: string) => (await ownership.load(conversationId))?.version ?? 0 };

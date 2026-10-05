@@ -235,12 +235,14 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
     return row ? mapHeldReply(row) : null;
   }
 
-  supersedePendingForConversation(conversationId: string, reason: Exclude<SupersedeReason, "policy_changed">): Promise<number> {
-    return this.supersede(reason, "conversation_id", conversationId);
+  async supersedePendingForConversation(conversationId: string, reason: Exclude<SupersedeReason, "policy_changed">): Promise<number> {
+    const result = await this.supersede(reason, "conversation_id", conversationId).executeTakeFirst();
+    return Number(result.numUpdatedRows);
   }
 
-  supersedePendingForPolicy(policyRef: string, reason: "policy_changed"): Promise<number> {
-    return this.supersede(reason, "policy_ref", policyRef);
+  async supersedePendingForPolicy(policyRef: string, reason: "policy_changed"): Promise<string[]> {
+    const rows = await this.supersede(reason, "policy_ref", policyRef).returning("conversation_id").execute();
+    return rows.map((row) => row.conversation_id);
   }
 
   async holdLiveForPolicy(policyRef: string, policyVersion: number, reason: "policy_changed"): Promise<{ returned: number; rebound: number }> {
@@ -326,18 +328,13 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
     return rows.map((row) => row.id);
   }
 
-  private async supersede(
-    reason: SupersedeReason,
-    column: "conversation_id" | "policy_ref",
-    value: string,
-  ): Promise<number> {
-    const result = await this.db
+  /** The supersede of the live drafts matching `column`, for the caller to run. */
+  private supersede(reason: SupersedeReason, column: "conversation_id" | "policy_ref", value: string) {
+    return this.db
       .updateTable("held_replies")
       .set({ ...decisionColumns({ kind: "supersede", reason }), superseded_reason: reason })
       .where(column, "=", value)
-      .where("state", "in", heldReplyEventSources("supersede"))
-      .executeTakeFirst();
-    return Number(result.numUpdatedRows);
+      .where("state", "in", heldReplyEventSources("supersede"));
   }
 
   private async list(

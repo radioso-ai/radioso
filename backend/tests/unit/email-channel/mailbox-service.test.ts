@@ -10,6 +10,7 @@ const workspaceId = "11111111-1111-4111-8111-111111111111";
 const otherWorkspaceId = "22222222-2222-4222-8222-222222222222";
 const agentId = "44444444-4444-4444-8444-444444444444";
 const foreignAgentId = "55555555-5555-4555-8555-555555555555";
+const otherAgentId = "66666666-6666-4666-8666-666666666666";
 const actor = { userId: "33333333-3333-4333-8333-333333333333", accountId: null };
 
 const harness = (supportedModes: readonly EngagementMode[] = ["operator_only"]) => {
@@ -27,7 +28,7 @@ const harness = (supportedModes: readonly EngagementMode[] = ["operator_only"]) 
   };
   const agents = {
     findByIdAndWorkspaceId: vi.fn(async (id: string, ws: string) =>
-      (id === agentId && ws === workspaceId) || (id === foreignAgentId && ws === otherWorkspaceId) ? { id } : null),
+      ((id === agentId || id === otherAgentId) && ws === workspaceId) || (id === foreignAgentId && ws === otherWorkspaceId) ? { id } : null),
   };
   const audit = { record: vi.fn(async (_event: AuditEventInput) => undefined) };
   let draw = 0;
@@ -225,7 +226,7 @@ describe("MailboxService", () => {
         policyChanges.heldReplies.superseded.push(policyRef);
         // Inside the policy change: the new version is already written.
         expect(mailboxes.records.get(created.id)?.policyVersion).toBe(2);
-        return 2;
+        return ["conversation-1", "conversation-2"];
       });
 
       const downgraded = await service.update(actor, workspaceId, created.id, { engagementMode: "operator_only", expectedPolicyVersion: 1 });
@@ -353,6 +354,71 @@ describe("MailboxService", () => {
 
       await expectAppError(service.update(actor, workspaceId, created.id, { engagementMode: "auto", autoOptIn: true }), 409, "engagement_mode_unavailable");
       expect(mailboxes.records.get(created.id)?.policyVersion).toBe(1);
+    });
+  });
+
+  describe("hand-off of the conversations a policy change leaves waiting (FR-018, FR-025, FR-030)", () => {
+    const ALL_MODES: readonly EngagementMode[] = ["operator_only", "draft", "auto"];
+
+    it("hands each conversation whose draft a downgrade to operator_only superseded to a person, in the same unit, and audits the count", async () => {
+      const { service, policyChanges, audits } = harness(ALL_MODES);
+      const created = await createSupport(service, { agentId });
+      policyChanges.heldReplies.live.set(emailMailboxPolicyRef(created.id), ["conversation-1", "conversation-2"]);
+      // A person already holds the second: the hand-off leaves it as it is.
+      policyChanges.handoffs.humanOwned.add("conversation-2");
+
+      await service.update(actor, workspaceId, created.id, { engagementMode: "operator_only", expectedPolicyVersion: 1 });
+
+      expect(policyChanges.runs).toBe(1);
+      expect(policyChanges.handoffs.requested).toEqual([
+        { workspaceId, conversationId: "conversation-1", reason: "operator_only_mailbox", inUnit: true },
+        { workspaceId, conversationId: "conversation-2", reason: "operator_only_mailbox", inUnit: true },
+      ]);
+      expect(audits().filter((event) => event.metadata.action === "mode_changed").at(-1)?.metadata)
+        .toMatchObject({ fromMode: "draft", toMode: "operator_only", supersededHeldReplies: 2, handedOffConversations: 1 });
+    });
+
+    it.each([
+      ["draft drops to operator_only", "draft", { engagementMode: "operator_only" }, "operator_only_mailbox"],
+      ["auto drops to operator_only", "auto", { engagementMode: "operator_only" }, "operator_only_mailbox"],
+      ["a draft mailbox is disabled", "draft", { enabled: false }, "operator_only_mailbox"],
+      ["auto drops to draft as the mailbox is disabled", "auto", { engagementMode: "draft", enabled: false }, "operator_only_mailbox"],
+      ["a draft mailbox loses its agent", "draft", { agentId: null }, "operator_only_mailbox"],
+      ["draft is upgraded to auto", "draft", { engagementMode: "auto", autoOptIn: true }, "policy_changed"],
+      ["a draft mailbox changes its agent", "draft", { agentId: otherAgentId }, "policy_changed"],
+      ["auto drops to draft under a new agent", "auto", { engagementMode: "draft", agentId: otherAgentId }, "policy_changed"],
+    ] as const)("hands the waiting conversation to a person when %s, as %s", async (_label, mode, change, reason) => {
+      const { service, policyChanges } = harness(ALL_MODES);
+      const created = await createSupport(service, { engagementMode: mode, autoOptIn: mode === "auto", agentId });
+      policyChanges.heldReplies.live.set(emailMailboxPolicyRef(created.id), ["conversation-1"]);
+
+      await service.update(actor, workspaceId, created.id, change);
+
+      expect(policyChanges.handoffs.requested).toEqual([{ workspaceId, conversationId: "conversation-1", reason, inUnit: true }]);
+    });
+
+    it("hands nothing off when auto drops to draft: the drafts stay with a teammate for review", async () => {
+      const { service, policyChanges, audits } = harness(ALL_MODES);
+      const created = await createSupport(service, { engagementMode: "auto", autoOptIn: true, agentId });
+      policyChanges.heldReplies.live.set(emailMailboxPolicyRef(created.id), ["conversation-1"]);
+
+      await service.update(actor, workspaceId, created.id, { engagementMode: "draft" });
+
+      expect(policyChanges.heldReplies.held).toHaveLength(1);
+      expect(policyChanges.handoffs.requested).toEqual([]);
+      expect(audits().filter((event) => event.metadata.action === "mode_changed").at(-1)?.metadata)
+        .toMatchObject({ handedOffConversations: 0 });
+    });
+
+    it("hands nothing off when the change superseded no draft, or changed no policy", async () => {
+      const { service, policyChanges } = harness(ALL_MODES);
+      const created = await createSupport(service, { agentId });
+
+      await service.update(actor, workspaceId, created.id, { engagementMode: "operator_only" });
+      policyChanges.heldReplies.live.set(emailMailboxPolicyRef(created.id), ["conversation-1"]);
+      await service.update(actor, workspaceId, created.id, { displayName: "Help desk" });
+
+      expect(policyChanges.handoffs.requested).toEqual([]);
     });
   });
 

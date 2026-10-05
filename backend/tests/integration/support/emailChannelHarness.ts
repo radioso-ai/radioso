@@ -45,6 +45,7 @@ import {
   generateOpaqueToken,
   type EmailChannelDrainDispatcherPort,
   type EngagementMode,
+  type MailboxPolicyChangeUnitOfWork,
 } from "../../../src/modules/emailChannel/public.js";
 import { ConversationOwnershipService, HeldReplyService } from "../../../src/modules/handoff/public.js";
 import { LocalEmailDriver } from "../../../src/modules/mail/adapters/localEmailDriver.js";
@@ -207,13 +208,24 @@ export const seedSupportMailbox = async (
   return { accountId, workspaceId, agentId, domain, mailbox };
 };
 
+/**
+ * The settings path's policy change over Postgres, as the channel composition binds it: the hand-off
+ * of a superseded draft's conversation goes through the host's ownership rules.
+ */
+export const createPolicyChanges = (database: Database): MailboxPolicyChangeUnitOfWork =>
+  createPostgresMailboxPolicyChangeUnitOfWork({
+    db: database.kysely,
+    activity: new ConversationActivityRepository(database.kysely),
+    ownership: createHostOwnership(database),
+  });
+
 /** Appends a policy version the way the settings path does, effective now (research B16). */
 export const changeMailboxPolicy = async (
   database: Database,
   mailbox: SeededMailbox,
   policy: { engagementMode: EngagementMode; enabled: boolean; agentId: string | null },
 ): Promise<void> => {
-  const changed = await createPostgresMailboxPolicyChangeUnitOfWork({ db: database.kysely }).run(async (scope) => {
+  const changed = await createPolicyChanges(database).run(async (scope) => {
     const locked = await scope.mailboxes.lockForPolicyChange(mailbox.workspaceId, mailbox.id);
     if (!locked) throw new Error("mailbox not found");
     return scope.mailboxes.appendPolicyVersion({
@@ -446,6 +458,9 @@ type EmailChannelConnectorDependencies = Parameters<typeof createEmailChannelCon
 class RecordingLogger {
   readonly lines: { level: "warn" | "error"; message: string; fields: Record<string, unknown> }[] = [];
 
+  /** Milestone lines; the suites assert failure lines only. */
+  info(): void {}
+
   warn(fields: Record<string, unknown>, message: string): void {
     this.lines.push({ level: "warn", message, fields });
   }
@@ -506,7 +521,7 @@ const createConnectorDependencies = (
       mailboxes,
       domainRecords: domains,
       sendingDomains: { ensureRegistered: unused },
-      policyChanges: createPostgresMailboxPolicyChangeUnitOfWork({ db }),
+      policyChanges: createPolicyChanges(database),
       agents: { findByIdAndWorkspaceId: async (agentId) => ({ id: agentId }) },
       randomBytes: randomBytesOf,
       clock,

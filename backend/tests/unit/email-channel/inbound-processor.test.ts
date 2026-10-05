@@ -97,7 +97,7 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
     clock,
     config: { inboundDomain: INBOUND_DOMAIN, supportedModes: ["operator_only"] },
   });
-  const logger = { warn: vi.fn() };
+  const logger = { info: vi.fn(), warn: vi.fn() };
   const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
   const deliveryEvents = {
     applyStatus: vi.fn(async (): Promise<"applied" | "ignored" | "foreign"> => "applied"),

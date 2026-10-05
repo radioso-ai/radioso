@@ -8843,18 +8843,28 @@ export interface components {
         };
         AudiencePulseSemanticCoverage: {
             answered: number;
-            /** @description Partly answered for a reason other than an intentional scope boundary. */
             partial: number;
-            /** @description Unanswered for a reason other than an intentional scope boundary. */
             unanswered: number;
             unclear: number;
-            /** @description Partly answered or unanswered because the request was outside the agent's intended scope. */
-            outOfScope: number;
             unassessed: number;
             legacy: number;
             reasons: {
                 [key: string]: number;
             };
+        };
+        /**
+         * @description What happened to a visitor question. `out_of_scope` is a partly answered or unanswered verdict with the intentional scope boundary reason; a question with no assessment record reads from its retrieval content-gap grounding.
+         * @enum {string}
+         */
+        AudiencePulseAnswerStatus: "answered" | "partial" | "unanswered" | "unclear" | "out_of_scope" | "not_assessed";
+        /** @description Every topic member counted by its answer status. */
+        AudiencePulseAnswerSummary: {
+            answered: number;
+            partial: number;
+            unanswered: number;
+            unclear: number;
+            outOfScope: number;
+            notAssessed: number;
         };
         AudiencePulseEvidence: {
             reference: string;
@@ -8865,6 +8875,7 @@ export interface components {
             question: string;
             occurrenceCount: number;
             answerCoverage?: components["schemas"]["AnswerCoverage"];
+            answerStatus?: components["schemas"]["AudiencePulseAnswerStatus"];
         };
         AudiencePulseEvidenceAnchorRequest: {
             /** Format: uuid */
@@ -8917,6 +8928,7 @@ export interface components {
             }[];
             grounding: components["schemas"]["AudiencePulseGrounding"];
             coverage?: components["schemas"]["AudiencePulseSemanticCoverage"];
+            answers: components["schemas"]["AudiencePulseAnswerSummary"];
             evidence: components["schemas"]["AudiencePulseEvidence"][];
         };
         AudiencePulseContentGap: {

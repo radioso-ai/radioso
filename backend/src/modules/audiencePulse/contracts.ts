@@ -6,6 +6,7 @@ import type {
   AudiencePulseStoredReport,
   AudiencePulseWeeklyVolume,
 } from "./domain/report.js";
+import { AUDIENCE_PULSE_ANSWER_STATUSES } from "./domain/answerStatus.js";
 import { AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS } from "./contracts/history.js";
 import type {
   AudiencePulseEvidenceAnchor,
@@ -20,6 +21,8 @@ export {
   type AudiencePulseHydratedEvidence,
   type AudiencePulsePromptEvidenceReference,
 } from "./contracts/history.js";
+
+export { AUDIENCE_PULSE_ANSWER_STATUSES };
 
 export const AUDIENCE_PULSE_ANALYSIS_DAYS = 30;
 
@@ -86,6 +89,15 @@ const groundingSchema = z.object({
   contentGapEligible: z.number().int().min(0),
 });
 
+const answerSummarySchema = z.object({
+  answered: z.number().int().min(0),
+  partial: z.number().int().min(0),
+  unanswered: z.number().int().min(0),
+  unclear: z.number().int().min(0),
+  outOfScope: z.number().int().min(0),
+  notAssessed: z.number().int().min(0),
+});
+
 const topicTransitionSchema = z.object({
   kind: z.enum(["survived", "split", "merged", "emerged", "dissolved"]),
   parentTopicIds: z.array(z.string()),
@@ -134,11 +146,11 @@ export const audiencePulseReportResponseSchema = z.object({
       partial: z.number().int().min(0),
       unanswered: z.number().int().min(0),
       unclear: z.number().int().min(0),
-      outOfScope: z.number().int().min(0),
       unassessed: z.number().int().min(0),
       legacy: z.number().int().min(0),
       reasons: z.record(z.string(), z.number().int().min(0)),
     }).optional(),
+    answers: answerSummarySchema,
     evidence: z.array(z.object({
       reference: z.string(),
       conversationId: z.string().uuid(),
@@ -150,6 +162,7 @@ export const audiencePulseReportResponseSchema = z.object({
         coverage: z.enum(["answered", "partial", "unanswered", "unclear"]).optional(),
         reason: z.enum(["sufficient_evidence", "insufficient_evidence", "conflicting_evidence", "ambiguous_request", "intentional_scope_boundary"]).optional(),
       }).optional(),
+      answerStatus: z.enum(AUDIENCE_PULSE_ANSWER_STATUSES).optional(),
     })),
   })),
   contentGaps: z.array(z.object({

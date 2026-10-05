@@ -109,8 +109,7 @@ describe('audiencePulseApi', () => {
     })
   })
 
-  it('reads a coverage summary without an out-of-scope count as zero declines', async () => {
-    const savedCoverage = { answered: 3, partial: 1, unanswered: 1, unclear: 0, unassessed: 0, legacy: 0, reasons: {} }
+  it('leaves topic answers empty when an API older than the browser bundle omits them', async () => {
     requestMock.mockResolvedValueOnce({
       kind: 'completed',
       report: {
@@ -126,8 +125,7 @@ describe('audiencePulseApi', () => {
           share: 1,
           distinctQuestionCount: 1,
           weeklyPulse: [],
-          grounding: { grounded: 0, degraded: 0, noSupport: 0, unknown: 0, contentGapEligible: 0 },
-          coverage: savedCoverage,
+          grounding: { grounded: 3, degraded: 1, noSupport: 1, unknown: 0, contentGapEligible: 2 },
           evidence: [],
         }],
         contentGaps: [],
@@ -142,11 +140,12 @@ describe('audiencePulseApi', () => {
 
     expect(result.kind).toBe('completed')
     if (result.kind !== 'completed') return
-    expect(result.report.themes[0]?.coverage).toEqual({ ...savedCoverage, outOfScope: 0 })
+    expect(result.report.themes[0]?.answers).toBeNull()
   })
 
   it('keeps the topic-transition fields a current API sends', async () => {
     const transition = { kind: 'survived' as const, parentTopicIds: ['prior-1'], viaCentroidFallback: false }
+    const answers = { answered: 7, partial: 1, unanswered: 1, unclear: 0, outOfScope: 1, notAssessed: 0 }
     requestMock.mockResolvedValueOnce({
       kind: 'completed',
       report: {
@@ -171,6 +170,7 @@ describe('audiencePulseApi', () => {
           distinctQuestionCount: 1,
           weeklyPulse: [],
           grounding: { grounded: 0, degraded: 0, noSupport: 0, unknown: 0, contentGapEligible: 0 },
+          answers,
           evidence: [],
         }],
         contentGaps: [],
@@ -193,6 +193,7 @@ describe('audiencePulseApi', () => {
       previousMemberCount: 8,
       previousShare: 0.8,
       transition,
+      answers,
     })
   })
 

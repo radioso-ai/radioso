@@ -13,7 +13,7 @@ import {
   statusTone,
   type StageTone,
 } from '@/lib/activity-stage-presentation'
-import { answerCoverageOutcomePresentation } from '@/lib/answer-coverage'
+import { answerCoverageOutcomePresentation, answerCoverageReasonLabel } from '@/lib/answer-coverage'
 import {
   answerCoverageFromTurnTrace,
   getCapabilitySubTrace,
@@ -312,7 +312,7 @@ const coverageView = (stage: ConversationTraceStage): { sublabel?: string; tone:
   const coverage = asString(outputs.coverage)
   const reason = asString(outputs.reason)
   return {
-    sublabel: joined([coverage ? titleCase(coverage) : undefined, reason ? spaced(reason) : undefined]),
+    sublabel: joined([coverage ? titleCase(coverage) : undefined, reason ? answerCoverageReasonLabel(reason) : undefined]),
     tone: (coverage && COVERAGE_TONES[coverage]) || 'neutral',
   }
 }

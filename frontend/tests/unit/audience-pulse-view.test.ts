@@ -15,6 +15,7 @@ const theme = (overrides: Partial<AudiencePulseTheme>): AudiencePulseTheme => ({
   distinctQuestionCount: 2,
   weeklyPulse: [],
   grounding: { grounded: 0, degraded: 0, noSupport: 0, unknown: 0, contentGapEligible: 0 },
+  answers: null,
   evidence: [],
   ...overrides,
 })

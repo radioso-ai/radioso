@@ -27,7 +27,8 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 // queued as `queued_auto` with its `email.send` keyed by the held reply, and no message is written
 // until dispatch materializes it — once, as the agent's mail, with `Auto-Submitted: auto-generated`.
 // A takeover or a downgrade to `operator_only` between queue and materialize supersedes it, a
-// downgrade to `draft` holds it for a teammate to release, and authority that fails without either
+// downgrade to `draft` holds it for a teammate to release, a policy change that supersedes a draft
+// hands the waiting customer to a person (FR-018, FR-030), and authority that fails without either
 // (an unverified domain) returns it to a teammate, so none of them sends on its own. A headerless
 // responder stops at the thread's send budget with one approval flag (SC-006, AS5.4); a human-owned
 // conversation runs no turn (AS6.3); and a queued reply whose `email.send` gave up before it
@@ -129,6 +130,34 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
   const approvalsOf = async (conversation: Conversation) =>
     (await api.heldReplies.list(conversation.teammate, { attention: "open", limit: 50 })).items
       .filter((item) => item.conversationId === conversation.conversationId);
+
+  /** The conversation's ownership row as it stands; null while the AI owns it and no person ever did. */
+  const ownershipRowOf = (conversationId: string) =>
+    database.queryOptional<{ state: string; reason: string | null; owner_user_id: string | null }>(
+      "SELECT state, reason, owner_user_id FROM conversation_ownership WHERE conversation_id = $1",
+      [conversationId],
+    );
+
+  const handoffActivityOf = (conversationId: string) =>
+    database.query<{ actor_user_id: string | null; detail: unknown }>(
+      "SELECT actor_user_id, detail FROM conversation_activity WHERE conversation_id = $1 AND kind = 'handoff_requested' ORDER BY created_at",
+      [conversationId],
+    );
+
+  /** The human-owned conversations of the workspace, as the needs-attention queue reads its hand-offs. */
+  const handoffQueueOf = async (workspaceId: string) =>
+    (await api.history.listConversations(workspaceId, { limit: 50, ownership: "human_owned" })).conversations;
+
+  /** Alice's first contact on a `draft` mailbox, reviewed: one pending draft, and the AI owns the conversation. */
+  const pendingDraft = async (worker = workerNode()) => {
+    const conversation = await openEmailConversation(database, { node: worker, spool }, { engagementMode: "draft", withAgent: true });
+    await review(worker, conversation.conversationId);
+    const [held, ...others] = await heldRepliesOf(conversation.conversationId);
+    expect(others).toEqual([]);
+    expect(held).toMatchObject({ state: "pending" });
+    expect(await ownershipRowOf(conversation.conversationId)).toBeNull();
+    return { ...conversation, worker, heldReplyId: held.id };
+  };
 
   const autoSendsSinceRenewalOf = async (conversationId: string): Promise<number> =>
     (await database.queryOne<{ auto_sends_since_renewal: number }>(
@@ -239,6 +268,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
   it("holds a reply a downgrade to draft halted between queue and materialize for a teammate, who releases it (AS5.8)", async () => {
     const queued = await queuedAutoReply();
     const { conversationId, worker, heldReplyId, key, teammate, workspaceId, mailbox } = queued;
+    const ownershipBefore = await ownershipRowOf(conversationId);
 
     // The settings path: the policy change holds the mailbox's live drafts for review in its own transaction.
     await api.channel.mailboxes.update({ userId: teammate.userId }, workspaceId, mailbox.id, { engagementMode: "draft" });
@@ -251,8 +281,9 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
       released_message_id: null,
     })]);
     expect(await approvalsOf(queued)).toEqual([expect.objectContaining({ id: heldReplyId, state: "pending", holdReason: "policy_changed" })]);
-    // Held, not replaced: no review is scheduled in its place.
+    // Held, not replaced: no review is scheduled in its place, and the conversation stays the AI's.
     expect(await reviewDueAtOf(conversationId)).toBeNull();
+    expect(await ownershipRowOf(conversationId)).toEqual(ownershipBefore);
 
     // Its queued `email.send` finds nothing queued to materialize.
     expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
@@ -284,12 +315,52 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
       expect.objectContaining({ id: heldReplyId, state: "superseded", superseded_reason: "policy_changed" }),
     ]);
     expect(await approvalsOf(queued)).toEqual([]);
+    // The customer still waits for an answer: the conversation goes to a person.
+    expect(await ownershipRowOf(conversationId)).toMatchObject({ state: "human_owned", reason: "operator_only_mailbox" });
 
     expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
 
     await expectNothingSent(conversationId, key);
     expect((await heldRepliesOf(conversationId)).map((held) => held.state)).toEqual(["superseded"]);
     expect(counterValue(worker.metrics, "email_auto_dispatch_total", { result: "not_queued" })).toBe(1);
+  });
+
+  it("hands the customer to a person when a downgrade to operator_only supersedes their pending draft (FR-018, FR-030)", async () => {
+    const drafted = await pendingDraft();
+    const { conversationId, heldReplyId, teammate, workspaceId, mailbox } = drafted;
+    expect(await approvalsOf(drafted)).toEqual([expect.objectContaining({ id: heldReplyId })]);
+
+    await api.channel.mailboxes.update({ userId: teammate.userId }, workspaceId, mailbox.id, { engagementMode: "operator_only" });
+
+    // The draft is gone from the approvals, and the conversation waits for a person instead.
+    expect(await heldRepliesOf(conversationId)).toEqual([
+      expect.objectContaining({ id: heldReplyId, state: "superseded", superseded_reason: "policy_changed" }),
+    ]);
+    expect(await approvalsOf(drafted)).toEqual([]);
+    expect(await ownershipRowOf(conversationId)).toEqual({ state: "human_owned", reason: "operator_only_mailbox", owner_user_id: null });
+    expect(await handoffActivityOf(conversationId)).toEqual([{ actor_user_id: null, detail: { reason: "operator_only_mailbox" } }]);
+    expect(await handoffQueueOf(workspaceId)).toContainEqual(expect.objectContaining({
+      id: conversationId,
+      ownership: expect.objectContaining({ state: "human_owned", reason: "operator_only_mailbox" }),
+    }));
+    expect(api.invalidations).toContainEqual({ workspaceId, kinds: ["conversation.ownership_changed"] });
+    expect(await agentMessagesOf(conversationId)).toEqual([]);
+  });
+
+  it("hands the customer to a person as policy_changed when an upgrade to auto supersedes their pending draft (FR-025)", async () => {
+    const drafted = await pendingDraft();
+    const { conversationId, heldReplyId, teammate, workspaceId, mailbox } = drafted;
+
+    await api.channel.mailboxes.update({ userId: teammate.userId }, workspaceId, mailbox.id, { engagementMode: "auto", autoOptIn: true });
+
+    expect(await heldRepliesOf(conversationId)).toEqual([
+      expect.objectContaining({ id: heldReplyId, state: "superseded", superseded_reason: "policy_changed" }),
+    ]);
+    // The upgrade applies to new mail only, so no review answers this message: a person does.
+    expect(await reviewDueAtOf(conversationId)).toBeNull();
+    expect(await ownershipRowOf(conversationId)).toEqual({ state: "human_owned", reason: "policy_changed", owner_user_id: null });
+    expect(await handoffActivityOf(conversationId)).toEqual([{ actor_user_id: null, detail: { reason: "policy_changed" } }]);
+    expect(await handoffQueueOf(workspaceId)).toContainEqual(expect.objectContaining({ id: conversationId }));
   });
 
   it("returns a reply whose authority failed without a supersede to a teammate as pending, sending nothing (AS6.4)", async () => {

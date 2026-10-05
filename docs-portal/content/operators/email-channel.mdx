@@ -54,7 +54,7 @@ You have three moves on a draft:
 - **Edit it, then send.** It goes out with your wording, attributed to you — the original draft is kept, so anyone who checks later can see what the agent actually wrote.
 - **Discard it.** Nothing goes out. The conversation stays flagged until someone replies or takes it over, and the next email on the thread gets a fresh draft.
 
-Sending or discarding never takes the conversation over — it stays with the agent, same as before the draft was written. Only a free-form reply or an explicit takeover hands it to a person. If a newer email arrives, a teammate replies, or someone takes the conversation over while a draft is still waiting, that draft is dropped in favor of the newer thing — you'll never see two drafts competing for the same reply.
+Sending or discarding never takes the conversation over — it stays with the agent, same as before the draft was written. Only a free-form reply or an explicit takeover hands it to a person. If a newer email arrives, a teammate replies, or someone takes the conversation over while a draft is still waiting, that draft is dropped in favor of the newer thing — you'll never see two drafts competing for the same reply. Change the mailbox's mode, agent, or on/off switch while a draft is waiting and the draft is dropped too, but the customer is still owed an answer, so the conversation lands in your Inbox as a handoff: with the reason `operator_only_mailbox` when the mailbox stops drafting, and `policy_changed` for any other change.
 
 ## Turn on automatic replies
 
@@ -77,7 +77,7 @@ A turn with no usable answer goes to a person with its hand-off reason instead o
 
 **The send budget.** Each thread allows `threadSendBudget` automatic replies in a row — 3 by default. Your reply on the thread, or sending one of its drafts, resets the count. Customer mail never does, so even an autoresponder that slips past the automated-mail check can draw at most three replies before a person steps in. The fourth waits for you with the reason `send_budget`.
 
-To stop automatic replies, switch the mailbox back to `draft` or `operator_only`, and nothing more goes out on its own. Switch to `draft` and any reply still queued comes back to you as a draft with the reason `policy_changed`, ready to send, edit, or discard — the card says so before you confirm: "Queued automatic replies are held for your review." Switch to `operator_only` and queued replies are discarded along with pending drafts.
+To stop automatic replies, switch the mailbox back to `draft` or `operator_only`, and nothing more goes out on its own. Switch to `draft` and any reply still queued comes back to you as a draft with the reason `policy_changed`, ready to send, edit, or discard — the card says so before you confirm: "Queued automatic replies are held for your review." Switch to `operator_only` and queued replies are discarded along with pending drafts, and each conversation they would have answered comes to you as a handoff.
 
 ## Limits
 

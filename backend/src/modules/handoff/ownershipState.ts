@@ -12,6 +12,12 @@ export type ConversationOwnershipReason =
   | "generation_budget"
   /** A reviewed turn could not produce a reply to review. */
   | "review_unavailable"
+  /**
+   * A channel's policy change (an upgrade, another agent) superseded the draft the customer was
+   * waiting on and runs no review for that message again. Its own reason rather than
+   * `review_unavailable`, because no review failed: the operator changed the rules under it.
+   */
+  | "policy_changed"
   | (string & {});
 
 /** The owning teammate's profile as it is now. */

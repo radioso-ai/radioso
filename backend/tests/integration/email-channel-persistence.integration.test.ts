@@ -4,6 +4,7 @@ import pg from "pg";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { createPostgresMailboxPolicyChangeUnitOfWork } from "../../src/app/composition/mailboxPolicyChange.js";
+import { ConversationActivityRepository } from "../../src/db/repositories/conversationActivityRepository.js";
 import {
   EmailDomainRepository,
   EmailInboundRepository,
@@ -338,7 +339,11 @@ describeIntegration("email channel persistence (Postgres)", () => {
 
   it("appends policy versions through the policy-change unit of work and finds the version effective at a time", async () => {
     const { workspaceId, agentId, mailbox } = await seedMailbox();
-    const changes = createPostgresMailboxPolicyChangeUnitOfWork({ db: database.kysely });
+    const changes = createPostgresMailboxPolicyChangeUnitOfWork({
+      db: database.kysely,
+      activity: new ConversationActivityRepository(database.kysely),
+      ownership: { requestHumanOwnership: () => Promise.reject(new Error("this suite supersedes no draft")) },
+    });
 
     const changed = await changes.run(async (scope) => {
       const locked = await scope.mailboxes.lockForPolicyChange(workspaceId, mailbox.id);

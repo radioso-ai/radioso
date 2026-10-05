@@ -138,7 +138,7 @@ const runThroughChannel = async (fixture: string, verdict: AdapterVerdict, mailb
     draft: { text: "Thanks for writing.", presentation: {} },
   }));
   const drains = { requestDrain: vi.fn(async () => undefined) };
-  const logger = { warn: vi.fn() };
+  const logger = { info: vi.fn(), warn: vi.fn() };
   const raw = readFileSync(`${PROTOCOL_DIR}${fixture}`);
 
   const processor = new EmailInboundProcessor({

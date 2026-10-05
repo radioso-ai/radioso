@@ -96,6 +96,24 @@ describe("EmailReviewRunner", () => {
       ]);
     });
 
+    it("logs the completed review at info with its ids and outcome, never the draft", async () => {
+      const { h, mailbox, conversationId } = await dueThread();
+      h.respond.mockResolvedValue(h.draftTurn(conversationId, {}, "A draft only the teammate reads."));
+
+      await h.drain();
+
+      expect(h.logger.info).toHaveBeenCalledWith({
+        conversationId,
+        workspaceId: mailbox.workspaceId,
+        mailboxId: mailbox.id,
+        revision: 1,
+        attempt: 1,
+        outcome: "held",
+        reviewAgain: false,
+      }, "email_review_completed");
+      expect(JSON.stringify(h.logger.info.mock.calls)).not.toContain("A draft only the teammate reads.");
+    });
+
     it("holds a draft bound to the policy and ownership the review ran under, with the decision's reason", async () => {
       const { h, mailbox, conversationId, messageId } = await dueThread();
       const turn = h.draftTurn(conversationId, { coverage: "partial" });

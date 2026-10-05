@@ -29,6 +29,22 @@ describe("EmailSendActionHandler", () => {
       expect(h.counted("email_send_intents_total")).toContainEqual({ trigger: "operator_reply", state: "queued" });
     });
 
+    it("logs the send the provider accepted at info, with ids only", async () => {
+      const h = createSendPathHarness();
+
+      await h.deliver();
+
+      const intent = h.onlyIntent();
+      expect(h.logger.info).toHaveBeenCalledExactlyOnceWith({
+        sendIntentId: intent.id,
+        workspaceId: intent.workspaceId,
+        mailboxId: h.mailbox.id,
+        conversationId: SEND_IDS.conversation,
+        trigger: "operator_reply",
+        attempt: 1,
+      }, "email_send_accepted");
+    });
+
     it("materializes a released held reply's send under its message key", async () => {
       const h = createSendPathHarness();
 

@@ -145,6 +145,13 @@ export const createApiNode = (
   const audit = new RecordingAudit();
   const actionDrain = { pushes: 0, requestDrain: async () => { actionDrain.pushes += 1; } };
   const logger = createLogger("silent");
+  const invalidations: { workspaceId: string; kinds: readonly WorkspaceInvalidationKind[] }[] = [];
+  const publisher = {
+    enqueue: (workspaceId: string, kinds: readonly WorkspaceInvalidationKind[]) => {
+      invalidations.push({ workspaceId, kinds });
+      return { accepted: true as const, coalesced: false };
+    },
+  };
   const channel = createEmailChannelComposition({
     config: parseEmailChannelConfig({
       EMAIL_CHANNEL_PROVIDER: "local",
@@ -165,7 +172,10 @@ export const createApiNode = (
       materializeAuto: apiNodeDrains,
       returnAbandonedAuto: apiNodeDrains,
     },
-    ownership: { requestHumanOwnership: apiNodeDrains },
+    // A policy change hands the conversations whose draft it superseded to a person; bound once the
+    // ownership rules below are built, as the server binds it.
+    ownership: { requestHumanOwnership: (scope, input) => ownership.requestHumanOwnership(scope, input) },
+    publisher,
     agents: { findByIdAndWorkspaceId: async (agentId) => ({ id: agentId }) },
     audit,
     actionDrain,
@@ -175,7 +185,6 @@ export const createApiNode = (
   if (!channel) throw new Error("the local provider composes the email channel");
 
   const events: PublicConversationEvent[] = [];
-  const invalidations: { workspaceId: string; kinds: readonly WorkspaceInvalidationKind[] }[] = [];
   const replies = new OperatorReplyService({
     auditService: audit,
     publicConversationEventBus: { publish: (event) => { events.push(event); } },
@@ -209,12 +218,7 @@ export const createApiNode = (
     customerReplyDelivery: new CustomerReplyDeliveryDispatcher({ email: channel.customerReplyDeliverer }),
     replies,
     audit,
-    publisher: {
-      enqueue: (workspaceId, kinds) => {
-        invalidations.push({ workspaceId, kinds });
-        return { accepted: true, coalesced: false };
-      },
-    },
+    publisher,
     logger,
   });
 

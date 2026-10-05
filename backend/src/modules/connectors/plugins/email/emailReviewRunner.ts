@@ -98,8 +98,11 @@ export interface EmailReviewRunnerDependencies {
   handoffs: EmailReviewHandoffPort;
   drains: EmailChannelDrainDispatcherPort;
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
-  /** Failure and degradation lines only, with ids and codes. */
-  logger: { warn(fields: Record<string, unknown>, message: string): void };
+  /** A line per completed review, and failure and degradation lines; ids and codes only. */
+  logger: {
+    info(fields: Record<string, unknown>, message: string): void;
+    warn(fields: Record<string, unknown>, message: string): void;
+  };
   clock: () => Date;
   config: {
     /** The modes this deployment runs (plan, Questions settled, item 4). */
@@ -187,6 +190,17 @@ export class EmailReviewRunner {
     } catch (error) {
       return this.fail(claim, error);
     }
+    this.deps.logger.info(
+      {
+        ...this.ids(claim),
+        mailboxId: claim.mailboxId,
+        revision: claim.reviewRevision,
+        attempt: claim.reviewAttempts,
+        outcome: revision.outcome,
+        reviewAgain: revision.reviewAgainUnder !== null,
+      },
+      "email_review_completed",
+    );
     return revision.outcome;
   }
 

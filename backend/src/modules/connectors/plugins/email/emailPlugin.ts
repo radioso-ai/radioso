@@ -25,6 +25,7 @@ interface EmailChannelConnectorDependencies
   /** Stage 2's own ports, and `EMAIL_CHANNEL_REVIEW_MAX_ATTEMPTS`. */
   review: Pick<EmailReviewRunnerDependencies, "conversations" | "heldReplies" | "handoffs"> & { maxAttempts: number };
   logger: {
+    info(fields: Record<string, unknown>, message: string): void;
     warn(fields: Record<string, unknown>, message: string): void;
     error(fields: Record<string, unknown>, message: string): void;
   };

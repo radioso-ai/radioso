@@ -302,7 +302,7 @@ The single source of truth for what happens to an accepted inbound message. "Tur
 - **FR-027**: A held reply MUST be visible to operators with the turn outcome, reasoning, and any suppressed-action dependency, and MUST NOT appear in customer-visible history.
 - **FR-028**: Operators MUST be able to release, edit-and-release, or discard a held reply; release MUST be an atomic conditional operation that creates at most one send intent and MUST emit an audit event naming the operator; author, editor, and releaser MUST be recorded separately.
 - **FR-029**: Release, edited or not, MUST NOT change conversation ownership; an unchanged release delivers as an agent message, an edited release as an operator message with the original retained.
-- **FR-030**: A newer inbound, a free-form operator reply, a takeover, or a downgrade to `operator_only` MUST supersede a pending held reply; a downgrade from `auto` to `draft` MUST keep it reviewable per FR-025.
+- **FR-030**: A newer inbound, a free-form operator reply, a takeover, or a downgrade to `operator_only` MUST supersede a pending held reply; a downgrade from `auto` to `draft` MUST keep it reviewable per FR-025. Every conversation whose live draft a policy change supersedes and that is still AI-owned MUST become human-owned in the same transaction, recording `handoff_requested`: with reason `operator_only_mailbox` when the new policy reviews no mail (`operator_only`, disabled, or no agent), and `policy_changed` otherwise (an upgrade, another agent).
 
 **Outbound**
 

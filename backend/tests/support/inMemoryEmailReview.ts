@@ -96,7 +96,7 @@ export const createEmailReviewHarness = (options: {
 
   const respond = vi.fn<(input: ConnectorRespondInput) => Promise<ConnectorTurnResult>>();
   const requestDrain = vi.fn(async () => undefined);
-  const logger = { warn: vi.fn() };
+  const logger = { info: vi.fn(), warn: vi.fn() };
   const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
   const requestHumanOwnership = vi.fn(async (input: { workspaceId: string; conversationId: string; reason: string }) => {
     handoffs.push({ conversationId: input.conversationId, reason: input.reason });

@@ -199,7 +199,8 @@ Reviewing a draft, an operator has three options:
 Releasing a held reply — as written or edited — never changes who owns the
 conversation; it stays `ai_owned`, exactly as before the review ran. Only a
 free-form operator reply or an explicit takeover hands a conversation to a
-person, the same as on any other channel. A held reply is visible only to
+person, the same as on any other channel — or a change to the mailbox that
+supersedes the draft, described next. A held reply is visible only to
 operators: it never appears in the customer's message history, the public
 chat API, or a conversation transcript, in any of its states.
 
@@ -209,7 +210,14 @@ next. A newer inbound message, a free-form operator reply, a takeover, or a
 change to the mailbox's mode, agent, or enabled flag all *supersede* a
 pending draft: it's replaced rather than released, and nothing is sent for
 it. Where there's a new customer message behind the supersede, a fresh
-review turn runs in its place. The one policy change that keeps drafts is
+review turn runs in its place. A policy change has no new message behind
+it, and the customer is still waiting on the one the draft answered, so in
+the same transaction the conversation goes to a person, unclaimed, and shows
+in the Inbox as a handoff: with reason `operator_only_mailbox` when the
+mailbox no longer reviews mail (it's `operator_only`, disabled, or has no
+agent), and `policy_changed` for any other change, such as an upgrade to
+`auto` or a different agent. A conversation a person already owns stays
+with them. The one policy change that keeps drafts is
 switching an `auto` mailbox to `draft`: they stay with your team for review
 (see [What hands a reply back to a person](#what-hands-a-reply-back-to-a-person)).
 Two operators releasing the same draft at the same instant produce exactly
@@ -272,8 +280,8 @@ checks authority again under the conversation's lock: the mailbox is
 enabled and still `auto` at the policy version the review ran under, the
 conversation is still AI-owned at the same ownership version, and the
 sending domain is verified. When every check passes, one transaction writes
-the agent's message, moves the held reply to `released` with `releaseKind`
-`auto`, and records the send intent. From there it's an ordinary outbound
+the agent's message, moves the held reply to `released` with the agent as
+the releaser, and records the send intent. From there it's an ordinary outbound
 send: `Auto-Submitted: auto-generated`, the same
 [delivery states](#send-a-reply-and-track-delivery), the same idempotent
 retries. When any check fails, the customer sees nothing: the held reply
@@ -294,7 +302,8 @@ is flagged `approval`, and no message or send intent is written.
   free-form operator reply, a takeover, or any other change to the mailbox's
   mode, agent, or enabled flag supersedes a `queued_auto` reply the same way
   it supersedes a pending draft. Nothing is sent for it, and a newer customer
-  message gets a fresh review. A takeover always wins over a queued reply —
+  message gets a fresh review; a policy change hands the conversation to a
+  person instead. A takeover always wins over a queued reply —
   see [Human Takeover](human-takeover.md#what-replaces-a-draft).
 - **Authority fails at dispatch.** The reply returns to `pending` with
   `authority_changed`, as described above.
@@ -336,11 +345,14 @@ replies." — and confirming records the opt-in. Through the API, setting
 Without it the request is refused with `400` and code
 `auto_opt_in_required`. The switch applies to mail accepted afterwards;
 mail accepted earlier keeps the mode it arrived under, and drafts already
-pending are superseded. Switching away from `auto` stops every automatic
+pending are superseded, their conversations handed to a person with reason
+`policy_changed`. Switching away from `auto` stops every automatic
 send that hasn't gone out: to `draft`, the queued replies come back to your
 team for review; to `operator_only`, they're superseded along with pending
-drafts. Changing the mailbox's agent or enabled flag supersedes its pending
-and queued replies too.
+drafts, and their conversations go to a person with reason
+`operator_only_mailbox`. Changing the mailbox's agent or enabled flag
+supersedes its pending and queued replies too, and hands their
+conversations to a person the same way.
 
 ### Rollout and rollback
 
@@ -440,7 +452,7 @@ the agent when any of these is true:
 - `X-Auto-Response-Suppress` is present.
 - `List-Id` is present.
 
-The last four give disposition `automated_sender`. None of these runs a turn
+The last four are classified `automated_sender` and dropped. None of these runs a turn
 or opens a conversation. Each appears in the mailbox's event log with its
 disposition, and when it lands on a thread that already has a conversation,
 it also shows there as a note in the conversation's activity, outside the
@@ -465,7 +477,8 @@ must have been enabled at acceptance and still be enabled. In practice:
 
 - Switch a mailbox from `draft` to `operator_only`, and mail still waiting
   for review goes to a person with handoff reason `operator_only_mailbox`;
-  pending drafts are superseded.
+  pending drafts are superseded, and their conversations go to a person
+  with the same reason.
 - Switch it from `auto` to `draft`, and replies still queued to send come
   back to your team as drafts with hold reason `policy_changed`, beside the
   drafts already pending. Nothing goes out until a teammate releases one.

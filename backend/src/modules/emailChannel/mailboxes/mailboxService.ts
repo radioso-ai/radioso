@@ -13,7 +13,12 @@ import type {
   SetupCheckStep,
 } from "../persistence/emailMailboxRepository.js";
 import type { EngagementMode } from "./effectiveMode.js";
-import type { MailboxPolicyChangeUnitOfWork, PolicyChangeHeldReplies } from "./mailboxPolicyChangeUnitOfWork.js";
+import type {
+  MailboxPolicyChangeUnitOfWork,
+  PolicyChangeHandoffReason,
+  PolicyChangeHandoffs,
+  PolicyChangeHeldReplies,
+} from "./mailboxPolicyChangeUnitOfWork.js";
 import { deriveReceivingState } from "./receivingState.js";
 import { generateOpaqueToken, parsePlusToken, splitPlusAddress } from "./relayTokens.js";
 
@@ -60,9 +65,16 @@ interface HeldReplyChanges {
   returnedHeldReplies: number;
   /** Pending drafts kept for review, re-bound to the new version. */
   reboundHeldReplies: number;
+  /** Conversations whose draft was superseded that the AI owned, now waiting for a person. */
+  handedOffConversations: number;
 }
 
-const NO_HELD_REPLY_CHANGES: HeldReplyChanges = { supersededHeldReplies: 0, returnedHeldReplies: 0, reboundHeldReplies: 0 };
+const NO_HELD_REPLY_CHANGES: HeldReplyChanges = {
+  supersededHeldReplies: 0,
+  returnedHeldReplies: 0,
+  reboundHeldReplies: 0,
+  handedOffConversations: 0,
+};
 
 /**
  * Whether a policy change keeps the live drafts bound to the version it replaces for a teammate to
@@ -74,19 +86,39 @@ const NO_HELD_REPLY_CHANGES: HeldReplyChanges = { supersededHeldReplies: 0, retu
 const keepsDraftsForReview = (from: EngagementMode, to: EngagementMode, changed: readonly PolicyField[]): boolean =>
   from === "auto" && to === "draft" && changed.length === 1;
 
-/** Supersedes the drafts bound to `before`'s policy version, or holds them for review under `after`'s. */
+/**
+ * Why a conversation whose draft a policy change superseded goes to a person. Its customer is still
+ * waiting on the message the draft answered, and no review runs for that message again (FR-025
+ * applies a change to new mail only), so it must not drop out of everyone's queue. A mailbox that
+ * no longer reviews mail — `operator_only`, disabled, or with no agent — hands it off as its inbound
+ * would be (FR-018); any other change, an upgrade or another agent, as `policy_changed`.
+ */
+const handoffReasonAfter = (after: EmailMailboxRecord): PolicyChangeHandoffReason =>
+  after.engagementMode === "operator_only" || !after.enabled || after.agentId === null ? "operator_only_mailbox" : "policy_changed";
+
+/**
+ * Supersedes the drafts bound to `before`'s policy version and hands their conversations to a
+ * person, or holds the drafts for review under `after`'s.
+ */
 const settleHeldReplies = async (
-  heldReplies: PolicyChangeHeldReplies,
+  scope: { heldReplies: PolicyChangeHeldReplies; handoffs: PolicyChangeHandoffs },
   before: EmailMailboxRecord,
   after: EmailMailboxRecord,
   changed: readonly PolicyField[],
 ): Promise<HeldReplyChanges> => {
   const policyRef = emailMailboxPolicyRef(before.id);
   if (keepsDraftsForReview(before.engagementMode, after.engagementMode, changed)) {
-    const held = await heldReplies.holdLiveForPolicy(policyRef, after.policyVersion, "policy_changed");
+    const held = await scope.heldReplies.holdLiveForPolicy(policyRef, after.policyVersion, "policy_changed");
     return { ...NO_HELD_REPLY_CHANGES, returnedHeldReplies: held.returned, reboundHeldReplies: held.rebound };
   }
-  return { ...NO_HELD_REPLY_CHANGES, supersededHeldReplies: await heldReplies.supersedePendingForPolicy(policyRef, "policy_changed") };
+  const conversationIds = await scope.heldReplies.supersedePendingForPolicy(policyRef, "policy_changed");
+  const reason = handoffReasonAfter(after);
+  let handedOffConversations = 0;
+  for (const conversationId of conversationIds) {
+    const { changed: handedOff } = await scope.handoffs.requestHumanOwnership({ workspaceId: after.workspaceId, conversationId, reason });
+    if (handedOff) handedOffConversations += 1;
+  }
+  return { ...NO_HELD_REPLY_CHANGES, supersededHeldReplies: conversationIds.length, handedOffConversations };
 };
 
 /** The operator's explicit consent to automatic sending, required to put a mailbox into `auto`. */
@@ -287,9 +319,10 @@ export class MailboxService {
    * Updates settings and policy together. Mode, enabled and agent changes go through the
    * policy-change unit of work: the row is locked, a stale `expectedPolicyVersion` is refused, and
    * a real change writes the next version with its history row. The drafts bound to the version it
-   * replaced, which no release could send any more, are superseded (FR-025, FR-030) — or, when
-   * `auto` drops to `draft`, held for review and re-bound to the new version, queued automatic
-   * replies included.
+   * replaced, which no release could send any more, are superseded (FR-025, FR-030) and the
+   * conversations they would have answered handed to a person — or, when `auto` drops to `draft`,
+   * the drafts are held for review and re-bound to the new version, queued automatic replies
+   * included.
    */
   async update(
     actor: EmailChannelActor,
@@ -300,7 +333,7 @@ export class MailboxService {
     const settings = validatedSettings(request);
     if (request.agentId) await this.requireAgent(workspaceId, request.agentId);
 
-    const outcome = await this.deps.policyChanges.run(async ({ mailboxes, heldReplies }) => {
+    const outcome = await this.deps.policyChanges.run(async ({ mailboxes, heldReplies, handoffs }) => {
       const current = await mailboxes.lockForPolicyChange(workspaceId, mailboxId);
       if (!current) return { kind: "not_found" as const };
       if (request.expectedPolicyVersion !== undefined && request.expectedPolicyVersion !== current.policyVersion) {
@@ -329,7 +362,7 @@ export class MailboxService {
           ...next,
           changedByUserId: actor.userId,
         }));
-        heldReplyChanges = await settleHeldReplies(heldReplies, current, after, policyChanges);
+        heldReplyChanges = await settleHeldReplies({ heldReplies, handoffs }, current, after, policyChanges);
       }
       if (settingChanges.length > 0) {
         const changedSettings = Object.fromEntries(settingChanges.map((key) => [key, settings[key]])) as Partial<MailboxSettings>;

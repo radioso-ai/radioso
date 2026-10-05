@@ -7,7 +7,8 @@ message storage and the sanitized view of it, thread-message-id bookkeeping,
 and the read-only facts an email conversation shows in the inbox. Mailbox
 policy changes (mode, enabled, agent) live here too, through
 `MailboxPolicyChangeUnitOfWork` — the one seam that supersedes a pending
-held reply in the same transaction as the change that invalidated it.
+held reply in the same transaction as the change that invalidated it, and
+hands that draft's conversation to a person through its `handoffs` port.
 
 It does not own:
 
@@ -49,7 +50,7 @@ It does not own:
   charges once per thread review revision), receiving-state derivation
   (`receivingState.ts`), and the policy change-of-record
   (`mailboxPolicyChangeUnitOfWork.ts`), which supersedes the drafts bound
-  to the version it replaces.
+  to the version it replaces and hands their conversations to a person.
 - `heldReplyChannelScope.ts` — email's side of a held-reply transaction.
   Drafts are bound to `email_mailbox:<mailboxId>`; `lockPolicy` locks the
   mailbox row `FOR SHARE` and returns its policy version for handoff to

@@ -1422,6 +1422,17 @@ test('shows the enabled Italian fallback greeting before the first message', asy
   await expect.poll(() => requestBodies.filter((body) =>
     body !== null && typeof body === 'object' && 'mode' in body,
   )).toHaveLength(1)
+  // A greeting alone is not recorded history yet: the conversation id and the chat's link wait for the first message.
+  await expect(page.getByTitle(/^Copy Conversation ID: /)).toHaveCount(0)
+  await page.getByRole('button', { name: 'Test chat actions', exact: true }).click()
+  await expect(testChatMenuItem(page, 'Conversation history')).toBeVisible()
+  await expect(testChatMenuItem(page, 'Copy link to this chat')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await testChatComposer(page).fill('Vorrei prenotare')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(page.getByTitle(/^Copy Conversation ID: /)).toBeVisible()
+  await page.getByRole('button', { name: 'Test chat actions', exact: true }).click()
+  await expect(testChatMenuItem(page, 'Copy link to this chat')).toBeVisible()
 })
 
 test('keeps a disabled proactive greeting lazy until the first message', async ({ page }) => {

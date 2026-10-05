@@ -51,7 +51,9 @@ turn is still running is refused with `409` and the error code
 `test_turn_in_progress`; send it again once that turn settles.
 
 Use `GET /api/v1/agents/{agentId}/test-executions?limit=50` to page through
-private Test Chat history. Each row carries `turnCount`, the number of user
+private Test Chat history. An execution is listed once it has a user message,
+sent by the operator or copied from a real conversation, so one holding only its
+proactive greeting stays off the page. Each row carries `turnCount`, the number of user
 messages in the test, counting both those copied from a real conversation it
 continues and those the operator sent, and `firstMessage`, the first of them
 with text, as a label of at most 200 characters ending in `…` when it is longer;

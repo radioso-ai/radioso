@@ -129,7 +129,10 @@ for a teammate; on one you already hold it returns the record unchanged. One a
 teammate already holds returns `409` with the current ownership in
 `error.details.ownership`; you take it from them with a
 [transfer](#transfer-ownership) to yourself, which is what the dashboard's
-**Reassign → Me** does on a teammate's conversation.
+**Reassign → Me** does on a teammate's conversation. On an email
+conversation, taking over also replaces any held reply the agent hasn't
+sent, including one already queued to send automatically — see
+[What replaces a draft](#what-replaces-a-draft).
 
 ### Reply as a human
 
@@ -441,7 +444,7 @@ transport with an `approval.request` action, mirroring `handoff.notify`.
 
 ## Held replies
 
-A `draft` mailbox's review turn doesn't write a customer-visible message —
+An email mailbox's review turn doesn't write a customer-visible message —
 it writes a **held reply**: the agent's draft text, its judgment of the turn
 (grounded? fully answered? did it ask for a person?), and whether it depends
 on a skill effect that was suppressed. A held reply opens the same
@@ -450,10 +453,21 @@ shows in the Inbox the same way, but it's a distinct resource with its own
 list, its own release, and no `routineId` or `stepId`. Its `holdReason` is
 the channel's code for why it waited. On email that's `draft_mode` on a
 `draft` mailbox, `sending_not_verified` while the sending domain is
-unverified, or `send_budget` once the thread's
-[send budget](email-channel.md#budgets) is spent. See
+unverified, `send_budget` once the thread's
+[send budget](email-channel.md#budgets) is spent, `outcome_not_publishable`
+when an `auto` mailbox's turn wasn't a grounded, complete answer free of a
+hand-off, or `authority_changed` when ownership or the mailbox's policy
+moved before an automatic reply could send. See
 [Email channel](email-channel.md#draft-mode-review-before-it-sends) for what
 a review turn can and can't do, and what the operator's three choices mean.
+
+On an `auto` mailbox, a reply that qualifies to send is held in state
+`queued_auto` until the send worker re-checks its authority and sends it,
+which moves it to `released` with `releaseKind` `auto`. A queued reply
+opens no attention item and can't be released or discarded; when the
+re-check fails it returns to `pending` with `authority_changed` and opens
+`approval` like any other held reply. See
+[Automatic mode](email-channel.md#automatic-mode-replies-that-send-themselves).
 
 ### List held replies
 
@@ -512,6 +526,12 @@ mailbox's mode being downgraded all supersede a pending held reply before
 an operator acts on it: the draft is replaced, not released, and nothing is
 sent for it. Where there's a new customer message behind the supersede, a
 fresh review turn runs in its place.
+
+An automatic reply never gets around a takeover. The same events supersede
+a `queued_auto` reply, and the send worker writes the agent's message only
+while the held reply is still `queued_auto` and the conversation is still
+AI-owned at the version the review ran under, so a takeover that lands
+before that re-check leaves the worker nothing to send.
 
 ## Delivery failures
 

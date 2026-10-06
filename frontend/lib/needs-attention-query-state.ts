@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query'
 
 import { chatApi } from './api-chat'
 import { hitlApi } from './api-hitl'
@@ -10,8 +10,9 @@ import { dashboardQueryKeys } from './dashboard-query-keys'
 import { isDashboardQueryRetryable, useDashboardQueryPolicy } from '@/components/providers/dashboard-query-provider'
 import { useQualityTurnsQuery, type QualityTurnsRequest } from './quality-query-state'
 import type { LowQualityTurnsPage } from './api-quality'
-import type { ChatConversationSummary, PendingApprovalDecision } from './api-types'
-import { buildInboxModel } from './needs-attention'
+import type { ChatConversationDetail, ChatConversationSummary, PendingApprovalDecision } from './api-types'
+import { resolveReadOnlySource } from './inbox-response'
+import { buildInboxModel, type HandoffCandidateSource } from './needs-attention'
 import type { QualityInboxSnapshot, QualityInboxSourceAttempts } from './needs-attention-quality'
 import { reduceQualityInboxSnapshot } from './needs-attention-quality'
 
@@ -26,6 +27,34 @@ export const reconcileAttentionOperatorResult = <T extends { id: string }>(
 
 export const NEEDS_ATTENTION_PAGE_SIZE = 50
 const NEEDS_ATTENTION_FEEDBACK_PAGE_SIZE = 25
+/** Pages one held-reply or delivery-failure read follows before it stops: 1,000 items at most. */
+const ATTENTION_SOURCE_MAX_PAGES = 20
+
+type CursorPage<T> = { items: T[]; nextCursor: string | null }
+
+/**
+ * Every page of a newest-first cursor list, followed until it ends or `maxPages` were read, in the
+ * page's own shape: `nextCursor` is null when everything was read, and otherwise where the unread
+ * rest starts. An item the moving list returns on two pages is kept once.
+ */
+export const readAllCursorPages = async <T extends { id: string }>(
+  readPage: (cursor: string | null) => Promise<CursorPage<T>>,
+  maxPages = ATTENTION_SOURCE_MAX_PAGES,
+): Promise<CursorPage<T>> => {
+  const items = new Map<string, T>()
+  let cursor: string | null = null
+  for (let pagesRead = 0; pagesRead < maxPages; pagesRead += 1) {
+    const page: CursorPage<T> = await readPage(cursor)
+    for (const item of page.items) {
+      if (!items.has(item.id)) items.set(item.id, item)
+    }
+    cursor = page.nextCursor
+    if (cursor === null) break
+  }
+  return { items: [...items.values()], nextCursor: cursor }
+}
+
+const cursorQuery = (cursor: string | null) => (cursor === null ? {} : { cursor })
 
 export const allAttentionSourcesTerminal = (
   queriesEnabled: boolean,
@@ -225,21 +254,57 @@ export const useAttentionRailQueries = (workspaceId: string) => {
     enabled: Boolean(workspaceId) && policy.queriesEnabled,
     refetchInterval: policy.intervalFor(humanOwnedKey),
   })
+  // Both reply-review sources read every page: they list newest first, and the queue serves the
+  // oldest first, so a first page alone would hide exactly the work that has waited longest.
   const deliveryFailures = useQuery({
     queryKey: deliveryFailuresKey,
-    queryFn: ({ signal }) => replyReviewApi.listDeliveryFailures({ state: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE }, signal),
+    queryFn: ({ signal }) => readAllCursorPages((cursor) =>
+      replyReviewApi.listDeliveryFailures({ state: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE, ...cursorQuery(cursor) }, signal)),
     enabled: Boolean(workspaceId) && policy.queriesEnabled,
     refetchInterval: policy.intervalFor(deliveryFailuresKey),
     retry: retryReplyReview,
   })
   const heldReplies = useQuery({
     queryKey: heldRepliesKey,
-    queryFn: ({ signal }) => replyReviewApi.listHeldReplies({ attention: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE }, signal),
+    queryFn: ({ signal }) => readAllCursorPages((cursor) =>
+      replyReviewApi.listHeldReplies({ attention: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE, ...cursorQuery(cursor) }, signal)),
     enabled: Boolean(workspaceId) && policy.queriesEnabled,
     refetchInterval: policy.intervalFor(heldRepliesKey),
     retry: retryReplyReview,
   })
   return { decisions, humanOwned, deliveryFailures, heldReplies, policy }
+}
+
+// A conversation's agent and title do not change while it waits, so a lookup is read once a while.
+const CONVERSATION_SOURCE_STALE_MS = 5 * 60_000
+
+const conversationSourceOf = (detail: ChatConversationDetail): HandoffCandidateSource | null =>
+  resolveReadOnlySource(undefined, detail)
+
+const presentSources = (
+  results: UseQueryResult<HandoffCandidateSource | null>[],
+): HandoffCandidateSource[] => results.flatMap((result) => (result.data ? [result.data] : []))
+
+/**
+ * The conversations named by id, each read on its own (with one message, for its title and agent),
+ * for Inbox rows whose source carries no conversation facts. A conversation that cannot be read is
+ * left out; its row keeps its own title and no agent.
+ */
+export const useConversationSources = (
+  workspaceId: string,
+  conversationIds: readonly string[],
+): HandoffCandidateSource[] => {
+  const policy = useDashboardQueryPolicy()
+  return useQueries({
+    queries: conversationIds.map((conversationId) => ({
+      queryKey: dashboardQueryKeys.attention.conversationSource(workspaceId, conversationId),
+      queryFn: ({ signal }: { signal: AbortSignal }) => chatApi.getHistoryConversation(conversationId, { limit: 1 }, signal),
+      select: conversationSourceOf,
+      enabled: Boolean(workspaceId) && policy.queriesEnabled,
+      staleTime: CONVERSATION_SOURCE_STALE_MS,
+    })),
+    combine: presentSources,
+  })
 }
 
 export const useNeedsAttentionQueries = (workspaceId: string) => {

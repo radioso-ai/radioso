@@ -21,7 +21,9 @@ import {
   reconcileAttentionOperatorResult,
   refetchAttentionInboxSnapshot,
   refetchAttentionRailSnapshot,
+  readAllCursorPages,
   useAttentionRailQueries,
+  useConversationSources,
   useNeedsAttentionOpenCount,
   useNeedsAttentionQueries,
 } from '@/lib/needs-attention-query-state'
@@ -32,7 +34,7 @@ import { countNewInboxItems } from '@/lib/needs-attention'
 
 vi.mock('@/lib/api-chat', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api-chat')>('@/lib/api-chat')
-  return { ...actual, chatApi: { ...actual.chatApi, listChatHistory: vi.fn() } }
+  return { ...actual, chatApi: { ...actual.chatApi, listChatHistory: vi.fn(), getHistoryConversation: vi.fn() } }
 })
 vi.mock('@/lib/api-quality', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api-quality')>('@/lib/api-quality')
@@ -223,6 +225,87 @@ describe('Needs Attention query state', () => {
     await act(async () => root.unmount())
   })
 
+  it('reads every page of held replies and delivery failures, so the oldest beyond the first page still counts', async () => {
+    vi.mocked(hitlApi.listPendingDecisions).mockResolvedValue({ decisions: [] })
+    vi.mocked(chatApi.listChatHistory).mockResolvedValue({ conversations: [], total: 0 } as never)
+    vi.mocked(qualityApi.listTurns).mockResolvedValue(page)
+    const heldReplies = Array.from({ length: NEEDS_ATTENTION_PAGE_SIZE + 1 }, (_, index) =>
+      heldReply(`held-${index}`, `conversation-held-${index}`))
+    vi.mocked(replyReviewApi.listHeldReplies).mockImplementation(async (query) => query?.cursor === 'held-page-2'
+      ? { items: heldReplies.slice(NEEDS_ATTENTION_PAGE_SIZE), nextCursor: null }
+      : { items: heldReplies.slice(0, NEEDS_ATTENTION_PAGE_SIZE), nextCursor: 'held-page-2' })
+    const failure = (id: string) => ({
+      id,
+      conversationId: `conversation-${id}`,
+      messageId: `message-${id}`,
+      provider: 'email',
+      kind: 'bounced' as const,
+      detailCode: null,
+      openedAt: '2026-06-19T10:00:00.000Z',
+      clearedAt: null,
+      clearReason: null,
+    })
+    vi.mocked(replyReviewApi.listDeliveryFailures).mockImplementation(async (query) => query?.cursor === 'failure-page-2'
+      ? { items: [failure('failure-oldest')], nextCursor: null }
+      : { items: [failure('failure-newest')], nextCursor: 'failure-page-2' })
+
+    const counts: number[] = []
+    const Count = () => {
+      const count = useNeedsAttentionOpenCount('workspace-1')
+      useEffect(() => { counts.push(count) }, [count])
+      return null
+    }
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(<DashboardQueryProvider workspaceId="workspace-1" interest={interest}><Count /></DashboardQueryProvider>)
+    })
+    await vi.waitFor(() => expect(counts.at(-1)).toBe(NEEDS_ATTENTION_PAGE_SIZE + 1 + 2))
+    expect(replyReviewApi.listHeldReplies).toHaveBeenCalledWith({ attention: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE }, expect.any(AbortSignal))
+    expect(replyReviewApi.listHeldReplies).toHaveBeenCalledWith(
+      { attention: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE, cursor: 'held-page-2' },
+      expect.any(AbortSignal),
+    )
+    expect(replyReviewApi.listDeliveryFailures).toHaveBeenCalledWith(
+      { state: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE, cursor: 'failure-page-2' },
+      expect.any(AbortSignal),
+    )
+    await act(async () => root.unmount())
+  })
+
+  it('looks up the conversations of delivery failures the Inbox has not loaded, once each, by id', async () => {
+    vi.mocked(chatApi.getHistoryConversation).mockImplementation(async (conversationId) => ({
+      conversationId,
+      title: `Title of ${conversationId}`,
+      updatedAt: '2026-06-19T10:00:00.000Z',
+      agentId: 'agent-email',
+      agentName: 'Gioia',
+      agentInternalName: null,
+      ownership: undefined,
+    }) as never)
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    const seen: unknown[] = []
+    const Probe = () => {
+      const sources = useConversationSources('workspace-1', ['conversation-a', 'conversation-b'])
+      useEffect(() => { seen.push(sources) }, [sources])
+      return null
+    }
+    await act(async () => {
+      root.render(<DashboardQueryProvider workspaceId="workspace-1" interest={interest}><Probe /></DashboardQueryProvider>)
+    })
+    await vi.waitFor(() => expect(seen.at(-1)).toHaveLength(2))
+    expect(seen.at(-1)).toEqual([
+      expect.objectContaining({ id: 'conversation-a', agentId: 'agent-email', title: 'Title of conversation-a' }),
+      expect.objectContaining({ id: 'conversation-b', agentId: 'agent-email', title: 'Title of conversation-b' }),
+    ])
+    expect(chatApi.getHistoryConversation).toHaveBeenCalledTimes(2)
+    expect(chatApi.getHistoryConversation).toHaveBeenCalledWith('conversation-a', { limit: 1 }, expect.any(AbortSignal))
+    await act(async () => root.unmount())
+  })
+
   it('represents initial 403 as permission state while preserving other source data', () => {
     const forbidden = Object.assign(new Error('forbidden'), { status: 403 })
     const snapshot = qualitySnapshotFromQueries(
@@ -365,5 +448,30 @@ describe('Needs Attention query state', () => {
     expect(reconcileAttentionOperatorResult(conversations, {
       kind: 'refresh', conversationId: 'conversation-a', reason: 'conflict',
     })).toEqual(conversations)
+  })
+})
+
+describe('readAllCursorPages', () => {
+  const pageOf = (ids: string[], nextCursor: string | null) => ({ items: ids.map((id) => ({ id })), nextCursor })
+
+  it('follows each next cursor until the list ends', async () => {
+    const readPage = vi.fn(async (cursor: string | null) =>
+      cursor === null ? pageOf(['a', 'b'], 'c2') : cursor === 'c2' ? pageOf(['c'], 'c3') : pageOf(['d'], null))
+
+    await expect(readAllCursorPages(readPage)).resolves.toEqual({ items: [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }], nextCursor: null })
+    expect(readPage.mock.calls.map(([cursor]) => cursor)).toEqual([null, 'c2', 'c3'])
+  })
+
+  it('keeps one of an item a moving list returns on two pages', async () => {
+    const readPage = async (cursor: string | null) => cursor === null ? pageOf(['a', 'b'], 'c2') : pageOf(['b', 'c'], null)
+
+    await expect(readAllCursorPages(readPage)).resolves.toEqual({ items: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], nextCursor: null })
+  })
+
+  it('stops after the page limit and returns where the unread rest starts', async () => {
+    const readPage = vi.fn(async (cursor: string | null) => pageOf([cursor ?? 'first'], `${cursor ?? 'first'}+`))
+
+    await expect(readAllCursorPages(readPage, 2)).resolves.toEqual({ items: [{ id: 'first' }, { id: 'first+' }], nextCursor: 'first++' })
+    expect(readPage).toHaveBeenCalledTimes(2)
   })
 })

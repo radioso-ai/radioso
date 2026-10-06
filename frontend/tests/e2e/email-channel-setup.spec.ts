@@ -48,6 +48,7 @@ type EmailEvent = {
 };
 
 const relayAddress = "r7f3k2m9q@in.radioso.test";
+const rotatedRelayAddress = "r2x8w4n6p@in.radioso.test";
 const mailboxId = "mailbox-support";
 const domainId = "domain-customer";
 
@@ -244,6 +245,12 @@ const installEmailChannelBackend = async (
       }
       if (policyChanged) mailbox.policyVersion = (mailbox.policyVersion as number) + 1;
       return json(route, mailbox);
+    }
+
+    if (method === "POST" && path === `/mailboxes/${mailboxId}/relay-token/rotate`) {
+      // The previous address keeps forwarding for the grace period; the mailbox shows the new one.
+      mailboxes[0].relayAddress = rotatedRelayAddress;
+      return json(route, mailboxes[0]);
     }
 
     if (method === "POST" && path === `/mailboxes/${mailboxId}/setup-check`) {
@@ -646,6 +653,90 @@ test("a limits save against settings saved elsewhere is refused and reloads the 
   ]);
 });
 
+test("disabling a mailbox asks once, says waiting drafts are discarded and go to a person, and enabling it again needs no confirmation", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page, {
+    supportedModes: ["operator_only", "draft"],
+    existingMailbox: { engagementMode: "draft" },
+  });
+
+  await openEmailChannel(page);
+  const mailbox = page.locator("#email-channel").getByRole("region", { name: "support@customer.test" });
+  const patches = () => backend.requests.filter((request) => request.method === "PATCH");
+
+  await mailbox.getByRole("button", { name: "Disable mailbox" }).click();
+  const confirmation = mailbox.getByRole("group", { name: "Confirm disabling the mailbox" });
+  await expect(confirmation).toContainText("Mail to support@customer.test is only logged until you enable it again.");
+  await expect(confirmation).toContainText("Pending drafts are discarded and their conversations go to a person.");
+  await expect(confirmation.getByRole("button", { name: "Confirm" })).toBeFocused();
+  expect(patches()).toEqual([]);
+
+  // Cancelling changes nothing.
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(mailbox.getByRole("button", { name: "Disable mailbox" })).toBeFocused();
+  expect(patches()).toEqual([]);
+
+  await mailbox.getByRole("button", { name: "Disable mailbox" }).click();
+  await confirmation.getByRole("button", { name: "Confirm" }).click();
+  await expect(announcer(page)).toHaveText("Mailbox disabled.");
+  await expect(mailbox.getByText("Disabled", { exact: true })).toBeVisible();
+  await expect(mailbox.getByRole("button", { name: "Enable mailbox" })).toBeFocused();
+
+  await mailbox.getByRole("button", { name: "Enable mailbox" }).click();
+  await expect(announcer(page)).toHaveText("Mailbox enabled. It applies to new mail.");
+  await expect(mailbox.getByText("Disabled", { exact: true })).toHaveCount(0);
+  await expect(mailbox.getByRole("button", { name: "Disable mailbox" })).toBeFocused();
+  expect(patches()).toEqual([
+    { method: "PATCH", path: `/mailboxes/${mailboxId}`, body: { enabled: false, expectedPolicyVersion: 1 } },
+    { method: "PATCH", path: `/mailboxes/${mailboxId}`, body: { enabled: true, expectedPolicyVersion: 2 } },
+  ]);
+});
+
+test("disabling a mailbox whose settings were saved elsewhere is refused and reloads it", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page, {
+    supportedModes: ["operator_only", "draft"],
+    existingMailbox: { engagementMode: "draft" },
+  });
+
+  await openEmailChannel(page);
+  const mailbox = page.locator("#email-channel").getByRole("region", { name: "support@customer.test" });
+  backend.changePolicyElsewhere();
+  await mailbox.getByRole("button", { name: "Disable mailbox" }).click();
+  await mailbox.getByRole("group", { name: "Confirm disabling the mailbox" }).getByRole("button", { name: "Confirm" }).click();
+
+  await expect(mailbox.getByRole("alert")).toHaveText("Settings changed elsewhere, reloaded.");
+  await expect(mailbox.getByText("Disabled", { exact: true })).toHaveCount(0);
+  await expect(mailbox.getByRole("button", { name: "Disable mailbox" })).toBeFocused();
+});
+
+test("replacing the relay address asks once with the grace period, then shows the new address", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page, { existingMailbox: { engagementMode: "operator_only" } });
+
+  await openEmailChannel(page);
+  const mailbox = page.locator("#email-channel").getByRole("region", { name: "support@customer.test" });
+  await expect(mailbox.getByText(relayAddress)).toBeVisible();
+  const rotations = () => backend.requests.filter((request) => request.path.endsWith("/relay-token/rotate"));
+
+  await mailbox.getByRole("button", { name: "Replace relay address" }).click();
+  const confirmation = mailbox.getByRole("group", { name: "Confirm replacing the relay address" });
+  await expect(confirmation).toContainText("The current address keeps working for 7 days. Point your forwarding at the new one before then.");
+  await expect(confirmation.getByRole("button", { name: "Confirm" })).toBeFocused();
+  expect(rotations()).toEqual([]);
+  await confirmation.getByRole("button", { name: "Confirm" }).click();
+
+  await expect(mailbox.getByText(rotatedRelayAddress)).toBeVisible();
+  await expect(mailbox.getByText(relayAddress)).toHaveCount(0);
+  await expect(announcer(page)).toHaveText("New relay address issued. Update your forwarding within 7 days.");
+  await expect(mailbox.getByRole("button", { name: "Replace relay address" })).toBeFocused();
+  expect(rotations()).toEqual([{ method: "POST", path: `/mailboxes/${mailboxId}/relay-token/rotate` }]);
+});
+
 test("operator copies DNS records, checks them, and enables direct receiving with a typed confirmation", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await seedDashboardStorage(page);
@@ -815,8 +906,11 @@ test("an operator-only email conversation shows its sender and subject, and the 
   await response.getByRole("button", { name: "Send" }).click();
 
   await expect(response.getByText("Replies to email conversations cannot be sent yet.")).toBeVisible();
-  await expect(response.getByRole("button", { name: "Send" })).toBeDisabled();
   await expect(replyBox).toHaveValue("We are tracking it now.");
   await expect(replyBox).toBeFocused();
   expect(replies).toHaveLength(1);
+  // The mailbox read after the refusal still says it can send, so Send is offered again and the
+  // refusal stays said until the next attempt.
+  await expect(response.getByRole("button", { name: "Send" })).toBeEnabled();
+  await expect(response.getByText("Replies to email conversations cannot be sent yet.")).toBeVisible();
 });

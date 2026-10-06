@@ -57,6 +57,7 @@ import {
   NEEDS_ATTENTION_PAGE_SIZE,
   qualityLoadStateFromQueries,
   qualitySnapshotFromQueries,
+  useConversationSources,
   useNeedsAttentionQueries,
 } from '@/lib/needs-attention-query-state'
 import { patchQualityTriage } from '@/lib/quality-query-state'
@@ -146,6 +147,15 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     () => attentionQueries.heldReplies.data?.items ?? [],
     [attentionQueries.heldReplies.data],
   )
+  // A failed reply on a conversation no human holds — an automatic reply that bounced — still
+  // needs its conversation's title and agent, so the agent filter finds it.
+  const failureConversationIds = useMemo(() => {
+    const loaded = new Set(humanOwnedConversations.map((conversation) => conversation.id))
+    return [...new Set(deliveryFailures.map((failure) => failure.conversationId))].filter((id) => !loaded.has(id))
+  }, [deliveryFailures, humanOwnedConversations])
+  const failureConversations = useConversationSources(workspaceId, failureConversationIds)
+  // Each source reads up to its page limit; past it, the queue says some work is not shown.
+  const hasUnreadAttention = Boolean(attentionQueries.deliveryFailures.data?.nextCursor || attentionQueries.heldReplies.data?.nextCursor)
   const qualityPresentation = useMemo(() => qualityInboxPresentation(qualitySnapshot), [qualitySnapshot])
   const qualityLoadState = qualityLoadStateFromQueries(
     attentionQueries.commentedFeedback,
@@ -156,8 +166,15 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     [qualityPresentation.turns, terminalQualityMessageIds],
   )
   const inboxModel = useMemo(
-    () => buildInboxModel({ decisions, conversations: humanOwnedConversations, qualityTurns, deliveryFailures, heldReplies }),
-    [decisions, humanOwnedConversations, qualityTurns, deliveryFailures, heldReplies],
+    () => buildInboxModel({
+      decisions,
+      conversations: humanOwnedConversations,
+      qualityTurns,
+      deliveryFailures,
+      failureConversations,
+      heldReplies,
+    }),
+    [decisions, humanOwnedConversations, qualityTurns, deliveryFailures, failureConversations, heldReplies],
   )
   const items = inboxModel.items
   const criticalOpenCount = useMemo(
@@ -519,6 +536,11 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         {heldReplyError ? (
           <div className="m-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             {heldReplyError}
+          </div>
+        ) : null}
+        {hasUnreadAttention ? (
+          <div className="m-3 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+            Older drafts or delivery failures are waiting beyond what the Inbox shows.
           </div>
         ) : null}
 

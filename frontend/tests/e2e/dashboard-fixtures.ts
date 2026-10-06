@@ -1275,6 +1275,50 @@ export const installDashboardApiMocks = async (
     };
   };
   let humanReplyCreated = false;
+  type OwnershipFixture = ApiSchemas["ConversationOwnership"];
+  const ownershipOf = (conversationId: string): OwnershipFixture | undefined => {
+    const detail = conversationDetails.get(conversationId) ?? conversationDetail;
+    return (detail as { ownership?: OwnershipFixture } | undefined)?.ownership;
+  };
+  // Takes the conversation for the signed-in teammate: a takeover, or a reply to a conversation
+  // nobody holds. Every read of it afterwards shows the claim.
+  const claimConversation = (conversationId: string): ApiSchemas["ConversationOwnershipResponse"] => {
+    const response = options.takeOverConversationResponse ?? {
+      ownership: {
+        conversationId,
+        workspaceId,
+        state: "human_owned",
+        ownerAccountId: accountId,
+        ownerUserId: currentUserId,
+        ownerDisplayName: "Test Operator",
+        reason: null,
+        version: 2,
+        takenOverAt: nowIso,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      },
+    };
+    if (conversationDetail && typeof conversationDetail === "object") {
+      conversationDetail = {
+        ...conversationDetail,
+        ownership: response.ownership,
+      };
+    }
+    const activeConversationDetail = conversationDetails.get(conversationId);
+    if (activeConversationDetail && typeof activeConversationDetail === "object") {
+      conversationDetails.set(conversationId, {
+        ...activeConversationDetail,
+        ownership: response.ownership,
+      });
+    }
+    if (conversationTailResponses[0] && conversationTailResponses[0].messages.length === 0) {
+      conversationTailResponses[0] = {
+        ...conversationTailResponses[0],
+        ownership: response.ownership,
+      };
+    }
+    return response;
+  };
   const documentSources = options.documentSources ?? emptyDocumentSources;
   const historyItems = options.historyItems ?? {
     items: Array.isArray((historyList as { conversations?: unknown[] }).conversations)
@@ -1630,42 +1674,7 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/takeover")) {
-      const response = options.takeOverConversationResponse ?? {
-        ownership: {
-          conversationId: path.replace("/conversations/", "").replace("/takeover", ""),
-          workspaceId,
-          state: "human_owned",
-          ownerAccountId: accountId,
-          ownerUserId: currentUserId,
-          ownerDisplayName: "Test Operator",
-          reason: null,
-          version: 2,
-          takenOverAt: nowIso,
-          createdAt: nowIso,
-          updatedAt: nowIso,
-        },
-      };
-      if (conversationDetail && typeof conversationDetail === "object") {
-        conversationDetail = {
-          ...conversationDetail,
-          ownership: response.ownership,
-        };
-      }
-      const conversationId = path.replace("/conversations/", "").replace("/takeover", "");
-      const activeConversationDetail = conversationDetails.get(conversationId);
-      if (activeConversationDetail && typeof activeConversationDetail === "object") {
-        conversationDetails.set(conversationId, {
-          ...activeConversationDetail,
-          ownership: response.ownership,
-        });
-      }
-      if (conversationTailResponses[0] && conversationTailResponses[0].messages.length === 0) {
-        conversationTailResponses[0] = {
-          ...conversationTailResponses[0],
-          ownership: response.ownership,
-        };
-      }
-      await json(route, response);
+      await json(route, claimConversation(path.replace("/conversations/", "").replace("/takeover", "")));
       return;
     }
 
@@ -1774,6 +1783,11 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/reply")) {
+      const conversationId = path.replace("/conversations/", "").replace("/reply", "");
+      // A reply to a conversation the signed-in teammate does not hold claims it in the same write.
+      const current = ownershipOf(conversationId);
+      const heldByMe = current?.state === "human_owned" && current.ownerUserId === currentUserId;
+      const claim = heldByMe ? null : claimConversation(conversationId);
       humanReplyCreated = true;
       if (conversationTailResponses.length > 1 && conversationTailResponses[0]?.messages.length === 0) {
         conversationTailResponses.shift();
@@ -1781,13 +1795,14 @@ export const installDashboardApiMocks = async (
       await json(route, options.humanReplyResponse ?? {
         message: {
           id: "human-reply-1",
-          conversationId: path.replace("/conversations/", "").replace("/reply", ""),
+          conversationId,
           workspaceId,
           role: "assistant",
           source: "human_agent",
           content: "Human reply",
           createdAt: nowIso,
         },
+        ...(claim ? { ownership: claim.ownership } : current ? { ownership: current } : {}),
       }, 201);
       return;
     }

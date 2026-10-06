@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ApprovalDecisionPanel, OperatorComposer } from '@/components/dashboard/operator-composer'
+import { ApprovalDecisionPanel, OperatorComposer, type ChannelSendReadiness } from '@/components/dashboard/operator-composer'
 import { hitlApi } from '@/lib/api-hitl'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -68,14 +68,44 @@ const chooseOwnershipTarget = async (container: HTMLElement, menuLabel: string, 
   })
 }
 
+const sendButton = (container: HTMLElement) =>
+  [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Send'))
+
+const channelRefusal = (message: string) => Object.assign(new Error('refused'), {
+  status: 409,
+  error: { code: 'email_sending_not_verified', message },
+})
+
+// Renders a composer whose conversation has a channel the caller reads; `render` reports a new read.
+const renderWithReadiness = async (
+  readiness: ChannelSendReadiness,
+  onChanged = vi.fn(),
+  ownership: Record<string, unknown> = { state: 'human_owned', version: 2, ownerUserId: 'user-me' },
+) => {
+  const root = createRoot(document.createElement('div'))
+  const container = (root as unknown as { _internalRoot: { containerInfo: HTMLElement } })._internalRoot.containerInfo
+  const render = (next: ChannelSendReadiness) => act(async () => {
+    root.render(
+      <OperatorComposer
+        conversationId="conversation-a"
+        ownership={ownership as never}
+        currentUserId="user-me"
+        onChanged={onChanged}
+        sendReadiness={next}
+      />,
+    )
+  })
+  await render(readiness)
+  return { root, container, render }
+}
+
 const menuEntries = () => [...document.body.querySelectorAll('[role="menuitem"]')].map((element) => element.textContent?.trim())
 
 afterEach(() => vi.restoreAllMocks())
 
 describe('OperatorComposer', () => {
-  it('claims an AI-owned conversation on send and reports a single reply outcome', async () => {
+  it('sends an AI-owned conversation\'s reply at the version it read, letting the reply claim it, never a separate takeover first', async () => {
     const takeover = vi.spyOn(hitlApi, 'takeOverConversation')
-      .mockResolvedValue({ ownership: { state: 'human_owned', version: 2 } } as never)
     const reply = vi.spyOn(hitlApi, 'replyAsHuman').mockResolvedValue({ message: {} } as never)
     const changed = vi.fn()
     const { root, container } = await renderComposer({ state: 'ai_owned', version: 1 }, changed)
@@ -83,19 +113,18 @@ describe('OperatorComposer', () => {
     await typeInto(container.querySelector('textarea')!, 'Ciao, come posso aiutarti?')
     await clickSend(container)
 
-    expect(takeover).toHaveBeenCalledWith('conversation-a', {})
+    expect(takeover).not.toHaveBeenCalled()
     expect(reply).toHaveBeenCalledWith('conversation-a', {
       message: 'Ciao, come posso aiutarti?',
-      expectedVersion: 2,
+      expectedVersion: 1,
     })
     expect(changed).toHaveBeenCalledTimes(1)
     expect(changed).toHaveBeenCalledWith({ kind: 'reply', conversationId: 'conversation-a' })
     await act(async () => root.unmount())
   })
 
-  it('claims an unclaimed handoff on send, not just an AI-owned conversation', async () => {
+  it('claims an unclaimed handoff through the reply too, not just an AI-owned conversation', async () => {
     const takeover = vi.spyOn(hitlApi, 'takeOverConversation')
-      .mockResolvedValue({ ownership: { state: 'human_owned', version: 3 } } as never)
     const reply = vi.spyOn(hitlApi, 'replyAsHuman').mockResolvedValue({ message: {} } as never)
     const changed = vi.fn()
     // "Awaiting a human": already human_owned, but unclaimed (no owner) -
@@ -108,9 +137,20 @@ describe('OperatorComposer', () => {
     await typeInto(container.querySelector('textarea')!, 'hi')
     await clickSend(container)
 
-    expect(takeover).toHaveBeenCalledWith('conversation-a', {})
-    expect(reply).toHaveBeenCalledWith('conversation-a', { message: 'hi', expectedVersion: 3 })
+    expect(takeover).not.toHaveBeenCalled()
+    expect(reply).toHaveBeenCalledWith('conversation-a', { message: 'hi', expectedVersion: 2 })
     expect(changed).toHaveBeenCalledWith({ kind: 'reply', conversationId: 'conversation-a' })
+    await act(async () => root.unmount())
+  })
+
+  it('replies to a conversation with no ownership record at version 0, so a record written meanwhile refuses it', async () => {
+    const reply = vi.spyOn(hitlApi, 'replyAsHuman').mockResolvedValue({ message: {} } as never)
+    const { root, container } = await renderComposer(undefined as never)
+
+    await typeInto(container.querySelector('textarea')!, 'hi')
+    await clickSend(container)
+
+    expect(reply).toHaveBeenCalledWith('conversation-a', { message: 'hi', expectedVersion: 0 })
     await act(async () => root.unmount())
   })
 
@@ -147,7 +187,7 @@ describe('OperatorComposer', () => {
   })
 
   it('surfaces a conflict and preserves the drafted text on a stale-version send', async () => {
-    vi.spyOn(hitlApi, 'takeOverConversation')
+    vi.spyOn(hitlApi, 'replyAsHuman')
       .mockRejectedValue(Object.assign(new Error('conflict'), { status: 409 }))
     const changed = vi.fn()
     const { root, container } = await renderComposer({ state: 'ai_owned', version: 1 }, changed)
@@ -163,88 +203,105 @@ describe('OperatorComposer', () => {
     await act(async () => root.unmount())
   })
 
-  it('keeps the draft and disables Send with the server reason when the channel refuses the reply', async () => {
-    vi.spyOn(hitlApi, 'takeOverConversation')
-      .mockResolvedValue({ ownership: { state: 'human_owned', version: 2 } } as never)
-    vi.spyOn(hitlApi, 'replyAsHuman').mockRejectedValue(Object.assign(new Error('refused'), {
-      status: 409,
-      error: { code: 'email_sending_not_available', message: 'Replies to email conversations cannot be sent yet.' },
-    }))
+  it('keeps the draft and holds Send with the server reason when the channel refuses the reply, and reads the channel again', async () => {
+    const takeover = vi.spyOn(hitlApi, 'takeOverConversation')
+    vi.spyOn(hitlApi, 'replyAsHuman').mockRejectedValue(channelRefusal('Replies to email conversations cannot be sent yet.'))
     const changed = vi.fn()
-    const { root, container } = await renderComposer({ state: 'ai_owned', version: 1 }, changed)
+    const reread = vi.fn()
+    const { root, container, render } = await renderWithReadiness({ unavailableReason: null, readAt: 1, reread }, changed)
 
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement
     await typeInto(textarea, 'my draft reply')
     await clickSend(container)
 
+    expect(takeover).not.toHaveBeenCalled()
     expect(changed).not.toHaveBeenCalled()
+    expect(reread).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Replies to email conversations cannot be sent yet.')
     expect(container.textContent).not.toContain('conversation changed')
     expect(textarea.value).toBe('my draft reply')
-    const send = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Send'))
-    expect(send?.disabled).toBe(true)
+    expect(sendButton(container)?.disabled).toBe(true)
+
+    // The same read, rendered again, still holds Send.
+    await render({ unavailableReason: null, readAt: 1, reread })
+    expect(sendButton(container)?.disabled).toBe(true)
     await act(async () => root.unmount())
   })
 
-  it('lets the channel state the caller reports replace a refusal, and re-enables Send once sending is ready', async () => {
-    vi.spyOn(hitlApi, 'replyAsHuman').mockRejectedValueOnce(Object.assign(new Error('refused'), {
-      status: 409,
-      error: { code: 'email_sending_not_verified', message: 'The sending domain is not verified.' },
-    }))
-    const root = createRoot(document.createElement('div'))
-    const container = (root as unknown as { _internalRoot: { containerInfo: HTMLElement } })._internalRoot.containerInfo
-    const render = (sendUnavailableReason: string | null) => act(async () => {
-      root.render(
-        <OperatorComposer
-          conversationId="conversation-a"
-          ownership={{ state: 'human_owned', version: 2, ownerUserId: 'user-me' } as never}
-          currentUserId="user-me"
-          onChanged={vi.fn()}
-          sendUnavailableReason={sendUnavailableReason}
-        />,
-      )
-    })
-    const send = () => [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Send'))
+  it('lets a fresh read of the channel replace a refusal, and re-enables Send once sending is ready', async () => {
+    vi.spyOn(hitlApi, 'replyAsHuman').mockRejectedValueOnce(channelRefusal('The sending domain is not verified.'))
+    const reread = vi.fn()
+    const { root, container, render } = await renderWithReadiness({ unavailableReason: null, readAt: 1, reread })
 
-    await render(null)
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement
     await typeInto(textarea, 'my draft reply')
     await clickSend(container)
     expect(container.textContent).toContain('The sending domain is not verified.')
-    expect(send()?.disabled).toBe(true)
-
-    // The same channel state read again keeps the refusal.
-    await render(null)
-    expect(send()?.disabled).toBe(true)
+    expect(sendButton(container)?.disabled).toBe(true)
 
     // A fresh read that finds the domain unverified explains it in the caller's words.
-    await render("Replies wait until this mailbox's domain is verified.")
+    await render({ unavailableReason: "Replies wait until this mailbox's domain is verified.", readAt: 2, reread })
     expect(container.textContent).toContain("Replies wait until this mailbox's domain is verified.")
     expect(container.textContent).not.toContain('The sending domain is not verified.')
-    expect(send()?.disabled).toBe(true)
+    expect(sendButton(container)?.disabled).toBe(true)
 
     // Sending is ready again: the draft is still there and Send is enabled.
-    await render(null)
+    await render({ unavailableReason: null, readAt: 3, reread })
     expect(textarea.value).toBe('my draft reply')
-    expect(send()?.disabled).toBe(false)
+    expect(sendButton(container)?.disabled).toBe(false)
+    await act(async () => root.unmount())
+  })
+
+  it('does not latch a transient refusal: a fresh read that finds sending ready, before and after, enables Send again', async () => {
+    const reply = vi.spyOn(hitlApi, 'replyAsHuman')
+      .mockRejectedValueOnce(channelRefusal('The sending domain is not verified.'))
+      .mockResolvedValueOnce({ message: {} } as never)
+    const reread = vi.fn()
+    const changed = vi.fn()
+    const { root, container, render } = await renderWithReadiness({ unavailableReason: null, readAt: 1, reread }, changed)
+
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement
+    await typeInto(textarea, 'my draft reply')
+    await clickSend(container)
+    expect(sendButton(container)?.disabled).toBe(true)
+    expect(reread).toHaveBeenCalledTimes(1)
+
+    // The reason the caller reports never changed (null before, null after); only the read did.
+    await render({ unavailableReason: null, readAt: 2, reread })
+    expect(sendButton(container)?.disabled).toBe(false)
+    // The refusal stays said until the next attempt, so it does not flash away.
+    expect(container.textContent).toContain('The sending domain is not verified.')
+
+    await clickSend(container)
+    expect(reply).toHaveBeenCalledTimes(2)
+    expect(changed).toHaveBeenCalledWith({ kind: 'reply', conversationId: 'conversation-a' })
+    expect(container.textContent).not.toContain('The sending domain is not verified.')
+    await act(async () => root.unmount())
+  })
+
+  it('says why a refusal happened but leaves Send enabled when there is no channel to read again', async () => {
+    vi.spyOn(hitlApi, 'replyAsHuman').mockRejectedValue(channelRefusal('Replies to this channel cannot be sent yet.'))
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-me', version: 1 } as never,
+    )
+
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement
+    await typeInto(textarea, 'my draft reply')
+    await clickSend(container)
+
+    expect(container.textContent).toContain('Replies to this channel cannot be sent yet.')
+    expect(textarea.value).toBe('my draft reply')
+    expect(sendButton(container)?.disabled).toBe(false)
     await act(async () => root.unmount())
   })
 
   it('disables Send with the reason the caller gives, without sending', async () => {
     const reply = vi.spyOn(hitlApi, 'replyAsHuman')
-    const root = createRoot(document.createElement('div'))
-    const container = (root as unknown as { _internalRoot: { containerInfo: HTMLElement } })._internalRoot.containerInfo
-    await act(async () => {
-      root.render(
-        <OperatorComposer
-          conversationId="conversation-a"
-          ownership={{ state: 'ai_owned', version: 1 } as never}
-          currentUserId="user-me"
-          onChanged={vi.fn()}
-          sendUnavailableReason="Replies wait until this mailbox's domain is verified."
-        />,
-      )
-    })
+    const { root, container } = await renderWithReadiness(
+      { unavailableReason: "Replies wait until this mailbox's domain is verified.", readAt: 1, reread: vi.fn() },
+      vi.fn(),
+      { state: 'ai_owned', version: 1 },
+    )
 
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement
     await typeInto(textarea, 'a reply')
@@ -252,6 +309,7 @@ describe('OperatorComposer', () => {
 
     expect(reply).not.toHaveBeenCalled()
     expect(container.textContent).toContain("Replies wait until this mailbox's domain is verified.")
+    expect(sendButton(container)?.disabled).toBe(true)
     expect(textarea.value).toBe('a reply')
     await act(async () => root.unmount())
   })
@@ -394,7 +452,6 @@ describe('OperatorComposer', () => {
 
     it('keeps claim-on-send on an unclaimed handoff without a menu, and the draft survives the viewer becoming known', async () => {
       const takeover = vi.spyOn(hitlApi, 'takeOverConversation')
-        .mockResolvedValue({ ownership: { state: 'human_owned', version: 3 } } as never)
       const reply = vi.spyOn(hitlApi, 'replyAsHuman').mockResolvedValue({ message: {} } as never)
       const waiting = { state: 'human_owned', ownerAccountId: null, ownerUserId: null, version: 2 }
       const { root, container } = await renderComposer(waiting as never, vi.fn(), null, vi.fn(), teammates)
@@ -409,8 +466,8 @@ describe('OperatorComposer', () => {
       expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe('draft while signing in')
 
       await clickSend(container)
-      expect(takeover).toHaveBeenCalledWith('conversation-a', {})
-      expect(reply).toHaveBeenCalledWith('conversation-a', { message: 'draft while signing in', expectedVersion: 3 })
+      expect(takeover).not.toHaveBeenCalled()
+      expect(reply).toHaveBeenCalledWith('conversation-a', { message: 'draft while signing in', expectedVersion: 2 })
       await act(async () => root.unmount())
     })
   })

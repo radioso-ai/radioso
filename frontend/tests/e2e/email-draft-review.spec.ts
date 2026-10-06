@@ -37,7 +37,14 @@ type HeldReply = {
   releaserUserId: string | null;
   editorUserId: string | null;
   attentionOpen: boolean;
-  trace: unknown;
+  trace: {
+    turnId: string;
+    outcome: string | null;
+    groundingVerdict: "grounded" | "degraded" | "no_support" | null;
+    coverage: string;
+    handoffReason: string | null;
+    suppressedEffects: { skillName: string }[];
+  } | null;
 };
 
 type ThreadMessage = { id: string; role: "user" | "assistant"; source: string; content: string; createdAt: string };
@@ -54,18 +61,16 @@ const json = (route: Route, body: unknown, status = 200) =>
 const refuse = (route: Route, status: number, code: string, message: string, details?: unknown) =>
   json(route, { error: { code, message, ...(details === undefined ? {} : { details }) } }, status);
 
-const reviewTrace = {
-  version: 1,
-  spine: {
-    traceId: "trace-review-1",
-    startedAt: nowIso,
-    stages: [
-      { id: "stage-1", kind: "turn_interpretation", status: "applied" },
-      { id: "stage-2", kind: "skill_selection", status: "applied" },
-      { id: "stage-3", kind: "skill_dispatch", status: "skipped" },
-      { id: "stage-4", kind: "compose", status: "applied" },
-    ],
-  },
+const reviewTurnId = "7d0c5a51-3f7e-4b9a-9c1e-2a4f6b8d0e13";
+
+// The review turn's reasoning as the held-reply contract carries it: codes and the turn's id.
+const reviewTrace: HeldReply["trace"] = {
+  turnId: reviewTurnId,
+  outcome: "coverage_partial",
+  groundingVerdict: "grounded",
+  coverage: "partial",
+  handoffReason: null,
+  suppressedEffects: [{ skillName: "refund_order" }],
 };
 
 const heldReply = (overrides: Partial<HeldReply> = {}): HeldReply => ({
@@ -99,6 +104,8 @@ const installDraftReviewBackend = async (
   options: {
     teammateReleasesFirst?: boolean;
     refuseRelease?: "policy_changed" | "channel_not_ready" | "email_sending_not_verified";
+    /** The mailbox refuses an operator's reply before anything is written. */
+    refuseReplies?: boolean;
   } = {},
 ) => {
   let ownership = {
@@ -121,6 +128,7 @@ const installDraftReviewBackend = async (
   const releases: Array<{ heldReplyId: string; body: Record<string, unknown> }> = [];
   const discards: string[] = [];
   const replies: unknown[] = [];
+  const takeovers: unknown[] = [];
 
   const summary = () => ({
     id: conversationId,
@@ -257,6 +265,7 @@ const installDraftReviewBackend = async (
       return json(route, target);
     }
     if (request.method() === "POST" && path === "/takeover") {
+      takeovers.push(request.postDataJSON());
       ownership = {
         ...ownership,
         state: "human_owned",
@@ -271,8 +280,29 @@ const installDraftReviewBackend = async (
       return json(route, { ownership });
     }
     if (request.method() === "POST" && path === "/reply") {
-      const body = request.postDataJSON() as { message: string };
+      const body = request.postDataJSON() as { message: string; expectedVersion: number };
       replies.push(body);
+      // The mailbox's refusal comes before any write: the draft stays pending and the agent keeps
+      // the conversation.
+      if (options.refuseReplies) {
+        return refuse(route, 409, "email_sending_not_verified", "Replies to this email conversation can be sent once its sending domain is verified.", {
+          step: "verify_sending_domain",
+        });
+      }
+      if (body.expectedVersion !== ownership.version) {
+        return refuse(route, 409, "conflict", "Conversation ownership changed");
+      }
+      // A reply claims the conversation and supersedes its draft in the same write.
+      ownership = {
+        ...ownership,
+        state: "human_owned",
+        ownerAccountId: "account-1",
+        ownerUserId: currentUserId,
+        ownerDisplayName: "Test Operator",
+        reason: "operator_takeover",
+        version: ownership.version + 1,
+        takenOverAt: nowIso,
+      };
       clearAttention();
       const message: ThreadMessage = { id: "message-operator-1", role: "assistant", source: "human_agent", content: body.message, createdAt: nowIso };
       messages.push(message);
@@ -285,6 +315,9 @@ const installDraftReviewBackend = async (
     releases,
     discards,
     replies,
+    takeovers,
+    ownershipState: () => ownership.state,
+    heldReplyStates: () => heldReplies.map((reply) => reply.state),
     /** The customer writes again before review: the pending draft is superseded by a fresh one. */
     receiveNewerInbound: () => {
       heldReplies.forEach((reply) => {
@@ -329,8 +362,13 @@ test("a draft mailbox's inbound becomes an approval whose panel shows the outcom
   await expect(panel.getByRole("textbox", { name: "Draft reply text" })).toHaveValue(draftText);
 
   await panel.getByRole("button", { name: "Reasoning" }).click();
-  await expect(panel.getByRole("list", { name: "Reasoning steps" }).getByRole("listitem"))
-    .toHaveText(["Interpret", "Select skill", "Dispatch · Skipped", "Compose"]);
+  await expect(panel.getByRole("list", { name: "Reasoning" }).getByRole("listitem")).toHaveText([
+    "Outcome: Coverage partial",
+    "Grounding: Grounded",
+    "Coverage: Partly answered",
+    "Not run: refund_order",
+    `Turn: ${reviewTurnId}`,
+  ]);
 });
 
 test("sending the draft unchanged releases it as written, keeps focus, and announces it", async ({ page }) => {
@@ -392,6 +430,73 @@ test("discarding asks once, keeps the item in the Inbox, and a reply then clears
   await expect(row).toHaveCount(0);
   expect(backend.releases).toEqual([]);
   expect(backend.replies).toHaveLength(1);
+});
+
+test("a reply the mailbox refuses leaves the draft pending and the conversation with the agent", async ({ page }) => {
+  await seedDashboardStorage(page);
+  const backend = await installDraftReviewBackend(page, { refuseReplies: true });
+
+  const { row, response, panel } = await openDraft(page);
+  const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  await replyBox.fill("A teammate will call you today.");
+  await response.getByRole("button", { name: "Send", exact: true }).click();
+
+  await expect(response.getByText("Replies to this email conversation can be sent once its sending domain is verified.")).toBeVisible();
+  await expect(replyBox).toHaveValue("A teammate will call you today.");
+  await expect(row).toBeVisible();
+  await expect(panel.getByRole("textbox", { name: "Draft reply text" })).toHaveValue(draftText);
+  expect(backend.replies).toEqual([{ message: "A teammate will call you today.", expectedVersion: 1 }]);
+  // Nothing claimed the conversation before the refusal, so nothing superseded the draft.
+  expect(backend.takeovers).toEqual([]);
+  expect(backend.ownershipState()).toBe("ai_owned");
+  expect(backend.heldReplyStates()).toEqual(["pending"]);
+});
+
+test("every waiting draft and delivery failure reaches the Inbox, past the first page of fifty", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/quality/turns**", (route) =>
+    json(route, { items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }));
+
+  // Both lists answer newest first, fifty to a page; the oldest of each sits on the second page.
+  const minutesAgo = (minutes: number) => new Date(Date.parse(nowIso) - minutes * 60_000).toISOString();
+  const drafts = Array.from({ length: 51 }, (_, index) => heldReply({
+    id: `held-${index}`,
+    conversationId: `conversation-draft-${index}`,
+    draftText: index === 50 ? "The oldest draft waits on the second page." : `Draft number ${index}.`,
+    createdAt: minutesAgo(index + 1),
+  }));
+  await page.route("**/backend/api/v1/held-replies**", (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    return cursor === "held-page-2"
+      ? json(route, { items: drafts.slice(50), nextCursor: null })
+      : json(route, { items: drafts.slice(0, 50), nextCursor: "held-page-2" });
+  });
+  const failure = (id: string, openedAt: string) => ({
+    id,
+    conversationId: `conversation-${id}`,
+    messageId: `message-${id}`,
+    provider: "email",
+    kind: "bounced",
+    detailCode: "mailbox_full",
+    openedAt,
+    clearedAt: null,
+    clearReason: null,
+  });
+  await page.route("**/backend/api/v1/delivery-failures**", (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    return cursor === "failure-page-2"
+      ? json(route, { items: [failure("failure-oldest", minutesAgo(600))], nextCursor: null })
+      : json(route, { items: [failure("failure-newest", minutesAgo(1))], nextCursor: "failure-page-2" });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  const queue = page.getByLabel("Inbox queue");
+  await expect(page.getByText("Needs you · 53")).toBeVisible();
+  await expect(queue.getByRole("button", { name: /Approval.*The oldest draft waits on the second page/ })).toBeVisible();
+  await expect(queue.getByRole("button", { name: /Delivery failure/ })).toHaveCount(2);
+  // Everything waiting was read, so nothing says some is missing.
+  await expect(page.getByText("Older drafts or delivery failures are waiting beyond what the Inbox shows.")).toHaveCount(0);
 });
 
 test("a newer inbound replaces the draft in place, and Send releases the newer one", async ({ page }) => {

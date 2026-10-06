@@ -32,6 +32,7 @@ import {
   type HumanOwnedConversationSummary,
   type InboxItem,
 } from '@/lib/needs-attention'
+import { heldReplyReasoningLines } from '@/lib/needs-attention-reply-review'
 
 const ownership = (overrides: Partial<ConversationOwnership> = {}): ConversationOwnership => ({
   conversationId: 'conversation-1',
@@ -1368,6 +1369,21 @@ describe('delivery failures in the inbox model', () => {
     })
   })
 
+  it('attributes a failed automatic reply on an AI-owned conversation to its agent, so the agent filter keeps it', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [],
+      deliveryFailures: [deliveryFailure()],
+      failureConversations: [{ id: 'c-email', title: 'Where is my order?', updatedAt: '2026-06-19T10:00:00.000Z', agentId: 'agent-3', agentName: 'Gioia' }],
+    })
+
+    expect(items[0]).toMatchObject({ type: 'delivery_failed', title: 'Where is my order?', agentId: 'agent-3', agentName: 'Gioia' })
+    expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, agentId: 'agent-3' }, { currentUserId: null })
+      .map((item) => item.key)).toEqual(['delivery_failed:failure-1'])
+    expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, agentId: 'agent-other' }, { currentUserId: null })).toEqual([])
+  })
+
   it('sorts with the other critical rows, oldest first, above feedback', () => {
     const items = buildInboxItems({
       decisions: [decision({ handle: 'd1', conversationId: 'c-approval', createdAt: '2026-06-19T10:03:00.000Z' })],
@@ -1576,5 +1592,38 @@ describe('held replies in the inbox model', () => {
 
     expect(findRefreshedInboxItem(refetched, selectedApproval)).toBeUndefined()
     expect(findRefreshedInboxItem(refetched, selectedHeld)).toBeUndefined()
+  })
+})
+
+describe('heldReplyReasoningLines', () => {
+  const trace = {
+    turnId: 'turn-1',
+    outcome: 'coverage_partial',
+    groundingVerdict: 'degraded' as const,
+    coverage: 'partial',
+    handoffReason: 'billing_dispute',
+    suppressedEffects: [{ skillName: 'refund_order' }, { skillName: 'cancel_order' }],
+  }
+
+  it('reads each recorded fact as a short line and closes with the turn id', () => {
+    expect(heldReplyReasoningLines(trace)).toEqual([
+      { label: 'Outcome', value: 'Coverage partial' },
+      { label: 'Grounding', value: 'Partly grounded' },
+      { label: 'Coverage', value: 'Partly answered' },
+      { label: 'Hand-off', value: 'Billing dispute' },
+      { label: 'Not run', value: 'refund_order, cancel_order' },
+      { label: 'Turn', value: 'turn-1' },
+    ])
+  })
+
+  it('leaves out the facts the turn did not record', () => {
+    expect(heldReplyReasoningLines({
+      ...trace,
+      outcome: null,
+      groundingVerdict: null,
+      coverage: 'not_assessed',
+      handoffReason: null,
+      suppressedEffects: [],
+    })).toEqual([{ label: 'Turn', value: 'turn-1' }])
   })
 })

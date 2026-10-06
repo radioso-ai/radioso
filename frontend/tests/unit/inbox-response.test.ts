@@ -85,6 +85,16 @@ describe('visitorIdentityLabel', () => {
   it('labels an unknown session state generically rather than guessing', () => {
     expect(visitorIdentityLabel({ anonymousSessionId: undefined })).toBe('Visitor')
   })
+
+  it('never calls an email sender verified: a session does not apply to email, so none proves nothing', () => {
+    expect(visitorIdentityLabel({ anonymousSessionId: null, channel: 'email' })).toBe('Email sender')
+    expect(visitorIdentityLabel({ anonymousSessionId: undefined, channel: 'email' })).toBe('Email sender')
+  })
+
+  it('keeps the session reading for a web visitor', () => {
+    expect(visitorIdentityLabel({ anonymousSessionId: null, channel: 'web' })).toBe('Verified visitor')
+    expect(visitorIdentityLabel({ anonymousSessionId: null, channel: null })).toBe('Verified visitor')
+  })
 })
 
 describe('stripTrackingParams', () => {

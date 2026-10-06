@@ -179,6 +179,12 @@ export const buildInboxModel = (input: {
   conversations: HumanOwnedConversationSummary[]
   qualityTurns: LowQualityTurn[]
   deliveryFailures?: readonly DeliveryFailure[]
+  /**
+   * The conversations of delivery failures that are not among `conversations`, read on their own:
+   * an automatic reply that bounced leaves its conversation AI-owned, and its row still needs the
+   * conversation's title and agent.
+   */
+  failureConversations?: readonly HandoffCandidateSource[]
   /** Held replies are approvals too, beside routine decisions. */
   heldReplies?: readonly HeldReply[]
 }): InboxModel => {
@@ -202,8 +208,10 @@ export const buildInboxModel = (input: {
 
   const handoffs: InboxItem[] = input.conversations.map(toHandoffInboxItem)
 
-  const deliveryFailures: InboxItem[] = buildDeliveryFailureRows(input.deliveryFailures ?? [], input.conversations)
-    .map((row) => ({ ...row, severity: ESCALATION_SEVERITY[row.type] }))
+  const deliveryFailures: InboxItem[] = buildDeliveryFailureRows(
+    input.deliveryFailures ?? [],
+    [...(input.failureConversations ?? []), ...input.conversations],
+  ).map((row) => ({ ...row, severity: ESCALATION_SEVERITY[row.type] }))
 
   const escalatedConversationIds = new Set(
     [...approvals, ...handoffs, ...deliveryFailures].map((item) => item.conversationId),
@@ -328,9 +336,9 @@ export const toHandoffInboxItem = (conversation: HandoffCandidateSource): InboxI
  * with the agent — is actionable, with the same composer, claim-on-send, and
  * Done control as a Needs-you queue row; only a *completed* conversation is
  * read-only. Sending a reply on a live-but-unclaimed conversation claims it
- * exactly like a handoff (`OperatorComposer` already takes over before
- * sending whenever the conversation isn't already owned by a specific
- * human — see `deriveOperatorActions`). Returns `null` for read-only so the
+ * exactly like a handoff (`OperatorComposer`'s reply claims it whenever the
+ * conversation isn't already owned by a specific human — see
+ * `deriveOperatorActions`). Returns `null` for read-only so the
  * response view can treat "no handoff item" as its one read-only signal.
  */
 export const deriveInboxResponseHandoffItem = (

@@ -13,10 +13,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorCode, getApiErrorMessage } from '@/lib/api-error'
 import { getHitlApiErrorStatus } from '@/lib/api-hitl'
 import { replyReviewApi, type HeldReply } from '@/lib/api-reply-review'
-import type { ConversationTraceStage } from '@/lib/api'
 import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
-import { heldReplyFactsLine, heldReplyOutcomeLabel } from '@/lib/needs-attention-reply-review'
-import { spineStageLabel } from '@/lib/turn-trace'
+import { heldReplyFactsLine, heldReplyOutcomeLabel, heldReplyReasoningLines } from '@/lib/needs-attention-reply-review'
 
 type OwnOutcome = 'released' | 'edited' | 'discarded'
 
@@ -47,15 +45,6 @@ const SENDING_STEP: Record<string, (domain: string | null) => string> = {
   verify_sending_domain: (domain) => `Verify ${domain ?? 'the sending domain'} in Settings, then send again.`,
   add_sending_domain: () => 'Add a sending domain in Settings, then send again.',
   add_mailbox: () => 'Add this mailbox again in Settings, then send again.',
-}
-
-const STAGE_STATUS: Record<ConversationTraceStage['status'], string | null> = {
-  applied: null,
-  skipped: 'Skipped',
-  fallback: 'Fallback',
-  rejected: 'Rejected',
-  unavailable: 'Unavailable',
-  failed: 'Failed',
 }
 
 const DISCARD_CONSEQUENCE = 'Nothing is sent. The conversation stays in your Inbox until someone replies.'
@@ -243,7 +232,7 @@ export function HeldReplyPanel({
   const isEdited = text.trim() !== heldReply.draftText.trim()
   const factsLine = heldReplyFactsLine(heldReply.facts)
   const suppressedSkills = heldReply.suppressedEffects.map((effect) => effect.skillName)
-  const stages = heldReply.trace?.spine.stages ?? []
+  const reasoning = heldReply.trace ? heldReplyReasoningLines(heldReply.trace) : []
   const status = own?.id === heldReply.id
     ? OWN_OUTCOME[own.outcome]
     : heldReply.state === 'pending' ? notice : SETTLED_ELSEWHERE[heldReply.state]
@@ -300,20 +289,21 @@ export function HeldReplyPanel({
       ) : null}
       {factsLine ? <p className="mt-1 text-xs text-muted-foreground">{factsLine}</p> : null}
 
-      {stages.length > 0 ? (
+      {reasoning.length > 0 ? (
         <Collapsible className="mt-2">
           <CollapsibleTrigger className="group inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
             Reasoning
             <ChevronDown className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180" aria-hidden />
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <ol aria-label="Reasoning steps" className="mt-1 list-decimal space-y-0.5 pl-5 text-xs text-muted-foreground">
-              {stages.map((stage) => (
-                <li key={stage.id}>
-                  {STAGE_STATUS[stage.status] ? `${spineStageLabel(stage)} · ${STAGE_STATUS[stage.status]}` : spineStageLabel(stage)}
+            <ul aria-label="Reasoning" className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+              {reasoning.map((line) => (
+                <li key={line.label}>
+                  <span className="text-foreground/80">{line.label}:</span>{' '}
+                  <span className={line.label === 'Turn' ? 'font-mono' : undefined}>{line.value}</span>
                 </li>
               ))}
-            </ol>
+            </ul>
           </CollapsibleContent>
         </Collapsible>
       ) : null}

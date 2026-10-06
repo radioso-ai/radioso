@@ -1,4 +1,4 @@
-import type { DeliveryFailure, HeldReply } from './api-reply-review'
+import type { DeliveryFailure, HeldReply, HeldReplyTrace } from './api-reply-review'
 import { handoffReasonLabel } from './conversation-activity'
 import { resolveConversationDisplayTitle } from './conversation-title'
 import type { HandoffCandidateSource, InboxItem } from './needs-attention'
@@ -29,7 +29,8 @@ type DeliveryFailureRow = Omit<InboxItem, 'severity'> & { type: 'delivery_failed
 /**
  * One Inbox row per open delivery failure: a conversation with two failed replies has two rows.
  * Each waits from the moment the failure opened. A failure carries no conversation facts, so the
- * row borrows its title and agent from the conversation when the Inbox has already loaded it.
+ * row borrows its title and agent from the conversation when the Inbox has loaded it: as a
+ * human-owned conversation, or read on its own for the failure. The later of two entries wins.
  */
 export const buildDeliveryFailureRows = (
   failures: readonly DeliveryFailure[],
@@ -99,6 +100,36 @@ export const heldReplyFactsLine = (facts: HeldReply['facts']): string =>
     labelFor(COVERAGE_LABEL, facts.coverage),
     facts.handoff.requested ? handoffReasonLabel(facts.handoff.reason) ?? 'Asked for a person' : null,
   ].filter((part): part is string => Boolean(part)).join(' · ')
+
+const TRACE_GROUNDING_LABEL: Readonly<Record<NonNullable<HeldReplyTrace['groundingVerdict']>, string>> = {
+  grounded: 'Grounded',
+  degraded: 'Partly grounded',
+  no_support: 'Not supported by sources',
+}
+
+/** One line of a review turn's reasoning: what it names, and what the turn recorded. */
+type HeldReplyReasoningLine = { label: string; value: string }
+
+/**
+ * The review turn's reasoning as short lines: its outcome, grounding, coverage, why it asked for a
+ * person, and the skills it was not allowed to run. A fact the turn did not record is left out;
+ * the turn's id closes the list, so support can find the turn.
+ */
+export const heldReplyReasoningLines = (trace: HeldReplyTrace): HeldReplyReasoningLine[] => {
+  const coverage = labelFor(COVERAGE_LABEL, trace.coverage)
+  const handoff = trace.handoffReason ? handoffReasonLabel(trace.handoffReason) : null
+  const lines: (HeldReplyReasoningLine | null)[] = [
+    trace.outcome ? { label: 'Outcome', value: codeAsWords(trace.outcome) } : null,
+    trace.groundingVerdict ? { label: 'Grounding', value: TRACE_GROUNDING_LABEL[trace.groundingVerdict] } : null,
+    coverage ? { label: 'Coverage', value: coverage } : null,
+    handoff ? { label: 'Hand-off', value: handoff } : null,
+    trace.suppressedEffects.length > 0
+      ? { label: 'Not run', value: trace.suppressedEffects.map((effect) => effect.skillName).join(', ') }
+      : null,
+    { label: 'Turn', value: trace.turnId },
+  ]
+  return lines.filter((line): line is HeldReplyReasoningLine => line !== null)
+}
 
 /** An approval row before the inbox model ranks it; the model owns every row's severity. */
 type HeldReplyRow = Omit<InboxItem, 'severity'> & { type: 'approval'; heldReplyId: string }

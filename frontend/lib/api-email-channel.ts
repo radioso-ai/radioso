@@ -77,6 +77,8 @@ export type UpdateEmailMailboxRequest = Partial<EmailMailboxLimits> & {
   engagementMode?: EmailEngagementMode
   /** The owner's explicit opt-in; switching an existing mailbox to `auto` is refused without it. */
   autoOptIn?: true
+  /** A disabled mailbox logs its mail but answers none of it; disabling hands waiting drafts to a person. */
+  enabled?: boolean
   expectedPolicyVersion?: number
 }
 
@@ -160,6 +162,11 @@ export const emailChannelApi = {
 
   updateMailbox(workspaceId: string, mailboxId: string, body: UpdateEmailMailboxRequest): Promise<EmailMailbox> {
     return request<EmailMailbox>(mailboxPath(workspaceId, mailboxId), { method: 'PATCH', body: JSON.stringify(body) })
+  },
+
+  /** Issues a new relay address; the previous one keeps working for a seven-day grace period. */
+  rotateRelayAddress(workspaceId: string, mailboxId: string): Promise<EmailMailbox> {
+    return request<EmailMailbox>(mailboxPath(workspaceId, mailboxId, '/relay-token/rotate'), post())
   },
 
   startSetupCheck(workspaceId: string, mailboxId: string, step: EmailSetupCheckStep): Promise<EmailMailboxSetupCheck> {

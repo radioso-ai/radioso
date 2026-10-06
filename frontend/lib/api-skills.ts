@@ -60,6 +60,15 @@ export type SkillCapabilityTarget = {
   status?: string
 }
 
+// Present only on a number field whose true effective ceiling is set by a sibling field's
+// current value rather than by `max`. See SkillForm's usage-cap notice rendering.
+export type SkillCapabilitySettingsFieldUsageCap = {
+  raisedByKey: string
+  floor: number
+  ceiling: number
+  notice: string
+}
+
 export type SkillCapabilitySettingsField = {
   key: string
   label: string
@@ -70,6 +79,7 @@ export type SkillCapabilitySettingsField = {
   options?: Array<{ value: string; label: string }>
   min?: number
   max?: number
+  usageCap?: SkillCapabilitySettingsFieldUsageCap
   group?: string
   advanced?: boolean
 }

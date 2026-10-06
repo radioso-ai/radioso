@@ -32,7 +32,7 @@ import type { MetricsRegistry } from "../../../../shared/observability/metrics/m
 import { traceOperation } from "../../../../shared/observability/tracing/operations.js";
 import { resolveEngagementDisposition, type EngagementDisposition, type IngestOnlyReason } from "./emailEngagementDisposition.js";
 import { classifyInbound } from "./emailInboundClassification.js";
-import { routeDeliveredTo, type MailboxRouteLookups, type MailboxTarget } from "./emailInboundRouting.js";
+import { routeDeliveredTo, type InboundRouteLookups, type MailboxTarget } from "./emailInboundRouting.js";
 import { resolveThread, type ThreadCandidates, type ThreadResolution } from "./emailThreadResolution.js";
 
 /**
@@ -793,7 +793,7 @@ export class EmailInboundProcessor {
     });
   }
 
-  private routeLookups(): MailboxRouteLookups {
+  private routeLookups(): InboundRouteLookups {
     return { inboundDomain: this.deps.config.inboundDomain, mailboxes: this.deps.mailboxes, domains: this.deps.domains };
   }
 

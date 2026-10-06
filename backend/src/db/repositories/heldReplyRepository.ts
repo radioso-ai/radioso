@@ -1,3 +1,9 @@
+import {
+  REPLY_COVERAGES,
+  REPLY_GROUNDINGS,
+  REPLY_OUTCOMES,
+  type ReviewTurnFacts,
+} from "@radioso/conversation-contract";
 import { sql, type Selectable } from "kysely";
 
 // The handoff module owns the held-reply machine, its record and its store ports; this repository is
@@ -14,7 +20,6 @@ import {
   type HeldReplyEvent,
   type HeldReplyRecord,
   type HeldReplyTransition,
-  type HeldReplyTurnFacts,
   type SupersedeReason,
 } from "../../modules/handoff/heldReplies/heldReplyState.js";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
@@ -28,6 +33,10 @@ const asObject = (value: unknown): Record<string, unknown> =>
 
 const asCode = (value: unknown): string => (typeof value === "string" ? value : "unknown");
 
+/** A stored fact code read back as one of its codes; one this build does not know reads as the host could not tell. */
+const asCodeOf = <Code extends string>(codes: readonly Code[], value: unknown, couldNotTell: Code): Code =>
+  codes.find((code) => code === value) ?? couldNotTell;
+
 const readSuppressedEffects = (value: unknown): { skillName: string }[] =>
   (Array.isArray(value) ? value : []).flatMap((effect) => {
     const skillName = asObject(effect).skillName;
@@ -35,20 +44,20 @@ const readSuppressedEffects = (value: unknown): { skillName: string }[] =>
   });
 
 /** `turn_facts` holds the facts but the suppressed effects, which have their own column. */
-const readFacts = (turnFacts: unknown, suppressedEffects: unknown): HeldReplyTurnFacts => {
+const readFacts = (turnFacts: unknown, suppressedEffects: unknown): ReviewTurnFacts => {
   const facts = asObject(turnFacts);
   const handoff = asObject(facts.handoff);
   return {
-    outcome: asCode(facts.outcome),
-    grounding: asCode(facts.grounding),
-    coverage: asCode(facts.coverage),
+    outcome: asCodeOf(REPLY_OUTCOMES, facts.outcome, "unavailable"),
+    grounding: asCodeOf(REPLY_GROUNDINGS, facts.grounding, "unknown"),
+    coverage: asCodeOf(REPLY_COVERAGES, facts.coverage, "unavailable"),
     handoff: handoff.requested === true ? { requested: true, reason: asCode(handoff.reason) } : { requested: false },
     suppressedEffects: readSuppressedEffects(suppressedEffects),
     citationCount: typeof facts.citationCount === "number" ? facts.citationCount : 0,
   };
 };
 
-const storedFacts = (facts: HeldReplyTurnFacts): Record<string, unknown> => ({
+const storedFacts = (facts: ReviewTurnFacts): Record<string, unknown> => ({
   outcome: facts.outcome,
   grounding: facts.grounding,
   coverage: facts.coverage,

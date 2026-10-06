@@ -47,6 +47,31 @@ export interface EmailReviewTranscriptReader {
   recentMessages(input: { workspaceId: string; conversationId: string; limit: number }): Promise<readonly EmailTranscriptMessage[]>;
 }
 
+/** The host's stored messages, narrowed to what the transcript reads. */
+export interface EmailReviewMessageStore {
+  /** The newest `limit` messages in `roles`, oldest first; the roles filter applies before the limit. */
+  listRecentByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    limit: number,
+    options: { roles: readonly TranscriptRole[] },
+  ): Promise<readonly { role: string; content: string }[]>;
+}
+
+/**
+ * The rows the checks read: the customer's messages and the business's, never a system row. The
+ * store filters before it limits, so the window check sees truncation.
+ */
+const TRANSCRIPT_ROLES = ["user", "assistant"] as const;
+type TranscriptRole = typeof TRANSCRIPT_ROLES[number];
+
+/** The conversation as the checks read it, over the host's stored messages. */
+export const emailReviewTranscript = (messages: EmailReviewMessageStore): EmailReviewTranscriptReader => ({
+  recentMessages: async ({ workspaceId, conversationId, limit }) =>
+    (await messages.listRecentByConversationId(workspaceId, conversationId, limit, { roles: TRANSCRIPT_ROLES }))
+      .map((message) => ({ author: message.role === "user" ? "customer" : "business", text: message.content })),
+});
+
 /** What every check is built with. */
 export interface EmailReviewCheckDependencies {
   inference: EmailReviewInferenceFactory;

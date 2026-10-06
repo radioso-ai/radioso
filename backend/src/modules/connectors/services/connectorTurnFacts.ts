@@ -98,7 +98,7 @@ export const connectorTurnResult = (result: ChatReviewResult): ConnectorTurnResu
         conversationId: result.conversationId,
         ownershipVersion: result.ownershipVersion,
         facts: connectorTurnFacts(result.facts, "draft"),
-        draft: { text: result.draft.text, presentation: result.draft.presentation },
+        draft: result.draft,
       };
     case "no_draft":
       return {

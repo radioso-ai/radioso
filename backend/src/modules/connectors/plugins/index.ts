@@ -10,7 +10,7 @@ export { createEmailChannelConnector, createEmailReviewChecks } from "./email/em
 export type { EmailChannelWorker } from "./email/emailChannelWorker.js";
 export { EMAIL_COALESCE_SECONDS, EMAIL_RAW_MAX_BYTES, type EmailThreadProtocolUnitOfWork } from "./email/emailInboundProcessor.js";
 export { EMAIL_REVIEW_MAX_ATTEMPTS, type EmailReviewChecks } from "./email/emailReviewRunner.js";
-export type { EmailReviewInferenceFactory, EmailTranscriptMessage } from "./email/emailReviewChecks.js";
+export type { EmailReviewInferenceFactory } from "./email/emailReviewChecks.js";
 
 interface BuiltInConnectorOptions {
   slack?: Partial<Record<RequiredSlackEnvVar, string | undefined>> & {

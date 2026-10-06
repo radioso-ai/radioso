@@ -12,7 +12,7 @@ import {
   type HeldReplyBindingCheck,
   type HeldReplyEvent,
   type HeldReplyState,
-} from "../../../src/modules/handoff/public.js";
+} from "../../../src/modules/handoff/heldReplies/heldReplyState.js";
 
 const current: HeldReplyBindingCheck = {
   ownership: { bound: 2, current: 2 },

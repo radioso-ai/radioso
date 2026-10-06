@@ -1,9 +1,9 @@
 import { sql } from "kysely";
 import { describe, expect, it, vi } from "vitest";
 
+import { createEmailHeldReplyChannelRegistration } from "../../../src/app/composition/emailChannel/index.js";
 import {
   createPostgresHeldReplyUnitOfWork,
-  emailHeldReplyChannelRegistration,
   type HeldReplyChannelRegistration,
 } from "../../../src/app/composition/heldReplyUnitOfWork.js";
 import type { ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
@@ -11,6 +11,8 @@ import { emailMailboxPolicyRef, EMAIL_SEND_ACTION_TYPE } from "../../../src/modu
 import { HeldReplyService, type HeldReplyChannelScope, type OwnershipActor } from "../../../src/modules/handoff/public.js";
 import { createRecordingKysely, type RecordedAnswer } from "../../support/recordingKysely.js";
 
+/** Email's registration where the deployment grants no automatic sending. */
+const emailHeldReplyChannelRegistration = createEmailHeldReplyChannelRegistration({ autoSend: false });
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const conversationId = "22222222-2222-4222-8222-222222222222";
 const heldReplyId = "33333333-3333-4333-8333-333333333333";
@@ -440,7 +442,7 @@ describe("createPostgresHeldReplyUnitOfWork", () => {
       ownershipVersion: 0,
       policy: { ref: emailMailboxPolicyRef(mailboxId), version: 4 },
       reviewRef: `email:${conversationId}:1`,
-      facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: false as const }, suppressedEffects: [], citationCount: 1 },
+      facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: false }, suppressedEffects: [], citationCount: 1 } as const,
       draft: { text: "Your order ships tomorrow.", presentation: { skillName: "retrieval.answer", skillOutcome: "grounded", metadata: { citations: [] } } },
     };
 

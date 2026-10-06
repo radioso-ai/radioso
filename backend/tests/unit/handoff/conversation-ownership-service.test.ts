@@ -3,12 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../../src/db/repositories/messageRepository.js";
 import type { ConversationActivityEvent } from "../../../src/modules/conversationActivity/contracts/index.js";
+import { heldReplyTransition, type HeldReplyEvent } from "../../../src/modules/handoff/heldReplies/heldReplyState.js";
 import {
   CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
   ConversationOwnershipService,
-  heldReplyTransition,
   type ConversationOperator,
-  type HeldReplyEvent,
   type HeldReplyState,
   type OperatorReplyService,
   type OwnershipActor,

@@ -405,7 +405,7 @@ const heldReply = (overrides: Record<string, unknown> = {}) => ({
   agentId: "11111111-1111-4111-8111-111111111111",
   state: "pending" as const,
   holdReason: "draft_mode",
-  facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: false, reason: null } },
+  facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: false, reason: null } } as const,
   dependsOnSuppressedAction: false,
   suppressedEffects: [],
   draftText: "Your refund was issued on Monday.",

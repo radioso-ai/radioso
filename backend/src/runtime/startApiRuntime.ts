@@ -6,7 +6,7 @@ import { buildDependencies } from "../app/server/dependencies.js";
 import type { Env } from "../app/config/env.js";
 import type { ApplicationModule } from "../app/composition/index.js";
 import { runMigrations, type MigrationTimeoutOptions } from "../db/runMigrations.js";
-import { createConnectorChatPort } from "../modules/connectors/services/connectorChatPort.js";
+import { createConnectorChatPort } from "../modules/connectors/services/public.js";
 import { fetchPublicUrl } from "../shared/infra/http/publicUrlFetch.js";
 import { createLogger, type AppLogger } from "../shared/observability/logger.js";
 import type { AppDependencies } from "../app/server/types.js";

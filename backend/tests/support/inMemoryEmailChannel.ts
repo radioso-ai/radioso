@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
-import type { EmailChannelOperatorServices } from "../../src/app/composition/emailChannel.js";
+import type { EmailChannelOperatorServices } from "../../src/app/composition/emailChannel/index.js";
 import type { AuditPort } from "../../src/modules/audit/contracts/index.js";
 import {
   ConversationEmailFactsReader,

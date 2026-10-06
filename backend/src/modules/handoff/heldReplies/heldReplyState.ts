@@ -1,3 +1,5 @@
+import type { ReplyDraft, ReviewTurnFacts } from "@radioso/conversation-contract";
+
 /**
  * The held-reply machine: what a review result is born as, which events move a held reply out of
  * which state and to what, and when a release is refused. Pure; the repository's conditional
@@ -20,25 +22,6 @@ export type HeldReplyAttentionClearReason = "released" | "operator_reply" | "tak
 /** Why a teammate's release changed nothing. */
 export type HeldReplyReleaseRefusal = "not_pending" | "ownership_changed" | "policy_changed" | "channel_not_ready";
 
-/**
- * The review turn's facts as the held reply keeps them, for operators to judge the draft by. The
- * codes are the host's; handoff stores and presents them and decides nothing on them.
- */
-export interface HeldReplyTurnFacts {
-  outcome: string;
-  grounding: string;
-  coverage: string;
-  handoff: { requested: false } | { requested: true; reason: string };
-  suppressedEffects: readonly { skillName: string }[];
-  citationCount: number;
-}
-
-/** The reply a review turn produced: its text, and the host-owned presentation it is written with. */
-export interface HeldReplyDraft {
-  readonly text: string;
-  readonly presentation: Readonly<Record<string, unknown>>;
-}
-
 export interface HeldReplyRecord {
   id: string;
   workspaceId: string;
@@ -54,8 +37,13 @@ export interface HeldReplyRecord {
   /** The producer's policy the review ran under, by an opaque ref and its version; null when none is bound. */
   policy: { ref: string; version: number } | null;
   holdReason: string;
-  facts: HeldReplyTurnFacts;
-  draft: HeldReplyDraft;
+  /**
+   * The review turn's facts, for operators to judge the draft by. The codes are the host's;
+   * handoff stores and presents them and decides nothing on them.
+   */
+  facts: ReviewTurnFacts;
+  /** The reply the review turn produced, written with its host-owned presentation on release. */
+  draft: ReplyDraft;
   editedText: string | null;
   editorUserId: string | null;
   releaserUserId: string | null;

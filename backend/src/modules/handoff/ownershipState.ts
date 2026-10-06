@@ -111,6 +111,27 @@ type CanResumeResult =
 export const isHumanOwned = (record: ConversationOwnershipRecord | null): boolean =>
   record?.state === "human_owned";
 
+/** The ownership version work on a conversation is bound to: 0 while it has no ownership row. */
+export const ownershipVersionOf = (record: ConversationOwnershipRecord | null): number => record?.version ?? 0;
+
+/**
+ * Who owns a conversation, read through the caller's stores so a transaction can bind them: null
+ * while the conversation does not exist yet, and the AI while it has no ownership row.
+ */
+export const readConversationOwnershipState = async (
+  stores: {
+    conversations: { findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<object | null> };
+    ownership: { load(conversationId: string): Promise<ConversationOwnershipRecord | null> };
+  },
+  input: { conversationId: string; workspaceId: string },
+): Promise<ConversationOwnershipState | null> => {
+  const conversation = await stores.conversations.findByIdAndWorkspaceId(input.conversationId, input.workspaceId);
+  if (!conversation) {
+    return null;
+  }
+  return (await stores.ownership.load(input.conversationId))?.state ?? "ai_owned";
+};
+
 // FR-022 compatibility stub: resume work is message-emitting unless the host marks it
 // side-effect-only/safe. Message-emitting resumes must park while a human owns the
 // conversation so the AI never speaks into a manually owned thread.

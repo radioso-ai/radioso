@@ -1,3 +1,5 @@
+import type { ReplyDraft } from "@radioso/conversation-contract";
+
 import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
 import type { ChatAnswerCoverageAssessment } from "../contracts/answerCoverage.js";
 import type { AssistantTurnOutcome } from "../services/assistantTurnOutcomeTypes.js";
@@ -17,17 +19,6 @@ export interface ChatReviewInput {
   historyWindow: { maxMessages: number };
 }
 
-/** The reply a review turn wrote, unpublished. */
-export interface ReviewedTurnDraft {
-  readonly text: string;
-  /**
-   * What the published message row carries besides its text (skill outcome, grounding,
-   * citations and the rest of its metadata). Host-owned and opaque to channels: it is
-   * stored with the held reply and written verbatim when the draft is published.
-   */
-  readonly presentation: Readonly<Record<string, unknown>>;
-}
-
 /** The turn's own record of how it went, for a channel to decide what to do with the draft. */
 export interface ReviewTurnFactsSource {
   answerOutcome: AssistantTurnOutcome | null;
@@ -45,7 +36,7 @@ export interface ReviewTurnFactsSource {
  * can tell whether a person took the conversation over while it ran.
  */
 export type ChatReviewResult =
-  | { kind: "draft"; conversationId: string; ownershipVersion: number; draft: ReviewedTurnDraft; facts: ReviewTurnFactsSource }
+  | { kind: "draft"; conversationId: string; ownershipVersion: number; draft: ReplyDraft; facts: ReviewTurnFactsSource }
   /** The turn produced no usable reply: no text, or the model could not be reached. */
   | { kind: "no_draft"; conversationId: string; ownershipVersion: number; facts: ReviewTurnFactsSource }
   /** A person owns the conversation, so no turn ran. */

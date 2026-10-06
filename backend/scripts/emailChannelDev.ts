@@ -4,10 +4,12 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 import { getEnv, parseEmailChannelConfig } from "../src/app/config/env.js";
-import { LocalEmailDomainProvisioner } from "../src/modules/mail/adapters/localDomainProvisioner.js";
-import { LocalEmailDriver } from "../src/modules/mail/adapters/localEmailDriver.js";
-import { LOCAL_EMAIL_SPOOL_DIR } from "../src/modules/mail/adapters/localSpool.js";
-import { normalizeInboundMime } from "../src/modules/mail/public.js";
+import {
+  LOCAL_EMAIL_SPOOL_DIR,
+  LocalEmailDomainProvisioner,
+  LocalEmailDriver,
+  normalizeInboundMime,
+} from "../src/modules/mail/public.js";
 import { loadEnvFileIfPresent } from "../src/runtime/loadEnv.js";
 
 /**

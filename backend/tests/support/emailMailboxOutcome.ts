@@ -1,8 +1,5 @@
-import {
-  isHeldReplyAttentionOpen,
-  type ConversationOwnershipRecord,
-  type HeldReplyRecord,
-} from "../../src/modules/handoff/public.js";
+import { isHeldReplyAttentionOpen } from "../../src/modules/handoff/heldReplies/heldReplyState.js";
+import type { ConversationOwnershipRecord, HeldReplyRecord } from "../../src/modules/handoff/public.js";
 
 /**
  * What happened to one inbound email, in the terms a support team uses: the customer got a reply

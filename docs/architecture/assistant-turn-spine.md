@@ -57,7 +57,7 @@ that asked for it.
 
 A pure mapper, `backend/src/modules/connectors/services/connectorTurnFacts.ts`,
 turns a review's internal result into the same typed facts every connector
-reasons about: grounding (`grounded`, `ungrounded`, `not_applicable`,
+reasons about, `ReviewTurnFacts` from `@radioso/conversation-contract`: grounding (`grounded`, `ungrounded`, `not_applicable`,
 `unknown`), coverage (`answered`, `partial`, `unanswered`, `unclear`,
 `unavailable`, `not_assessed`), and whether a hand-off was requested and
 why. The [email channel](../email-channel.md#draft-mode-review-before-it-sends)

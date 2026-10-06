@@ -470,7 +470,6 @@
   "types|backend/src/modules/settings/domain/websiteEmbedIntegration.ts|DefaultWebsiteEmbedIntegrationProviderOptions",
   "types|backend/src/modules/settings/domain/websiteEmbedSettings.ts|WebsiteEmbedSettingsInput",
   "types|backend/src/modules/settings/services/workspaceLlmCapabilitySettingsService.ts|WorkspaceLlmCapabilityActor",
-  "types|backend/src/modules/skills/capabilityRegistry.ts|SkillCapabilitySettingsFieldOption",
   "types|backend/src/modules/skills/routineInvocableSkillNames.ts|RoutineNameDispatchedSkillKind",
   "types|backend/src/modules/skills/skillCatalogService.ts|SkillCatalogContext",
   "types|backend/src/modules/slack/oauth/slackProvider.ts|SlackOauthProviderCredentialConfig",

@@ -1,7 +1,7 @@
 ---
 title: "Rerank Top K"
 description: "Retrieval setting controlling how many reranked candidates proceed to context assembly and answer composition."
-last_updated: 2026-04-02
+last_updated: 2026-10-06
 ---
 
 # Rerank Top K
@@ -23,7 +23,7 @@ This setting determines the size of the shortlist that reranking evaluates.
 
 So this setting does not directly set the number of citations in the final answer. It controls how much retrieved evidence reranking gets to judge before the final prompt is assembled.
 
-In practice, the system will keep enough rerank candidates to fill the final context target when that many candidates are available. This prevents a very low rerank value from accidentally limiting broad answers to only a few sources.
+The system never keeps fewer than 12 candidates (the final context target), and never more than 50: a value below 12 acts as 12, and a value above 50 is capped at 50. This prevents a very low rerank value from accidentally limiting broad answers to only a few sources. Whatever this setting is set to, the answer itself still only ever uses up to 12 passages, at most 2 per document, each cut to 900 characters — `Rerank Top K` controls the shortlist reranking judges, not how much of it survives into the prompt.
 
 ### Lower Values
 
@@ -43,9 +43,9 @@ Higher values mean:
 
 - more evidence reaches reranking
 - recall is preserved better
-- the answer generator has more context to work with
+- reranking has a wider field to re-sort before the 12-passage cutoff applies
 
-The downside is that weaker chunks also survive, which can make answers feel less focused or cause the prompt budget to be spent on second-tier evidence.
+The downside is that weaker chunks also survive into reranking, which can make the final 12 feel less focused if reranking promotes a second-tier chunk over a stronger one further down the shortlist.
 
 ### Example
 

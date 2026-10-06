@@ -2,7 +2,7 @@ import type { FinalPromptContext, RerankedCandidate } from "../domain/retrievalP
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
 const DEFAULT_CONTEXT_TOKEN_BUDGET = RETRIEVAL_BEHAVIOR.promptContextTokenBudget;
-const DEFAULT_MAX_CONTEXTS_PER_DOCUMENT = 2;
+const DEFAULT_MAX_CONTEXTS_PER_DOCUMENT = RETRIEVAL_BEHAVIOR.promptContextMaxPerDocument;
 const DEFAULT_MAX_CHARS_PER_CONTEXT = RETRIEVAL_BEHAVIOR.promptContextMaxCharsPerContext;
 const DEFAULT_MIN_USEFUL_CHARS = RETRIEVAL_BEHAVIOR.promptContextMinUsefulChars;
 

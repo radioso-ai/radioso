@@ -4,9 +4,10 @@ import {
   buildAgentSkillInput,
   createInitialSkillDraft,
   deriveSkillFields,
+  resolveUsageCapNotice,
   validateSkillName,
 } from '@/components/dashboard/settings/skills/skill-form-model'
-import type { AgentSkill, SkillCapabilityDescriptor } from '@/lib/api-skills'
+import type { AgentSkill, SkillCapabilityDescriptor, SkillCapabilitySettingsField } from '@/lib/api-skills'
 
 const baseCapability = (input: Partial<SkillCapabilityDescriptor> = {}): SkillCapabilityDescriptor => ({
   id: 'email',
@@ -499,5 +500,55 @@ describe('skill form model', () => {
       exposedParams: { message: { description: 'Message text', slotBinding: 'message', required: true } },
       declaredOutcomes: ['completed', 'failed'],
     })
+  })
+})
+
+describe('resolveUsageCapNotice', () => {
+  const vectorTopKField = (): SkillCapabilitySettingsField => ({
+    key: 'vectorTopK',
+    label: 'Vector top K',
+    type: 'number',
+    defaultValue: 15,
+    usageCap: {
+      raisedByKey: 'rerankTopK',
+      floor: 12,
+      ceiling: 50,
+      notice: 'The answer draws on the top {cap} candidates after filters and boosts. To use more, raise Rerank top K with Rerank results on.',
+    },
+  })
+  const rerankTopKField = (): SkillCapabilitySettingsField => ({
+    key: 'rerankTopK',
+    label: 'Rerank top K',
+    type: 'number',
+    defaultValue: 5,
+  })
+
+  it('returns null for a field with no usageCap', () => {
+    const field = { ...vectorTopKField(), usageCap: undefined }
+    expect(resolveUsageCapNotice(field, [field, rerankTopKField()], { vectorTopK: 100 })).toBeNull()
+  })
+
+  it('returns null when the field value is within the cap raised by its sibling', () => {
+    const fields = [vectorTopKField(), rerankTopKField()]
+    expect(resolveUsageCapNotice(fields[0], fields, { vectorTopK: 20, rerankTopK: 40 })).toBeNull()
+  })
+
+  it('reports the notice with {cap} replaced when the field exceeds the sibling-raised cap', () => {
+    const fields = [vectorTopKField(), rerankTopKField()]
+    expect(resolveUsageCapNotice(fields[0], fields, { vectorTopK: 100, rerankTopK: 40 })).toBe(
+      'The answer draws on the top 40 candidates after filters and boosts. To use more, raise Rerank top K with Rerank results on.',
+    )
+  })
+
+  it('falls back to the raising sibling default value when it is unset in the draft', () => {
+    const fields = [vectorTopKField(), rerankTopKField()]
+    expect(resolveUsageCapNotice(fields[0], fields, { vectorTopK: 100 })).toBe(
+      'The answer draws on the top 12 candidates after filters and boosts. To use more, raise Rerank top K with Rerank results on.',
+    )
+  })
+
+  it('returns null while the field inherits a default that exceeds the cap', () => {
+    const fields = [vectorTopKField(), rerankTopKField()]
+    expect(resolveUsageCapNotice(fields[0], fields, {})).toBeNull()
   })
 })

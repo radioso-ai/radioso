@@ -185,6 +185,7 @@ export type SkillCapabilityFixture = {
     options?: Array<{ value: string; label: string }>;
     min?: number;
     max?: number;
+    usageCap?: { raisedByKey: string; floor: number; ceiling: number; notice: string };
     group?: string;
     advanced?: boolean;
   }>;
@@ -704,9 +705,9 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
         group: "Retrieval tuning",
         advanced: true,
       },
-      { key: "vectorTopK", label: "Vector top K", type: "number", help: "How many chunks are fetched from the vector index before filtering and reranking.", defaultValue: 15, min: 1, max: 300, group: "Retrieval tuning", advanced: true },
+      { key: "vectorTopK", label: "Vector top K", type: "number", help: "How many chunks each vector search fetches, before filters, boosts and merging. The top Rerank top K of the result (at least 12) go on to the answer.", defaultValue: 15, min: 1, max: 300, usageCap: { raisedByKey: "rerankTopK", floor: 12, ceiling: 50, notice: "The answer draws on the top {cap} candidates after filters and boosts. To use more, raise Rerank top K with Rerank results on." }, group: "Retrieval tuning", advanced: true },
       { key: "rerankEnabled", label: "Rerank results", type: "boolean", help: "Re-score the fetched chunks with a reranker model to improve ordering.", defaultValue: false, group: "Retrieval tuning", advanced: true },
-      { key: "rerankTopK", label: "Rerank top K", type: "number", help: "How many chunks survive reranking and are passed to the answer.", defaultValue: 5, dependsOnKey: "rerankEnabled", min: 1, max: 100, group: "Retrieval tuning", advanced: true },
+      { key: "rerankTopK", label: "Rerank top K", type: "number", help: "How many top candidates go on to the answer, reordered by the reranker when it's on. Values below 12 act as 12; max 50. The answer uses up to 12 of them, at most 2 per document, each cut to 900 characters.", defaultValue: 5, dependsOnKey: "rerankEnabled", min: 1, max: 50, group: "Retrieval tuning", advanced: true },
       { key: "metadataRules", label: "Metadata rules", type: "metadata_rules", group: "Retrieval tuning", advanced: true },
       { key: "citationHoldEnabled", label: "Hold the answer until it cites a source", type: "boolean", help: "Answers stream immediately when off; an answer with no citations is still shown and flagged in Quality.", defaultValue: true, group: "Grounded evidence", advanced: true },
       { key: "temporalStructuredLookupEnabled", label: "Temporal structured lookup", type: "boolean", help: "When someone asks for upcoming events without naming one, also fetch documents by their extracted event dates instead of relying on text similarity alone. Needs metadata extraction enabled on the knowledge base.", defaultValue: true, group: "Temporal retrieval", advanced: true },

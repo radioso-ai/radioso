@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { buildEdgeFactsHeaders } from '../../../../../lib/server/edge-facts'
+import { relayRateLimitResponseHeaders } from '../../../../../lib/server/rate-limit-headers'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,26 +15,6 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
   Vary: 'Origin',
 }
-const RATE_LIMIT_RESPONSE_HEADER_NAMES = [
-  'ratelimit-limit',
-  'ratelimit-remaining',
-  'ratelimit-reset',
-  'retry-after',
-] as const
-
-const rateLimitResponseHeaders = (upstream: Response): Record<string, string> => {
-  const headers: Record<string, string> = {}
-
-  for (const name of RATE_LIMIT_RESPONSE_HEADER_NAMES) {
-    const value = upstream.headers.get(name)
-    if (value) {
-      headers[name] = value
-    }
-  }
-
-  return headers
-}
-
 const withCorsHeaders = (
   origin: string | null,
   headers?: HeadersInit,
@@ -130,16 +111,17 @@ export async function POST(
     })
 
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
+    const responseHeaders = new Headers({
+      'Content-Type': contentType,
+      'Cache-Control': 'no-store',
+    })
+    relayRateLimitResponseHeaders(upstream.headers, responseHeaders)
 
     return new Response(upstream.body, {
       status: upstream.status,
       headers: withCorsHeaders(
         requestOrigin,
-        {
-          'Content-Type': contentType,
-          'Cache-Control': 'no-store',
-          ...rateLimitResponseHeaders(upstream),
-        },
+        responseHeaders,
         { allowOrigin: upstream.ok },
       ),
     })

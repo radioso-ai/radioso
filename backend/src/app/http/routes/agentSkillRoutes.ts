@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { agentSkillCreateSchema, agentSkillUpdateSchema } from "../../../modules/agentSkills/public.js";
+import { builtInAnswerSkillNames } from "../../../modules/chat/public.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
@@ -17,6 +18,7 @@ type AgentSkillRouteDependencies = Pick<
   | "logger"
   | "agentService"
   | "agentSkillsService"
+  | "skillCatalogService"
   | "skillCapabilityRegistry"
 >;
 
@@ -82,8 +84,20 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
   router.get("/:agentId/skills", workspaceSession, agentRead, async (req, res, next) => {
     try {
       const { workspaceId, agentId } = await resolveAgent(req, res);
+      const platformSkills = await Promise.all(builtInAnswerSkillNames.map(async (name) => {
+        const catalog = await dependencies.skillCatalogService.get(name, { workspaceId });
+        if (!catalog) {
+          throw new Error(`Built-in answer skill "${name}" is missing from the skill catalog`);
+        }
+        return { owner: "platform" as const, catalog };
+      }));
       const skills = await dependencies.agentSkillsService.list(workspaceId, agentId);
-      res.status(200).json({ skills });
+      const workspaceSkills = skills
+        // The persisted default retrieve row backs the platform retrieval setting.
+        // The platform row is the only operator-facing representation of that answer skill.
+        .filter((skill) => !(skill.capability === "retrieve" && skill.invocationMode === "default_answer"))
+        .map((skill) => ({ owner: "workspace" as const, skill }));
+      res.status(200).json({ skills: [...platformSkills, ...workspaceSkills] });
     } catch (error) {
       next(error);
     }

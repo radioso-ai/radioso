@@ -96,6 +96,10 @@ export const registerAgentSkillsPaths = (
   const json = <T>(schema: T) => ({ "application/json": { schema } });
   const errorResponse = (description: string) => ({ description, content: json(schemas.ErrorResponseSchema) });
   const skillResponse = json(z.object({ skill: AgentSkillSchema }));
+  const agentSkillListItemSchema = z.discriminatedUnion("owner", [
+    z.object({ owner: z.literal("platform"), catalog: schemas.SkillCatalogEntrySchema }),
+    z.object({ owner: z.literal("workspace"), skill: AgentSkillSchema }),
+  ]);
 
   registry.registerPath({
     method: "get",
@@ -122,7 +126,7 @@ export const registerAgentSkillsPaths = (
     security: sec,
     request: { params: AgentParams },
     responses: {
-      200: { description: "Agent skills", content: json(z.object({ skills: z.array(AgentSkillSchema) })) },
+      200: { description: "Agent skills", content: json(z.object({ skills: z.array(agentSkillListItemSchema) })) },
       401: errorResponse("Authentication required"),
       403: errorResponse("Agent read permission required"),
       404: errorResponse("Agent not found"),

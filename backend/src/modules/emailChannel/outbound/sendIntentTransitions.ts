@@ -198,6 +198,43 @@ const settleUncertain = (
   ]);
 };
 
+/**
+ * A claim that froze the request comes back with the provider's acceptance after the outbox gave
+ * up on the action and the send became `uncertain`: a newer claim lost the freeze to it, and that
+ * claim's final failure exhausted the action. The acceptance says the provider holds the message,
+ * not that it was delivered, so the doubt stays where it is: its ids are recorded on this attempt,
+ * which the writer indexes, so the attempt's later delivery or bounce correlates and settles it,
+ * and a lookup is scheduled for when no event does. A teammate's decision on the attempt is kept,
+ * and no failure is cleared or retargeted: a resend's failure stays the resend's.
+ */
+const recordLateAcceptance = (
+  current: SendIntentSnapshot,
+  event: Extract<SendIntentEvent, { kind: "provider_accepted" }>,
+): SendIntentTransition => {
+  if (!current.requestFrozen || current.providerMessageId !== null) return NOT_APPLICABLE;
+  return to(
+    { ...current, providerMessageId: event.providerMessageId, deliveredRfcMessageId: event.deliveredMessageId },
+    [{ kind: "schedule_reconcile", purpose: "lookup", afterSeconds: LOOKUP_AFTER_ACCEPT_SECONDS }],
+  );
+};
+
+const fromUncertain = (current: SendIntentSnapshot, event: SendIntentEvent): SendIntentTransition => {
+  switch (event.kind) {
+    case "provider_status":
+      return settleUncertain(current, event);
+    case "operator_resolution":
+      return resolveByOperator(current, event);
+    case "provider_accepted":
+      return recordLateAcceptance(current, event);
+    case "reconcile_unsettled":
+      // The lookup a late acceptance scheduled found nothing that settles it: the attempt stays
+      // uncertain, its failure a teammate's, and its later evidence still settles it.
+      return current.providerMessageId === null ? NOT_APPLICABLE : to(current);
+    default:
+      return NOT_APPLICABLE;
+  }
+};
+
 const resolveByOperator = (
   current: SendIntentSnapshot,
   event: Extract<SendIntentEvent, { kind: "operator_resolution" }>,
@@ -236,8 +273,7 @@ export const nextSendIntentState = (current: SendIntentSnapshot | null, event: S
     case "accepted":
       return fromAccepted(current, event);
     case "uncertain":
-      if (event.kind === "provider_status") return settleUncertain(current, event);
-      return event.kind === "operator_resolution" ? resolveByOperator(current, event) : NOT_APPLICABLE;
+      return fromUncertain(current, event);
     case "halted":
       return event.kind === "operator_resolution" ? resolveByOperator(current, event) : NOT_APPLICABLE;
   }

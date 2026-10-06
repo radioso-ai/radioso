@@ -15,7 +15,11 @@ import { createPostgresOwnershipReplyUnitOfWork } from "../../../src/app/composi
 import { createPostgresDeliveryFailures } from "../../../src/app/composition/deliveryFailures.js";
 import { createPostgresThreadProtocolUnitOfWork } from "../../../src/app/composition/emailChannel/inbound.js";
 import { createEmailHeldReplyChannelRegistration } from "../../../src/app/composition/emailChannel/index.js";
-import { createPostgresEmailSendUnitOfWork } from "../../../src/app/composition/emailChannel/outbound.js";
+import {
+  createPostgresEmailSendCommitmentUnitOfWork,
+  createPostgresEmailSendUnitOfWork,
+} from "../../../src/app/composition/emailChannel/outbound.js";
+import { createPostgresReviewHandoffs } from "../../../src/app/composition/emailChannel/review.js";
 import { createPostgresHeldReplyUnitOfWork } from "../../../src/app/composition/heldReplyUnitOfWork.js";
 import { createPostgresMailboxPolicyChangeUnitOfWork } from "../../../src/app/composition/mailboxPolicyChange.js";
 import { ActionRequestRepository } from "../../../src/db/repositories/actionRequestRepository.js";
@@ -39,6 +43,7 @@ import {
   MailboxService,
   ProviderDeliveryEvents,
   ProviderSendAttempt,
+  SendCommitment,
   SendIntentWriter,
   SendReconciler,
   generateOpaqueToken,
@@ -434,6 +439,7 @@ const createReviewPorts = (
   database: Database,
   heldReplies: WorkerHeldReplies,
   checks: EmailReviewChecks,
+  guard: Guard,
 ): EmailChannelConnectorDependencies["review"] => {
   const db = database.kysely;
   const activity = new ConversationActivityRepository(db);
@@ -450,14 +456,8 @@ const createReviewPorts = (
       queueAuto: (input) => service.queueAuto(input),
       findByReviewRef: (conversationId, reviewRef) => service.findByReviewRef(conversationId, reviewRef),
     },
-    handoffs: {
-      requestHumanOwnership: async (input) => {
-        await db.transaction().execute((trx) => ownershipRules.requestHumanOwnership({
-          ownership: new ConversationOwnershipRepository(trx),
-          activity: { record: (event) => activity.record(trx, event) },
-        }, input));
-      },
-    },
+    // The composition's hand-off unit, so a suite runs the claim check under the thread's lock.
+    handoffs: guard("handoffs", createPostgresReviewHandoffs({ db, activity, ownership: ownershipRules })),
     checks,
     maxAttempts: 4,
   };
@@ -467,10 +467,12 @@ type EmailChannelConnectorDependencies = Parameters<typeof createEmailChannelCon
 
 /** Lines the processor and worker log, by message; fields are kept for assertions. */
 class RecordingLogger {
-  readonly lines: { level: "warn" | "error"; message: string; fields: Record<string, unknown> }[] = [];
+  readonly lines: { level: "info" | "warn" | "error"; message: string; fields: Record<string, unknown> }[] = [];
 
-  /** Milestone lines; the suites assert failure lines only. */
-  info(): void {}
+  /** Milestone and ignored-event lines, kept so a suite can see one. */
+  info(fields: Record<string, unknown>, message: string): void {
+    this.lines.push({ level: "info", message, fields });
+  }
 
   warn(fields: Record<string, unknown>, message: string): void {
     this.lines.push({ level: "warn", message, fields });
@@ -547,7 +549,7 @@ const createConnectorDependencies = (
     // The activity it records goes through the worker's seams, so a test can stop a step's transaction mid-way.
     threadProtocol: createPostgresThreadProtocolUnitOfWork({ db, activity: options.guard("activity", new ConversationActivityRepository(db)) }),
     chat: { ingest: (input) => hostIngest.ingest(input), respond: options.respond ?? noReviewTurn },
-    review: createReviewPorts(database, options.heldReplies, options.checks ?? passingReviewChecks()),
+    review: createReviewPorts(database, options.heldReplies, options.checks ?? passingReviewChecks(), options.guard),
     drains: options.drains,
     metrics,
     logger,
@@ -647,13 +649,19 @@ const createSendPath = (
   const unitOfWork = guard("sends", createPostgresEmailSendUnitOfWork({ db, activity }));
   const writer = guard("writer", new SendIntentWriter({ unitOfWork, metrics, logger }));
   const attempt = new ProviderSendAttempt({ driver, writer, unitOfWork, drains: options.drains, metrics, logger, clock: () => new Date() });
+  // The commitment's transaction, with its freeze behind the `commitment.freezeRequest` seam: a test
+  // that pauses there holds the commitment's row locks, as a worker stalled inside it would.
+  const commitmentUnits = createPostgresEmailSendCommitmentUnitOfWork({ db, logger });
+  const commitment = guard("sendCommitment", new SendCommitment({
+    unitOfWork: { run: (work) => commitmentUnits.run((scope) => work({ ...scope, intents: guard("commitment", scope.intents) })) },
+  }));
   const handler = new EmailSendActionHandler({
     intents,
     unitOfWork,
+    commitment,
     messages: guard("messages", new MessageRepository(db)),
     mailboxes,
     domains,
-    threads: guard("threads", new EmailThreadRepository(db)),
     ownership,
     heldReplies: options.heldReplies.service,
     attempt,
@@ -693,6 +701,9 @@ const SEAMS = [
   "heldReplies.queueAuto",
   "heldReplies.materializeAuto",
   "heldReplyChannel.recordMaterialized",
+  "sendCommitment.commit",
+  "commitment.freezeRequest",
+  "handoffs.requestHumanOwnership",
   "driver.send",
   "driver.lookup",
   "writer.apply",

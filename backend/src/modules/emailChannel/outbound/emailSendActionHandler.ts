@@ -1,29 +1,18 @@
 import type { ActionHandler, ActionHandlerContext } from "../../chat/contracts/index.js";
 import type { DeliveryFailureRecorderPort } from "../../customerReplyDelivery/public.js";
 import type { HeldReplyDispatchPort } from "../../handoff/public.js";
-import { parseRfcMessageId, type RfcMessageId } from "../../mail/public.js";
 import { isHumanAuthoredMessageSource } from "../../../shared/domain/messageAuthorship.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type { EmailChannelJobLogger } from "../emailChannelAudit.js";
 import type { EmailDomainRecord, EmailDomainRepository } from "../persistence/emailDomainRepository.js";
 import type { EmailMailboxRecord, EmailMailboxRepository } from "../persistence/emailMailboxRepository.js";
-import type {
-  EmailSendIntentRecord,
-  EmailSendIntentRepository,
-  SendRequestSnapshot,
-} from "../persistence/emailSendIntentRepository.js";
-import type { EmailThreadRepository } from "../persistence/emailThreadRepository.js";
+import type { EmailSendIntentRecord, EmailSendIntentRepository } from "../persistence/emailSendIntentRepository.js";
 import { readEmailSendAction, type EmailSendActionPayload } from "./emailSendAction.js";
-import { buildOutboundHeaders, outboundMessageId, replySubject, replyToAddress } from "./outboundHeaders.js";
+import { outboundMessageId } from "./outboundHeaders.js";
 import type { ProviderSendAttempt } from "./providerSendAttempt.js";
-import {
-  firstAttemptAuthority,
-  ownershipFactsOf,
-  repostAuthorized,
-  type EmailSendOwnershipReader,
-  type SendOwnershipFacts,
-} from "./sendAuthority.js";
+import { ownershipFactsOf, repostAuthorized, type EmailSendOwnershipReader } from "./sendAuthority.js";
+import type { EmailSendMessageReader, SendCommitment, SendRefusal } from "./sendCommitment.js";
 import { DISPATCH_EXHAUSTED } from "./sendIntentTransitions.js";
 import {
   countEmailSendIntentState,
@@ -32,19 +21,8 @@ import {
   type SendIntentWriter,
 } from "./sendIntentWriter.js";
 
-/** The message a send delivers: its author and its text, read when the intent materializes and freezes. */
-interface EmailSendMessageReader {
-  findByIdAndWorkspaceId(
-    workspaceId: string,
-    messageId: string,
-  ): Promise<{ id: string; conversationId: string; content: string; source?: string | null } | null>;
-}
-
 type SendFacts = { mailbox: EmailMailboxRecord | null; domain: EmailDomainRecord | null };
 type AutoMaterialization = Awaited<ReturnType<HeldReplyDispatchPort["materializeAuto"]>>;
-type FrozenRequest = SendRequestSnapshot & { body: NonNullable<SendRequestSnapshot["body"]> };
-
-const isRfcMessageId = (value: RfcMessageId | null): value is RfcMessageId => value !== null;
 
 /**
  * Another claim froze the request after this one read the intent, and may be in its provider call:
@@ -67,7 +45,9 @@ class SendFrozenByAnotherClaimError extends Error {
  * 2. on the first attempt only, rechecks the authority its trigger needs: that the mailbox may
  *    still send, and halts if not; for an automatic reply, also its automatic authority and the
  *    thread's budget, and fails it unsent if they narrowed;
- * 3. freezes the provider request, so every re-POST under the key is identical;
+ * 3. freezes the provider request, so every re-POST under the key is identical. Steps 2 and 3 are
+ *    one transaction under the locks of what step 2 reads (`SendCommitment`): the freeze is the
+ *    send's commitment, and a revocation committed before it refuses the send;
  * 4. sends it through the provider with the key;
  * 5. applies the outcome through the fenced transition (research B18);
  * 6. fetches the delivered Message-ID.
@@ -93,13 +73,14 @@ class SendFrozenByAnotherClaimError extends Error {
  */
 export class EmailSendActionHandler implements ActionHandler {
   constructor(private readonly deps: {
-    intents: Pick<EmailSendIntentRepository, "findByIdempotencyKey" | "freezeRequest">;
+    intents: Pick<EmailSendIntentRepository, "findByIdempotencyKey">;
     unitOfWork: EmailSendUnitOfWork;
+    /** Steps 2 and 3, as one transaction: the authority check and the freeze. */
+    commitment: Pick<SendCommitment, "commit">;
     messages: EmailSendMessageReader;
     mailboxes: Pick<EmailMailboxRepository, "findById">;
     domains: Pick<EmailDomainRepository, "findById">;
-    threads: Pick<EmailThreadRepository, "findLink" | "findLatestInboundThreading">;
-    /** Read for an automatic send's authority before its first attempt and before a re-POST. */
+    /** Read for an automatic send's authority before a re-POST. */
     ownership: EmailSendOwnershipReader;
     /** Turns a queued automatic reply into the message it sends (research B9). */
     heldReplies: Pick<HeldReplyDispatchPort, "materializeAuto">;
@@ -162,7 +143,7 @@ export class EmailSendActionHandler implements ActionHandler {
       return;
     }
     if (intent.state !== "queued") return;
-    await this.deps.writer.apply(intent, { kind: "dispatch_exhausted" }, { writer: "handler" });
+    await this.deps.writer.apply(intent, { kind: "dispatch_exhausted" }, { writer: "handler", attempt: input.context.attempt });
   }
 
   // ── Steps ──────────────────────────────────────────────────────────
@@ -263,41 +244,45 @@ export class EmailSendActionHandler implements ActionHandler {
   }
 
   /**
-   * Steps 2 and 3 on an intent this claim read unfrozen: the verdict lands as the freeze or as the
-   * unsent settlement, each fenced on that read. Returns the intent as another claim left it when
-   * that claim moved it first, and null once this claim's step landed.
+   * Steps 2 and 3 on an intent this claim read unfrozen, as one commitment: the request freezes,
+   * or the refusal settles the send unsent, fenced on that read. Returns the intent as another
+   * claim left it when that claim moved it first, and null once this claim's step landed.
    */
   private async checkAndFreeze(intent: EmailSendIntentRecord, attempt: number): Promise<EmailSendIntentRecord | null> {
-    const facts = await this.sendFacts(intent);
-    const verdict = await traceOperation({
-      name: "email.send.revalidate",
-      attributes: { trigger: intent.trigger, "radioso.workspace_id": intent.workspaceId, "radioso.email.send_intent_id": intent.id },
-      run: async () => firstAttemptAuthority(intent, { ...facts, ...(await this.automaticFacts(intent)) }),
-      resultAttributes: (checked) => ({
-        result: checked.verdict === "allow" ? "allow" : checked.verdict === "halt" ? checked.haltReason : checked.code,
-      }),
-    });
-    if (verdict.verdict !== "allow") {
-      const settled = await this.deps.writer.apply(
-        intent,
-        verdict.verdict === "halt"
-          ? { kind: "revalidation_failed", haltReason: verdict.haltReason }
-          : { kind: "authority_revoked", code: verdict.code },
-        { writer: "handler" },
-      );
-      if (settled.outcome === "ignored") return settled.intent;
-      if (settled.outcome === "applied" && verdict.verdict === "revoked") {
-        this.deps.logger.warn(
-          { sendIntentId: intent.id, workspaceId: intent.workspaceId, conversationId: intent.conversationId, code: verdict.code },
-          "email_auto_send_revoked_before_send",
-        );
-      }
-      return null;
+    const committed = await this.deps.commitment.commit(intent);
+    switch (committed.outcome) {
+      case "not_found":
+        return null;
+      case "moved":
+        return committed.current;
+      case "frozen":
+        await this.send(committed.intent, attempt);
+        return null;
+      case "refused":
+        return this.settleUnsent(intent, committed.refusal, attempt);
     }
-    const frozen = await this.deps.intents.freezeRequest(intent.id, intent.version, await this.buildRequest(intent, facts));
-    if (frozen.outcome === "not_found") return null;
-    if (frozen.outcome === "conflict") return frozen.current;
-    await this.send(frozen.intent, attempt);
+  }
+
+  /**
+   * A refused send never reached the provider: it halts, or an automatic one fails with the
+   * refusal's code. Fenced on the intent this claim read, so a request another claim froze since is
+   * left to that claim.
+   */
+  private async settleUnsent(intent: EmailSendIntentRecord, refusal: SendRefusal, attempt: number): Promise<EmailSendIntentRecord | null> {
+    const settled = await this.deps.writer.apply(
+      intent,
+      refusal.verdict === "halt"
+        ? { kind: "revalidation_failed", haltReason: refusal.haltReason }
+        : { kind: "authority_revoked", code: refusal.code },
+      { writer: "handler", attempt },
+    );
+    if (settled.outcome === "ignored") return settled.intent;
+    if (settled.outcome === "applied" && refusal.verdict === "revoked") {
+      this.deps.logger.warn(
+        { sendIntentId: intent.id, workspaceId: intent.workspaceId, conversationId: intent.conversationId, code: refusal.code },
+        "email_auto_send_revoked_before_send",
+      );
+    }
     return null;
   }
 
@@ -321,7 +306,7 @@ export class EmailSendActionHandler implements ActionHandler {
     const authorityValid = repostAuthorized(intent, { ...facts, ownership: ownershipFactsOf(ownership) });
     const withinWindow = this.deps.attempt.withinRepostWindow(intent);
     if (!authorityValid || !withinWindow) {
-      await this.deps.writer.apply(intent, { kind: "outcome_unknown", authorityValid, withinWindow }, { writer: "handler" });
+      await this.deps.writer.apply(intent, { kind: "outcome_unknown", authorityValid, withinWindow }, { writer: "handler", attempt });
       return;
     }
     await this.send(intent, attempt);
@@ -344,52 +329,9 @@ export class EmailSendActionHandler implements ActionHandler {
     );
   }
 
-  /**
-   * What only an automatic send's authority reads: the conversation's ownership and the thread's
-   * automatic sends since its budget was renewed, this one's reservation among them. An
-   * operator-authorized send reads neither.
-   */
-  private async automaticFacts(intent: EmailSendIntentRecord): Promise<{ ownership: SendOwnershipFacts; reservedAutoSends: number | null }> {
-    if (intent.trigger !== "auto_reply") return { ownership: ownershipFactsOf(null), reservedAutoSends: null };
-    const [ownership, link] = await Promise.all([
-      this.deps.ownership.load(intent.conversationId),
-      this.deps.threads.findLink(intent.conversationId),
-    ]);
-    return { ownership: ownershipFactsOf(ownership), reservedAutoSends: link?.autoSendsSinceRenewal ?? null };
-  }
-
   private async sendFacts(intent: EmailSendIntentRecord): Promise<SendFacts> {
     const mailbox = await this.deps.mailboxes.findById(intent.mailboxId);
     const domain = mailbox ? await this.deps.domains.findById(mailbox.domainId) : null;
     return { mailbox, domain };
-  }
-
-  /** Step 3's request: the mailbox's real address, the thread's headers and the message's text. */
-  private async buildRequest(intent: EmailSendIntentRecord, facts: SendFacts): Promise<FrozenRequest> {
-    const { mailbox, domain } = facts;
-    if (!mailbox || !domain) throw new Error("email_send_mailbox_not_found");
-    const [link, latest, message] = await Promise.all([
-      this.deps.threads.findLink(intent.conversationId),
-      this.deps.threads.findLatestInboundThreading(intent.conversationId),
-      this.deps.messages.findByIdAndWorkspaceId(intent.workspaceId, intent.messageId),
-    ]);
-    if (!link) throw new Error("email_send_thread_not_found");
-    if (!message) throw new Error("email_send_message_not_found");
-    return {
-      from: { email: mailbox.address, name: mailbox.displayName },
-      to: link.participantAddress,
-      replyTo: replyToAddress({ address: mailbox.address, plusAddressVerified: mailbox.plusAddressVerifiedAt !== null }, link.threadToken),
-      subject: replySubject(link.latestSubject),
-      threading: buildOutboundHeaders({
-        sendingDomain: domain.domain,
-        latestInbound: {
-          rfcMessageId: latest ? parseRfcMessageId(latest.rfcMessageId) : null,
-          references: (latest?.referenceIds ?? []).map((id) => parseRfcMessageId(id)).filter(isRfcMessageId),
-        },
-        authorKind: intent.authorKind,
-        newMessageUuid: intent.id,
-      }),
-      body: { text: message.content, html: null },
-    };
   }
 }

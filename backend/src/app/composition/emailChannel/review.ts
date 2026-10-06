@@ -9,6 +9,7 @@ import type { Kysely } from "kysely";
 
 import { ChunkPassageRepository } from "../../../db/repositories/chunkPassageRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
+import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { HeldReplyRepository } from "../../../db/repositories/heldReplyRepository.js";
 import { MessageRepository } from "../../../db/repositories/messageRepository.js";
 import {
@@ -36,6 +37,7 @@ import {
 import type { DB } from "../../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import { runTransactionWithDeadlockRetry } from "../conversationLockOrder.js";
 import type { HeldReplyChannelRegistration } from "../heldReplyUnitOfWork.js";
 
 /**
@@ -109,6 +111,8 @@ export const createEmailReviewPorts = (deps: {
   publisher?: WorkspaceInvalidationPublisher;
   checks: EmailReviewChecks;
   maxAttempts: number;
+  /** Where a hand-off's deadlock retry is logged, by unit and attempt. */
+  logger?: { warn(fields: Record<string, unknown>, message: string): void };
 }): EmailReviewPorts => {
   const heldReplyRecords = new HeldReplyRepository(deps.db);
   const ownership = new ConversationOwnershipRepository(deps.db);
@@ -130,26 +134,45 @@ export const createEmailReviewPorts = (deps: {
 };
 
 /**
- * A review's hand-off to a person (research B3, B7) in its own Postgres transaction: the ownership
- * change with the activity it records, through the ownership rules, and the dashboard told once it
- * commits. Only binds; whether to hand off is the review runner's decision.
+ * A review's hand-off to a person (research B3, B7) in its own Postgres transaction, only while the
+ * review's claim still holds: the ownership change with the activity it records, through the
+ * ownership rules, and the dashboard told once it commits. It takes the conversation lock
+ * protocol's steps in order (`conversationLockOrder.ts`) — the conversation row, which a hand-off
+ * that may create the ownership row locks first, the ownership row, then the thread's link, under
+ * which the claim is checked — so a stale worker writes nothing once another claim took the review
+ * over or completed it. A deadlock victim's whole transaction runs again. Only binds; whether to
+ * hand off is the review runner's decision.
  */
-const createPostgresReviewHandoffs = (deps: {
+export const createPostgresReviewHandoffs = (deps: {
   db: Kysely<DB>;
   activity: ConversationActivityRecorder;
   ownership: Pick<ConversationOwnershipService, "requestHumanOwnership">;
   publisher?: WorkspaceInvalidationPublisher;
-}) => ({
-  async requestHumanOwnership(input: { workspaceId: string; conversationId: string; reason: string }): Promise<void> {
-    const { changed } = await deps.db.transaction().execute((trx) => deps.ownership.requestHumanOwnership({
-      ownership: new ConversationOwnershipRepository(trx),
-      activity: { record: (event) => deps.activity.record(trx, event) },
-    }, input));
+  logger?: { warn(fields: Record<string, unknown>, message: string): void };
+}): EmailReviewPorts["handoffs"] => ({
+  async requestHumanOwnership({ claim, ...input }) {
+    const { outcome, changed } = await runTransactionWithDeadlockRetry(deps.db, async (trx) => {
+      const ownership = new ConversationOwnershipRepository(trx);
+      // A conversation gone by now has no one to hand to.
+      if (!(await new ConversationRepository(trx).lockForUpdate(input.conversationId, input.workspaceId))) {
+        return { outcome: "requested" as const, changed: false };
+      }
+      await ownership.loadForUpdate(input.conversationId);
+      if (!(await new EmailThreadRepository(trx).lockReviewClaim({ conversationId: input.conversationId, ...claim }))) {
+        return { outcome: "claim_lost" as const, changed: false };
+      }
+      const requested = await deps.ownership.requestHumanOwnership({
+        ownership,
+        activity: { record: (event) => deps.activity.record(trx, event) },
+      }, input);
+      return { outcome: "requested" as const, changed: requested.changed };
+    }, { unit: "email_review_handoff", logger: deps.logger });
     if (changed && deps.publisher) {
       flushPostCommitInvalidationReceipt(
         deps.publisher,
         createPostCommitInvalidationReceipt(input.workspaceId, ["conversation.ownership_changed"]),
       );
     }
+    return outcome;
   },
 });

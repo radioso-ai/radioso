@@ -21,10 +21,12 @@ import {
   EmailThreadRepository,
   ProviderDeliveryEvents,
   ProviderSendAttempt,
+  SendCommitment,
   SendIntentWriter,
   SendReconciler,
   type DeliveryResolutionUnitOfWork,
   type EmailChannelDrainDispatcherPort,
+  type EmailSendCommitmentUnitOfWork,
   type EmailSendUnitOfWork,
 } from "../../../modules/emailChannel/public.js";
 import { HeldReplyService, type HeldReplyDispatchPort } from "../../../modules/handoff/public.js";
@@ -33,6 +35,7 @@ import type { DB } from "../../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { pushActionDrainAfterCommit, type QueuedOutboxRow } from "../actionDrainAfterCommit.js";
+import { runTransactionWithDeadlockRetry } from "../conversationLockOrder.js";
 import { createPostgresDeliveryFailures } from "../deliveryFailures.js";
 import { createPostgresHeldReplyUnitOfWork, type HeldReplyChannelRegistration } from "../heldReplyUnitOfWork.js";
 import { channelEmailDriver, type ChannelProvider } from "./adapters.js";
@@ -67,10 +70,10 @@ export const createEmailSendServices = (input: {
     handler: new EmailSendActionHandler({
       intents,
       unitOfWork,
+      commitment: new SendCommitment({ unitOfWork: createPostgresEmailSendCommitmentUnitOfWork({ db, logger }) }),
       messages: new MessageRepository(db),
       mailboxes,
       domains,
-      threads: new EmailThreadRepository(db),
       ownership,
       heldReplies: input.heldReplyDispatch,
       attempt,
@@ -198,6 +201,36 @@ export const createPostgresEmailSendUnitOfWork = (deps: {
       activity: { record: (event) => deps.activity.record(trx, event) },
     }),
   })),
+});
+
+/**
+ * Binds a send's commitment — its authority check and its freeze — to one Postgres transaction.
+ * The commitment takes its locks in the conversation lock protocol's order
+ * (`conversationLockOrder.ts`); an automatic send's first two steps lock the conversation row, then
+ * its ownership row. A deadlock victim's whole transaction runs again. Only binds; what is checked
+ * is the send path's decision.
+ */
+export const createPostgresEmailSendCommitmentUnitOfWork = (deps: {
+  db: Kysely<DB>;
+  /** Where a deadlock victim's retry is logged, by unit and attempt. */
+  logger?: { warn(fields: Record<string, unknown>, message: string): void };
+}): EmailSendCommitmentUnitOfWork => ({
+  run: (work) => runTransactionWithDeadlockRetry(deps.db, (trx) => {
+    const ownership = new ConversationOwnershipRepository(trx);
+    return work({
+      conversations: {
+        lockOwnership: async ({ workspaceId, conversationId }) => {
+          await new ConversationRepository(trx).lockForUpdate(conversationId, workspaceId);
+          return ownership.loadForUpdate(conversationId);
+        },
+      },
+      mailboxes: new EmailMailboxRepository(trx),
+      domains: new EmailDomainRepository(trx),
+      threads: new EmailThreadRepository(trx),
+      messages: new MessageRepository(trx),
+      intents: new EmailSendIntentRepository(trx),
+    });
+  }, { unit: "email_send_commitment", logger: deps.logger }),
 });
 
 /**

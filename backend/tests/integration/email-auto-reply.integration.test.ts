@@ -250,6 +250,84 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
     expect(await emailSendsOf(conversationId)).toEqual([expect.objectContaining({ status: "dispatched", attempts: 1 })]);
   });
 
+  /** Waits until `count` sessions of the suite's database wait on a row lock; the statements waiting. */
+  const lockWaiters = async (count: number): Promise<string[]> => {
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      const waiting = await database.query<{ query: string }>(
+        "SELECT query FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+      );
+      if (waiting.length >= count) return waiting.map((row) => row.query);
+      if (Date.now() > deadline) throw new Error(`expected ${count} lock waiter(s), saw ${waiting.length}`);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
+
+  it.each([
+    ["a takeover", async (queued: Awaited<ReturnType<typeof queuedAutoReply>>) => {
+      expect((await api.takeOver(queued.teammate, queued.conversationId)).status).toBe(200);
+    }, { state: "failed", failureCode: "human_owned" }],
+    ["a downgrade to operator_only", async (queued: Awaited<ReturnType<typeof queuedAutoReply>>) => {
+      await api.channel.mailboxes.update({ userId: queued.teammate.userId }, queued.workspaceId, queued.mailbox.id, { engagementMode: "operator_only" });
+    }, { state: "failed", failureCode: "policy_changed" }],
+    ["the mailbox's removal", async (queued: Awaited<ReturnType<typeof queuedAutoReply>>) => {
+      await api.channel.mailboxes.remove({ userId: queued.teammate.userId }, queued.workspaceId, queued.mailbox.id);
+    }, { state: "halted", haltReason: "mailbox_removed" }],
+  ] as const)(
+    "never sends a materialized reply once %s committed after its worker read valid authority and before its freeze (FR-025, FR-032)",
+    async (_label, revoke, settled) => {
+      const queued = await queuedAutoReply();
+      const { conversationId, worker, key } = queued;
+      // The worker materializes the reply on authority that still holds, then stalls before its commitment.
+      const paused = worker.seams.pauseAt("sendCommitment.commit", "before");
+      const dispatching = worker.dispatch();
+      await paused.reached;
+      const [message] = await agentMessagesOf(conversationId);
+      expect(await sendIntentOf(database, message.id)).toMatchObject({ state: "queued", request: null });
+
+      await revoke(queued);
+      paused.release();
+
+      expect(await dispatching).toMatchObject({ dispatched: 1, failed: 0 });
+      expect(await sendIntentOf(database, message.id)).toMatchObject({ ...settled, request: null, providerMessageId: null });
+      expect(worker.provider.sendKeys).toEqual([]);
+      expect(await providerAcceptsUnder(spool.dir, key)).toEqual([]);
+      // A redelivery finds the send settled unsent and sends nothing.
+      await database.execute("UPDATE routine_action_requests SET status = 'pending' WHERE conversation_id = $1", [conversationId]);
+      expect(await worker.dispatch()).toMatchObject({ dispatched: 1 });
+      expect(worker.provider.sendKeys).toEqual([]);
+    },
+  );
+
+  it.each([
+    ["a takeover", "conversations", (queued: Awaited<ReturnType<typeof queuedAutoReply>>) =>
+      // `then` sends the request now; a supertest request is otherwise sent only once awaited.
+      api.takeOver(queued.teammate, queued.conversationId).then((response) => expect(response.status).toBe(200))],
+    ["a downgrade to operator_only", "email_mailboxes", (queued: Awaited<ReturnType<typeof queuedAutoReply>>) =>
+      api.channel.mailboxes.update({ userId: queued.teammate.userId }, queued.workspaceId, queued.mailbox.id, { engagementMode: "operator_only" })],
+  ] as const)(
+    "makes %s that arrives inside a reply's commitment wait on %s for its freeze: committed first, the reply goes out once",
+    async (_label, lockedTable, revoke) => {
+      const queued = await queuedAutoReply();
+      const { conversationId, worker, key } = queued;
+      // The worker has checked the reply's authority under its locks and is about to freeze it.
+      const paused = worker.seams.pauseAt("commitment.freezeRequest", "before");
+      const dispatching = worker.dispatch();
+      await paused.reached;
+
+      const revoking = revoke(queued);
+      // The revocation queues on a row the commitment holds: it cannot commit before the freeze.
+      expect(await lockWaiters(1)).toEqual([expect.stringMatching(new RegExp(`from "${lockedTable}"`, "u"))]);
+      paused.release();
+
+      expect(await dispatching).toMatchObject({ dispatched: 1, failed: 0 });
+      await revoking;
+      const [message] = await agentMessagesOf(conversationId);
+      expect(await sendIntentOf(database, message.id)).toMatchObject({ state: "accepted" });
+      expect(await providerAcceptsUnder(spool.dir, key)).toHaveLength(1);
+    },
+  );
+
   it("sends nothing for a reply a takeover superseded between queue and materialize", async () => {
     const { conversationId, worker, heldReplyId, key, teammate } = await queuedAutoReply();
 

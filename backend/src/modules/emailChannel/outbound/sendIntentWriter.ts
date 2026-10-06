@@ -1,6 +1,6 @@
 import type { DeliveryFailureRecorderPort } from "../../customerReplyDelivery/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
-import type { EmailChannelLogger } from "../emailChannelAudit.js";
+import type { EmailChannelJobLogger } from "../emailChannelAudit.js";
 import type {
   EmailSendIntentRecord,
   EmailSendIntentRepository,
@@ -40,6 +40,12 @@ type SendIntentWriteOutcome =
   | (Applied & { previousState: SendIntentState })
   | Exclude<SendIntentTransitionOutcome, { outcome: "applied" | "conflict" }>;
 
+type Ignored = Extract<SendIntentTransitionOutcome, { outcome: "ignored" }>;
+
+/** The event an ignored-event line names: its kind, and a provider status's enum and source. Never content. */
+const eventFields = (event: SendIntentEvent): Record<string, string> =>
+  event.kind === "provider_status" ? { event: event.kind, status: event.status, source: event.source } : { event: event.kind };
+
 /** Counts an intent entering its current state (contracts/events.md). */
 export const countEmailSendIntentState = (
   metrics: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
@@ -55,15 +61,16 @@ export const countEmailSendIntentState = (
  * Applies one event to a send intent through the repository's version fence (research B18). A
  * lost race re-applies the event to the intent as it now is, which the state machine judges on
  * that row: a terminal intent drops it, and an unsent settlement read before another claim froze
- * the request no longer applies. A transition's delivery-failure effects commit in its
- * transaction. `create_resend_intent` is left to the caller that asked for the resend: it is the
- * operator resolution's to act on.
+ * the request no longer applies. An event the machine drops is logged at info with ids only, so a
+ * stale or unsupported event can be traced by intent. A transition's delivery-failure effects
+ * commit in its transaction. `create_resend_intent` is left to the caller that asked for the
+ * resend: it is the operator resolution's to act on.
  */
 export class SendIntentWriter {
   constructor(private readonly deps: {
     unitOfWork: EmailSendUnitOfWork;
     metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
-    logger: EmailChannelLogger;
+    logger: EmailChannelJobLogger;
   }) {}
 
   async apply(
@@ -71,6 +78,8 @@ export class SendIntentWriter {
     event: SendIntentEvent,
     options: {
       writer: SendIntentWriterName;
+      /** The outbox attempt the event came from; null or absent off the action path. */
+      attempt?: number | null;
       /** Further writes the applied change implies, in its transaction. */
       onApplied?: (scope: EmailSendScope, applied: EmailSendIntentRecord) => Promise<void>;
     },
@@ -90,6 +99,7 @@ export class SendIntentWriter {
         this.observe(previousState, result.intent);
         return { ...result, previousState };
       }
+      if (result.outcome === "ignored") this.logIgnored(result, event, options);
       if (result.outcome !== "conflict") return result;
       this.deps.metrics?.incrementCounter("email_send_transition_conflicts_total", {
         help: "Send-intent transitions re-applied after losing the version fence, by writer.",
@@ -100,6 +110,23 @@ export class SendIntentWriter {
       previousState = result.current.state;
     }
     throw new Error("email_send_transition_contended");
+  }
+
+  private logIgnored(ignored: Ignored, event: SendIntentEvent, options: { writer: SendIntentWriterName; attempt?: number | null }): void {
+    const { intent } = ignored;
+    this.deps.logger.info(
+      {
+        sendIntentId: intent.id,
+        workspaceId: intent.workspaceId,
+        conversationId: intent.conversationId,
+        writer: options.writer,
+        attempt: options.attempt ?? null,
+        ...eventFields(event),
+        state: intent.state,
+        reason: ignored.reason,
+      },
+      "email_send_event_ignored",
+    );
   }
 
   private observe(previousState: SendIntentState, after: EmailSendIntentRecord): void {

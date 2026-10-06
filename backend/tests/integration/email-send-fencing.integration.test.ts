@@ -9,6 +9,7 @@ import {
   createEmailChannelDatabase,
   createSpool,
   createWorkerNode,
+  indexedMessageIdsOf,
   postDeliveryEvent,
 } from "./support/emailChannelHarness.js";
 import {
@@ -181,6 +182,115 @@ describeIntegration("email send fencing (Postgres, research B18)", () => {
     expect(current.provider.sendKeys).toEqual([key]);
     expect(await deliveryFailuresOf(database, conversationId)).toEqual([]);
     expect(await outboxActionsOf(database, conversationId)).toEqual([expect.objectContaining({ status: "dispatched", attempts: 2 })]);
+  });
+
+  /** Waits until `count` sessions of the suite's database wait on a row lock; the statements waiting. */
+  const lockWaiters = async (count: number): Promise<string[]> => {
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      const waiting = await database.query<{ query: string }>(
+        "SELECT query FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+      );
+      if (waiting.length >= count) return waiting.map((row) => row.query);
+      if (Date.now() > deadline) throw new Error(`expected ${count} lock waiter(s), saw ${waiting.length}`);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
+
+  it.each([
+    ["its domain stopped being verified", "UPDATE email_domains SET sending_status = 'failed' WHERE id = $1", "sending_not_verified"],
+    ["its domain was removed", "UPDATE email_domains SET removed_at = now() WHERE id = $1", "domain_removed"],
+  ] as const)("halts an operator reply once %s after its claim loaded it and before its freeze (FR-025)", async (_label, revocation, haltReason) => {
+    const { conversationId, messageId, domain } = await queuedReply();
+    const sender = workerNode();
+    const paused = sender.seams.pauseAt("sendCommitment.commit", "before");
+    const dispatching = sender.dispatch();
+    await paused.reached;
+
+    await database.execute(revocation, [domain.id]);
+    paused.release();
+
+    expect(await dispatching).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await sendIntentOf(database, messageId)).toMatchObject({ state: "halted", haltReason, request: null, providerMessageId: null });
+    expect(sender.provider.sendKeys).toEqual([]);
+    expect((await deliveryFailuresOf(database, conversationId)).map((failure) => [failure.message_id, failure.failure_kind])).toEqual([
+      [messageId, "halted"],
+    ]);
+  });
+
+  it("makes a readiness downgrade that arrives inside an operator reply's commitment wait on the domain for its freeze: the reply goes out once", async () => {
+    const { messageId, domain } = await queuedReply();
+    const key = emailSendKey.message(messageId);
+    const sender = workerNode();
+    const paused = sender.seams.pauseAt("commitment.freezeRequest", "before");
+    const dispatching = sender.dispatch();
+    await paused.reached;
+
+    const downgrading = database.execute("UPDATE email_domains SET sending_status = 'failed' WHERE id = $1", [domain.id]);
+    // The commitment holds the domain row `FOR SHARE`: the downgrade cannot commit before the freeze.
+    expect(await lockWaiters(1)).toEqual([expect.stringMatching(/^UPDATE email_domains/u)]);
+    paused.release();
+
+    expect(await dispatching).toMatchObject({ dispatched: 1, failed: 0 });
+    await downgrading;
+    expect(await sendIntentOf(database, messageId)).toMatchObject({ state: "accepted", haltReason: null });
+    expect(await providerAcceptsUnder(spool.dir, key)).toHaveLength(1);
+  });
+
+  it("records a stalled claim's acceptance after the last attempt lost the freeze to it and gave the send up as uncertain (FR-036)", async () => {
+    const { conversationId, messageId } = await queuedReply();
+    const key = emailSendKey.message(messageId);
+    // The action is on its last two of five attempts.
+    await database.execute("UPDATE routine_action_requests SET attempts = 3 WHERE conversation_id = $1", [conversationId]);
+    const [stalled, last] = [workerNode(), workerNode()];
+    // Attempt 4 reads the intent unfrozen and stalls before its commitment.
+    const stalledCommit = stalled.seams.pauseAt("sendCommitment.commit", "before");
+    const stalledPost = stalled.seams.pauseAt("driver.send", "before");
+    const stalledDispatch = stalled.dispatch();
+    await stalledCommit.reached;
+    // Its lease runs out; attempt 5 reads the intent unfrozen too, and stalls likewise.
+    await expireOutboxClaims(database, conversationId);
+    const lastCommit = last.seams.pauseAt("sendCommitment.commit", "before");
+    const lastDispatch = last.dispatch();
+    await lastCommit.reached;
+
+    // Attempt 4 freezes the request and enters the provider call; attempt 5 loses the freeze to it,
+    // and its failure, the action's last, gives the send up as uncertain.
+    stalledCommit.release();
+    await stalledPost.reached;
+    lastCommit.release();
+    expect(await lastDispatch).toMatchObject({ dispatched: 0, failed: 1 });
+    expect(await sendIntentOf(database, messageId)).toMatchObject({ state: "uncertain", outcomeUnknown: true, providerMessageId: null });
+
+    // Attempt 4's provider call comes back accepted.
+    stalledPost.release();
+    await stalledDispatch;
+    const [accept, ...others] = await providerAcceptsUnder(spool.dir, key);
+    expect(others).toEqual([]);
+    const intent = await sendIntentOf(database, messageId);
+    expect(intent).toMatchObject({
+      state: "uncertain",
+      providerMessageId: accept.providerMessageId,
+      uncertainResolution: null,
+      acceptedAt: expect.any(Date),
+      nextReconcileAt: expect.any(Date),
+    });
+    expect(await indexedMessageIdsOf(database, conversationId)).toContain(intent.suppliedRfcMessageId);
+    expect(stalled.logger.messages()).toContain("email_send_late_acceptance");
+    // The doubt is a teammate's until evidence settles it.
+    expect((await deliveryFailuresOf(database, conversationId)).map((failure) => [failure.failure_kind, failure.clear_reason])).toEqual([
+      ["uncertain", null],
+    ]);
+
+    // Its delivery now correlates by the provider's id, and settles it without any resend.
+    const webhook = workerNode();
+    expect(await postDeliveryEvent(await webhook.webhook(), { type: "email.delivered", providerMessageId: accept.providerMessageId })).toBe(200);
+    expect(await webhook.worker.drain({ maxJobs: 5, stage: "inbound" })).toMatchObject({ processed: 1 });
+    expect(await sendIntentOf(database, messageId)).toMatchObject({ state: "delivered", uncertainResolution: "provider_evidence" });
+    expect((await deliveryFailuresOf(database, conversationId)).map((failure) => [failure.failure_kind, failure.clear_reason])).toEqual([
+      ["uncertain", "provider_evidence"],
+    ]);
+    expect(await providerAcceptsUnder(spool.dir, key)).toHaveLength(1);
   });
 
   it("makes an unknown outcome uncertain without a re-POST once the sending authority is revoked", async () => {

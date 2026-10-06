@@ -2,7 +2,7 @@ import { EmailSendError, type EmailDriver, type EmailMessage, type RfcMessageId 
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import { requestDrainBestEffort, type EmailChannelDrainDispatcherPort } from "../drains.js";
-import type { EmailChannelLogger } from "../emailChannelAudit.js";
+import type { EmailChannelJobLogger } from "../emailChannelAudit.js";
 import type { EmailSendIntentRecord, SendRequestSnapshot } from "../persistence/emailSendIntentRepository.js";
 import type { EmailSendUnitOfWork, SendIntentWriter, SendIntentWriterName } from "./sendIntentWriter.js";
 
@@ -13,6 +13,9 @@ import type { EmailSendUnitOfWork, SendIntentWriter, SendIntentWriterName } from
 const REPOST_WINDOW_MS = 23 * 60 * 60 * 1000;
 /** Due intents one scheduled reconcile drain asks the worker to claim. */
 const RECONCILE_DRAIN_BATCH = 5;
+
+/** Who makes the call, and the outbox attempt it is made on: null for the reconciler's re-POST. */
+type SendOptions = { writer: SendIntentWriterName; attempt: number | null };
 
 type ProviderCallResult =
   | { result: "accepted"; providerMessageId: string; deliveredMessageId: RfcMessageId | null }
@@ -77,7 +80,8 @@ export class ProviderSendAttempt {
     unitOfWork: EmailSendUnitOfWork;
     drains: EmailChannelDrainDispatcherPort;
     metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
-    logger: EmailChannelLogger;
+    /** Failure lines, and an info line when an acceptance reaches a send already `uncertain`; ids only. */
+    logger: EmailChannelJobLogger;
     clock: () => Date;
   }) {}
 
@@ -90,7 +94,7 @@ export class ProviderSendAttempt {
    * Sends the intent's frozen request with its key. The caller has checked the send's authority.
    * Throws `EmailSendRetryableError` when the provider asks to be asked again.
    */
-  async send(intent: EmailSendIntentRecord, options: { writer: SendIntentWriterName; attempt: number | null }): Promise<EmailSendIntentRecord> {
+  async send(intent: EmailSendIntentRecord, options: SendOptions): Promise<EmailSendIntentRecord> {
     const request = intent.request;
     if (request === null || request.body === null) {
       throw new Error("email_send_request_not_frozen");
@@ -108,13 +112,13 @@ export class ProviderSendAttempt {
     });
     switch (outcome.result) {
       case "accepted":
-        return this.recordAcceptance(intent, outcome, options.writer);
+        return this.recordAcceptance(intent, outcome, options);
       case "rejected":
-        return this.recordRejection(intent, outcome.code, options.writer);
+        return this.recordRejection(intent, outcome.code, options);
       case "retryable":
         throw new EmailSendRetryableError(outcome.code);
       case "unknown":
-        return this.recordUnknownOutcome(intent, outcome.code, options.writer);
+        return this.recordUnknownOutcome(intent, outcome.code, options);
     }
   }
 
@@ -164,16 +168,23 @@ export class ProviderSendAttempt {
     }
   }
 
+  /**
+   * Records the acceptance with the thread index rows its Message-Ids are found by. An acceptance
+   * that reaches a send the outbox already gave up on as `uncertain` is recorded on it too (FR-036):
+   * its later delivery or bounce then correlates, and a teammate is not left resending mail the
+   * provider already holds without knowing it.
+   */
   private async recordAcceptance(
     intent: EmailSendIntentRecord,
     accepted: Extract<ProviderCallResult, { result: "accepted" }>,
-    writer: SendIntentWriterName,
+    options: SendOptions,
   ): Promise<EmailSendIntentRecord> {
     const written = await this.deps.writer.apply(
       intent,
       { kind: "provider_accepted", providerMessageId: accepted.providerMessageId, deliveredMessageId: accepted.deliveredMessageId },
       {
-        writer,
+        writer: options.writer,
+        attempt: options.attempt,
         onApplied: async (scope, applied) => {
           const ids = [applied.suppliedRfcMessageId, ...(applied.deliveredRfcMessageId ? [applied.deliveredRfcMessageId] : [])];
           await scope.threads.insertIndexEntries(outboundIndexEntries(applied, ids));
@@ -181,16 +192,22 @@ export class ProviderSendAttempt {
       },
     );
     if (written.outcome === "not_found") return intent;
+    if (written.outcome === "applied" && written.previousState === "uncertain") {
+      this.deps.logger.info(
+        { sendIntentId: intent.id, workspaceId: intent.workspaceId, conversationId: intent.conversationId, attempt: options.attempt },
+        "email_send_late_acceptance",
+      );
+    }
     await this.fetchDeliveredMessageId(written.intent);
     return written.intent;
   }
 
-  private async recordRejection(intent: EmailSendIntentRecord, code: string, writer: SendIntentWriterName): Promise<EmailSendIntentRecord> {
+  private async recordRejection(intent: EmailSendIntentRecord, code: string, options: SendOptions): Promise<EmailSendIntentRecord> {
     if (code === "idempotency_body_mismatch") {
       // The same key carried a different body: a defect, since the request is frozen (research A5).
       this.deps.logger.warn({ sendIntentId: intent.id, conversationId: intent.conversationId }, "email_send_idempotency_body_mismatch");
     }
-    const written = await this.deps.writer.apply(intent, { kind: "provider_rejected", code }, { writer });
+    const written = await this.deps.writer.apply(intent, { kind: "provider_rejected", code }, options);
     return written.outcome === "not_found" ? intent : written.intent;
   }
 
@@ -198,12 +215,12 @@ export class ProviderSendAttempt {
    * The provider may have accepted the send. While the key is in its window the send stays queued
    * and a reconcile drain is scheduled for the re-POST; after it, the doubt goes to an operator.
    */
-  private async recordUnknownOutcome(intent: EmailSendIntentRecord, code: string, writer: SendIntentWriterName): Promise<EmailSendIntentRecord> {
+  private async recordUnknownOutcome(intent: EmailSendIntentRecord, code: string, options: SendOptions): Promise<EmailSendIntentRecord> {
     this.deps.logger.warn({ sendIntentId: intent.id, conversationId: intent.conversationId, code }, "email_send_outcome_unknown");
     const written = await this.deps.writer.apply(
       intent,
       { kind: "outcome_unknown", authorityValid: true, withinWindow: this.withinRepostWindow(intent) },
-      { writer },
+      options,
     );
     if (written.outcome === "not_found") return intent;
     const { nextReconcileAt } = written.intent;

@@ -328,13 +328,60 @@ describe("nextSendIntentState: uncertain, late provider evidence", () => {
     status("delivery_delayed"),
     status("complained"),
     status("unknown"),
-    { kind: "reconcile_unsettled" } as const,
     { kind: "provider_accepted", providerMessageId: "re_1", deliveredMessageId: null } as const,
     { kind: "provider_rejected", code: "validation_error" } as const,
     { kind: "outcome_unknown", authorityValid: true, withinWindow: true } as const,
     { kind: "revalidation_failed", haltReason: "domain_removed" } as const,
+    { kind: "dispatch_exhausted" } as const,
   ])("leaves an uncertain intent unchanged on $kind ($status), never re-sending", (event) => {
     expect(nextSendIntentState(uncertain(), event)).toEqual({ ignored: "not_applicable" });
+  });
+});
+
+describe("nextSendIntentState: uncertain, late acceptance (FR-036)", () => {
+  /** A frozen attempt the outbox gave up on while the claim that froze it was still in its provider call. */
+  const exhausted = (overrides: Partial<SendIntentSnapshot> = {}): SendIntentSnapshot =>
+    uncertain({ providerMessageId: null, ...overrides });
+  const acceptance = { kind: "provider_accepted", providerMessageId: "re_late", deliveredMessageId: "<ses-late@eu-west-1.amazonses.com>" } as const;
+
+  it("records the late acceptance's ids on the attempt and schedules the lookup, staying uncertain with its failure untouched", () => {
+    expect(applied(exhausted(), acceptance)).toEqual({
+      next: exhausted({ providerMessageId: "re_late", deliveredRfcMessageId: "<ses-late@eu-west-1.amazonses.com>" }),
+      effects: [{ kind: "schedule_reconcile", purpose: "lookup", afterSeconds: DAY_SECONDS }],
+    });
+  });
+
+  it.each([
+    ["marked sent", "marked_sent"],
+    ["resent", "resend_authorized"],
+  ] as const)("keeps a teammate's decision on an attempt they %s, and never clears or retargets a failure", (_label, resolution) => {
+    const resolved = exhausted({ uncertainResolution: resolution, uncertainResolvedByUserId: "user-1" });
+
+    expect(applied(resolved, acceptance)).toEqual({
+      next: { ...resolved, providerMessageId: "re_late", deliveredRfcMessageId: "<ses-late@eu-west-1.amazonses.com>" },
+      effects: [{ kind: "schedule_reconcile", purpose: "lookup", afterSeconds: DAY_SECONDS }],
+    });
+  });
+
+  it("settles the attempt on its later evidence once the acceptance correlated it", () => {
+    const { next } = applied(exhausted(), acceptance);
+
+    expect(applied(next, status("bounced", "webhook", "5.1.1"))).toEqual({
+      next: { ...next, state: "bounced", failureCode: "5.1.1", uncertainResolution: "provider_evidence" },
+      effects: [{ kind: "retarget_delivery_failure", failureKind: "bounced", detailCode: "5.1.1" }],
+    });
+  });
+
+  it("ignores an acceptance for an attempt whose request never froze, or whose acceptance is already recorded", () => {
+    expect(nextSendIntentState(exhausted({ requestFrozen: false }), acceptance)).toEqual({ ignored: "not_applicable" });
+    expect(nextSendIntentState(exhausted({ providerMessageId: "re_first" }), acceptance)).toEqual({ ignored: "not_applicable" });
+  });
+
+  it("consumes the lookup that could not settle it, staying uncertain with nothing more scheduled", () => {
+    const { next } = applied(exhausted(), acceptance);
+
+    expect(applied(next, { kind: "reconcile_unsettled" })).toEqual({ next, effects: [] });
+    expect(nextSendIntentState(exhausted(), { kind: "reconcile_unsettled" })).toEqual({ ignored: "not_applicable" });
   });
 });
 

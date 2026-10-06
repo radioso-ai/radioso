@@ -142,9 +142,10 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   await replyBox.fill("Ecco gli orari aggiornati dei corsi di yoga.");
   await response.getByRole("button", { name: "Send" }).click();
 
-  await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/takeover`);
+  // The reply claims the waiting handoff itself; nothing takes it over first.
   await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/reply`);
   await expect(replyBox).toHaveValue("");
+  expect(requestLog).not.toContainEqual(`POST /conversations/${conversationId}/takeover`);
 
   // The response view's only link into the drawer is quiet, and the drawer it
   // opens carries zero operator mutation controls (spec 1116 User Story 4).
@@ -993,7 +994,9 @@ test("a hand-back made elsewhere reaches an open pane on my conversation through
 
   await replyBox.fill("I'm back on this one");
   await response.getByRole("button", { name: "Send", exact: true }).click();
-  await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/takeover`);
+  // Sending claims it again through the reply itself, never a separate takeover first.
+  await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/reply`);
+  expect(requestLog).not.toContainEqual(`POST /conversations/${conversationId}/takeover`);
 });
 
 test("a hand-back made elsewhere on a conversation a teammate held brings the claim-on-send composer back", async ({ page }) => {

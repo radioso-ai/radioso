@@ -108,6 +108,10 @@ export const dashboardQueryKeys = {
     // re-reads them by invalidating this key.
     heldReplies: (workspaceId: string, input: { limit: number }) =>
       workspaceKey(workspaceId, 'attention', 'held-replies', input.limit),
+    // A conversation an attention row names but no attention list carries: its agent and title.
+    // Not a live-invalidation family; neither changes while the row waits.
+    conversationSource: (workspaceId: string, conversationId: string) =>
+      workspaceKey(workspaceId, 'attention', 'conversation-source', conversationId),
   },
   conversations: {
     // Not a live-invalidation family: no workspace event reports a teammate change, so

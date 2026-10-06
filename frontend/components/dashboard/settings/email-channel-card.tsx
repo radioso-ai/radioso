@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { CheckCircle2, Loader2, Mail, MailCheck } from 'lucide-react'
 
+import { EmailMailboxEnabled, EmailMailboxRelayAddress } from '@/components/dashboard/settings/email-mailbox-controls'
 import { EmailDomainRecords, emailChannelErrorMessage } from '@/components/dashboard/settings/email-domain-records'
 import { EmailMailboxEvents } from '@/components/dashboard/settings/email-mailbox-events'
 import { EmailMailboxLimits } from '@/components/dashboard/settings/email-mailbox-limits'
@@ -10,7 +11,6 @@ import { EmailMailboxMode, MODE_LABELS } from '@/components/dashboard/settings/e
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control'
@@ -68,8 +68,8 @@ const replaceById = <T extends { id: string }>(items: T[], next: T) =>
   items.some((item) => item.id === next.id) ? items.map((item) => (item.id === next.id ? next : item)) : [...items, next]
 
 /**
- * The email channel for one agent: its mailboxes with mode, limits, relay address,
- * forwarding steps, setup check and event log, and the workspace's sending domains.
+ * The email channel for one agent: its mailboxes with mode, on/off, limits, relay address
+ * (replaceable), forwarding steps, setup check and event log, and the workspace's sending domains.
  * Modes come from what the server supports, never from a list kept here.
  */
 export function EmailChannelCard({ workspaceId, agentId }: EmailChannelCardProps) {
@@ -321,9 +321,11 @@ function EmailMailboxPanel({ workspaceId, mailbox, supportedModes, headingRef, o
         announce={announce}
       />
 
+      <EmailMailboxEnabled workspaceId={workspaceId} mailbox={mailbox} onMailboxChanged={onMailboxChanged} announce={announce} />
+
       <EmailMailboxLimits workspaceId={workspaceId} mailbox={mailbox} onMailboxChanged={onMailboxChanged} announce={announce} />
 
-      <CopyValueField label="Relay address" value={mailbox.relayAddress} ariaLabel="Copy relay address" />
+      <EmailMailboxRelayAddress workspaceId={workspaceId} mailbox={mailbox} onMailboxChanged={onMailboxChanged} announce={announce} />
 
       <ForwardingSteps address={mailbox.address} />
 

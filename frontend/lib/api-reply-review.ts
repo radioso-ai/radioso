@@ -1,12 +1,25 @@
 import { request } from './api-client'
 import { withQuery } from './api-query'
-import type { TurnTraceEnvelope } from './api-types'
 
 /**
  * Where a held reply stands. `released` went out as written and `edited` as the operator changed
  * it; `discarded` and `superseded` never went out. `queued_auto` is waiting for an automatic send.
  */
 type HeldReplyState = 'pending' | 'queued_auto' | 'released' | 'edited' | 'discarded' | 'superseded'
+
+/**
+ * The review turn's reasoning, as identifiers and codes: how it answered, whether its claims are
+ * supported, how completely it covered the question, why it asked for a person, and the skills it
+ * was not allowed to run. Never prompt, completion or customer text.
+ */
+export type HeldReplyTrace = {
+  turnId: string
+  outcome: string | null
+  groundingVerdict: 'grounded' | 'degraded' | 'no_support' | null
+  coverage: string
+  handoffReason: string | null
+  suppressedEffects: { skillName: string }[]
+}
 
 /**
  * A reply the agent wrote that waits for an operator before it reaches the customer, with what the
@@ -36,7 +49,8 @@ export type HeldReply = {
   editorUserId: string | null
   /** Whether the conversation still waits on an operator because of this reply. */
   attentionOpen: boolean
-  trace: TurnTraceEnvelope | null
+  /** Null when the review turn's record is not readable. */
+  trace: HeldReplyTrace | null
 }
 
 export type HeldReplyPage = { items: HeldReply[]; nextCursor: string | null }

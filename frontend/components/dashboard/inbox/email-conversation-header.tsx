@@ -33,13 +33,14 @@ const factsPollMs = (facts: ConversationEmailFacts | undefined) =>
 
 /**
  * Reads an email conversation's sender, mailbox, subject, sending state and the delivery of each
- * reply; idle for any other conversation. `refresh` reads them again after an operator's own action.
+ * reply; idle for any other conversation. `refresh` reads them again after an operator's own action
+ * or a refused send; `readAt` changes with every successful read.
  */
 export function useConversationEmailFacts(
   workspaceId: string,
   conversationId: string | null,
   isEmailConversation: boolean,
-): EmailFactsState & { refresh: () => void } {
+): EmailFactsState & { readAt: number; refresh: () => void } {
   const policy = useDashboardQueryPolicy()
   const queryClient = useQueryClient()
   const queryKey = useMemo(
@@ -62,19 +63,8 @@ export function useConversationEmailFacts(
     facts: isActive ? query.data ?? null : null,
     error: isActive && query.error ? getApiErrorMessage(query.error, 'Email details are unavailable.') : null,
     isLoading: isActive && query.data === undefined && !query.error,
+    readAt: query.dataUpdatedAt,
     refresh,
-  }
-}
-
-/** Why replies on this email conversation cannot be sent now, from its mailbox's sending state. */
-export const emailSendUnavailableReason = (facts: ConversationEmailFacts | null): string | null => {
-  switch (facts?.sending.state) {
-    case 'not_verified':
-      return 'Replies wait until this mailbox’s domain is verified.'
-    case 'domain_removed':
-      return 'This mailbox’s sending domain was removed.'
-    default:
-      return null
   }
 }
 

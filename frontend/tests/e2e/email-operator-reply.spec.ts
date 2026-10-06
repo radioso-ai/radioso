@@ -43,17 +43,27 @@ const refuse = (route: Route, status: number, code: string, message: string) =>
 
 const installEmailReplyBackend = async (
   page: Page,
-  options: { sending: SendingState; refuseSends?: boolean; failedReply?: "uncertain" | "halted" },
+  options: {
+    sending: SendingState;
+    refuseSends?: boolean;
+    failedReply?: "uncertain" | "halted" | "bounced";
+    /** The agent still holds the conversation: its own automatic reply is the one that failed. */
+    aiOwned?: boolean;
+    /** The mailbox's facts cannot be read. */
+    factsUnavailable?: boolean;
+  },
 ) => {
   let sending = options.sending;
+  let refuseSends = options.refuseSends ?? false;
+  const initialState: "ai_owned" | "human_owned" = options.aiOwned ? "ai_owned" : "human_owned";
   let ownership = {
     conversationId,
     workspaceId,
-    state: "human_owned" as const,
+    state: initialState,
     ownerAccountId: null as string | null,
     ownerUserId: null as string | null,
     ownerDisplayName: null as string | null,
-    reason: "operator_only_mailbox",
+    reason: options.aiOwned ? null : "operator_only_mailbox",
     version: 1,
     takenOverAt: null as string | null,
     createdAt: nowIso,
@@ -65,19 +75,27 @@ const installEmailReplyBackend = async (
   const deliveries = new Map<string, { state: DeliveryState; failureCode: string | null }>();
   const failures: DeliveryFailure[] = [];
   const replies: unknown[] = [];
+  const takeovers: unknown[] = [];
   const acknowledged: string[] = [];
   const resolutions: Array<{ failureId: string; decision: string }> = [];
   // A reply already sent whose outcome is unknown, or that never went out, with its open failure.
   if (options.failedReply) {
-    messages.push({ id: replyMessageId, role: "assistant", source: "human_agent", content: "We are tracking it now.", createdAt: nowIso });
-    deliveries.set(replyMessageId, { state: options.failedReply, failureCode: null });
+    messages.push({
+      id: replyMessageId,
+      role: "assistant",
+      source: options.aiOwned ? "assistant" : "human_agent",
+      content: "We are tracking it now.",
+      createdAt: nowIso,
+    });
+    const failureCode = options.failedReply === "bounced" ? "mailbox_full" : null;
+    deliveries.set(replyMessageId, { state: options.failedReply, failureCode });
     failures.push({
       id: "failure-1",
       conversationId,
       messageId: replyMessageId,
       provider: "email",
       kind: options.failedReply,
-      detailCode: null,
+      detailCode: failureCode,
       openedAt: nowIso,
       clearedAt: null,
       clearReason: null,
@@ -97,6 +115,7 @@ const installEmailReplyBackend = async (
     userMessageCount: 1,
     assistantMessageCount: messages.length - 1,
     preview: "Where is my order?",
+    title: "Where is my order?",
     ownership,
     channelContext: {
       provider: "email",
@@ -149,23 +168,35 @@ const installEmailReplyBackend = async (
   await page.route(`**/backend/api/v1/conversations/${conversationId}/**`, (route) => {
     const request = route.request();
     const action = new URL(request.url()).pathname.split("/").at(-1);
-    if (request.method() === "GET" && action === "email") return json(route, facts());
+    if (request.method() === "GET" && action === "email") {
+      return options.factsUnavailable ? refuse(route, 500, "internal_error", "Email facts failed") : json(route, facts());
+    }
     if (request.method() === "POST" && action === "takeover") {
-      ownership = {
-        ...ownership,
-        ownerAccountId: "account-1",
-        ownerUserId: currentUserId,
-        ownerDisplayName: "Test Operator",
-        version: ownership.version + 1,
-        takenOverAt: nowIso,
-      };
-      return json(route, { ownership });
+      takeovers.push(request.postDataJSON());
+      return refuse(route, 500, "internal_error", "A reply claims the conversation itself; nothing calls takeover first.");
     }
     if (request.method() === "POST" && action === "reply") {
       const body = request.postDataJSON() as { message: string; expectedVersion: number };
       replies.push(body);
-      if (options.refuseSends) {
+      // The channel refuses before anything is written: no claim, no message.
+      if (refuseSends) {
         return refuse(route, 409, "email_sending_not_verified", "The sending domain for support@customer.test is not verified.");
+      }
+      if (body.expectedVersion !== ownership.version) {
+        return refuse(route, 409, "conflict", "Conversation ownership changed");
+      }
+      // A reply to a conversation nobody holds claims it in the same write.
+      if (ownership.ownerUserId === null) {
+        ownership = {
+          ...ownership,
+          state: "human_owned",
+          ownerAccountId: "account-1",
+          ownerUserId: currentUserId,
+          ownerDisplayName: "Test Operator",
+          reason: ownership.reason ?? "operator_takeover",
+          version: ownership.version + 1,
+          takenOverAt: nowIso,
+        };
       }
       const message: ThreadMessage = {
         id: replyMessageId,
@@ -211,9 +242,12 @@ const installEmailReplyBackend = async (
 
   return {
     replies,
+    takeovers,
     acknowledged,
     resolutions,
+    ownershipState: () => ownership.state,
     setSending: (next: SendingState) => { sending = next; },
+    setRefuseSends: (next: boolean) => { refuseSends = next; },
     /** The provider reports where the reply stands; a bounce raises a failure with its sanitized code. */
     settle: (state: DeliveryState, failureCode: string | null = null) => {
       deliveries.set(replyMessageId, { state, failureCode });
@@ -265,7 +299,9 @@ test("an operator's reply is queued, then delivered, and the header says so", as
   await expect(delivery).toHaveCount(1);
   await expect(delivery).toContainText("We are tracking it now.");
   await expect(delivery).toContainText("Queued");
-  expect(backend.replies).toEqual([{ message: "We are tracking it now.", expectedVersion: 2 }]);
+  // The reply claims the waiting conversation at the version the Inbox read; nothing takes it over first.
+  expect(backend.replies).toEqual([{ message: "We are tracking it now.", expectedVersion: 1 }]);
+  expect(backend.takeovers).toEqual([]);
 
   backend.settle("accepted");
   await expect(delivery).toContainText("Sent", factsPoll);
@@ -273,20 +309,60 @@ test("an operator's reply is queued, then delivered, and the header says so", as
   await expect(delivery).toContainText("Delivered", factsPoll);
 });
 
-test("a reply refused because the domain is unverified keeps the draft and focus and shows the server's reason", async ({ page }) => {
+test("a reply refused because the domain is unverified keeps the draft and focus, claims nothing, and Send comes back once the mailbox reads ready", async ({ page }) => {
   await seedDashboardStorage(page);
   const backend = await installEmailReplyBackend(page, { sending: "ok", refuseSends: true });
 
   const response = await openEmailConversation(page);
   const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  const send = response.getByRole("button", { name: "Send" });
   await replyBox.fill("We are tracking it now.");
-  await response.getByRole("button", { name: "Send" }).click();
+  await send.click();
 
   await expect(response.getByText("The sending domain for support@customer.test is not verified.")).toBeVisible();
-  await expect(response.getByRole("button", { name: "Send" })).toBeDisabled();
   await expect(replyBox).toHaveValue("We are tracking it now.");
   await expect(replyBox).toBeFocused();
   expect(backend.replies).toHaveLength(1);
+  expect(backend.takeovers).toEqual([]);
+  expect(backend.ownershipState()).toBe("human_owned");
+
+  // The refusal was transient. The mailbox read after it still says it can send (it said so before
+  // the refusal too), so Send is enabled again rather than held until the reason changes.
+  backend.setRefuseSends(false);
+  await expect(send).toBeEnabled(factsPoll);
+  await send.click();
+  await expect(response.getByRole("list", { name: "Reply delivery" })).toContainText("Queued");
+  await expect(response.getByText("The sending domain for support@customer.test is not verified.")).toHaveCount(0);
+  expect(backend.replies).toHaveLength(2);
+});
+
+test("a mailbox whose facts cannot be read never offers Send, and says why", async ({ page }) => {
+  await seedDashboardStorage(page);
+  const backend = await installEmailReplyBackend(page, { sending: "ok", factsUnavailable: true });
+
+  const response = await openEmailConversation(page);
+  await response.getByRole("textbox", { name: "Reply to the visitor" }).fill("We are tracking it now.");
+  const send = response.getByRole("button", { name: "Send" });
+  await expect(send).toBeDisabled();
+  await expect(send).toHaveAccessibleDescription("Can’t confirm this mailbox can send right now.", factsPoll);
+  expect(backend.replies).toEqual([]);
+  expect(backend.takeovers).toEqual([]);
+});
+
+test("an automatic reply that bounced stays in the Inbox under its agent's filter, titled after its conversation", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installEmailReplyBackend(page, { sending: "ok", failedReply: "bounced", aiOwned: true });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  const queue = page.getByLabel("Inbox queue");
+  // Nobody holds the conversation, so the Inbox reads it on its own for the failure's title and agent.
+  const failureRow = queue.getByRole("button", { name: /Delivery failure.*Where is my order/ });
+  await expect(failureRow).toBeVisible();
+
+  await queue.getByLabel("Filter by agent").click();
+  await page.getByRole("option", { name: "Marta" }).click();
+  await expect(failureRow).toBeVisible();
+  await expect(page.getByText("No items match your filters.")).toHaveCount(0);
 });
 
 test("the composer waits for a verified domain, then sends", async ({ page }) => {

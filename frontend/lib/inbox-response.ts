@@ -20,8 +20,18 @@ import { deriveOperatorActions } from '@/lib/operator-actions'
  * `anonymousSessionId` is only loaded for handoff items (see `InboxItem`); for
  * approvals and feedback it's `undefined` rather than a known verified/anonymous
  * state, so this returns a generic label instead of guessing either way.
+ *
+ * A session only means something on a channel that has one. An email sender has
+ * no browser session, and the address they wrote from verifies nobody, so an
+ * email conversation is never labeled verified (nor anonymous).
  */
-export const visitorIdentityLabel = (conversation: { anonymousSessionId: string | null | undefined }): string => {
+export const visitorIdentityLabel = (conversation: {
+  anonymousSessionId: string | null | undefined
+  channel?: ConversationChannelContext['provider'] | null
+}): string => {
+  if (conversation.channel === 'email') {
+    return 'Email sender'
+  }
   if (conversation.anonymousSessionId === undefined) {
     return 'Visitor'
   }

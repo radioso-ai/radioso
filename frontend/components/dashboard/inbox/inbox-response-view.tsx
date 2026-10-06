@@ -14,6 +14,7 @@ import {
   ApprovalDecisionPanel,
   OperatorComposer,
   useOperatorActionRunner,
+  type ChannelSendReadiness,
   type OperatorActionResult,
 } from '@/components/dashboard/operator-composer'
 import { Button } from '@/components/ui/button'
@@ -25,6 +26,7 @@ import { hitlApi } from '@/lib/api-hitl'
 import { useOptionalAuth } from '@/lib/auth-context'
 import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
+import { emailSendUnavailableReason } from '@/lib/email-send-readiness'
 import {
   doneControlTooltip,
   findFirstVisitorMessage,
@@ -46,7 +48,7 @@ import {
 import { useSkillCatalog } from '@/lib/skill-catalog'
 import { cn } from '@/lib/utils'
 import { DeliveryFailurePanel } from './delivery-failure-panel'
-import { EmailConversationHeader, emailSendUnavailableReason, useConversationEmailFacts } from './email-conversation-header'
+import { EmailConversationHeader, useConversationEmailFacts } from './email-conversation-header'
 import { HeldReplyPanel } from './held-reply-panel'
 import { InboxReadOnlyFooter } from './inbox-readonly-footer'
 import { InboxSituationCard } from './inbox-situation-card'
@@ -288,16 +290,15 @@ export function InboxResponseView({
 
   const renderedMessages = effectiveConversationMessages.map((message) =>
     message.role === 'assistant' ? { ...message, persistedAssistantMessageId: message.id } : message)
+  // An email reply waits for a successful read of its mailbox that says it can send: unknown or
+  // stale facts never offer Send. A refused send reads the mailbox again.
+  const sendUnavailableReason = isEmailConversation ? emailSendUnavailableReason(emailFacts) : null
+  const sendReadiness: ChannelSendReadiness | undefined = isEmailConversation
+    ? { unavailableReason: sendUnavailableReason, readAt: emailFacts.readAt, reread: refreshEmailFacts }
+    : undefined
   // A resend goes out through the conversation's channel, so it waits for the same readiness a reply
   // does, and for the channel to be known at all.
-  const resendUnavailableReason = !conversationDetail
-    ? 'Checking whether this conversation can send.'
-    : !isEmailConversation
-      ? null
-      : emailFacts.facts
-        ? emailSendUnavailableReason(emailFacts.facts)
-        : 'Checking whether this mailbox can send.'
-  const sendUnavailableReason = isEmailConversation ? emailSendUnavailableReason(emailFacts.facts) : null
+  const resendUnavailableReason = conversationDetail ? sendUnavailableReason : 'Checking whether this conversation can send.'
   const replyPreviews = useMemo(
     () => new Map(isEmailConversation ? effectiveConversationMessages.map((message) => [message.id, message.content]) : []),
     [effectiveConversationMessages, isEmailConversation],
@@ -325,8 +326,14 @@ export function InboxResponseView({
   // with the agent (no ownership record, or an AI-owned one) has no "waiting
   // since" or "with them since" to show.
   const waiting = effectiveItem?.escalatedAt ? inboxWaitingPresentation(effectiveItem, now) : null
+  // Who wrote in depends on the channel: until the conversation (or its row) says which, the
+  // session reading claims nothing.
+  const channelSource = conversationDetail ?? readOnlySelection?.conversation
   const identity = visitorIdentityLabel({
-    anonymousSessionId: effectiveItem ? effectiveItem.anonymousSessionId : readOnlySource?.anonymousSessionId,
+    channel: channelSource?.channelContext?.provider ?? null,
+    anonymousSessionId: !channelSource
+      ? undefined
+      : effectiveItem ? effectiveItem.anonymousSessionId : readOnlySource?.anonymousSessionId,
   })
 
   return (
@@ -463,7 +470,7 @@ export function InboxResponseView({
           onTeammatesStale={teammates.refresh}
           onChanged={handleChanged}
           externalError={handBackRunner.error}
-          sendUnavailableReason={sendUnavailableReason}
+          sendReadiness={sendReadiness}
           trailingActions={showDoneControl ? (
             <Tooltip>
               <TooltipTrigger asChild>

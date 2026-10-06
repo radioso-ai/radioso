@@ -6,14 +6,14 @@ import { useQuery } from '@tanstack/react-query'
 import { useDashboardQueryPolicy } from '@/components/providers/dashboard-query-provider'
 import { hitlApi } from '@/lib/api-hitl'
 import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
-import { buildRecentlyClosedItems, RECENTLY_CLOSED_LIMIT, type RecentlyClosedInboxItem } from '@/lib/needs-attention'
+import { buildRecentlyClosedItems, RECENTLY_CLOSED_LIMIT } from '@/lib/needs-attention'
 
 /**
  * The Inbox's recently closed items — handoffs handed back, approvals decided, negative feedback
  * resolved or dismissed — each with the teammate who closed it. Refreshed by the same workspace
  * events that close them (see `matchesWorkspaceInvalidation`).
  */
-export const useInboxRecentlyClosed = (workspaceId: string): RecentlyClosedInboxItem[] => {
+export const useInboxRecentlyClosed = (workspaceId: string) => {
   const policy = useDashboardQueryPolicy()
   const queryKey = dashboardQueryKeys.attention.recentlyClosed(workspaceId, { limit: RECENTLY_CLOSED_LIMIT })
   const query = useQuery({
@@ -22,5 +22,10 @@ export const useInboxRecentlyClosed = (workspaceId: string): RecentlyClosedInbox
     enabled: Boolean(workspaceId) && policy.queriesEnabled,
     refetchInterval: policy.intervalFor(queryKey),
   })
-  return useMemo(() => buildRecentlyClosedItems(query.data?.items ?? []), [query.data])
+  const items = useMemo(() => buildRecentlyClosedItems(query.data?.items ?? []), [query.data])
+  return {
+    items,
+    isLoading: query.isLoading,
+    hasLoadFailure: query.isError,
+  }
 }

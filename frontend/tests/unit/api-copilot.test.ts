@@ -231,6 +231,24 @@ describe('deriveCopilotPageContext', () => {
     })
   })
 
+  it('derives the customer conversation id from a stable Needs-you row route', async () => {
+    const { deriveCopilotPageContext } = await import('@/lib/api-copilot')
+
+    expect(deriveCopilotPageContext({
+      section: 'activity',
+      activityTab: 'needs-attention',
+      historyItemKind: 'inbox',
+      historyItemId: 'inbox:handoff:customer-conversation-1:handoff',
+      agentId: 'agent-1',
+    })).toEqual({
+      view: 'activity',
+      agentId: 'agent-1',
+      conversationId: 'customer-conversation-1',
+      selection: null,
+      entities: [],
+    })
+  })
+
   it('maps dashboard sections to the contract enum without inspecting URL text', async () => {
     const { deriveCopilotPageContext } = await import('@/lib/api-copilot')
 

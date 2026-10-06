@@ -113,7 +113,7 @@ GitHub CI is manual here, so run the local check first. It builds and tests the 
 pnpm run ci:local -- origin/main
 ```
 
-Use `pnpm run ci:local -- --all` for changes that touch many areas, and paste the result into the pull request body.
+Use `pnpm run ci:local -- --all` for changes that touch many areas, and paste the result into the pull request body. A change under `infra/` also runs CI's Terraform check, `terraform fmt -check` and `validate` over every root, so it needs Terraform on your `PATH`.
 
 ## Commit and pull request format
 

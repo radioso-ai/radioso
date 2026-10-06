@@ -155,8 +155,10 @@ resource "google_cloud_scheduler_job" "slack_inbound_event_retention" {
   depends_on = [google_project_service.apis]
 }
 
+# The sweep route is mounted only when the channel has a provider, so the job exists only then;
+# a deployment with the channel off schedules nothing against an unmounted endpoint.
 resource "google_cloud_scheduler_job" "email_channel_sweep" {
-  count    = var.deploy_services ? 1 : 0
+  count    = var.deploy_services && var.email_channel_provider != null ? 1 : 0
   name     = "${local.resource_name_prefix}-email-channel-sweep"
   region   = var.region
   schedule = local.email_channel_sweep_schedule

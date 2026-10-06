@@ -485,6 +485,18 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
+        for_each = var.email_channel_webhook_secret_previous != null ? [google_secret_manager_secret.secrets["email-channel-webhook-secret-previous"].secret_id] : []
+        content {
+          name = "EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
         for_each = var.resend_channel_api_key != null ? [google_secret_manager_secret.secrets["resend-channel-api-key"].secret_id] : []
         content {
           name = "RESEND_CHANNEL_API_KEY"
@@ -1238,6 +1250,18 @@ resource "google_cloud_run_v2_service" "document_worker" {
         for_each = var.email_channel_webhook_secret != null ? [google_secret_manager_secret.secrets["email-channel-webhook-secret"].secret_id] : []
         content {
           name = "EMAIL_CHANNEL_WEBHOOK_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.email_channel_webhook_secret_previous != null ? [google_secret_manager_secret.secrets["email-channel-webhook-secret-previous"].secret_id] : []
+        content {
+          name = "EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS"
           value_source {
             secret_key_ref {
               secret  = env.value

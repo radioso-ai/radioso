@@ -33,6 +33,9 @@ locals {
     var.email_channel_webhook_secret != null ? {
       "email-channel-webhook-secret" = var.email_channel_webhook_secret
     } : {},
+    var.email_channel_webhook_secret_previous != null ? {
+      "email-channel-webhook-secret-previous" = var.email_channel_webhook_secret_previous
+    } : {},
     nonsensitive(var.metrics_auth_token) == null ? {} : {
       "metrics-auth-token" = var.metrics_auth_token
     },
@@ -90,6 +93,9 @@ locals {
     } : {},
     var.email_channel_webhook_secret != null ? {
       "email-channel-webhook-secret" = true
+    } : {},
+    var.email_channel_webhook_secret_previous != null ? {
+      "email-channel-webhook-secret-previous" = true
     } : {},
     nonsensitive(var.metrics_auth_token) == null ? {} : {
       "metrics-auth-token" = true

@@ -283,9 +283,10 @@ variable "action_dispatch_recovery_max_jobs" {
 # --- Email channel (inbound email conversations) ---
 # Cloud Tasks queue for scheduled inbound/review/reconcile drains, plus a Cloud
 # Scheduler sweep for lease recovery, domain refresh, send reconciliation claims
-# and event-log retention (research B7, B12). The queue and scheduler job are
-# created whenever deploy_services is true; email_channel_provider below is the
-# separate runtime switch that turns the channel on.
+# and event-log retention (research B7, B12). The queue is created whenever
+# deploy_services is true, so it can be provisioned ahead of a rollout; the
+# scheduler job is created only once email_channel_provider below is set, the
+# runtime switch that turns the channel on and mounts the sweep route.
 
 variable "email_channel_task_queue_name" {
   description = "Cloud Tasks queue name used to push email-channel drain requests (inbound, review, reconcile)."
@@ -323,7 +324,7 @@ variable "email_channel_sweep_max_jobs" {
 }
 
 variable "email_channel_workers_enabled" {
-  description = "Whether the email-channel worker (interval loop, drain and sweep routes) runs (EMAIL_CHANNEL_WORKERS_ENABLED). Defaults to false so Terraform can provision the queue, scheduler job, domain and secrets ahead of a rollout."
+  description = "Whether the email-channel worker (interval loop, drain and sweep routes) runs (EMAIL_CHANNEL_WORKERS_ENABLED). Defaults to false so Terraform can provision the queue, domain and secrets ahead of a rollout."
   type        = bool
   default     = false
 }
@@ -471,6 +472,18 @@ variable "email_channel_webhook_secret" {
   type        = string
   sensitive   = true
   default     = null
+}
+
+variable "email_channel_webhook_secret_previous" {
+  description = "Optional previous webhook signing secret, accepted beside email_channel_webhook_secret while a rotation overlaps (EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS). Set it to the old value when rotating, and unset it once the provider's retries signed with the old value have passed."
+  type        = string
+  sensitive   = true
+  default     = null
+
+  validation {
+    condition     = var.email_channel_webhook_secret_previous == null || var.email_channel_webhook_secret != null
+    error_message = "email_channel_webhook_secret_previous needs email_channel_webhook_secret: the previous secret only overlaps a current one."
+  }
 }
 
 variable "resend_channel_api_key" {

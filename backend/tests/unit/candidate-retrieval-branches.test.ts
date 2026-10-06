@@ -103,13 +103,11 @@ describe("candidate retrieval branches", () => {
         originalQuery: "who is narayani and arudra?",
         semanticQuery: "who is narayani and arudra?",
         lexicalQuery: "who is narayani and arudra?",
-        constraints: [],
       },
       originalPreparedQuery: {
         originalQuery: "who is narayani and arudra?",
         semanticQuery: "who is narayani and arudra?",
         lexicalQuery: "who is narayani and arudra?",
-        constraints: [],
       },
       rewrittenQuery: {
         originalQuery: "who is narayani and arudra?",
@@ -131,7 +129,6 @@ describe("candidate retrieval branches", () => {
         originalQuery: "who is narayani and arudra?",
         semanticQuery: "who is narayani and arudra?",
         lexicalQuery: "who is narayani and arudra?",
-        constraints: [],
       },
       activeSemanticQuery: "who is narayani and arudra?",
       activeRetrievalSubqueries: [
@@ -254,13 +251,11 @@ describe("candidate retrieval branches", () => {
         originalQuery: "alpha beta gamma delta?",
         semanticQuery: "alpha beta gamma delta?",
         lexicalQuery: "alpha beta gamma delta?",
-        constraints: [],
       },
       originalPreparedQuery: {
         originalQuery: "alpha beta gamma delta?",
         semanticQuery: "alpha beta gamma delta?",
         lexicalQuery: "alpha beta gamma delta?",
-        constraints: [],
       },
       rewrittenQuery: {
         originalQuery: "alpha beta gamma delta?",
@@ -279,7 +274,6 @@ describe("candidate retrieval branches", () => {
         originalQuery: "alpha beta gamma delta?",
         semanticQuery: "alpha beta gamma delta?",
         lexicalQuery: "alpha beta gamma delta?",
-        constraints: [],
       },
       activeSemanticQuery: "alpha beta gamma delta?",
       activeRetrievalSubqueries: subqueries,
@@ -396,13 +390,11 @@ describe("candidate retrieval branches", () => {
         originalQuery: "account recovery",
         semanticQuery: "account recovery",
         lexicalQuery: "account recovery",
-        constraints: [],
       },
       originalPreparedQuery: {
         originalQuery: "account recovery",
         semanticQuery: "account recovery",
         lexicalQuery: "account recovery",
-        constraints: [],
       },
       rewrittenQuery: {
         originalQuery: "account recovery",
@@ -423,7 +415,6 @@ describe("candidate retrieval branches", () => {
         originalQuery: "account recovery",
         semanticQuery: "account recovery",
         lexicalQuery: "account recovery",
-        constraints: [],
       },
       activeSemanticQuery: "account recovery",
       activeRetrievalSubqueries: [
@@ -535,13 +526,11 @@ describe("candidate retrieval branches", () => {
         originalQuery: "recover account access",
         semanticQuery: "recover account access",
         lexicalQuery: "recover account access",
-        constraints: [],
       },
       originalPreparedQuery: {
         originalQuery: "recover account access",
         semanticQuery: "recover account access",
         lexicalQuery: "recover account access",
-        constraints: [],
       },
       rewrittenQuery: {
         originalQuery: "recover account access",
@@ -563,7 +552,6 @@ describe("candidate retrieval branches", () => {
         originalQuery: "recover account access",
         semanticQuery: "recover account access",
         lexicalQuery: "recover account access",
-        constraints: [],
       },
       activeSemanticQuery: "recover account access",
       activeRetrievalSubqueries: [
@@ -665,13 +653,11 @@ const singleBranchStageInput = () => ({
     originalQuery: "recover account access",
     semanticQuery: "recover account access",
     lexicalQuery: "recover account access",
-    constraints: [],
   },
   originalPreparedQuery: {
     originalQuery: "recover account access",
     semanticQuery: "recover account access",
     lexicalQuery: "recover account access",
-    constraints: [],
   },
   rewrittenQuery: {
     originalQuery: "recover account access",
@@ -692,7 +678,6 @@ const singleBranchStageInput = () => ({
     originalQuery: "recover account access",
     semanticQuery: "recover account access",
     lexicalQuery: "recover account access",
-    constraints: [],
   },
   activeSemanticQuery: "recover account access",
   activeRetrievalSubqueries: [

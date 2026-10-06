@@ -3,9 +3,18 @@ import type {
   RetrievalExecutionMetadata,
   ActivitySummary,
 } from "../domain/retrievalPipelineTypes.js";
+import type { ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import { summarizeResolvedSteps } from "./retrievalShapeResolver.js";
 
-export interface ActivitySummaryPresenterOptions {
+export const presentParsedQuery = (parsedQuery: ParsedQueryInterpretation): NonNullable<ActivitySummary["parsedQuery"]> => ({
+  originalQuery: parsedQuery.originalQuery ?? parsedQuery.semanticQuery,
+  semanticQuery: parsedQuery.semanticQuery,
+  lexicalQuery: parsedQuery.lexicalQuery,
+  // Required by the public ParsedQuery contract; retrieval no longer parses query constraints.
+  constraintSummary: [],
+});
+
+interface ActivitySummaryPresenterOptions {
   execution?: RetrievalExecutionMetadata;
 }
 
@@ -19,14 +28,7 @@ export class ActivitySummaryPresenter {
       status: input.fallbackApplied ? "fallback" : input.retrievalSkipped ? "skipped" : "success",
       outcome: input.retrievalSkipped ? "retrieval_skipped" : "retrieval_completed",
       execution,
-      parsedQuery: input.parsedQuery
-        ? {
-            originalQuery: input.parsedQuery.originalQuery ?? input.parsedQuery.semanticQuery,
-            semanticQuery: input.parsedQuery.semanticQuery,
-            lexicalQuery: input.parsedQuery.lexicalQuery,
-            constraintSummary: input.parsedQuery.constraints.map((constraint) => constraint.summary),
-          }
-        : undefined,
+      parsedQuery: input.parsedQuery ? presentParsedQuery(input.parsedQuery) : undefined,
       retrievalSubqueries:
         input.retrievalSubqueries && input.retrievalSubqueries.length > 1
           ? input.retrievalSubqueries.map((subquery) => ({

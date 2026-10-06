@@ -403,7 +403,6 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
               { label: 'Rewrite confidence', value: metrics.rewriteConfidence as number | undefined },
             ]}
           />
-          <StringList values={asStringList(outputs.parsedConstraints)} />
         </Section>
         <RawBlock label="Retrieval subqueries" value={outputs.retrievalSubqueries} />
       </>

@@ -552,7 +552,6 @@ describe("WorkbenchReplayRunner", () => {
         rewrittenQuery: "refund timeline after returned item",
         semanticQuery: "refund timeline after returned item",
         lexicalQuery: "refund returned item timeline",
-        constraints: [],
         responseLanguagePolicy: "match_user_question" as const,
         turnKind: "referential_followup" as const,
         relatedEntities: [],

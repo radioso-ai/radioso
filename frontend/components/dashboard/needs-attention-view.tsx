@@ -115,6 +115,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   } | null>(null)
   const [statusAnnouncement, setStatusAnnouncement] = useState('')
   const [notFoundNotice, setNotFoundNotice] = useState<string | null>(null)
+  const preservedNotFoundNoticeRouteKeyRef = useRef<string | null>(null)
   // A route reconciliation must never overwrite a selection the operator just
   // made while a previous render's effect was still queued.
   const selectionWriteRef = useRef(0)
@@ -301,26 +302,35 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     }
 
     if (routeSelection.kind === 'item') {
+      preservedNotFoundNoticeRouteKeyRef.current = null
       setNotFoundNotice(needsAttentionNotFoundNotice(routeSelection))
       setSelectedInboxItem((current) => preserveMatchingQueueItem(current, routeSelection.item))
       setSelectedRecentlyClosedItem(null)
       return
     }
     if (routeSelection.kind === 'recently-closed') {
+      preservedNotFoundNoticeRouteKeyRef.current = null
       setNotFoundNotice(needsAttentionNotFoundNotice(routeSelection))
       setSelectedInboxItem(null)
       setSelectedRecentlyClosedItem((current) => preserveMatchingQueueItem(current, routeSelection.item))
       return
     }
     if (routeSelection.kind === 'pending') {
+      preservedNotFoundNoticeRouteKeyRef.current = null
       setNotFoundNotice(needsAttentionNotFoundNotice(routeSelection))
       setSelectedInboxItem(null)
       setSelectedRecentlyClosedItem(null)
       return
     }
     if (routeSelection.kind === 'missing' && routeTarget) {
+      preservedNotFoundNoticeRouteKeyRef.current = routeTargetKey
       setNotFoundNotice(needsAttentionNotFoundNotice(routeSelection))
       clearSelectionRoute(routeTarget)
+      return
+    }
+    if (!routeTarget && preservedNotFoundNoticeRouteKeyRef.current !== null) {
+      setSelectedInboxItem(null)
+      setSelectedRecentlyClosedItem(null)
       return
     }
     setNotFoundNotice(needsAttentionNotFoundNotice(routeSelection))
@@ -391,6 +401,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const handleSelectItem = useCallback((item: InboxItem) => {
     beginSelectionWrite()
     pendingClearRouteKeyRef.current = null
+    preservedNotFoundNoticeRouteKeyRef.current = null
     setNotFoundNotice(null)
     setSelectedInboxItem(item)
     setSelectedRecentlyClosedItem(null)
@@ -399,7 +410,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       section: 'activity',
       activityTab: 'needs-attention',
       historyItemKind: 'inbox',
-      historyItemId: item.key,
+      historyItemId: needsAttentionRouteTargetForItem(item).itemId,
       historyMessageId: undefined,
     }))
     if (item.type === 'negative_feedback' && item.triageState === 'open') {
@@ -410,6 +421,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const handleSelectRecentlyClosed = useCallback((item: RecentlyClosedInboxItem) => {
     beginSelectionWrite()
     pendingClearRouteKeyRef.current = null
+    preservedNotFoundNoticeRouteKeyRef.current = null
     setNotFoundNotice(null)
     setSelectedInboxItem(null)
     setSelectedRecentlyClosedItem(item)
@@ -418,7 +430,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       section: 'activity',
       activityTab: 'needs-attention',
       historyItemKind: 'inbox',
-      historyItemId: item.key,
+      historyItemId: needsAttentionRouteTargetForItem(item).itemId,
       historyMessageId: undefined,
     }))
   }, [accountId, beginSelectionWrite, routeState, router])
@@ -428,9 +440,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     if (!item) {
       return
     }
+    preservedNotFoundNoticeRouteKeyRef.current = needsAttentionRouteTargetKey(
+      routeTarget ?? needsAttentionRouteTargetForItem(item),
+    )
     setNotFoundNotice('This conversation is no longer available.')
     clearItemSelectionRoute(item)
-  }, [clearItemSelectionRoute, selectedInboxItem, selectedRecentlyClosedItem])
+  }, [clearItemSelectionRoute, routeTarget, selectedInboxItem, selectedRecentlyClosedItem])
 
   const handleOperatorChanged = useCallback(async (result: OperatorActionResult) => {
     if (result.kind === 'ownership') {

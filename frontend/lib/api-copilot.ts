@@ -1,5 +1,6 @@
 import { API_BASE, buildError, getStoredActiveWorkspaceId, request } from './api-client'
 import type { DashboardRouteState } from './dashboard-routes'
+import { conversationIdFromNeedsAttentionRouteItemId } from './needs-attention-route'
 
 export const COPILOT_PAGE_VIEWS = [
   'activity',
@@ -257,7 +258,9 @@ export const deriveCopilotPageContext = (
   const agentId = routeState.agentId ?? null
   const conversationId = routeState.historyItemKind === 'chat'
     ? routeState.historyItemId ?? null
-    : null
+    : routeState.historyItemKind === 'inbox'
+      ? conversationIdFromNeedsAttentionRouteItemId(routeState.historyItemId)
+      : null
 
   switch (routeState.section) {
     case 'activity':

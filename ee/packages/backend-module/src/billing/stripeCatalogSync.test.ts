@@ -167,19 +167,10 @@ describe("desiredStripeCatalog", () => {
     });
   });
 
-  it("maps the managed service to a monthly price on a product that grants no plan", () => {
+  it("creates no managed-service product: the managed service is sold by agreement, not in Stripe", () => {
     const target = desired();
-    const product = target.products.find((candidate) => candidate.id === "radioso_managed_service");
-    expect(product?.metadata).toEqual({});
-    expect(product?.taxCode).toBe(SAAS_TAX_CODE);
-    expect(target.prices).toContainEqual({
-      lookupKey: PLAN_CATALOG.managedService.stripeLookupKey,
-      productId: "radioso_managed_service",
-      unitAmount: PLAN_CATALOG.managedService.priceCents,
-      currency: "eur",
-      recurringInterval: "month",
-      taxBehavior: "exclusive",
-    });
+    expect(target.products.find((candidate) => candidate.id === "radioso_managed_service")).toBeUndefined();
+    expect(target.prices.some((entry) => entry.lookupKey === "managed_month")).toBe(false);
   });
 
   it("writes the plan id under an overridden metadata key", () => {

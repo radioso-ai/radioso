@@ -267,7 +267,7 @@ interface BuildTurnTraceForPresentationInput {
   accountId?: string;
   session: PreparedSession;
   presentation: ChatPresentedAnswer;
-  answerStartedAt: number;
+  requestReceivedAt: number;
   stream: boolean;
   engineTrace?: ConversationTrace;
   modelCallTrace?: ModelCallTraceCollector;
@@ -323,10 +323,10 @@ export const buildTurnTraceForPresentation = (
     path: route.type === "direct" ? "assistant_direct" as const : "assistant_retrieval" as const,
     retrievalInvoked: route.type === "retrieval",
   };
-  // One measurement of turn wall time, used for both the persisted
-  // `messages.total_latency_ms` column and the trace's answer/generation stages, so the
-  // quality dashboard and the debug trace can never report different numbers for a turn.
-  const totalLatencyMs = Date.now() - input.answerStartedAt;
+  // One visitor-perceived duration, used for both the persisted
+  // `messages.total_latency_ms` column and the trace's answer stage, so the quality
+  // dashboard and debug trace cannot report different durations for a turn.
+  const totalLatencyMs = Date.now() - input.requestReceivedAt;
   const activitySummary = {
     ...activitySummaryPresenter.present(retrieval.diagnostics, {
       execution,
@@ -634,7 +634,8 @@ export class ChatTurnLifecycle {
     accountId?: string;
     session: PreparedSession;
     presentation: ChatPresentedAnswer;
-    answerStartedAt: number;
+    /** Time the turn entered ChatService, before any queueing or preparation work. */
+    requestReceivedAt: number;
     stream: boolean;
     /** Suppresses customer-facing effects while retaining the synthetic messages and trace. */
     executionMode?: TurnExecutionMode;
@@ -682,7 +683,7 @@ export class ChatTurnLifecycle {
       accountId: input.accountId,
       session: input.session,
       presentation: input.presentation,
-      answerStartedAt: input.answerStartedAt,
+      requestReceivedAt: input.requestReceivedAt,
       stream: input.stream,
       engineTrace: input.engineTrace,
       modelCallTrace: input.modelCallTrace,

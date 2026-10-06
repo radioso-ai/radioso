@@ -43207,134 +43207,127 @@
                     "skills": {
                       "type": "array",
                       "items": {
-                        "oneOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "owner": {
-                                "type": "string",
-                                "enum": [
-                                  "platform"
-                                ]
-                              },
-                              "catalog": {
-                                "$ref": "#/components/schemas/SkillCatalogEntry"
-                              }
-                            },
-                            "required": [
-                              "owner",
-                              "catalog"
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "workspaceId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "agentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "capability": {
+                            "type": "string",
+                            "enum": [
+                              "retrieve",
+                              "mcp_tool",
+                              "email",
+                              "slack_post",
+                              "webhook_call",
+                              "notify"
                             ]
                           },
-                          {
+                          "storedKind": {
+                            "type": "string"
+                          },
+                          "target": {
                             "type": "object",
                             "properties": {
-                              "owner": {
-                                "type": "string",
-                                "enum": [
-                                  "workspace"
-                                ]
+                              "kind": {
+                                "type": "string"
                               },
-                              "skill": {
-                                "type": "object",
-                                "properties": {
-                                  "id": {
-                                    "type": "string",
-                                    "format": "uuid"
-                                  },
-                                  "workspaceId": {
-                                    "type": "string",
-                                    "format": "uuid"
-                                  },
-                                  "agentId": {
-                                    "type": "string",
-                                    "format": "uuid"
-                                  },
-                                  "name": {
-                                    "type": "string"
-                                  },
-                                  "capability": {
-                                    "type": "string",
-                                    "enum": [
-                                      "retrieve",
-                                      "mcp_tool",
-                                      "email",
-                                      "slack_post",
-                                      "webhook_call",
-                                      "notify"
-                                    ]
-                                  },
-                                  "storedKind": {
-                                    "type": "string"
-                                  },
-                                  "target": {
-                                    "type": "object",
-                                    "properties": {
-                                      "kind": {
-                                        "type": "string"
-                                      },
-                                      "id": {
-                                        "type": [
-                                          "string",
-                                          "null"
-                                        ],
-                                        "format": "uuid"
-                                      }
-                                    },
-                                    "required": [
-                                      "kind",
-                                      "id"
-                                    ]
-                                  },
-                                  "config": {
-                                    "type": "object",
-                                    "additionalProperties": {}
-                                  },
-                                  "invocationMode": {
-                                    "type": "string",
-                                    "enum": [
-                                      "default_answer",
-                                      "routine_named",
-                                      "agent_selectable"
-                                    ]
-                                  },
-                                  "enabled": {
-                                    "type": "boolean"
-                                  },
-                                  "createdAt": {
-                                    "type": "string"
-                                  },
-                                  "updatedAt": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "id",
-                                  "workspaceId",
-                                  "agentId",
-                                  "name",
-                                  "capability",
-                                  "storedKind",
-                                  "target",
-                                  "config",
-                                  "invocationMode",
-                                  "enabled",
-                                  "createdAt",
-                                  "updatedAt"
-                                ]
+                              "id": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
                               }
                             },
                             "required": [
-                              "owner",
-                              "skill"
+                              "kind",
+                              "id"
                             ]
+                          },
+                          "config": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "invocationMode": {
+                            "type": "string",
+                            "enum": [
+                              "default_answer",
+                              "routine_named",
+                              "agent_selectable"
+                            ]
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
                           }
+                        },
+                        "required": [
+                          "id",
+                          "workspaceId",
+                          "agentId",
+                          "name",
+                          "capability",
+                          "storedKind",
+                          "target",
+                          "config",
+                          "invocationMode",
+                          "enabled",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    },
+                    "platformSkills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "owner": {
+                            "type": "string",
+                            "enum": [
+                              "platform"
+                            ]
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "owner",
+                          "name",
+                          "displayName",
+                          "description"
                         ]
                       }
                     }
                   },
                   "required": [
-                    "skills"
+                    "skills",
+                    "platformSkills"
                   ]
                 }
               }

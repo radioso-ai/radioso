@@ -93,22 +93,25 @@ const retrieveSkill: AgentSkill = {
 const platformSkills = [
   {
     owner: 'platform' as const,
-    catalog: { name: 'clarification.answer', displayName: 'Clarification answer', description: 'Ask for detail.' },
+    name: 'clarification.answer',
+    displayName: 'Clarification answer',
+    description: 'Ask for detail.',
   },
   {
     owner: 'platform' as const,
-    catalog: { name: 'retrieval.answer', displayName: 'Retrieval answer', description: 'Answer from documents.' },
+    name: 'retrieval.answer',
+    displayName: 'Retrieval answer',
+    description: 'Answer from documents.',
   },
   {
     owner: 'platform' as const,
-    catalog: { name: 'direct.answer', displayName: 'Direct answer', description: 'Answer directly.' },
+    name: 'direct.answer',
+    displayName: 'Direct answer',
+    description: 'Answer directly.',
   },
 ]
 
-const skillListItems = (skill: AgentSkill = retrieveSkill) => [
-  ...platformSkills,
-  { owner: 'workspace' as const, skill },
-]
+const skillListResponse = (skill: AgentSkill = retrieveSkill) => ({ skills: [skill], platformSkills })
 
 const assistantBehaviorSettings = { retrievalEnabled: true } as never
 
@@ -126,7 +129,7 @@ describe('SkillList submit', () => {
 
   beforeEach(() => {
     apiMocks.getSkillCapabilities.mockResolvedValue({ capabilities: [retrieveCapability] })
-    apiMocks.listSkills.mockResolvedValue({ skills: skillListItems() })
+    apiMocks.listSkills.mockResolvedValue(skillListResponse())
     apiMocks.createSkill.mockResolvedValue({ skill: retrieveSkill })
     apiMocks.updateSkill.mockResolvedValue({
       skill: {
@@ -175,7 +178,7 @@ describe('SkillList submit', () => {
 
   it('discards an older agent load that completes after the active agent load', async () => {
     const firstCapabilities = deferred<{ capabilities: readonly typeof retrieveCapability[] }>()
-    const firstSkills = deferred<{ skills: ReturnType<typeof skillListItems> }>()
+    const firstSkills = deferred<ReturnType<typeof skillListResponse>>()
     const secondSkill: AgentSkill = { ...retrieveSkill, id: 'skill-2', agentId: 'agent-2', name: 'second-answer' }
 
     apiMocks.getSkillCapabilities.mockImplementation((agentId: string) =>
@@ -186,7 +189,7 @@ describe('SkillList submit', () => {
     apiMocks.listSkills.mockImplementation((agentId: string) =>
       agentId === 'agent-1'
         ? firstSkills.promise
-        : Promise.resolve({ skills: skillListItems(secondSkill) }),
+        : Promise.resolve(skillListResponse(secondSkill)),
     )
 
     await act(async () => {
@@ -206,7 +209,7 @@ describe('SkillList submit', () => {
 
     await act(async () => {
       firstCapabilities.resolve({ capabilities: [retrieveCapability] })
-      firstSkills.resolve({ skills: skillListItems() })
+      firstSkills.resolve(skillListResponse())
       await Promise.resolve()
     })
 

@@ -1,2 +1,2 @@
 export * from "./copilotPrimitiveRegistry.js";
-export { builtInAnswerSkillNames } from "./services/builtInAnswerSkills.js";
+export { builtInAnswerSkillDefinitions } from "./services/builtInAnswerSkills.js";

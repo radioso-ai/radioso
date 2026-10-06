@@ -5,10 +5,16 @@ import {
 } from "../../skills/public.js";
 
 /** Runtime registration shared with the read-only agent Skills presentation. */
-export const builtInAnswerSkills = {
-  clarification: clarificationAnswerSkillDefinition.name,
-  retrieval: retrievalAnswerSkillDefinition.name,
-  direct: directAnswerSkillDefinition.name,
-} as const;
+export const builtInAnswerSkillDefinitions = [
+  clarificationAnswerSkillDefinition,
+  retrievalAnswerSkillDefinition,
+  directAnswerSkillDefinition,
+] as const;
 
-export const builtInAnswerSkillNames = Object.values(builtInAnswerSkills);
+const [clarificationAnswerSkill, retrievalAnswerSkill, directAnswerSkill] = builtInAnswerSkillDefinitions;
+
+export const builtInAnswerSkills = {
+  clarification: clarificationAnswerSkill.name,
+  retrieval: retrievalAnswerSkill.name,
+  direct: directAnswerSkill.name,
+} as const;

@@ -3,7 +3,6 @@ import { type SkillCatalogEntryDefinition } from "./domain.js";
 import { assistantChatSkillDefinition } from "./definitions/assistant.chat.js";
 import { retrievalSearchSkillDefinition } from "./definitions/retrieval.search.js";
 import { retrievalAnswerSkillDefinition } from "./definitions/retrieval.answer.js";
-import { clarificationAnswerSkillDefinition } from "./definitions/clarification.answer.js";
 import { retrievalContextSkillDefinition } from "./definitions/retrieval.context.js";
 import { directAnswerSkillDefinition } from "./definitions/direct.js";
 import { documentsIngestSkillDefinition } from "./definitions/documents.ingest.js";
@@ -73,7 +72,6 @@ const webhookSkillCatalogEntry: SkillCatalogEntryDefinition = {
 const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
   assistantChatSkillDefinition,
   retrievalSearchSkillDefinition,
-  clarificationAnswerSkillDefinition,
   retrievalAnswerSkillDefinition,
   retrievalContextSkillDefinition,
   directAnswerSkillDefinition,

@@ -8,6 +8,7 @@ import type {
 import { createConversationEngine } from "@radioso/conversation-engine";
 import {
   BlankChatAnswerError,
+  ChatTurnDisconnectAbortError,
   ChatTurnSupersededError,
   ChatService,
   ModelChatGateway,
@@ -904,6 +905,132 @@ describe("chat service streaming", () => {
     expect(response.setHeader).not.toHaveBeenCalled();
     expect(response.flushHeaders).not.toHaveBeenCalled();
     expect(writes).toEqual([]);
+  });
+
+  it("aborts a streaming turn stuck in the gateway call when the caller's external signal fires (#885), releasing but not committing usage", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const conversation = await conversationRepository.create({
+      workspaceId: "workspace-1",
+      sourceChannel: "authenticated_chat",
+    });
+    const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
+
+    let resolveGatewayEntered!: () => void;
+    const gatewayEntered = new Promise<void>((resolve) => {
+      resolveGatewayEntered = resolve;
+    });
+    const chatGateway: ChatGateway = {
+      async answer() { return "unused"; },
+      async *streamAnswer(gatewayInput) {
+        resolveGatewayEntered();
+        // Simulates a stage that never settles on its own: the only way out is
+        // the caller's AbortSignal, mirroring a real provider adapter's fetch
+        // rejecting once its signal aborts (#859).
+        await new Promise((_resolve, reject) => {
+          gatewayInput.signal?.addEventListener(
+            "abort",
+            () => reject(gatewayInput.signal!.reason as Error),
+            { once: true },
+          );
+        });
+        yield "unreached";
+      },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(
+        createIntentRoutedNoContextPipeline({ query: "What changed?" }),
+      ) as never),
+      chatGateway,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+      undefined, // agentService
+      undefined, // _retiredPublicChatActionAdvertiser
+      undefined, // chatActionSuggestionService
+      undefined, // skillOutcomeCapabilities
+      undefined, // directiveSteering
+      undefined, // selectionStrategy
+      undefined, // conversationEngine
+      undefined, // routine
+      {
+        async classify() {
+          return { route: "direct" as const, framing: { isIdentityQuestion: false } };
+        },
+      },
+    );
+
+    const externalAbort = new AbortController();
+    const collected: ChatStreamEvent[] = [];
+    const consumed = (async () => {
+      for await (const event of service.streamAnswer({
+        workspaceId: "workspace-1",
+        conversationId: conversation.id,
+        sourceChannel: "authenticated_chat",
+        query: "What changed?",
+        stream: true,
+        signal: externalAbort.signal,
+      })) {
+        collected.push(event);
+      }
+    })();
+
+    await gatewayEntered;
+    externalAbort.abort();
+
+    await expect(consumed).rejects.toBeInstanceOf(ChatTurnDisconnectAbortError);
+    expect(reservation.commit).not.toHaveBeenCalled();
+    expect(reservation.release).toHaveBeenCalled();
+    expect(collected.some((event) => event.type === "done")).toBe(false);
+  });
+
+  it("honours a disconnect signal that aborted before a new conversation registered its lease", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
+    const chatGateway: ChatGateway = {
+      async answer() { return "unreached"; },
+      async *streamAnswer() { yield "unreached"; },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(
+        createIntentRoutedNoContextPipeline({ query: "What changed?" }),
+      ) as never),
+      chatGateway,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+    );
+    const externalAbort = new AbortController();
+    externalAbort.abort();
+
+    const consume = async () => {
+      for await (const _event of service.streamAnswer({
+        workspaceId: "workspace-1",
+        query: "What changed?",
+        stream: true,
+        signal: externalAbort.signal,
+      })) {
+        // drain
+      }
+    };
+
+    await expect(consume()).rejects.toBeInstanceOf(ChatTurnDisconnectAbortError);
+    expect(reservation.commit).not.toHaveBeenCalled();
+    expect(reservation.release).toHaveBeenCalledOnce();
+    const conversations = await conversationRepository.listByWorkspaceId("workspace-1");
+    const createdConversation = conversations[0];
+    if (!createdConversation) throw new Error("Expected the aborted turn to create its conversation.");
+    const messages = await messageRepository.listByConversationId("workspace-1", createdConversation.id);
+    expect(messages.some((message) => message.role === "assistant")).toBe(false);
   });
 
   it("records both the aborted gate-bound candidate and focused decline in usage and the turn rollup", async () => {
@@ -4018,7 +4145,7 @@ describe("chat service streaming", () => {
 
     const originalPrepare = ChatSessionPreparer.prototype.prepare;
     const prepare = vi.spyOn(ChatSessionPreparer.prototype, "prepare");
-    prepare.mockImplementation(async function (...args) {
+    prepare.mockImplementation(async function (this: ChatSessionPreparer, ...args) {
       vi.advanceTimersByTime(8000);
       return originalPrepare.apply(this, args);
     });
@@ -4035,7 +4162,7 @@ describe("chat service streaming", () => {
       expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
       const persistedAssistant = createMessage.mock.calls
         .map(([input]) => input)
-        .find((input) => input.role === "assistant");
+        .find((input) => input.role === "assistant") as { totalLatencyMs?: number } | undefined;
       expect(persistedAssistant?.totalLatencyMs).toBe(8000);
     } finally {
       prepare.mockRestore();

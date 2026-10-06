@@ -1,7 +1,7 @@
 ---
 title: "Assistant Execution Model"
 description: "Design principle that live chat stays in the request path while background work like exports is deferred asynchronously."
-last_updated: 2026-07-27
+last_updated: 2026-10-06
 ---
 
 # Assistant Execution Model
@@ -77,6 +77,24 @@ continue reading until the stream closes.
 Interruption coordination is process-local. Multi-instance deployments need
 conversation-affine routing for strict behavior across instances. Without it,
 cancellation remains best effort within each process.
+
+## A Disconnected Client Does Not Stop the Turn
+
+A streaming client that closes its connection stops receiving data right away: the
+server stops writing to that response. The turn itself keeps running, so a visitor
+who closes the tab mid-answer still finds the completed reply in history when they
+come back. Operator Test Chat streams follow the same rule and keep running their
+revision-pinned attempt.
+
+If the turn has not finished within two minutes of the disconnect, the server
+aborts it instead of waiting on the HTTP response indefinitely. The turn uses its
+ordinary cancellation cleanup: provider adapters that honor the abort signal stop,
+and usage settles through the established cancellation path. Test Chat receives
+the same signal through its replay runner and uses its existing attempt handling.
+
+A stage that does not honor the abort signal can continue holding the conversation
+lease until it returns, just as a slow stage on a connected turn can. The HTTP
+stream is released at the ceiling even while that stage remains in progress.
 
 ## Background Work Is Separate
 

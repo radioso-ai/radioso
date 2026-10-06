@@ -53,8 +53,10 @@ describe("test execution HTTP streaming", () => {
   });
 
   it("sends the SSE and reverse-proxy buffering headers after its pre-header check", async () => {
+    let observedSignal: AbortSignal | undefined;
     const testExecutionService = {
-      async *streamMessage() {
+      async *streamMessage(input: { signal?: AbortSignal }) {
+        observedSignal = input.signal;
         yield { type: "side_started", executionId, generation: 1, turnId, attemptId, sideId: "50000000-0000-4000-8000-000000000001" };
       },
     } as unknown as TestExecutionService;
@@ -70,6 +72,7 @@ describe("test execution HTTP streaming", () => {
     expect(response.headers["content-type"]).toMatch(/^text\/event-stream/);
     expect(response.headers["cache-control"]).toBe("no-cache, no-transform");
     expect(response.headers["x-accel-buffering"]).toBe("no");
+    expect(observedSignal).toBeInstanceOf(AbortSignal);
   });
 
   it.each([

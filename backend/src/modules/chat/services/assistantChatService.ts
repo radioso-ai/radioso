@@ -110,6 +110,7 @@ export class AssistantChatService {
       channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
       chatSessionId,
       sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
+      signal: input.signal,
     });
   }
 }

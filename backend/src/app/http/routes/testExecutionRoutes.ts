@@ -1,7 +1,7 @@
-import { Router, type Response } from "express";
+import { Router } from "express";
 import { z } from "zod";
 
-import type { TestExecutionService, TestExecution, TestExecutionAttemptRecord, TestExecutionEvent, TestExecutionHistoryItem, TestExecutionSummary } from "../../../modules/test-execution/testExecution.js";
+import type { TestExecutionService, TestExecution, TestExecutionAttemptRecord, TestExecutionHistoryItem, TestExecutionSummary } from "../../../modules/test-execution/testExecution.js";
 import type { EvalSnapshotService } from "../../../modules/eval/services/evalSnapshotService.js";
 import type { WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
@@ -9,6 +9,7 @@ import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
 import { presentRevisionSummary } from "./agentRevisionPresenters.js";
 import { retryTestExecutionSideSchema, sendTestExecutionMessageSchema, startTestExecutionSchema } from "./agentRevisionRequestSchemas.js";
+import { sendTestExecutionSse } from "../presenters/testExecutionPresenter.js";
 
 const agentParams = z.object({ agentId: z.string().uuid() });
 const executionParams = agentParams.extend({ executionId: z.string().uuid() });
@@ -77,36 +78,6 @@ const presentDetail = (execution: TestExecution, attempts: readonly TestExecutio
   };
 };
 
-const writeEvents = async (res: Response, events: AsyncIterable<TestExecutionEvent>) => {
-  const iterator = events[Symbol.asyncIterator]();
-  // A generator does not execute until next() is called. Prepare its first event before
-  // committing SSE headers so scoped lookup/fencing errors remain ordinary JSON 404/409s.
-  const first = await iterator.next();
-  res.status(200).setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.flushHeaders();
-  let closed = false;
-  res.once("close", () => { closed = true; });
-  const heartbeat = setInterval(() => { if (!closed) res.write(": keepalive\n\n"); }, 15_000);
-  try {
-    if (!first.done && !closed) res.write(`event: ${first.value.type}\ndata: ${JSON.stringify(first.value)}\n\n`);
-    for (;;) {
-      const next = await iterator.next();
-      if (next.done) break;
-      const event = next.value;
-      if (!closed) res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-    }
-  } catch {
-    // SSE is already committed. The stream can only close here; forwarding the error to
-    // Express would make its JSON error handler attempt a second response.
-  } finally {
-    clearInterval(heartbeat);
-    if (!closed) res.end();
-  }
-};
-
 /**
  * Operator-only test routes. The server builder mounts this beneath
  * `/api/v1/agents`; it is intentionally not reachable from public channel routers.
@@ -148,7 +119,12 @@ export const createTestExecutionRoutes = (dependencies: TestExecutionRouteDepend
     try {
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string | null };
       const { agentId, executionId } = executionParams.parse(req.params);
-      await writeEvents(res, dependencies.testExecutionService.streamMessage({ workspaceId, agentId, accountId: accountId ?? null, executionId, message: req.body.message, generation: req.body.executionGeneration, turnId: req.body.turnId, attemptId: req.body.attemptId }));
+      const disconnectAbort = new AbortController();
+      await sendTestExecutionSse(
+        res,
+        dependencies.testExecutionService.streamMessage({ workspaceId, agentId, accountId: accountId ?? null, executionId, message: req.body.message, generation: req.body.executionGeneration, turnId: req.body.turnId, attemptId: req.body.attemptId, signal: disconnectAbort.signal }),
+        { onDisconnectCeilingExceeded: () => disconnectAbort.abort() },
+      );
     } catch (error) { if (!res.headersSent) next(error); else res.end(); }
   });
 
@@ -182,7 +158,12 @@ export const createTestExecutionRoutes = (dependencies: TestExecutionRouteDepend
     try {
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string | null };
       const { agentId, executionId, sideId } = retryParams.parse(req.params);
-      await writeEvents(res, dependencies.testExecutionService.streamRetry({ workspaceId, agentId, accountId: accountId ?? null, executionId, sideId, generation: req.body.executionGeneration, turnId: req.body.turnId, attemptId: req.body.attemptId }));
+      const disconnectAbort = new AbortController();
+      await sendTestExecutionSse(
+        res,
+        dependencies.testExecutionService.streamRetry({ workspaceId, agentId, accountId: accountId ?? null, executionId, sideId, generation: req.body.executionGeneration, turnId: req.body.turnId, attemptId: req.body.attemptId, signal: disconnectAbort.signal }),
+        { onDisconnectCeilingExceeded: () => disconnectAbort.abort() },
+      );
     } catch (error) { if (!res.headersSent) next(error); else res.end(); }
   });
   return router;

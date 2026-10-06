@@ -1,16 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { presentChatPayload, sendChatSse } from "../../src/app/http/presenters/chatPresenter.js";
 import type { ChatStreamEvent } from "../../src/modules/chat/services/chatService.js";
 
-const createMockResponse = () => {
+const createMockResponse = (initial: { destroyed?: boolean; writableEnded?: boolean } = {}) => {
   let closeHandler: (() => void) | undefined;
   const writes: string[] = [];
 
   return {
     response: {
       headersSent: false,
-      writableEnded: false,
+      destroyed: initial.destroyed ?? false,
+      writableEnded: initial.writableEnded ?? false,
       on(event: string, handler: () => void) {
         if (event === "close") {
           closeHandler = handler;
@@ -44,7 +45,7 @@ describe("chat presenter", () => {
       assistantMessageId: "assistant-message-1",
       route: { type: "retrieval", reason: "evidence_required" },
       answer: "I cannot confirm that.",
-      activitySummary: { status: "completed", outcome: "no_context_refusal", retrievalSkipped: false },
+      activitySummary: { status: "success", outcome: "no_context_refusal", retrievalSkipped: false },
       activityTrace: { traceId: "trace-1", startedAt: new Date().toISOString(), stages: [], links: [] },
       answerCoverage: {
         availability: "failed",
@@ -281,7 +282,7 @@ describe("chat presenter", () => {
       route: { type: "retrieval", reason: "evidence_required" },
       answer: "I cannot confirm one-day attendance.",
       citations: [],
-      activitySummary: { status: "completed", outcome: "no_context_refusal", retrievalSkipped: false },
+      activitySummary: { status: "success", outcome: "no_context_refusal", retrievalSkipped: false },
       activityTrace: { traceId: "trace-1", startedAt: new Date().toISOString(), stages: [], links: [] },
       answerCoverage: {
         availability: "assessed",
@@ -347,5 +348,146 @@ describe("chat presenter", () => {
 
     const skillPayload = writes.find((entry) => entry.startsWith("data: {") && entry.includes("\"skillName\":\"human_contact.request\""));
     expect(skillPayload).toContain("\"display\":{\"icon\":\"handshake\",\"title\":\"Contact us\"}");
+  });
+});
+
+/** Wraps a real async iterator with spyable `next`/`return`, matching how a
+ *  generator actually behaves (unlike a hand-rolled fake). */
+const spyOnIterable = (events: AsyncIterable<ChatStreamEvent>) => {
+  const inner = events[Symbol.asyncIterator]();
+  const returnSpy = vi.fn(
+    () => inner.return?.() ?? Promise.resolve({ value: undefined, done: true as const }),
+  );
+  const iterable: AsyncIterable<ChatStreamEvent> = {
+    [Symbol.asyncIterator]() {
+      return { next: () => inner.next(), return: returnSpy };
+    },
+  };
+  return { iterable, returnSpy };
+};
+
+describe("chat presenter disconnect ceiling (#885)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("stops writing once the client disconnects but keeps draining the turn to its natural, persisted end", async () => {
+    const { response, writes, close } = createMockResponse();
+    let drainedPastDisconnect = false;
+
+    async function* turn(): AsyncGenerator<ChatStreamEvent> {
+      yield { type: "status", stage: "searching" };
+      close();
+      yield { type: "status", stage: "composing" };
+      drainedPastDisconnect = true;
+    }
+
+    await sendChatSse(response as never, turn());
+
+    expect(writes.join("")).toContain("searching");
+    expect(writes.join("")).not.toContain("composing");
+    expect(drainedPastDisconnect).toBe(true);
+  });
+
+  it("releases the request at the disconnect ceiling when a stage never settles, aborting the turn and closing the iterator", async () => {
+    vi.useFakeTimers();
+    const { response, close } = createMockResponse();
+
+    async function* hangs(): AsyncGenerator<ChatStreamEvent> {
+      await new Promise<never>(() => {
+        // Deliberately never resolves: a stage that ignores its AbortSignal.
+      });
+      yield { type: "status", stage: "composing" };
+    }
+
+    const { iterable, returnSpy } = spyOnIterable(hangs());
+    const onDisconnectCeilingExceeded = vi.fn();
+
+    const sendPromise = sendChatSse(response as never, iterable, { onDisconnectCeilingExceeded });
+
+    close();
+    expect(vi.getTimerCount()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    await sendPromise;
+
+    expect(onDisconnectCeilingExceeded).toHaveBeenCalledTimes(1);
+    expect(returnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not abort or wait past the ceiling when the turn settles before it elapses", async () => {
+    vi.useFakeTimers();
+    const { response, close } = createMockResponse();
+    const onDisconnectCeilingExceeded = vi.fn();
+    const commitUsage = vi.fn();
+    let persisted = false;
+
+    let releaseTurn!: () => void;
+    const turnReleased = new Promise<void>((resolve) => {
+      releaseTurn = resolve;
+    });
+
+    async function* controllable(): AsyncGenerator<ChatStreamEvent> {
+      await turnReleased;
+      persisted = true;
+      commitUsage();
+      yield {
+        type: "done",
+        conversationId: "conversation-1",
+        assistantMessageId: "assistant-message-1",
+        route: { type: "direct", reason: "social_only" },
+        answer: "Answer",
+        citations: [],
+        activitySummary: { status: "skipped", outcome: "non_retrieval_response", retrievalSkipped: true },
+        activityTrace: { traceId: "trace-1", startedAt: new Date().toISOString(), stages: [], links: [] },
+      };
+    }
+
+    const sendPromise = sendChatSse(response as never, controllable(), { onDisconnectCeilingExceeded });
+
+    close();
+    expect(vi.getTimerCount()).toBe(1);
+
+    releaseTurn();
+    await sendPromise;
+
+    expect(onDisconnectCeilingExceeded).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(persisted).toBe(true);
+    expect(commitUsage).toHaveBeenCalledOnce();
+  });
+
+  it("does not start a disconnect ceiling timer once the turn has already settled", async () => {
+    vi.useFakeTimers();
+    const { response, close } = createMockResponse();
+
+    await sendChatSse(response as never, (async function* () {
+      yield { type: "status", stage: "searching" };
+    })());
+
+    expect(vi.getTimerCount()).toBe(0);
+    close();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("starts the disconnect ceiling when the response was already closed before the presenter attached", async () => {
+    vi.useFakeTimers();
+    const { response } = createMockResponse({ destroyed: true });
+    const onDisconnectCeilingExceeded = vi.fn();
+
+    const sendPromise = sendChatSse(response as never, {
+      [Symbol.asyncIterator]() {
+        return {
+          next: vi.fn(() => new Promise<IteratorResult<ChatStreamEvent>>(() => undefined)),
+          return: vi.fn(async () => ({ value: undefined, done: true as const })),
+        };
+      },
+    }, { onDisconnectCeilingExceeded });
+
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(120_000);
+    await sendPromise;
+
+    expect(onDisconnectCeilingExceeded).toHaveBeenCalledOnce();
   });
 });

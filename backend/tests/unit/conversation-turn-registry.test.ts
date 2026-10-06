@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  ChatTurnDisconnectAbortError,
   ChatTurnSupersededError,
   InMemoryConversationTurnRegistry,
   LoggingConversationTurnInterruptionObserver,
@@ -98,6 +99,46 @@ describe("InMemoryConversationTurnRegistry", () => {
     );
   });
 
+  it("cancels a lease externally after disconnect, aborting its signal and reporting through the cancellation observer", () => {
+    const cancelled = vi.fn();
+    const registry = new InMemoryConversationTurnRegistry({ turnCancelled: cancelled });
+    const lease = registry.start("conversation-1");
+    lease.setStage("rendering");
+
+    lease.cancelAfterDisconnect();
+
+    expect(lease.signal.aborted).toBe(true);
+    expect(() => lease.throwIfCancelled()).toThrowError(ChatTurnDisconnectAbortError);
+    expect(cancelled).toHaveBeenCalledWith({
+      conversationId: "conversation-1",
+      reason: "disconnect_timeout",
+      stage: "rendering",
+    });
+  });
+
+  it("does not report a disconnect cancellation twice when the lease is already cancelled", () => {
+    const cancelled = vi.fn();
+    const registry = new InMemoryConversationTurnRegistry({ turnCancelled: cancelled });
+    const lease = registry.start("conversation-1");
+
+    lease.cancelAfterDisconnect();
+    lease.cancelAfterDisconnect();
+
+    expect(cancelled).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cancel a lease that has already completed", () => {
+    const cancelled = vi.fn();
+    const registry = new InMemoryConversationTurnRegistry({ turnCancelled: cancelled });
+    const lease = registry.start("conversation-1");
+
+    lease.complete();
+    lease.cancelAfterDisconnect();
+
+    expect(lease.signal.aborted).toBe(false);
+    expect(cancelled).not.toHaveBeenCalled();
+  });
+
   it("records a safe structured log and a bounded cancellation counter", () => {
     const logger = { info: vi.fn() };
     const metrics = new MetricsRegistry();
@@ -120,6 +161,9 @@ describe("InMemoryConversationTurnRegistry", () => {
     );
     expect(metrics.renderPrometheus()).toContain(
       'radioso_chat_turn_cancellations_total{reason="superseded",stage="routing"} 1',
+    );
+    expect(metrics.renderPrometheus()).toContain(
+      "# HELP radioso_chat_turn_cancellations_total Total assistant chat turns cancelled before completion.",
     );
     expect(metrics.renderPrometheus()).not.toContain("conversation-1");
   });

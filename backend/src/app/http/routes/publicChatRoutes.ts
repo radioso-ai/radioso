@@ -694,7 +694,15 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         };
 
         if (input.stream) {
-          await sendChatSse(res, stripPublicStreamCitationArtifacts(dependencies.assistantChatService.streamAnswer(input), citationDisplayEnabled));
+          const disconnectAbort = new AbortController();
+          await sendChatSse(
+            res,
+            stripPublicStreamCitationArtifacts(
+              dependencies.assistantChatService.streamAnswer({ ...input, signal: disconnectAbort.signal }),
+              citationDisplayEnabled,
+            ),
+            { onDisconnectCeilingExceeded: () => disconnectAbort.abort() },
+          );
         } else {
           const result = await dependencies.assistantChatService.answer(input);
           if (!result) {

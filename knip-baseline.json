@@ -280,8 +280,6 @@
   "types|backend/src/modules/chat/services/citationAnchorParser.ts|CitationAnchorGroup",
   "types|backend/src/modules/chat/services/clarification/retrievalSenseResolutionInput.ts|RetrievalSenseResolutionRequestInput",
   "types|backend/src/modules/chat/services/conversationTurnInterpreter.ts|ResolvedTurnInterpretationContext",
-  "types|backend/src/modules/chat/services/conversationTurnRegistry.ts|ConversationTurnCancellation",
-  "types|backend/src/modules/chat/services/conversationTurnRegistry.ts|ConversationTurnInterruptionObserver",
   "types|backend/src/modules/chat/services/directiveBindingResolution.ts|DirectiveBindingSkipReason",
   "types|backend/src/modules/chat/services/directiveBindingResolution.ts|ResolveDirectiveBindingInput",
   "types|backend/src/modules/chat/services/groundingAssertions.ts|ParsedInlineAssertions",

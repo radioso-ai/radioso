@@ -256,12 +256,15 @@ export interface WorkbenchReplayInput {
    * path — a captured slot value there would outlive the conversation it came from.
    */
   includeSlotValues?: boolean;
+  /** Cancels a private replay when its owning HTTP stream exceeds the disconnect ceiling. */
+  signal?: AbortSignal;
 }
 
 export class WorkbenchReplayRunner {
   constructor(private readonly options: WorkbenchReplayRunnerOptions) {}
 
   async run(input: WorkbenchReplayInput): Promise<WorkbenchReplayResult> {
+    input.signal?.throwIfAborted();
     const requestReceivedAt = Date.now();
     if (input.candidateRevision && input.executionMode !== "safe_test") {
       throw new Error("workbench_candidate_revision_requires_safe_test");
@@ -278,6 +281,12 @@ export class WorkbenchReplayRunner {
       conversationId: input.conversationId,
       directiveState: input.directiveStateStartState,
     });
+    const coordination = input.signal
+      ? {
+          signal: input.signal,
+          checkpoint: () => input.signal?.throwIfAborted(),
+        }
+      : undefined;
     const preparer = new ChatSessionPreparer(
       effects.conversationRepository,
       effects.messageRepository,
@@ -389,8 +398,10 @@ export class WorkbenchReplayRunner {
       responseLanguage: responseLanguagePromise,
       activeRoutine,
       clarification,
+      coordination,
     });
     if (routineResult) {
+      coordination?.checkpoint();
       await routineResult.commitRoutineState();
       await routineResult.commitClarificationState?.();
       await session.directiveStateStore?.commit();
@@ -423,7 +434,9 @@ export class WorkbenchReplayRunner {
       resolvedRetrievalSense: false,
       clarification,
       activeRoutineAtTurnStart: Boolean(activeRoutine),
+      coordination,
     });
+    coordination?.checkpoint();
     await clarificationStore.commit();
     await rendered.session.directiveStateStore?.commit();
     return this.presentResult({

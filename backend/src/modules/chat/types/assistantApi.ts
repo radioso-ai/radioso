@@ -84,6 +84,13 @@ export interface AssistantChatRequest {
    * derived from it and the turn admits the named routine directly.
    */
   routineInvocation?: RoutineInvocation;
+  /**
+   * Caller-owned abort signal (#885), used only by `streamAnswer`. The HTTP
+   * presenter fires this once the client has disconnected and the turn has
+   * not settled within its post-disconnect ceiling, so provider generation
+   * stops instead of running to completion against a gone client.
+   */
+  signal?: AbortSignal;
 }
 
 export type AssistantChatResponse = ChatResponse | ChatBootstrapResponse;

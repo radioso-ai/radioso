@@ -98,7 +98,15 @@ export const registerAgentChannelChatRoute = (
           onSuccessfulHttpResponse(res, () => dependencies.accessGrantService.recordAgentChannelChatSucceeded({
             grant: agentChannelGrant,
           }));
-          await sendChatSse(res, dependencies.assistantChatService.streamAnswer(chatInput), { agentEnvelope: true });
+          const disconnectAbort = new AbortController();
+          await sendChatSse(
+            res,
+            dependencies.assistantChatService.streamAnswer({ ...chatInput, signal: disconnectAbort.signal }),
+            {
+              agentEnvelope: true,
+              onDisconnectCeilingExceeded: () => disconnectAbort.abort(),
+            },
+          );
           return;
         }
         const response = await dependencies.assistantChatService.answer(chatInput);

@@ -320,6 +320,29 @@ const stubTurnRouter = (route: "retrieval" | "direct" = "retrieval"): TurnRouter
 });
 
 describe("WorkbenchReplayRunner", () => {
+  it("honours an already-aborted Test Chat signal before preparing a replay", async () => {
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+    });
+    const abort = new AbortController();
+    const reason = new Error("disconnect timeout");
+    abort.abort(reason);
+
+    await expect(runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "what is my plan?",
+      history: [],
+      signal: abort.signal,
+    })).rejects.toBe(reason);
+  });
+
   it("injects trusted sample values into a safe-test turn without a live resolver", async () => {
     const skill = answerSkill();
     const dispatch = skill.dispatch;
@@ -363,6 +386,7 @@ describe("WorkbenchReplayRunner", () => {
         sourceBasePublishedRevisionId: null,
         createdAt: new Date(),
         publishedAt: null,
+        publishedVersion: null,
       },
       query: "Hi",
       history: [],

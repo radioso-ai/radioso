@@ -248,41 +248,184 @@ describeIntegration("email channel persistence (Postgres)", () => {
     expect((await domains.listActive(first.workspaceId)).map((record) => record.id)).not.toContain(claimed.id);
   });
 
+  const domainRegistration = (domain: string, providerDomainId = `p-${domain}`) => ({
+    providerDomainId,
+    providerRegion: "eu-west-1",
+    dnsRecords: [{ purpose: "dkim" as const, type: "TXT" as const, name: `resend._domainkey.${domain}`, value: "p=abc", status: "pending" as const }],
+    sendingStatus: "pending" as const,
+    receivingStatus: "not_requested" as const,
+    nextCheckAt: new Date(Date.now() + HOUR_MS),
+  });
+
+  const heldClaim = async (workspaceId: string, domain: string) => {
+    const claim = await domains.claim({ workspaceId, domain, provider: "resend", createdByUserId: null });
+    if (claim.status !== "held") throw new Error(`expected a claim, got ${claim.status}`);
+    return claim.domain;
+  };
+
+  /**
+   * Another connection's transaction that takes `lock`'s row locks, then, once `release` names a
+   * statement, runs it and commits. Resolves once the locks are held.
+   */
+  const holdingLocks = async (lock: string, params: unknown[], release: Promise<string>) => {
+    const pool = new pg.Pool({ connectionString: testDatabaseUrl, max: 1 });
+    const client = await pool.connect();
+    await client.query("BEGIN");
+    await client.query(lock, params);
+    const committed = (async () => {
+      await client.query(await release, params);
+      await client.query("COMMIT");
+      client.release();
+      await pool.end();
+    })();
+    return { committed };
+  };
+
+  const stillPending = async (work: Promise<unknown>) => {
+    const settled = await Promise.race([work.then(() => true, () => true), new Promise((resolve) => setTimeout(() => resolve(false), 200))]);
+    return settled === false;
+  };
+
   it("claims a domain for one workspace at a time and records the provider's registration on the claim only", async () => {
     const first = await seedWorkspace();
     const second = await seedWorkspace();
     const domain = uniqueDomain();
-    const claimOf = (workspaceId: string) => domains.claim({ workspaceId, domain, provider: "resend", createdByUserId: null });
 
-    const [a, b] = await Promise.all([claimOf(first.workspaceId), claimOf(second.workspaceId)]);
+    const [a, b] = await Promise.all([heldClaim(first.workspaceId, domain), heldClaim(second.workspaceId, domain)]);
     expect(a.id).toBe(b.id);
-    expect(a).toMatchObject({ providerDomainId: null, sendingStatus: "pending", nextCheckAt: null, dnsRecords: [] });
+    expect(a).toMatchObject({ providerDomainId: null, registrationStatus: "registering", sendingStatus: "pending", nextCheckAt: null, dnsRecords: [] });
     expect((await domains.listDueForRefresh(1000)).map((record) => record.id)).not.toContain(a.id);
 
-    const registration = {
+    const registration = domainRegistration(domain);
+    expect(await domains.recordRegistration(a.id, registration)).toMatchObject({
       providerDomainId: `p-${domain}`,
       providerRegion: "eu-west-1",
-      dnsRecords: [{ purpose: "dkim" as const, type: "TXT" as const, name: `resend._domainkey.${domain}`, value: "p=abc", status: "pending" as const }],
-      sendingStatus: "pending" as const,
-      receivingStatus: "not_requested" as const,
-      nextCheckAt: new Date(Date.now() + HOUR_MS),
-    };
-    expect(await domains.recordRegistration(a.id, registration)).toMatchObject({ providerDomainId: `p-${domain}`, providerRegion: "eu-west-1" });
+      registrationStatus: "registered",
+    });
     expect(await domains.recordRegistration(a.id, { ...registration, providerDomainId: "other" })).toBeNull();
     await domains.releaseClaim(a.id);
     expect((await domains.findById(a.id))?.providerDomainId).toBe(`p-${domain}`);
-    expect(await domains.isProviderDomainActive("resend", `p-${domain}`)).toBe(true);
-    expect(await domains.isProviderDomainActive("local", `p-${domain}`)).toBe(false);
+    await expect(database.execute("UPDATE email_domains SET provider_domain_id = NULL WHERE id = $1", [a.id]))
+      .rejects.toMatchObject({ code: "23514" });
 
-    const holder = await domains.findActiveByDomain(domain);
-    await domains.markRemoved(holder!.workspaceId, a.id);
-    expect(await domains.isProviderDomainActive("resend", `p-${domain}`)).toBe(false);
-    const unfinished = await claimOf(second.workspaceId);
-    await domains.releaseClaim(unfinished.id);
-    expect(await domains.findById(unfinished.id)).toBeNull();
+    const unfinished = await heldClaim(second.workspaceId, uniqueDomain());
+    expect(await domains.markNeedsReconciliation(unfinished.id)).toMatchObject({ registrationStatus: "needs_reconciliation", providerDomainId: null });
+    expect(await domains.markNeedsReconciliation(unfinished.id)).toBeNull();
+    expect(await domains.recordRegistration(unfinished.id, domainRegistration(unfinished.domain))).toMatchObject({ registrationStatus: "registered" });
+    const released = await heldClaim(second.workspaceId, uniqueDomain());
+    await domains.releaseClaim(released.id);
+    expect(await domains.findById(released.id)).toBeNull();
   });
 
-  it("recovers a registration whose provider answer was lost, for the claiming workspace only", async () => {
+  it("refuses a claim and an adoption of a name while its removal is cleaned up, and only then", async () => {
+    const first = await seedWorkspace();
+    const second = await seedWorkspace();
+    const domain = uniqueDomain();
+    const removed = await createDomain(first.workspaceId, domain);
+    await domains.markRemoved(first.workspaceId, removed.id);
+    const claimBy = (workspaceId: string) => domains.claim({ workspaceId, domain, provider: "local", createdByUserId: null });
+
+    expect(await domains.isRemovalPending(domain)).toBe(true);
+    expect(await claimBy(second.workspaceId)).toEqual({ status: "removal_pending" });
+    expect(await claimBy(first.workspaceId)).toEqual({ status: "removal_pending" });
+    // A claim taken while the removal committed, waiting for reconciliation.
+    const [{ id: claimId }] = await database.query<{ id: string }>(
+      "INSERT INTO email_domains (workspace_id, domain, provider, registration_status) VALUES ($1, $2, 'local', 'needs_reconciliation') RETURNING id",
+      [second.workspaceId, domain],
+    );
+    const found = domainRegistration(domain, removed.providerDomainId!);
+    expect(await domains.adoptRegistration(claimId, found)).toEqual({ status: "removal_pending" });
+
+    await domains.recordCleanup(removed.id, { status: "failed", retryAt: new Date(Date.now() + HOUR_MS), providerDomainId: removed.providerDomainId });
+    expect(await domains.adoptRegistration(claimId, found)).toEqual({ status: "removal_pending" });
+    await domains.recordCleanup(removed.id, { status: "done", retryAt: null, providerDomainId: removed.providerDomainId });
+    expect(await domains.isRemovalPending(domain)).toBe(false);
+    // `done` is final: a stale attempt's failure does not reopen the removal.
+    await domains.recordCleanup(removed.id, { status: "failed", retryAt: null, providerDomainId: removed.providerDomainId });
+    expect((await domains.findById(removed.id))?.providerCleanupStatus).toBe("done");
+
+    const adopted = await domains.adoptRegistration(claimId, domainRegistration(domain, "p-fresh"));
+    expect(adopted).toMatchObject({ status: "adopted", domain: { id: claimId, providerDomainId: "p-fresh", registrationStatus: "registered" } });
+    expect(await domains.adoptRegistration(claimId, found)).toEqual({ status: "not_awaiting" });
+    expect(await domains.adoptRegistration(randomUUID(), found)).toEqual({ status: "not_awaiting" });
+  });
+
+  it("decides a claim and an adoption after a concurrent removal or cleanup transition commits, under the name's row locks", async () => {
+    const first = await seedWorkspace();
+    const second = await seedWorkspace();
+    const domain = uniqueDomain();
+    const active = await createDomain(first.workspaceId, domain);
+
+    // A claim that meets the active row while its removal is committing waits, then sees the removal.
+    let commitRemoval!: (statement: string) => void;
+    const removing = await holdingLocks(
+      "SELECT id FROM email_domains WHERE id = $1 FOR UPDATE",
+      [active.id],
+      new Promise<string>((resolve) => { commitRemoval = resolve; }),
+    );
+    const claiming = domains.claim({ workspaceId: second.workspaceId, domain, provider: "local", createdByUserId: null });
+    expect(await stillPending(claiming)).toBe(true);
+    commitRemoval("UPDATE email_domains SET removed_at = now(), provider_cleanup_status = 'pending' WHERE id = $1");
+    await removing.committed;
+    expect(await claiming).toEqual({ status: "removal_pending" });
+
+    const [{ id: claimId }] = await database.query<{ id: string }>(
+      "INSERT INTO email_domains (workspace_id, domain, provider, registration_status) VALUES ($1, $2, 'local', 'needs_reconciliation') RETURNING id",
+      [second.workspaceId, domain],
+    );
+    const found = domainRegistration(domain, active.providerDomainId!);
+
+    // An adoption that meets a cleanup mid-transition waits for it: still removing, it is refused.
+    let commitCleanup!: (statement: string) => void;
+    let cleaning = await holdingLocks(
+      "SELECT id FROM email_domains WHERE id = $1 FOR UPDATE",
+      [active.id],
+      new Promise<string>((resolve) => { commitCleanup = resolve; }),
+    );
+    let adopting = domains.adoptRegistration(claimId, found);
+    expect(await stillPending(adopting)).toBe(true);
+    commitCleanup("UPDATE email_domains SET provider_cleanup_status = 'failed' WHERE id = $1");
+    await cleaning.committed;
+    expect(await adopting).toEqual({ status: "removal_pending" });
+
+    // Once the cleanup commits `done`, the waiting adoption goes ahead.
+    cleaning = await holdingLocks(
+      "SELECT id FROM email_domains WHERE id = $1 FOR UPDATE",
+      [active.id],
+      new Promise<string>((resolve) => { commitCleanup = resolve; }),
+    );
+    adopting = domains.adoptRegistration(claimId, domainRegistration(domain, "p-fresh"));
+    expect(await stillPending(adopting)).toBe(true);
+    commitCleanup("UPDATE email_domains SET provider_cleanup_status = 'done' WHERE id = $1");
+    await cleaning.committed;
+    expect(await adopting).toMatchObject({ status: "adopted", domain: { providerDomainId: "p-fresh" } });
+  });
+
+  it("hands a registration answered after its claim was removed to that claim's cleanup, until the cleanup finishes", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const claim = await heldClaim(workspaceId, uniqueDomain());
+    await domains.markRemoved(workspaceId, claim.id);
+
+    // A cleanup attempt that read the claim before the registration arrived settles nothing.
+    expect(await domains.recordRemovedClaimRegistration(claim.id, { providerDomainId: "p-late", providerRegion: "eu-west-1" })).toBe(true);
+    await domains.recordCleanup(claim.id, { status: "done", retryAt: null, providerDomainId: null });
+    expect(await domains.findById(claim.id)).toMatchObject({
+      providerDomainId: "p-late",
+      registrationStatus: "registered",
+      providerCleanupStatus: "pending",
+    });
+    expect((await domains.listCleanupDue(1000)).map((record) => record.id)).toContain(claim.id);
+    await domains.recordCleanup(claim.id, { status: "done", retryAt: null, providerDomainId: "p-late" });
+    expect((await domains.findById(claim.id))?.providerCleanupStatus).toBe("done");
+
+    const settled = await heldClaim(workspaceId, uniqueDomain());
+    await domains.markRemoved(workspaceId, settled.id);
+    await domains.recordCleanup(settled.id, { status: "done", retryAt: null, providerDomainId: null });
+    expect(await domains.recordRemovedClaimRegistration(settled.id, { providerDomainId: "p-orphan", providerRegion: null })).toBe(false);
+    expect((await domains.findById(settled.id))?.providerDomainId).toBeNull();
+  });
+
+  it("waits for an operator's reconcile when the provider already holds a claimed name, and adopts it only then", async () => {
     const first = await seedWorkspace();
     const second = await seedWorkspace();
     const domain = uniqueDomain();
@@ -291,18 +434,17 @@ describeIntegration("email channel persistence (Postgres)", () => {
       receiving: "not_requested",
       records: [{ purpose: "dkim", type: "TXT", name: `resend._domainkey.${domain}`, value: "p=abc", status: "pending" }],
     };
-    // The provider account: one registration per name, created at the provider's clock.
-    const held = new Map<string, Date>();
-    const providerDomainOf = (name: string, createdAt: Date) => ({ providerDomainId: `p-${name}`, region: "eu-west-1", readiness, createdAt });
+    // The provider account: one registration per name.
+    const held = new Set<string>();
+    const providerDomainOf = (name: string) => ({ providerDomainId: `p-${name}`, region: "eu-west-1", readiness });
     const provisioner = {
       provider: "resend",
       registerSendingDomain: vi.fn<EmailDomainProvisioner["registerSendingDomain"]>(async (name) => {
         if (held.has(name)) return { ok: false, refused: "already_registered" };
-        held.set(name, new Date());
-        return { ok: true, ...providerDomainOf(name, held.get(name)!) };
+        held.add(name);
+        return { ok: true, ...providerDomainOf(name) };
       }),
-      findByName: vi.fn<EmailDomainProvisioner["findByName"]>(async (name) =>
-        (held.has(name) ? providerDomainOf(name, held.get(name)!) : null)),
+      findByName: vi.fn<EmailDomainProvisioner["findByName"]>(async (name) => (held.has(name) ? providerDomainOf(name) : null)),
       enableReceiving: vi.fn<EmailDomainProvisioner["enableReceiving"]>(async () => readiness),
       requestVerification: vi.fn<EmailDomainProvisioner["requestVerification"]>(async () => undefined),
       readiness: vi.fn<EmailDomainProvisioner["readiness"]>(async () => readiness),
@@ -322,28 +464,22 @@ describeIntegration("email channel persistence (Postgres)", () => {
 
     // Accepted by the provider, answer lost on the way back.
     provisioner.registerSendingDomain.mockImplementationOnce(async (name) => {
-      held.set(name, new Date());
+      held.add(name);
       throw new Error("socket hang up");
     });
     await expect(service.ensureRegistered(actor, first.workspaceId, domain)).rejects.toMatchObject({ code: "provider_unavailable" });
-    expect(await domains.findActiveByDomain(domain)).toMatchObject({ workspaceId: first.workspaceId, providerDomainId: null });
+    const claim = await domains.findActiveByDomain(domain);
+    expect(claim).toMatchObject({ workspaceId: first.workspaceId, providerDomainId: null, registrationStatus: "registering" });
     expect(await service.ensureRegistered(actor, second.workspaceId, domain)).toEqual({ ok: false, refused: "claimed_elsewhere" });
 
-    const recovered = await service.ensureRegistered(actor, first.workspaceId, domain);
-    expect(recovered).toMatchObject({ ok: true, domain: { workspaceId: first.workspaceId, providerDomainId: `p-${domain}` } });
-    expect(await service.ensureRegistered(actor, second.workspaceId, domain)).toEqual({ ok: false, refused: "claimed_elsewhere" });
+    await expect(service.ensureRegistered(actor, first.workspaceId, domain)).rejects.toMatchObject({ code: "domain_needs_reconciliation" });
+    expect(await domains.findById(claim!.id)).toMatchObject({ registrationStatus: "needs_reconciliation", providerDomainId: null });
+    expect(provisioner.findByName).not.toHaveBeenCalled();
 
-    // Accepted by the provider, stopped before the registration was recorded.
-    const other = uniqueDomain();
-    const interrupted = vi.spyOn(domains, "recordRegistration").mockRejectedValueOnce(new Error("connection terminated"));
-    await expect(service.ensureRegistered(actor, second.workspaceId, other)).rejects.toThrow("connection terminated");
-    interrupted.mockRestore();
-    expect(held.has(other)).toBe(true);
-    expect(await service.ensureRegistered(actor, second.workspaceId, other)).toMatchObject({
-      ok: true,
-      domain: { workspaceId: second.workspaceId, providerDomainId: `p-${other}` },
-    });
-    expect(await service.ensureRegistered(actor, first.workspaceId, other)).toEqual({ ok: false, refused: "claimed_elsewhere" });
+    expect(await service.reconcile(actor, first.workspaceId, claim!.id)).toMatchObject({ id: claim!.id, registration: { status: "registered" } });
+    expect(await domains.findById(claim!.id)).toMatchObject({ providerDomainId: `p-${domain}` });
+    expect(await service.ensureRegistered(actor, first.workspaceId, domain)).toMatchObject({ ok: true, domain: { id: claim!.id } });
+    expect(await service.ensureRegistered(actor, second.workspaceId, domain)).toEqual({ ok: false, refused: "claimed_elsewhere" });
   });
 
   it("refreshes readiness when due, confirms receiving, and leaves removed domains for asynchronous cleanup", async () => {
@@ -351,24 +487,33 @@ describeIntegration("email channel persistence (Postgres)", () => {
     const domain = await createDomain(workspaceId);
     await database.execute("UPDATE email_domains SET next_check_at = now() - interval '1 minute' WHERE id = $1", [domain.id]);
     expect((await domains.listDueForRefresh(100)).map((record) => record.id)).toContain(domain.id);
-    await domains.deferRefresh(domain.id, new Date(Date.now() + HOUR_MS));
+    await domains.deferRefresh(domain.id, new Date(Date.now() + HOUR_MS), domain.refreshRequestedVersion);
     expect((await domains.listDueForRefresh(100)).map((record) => record.id)).not.toContain(domain.id);
     expect((await domains.findById(domain.id))?.lastCheckedAt?.getTime()).toBe(domain.lastCheckedAt?.getTime());
     await database.execute("UPDATE email_domains SET next_check_at = now() - interval '1 minute' WHERE id = $1", [domain.id]);
 
-    const verified = await domains.recordReadiness(domain.id, {
-      sendingStatus: "verified",
-      receivingStatus: "not_requested",
-      dnsRecords: [{ purpose: "dkim", type: "TXT", name: "k", value: "v", status: "verified" }],
+    const verifiedReading = {
+      sendingStatus: "verified" as const,
+      receivingStatus: "not_requested" as const,
+      dnsRecords: [{ purpose: "dkim" as const, type: "TXT" as const, name: "k", value: "v", status: "verified" as const }],
       nextCheckAt: new Date(Date.now() + 24 * HOUR_MS),
       statusChanged: true,
-    });
+      requestedVersion: domain.refreshRequestedVersion,
+    };
+    const verified = await domains.recordReadiness(domain.id, verifiedReading);
     expect(verified).toMatchObject({ sendingStatus: "verified", dnsRecords: [{ status: "verified" }] });
     expect((await domains.listDueForRefresh(100)).map((record) => record.id)).not.toContain(domain.id);
 
     const confirmed = await domains.confirmReceiving(domain.id, {
       confirmedByUserId: null,
-      readiness: { sendingStatus: "verified", receivingStatus: "verified", dnsRecords: [], nextCheckAt: new Date(), statusChanged: true },
+      readiness: {
+        sendingStatus: "verified",
+        receivingStatus: "verified",
+        dnsRecords: [],
+        nextCheckAt: new Date(Date.now() + HOUR_MS),
+        statusChanged: true,
+        requestedVersion: domain.refreshRequestedVersion,
+      },
     });
     expect(confirmed?.receivingConfirmedAt).toBeInstanceOf(Date);
     expect(await domains.findReceivingVerified(domain.domain)).toEqual({ workspaceId });
@@ -376,11 +521,55 @@ describeIntegration("email channel persistence (Postgres)", () => {
     await domains.markRemoved(workspaceId, domain.id);
     expect(await domains.findReceivingVerified(domain.domain)).toBeNull();
     expect((await domains.listCleanupDue(100)).map((record) => record.id)).toContain(domain.id);
-    await domains.recordCleanup(domain.id, { status: "failed", retryAt: new Date(Date.now() + HOUR_MS) });
+    await domains.recordCleanup(domain.id, { status: "failed", retryAt: new Date(Date.now() + HOUR_MS), providerDomainId: domain.providerDomainId });
     expect((await domains.listCleanupDue(100)).map((record) => record.id)).not.toContain(domain.id);
-    await domains.recordCleanup(domain.id, { status: "done", retryAt: null });
+    await domains.recordCleanup(domain.id, { status: "done", retryAt: null, providerDomainId: domain.providerDomainId });
     expect((await domains.findById(domain.id))?.providerCleanupStatus).toBe("done");
     expect((await domains.listCleanupDue(100)).map((record) => record.id)).not.toContain(domain.id);
+  });
+
+  it("keeps a refresh request that arrives while a refresh reads the provider, including a readiness revocation", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const domain = await createDomain(workspaceId);
+    await database.execute("UPDATE email_domains SET sending_status = 'verified', next_check_at = now() - interval '1 minute' WHERE id = $1", [domain.id]);
+    const [read] = (await domains.listDueForRefresh(1000)).filter((record) => record.id === domain.id);
+    expect(read?.refreshRequestedVersion).toBe(0);
+
+    // The provider reports the revocation after the refresh read it.
+    expect(await domains.expediteRefresh({ provider: "local", providerDomainId: domain.providerDomainId! })).toBe(true);
+    const stale = {
+      sendingStatus: "verified" as const,
+      receivingStatus: "not_requested" as const,
+      dnsRecords: [],
+      nextCheckAt: new Date(Date.now() + 24 * HOUR_MS),
+      statusChanged: false,
+      requestedVersion: read.refreshRequestedVersion,
+    };
+    expect(await domains.recordReadiness(domain.id, stale)).toBeNull();
+    await domains.deferRefresh(domain.id, new Date(Date.now() + HOUR_MS), read.refreshRequestedVersion);
+    const [due] = (await domains.listDueForRefresh(1000)).filter((record) => record.id === domain.id);
+    expect(due).toMatchObject({ refreshRequestedVersion: 1, sendingStatus: "verified" });
+
+    // The next refresh reads past the event and records the revocation.
+    const revoked = await domains.recordReadiness(domain.id, {
+      ...stale,
+      sendingStatus: "failed",
+      nextCheckAt: new Date(Date.now() + 6 * HOUR_MS),
+      statusChanged: true,
+      requestedVersion: due.refreshRequestedVersion,
+    });
+    expect(revoked).toMatchObject({ sendingStatus: "failed", refreshRequestedVersion: 1 });
+    expect((await domains.listDueForRefresh(1000)).map((record) => record.id)).not.toContain(domain.id);
+
+    // A receiving confirmation always lands; an event since its read keeps the domain due.
+    await domains.expediteRefresh({ provider: "local", providerDomainId: domain.providerDomainId! });
+    const confirmed = await domains.confirmReceiving(domain.id, {
+      confirmedByUserId: null,
+      readiness: { ...stale, receivingStatus: "pending", requestedVersion: 1 },
+    });
+    expect(confirmed).toMatchObject({ receivingStatus: "pending", refreshRequestedVersion: 2 });
+    expect(confirmed?.receivingConfirmedAt).toBeInstanceOf(Date);
+    expect((await domains.listDueForRefresh(1000)).map((record) => record.id)).toContain(domain.id);
   });
 
   it("keeps an active mailbox address unique across workspaces and writes policy version 1 with the mailbox", async () => {

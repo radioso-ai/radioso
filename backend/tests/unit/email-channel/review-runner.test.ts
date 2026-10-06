@@ -7,6 +7,9 @@ const MINUTE_MS = 60_000;
 /** The runner's default review lease. */
 const LEASE_MS = 300_000;
 
+/** The lease a review claimed at the harness's current time runs until; the clock stands still during a drain. */
+const leaseFrom = (h: { clock: () => Date }): Date => new Date(h.clock().getTime() + LEASE_MS);
+
 /** A draft mailbox, one thread on it, and the clock moved to its review's due time. */
 const dueThread = async (options: Parameters<typeof createEmailReviewHarness>[0] = {}) => {
   const h = createEmailReviewHarness(options);
@@ -110,6 +113,54 @@ describe("EmailReviewRunner", () => {
       // Only the claim that took over hands the thread off; the stale one adds nothing.
       expect(h.handoffs).toHaveLength(1);
     });
+
+    it("queues no send once the claim that took over set R aside while this one checked completeness", async () => {
+      const h = createEmailReviewHarness({ supportedModes: ["operator_only", "draft", "auto"] });
+      const { conversationId } = await h.openThread(h.seedMailbox({ engagementMode: "auto" }));
+      h.advance(MINUTE_MS);
+      h.respond.mockResolvedValue(h.draftTurn(conversationId));
+      let takeover: Awaited<ReturnType<typeof h.drain>> | undefined;
+      h.replyCompleteness.mockImplementationOnce(async () => {
+        // This worker stalls in the check past its lease; another claims R, finds the mail needs no
+        // reply, and completes R with its note. This one then finds the reply complete.
+        h.advance(LEASE_MS + 1_000);
+        h.replyTriage.mockResolvedValueOnce("no");
+        takeover = await h.drain();
+        return { completeness: "complete", unansweredAsks: 0 };
+      });
+
+      expect(await h.drain()).toMatchObject({ claimed: 1, reclaimed: 1, queued_auto: 0, held: 0 });
+
+      expect(takeover).toMatchObject({ claimed: 1, no_reply_needed: 1 });
+      expect(h.heldRows.of(conversationId)).toEqual([]);
+      expect(h.outbox).toEqual([]);
+      expect(h.notes).toHaveLength(1);
+      expect(h.threads.links.get(conversationId)).toMatchObject({ autoSendsSinceRenewal: 0, reviewDueAt: null, reviewCompletedRevision: 1 });
+      expect(h.logger.warn).toHaveBeenCalledWith(expect.objectContaining({ conversationId, revision: 1 }), "email_review_claim_lost");
+    });
+
+    it("holds nothing once the claim that took over set R aside while this one decided publication", async () => {
+      const { h, conversationId } = await dueThread();
+      h.respond.mockResolvedValue(h.draftTurn(conversationId));
+      const findDomain = h.domains.findById.bind(h.domains);
+      let tookOver = false;
+      vi.spyOn(h.domains, "findById").mockImplementation(async (domainId) => {
+        if (!tookOver) {
+          // The decision reads the domain after the turn's claim check: the takeover lands in between.
+          tookOver = true;
+          h.advance(LEASE_MS + 1_000);
+          h.replyTriage.mockResolvedValueOnce("no");
+          await h.drain();
+        }
+        return findDomain(domainId);
+      });
+
+      expect(await h.drain()).toMatchObject({ claimed: 1, reclaimed: 1, held: 0 });
+
+      expect(h.heldRows.of(conversationId)).toEqual([]);
+      expect(h.notes).toHaveLength(1);
+      expect(h.counted("email_auto_queue_refusals_total")).toEqual([]);
+    });
   });
 
   describe("the turn", () => {
@@ -126,7 +177,8 @@ describe("EmailReviewRunner", () => {
         conversationId,
         respondToMessageId: newest,
         executionMode: "review",
-        historyWindow: { maxMessages: 10 },
+        // FR-024: ten messages in all, the answered one and the nine before it.
+        historyWindow: { maxMessages: 9 },
       });
     });
 
@@ -179,6 +231,7 @@ describe("EmailReviewRunner", () => {
         ownershipVersion: 0,
         policy: { ref: emailMailboxPolicyRef(mailbox.id), version: 1 },
         reviewRef: `email:${conversationId}:1`,
+        reviewClaim: { attempt: 1, leaseUntil: leaseFrom(h) },
         holdReason: "draft_mode",
         facts: turn.kind === "draft" ? turn.facts : never(),
         draft: turn.kind === "draft" ? turn.draft : never(),
@@ -282,6 +335,7 @@ describe("EmailReviewRunner", () => {
         ownershipVersion: 0,
         policy: { ref: emailMailboxPolicyRef(mailbox.id), version: 1 },
         reviewRef: `email:${conversationId}:1`,
+        reviewClaim: { attempt: 1, leaseUntil: leaseFrom(h) },
         facts: turn.kind === "draft" ? turn.facts : never(),
         draft: turn.kind === "draft" ? turn.draft : never(),
       });
@@ -316,6 +370,7 @@ describe("EmailReviewRunner", () => {
         ownershipVersion: 0,
         policy: { ref: emailMailboxPolicyRef(mailbox.id), version: 1 },
         reviewRef: `email:${conversationId}:1`,
+        reviewClaim: { attempt: 1, leaseUntil: leaseFrom(h) },
         holdReason,
         facts: turn.kind === "draft" ? turn.facts : never(),
         draft: turn.kind === "draft" ? turn.draft : never(),

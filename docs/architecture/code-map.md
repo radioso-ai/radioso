@@ -269,9 +269,11 @@ resolution, the mailbox event log, and raw-message access for a
 customer-owned mailbox forwarded to a Radioso-operated relay address. A
 mailbox's engagement mode gates whether an agent ever runs a turn on its
 mail, and whether that turn's reply is held for an operator or sent on its
-own. `operator_only` and `draft` run (`draft` is the default for a new
-mailbox); `auto` is outside the deployment's `supportedModes`, so setting it
-is refused.
+own. `operator_only`, `draft` and `auto` all run: `draft` is the default
+for a new mailbox, and `auto` sends on its own only on a mailbox an operator
+opted in, when the publication decision allows. The deployment's
+`supportedModes` (`backend/src/app/composition/emailChannel/index.ts`) also
+decides whether automatic sending is granted to the held-reply scope.
 
 A `draft` mailbox's inbound stage 2 (`emailReviewRunner.ts`) runs one
 coalesced turn per thread revision through `ConnectorChatPort.respond`
@@ -325,7 +327,8 @@ Public surfaces and key files:
 - `backend/src/modules/emailChannel/persistence/` — the channel's
   repositories, including `emailBacklogRepository.ts`, which counts overdue
   inbound events, thread reviews and queued sends across workspaces for the
-  sweep's backlog gauge.
+  `email_backlog` gauge. The API samples it when `/metrics` is scraped, at
+  most every 30 seconds (`backend/src/app/composition/emailChannel/backlogSampler.ts`).
 - `backend/src/app/composition/conversationLockOrder.ts` — the conversation
   lock protocol every held-reply, ingest, ownership and mailbox-policy unit
   of work follows (conversation, ownership, channel policy, held reply,

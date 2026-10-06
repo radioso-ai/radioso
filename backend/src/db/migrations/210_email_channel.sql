@@ -44,6 +44,11 @@ CREATE TABLE IF NOT EXISTS email_domains (
   -- provider's answer has not been recorded yet.
   provider_domain_id TEXT,
   provider_region TEXT,
+  -- `registering`: claimed, the provider's answer not recorded yet. `needs_reconciliation`: the
+  -- provider already holds the name, and only an operator's reconcile adopts that registration.
+  -- `registered`: the provider's registration is recorded.
+  registration_status TEXT NOT NULL DEFAULT 'registering'
+    CHECK (registration_status IN ('registering', 'needs_reconciliation', 'registered')),
   -- DnsRecordView[]: purpose, type, name, value, priority, status.
   dns_records JSONB NOT NULL DEFAULT '[]'::jsonb,
   sending_status TEXT NOT NULL DEFAULT 'pending'
@@ -57,12 +62,18 @@ CREATE TABLE IF NOT EXISTS email_domains (
   last_checked_at TIMESTAMPTZ,
   next_check_at TIMESTAMPTZ,
   status_changed_at TIMESTAMPTZ,
-  -- Authority is revoked first; the provider-side cleanup follows asynchronously.
+  -- Bumped by each provider event about the domain. A refresh records what it read only while the
+  -- version it started from is still current, so an event during the refresh keeps it due.
+  refresh_requested_version INTEGER NOT NULL DEFAULT 0 CHECK (refresh_requested_version >= 0),
+  -- Authority is revoked first; the provider-side cleanup follows asynchronously. While it is
+  -- `pending` or `failed` the name is being removed: it can be neither claimed nor adopted.
   removed_at TIMESTAMPTZ,
   provider_cleanup_status TEXT CHECK (provider_cleanup_status IN ('pending', 'done', 'failed')),
   created_by_user_id UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT email_domains_registration_check
+    CHECK ((registration_status = 'registered') = (provider_domain_id IS NOT NULL))
 );
 
 -- One workspace at a time may register a domain.
@@ -72,6 +83,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS email_domains_active_domain_uniq
 
 CREATE INDEX IF NOT EXISTS email_domains_workspace_idx
   ON email_domains (workspace_id);
+
+-- A claim's check for a removal of the same name still being cleaned up.
+CREATE INDEX IF NOT EXISTS email_domains_removing_domain_idx
+  ON email_domains (domain)
+  WHERE provider_cleanup_status IN ('pending', 'failed');
 
 -- The status refresh: active domains due for a check.
 CREATE INDEX IF NOT EXISTS email_domains_next_check_idx

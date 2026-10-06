@@ -128,7 +128,25 @@ A mailbox accepts inbound regardless of whether its domain is verified. Until
 it is, an operator's reply is refused before anything is written, with the
 missing step named — retrying once the domain verifies is safe. Removing a
 sending domain revokes its authority first, halts anything queued to send,
-and keeps every conversation and its history intact.
+and keeps every conversation and its history intact. The provider-side
+cleanup follows within a few minutes, and adding the same domain again
+waits for it (`409 domain_removal_pending`).
+
+**Domain already registered on the provider.** Sometimes the email provider
+already holds the domain you add: your operations team registered it on the
+same account, another Radioso deployment shares the account, or an earlier
+attempt reached the provider but its answer never came back. Radioso can't
+tell whose registration it is, so it never takes one over on its own. The
+domain shows up in settings and the overview with
+`registration.status: needs_reconciliation`, and mailboxes on it are refused
+with `409 domain_needs_reconciliation` until you decide. If the registration
+is yours to use, adopt it from the domain's settings, or call
+`POST /api/v1/workspaces/{workspaceId}/email-channel/domains/{domainId}/reconcile`
+with `workspace.settings.manage`. Radioso looks the domain up on the
+provider, adopts that registration for this workspace, and records who did it
+in the audit log. If the provider no longer has it, the domain is registered
+afresh instead. If it belongs to someone else, remove the domain here and sort
+it out on the provider account first.
 
 ## Send a reply and track delivery
 
@@ -169,7 +187,10 @@ all.
 
 `bounced`, `failed`, `uncertain`, and `halted` each flag the conversation
 with a `delivery_failed` item in the Inbox. [Human Takeover](human-takeover.md#delivery-failures)
-covers clearing that flag.
+covers clearing that flag. The Inbox reads up to 1,000 open drafts and
+1,000 open delivery failures, newest first. When more are waiting, it says
+so, and **Load older** reads the next batch, as often as it takes to reach
+the oldest.
 
 **When a send is uncertain.** A crash or a timeout between Radioso and the
 provider doesn't risk sending the customer two emails: every send carries a
@@ -196,7 +217,9 @@ send goes `uncertain` too.
 report a delivery outcome after a send has already gone `uncertain`.
 Radioso applies it without any operator step: a late `delivered` clears the
 flag on its own, while a late `bounced` or `failed` keeps the flag open,
-now carrying that reason.
+now carrying that reason. Late evidence about an earlier attempt updates
+that attempt only: once you've asked for a resend, the newer copy keeps its
+own status and stays resolvable on its own evidence.
 
 ## Draft mode: review before it sends
 
@@ -215,7 +238,11 @@ A held reply carries the turn's judgment along with its text: the outcome
 (Answered, No matching documents, Out of scope, Answer unavailable), whether
 the answer is grounded and how completely it covers the question, and why it
 asked for a person if it did. A held reply that depends on a suppressed
-action shows a badge naming which skill didn't run.
+action shows a badge naming which skill didn't run. One line says why the
+channel held it instead of sending it — `Held: this mailbox drafts every
+reply for review`, or `Held: this thread’s automatic replies are used up`
+— read from its hold reason, so it shows even when the turn's reasoning
+can't be read.
 
 Reviewing a draft, an operator has three options:
 
@@ -605,12 +632,43 @@ picks up work whose scheduled push was lost, reclaims leases that expired
 without being renewed, refreshes domain readiness that's due, and purges
 events past retention. On a deployment that doesn't run `auto`, it also
 returns stale `queued_auto` replies to an operator (see
-[Rollout and rollback](#rollout-and-rollback)). Each run ends by sampling
-the `radioso_email_backlog` gauge, the work still waiting past its deadline
-(see [Monitoring And Alerts](monitoring-alerts.md)). The bundled Terraform
+[Rollout and rollback](#rollout-and-rollback)). The bundled Terraform
 creates the job once `email_channel_provider` is set.
 
+**The backlog gauge.** `radioso_email_backlog` counts the work still waiting
+past its deadline. The API reads it from the database when its metrics
+endpoint is scraped, at most once every 30 seconds, so it needs
+`METRICS_ENABLED` on the API service (see
+[Monitoring And Alerts](monitoring-alerts.md)).
+
 ## Operations
+
+**Deploying with the bundled Terraform.** Each environment root under
+`infra/terraform/environments/` takes the channel's settings and passes them
+to the shared module: `email_channel_provider`,
+`email_channel_inbound_domain`, `email_channel_webhook_secret`,
+`email_channel_webhook_secret_previous`, `resend_channel_api_key`,
+`email_channel_workers_enabled`, the Cloud Tasks dispatch rates, and the
+sweep's schedule and batch size. Supply the secrets as `TF_VAR_*` values
+rather than in a committed `terraform.tfvars`. With `email_channel_provider`
+unset the channel stays off, while the apply still provisions its
+`radioso-<environment>-email-channel` queue so a rollout can set the rest
+first.
+
+**Deploying through the Terraform workflow.** `.github/workflows/terraform.yml`
+reads the channel's inputs from the target GitHub environment and hands each
+one to Terraform only when it's set, so an environment that sets none of them
+keeps the channel off. Setting `EMAIL_CHANNEL_PROVIDER` without
+`EMAIL_CHANNEL_INBOUND_DOMAIN` and `EMAIL_CHANNEL_WEBHOOK_SECRET` stops the
+run before the plan, since the backend won't boot with that combination.
+
+- Variables: `EMAIL_CHANNEL_PROVIDER`, `EMAIL_CHANNEL_INBOUND_DOMAIN`,
+  `EMAIL_CHANNEL_WORKERS_ENABLED`,
+  `EMAIL_CHANNEL_TASK_MAX_DISPATCHES_PER_SECOND`,
+  `EMAIL_CHANNEL_TASK_MAX_CONCURRENT_DISPATCHES`,
+  `EMAIL_CHANNEL_SWEEP_SCHEDULE`, `EMAIL_CHANNEL_SWEEP_MAX_JOBS`
+- Secrets: `EMAIL_CHANNEL_WEBHOOK_SECRET`,
+  `EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS`, `RESEND_CHANNEL_API_KEY`
 
 **Provider outage.** Inbound fetches and sends both retry inside their own
 jobs; nothing accepted is dropped, and the backlog just grows until the

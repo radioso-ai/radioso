@@ -859,6 +859,15 @@ Not fixed in S1; each needs a small decision before it is tasked.
     - **Escalation signals get automatic replies.** A chargeback threat received a policy answer. Same decision as action requests: default directive or an engine signal.
     - **"Thanks!" opens an approval item.** A pleasantry with no question produced a held "You're welcome!" draft. Decide whether no-question messages are silent on email.
 
+## Follow-ups found in review round two (2026-10-07)
+
+Not fixed on this branch; each is small and needs its own change.
+
+1. **Chat-turn hand-off takes ownership before the conversation lock**: `PostgresAssistantTurnPersistence` creates the ownership row before it locks the conversation row, the reverse of steps 1 and 2 in `backend/src/app/composition/conversationLockOrder.ts`, which documents it as the protocol's known exception. A racing takeover or reply retries as the deadlock victim, but the chat turn has no retry. Lock the conversation row first.
+2. **Usage events still store `Error.message`**: `errorCode` on usage events is the first 120 characters of the error's message in `modelInferencePipeline.ts`, `embeddingInferencePipeline.ts` and `rerankService.ts`, which can carry provider text. Store a code instead.
+3. **A provider acceptance after an intent went `uncertain` is dropped** (pre-existing): a provider acceptance that arrives after its send intent went `uncertain` is discarded rather than recorded on the intent. Decide whether a late acceptance is recorded (without resolving the intent) so later provider evidence for that send correlates.
+4. **Forwarding fixtures still need tenants**: the Google Workspace and Microsoft 365 forwarded-mail fixtures (S1 follow-up 7) remain `it.todo` until the S0 tenant checks (T007, T009, T010) supply real captures.
+
 ## Dependencies & Execution Order
 
 ### Phase dependencies

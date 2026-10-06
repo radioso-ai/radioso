@@ -17,7 +17,10 @@ export interface EmailChannelJobLogger extends EmailChannelLogger {
 }
 
 type EmailChannelAuditEvent =
-  | { eventType: "email_channel.domain"; action: "registered" | "readiness_changed" | "receiving_enabled" | "removed" }
+  | {
+      eventType: "email_channel.domain";
+      action: "registered" | "reconciliation_required" | "reconciled" | "readiness_changed" | "receiving_enabled" | "removed";
+    }
   | {
       eventType: "email_channel.mailbox";
       action: "created" | "updated" | "removed" | "mode_changed" | "relay_token_rotated";

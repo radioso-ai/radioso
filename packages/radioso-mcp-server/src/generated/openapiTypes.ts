@@ -2470,7 +2470,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Add a sending domain */
+        /**
+         * Add a sending domain
+         * @description Claims the domain for the workspace and registers it with the email provider. When the provider already holds the domain, it is added with `registration.status: needs_reconciliation` and adopted only by `reconcileEmailDomain`.
+         */
         post: operations["addEmailSendingDomain"];
         delete?: never;
         options?: never;
@@ -2489,6 +2492,26 @@ export interface paths {
         put?: never;
         /** Check a domain's DNS records now */
         post: operations["verifyEmailDomain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/domains/{domainId}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adopt the provider's existing registration of a domain
+         * @description For a domain in `registration.status: needs_reconciliation`: finds the email provider's registration of the domain by name and records it for this workspace, or registers the domain afresh when the provider no longer holds it. Audited. A registered domain is returned unchanged.
+         */
+        post: operations["reconcileEmailDomain"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9477,6 +9500,13 @@ export interface components {
             /** Format: uuid */
             id: string;
             domain: string;
+            registration: {
+                /**
+                 * @description `registering`: the provider has not answered yet; checking the domain finishes it. `needs_reconciliation`: the email provider already holds this domain, and only `reconcileEmailDomain` adopts that registration. `registered`: the provider holds the workspace's registration.
+                 * @enum {string}
+                 */
+                status: "registering" | "needs_reconciliation" | "registered";
+            };
             sending: {
                 /** @enum {string} */
                 status: "pending" | "verified" | "failed";
@@ -20499,8 +20529,17 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `mailbox_exists`, `domain_claimed_elsewhere` (names no other workspace) or `engagement_mode_unavailable` */
+            /** @description `mailbox_exists`, `domain_claimed_elsewhere` (names no other workspace), `domain_needs_reconciliation` (reconcile the domain first), `domain_removal_pending` or `engagement_mode_unavailable` */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `provider_unavailable`: the email provider could not register the address's domain */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -21171,8 +21210,17 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `domain_claimed_elsewhere` (names no other workspace) */
+            /** @description `domain_claimed_elsewhere` (names no other workspace) or `domain_removal_pending`: the domain's removal is still being cleaned up at the provider */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `provider_unavailable` */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -21232,6 +21280,92 @@ export interface operations {
             };
             /** @description Domain not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `domain_needs_reconciliation`: reconcile the domain first */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `provider_unavailable` */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reconcileEmailDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                domainId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Domain with its provider registration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailDomain"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Domain not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `domain_not_awaiting_reconciliation` (the provider has not reported the domain as already registered) or `domain_removal_pending`: a removal of the domain is still being cleaned up at the provider */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -21313,6 +21447,15 @@ export interface operations {
             };
             /** @description Domain not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `domain_needs_reconciliation`: reconcile the domain first */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

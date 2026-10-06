@@ -46,25 +46,30 @@ type EmailHeldReplyAutoSend = { autoSend: false } | { autoSend: true; provider: 
 
 /**
  * Email's side of held-reply transactions (research B1, B9): drafts bound to a mailbox's policy,
- * locked and sent through the transaction's repositories. With automatic sending granted, also the
+ * locked and sent through the transaction's repositories, and published only under a review claim
+ * that still holds the thread (research B17). With automatic sending granted, also the
  * thread's send budget, the queued send, its authorization at dispatch, and the send intent a
  * materialization records.
  */
 export const createEmailHeldReplyChannelRegistration = (input: EmailHeldReplyAutoSend): HeldReplyChannelRegistration => ({
   policyRefPrefix: EMAIL_MAILBOX_POLICY_REF_PREFIX,
-  bind: (trx) => new EmailHeldReplyChannelScope({
-    mailboxes: new EmailMailboxRepository(trx),
-    domains: new EmailDomainRepository(trx),
-    autoSend: input.autoSend
-      ? {
-          threads: new EmailThreadRepository(trx),
-          ownership: new ConversationOwnershipRepository(trx),
-          intents: new EmailSendIntentRepository(trx),
-          provider: input.provider,
-          createId: randomUUID,
-        }
-      : undefined,
-  }),
+  bind: (trx) => {
+    const threads = new EmailThreadRepository(trx);
+    return new EmailHeldReplyChannelScope({
+      mailboxes: new EmailMailboxRepository(trx),
+      domains: new EmailDomainRepository(trx),
+      reviews: threads,
+      autoSend: input.autoSend
+        ? {
+            threads,
+            ownership: new ConversationOwnershipRepository(trx),
+            intents: new EmailSendIntentRepository(trx),
+            provider: input.provider,
+            createId: randomUUID,
+          }
+        : undefined,
+    });
+  },
 });
 
 /**

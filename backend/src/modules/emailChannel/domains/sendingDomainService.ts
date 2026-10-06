@@ -6,6 +6,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import { recordEmailChannelAudit, type EmailChannelActor, type EmailChannelAuditDependencies } from "../emailChannelAudit.js";
 import type {
   DomainReceivingStatus,
+  DomainRegistrationStatus,
   DomainSendingStatus,
   EmailDomainRecord,
   EmailDomainRepository,
@@ -22,8 +23,6 @@ const REFRESH_AFTER_MS: Readonly<Record<DomainSendingStatus, number>> = {
   verified: 24 * HOUR_MS,
 };
 const CLEANUP_RETRY_MS = HOUR_MS;
-/** How far the provider's clock may run behind the database's. */
-const PROVIDER_CLOCK_SKEW_MS = MINUTE_MS;
 
 // Structural DNS hostname syntax: at least two labels of letters, digits and inner hyphens.
 const DNS_HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -37,6 +36,7 @@ type DomainRegistrationResult = { ok: true; domain: EmailDomainRecord } | { ok: 
 interface EmailDomainView {
   id: string;
   domain: string;
+  registration: { status: DomainRegistrationStatus };
   sending: { status: DomainSendingStatus; checkedAt: string | null };
   receiving: { status: DomainReceivingStatus; checkedAt: string | null };
   records: DnsRecordView[];
@@ -47,9 +47,12 @@ interface SendingDomainServiceDependencies extends EmailChannelAuditDependencies
     EmailDomainRepository,
     | "claim"
     | "recordRegistration"
+    | "markNeedsReconciliation"
+    | "isRemovalPending"
+    | "adoptRegistration"
+    | "recordRemovedClaimRegistration"
     | "releaseClaim"
-    | "isProviderDomainActive"
-    | "findActiveByDomain"
+    | "findById"
     | "findActive"
     | "listActive"
     | "listDueForRefresh"
@@ -82,6 +85,7 @@ const toIso = (value: Date | null): string | null => value?.toISOString() ?? nul
 const toEmailDomainView = (record: EmailDomainRecord): EmailDomainView => ({
   id: record.id,
   domain: record.domain,
+  registration: { status: record.registrationStatus },
   sending: { status: record.sendingStatus, checkedAt: toIso(record.lastCheckedAt) },
   receiving: { status: record.receivingStatus, checkedAt: toIso(record.lastCheckedAt) },
   records: record.dnsRecords.map((dnsRecord) => ({ ...dnsRecord })),
@@ -97,14 +101,15 @@ const errorName = (error: unknown): string => (error instanceof Error ? error.na
 const providerUnavailable = (): AppError =>
   new AppError(502, "provider_unavailable", "The email provider could not be reached. Try again shortly.");
 
-/**
- * Whether a registration the provider already holds was created by an attempt on this claim. No
- * other workspace could have registered the name while the claim held it, so one created since is
- * this claim's; an older one belongs to operations, another deployment sharing the account, or a
- * removed domain whose cleanup has not run.
- */
-const createdForClaim = (found: ProviderDomain, claim: EmailDomainRecord): boolean =>
-  found.createdAt !== null && found.createdAt.getTime() >= claim.createdAt.getTime() - PROVIDER_CLOCK_SKEW_MS;
+const removalPending = (): AppError =>
+  new AppError(409, "domain_removal_pending", "This domain is still being removed from the email provider. Try again in a few minutes.");
+
+const needsReconciliation = (): AppError =>
+  new AppError(
+    409,
+    "domain_needs_reconciliation",
+    "The email provider already has this domain registered. Reconcile the domain in the email channel settings to adopt that registration.",
+  );
 
 const refusalError = (refused: DomainRefusal): AppError =>
   refused === "claimed_elsewhere"
@@ -115,6 +120,11 @@ const refusalError = (refused: DomainRefusal): AppError =>
  * A workspace's own sending domains (and, as the advanced option, direct-receiving domains): one
  * active registration per domain across workspaces, readiness refreshed on a bounded cadence, and
  * removal that revokes authority before the provider is cleaned up.
+ *
+ * The provider account can hold registrations no claim made: operations', another deployment's
+ * sharing the account, or one whose answer was lost. Nothing the provider reports ties one to a
+ * claim, so a name the provider already holds waits as `needs_reconciliation` until an operator
+ * adopts it with `reconcile`; nothing adopts it automatically.
  */
 export class SendingDomainService {
   constructor(private readonly deps: SendingDomainServiceDependencies) {}
@@ -123,33 +133,24 @@ export class SendingDomainService {
     return (await this.deps.domains.listActive(workspaceId)).map(toEmailDomainView);
   }
 
-  /** Adds a sending domain directly (the settings card's "add domain"). */
+  /** Adds a sending domain directly (the settings card's "add domain"), in whatever registration status it reaches. */
   async add(actor: EmailChannelActor, workspaceId: string, domainInput: string): Promise<EmailDomainView> {
-    const result = await this.ensureRegistered(actor, workspaceId, domainInput);
+    const result = await this.claimAndRegister(actor, workspaceId, domainInput);
     if (!result.ok) throw refusalError(result.refused);
     return toEmailDomainView(result.domain);
   }
 
   /**
-   * The workspace's active registration of `domainInput`, registering it with the provider the
-   * first time. The workspace claims the domain before the provider is called, so a domain held by
+   * The workspace's registered domain `domainInput`, registering it with the provider the first
+   * time. The workspace claims the domain before the provider is called, so a domain held by
    * another workspace, claimed or registered, is one `claimed_elsewhere` refusal that names no
-   * workspace (AS1.4), and a registration interrupted after the provider accepted it is recovered
-   * by the next attempt.
+   * workspace (AS1.4). A name the provider already holds is refused `domain_needs_reconciliation`
+   * until an operator reconciles it.
    */
   async ensureRegistered(actor: EmailChannelActor, workspaceId: string, domainInput: string): Promise<DomainRegistrationResult> {
-    const domain = this.normalizeRegistrable(domainInput);
-    if (!domain) return { ok: false, refused: "invalid_domain" };
-
-    const claim = await this.deps.domains.claim({
-      workspaceId,
-      domain,
-      provider: this.deps.provisioner.provider,
-      createdByUserId: actor.userId,
-    });
-    if (claim.workspaceId !== workspaceId) return { ok: false, refused: "claimed_elsewhere" };
-    if (claim.providerDomainId !== null) return { ok: true, domain: claim };
-    return this.completeRegistration(actor, claim);
+    const result = await this.claimAndRegister(actor, workspaceId, domainInput);
+    if (result.ok && result.domain.registrationStatus !== "registered") throw needsReconciliation();
+    return result;
   }
 
   /** Asks the provider to check the records now, then records what it reports. */
@@ -160,6 +161,31 @@ export class SendingDomainService {
     const readiness = await this.callProvider("readiness", domain.id, () =>
       this.deps.provisioner.readiness({ providerDomainId, domain: domain.domain }));
     return toEmailDomainView((await this.applyReadiness(domain, readiness, actor)) ?? domain);
+  }
+
+  /**
+   * Adopts, at an operator's request, the provider's existing registration of a domain waiting for
+   * reconciliation: found by name, recorded for this workspace, and audited. When the provider no
+   * longer holds the name, the domain is registered afresh. Refused while a removal of the name is
+   * still being cleaned up, so a registration about to be deleted is never adopted.
+   */
+  async reconcile(actor: EmailChannelActor, workspaceId: string, domainId: string): Promise<EmailDomainView> {
+    const claim = await this.requireActive(workspaceId, domainId);
+    if (claim.registrationStatus === "registered") return toEmailDomainView(claim);
+    if (claim.registrationStatus !== "needs_reconciliation") {
+      throw new AppError(409, "domain_not_awaiting_reconciliation", "This domain is not waiting for reconciliation. Check it to finish its registration.");
+    }
+    // Checked before the lookup as well as at the adoption: a lookup that ran while a cleanup was
+    // still deleting the registration it found must not be adopted afterwards.
+    if (await this.deps.domains.isRemovalPending(claim.domain)) throw removalPending();
+    const found = await this.callProvider("find_by_name", claim.id, () => this.deps.provisioner.findByName(claim.domain));
+    if (!found) return this.registerAfresh(actor, claim);
+
+    const adoption = await this.deps.domains.adoptRegistration(claim.id, this.registrationWrite(found));
+    if (adoption.status === "removal_pending") throw removalPending();
+    if (adoption.status === "not_awaiting") return this.currentView(workspaceId, claim.id);
+    await this.auditReconciled(actor, adoption.domain, "adopted");
+    return toEmailDomainView(adoption.domain);
   }
 
   /**
@@ -187,6 +213,7 @@ export class SendingDomainService {
         dnsRecords: readiness.records,
         nextCheckAt: nextCheckAt(readiness.sending, receivingStatus, this.deps.clock()),
         statusChanged: readiness.sending !== domain.sendingStatus || receivingStatus !== domain.receivingStatus,
+        requestedVersion: domain.refreshRequestedVersion,
       },
     });
     if (!updated) throw notFound("Email domain was not found");
@@ -204,20 +231,14 @@ export class SendingDomainService {
 
   /**
    * Removes a domain (FR-006b). Authority is revoked at once: every lookup ignores a removed
-   * domain. The provider-side cleanup follows asynchronously, in `cleanupRemoved`.
+   * domain. The provider-side cleanup follows asynchronously, in `cleanupRemoved`; removing a claim
+   * calls no provider at all.
    */
   async remove(actor: EmailChannelActor, workspaceId: string, domainId: string): Promise<void> {
-    const active = await this.requireActive(workspaceId, domainId);
-    if ((await this.deps.mailboxes.countActiveOnDomain(active.id)) > 0) {
+    const domain = await this.requireActive(workspaceId, domainId);
+    if ((await this.deps.mailboxes.countActiveOnDomain(domain.id)) > 0) {
       throw new AppError(409, "domain_has_mailboxes", "Remove the mailboxes on this domain first.");
     }
-    // An unfinished claim is settled first: a registration its attempts left at the provider is
-    // recorded, so the cleanup removes it, rather than orphaned where no later claim may adopt it.
-    const settled: DomainRegistrationResult = active.providerDomainId === null
-      ? await this.completeRegistration(actor, active)
-      : { ok: true, domain: active };
-    if (!settled.ok) return;
-    const { domain } = settled;
     if (!(await this.deps.domains.markRemoved(workspaceId, domain.id))) throw notFound("Email domain was not found");
     await recordEmailChannelAudit(this.deps, {
       eventType: "email_channel.domain",
@@ -237,87 +258,145 @@ export class SendingDomainService {
     return refreshed;
   }
 
-  /** The sweep's provider cleanup of removed domains. Returns how many were cleaned up. */
+  /**
+   * The sweep's provider cleanup of removed domains. Returns how many were cleaned up. A removed
+   * claim has no registration of its own to remove: one an interrupted attempt left at the provider
+   * cannot be told apart from another writer's, so it is reconciled when the name is added again.
+   */
   async cleanupRemoved(limit: number): Promise<number> {
     let cleaned = 0;
     for (const domain of await this.deps.domains.listCleanupDue(limit)) {
+      const { providerDomainId } = domain;
       try {
-        const providerDomainId = await this.removableProviderDomainId(domain);
         if (providerDomainId) await this.deps.provisioner.remove(providerDomainId);
-        await this.deps.domains.recordCleanup(domain.id, { status: "done", retryAt: null });
+        await this.deps.domains.recordCleanup(domain.id, { status: "done", retryAt: null, providerDomainId });
         cleaned += 1;
       } catch (error) {
         this.deps.logger.warn({ domainId: domain.id, errorName: errorName(error) }, "email_domain_cleanup_failed");
         await this.deps.domains.recordCleanup(domain.id, {
           status: "failed",
           retryAt: new Date(this.deps.clock().getTime() + CLEANUP_RETRY_MS),
+          providerDomainId,
         });
       }
     }
     return cleaned;
   }
 
+  /** Claims the domain for the workspace and, the first time, registers it with the provider. */
+  private async claimAndRegister(actor: EmailChannelActor, workspaceId: string, domainInput: string): Promise<DomainRegistrationResult> {
+    const domain = this.normalizeRegistrable(domainInput);
+    if (!domain) return { ok: false, refused: "invalid_domain" };
+
+    const claim = await this.deps.domains.claim({
+      workspaceId,
+      domain,
+      provider: this.deps.provisioner.provider,
+      createdByUserId: actor.userId,
+    });
+    if (claim.status === "removal_pending") throw removalPending();
+    if (claim.domain.workspaceId !== workspaceId) return { ok: false, refused: "claimed_elsewhere" };
+    if (claim.domain.registrationStatus !== "registering") return { ok: true, domain: claim.domain };
+    return this.completeRegistration(actor, claim.domain);
+  }
+
   /**
    * Registers a claimed domain with the provider and records the answer. When the provider already
-   * holds the name, a registration created since the claim was taken is an earlier attempt's whose
-   * answer was never recorded: it is found by name and adopted. Any other is claimed elsewhere.
+   * holds the name, the claim waits for an operator's reconcile.
    */
   private async completeRegistration(actor: EmailChannelActor, claim: EmailDomainRecord): Promise<DomainRegistrationResult> {
-    const { domain } = claim;
-    const registration = await this.callProvider("register", claim.id, () => this.deps.provisioner.registerSendingDomain(domain));
-    if (!registration.ok && registration.refused === "invalid_domain") {
+    const registration = await this.callProvider("register", claim.id, () => this.deps.provisioner.registerSendingDomain(claim.domain));
+    if (registration.ok) return { ok: true, domain: await this.recordCreated(claim, registration, (domain) => this.auditRegistered(actor, domain)) };
+    if (registration.refused === "invalid_domain") {
       await this.deps.domains.releaseClaim(claim.id);
       return { ok: false, refused: "invalid_domain" };
     }
-    const recovered = !registration.ok;
-    const providerDomain = registration.ok ? registration : await this.adoptableRegistration(claim);
-    if (!providerDomain) {
-      await this.deps.domains.releaseClaim(claim.id);
-      return { ok: false, refused: "claimed_elsewhere" };
-    }
+    return { ok: true, domain: await this.awaitReconciliation(actor, claim) };
+  }
 
+  /** `reconcile` when the provider no longer holds the name: a fresh registration, audited as the reconcile's outcome. */
+  private async registerAfresh(actor: EmailChannelActor, claim: EmailDomainRecord): Promise<EmailDomainView> {
+    const registration = await this.callProvider("register", claim.id, () => this.deps.provisioner.registerSendingDomain(claim.domain));
+    if (!registration.ok) return this.currentView(claim.workspaceId, claim.id);
+    const registered = await this.recordCreated(claim, registration, (domain) => this.auditReconciled(actor, domain, "registered"));
+    return toEmailDomainView(registered);
+  }
+
+  /**
+   * Records the registration a create on `claim` returned. A claim removed while the create ran
+   * hands the registration to its cleanup, since it is provably the claim's own.
+   */
+  private async recordCreated(
+    claim: EmailDomainRecord,
+    created: ProviderDomain,
+    audit: (domain: EmailDomainRecord) => Promise<void>,
+  ): Promise<EmailDomainRecord> {
+    const registered = await this.deps.domains.recordRegistration(claim.id, this.registrationWrite(created));
+    if (registered) {
+      await audit(registered);
+      return registered;
+    }
+    const current = await this.deps.domains.findById(claim.id);
+    if (current && current.removedAt === null && current.registrationStatus === "registered") return current;
+    if (current?.removedAt) {
+      const handedOver = await this.deps.domains.recordRemovedClaimRegistration(claim.id, {
+        providerDomainId: created.providerDomainId,
+        providerRegion: created.region,
+      });
+      if (!handedOver) this.deps.logger.warn({ domainId: claim.id }, "email_domain_registration_unclaimed");
+    }
+    throw notFound("Email domain was not found");
+  }
+
+  private async awaitReconciliation(actor: EmailChannelActor, claim: EmailDomainRecord): Promise<EmailDomainRecord> {
+    const marked = await this.deps.domains.markNeedsReconciliation(claim.id);
+    if (!marked) {
+      // A concurrent attempt on the same claim settled it first, or the claim was removed meanwhile.
+      const current = await this.deps.domains.findById(claim.id);
+      if (!current || current.removedAt !== null) throw notFound("Email domain was not found");
+      return current;
+    }
+    this.deps.logger.warn({ domainId: marked.id }, "email_domain_needs_reconciliation");
+    await recordEmailChannelAudit(this.deps, {
+      eventType: "email_channel.domain",
+      action: "reconciliation_required",
+      actor,
+      workspaceId: marked.workspaceId,
+      metadata: { domainId: marked.id, domain: marked.domain, provider: marked.provider },
+    });
+    return marked;
+  }
+
+  private registrationWrite(providerDomain: ProviderDomain) {
     const { sending, receiving, records } = providerDomain.readiness;
-    const registered = await this.deps.domains.recordRegistration(claim.id, {
+    return {
       providerDomainId: providerDomain.providerDomainId,
       providerRegion: providerDomain.region,
       dnsRecords: records,
       sendingStatus: sending,
       receivingStatus: receiving,
       nextCheckAt: nextCheckAt(sending, receiving, this.deps.clock()),
-    });
-    if (!registered) {
-      // A concurrent attempt on the same claim recorded first, or the claim was removed meanwhile.
-      const holder = await this.deps.domains.findActiveByDomain(domain);
-      if (holder?.workspaceId === claim.workspaceId && holder.providerDomainId !== null) return { ok: true, domain: holder };
-      if (holder && holder.workspaceId !== claim.workspaceId) return { ok: false, refused: "claimed_elsewhere" };
-      throw notFound("Email domain was not found");
-    }
+    };
+  }
 
-    if (recovered) this.deps.logger.warn({ domainId: registered.id }, "email_domain_registration_recovered");
+  private async auditRegistered(actor: EmailChannelActor, domain: EmailDomainRecord): Promise<void> {
     await recordEmailChannelAudit(this.deps, {
       eventType: "email_channel.domain",
       action: "registered",
       actor,
-      workspaceId: registered.workspaceId,
-      metadata: { domainId: registered.id, domain, provider: registered.provider, region: registered.providerRegion, recovered },
+      workspaceId: domain.workspaceId,
+      metadata: { domainId: domain.id, domain: domain.domain, provider: domain.provider, region: domain.providerRegion },
     });
-    return { ok: true, domain: registered };
   }
 
-  /** The registration the provider already holds for a claimed name, when an attempt on this claim created it. */
-  private async adoptableRegistration(claim: EmailDomainRecord): Promise<ProviderDomain | null> {
-    const found = await this.callProvider("find_by_name", claim.id, () => this.deps.provisioner.findByName(claim.domain));
-    return found && createdForClaim(found, claim) ? found : null;
-  }
-
-  /**
-   * A removed domain's provider registration is removed with it, unless an active registration
-   * has since adopted it: the same name added again before the cleanup ran.
-   */
-  private async removableProviderDomainId(domain: EmailDomainRecord): Promise<string | null> {
-    const { provider, providerDomainId } = domain;
-    if (providerDomainId === null) return null;
-    return (await this.deps.domains.isProviderDomainActive(provider, providerDomainId)) ? null : providerDomainId;
+  private async auditReconciled(actor: EmailChannelActor, domain: EmailDomainRecord, outcome: "adopted" | "registered"): Promise<void> {
+    await recordEmailChannelAudit(this.deps, {
+      eventType: "email_channel.domain",
+      action: "reconciled",
+      actor,
+      workspaceId: domain.workspaceId,
+      metadata: { domainId: domain.id, domain: domain.domain, provider: domain.provider, region: domain.providerRegion, outcome },
+    });
   }
 
   private async refresh(domain: EmailDomainRecord): Promise<boolean> {
@@ -326,12 +405,17 @@ export class SendingDomainService {
       readiness = await this.deps.provisioner.readiness({ providerDomainId: this.providerDomainIdOf(domain), domain: domain.domain });
     } catch (error) {
       this.deps.logger.warn({ domainId: domain.id, errorName: errorName(error) }, "email_domain_refresh_failed");
-      await this.deps.domains.deferRefresh(domain.id, new Date(this.deps.clock().getTime() + REFRESH_AFTER_MS.pending));
+      await this.deps.domains.deferRefresh(
+        domain.id,
+        new Date(this.deps.clock().getTime() + REFRESH_AFTER_MS.pending),
+        domain.refreshRequestedVersion,
+      );
       return false;
     }
     return (await this.applyReadiness(domain, readiness, null)) !== null;
   }
 
+  /** Records a reading of `domain`; null when it was removed, or a provider event since keeps it due. */
   private async applyReadiness(
     domain: EmailDomainRecord,
     readiness: DomainReadiness,
@@ -343,6 +427,7 @@ export class SendingDomainService {
       dnsRecords: readiness.records,
       nextCheckAt: nextCheckAt(readiness.sending, readiness.receiving, this.deps.clock()),
       statusChanged: readiness.sending !== domain.sendingStatus || readiness.receiving !== domain.receivingStatus,
+      requestedVersion: domain.refreshRequestedVersion,
     });
     if (updated) await this.recordTransitions(domain, updated, actor);
     return updated;
@@ -389,12 +474,18 @@ export class SendingDomainService {
     return domain;
   }
 
-  /** An active domain with its provider registration, finishing one an earlier attempt left claimed. */
+  private async currentView(workspaceId: string, domainId: string): Promise<EmailDomainView> {
+    return toEmailDomainView(await this.requireActive(workspaceId, domainId));
+  }
+
+  /** An active domain with its provider registration, finishing one an earlier attempt left `registering`. */
   private async requireRegistered(actor: EmailChannelActor, workspaceId: string, domainId: string): Promise<EmailDomainRecord> {
     const domain = await this.requireActive(workspaceId, domainId);
-    if (domain.providerDomainId !== null) return domain;
+    if (domain.registrationStatus === "registered") return domain;
+    if (domain.registrationStatus === "needs_reconciliation") throw needsReconciliation();
     const result = await this.completeRegistration(actor, domain);
     if (!result.ok) throw refusalError(result.refused);
+    if (result.domain.registrationStatus !== "registered") throw needsReconciliation();
     return result.domain;
   }
 

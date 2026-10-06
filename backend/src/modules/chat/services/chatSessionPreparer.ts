@@ -668,7 +668,7 @@ export class ChatSessionPreparer {
   private async historyBefore(existing: ExistingUserMessage): Promise<MessageRecord[]> {
     const { message, historyWindow } = existing;
     return this.messageRepository.listBeforeByConversationId(message.workspaceId, message.conversationId, {
-      before: { createdAt: message.createdAt, id: message.id },
+      beforeMessageId: message.id,
       limit: historyWindow.maxMessages,
     });
   }

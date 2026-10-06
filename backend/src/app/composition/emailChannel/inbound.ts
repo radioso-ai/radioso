@@ -7,7 +7,6 @@ import { HeldReplyRepository } from "../../../db/repositories/heldReplyRepositor
 import type { EmailThreadProtocolUnitOfWork } from "../../../modules/connectors/plugins/index.js";
 import type { ConversationActivityRecorder } from "../../../modules/conversationActivity/contracts/index.js";
 import {
-  EmailBacklogRepository,
   EmailChannelSweep,
   EmailInboundRepository,
   EmailThreadRepository,
@@ -18,7 +17,6 @@ import {
 import { readConversationOwnershipState, type HeldReplyService } from "../../../modules/handoff/public.js";
 import type { DB } from "../../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
-import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 
 /**
  * Binds one step of the thread protocol (research B15) to one Postgres transaction: the
@@ -44,9 +42,9 @@ export const createPostgresThreadProtocolUnitOfWork = (deps: {
 });
 
 /**
- * The channel's sweep over Postgres: retention, domain readiness, send reconciliation, queued
- * automatic sends whose dispatch gave up, and the backlog gauges when metrics are on. Without
- * automatic sending, it also hands queued sends back to a teammate.
+ * The channel's sweep over Postgres: retention, domain readiness, send reconciliation, and queued
+ * automatic sends whose dispatch gave up. Without automatic sending, it also hands queued sends
+ * back to a teammate.
  */
 export const createEmailChannelSweepOverPostgres = (deps: {
   db: Kysely<DB>;
@@ -56,7 +54,6 @@ export const createEmailChannelSweepOverPostgres = (deps: {
   heldReplies: Pick<HeldReplyService, "materializeAuto" | "returnAbandonedAuto">;
   autoSend: boolean;
   eventRetentionDays: number;
-  metrics: MetricsRegistry | null;
   logger: AppLogger;
   clock: () => Date;
 }): EmailChannelSweep => {
@@ -76,6 +73,5 @@ export const createEmailChannelSweepOverPostgres = (deps: {
     queuedAutoRollback: deps.autoSend
       ? undefined
       : { queued: heldReplyRecords, dispatch: { materializeAuto: (heldReplyId) => deps.heldReplies.materializeAuto(heldReplyId) } },
-    backlog: deps.metrics ? { reader: new EmailBacklogRepository(deps.db), metrics: deps.metrics } : undefined,
   });
 };

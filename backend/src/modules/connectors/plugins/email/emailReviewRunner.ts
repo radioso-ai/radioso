@@ -39,8 +39,12 @@ const NO_REPLY_NEEDED = "no_reply_needed";
 /** No policy version is ever this: a removed mailbox's policy matches no bound version. */
 const REMOVED_POLICY_VERSION = -1;
 const RECEIPT_TO_HELD_REPLY_BUCKETS = [5, 10, 30, 60, 120, 300, 600, 1_800, 3_600];
-/** The thread's newest messages a review turn reads (FR-024). */
-const EMAIL_REVIEW_HISTORY_MESSAGES = 10;
+/**
+ * The thread's newest messages a review turn reads, the answered one included (FR-024). The turn's
+ * history window counts only the messages before the answered one, so it asks for one fewer.
+ */
+const EMAIL_REVIEW_THREAD_MESSAGES = 10;
+const EMAIL_REVIEW_PRECEDING_MESSAGES = EMAIL_REVIEW_THREAD_MESSAGES - 1;
 /** The claims a review gets before its conversation goes to a person with `review_unavailable`. */
 export const EMAIL_REVIEW_MAX_ATTEMPTS = 4;
 
@@ -130,7 +134,8 @@ class ReviewClaimLost extends Error {
   }
 }
 
-type QueueAutoRefusal = Extract<Awaited<ReturnType<HeldReplyProducerPort["queueAuto"]>>, { ok: false }>["refused"];
+/** Why queueing was refused when the claim still holds: the result is then held for a teammate. */
+type QueueAutoRefusal = Exclude<Extract<Awaited<ReturnType<HeldReplyProducerPort["queueAuto"]>>, { ok: false }>["refused"], "claim_lost">;
 
 /**
  * Why an answer the decision published waits for a teammate once queueing it was refused (research
@@ -203,6 +208,12 @@ const reviewClaimOf = (claim: ClaimedReview): ReviewClaim => ({
   leaseUntil: claim.reviewLeaseUntil,
 });
 
+/** The claim a review's result is published under: email's scope checks it in the publishing transaction. */
+const publicationClaimOf = (claim: ClaimedReview): NonNullable<QueueAutoInput["reviewClaim"]> => ({
+  attempt: claim.reviewAttempts,
+  leaseUntil: claim.reviewLeaseUntil,
+});
+
 const decisionReason = (decision: PublicationDecision): string => {
   if (decision.kind === "hold") return decision.reason;
   return decision.kind === "no_draft" ? decision.handoffReason ?? "human_owned" : "none";
@@ -231,8 +242,9 @@ const decisionReason = (decision: PublicationDecision): string => {
  * 8. completes revision R only, so mail that made R+1 meanwhile keeps its due time and runs next.
  *
  * Every write is the claim's: a worker whose lease ran out and was claimed over checks its claim
- * before it charges, publishes or hands off, and its completion, release and retry are fenced on
- * the claim, so it stops without touching what the claim that took over decided. A failure retries
+ * before it charges or hands off, publishes only while the held-reply transaction finds the claim
+ * still holding under the thread's lock, and its completion, release and retry are fenced on the
+ * claim, so it stops without touching what the claim that took over decided. A failure retries
  * at a backoff, and the last attempt hands the thread off as `review_unavailable`.
  */
 export class EmailReviewRunner {
@@ -351,6 +363,7 @@ export class EmailReviewRunner {
       ownershipVersion: turn.ownershipVersion,
       policy: { ref: emailMailboxPolicyRef(mailbox.id), version: mailbox.policyVersion },
       reviewRef,
+      reviewClaim: publicationClaimOf(claim),
       // An incomplete verdict shows as the held reply's coverage, so a teammate reads why it waits.
       facts: factsWithCompleteness(turn.facts, completeness),
       draft: turn.draft,
@@ -358,6 +371,7 @@ export class EmailReviewRunner {
     if (decision.kind === "publish") {
       const queued = await this.deps.heldReplies.queueAuto(result);
       if (queued.ok) return { outcome: "queued_auto", reviewAgainUnder: null };
+      if (queued.refused === "claim_lost") throw new ReviewClaimLost();
       this.count("email_auto_queue_refusals_total", "Automatic sends the held-reply service refused to queue, by refusal.", {
         refused: queued.refused,
       });
@@ -404,6 +418,7 @@ export class EmailReviewRunner {
     holdReason: HoldReason,
   ): Promise<RevisionResult> {
     const held = await this.deps.heldReplies.hold({ ...result, holdReason });
+    if ("refused" in held) throw new ReviewClaimLost();
     if (held.state === "pending" && !held.duplicate) this.observeReceiptToHeldReply(claim);
     // Born superseded because the policy moved under the review: it runs again under the new one.
     const reviewAgain = held.state === "superseded" && await this.policyMoved(mailbox);
@@ -448,7 +463,7 @@ export class EmailReviewRunner {
         conversationId: claim.conversationId,
         respondToMessageId,
         executionMode: "review",
-        historyWindow: { maxMessages: EMAIL_REVIEW_HISTORY_MESSAGES },
+        historyWindow: { maxMessages: EMAIL_REVIEW_PRECEDING_MESSAGES },
       }),
       resultAttributes: (result) => ({ result: result.kind }),
     });

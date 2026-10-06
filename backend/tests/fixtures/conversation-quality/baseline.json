@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T22:39:11.560Z",
+  "generatedAt": "2026-10-06T22:55:05.112Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -136,6 +136,16 @@
       "status": "pass",
       "passRate": 1,
       "samples": 3
+    },
+    "email-review-covered-refund": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "email-review-uncovered-nonprofit-discount": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
     }
   }
 }

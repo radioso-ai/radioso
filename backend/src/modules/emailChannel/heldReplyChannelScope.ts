@@ -46,6 +46,9 @@ interface EmailAutoSendCapability {
   createId: () => string;
 }
 
+/** The review claim a review runner publishes under, as handoff hands it to the channel. */
+type ReviewClaim = Parameters<HeldReplyChannelScope["authorizePublication"]>[1];
+
 /** The refusal of a scope composed without automatic sending, as when the deployment does not run `auto`. */
 const AUTO_UNSUPPORTED = { authorized: false, code: "auto_unsupported" } as const;
 type AutoDispatchVerdict = AutoSendVerdict | typeof AUTO_UNSUPPORTED;
@@ -55,7 +58,9 @@ type AutoDispatchVerdict = AutoSendVerdict | typeof AUTO_UNSUPPORTED;
  * mailbox row against a policy change until the transaction ends — a release that locked first
  * sends under the version it read, and a policy change that committed first leaves the release a
  * newer version to be refused on — and queues a released draft's send on the transaction's outbox.
- * Handoff compares the versions; email decides whether the mailbox can still send.
+ * Handoff compares the versions; email decides whether the mailbox can still send. A review's result
+ * is published only while the review runner's claim on the thread's review still holds, checked
+ * under the thread's lock in the same transaction (research B17).
  *
  * Automatic sends (research B9) are queued against the thread's send budget and keyed by the held
  * reply, then authorized again and recorded as a send intent when they are materialized. The
@@ -66,6 +71,8 @@ export class EmailHeldReplyChannelScope implements HeldReplyChannelScope {
   constructor(private readonly deps: {
     mailboxes: Pick<EmailMailboxRepository, "lockPolicy">;
     domains: Pick<EmailDomainRepository, "findById">;
+    /** The review claims a held or queued result is published under. */
+    reviews: Pick<EmailThreadRepository, "lockReviewClaim">;
     /** Granted where the deployment runs `auto`; absent, every automatic send is refused. */
     autoSend?: EmailAutoSendCapability;
   }) {}
@@ -192,6 +199,15 @@ export class EmailHeldReplyChannelScope implements HeldReplyChannelScope {
       provider: autoSend.provider,
       suppliedRfcMessageId: outboundMessageId(domain.domain, id),
     });
+  }
+
+  /**
+   * Whether the review runner's claim still holds the thread's review, with the thread's link row
+   * locked until the transaction ends: a claim another worker took over after its lease ran out,
+   * or one whose review was completed since, publishes nothing (research B17).
+   */
+  async authorizePublication(conversationId: string, claim: ReviewClaim): Promise<boolean> {
+    return this.deps.reviews.lockReviewClaim({ conversationId, attempt: claim.attempt, leaseUntil: claim.leaseUntil });
   }
 
   /** The authority an automatic send carries: the versions it was bound to, as the mailbox is now. */

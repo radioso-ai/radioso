@@ -5,6 +5,7 @@ import type { Selectable } from "kysely";
 import type {
   DeliveryFailureReadStore,
   DeliveryFailureRecord,
+  DeliveryFailureWait,
   DeliveryFailureWriteStore,
 } from "../../modules/customerReplyDelivery/deliveryFailures.js";
 import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
@@ -125,19 +126,39 @@ export class ConversationDeliveryFailureRepository implements DeliveryFailureWri
     return this.list(workspaceId, query, { includeCleared: true });
   }
 
-  private async list(
-    workspaceId: string,
-    query: ListQuery,
-    options: { includeCleared: boolean },
-  ): Promise<DeliveryFailureRecord[]> {
+  /** The ranking columns alone, oldest first. */
+  async listOldestOpen(workspaceId: string, query: Parameters<DeliveryFailureReadStore["listOldestOpen"]>[1]): Promise<DeliveryFailureWait[]> {
+    const rows = await this.failures(workspaceId, query.agentId, { includeCleared: false })
+      .select(["f.id", "f.conversation_id", "f.failure_kind", "f.detail_code", "f.opened_at"])
+      .orderBy("f.opened_at", "asc")
+      .orderBy("f.id", "asc")
+      .limit(query.limit)
+      .execute();
+    return rows.map((row) => ({
+      id: row.id,
+      conversationId: row.conversation_id,
+      // The table's CHECK holds the column to the module's vocabulary.
+      kind: row.failure_kind as DeliveryFailureWait["kind"],
+      detailCode: row.detail_code,
+      openedAt: row.opened_at,
+    }));
+  }
+
+  async countOpen(workspaceId: string, query: Parameters<DeliveryFailureReadStore["countOpen"]>[1]): Promise<number> {
+    const row = await this.failures(workspaceId, query.agentId, { includeCleared: false })
+      .select((eb) => eb.fn.countAll<string>().as("count"))
+      .executeTakeFirstOrThrow();
+    return Number(row.count);
+  }
+
+  /** The workspace's failures, the open ones unless `includeCleared`; with `agentId`, on that agent's conversations. */
+  private failures(workspaceId: string, agentId: string | undefined, options: { includeCleared: boolean }) {
     let select = this.db
       .selectFrom("conversation_delivery_failures as f")
-      .selectAll("f")
       .where("f.workspace_id", "=", workspaceId);
     if (!options.includeCleared) {
       select = select.where("f.cleared_at", "is", null);
     }
-    const { agentId, after } = query;
     if (agentId !== undefined) {
       select = select.where((eb) => eb.exists(
         eb.selectFrom("conversations as c")
@@ -146,6 +167,16 @@ export class ConversationDeliveryFailureRepository implements DeliveryFailureWri
           .where("c.agent_id", "=", agentId),
       ));
     }
+    return select;
+  }
+
+  private async list(
+    workspaceId: string,
+    query: ListQuery,
+    options: { includeCleared: boolean },
+  ): Promise<DeliveryFailureRecord[]> {
+    let select = this.failures(workspaceId, query.agentId, options).selectAll("f");
+    const { after } = query;
     if (after) {
       select = select.where((eb) => eb.or([
         eb("f.opened_at", "<", after.openedAt),

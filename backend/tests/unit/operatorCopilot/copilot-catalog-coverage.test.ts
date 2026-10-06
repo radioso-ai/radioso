@@ -67,7 +67,9 @@ describe("operator copilot catalog coverage", () => {
   //   102 -> 111 the email channel's nine settings writes (mailboxes, sending domains, the
   //   setup check, inbound retries) are deferred (spec 1403 FR-047): they decide which customer
   //   mail reaches which agent, so each needs a proposal card. Ray reads the channel instead.
-  const maxDeferredCatalogExclusions = 111;
+  //   111 -> 112 reconcileEmailDomain joins them: adopting a provider registration another
+  //   writer may hold is an operator's explicit decision, deferred with the other domain writes.
+  const maxDeferredCatalogExclusions = 112;
 
   it("keeps provider input-token caching outside Ray's operation catalog", () => {
     expect(internalRuntimeCoverageExclusions.providerInputTokenCaching).toMatchObject({

@@ -53,9 +53,11 @@ export const countEmailSendIntentState = (
 
 /**
  * Applies one event to a send intent through the repository's version fence (research B18). A
- * lost race re-applies the event to the intent as it now is, so a terminal intent drops it; a
- * transition's delivery-failure effects commit in its transaction. `create_resend_intent` is left
- * to the caller that asked for the resend: it is the operator resolution's to act on.
+ * lost race re-applies the event to the intent as it now is, which the state machine judges on
+ * that row: a terminal intent drops it, and an unsent settlement read before another claim froze
+ * the request no longer applies. A transition's delivery-failure effects commit in its
+ * transaction. `create_resend_intent` is left to the caller that asked for the resend: it is the
+ * operator resolution's to act on.
  */
 export class SendIntentWriter {
   constructor(private readonly deps: {
@@ -93,6 +95,7 @@ export class SendIntentWriter {
         help: "Send-intent transitions re-applied after losing the version fence, by writer.",
         labels: { writer: options.writer },
       });
+      // Re-applied to the row as it is now, never to the one the writer read.
       expectedVersion = result.current.version;
       previousState = result.current.state;
     }
@@ -131,6 +134,8 @@ const applyFailureEffect = async (
       });
       return;
     case "retarget_delivery_failure":
+      // Only an attempt whose own failure is still open asks for this: the machine never retargets
+      // from an attempt a teammate resent, whose message's failure is the resend's.
       await failures.retarget({
         conversationId: intent.conversationId,
         messageId: intent.messageId,

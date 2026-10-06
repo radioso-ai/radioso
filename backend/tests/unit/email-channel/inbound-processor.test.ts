@@ -875,7 +875,7 @@ describe("EmailInboundProcessor: review scheduling (stage 2)", () => {
       conversationId,
       respondToMessageId: third.deliveries[0].messageId,
       executionMode: "review",
-      historyWindow: { maxMessages: 10 },
+      historyWindow: { maxMessages: 9 },
     }));
     expect(h.conversations.get(conversationId)?.messageIds).toEqual(
       [first, second, third].map((received) => received.deliveries[0].messageId),
@@ -1061,6 +1061,83 @@ describe("EmailInboundProcessor: overlapping workers (research B15)", () => {
     expect(await h.inbound.listEventDeliveries(event.id)).toEqual([expect.objectContaining({ state: "done" })]);
     expect(h.inbound.events.get(event.id)).toMatchObject({ state: "processed", attempts: 2 });
     expect(h.logger.warn).toHaveBeenCalledWith({ eventId: event.id, attempt: 1, step: "reserve_thread" }, "email_inbound_claim_lost");
+  });
+
+  /** Runs `before` once, right before the processor writes its first delivery of the event. */
+  const beforeFirstInsert = (h: ReturnType<typeof harness>, before: () => Promise<unknown>) => {
+    const original = h.inbound.insertClaimedDelivery.bind(h.inbound);
+    let fired = false;
+    vi.spyOn(h.inbound, "insertClaimedDelivery").mockImplementation(async (claim, input) => {
+      if (!fired) {
+        fired = true;
+        await before();
+      }
+      return original(claim, input);
+    });
+  };
+
+  it("writes no delivery for a worker whose claim was taken over before its first insert", async () => {
+    const h = harness();
+    const mailbox = h.seedMailbox();
+    const providerObjectId = randomUUID();
+    h.messages.set(providerObjectId, h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
+    const event = h.inbound.seedEvent({ providerObjectId });
+    let reclaimed: string | undefined;
+    beforeFirstInsert(h, async () => {
+      reclaimed = await h.reclaimAndFinish(event.id);
+    });
+
+    expect(await h.runEvent(event.id)).toBe("superseded");
+
+    expect(reclaimed).toBe("processed");
+    expect(await h.inbound.listEventDeliveries(event.id)).toEqual([expect.objectContaining({ mailboxId: mailbox.id, state: "done" })]);
+    expect(h.conversations.size).toBe(1);
+    expect(h.inbound.events.get(event.id)).toMatchObject({ state: "processed", attempts: 2 });
+    expect(h.logger.warn).toHaveBeenCalledWith({ eventId: event.id, attempt: 1, step: "insert_delivery" }, "email_inbound_claim_lost");
+  });
+
+  it("leaves no pending delivery under the settled event when the relay token rotated before its first insert", async () => {
+    const h = harness();
+    const mailbox = h.seedMailbox();
+    const providerObjectId = randomUUID();
+    h.messages.set(providerObjectId, h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
+    const event = h.inbound.seedEvent({ providerObjectId });
+    let reclaimed: string | undefined;
+    beforeFirstInsert(h, async () => {
+      // This worker routed by the old token, then stalled; the token rotates past its grace, and the
+      // claim that takes over finds the address routes nowhere and settles the event.
+      h.mailboxes.records.set(mailbox.id, { ...h.mailboxes.records.get(mailbox.id)!, relayToken: token(), previousRelayToken: null });
+      reclaimed = await h.reclaimAndFinish(event.id);
+    });
+
+    expect(await h.runEvent(event.id)).toBe("superseded");
+
+    expect(reclaimed).toBe("processed");
+    expect(await h.inbound.listEventDeliveries(event.id)).toEqual([
+      expect.objectContaining({ mailboxId: null, state: "done", dispositionReason: "no_mailbox" }),
+    ]);
+    expect(h.conversations.size).toBe(0);
+    expect(h.inbound.events.get(event.id)).toMatchObject({ state: "processed", attempts: 2 });
+  });
+
+  it("writes no failed delivery for a worker giving up after its claim was taken over", async () => {
+    const h = harness();
+    const mailbox = h.seedMailbox();
+    const providerObjectId = randomUUID();
+    const event = h.inbound.seedEvent({ providerObjectId, envelope: { to: [h.relayAddressOf(mailbox)] } });
+    h.fetchFailures.push(new InboundFetchError(false, "message_not_found"));
+    let reclaimed: string | undefined;
+    beforeFirstInsert(h, async () => {
+      h.messages.set(providerObjectId, h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
+      reclaimed = await h.reclaimAndFinish(event.id);
+    });
+
+    expect(await h.runEvent(event.id)).toBe("superseded");
+
+    expect(reclaimed).toBe("processed");
+    expect(await h.inbound.listEventDeliveries(event.id)).toEqual([expect.objectContaining({ mailboxId: mailbox.id, state: "done" })]);
+    expect(h.inbound.events.get(event.id)).toMatchObject({ state: "processed", attempts: 2 });
+    expect(h.logger.warn).toHaveBeenCalledWith({ eventId: event.id, attempt: 1, step: "insert_delivery" }, "email_inbound_claim_lost");
   });
 
   it("indexes once when two workers hold the same ingested snapshot: the review revision moves once", async () => {

@@ -380,7 +380,7 @@ describe("held replies contract", () => {
         const lockPolicy = vi.fn((mailboxId: string) => mailboxes.findActiveById(mailboxId));
         const h = await harness({
           channel: {
-            scope: new EmailHeldReplyChannelScope({ mailboxes: { lockPolicy }, domains }),
+            scope: new EmailHeldReplyChannelScope({ mailboxes: { lockPolicy }, domains, reviews: { lockReviewClaim: async () => true } }),
             delivery: new CustomerReplyDeliveryDispatcher({
               email: new EmailCustomerReplyDeliverer({ mailboxes, domains, ownership: { versionOf: async () => 0 } }),
             }),

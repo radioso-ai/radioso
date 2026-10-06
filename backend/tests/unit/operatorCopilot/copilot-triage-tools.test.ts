@@ -73,7 +73,7 @@ const deliveryFailure = (overrides: Record<string, unknown> = {}) => ({
 
 const dependencies = (overrides: Partial<WorkspaceTriageCopilotToolDependencies> = {}): WorkspaceTriageCopilotToolDependencies => ({
   pendingApprovals: { listPending: vi.fn(async () => []) },
-  deliveryFailures: { listOpen: vi.fn(async () => ({ items: [], nextCursor: null })) },
+  deliveryFailures: { longestWaiting: vi.fn(async () => ({ items: [], total: 0 })) },
   chatHistoryService: {
     getConversation: vi.fn(),
     getConversationTurn: vi.fn(),
@@ -463,7 +463,7 @@ describe("workspace_triage", () => {
 describe("workspace_triage delivery failures", () => {
   it("ranks a reply that may not have reached the customer among the escalations, by its wait", async () => {
     const result = await digest(dependencies({
-      deliveryFailures: { listOpen: vi.fn(async () => ({ items: [deliveryFailure()], nextCursor: null })) },
+      deliveryFailures: { longestWaiting: vi.fn(async () => ({ items: [deliveryFailure()], total: 1 })) },
       chatHistoryService: {
         getConversation: vi.fn(),
         getConversationTurn: vi.fn(),
@@ -486,62 +486,47 @@ describe("workspace_triage delivery failures", () => {
   });
 
   it("reads the failures only under the conversation takeover permission, stating the gap otherwise", async () => {
-    const listOpen = vi.fn(async () => ({ items: [deliveryFailure()], nextCursor: null }));
+    const longestWaiting = vi.fn(async () => ({ items: [deliveryFailure()], total: 1 }));
     const permissions = new Set([...ALL_PERMISSIONS].filter((permission) => permission !== "workspace.conversation.takeover"));
 
-    const result = await digest(dependencies({ deliveryFailures: { listOpen } }), context(permissions));
+    const result = await digest(dependencies({ deliveryFailures: { longestWaiting } }), context(permissions));
 
-    expect(listOpen).not.toHaveBeenCalled();
+    expect(longestWaiting).not.toHaveBeenCalled();
     expect(result.items.map((item) => item.kind)).not.toContain("delivery_failed");
     expect(result.sources).toContainEqual({ source: "delivery_failures", status: "unauthorized", total: null, included: 0 });
   });
 
-  it("narrows the failures to the requested agent and holds them to the source cap", async () => {
-    const failures = Array.from({ length: 12 }, (_, index) => deliveryFailure({
+  it("narrows the failures to the requested agent and reads only the longest waits the source cap lists", async () => {
+    const failures = Array.from({ length: 10 }, (_, index) => deliveryFailure({
       id: `failure-${index}`,
       conversationId: `conversation-${index}`,
-      openedAt: new Date(Date.parse("2026-08-26T05:00:00.000Z") - index * 60_000),
+      openedAt: new Date(Date.parse("2026-08-26T05:00:00.000Z") + index * 60_000),
     }));
-    const listOpen = vi.fn(async () => ({ items: failures, nextCursor: null }));
-    const [descriptor] = createWorkspaceTriageCopilotTools(dependencies({ deliveryFailures: { listOpen } }));
+    const longestWaiting = vi.fn(async () => ({ items: failures, total: 12 }));
+    const [descriptor] = createWorkspaceTriageCopilotTools(dependencies({ deliveryFailures: { longestWaiting } }));
 
     const result = await descriptor.createTool(context()).invoke({ agentId: "agent-1" }, {} as never);
 
-    expect(listOpen).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ agentId: "agent-1" }));
+    expect(longestWaiting).toHaveBeenCalledExactlyOnceWith("workspace-1", { agentId: "agent-1", limit: 10 });
     expect(result.items.filter((item) => item.kind === "delivery_failed")).toHaveLength(10);
-    // Longest wait first: the oldest failure, opened last in the newest-first read, leads.
-    expect(result.items[0].conversationId).toBe("conversation-11");
+    // Longest wait first: the owning reader serves the oldest failure first.
+    expect(result.items[0].conversationId).toBe("conversation-0");
     expect(result.sources).toContainEqual({ source: "delivery_failures", status: "ok", total: 12, included: 10 });
   });
 });
 
+/** A held reply as the owning reader ranks it: who waits and since when, never its draft. */
 const heldReply = (overrides: Record<string, unknown> = {}) => ({
   id: "44444444-4444-4444-8444-444444444444",
   conversationId: "conversation-held",
   agentId: "agent-1",
-  state: "pending" as const,
   holdReason: "draft_mode",
-  facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: false, reason: null } } as const,
-  dependsOnSuppressedAction: false,
-  suppressedEffects: [],
-  draftText: "Your refund was issued on Monday.",
-  editedText: null,
-  answersMessageId: "55555555-5555-4555-8555-555555555555",
-  releasedMessageId: null,
-  trace: null,
   createdAt: new Date("2026-08-26T05:45:00.000Z"),
-  decidedAt: null,
-  releaserUserId: null,
-  editorUserId: null,
-  discardedByUserId: null,
-  supersededReason: null,
-  attentionOpen: true,
   ...overrides,
 });
 
 const heldReplyPort = (items: Array<ReturnType<typeof heldReply>>) => ({
-  list: vi.fn(async () => ({ items, nextCursor: null })),
-  current: vi.fn(async () => ({ heldReply: null })),
+  longestWaiting: vi.fn(async () => ({ items, total: items.length })),
 });
 
 describe("workspace_triage held replies", () => {
@@ -560,17 +545,17 @@ describe("workspace_triage held replies", () => {
       .toEqual(["conversation-held", "conversation-approval"]);
     expect(result.items[0]).toMatchObject({
       urgency: "blocking",
-      title: "Your refund was issued on Monday.",
-      detail: "draft_mode",
+      title: "draft_mode",
+      detail: null,
       since: "2026-08-26T05:45:00.000Z",
       agentId: "agent-1",
       dashboardUrl: "/w/acme/activity?itemKind=chat&itemId=conversation-held",
     });
     expect(result.sources).toContainEqual({ source: "approvals", status: "ok", total: 2, included: 2 });
     // Read as the signed-in teammate, so the held-reply port applies its own access rules.
-    expect(heldReplies.list).toHaveBeenCalledWith(
+    expect(heldReplies.longestWaiting).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ workspaceId: "workspace-1", userId: "operator-1" }),
-      expect.objectContaining({ attention: "open" }),
+      { limit: 10 },
     );
   });
 
@@ -580,7 +565,7 @@ describe("workspace_triage held replies", () => {
 
     await descriptor.createTool(context()).invoke({ agentId: "agent-1" }, {} as never);
 
-    expect(heldReplies.list).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ agentId: "agent-1" }));
+    expect(heldReplies.longestWaiting).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ agentId: "agent-1" }));
   });
 
   it("reads the held replies only under the approvals permission", async () => {
@@ -589,7 +574,7 @@ describe("workspace_triage held replies", () => {
 
     const result = await digest(dependencies({ heldReplies }), context(permissions));
 
-    expect(heldReplies.list).not.toHaveBeenCalled();
+    expect(heldReplies.longestWaiting).not.toHaveBeenCalled();
     expect(result.sources).toContainEqual({ source: "approvals", status: "unauthorized", total: null, included: 0 });
   });
 });

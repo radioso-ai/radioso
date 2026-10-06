@@ -51,7 +51,8 @@ export interface SendRequestSnapshot {
   body: { text: string; html: string | null } | null;
 }
 
-export interface EmailSendIntentRecord extends SendIntentSnapshot {
+/** The state machine's `requestFrozen` is the record's `request`, read as the machine sees it. */
+export interface EmailSendIntentRecord extends Omit<SendIntentSnapshot, "requestFrozen"> {
   id: string;
   workspaceId: string;
   mailboxId: string;
@@ -200,6 +201,7 @@ const snapshotOf = (intent: EmailSendIntentRecord): SendIntentSnapshot => ({
   providerMessageId: intent.providerMessageId,
   deliveredRfcMessageId: intent.deliveredRfcMessageId,
   failureCode: intent.failureCode,
+  requestFrozen: intent.request !== null,
   outcomeUnknown: intent.outcomeUnknown,
   uncertainResolution: intent.uncertainResolution,
   uncertainResolvedByUserId: intent.uncertainResolvedByUserId,
@@ -288,7 +290,8 @@ export class EmailSendIntentRepository {
 
   /**
    * Applies one event to the intent at `expectedVersion`. `ignored` writes nothing; `conflict`
-   * means another writer moved the intent first, and carries the row as it is now.
+   * means another writer moved the intent first, and carries the row as it is now. The machine
+   * reads the row's frozen request too, so a freeze landed first fences out an unsent settlement.
    */
   async transition(id: string, expectedVersion: number, event: SendIntentEvent): Promise<SendIntentTransitionOutcome> {
     const current = await this.findById(id);
@@ -324,7 +327,8 @@ export class EmailSendIntentRepository {
   /**
    * Freezes the request on the first attempt and stamps `first_attempt_at`, which starts the
    * re-POST window. The stored request is sanitized, so the caller sends the request this returns,
-   * never the one it passed in. An intent frozen already reports `conflict` with that request.
+   * never the one it passed in. An intent frozen already, or settled as unsent, reports `conflict`
+   * with the row as it is: a freeze and an unsent settlement read at one version never both land.
    */
   async freezeRequest(
     id: string,

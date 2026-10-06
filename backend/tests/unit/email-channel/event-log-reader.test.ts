@@ -33,11 +33,12 @@ const setup = () => {
   const deliveries = {
     listMailboxLog: vi.fn(async () => ({ entries: [entry({}), entry({ state: "resolved", authResults: {} }), entry({ state: "failed" })], nextCursor: "cursor-id" })),
     countMailboxEvents: vi.fn(async () => ({ byDisposition: { drop: 2, ingest_only: 5 }, failed: 1 })),
+    countWorkspaceEvents: vi.fn(async (): Promise<Array<{ mailboxId: string | null; byDisposition: Record<string, number>; failed: number }>> => []),
     listWorkspaceLog: vi.fn(async () => ({ entries: [entry({ dispositionReason: "no_mailbox", disposition: "drop" })], nextCursor: null })),
     findLogEntry: vi.fn(async (): Promise<EventLogEntry | null> => null),
   };
   const reader = new EventLogReader({ mailboxes, deliveries, clock: () => now });
-  return { reader, deliveries, mailbox };
+  return { reader, deliveries, mailbox, mailboxes };
 };
 
 describe("EventLogReader", () => {
@@ -120,5 +121,30 @@ describe("EventLogReader", () => {
       lastReceivedAt: now.toISOString(),
     });
     expect(deliveries.countMailboxEvents).toHaveBeenCalledWith(mailbox.id, new Date(now.getTime() - 24 * 60 * 60 * 1000));
+  });
+
+  it("summarizes a window of the whole workspace: each active mailbox, mail no mailbox received, and removed mailboxes' retained events", async () => {
+    const { reader, deliveries, mailbox, mailboxes } = setup();
+    const quiet = mailboxes.seed({ workspaceId, domainId: "d", address: "sales@customer.test", lastReceivedAt: null });
+    const removed = mailboxes.seed({ workspaceId, domainId: "d", address: "old@customer.test", removedAt: now });
+    const alsoRemoved = mailboxes.seed({ workspaceId, domainId: "d", address: "older@customer.test", removedAt: now });
+    deliveries.countWorkspaceEvents.mockResolvedValueOnce([
+      { mailboxId: mailbox.id, byDisposition: { ingest_only: 5 }, failed: 1 },
+      { mailboxId: null, byDisposition: { drop: 3, undecided: 1 }, failed: 1 },
+      { mailboxId: removed.id, byDisposition: { drop: 1 }, failed: 0 },
+      { mailboxId: alsoRemoved.id, byDisposition: { drop: 2, ingest_only: 1 }, failed: 1 },
+    ]);
+
+    expect(await reader.summarizeWorkspace(workspaceId, 6)).toEqual({
+      window: "6h",
+      mailboxes: [
+        { mailboxId: mailbox.id, window: "6h", byDisposition: { ingest_only: 5 }, failed: 1, lastReceivedAt: now.toISOString() },
+        { mailboxId: quiet.id, window: "6h", byDisposition: {}, failed: 0, lastReceivedAt: null },
+      ],
+      noMailbox: { byDisposition: { drop: 3, undecided: 1 }, failed: 1 },
+      removedMailboxes: { byDisposition: { drop: 3, ingest_only: 1 }, failed: 1 },
+    });
+    expect(deliveries.countWorkspaceEvents).toHaveBeenCalledExactlyOnceWith(workspaceId, new Date(now.getTime() - 6 * 60 * 60 * 1000));
+    expect(deliveries.countMailboxEvents).not.toHaveBeenCalled();
   });
 });

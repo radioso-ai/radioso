@@ -157,7 +157,7 @@ const createService = (options: {
     conversations,
     ownership,
     changes: {
-      run: (work) => inUnitOfWork(() => work({ ownership, outbox: options.outbox ?? outbox, activity, heldReplies })),
+      run: (work) => inUnitOfWork(() => work({ conversations: lockedConversations, ownership, outbox: options.outbox ?? outbox, activity, heldReplies })),
     },
     replyWrites: {
       run: (work) => inUnitOfWork(() => work({ conversations: lockedConversations, ownership, reply: replyScope, activity, heldReplies })),
@@ -541,6 +541,37 @@ describe("ConversationOwnershipService", () => {
       expect(auditedActions(audit)).toEqual(["taken_over"]);
     });
 
+    it("locks the conversation before it creates or claims the ownership row, so a claim never races a change that holds the conversation", async () => {
+      const { service, ownership, steps } = createService();
+      const originalTakeOver = ownership.takeOver.bind(ownership);
+      vi.spyOn(ownership, "takeOver").mockImplementation(async (input) => {
+        steps.push("claim_ownership");
+        return originalTakeOver(input);
+      });
+
+      await service.takeOver(dana, { conversationId });
+
+      expect(steps.slice(0, steps.indexOf("commit") + 1)).toEqual([
+        "begin",
+        "lock_conversation",
+        "claim_ownership",
+        "activity:claimed",
+        "held_replies:supersede:takeover",
+        "held_replies:clear_discarded:takeover",
+        "commit",
+      ]);
+    });
+
+    it("answers not found, claiming nothing, when the conversation is gone by the time the takeover locks it", async () => {
+      const { service, ownership, lockedConversations, audit } = createService();
+      lockedConversations.lockForUpdate.mockResolvedValueOnce(false);
+
+      await expect(service.takeOver(dana, { conversationId }))
+        .rejects.toMatchObject({ statusCode: 404, code: "not_found" });
+      await expect(ownership.load(conversationId)).resolves.toBeNull();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
     it("returns not found for a conversation outside the actor's workspace", async () => {
       const { service } = createService();
 
@@ -611,6 +642,7 @@ describe("ConversationOwnershipService", () => {
         });
         expect(steps).toEqual([
           "begin",
+          "lock_conversation",
           "activity:claimed",
           "held_replies:supersede:takeover",
           "held_replies:clear_discarded:takeover",

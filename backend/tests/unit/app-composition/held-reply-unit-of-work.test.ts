@@ -92,8 +92,9 @@ const domainRow = (overrides: Record<string, unknown> = {}): Record<string, unkn
   workspace_id: workspaceId,
   domain: "customer.example",
   provider: "local",
-  provider_domain_id: null,
+  provider_domain_id: "local:customer.example",
   provider_region: null,
+  registration_status: "registered",
   dns_records: [],
   sending_status: "verified",
   receiving_status: "not_requested",
@@ -102,6 +103,7 @@ const domainRow = (overrides: Record<string, unknown> = {}): Record<string, unkn
   last_checked_at: null,
   next_check_at: null,
   status_changed_at: null,
+  refresh_requested_version: 0,
   removed_at: null,
   provider_cleanup_status: null,
   created_by_user_id: null,
@@ -227,6 +229,7 @@ const harness = (options: {
             return { version: 4 };
           },
           enqueueRelease: async () => undefined,
+          authorizePublication: async () => true,
           reserveAutoSend: async () => {
             log.push("reserve_auto_send");
             return autoChannel.budgetLeft;

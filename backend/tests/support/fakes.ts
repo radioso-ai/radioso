@@ -4626,14 +4626,16 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
   async listBeforeByConversationId(
     workspaceId: string,
     conversationId: string,
-    input: { before: { createdAt: Date; id: string }; limit: number },
+    input: { beforeMessageId: string; limit: number },
   ): Promise<MessageRecord[]> {
     if (input.limit <= 0) return [];
-    const boundary = input.before.createdAt.getTime();
-    return [...(this.items.get(conversationId) ?? [])]
-      .filter((message) => message.workspaceId === workspaceId)
+    const messages = [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
+    const target = messages.find((message) => message.id === input.beforeMessageId);
+    if (!target) return [];
+    const boundary = target.createdAt.getTime();
+    return messages
       .filter((message) => message.createdAt.getTime() < boundary
-        || (message.createdAt.getTime() === boundary && message.id < input.before.id))
+        || (message.createdAt.getTime() === boundary && message.id < target.id))
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id))
       .slice(-input.limit);
   }

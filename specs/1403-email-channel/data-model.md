@@ -39,20 +39,32 @@ A customer-owned domain verified for sending on behalf of one workspace. Its rec
 | `provider` | text | no | CHECK IN (`resend`, `local`) |
 | `provider_domain_id` | text | yes | null while the row is a registration claim |
 | `provider_region` | text | yes | |
+| `registration_status` | text | no | default `registering`; CHECK IN (`registering`,`needs_reconciliation`,`registered`); CHECK `registered` exactly when `provider_domain_id` is set |
 | `dns_records` | jsonb | no | default `'[]'`; `DnsRecordView[]` |
 | `sending_status` | text | no | default `pending`; CHECK IN (`pending`,`verified`,`failed`) |
 | `receiving_status` | text | no | default `not_requested`; CHECK IN (`not_requested`,`pending`,`verified`,`failed`) |
 | `receiving_confirmed_by_user_id` | uuid | yes | typed confirmation (FR-006a) |
 | `receiving_confirmed_at` | timestamptz | yes | |
 | `last_checked_at`, `next_check_at`, `status_changed_at` | timestamptz | yes | refresh cadence |
+| `refresh_requested_version` | integer | no | default 0; bumped by each provider domain event; a refresh records its reading only while the version it read is current |
 | `removed_at` | timestamptz | yes | authority revoked first; history kept (FR-006b) |
 | `provider_cleanup_status` | text | yes | CHECK IN (`pending`,`done`,`failed`) |
 | `created_by_user_id` | uuid | yes | |
 | `created_at`, `updated_at` | timestamptz | no | default `now()` |
 
 - Unique: `email_domains_active_domain_uniq` ON (`domain`) WHERE `removed_at IS NULL` (FR-003).
-- Registration claim: an active row with a null `provider_domain_id`. The workspace inserts it, holding the domain, before calling the provider, then records the provider's id, region, records and statuses on the same row. It has no `next_check_at`, so the readiness refresh skips it. When the answer was lost or never recorded, the next registration attempt, a verify, or a removal finds the provider's registration by name and records it on the claim; a claim the provider refuses, or whose name the provider holds outside this deployment, is deleted (nothing references a claim). Another workspace's attempt meets the claim and is refused `claimed_elsewhere` without calling the provider. Provider cleanup skips a removed row whose registration an active row has since adopted.
-- Indexes: (`workspace_id`); (`next_check_at`) WHERE `removed_at IS NULL`; (`domain`) WHERE `receiving_status = 'verified' AND removed_at IS NULL` (direct-rule lookup).
+- Domain states, by registration and removal:
+
+  | State | Row | Reached by | Leaves by |
+  |---|---|---|---|
+  | `registering` | active, `provider_domain_id` null | a claim, inserted before the provider is called; a removal of the name still being cleaned up refuses it (`409 domain_removal_pending`), and another workspace's attempt meets it and is refused `claimed_elsewhere` without calling the provider | the create's answer recorded (`registered`); the provider's `already_registered` (`needs_reconciliation`); the provider refusing the name (row deleted: nothing references a claim) |
+  | `needs_reconciliation` | active, `provider_domain_id` null | the provider already holds the name: an operations domain, another deployment's sharing the account, or one whose create answer was lost. Nothing ties it to this claim, so nothing adopts it automatically; a mailbox, a check or receiving on it is refused `409 domain_needs_reconciliation` | an operator's reconcile (`registered`): adopted under the name's row locks, refused while a removal of the name is still being cleaned up |
+  | `registered` | active, `provider_domain_id` set | a recorded create answer or an adoption | removal |
+  | `removing` | `removed_at` set, `provider_cleanup_status` `pending` or `failed` | removal, which revokes authority at once and calls no provider; the sweep's cleanup is due at once, and a failed one retries an hour later | the cleanup recorded `done`: the provider registration recorded on the row is deleted, and a removed claim has none. A create answered after its claim was removed is handed to that claim's cleanup while it is still `removing` |
+  | `removed` | `provider_cleanup_status` `done` | the cleanup | final: no later cleanup attempt reopens it |
+
+  While a name is `removing`, it can be neither claimed nor adopted. `claim` and the reconcile's adoption lock the name's active and `removing` rows (`SELECT ... FOR UPDATE`) and decide on their committed state, and the reconcile also checks before its provider lookup, so an adoption never records a registration the cleanup is deleting. Provider calls run outside every transaction.
+- Indexes: (`workspace_id`); (`domain`) WHERE `provider_cleanup_status IN ('pending','failed')` (the removal fence); (`next_check_at`) WHERE `removed_at IS NULL`; (`domain`) WHERE `receiving_status = 'verified' AND removed_at IS NULL` (direct-rule lookup).
 
 `DnsRecordView`: `{ purpose: "dkim" | "spf" | "return_path" | "receiving_mx" | "dmarc", type: "TXT" | "MX" | "CNAME", name, value, priority?, status: "pending" | "verified" | "failed" | "advisory" }`.
 
@@ -362,17 +374,23 @@ type EmailChannelContext = {
 | State | Event | Next | Side effects |
 |---|---|---|---|
 | (none) | handler first claim (operator triggers) or materialize (auto) | `queued` | |
-| `queued` | first-attempt revalidation fails (operator triggers) | `halted` | `delivery_failed` (`halted`); resend only through audited resolution |
+| `queued`, request not frozen | first-attempt revalidation fails (every trigger) | `halted` | `delivery_failed` (`halted`); resend only through audited resolution |
+| `queued`, request not frozen | automatic authority or budget narrowed before the freeze (`auto_reply`) | `failed` | `delivery_failed` (`failed`, the refusal's code) |
+| `queued`, request frozen | a revalidation or revocation read before another claim froze the request | unchanged | refused on the row as it is; the claim that lost leaves the send to the claim that froze it and returns the action to the outbox |
 | `queued` | provider accepted | `accepted` | ids recorded; `next_reconcile_at = now() + 24h` |
 | `queued` | definite rejection | `failed` | `delivery_failed` |
 | `queued` | unknown outcome, authority still valid, inside `first_attempt_at + 23h` | `queued` | `outcome_unknown_since`; scheduled re-POST, same key and same snapshot |
 | `queued` | unknown outcome and authority since revoked, or past the window | `uncertain` | `delivery_failed` (`uncertain`); never re-POSTed |
+| `queued` | outbox gave up, request never frozen | `failed` | `delivery_failed` (`failed`, `dispatch_exhausted`) |
+| `queued` | outbox gave up, request frozen or outcome unknown | `uncertain` | `outcome_unknown_since`; `delivery_failed` (`uncertain`) |
 | `accepted` | delivered (event or lookup) | `delivered` | clears an open failure (`later_delivery`) |
 | `accepted` | bounced or suppressed (event, lookup or inbound DSN) | `bounced` | `delivery_failed` |
 | `accepted` | failed | `failed` | `delivery_failed` |
 | `accepted` | reconcile lookup cannot settle | `uncertain` | `delivery_failed` |
-| `uncertain` | late provider evidence: delivered | `delivered` | resolution `provider_evidence`; failure cleared |
-| `uncertain` | late provider evidence: bounced or failed | `bounced` / `failed` | resolution `provider_evidence`; failure retargeted |
+| `uncertain`, unresolved | late provider evidence: delivered | `delivered` | resolution `provider_evidence`; failure cleared |
+| `uncertain`, unresolved | late provider evidence: bounced or failed | `bounced` / `failed` | resolution `provider_evidence`; failure retargeted |
+| `uncertain`, resolved `marked_sent` | late provider evidence | `delivered` / `bounced` / `failed` | resolution kept; a bounce or failure opens a new `delivery_failed` |
+| `uncertain`, resolved `resend_authorized` | late provider evidence for this attempt's provider id or Message-ID | `delivered` / `bounced` / `failed` | resolution kept; recorded on this attempt only. The resend owns the message's failure, which stays resolvable by its own evidence or an operator |
 | `uncertain` | operator `marked_sent` | `uncertain` (resolved) | audit; failure cleared `operator_resolved` |
 | `uncertain`, `halted` | operator `resend` (audited) | unchanged (resolved) | new intent under `…:resend:<n>` |
 | terminal | any later event | unchanged | metric only |

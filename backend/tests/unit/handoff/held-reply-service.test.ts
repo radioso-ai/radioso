@@ -30,6 +30,16 @@ const dana: OwnershipActor = { accountId, workspaceId, userId: "user-dana" };
 
 const conversation = { id: conversationId, workspaceId, sourceChannel: "email", channelContext: null } as unknown as ConversationRecord;
 
+/** The producer's claim on the review whose result it hands over, opaque to handoff. */
+const reviewClaim = { attempt: 2, leaseUntil: new Date("2026-10-07T09:05:00.000Z") };
+
+/** Holds `input` through `service`, expecting it recorded: a refused hold fails the test. */
+const recordedHold = async (service: HeldReplyService, input: HoldReplyInput) => {
+  const held = await service.hold(input);
+  if ("refused" in held) throw new Error(`hold refused: ${held.refused}`);
+  return held;
+};
+
 const holdInput = (overrides: Partial<HoldReplyInput> = {}): HoldReplyInput => ({
   workspaceId,
   conversationId,
@@ -189,6 +199,15 @@ class InMemoryHeldReplies implements HeldReplyWriteStore, HeldReplyReadStore {
     return this.list(inWorkspace, query).slice(0, query.limit);
   }
 
+  async listOldestOpen(inWorkspace: string, query: Parameters<HeldReplyReadStore["listOldestOpen"]>[1]) {
+    return this.list(inWorkspace, { ...query, after: null }).filter(isHeldReplyAttentionOpen).reverse().slice(0, query.limit)
+      .map(({ id, conversationId: ofConversation, agentId, holdReason, createdAt }) => ({ id, conversationId: ofConversation, agentId, holdReason, createdAt }));
+  }
+
+  async countOpen(inWorkspace: string, query: Parameters<HeldReplyReadStore["countOpen"]>[1]): Promise<number> {
+    return this.list(inWorkspace, { ...query, after: null, limit: 0 }).filter(isHeldReplyAttentionOpen).length;
+  }
+
   private list(inWorkspace: string, query: Parameters<HeldReplyReadStore["listAll"]>[1]): HeldReplyRecord[] {
     const { after } = query;
     return this.newestFirst().filter((row) => row.workspaceId === inWorkspace
@@ -238,6 +257,8 @@ interface FakeChannelState {
   lockedPolicyVersion: number | null;
   sendBudgetLeft: boolean;
   dispatch: { authorized: true } | { authorized: false; code: string };
+  /** Whether the producer's review claim still holds when the channel locks it. */
+  claimHolds: boolean;
 }
 
 const createService = (options: {
@@ -253,8 +274,13 @@ const createService = (options: {
     lockedPolicyVersion: options.lockedPolicyVersion === undefined ? 5 : options.lockedPolicyVersion,
     sendBudgetLeft: true,
     dispatch: { authorized: true },
+    claimHolds: true,
   };
   const channelScope: HeldReplyChannelScope = {
+    authorizePublication: vi.fn(async () => {
+      steps.push("authorize_publication");
+      return channelState.claimHolds;
+    }),
     lockPolicy: vi.fn(async () => {
       steps.push("lock_policy");
       return channelState.lockedPolicyVersion === null ? null : { version: channelState.lockedPolicyVersion };
@@ -406,7 +432,7 @@ describe("HeldReplyService", () => {
     it("holds a current review result as pending, under the conversation, ownership and policy locks", async () => {
       const { service, steps, heldReplies, channelScope, audit, publisher, metrics } = createService();
 
-      const held = await service.hold(holdInput());
+      const held = await recordedHold(service, holdInput());
 
       expect(held).toEqual({ heldReplyId: "held-1", state: "pending", duplicate: false });
       expect(steps).toEqual(["lock_conversation", "lock_ownership", "lock_policy"]);
@@ -445,8 +471,8 @@ describe("HeldReplyService", () => {
     it("is idempotent on the review ref: holding the same review again finds the first", async () => {
       const { service, heldReplies, audit } = createService();
 
-      const first = await service.hold(holdInput());
-      const again = await service.hold(holdInput({ draft: { text: "A different draft", presentation: {} } }));
+      const first = await recordedHold(service, holdInput());
+      const again = await recordedHold(service, holdInput({ draft: { text: "A different draft", presentation: {} } }));
 
       expect(again).toEqual({ heldReplyId: first.heldReplyId, state: "pending", duplicate: true });
       expect(heldReplies.rows.size).toBe(1);
@@ -458,7 +484,7 @@ describe("HeldReplyService", () => {
       const { service, heldReplies, audit, publisher } = createService();
       heldReplies.latestCustomerMessage.set(conversationId, "message-inbound-2");
 
-      const held = await service.hold(holdInput());
+      const held = await recordedHold(service, holdInput());
 
       expect(held).toEqual({ heldReplyId: "held-1", state: "superseded", duplicate: false });
       expect(heldReplies.rows.get("held-1")).toMatchObject({ supersededReason: "newer_inbound" });
@@ -472,7 +498,7 @@ describe("HeldReplyService", () => {
       const { service, heldReplies, ownership } = createService();
       await ownership.requestHandoff({ conversationId, workspaceId, reason: "review_unavailable" });
 
-      const held = await service.hold(holdInput({ ownershipVersion: 0 }));
+      const held = await recordedHold(service, holdInput({ ownershipVersion: 0 }));
 
       expect(held.state).toBe("superseded");
       expect(heldReplies.rows.get(held.heldReplyId)?.supersededReason).toBe("takeover");
@@ -480,28 +506,58 @@ describe("HeldReplyService", () => {
 
     it("is born superseded when the bound policy changed, or no channel can vouch for it", async () => {
       const changed = createService({ lockedPolicyVersion: 6 });
-      expect((await changed.service.hold(holdInput())).state).toBe("superseded");
+      expect((await recordedHold(changed.service, holdInput())).state).toBe("superseded");
       expect(changed.heldReplies.rows.get("held-1")?.supersededReason).toBe("policy_changed");
 
       const removed = createService({ lockedPolicyVersion: null });
-      expect((await removed.service.hold(holdInput())).state).toBe("superseded");
+      expect((await recordedHold(removed.service, holdInput())).state).toBe("superseded");
 
       const unclaimed = createService({ channel: "unregistered" });
-      expect((await unclaimed.service.hold(holdInput())).state).toBe("superseded");
+      expect((await recordedHold(unclaimed.service, holdInput())).state).toBe("superseded");
     });
 
     it("binds no policy when the producer has none, and checks only ownership and the inbound", async () => {
       const { service, steps } = createService();
 
-      const held = await service.hold(holdInput({ policy: null }));
+      const held = await recordedHold(service, holdInput({ policy: null }));
 
       expect(held.state).toBe("pending");
       expect(steps).toEqual(["lock_conversation", "lock_ownership"]);
     });
 
+    it("holds under the producer's review claim only once the channel authorizes it, after the policy lock", async () => {
+      const { service, steps, channelScope } = createService();
+
+      const held = await recordedHold(service, holdInput({ reviewClaim }));
+
+      expect(held).toEqual({ heldReplyId: "held-1", state: "pending", duplicate: false });
+      expect(steps).toEqual(["lock_conversation", "lock_ownership", "lock_policy", "authorize_publication"]);
+      expect(channelScope.authorizePublication).toHaveBeenCalledExactlyOnceWith(conversationId, reviewClaim);
+    });
+
+    it("records nothing once the producer's review claim no longer holds: a claim taken over publishes nothing", async () => {
+      const { service, heldReplies, channelState, audit, publisher, metrics } = createService();
+      channelState.claimHolds = false;
+
+      expect(await service.hold(holdInput({ reviewClaim }))).toEqual({ refused: "claim_lost" });
+
+      expect(heldReplies.rows.size).toBe(0);
+      expect(audit.record).not.toHaveBeenCalled();
+      expect(publisher.enqueue).not.toHaveBeenCalled();
+      expect(metrics.incrementCounter).not.toHaveBeenCalled();
+    });
+
+    it("asks no channel to authorize a result held under no claim", async () => {
+      const { service, channelScope } = createService();
+
+      await recordedHold(service, holdInput());
+
+      expect(channelScope.authorizePublication).not.toHaveBeenCalled();
+    });
+
     it("finds a held reply by its review ref", async () => {
       const { service } = createService();
-      const held = await service.hold(holdInput());
+      const held = await recordedHold(service, holdInput());
 
       expect(await service.findByReviewRef(conversationId, `email:${conversationId}:1`))
         .toEqual({ heldReplyId: held.heldReplyId, state: "pending" });
@@ -597,6 +653,27 @@ describe("HeldReplyService", () => {
       expect(await service.queueAuto(queueInput())).toEqual({ ok: false, refused: "send_budget" });
       expect(heldReplies.rows.size).toBe(0);
       expect(outbox.enqueue).not.toHaveBeenCalled();
+    });
+
+    it("queues under the producer's review claim only once the channel authorizes it, before reserving a send", async () => {
+      const { service, steps, channelScope } = createService();
+
+      expect(await service.queueAuto(queueInput({ reviewClaim }))).toEqual({ ok: true, heldReplyId: "held-1", duplicate: false });
+
+      expect(steps.slice(0, 5)).toEqual(["lock_conversation", "lock_ownership", "lock_policy", "authorize_publication", "reserve_auto_send"]);
+      expect(channelScope.authorizePublication).toHaveBeenCalledExactlyOnceWith(conversationId, reviewClaim);
+    });
+
+    it("refuses with claim_lost once the producer's review claim no longer holds, reserving and enqueueing nothing", async () => {
+      const { service, heldReplies, channelState, channelScope, outbox, metrics } = createService();
+      channelState.claimHolds = false;
+
+      expect(await service.queueAuto(queueInput({ reviewClaim }))).toEqual({ ok: false, refused: "claim_lost" });
+
+      expect(heldReplies.rows.size).toBe(0);
+      expect(channelScope.reserveAutoSend).not.toHaveBeenCalled();
+      expect(outbox.enqueue).not.toHaveBeenCalled();
+      expect(metrics.incrementCounter).not.toHaveBeenCalled();
     });
   });
 
@@ -813,7 +890,7 @@ describe("HeldReplyService", () => {
       const {
         service, heldReplies, drafts, replyScope, outbox, route, channelScope, activityEvents, audit, publicConversationEventBus,
       } = createService();
-      const { heldReplyId } = await service.hold(holdInput());
+      const { heldReplyId } = await recordedHold(service, holdInput());
       audit.record.mockClear();
 
       const released = await service.release(dana, { conversationId, heldReplyId, editedText: null });
@@ -876,7 +953,7 @@ describe("HeldReplyService", () => {
 
     it("releases an edit as the teammate's own message and keeps the original draft", async () => {
       const { service, heldReplies, drafts, replyScope, outbox, route, channelScope, messages, activityEvents, audit } = createService();
-      const { heldReplyId } = await service.hold(holdInput());
+      const { heldReplyId } = await recordedHold(service, holdInput());
       audit.record.mockClear();
 
       const released = await service.release(dana, { conversationId, heldReplyId, editedText: "Refund issued Monday. — Dana" });
@@ -923,7 +1000,7 @@ describe("HeldReplyService", () => {
 
     it("locks the conversation, then the ownership, then the policy, before the conditional update and the writes", async () => {
       const { service, steps } = createService();
-      const { heldReplyId } = await service.hold(holdInput());
+      const { heldReplyId } = await recordedHold(service, holdInput());
       steps.length = 0;
 
       await service.release(dana, { conversationId, heldReplyId, editedText: null });
@@ -941,7 +1018,7 @@ describe("HeldReplyService", () => {
 
     it("delivers a draft no channel bound the way any reply on the conversation goes", async () => {
       const { service, route, channelScope, outbox } = createService();
-      const { heldReplyId } = await service.hold(holdInput({ policy: null }));
+      const { heldReplyId } = await recordedHold(service, holdInput({ policy: null }));
 
       await service.release(dana, { conversationId, heldReplyId, editedText: null });
 
@@ -952,7 +1029,7 @@ describe("HeldReplyService", () => {
     it("leaves the conversation's ownership as it was, edited or not", async () => {
       for (const editedText of [null, "Edited"]) {
         const { service, ownership, takeOver } = createService();
-        const { heldReplyId } = await service.hold(holdInput());
+        const { heldReplyId } = await recordedHold(service, holdInput());
 
         await service.release(dana, { conversationId, heldReplyId, editedText });
 
@@ -1010,7 +1087,7 @@ describe("HeldReplyService", () => {
 
     it("gives the loser of a concurrent release nothing but the winner's state", async () => {
       const { service, heldReplies, messages, activityEvents, outbox, audit } = createService();
-      const { heldReplyId } = await service.hold(holdInput());
+      const { heldReplyId } = await recordedHold(service, holdInput());
       audit.record.mockClear();
       heldReplies.loseNextReleaseTo = "released";
 
@@ -1025,7 +1102,7 @@ describe("HeldReplyService", () => {
 
     it("refuses once the ownership moved since the review", async () => {
       const { service, ownership, messages } = createService();
-      const { heldReplyId } = await service.hold(holdInput());
+      const { heldReplyId } = await recordedHold(service, holdInput());
       await ownership.requestHandoff({ conversationId, workspaceId, reason: "review_unavailable" });
 
       expect(await service.release(dana, { conversationId, heldReplyId, editedText: null }))
@@ -1064,7 +1141,7 @@ describe("HeldReplyService", () => {
   describe("discard", () => {
     it("discards a pending draft and keeps the conversation's attention open", async () => {
       const { service, activityEvents, audit, messages } = createService();
-      const { heldReplyId } = await service.hold(holdInput());
+      const { heldReplyId } = await recordedHold(service, holdInput());
       audit.record.mockClear();
 
       const discarded = await service.discard(dana, { conversationId, heldReplyId });
@@ -1118,6 +1195,28 @@ describe("HeldReplyService", () => {
       expect(all.items.find((item) => item.id === queued.id)).toMatchObject({ state: "queued_auto", attentionOpen: false });
     });
 
+    it("reads the longest waits oldest first with how many wait in all, and never a draft", async () => {
+      const { service, heldReplies } = createService();
+      const oldest = heldReplies.seed({ conversationId: "conversation-1" });
+      heldReplies.seed({ state: "queued_auto", conversationId: "conversation-2" });
+      const other = heldReplies.seed({ conversationId: "conversation-3", agentId: "agent-2" });
+      const newest = heldReplies.seed({ conversationId: "conversation-4", holdReason: "send_budget" });
+
+      const waiting = await service.longestWaiting(dana, { limit: 2 });
+      const agentOnly = await service.longestWaiting(dana, { agentId: "agent-1", limit: 5 });
+
+      expect(waiting).toEqual({
+        total: 3,
+        items: [
+          { id: oldest.id, conversationId: "conversation-1", agentId: "agent-1", holdReason: "draft_mode", createdAt: oldest.createdAt },
+          { id: other.id, conversationId: "conversation-3", agentId: "agent-2", holdReason: "draft_mode", createdAt: other.createdAt },
+        ],
+      });
+      expect(agentOnly.total).toBe(2);
+      expect(agentOnly.items.map((item) => item.id)).toEqual([oldest.id, newest.id]);
+      expect(JSON.stringify([waiting, agentOnly])).not.toContain(draftText);
+    });
+
     it("pages newest first with an opaque cursor", async () => {
       const { service, heldReplies } = createService();
       const ids = [1, 2, 3].map((n) => heldReplies.seed({ conversationId: `conversation-${n}` }).id);
@@ -1132,7 +1231,7 @@ describe("HeldReplyService", () => {
 
     it("presents the facts operators judge a draft by", async () => {
       const { service } = createService();
-      await service.hold(holdInput({
+      await recordedHold(service, holdInput({
         facts: {
           outcome: "no_context",
           grounding: "ungrounded",
@@ -1164,7 +1263,7 @@ describe("HeldReplyService", () => {
       const { service } = createService();
 
       expect(await service.current(dana, conversationId)).toEqual({ heldReply: null });
-      const { heldReplyId } = await service.hold(holdInput());
+      const { heldReplyId } = await recordedHold(service, holdInput());
       expect(await service.current(dana, conversationId)).toEqual({ heldReply: expect.objectContaining({ id: heldReplyId }) });
       await expect(service.current({ ...dana, workspaceId: "workspace-2" }, conversationId)).rejects.toMatchObject({ statusCode: 404 });
     });

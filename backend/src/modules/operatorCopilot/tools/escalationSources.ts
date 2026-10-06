@@ -1,5 +1,5 @@
 import type { AccountPermission } from "../../account/public.js";
-import type { HeldReplyService, HeldReplyView, OwnershipActor } from "../../handoff/public.js";
+import type { HeldReplyService, OwnershipActor } from "../../handoff/public.js";
 import type { CopilotToolInvocationContext } from "../contracts.js";
 import type { CopilotTriageSourceId, CopilotTriageSourceReport } from "../triageDigest.js";
 import type { CopilotConversationSummary } from "./chat.js";
@@ -35,7 +35,7 @@ export interface CopilotPendingApprovalsPort {
   listPending(workspaceId: string): Promise<ReadonlyArray<CopilotPendingApproval>>;
 }
 
-/** A reply that may not have reached the customer. */
+/** A reply that may not have reached the customer, as the queue ranks it. */
 export interface CopilotDeliveryFailure {
   readonly conversationId: string;
   /** The delivering channel's enum code: `bounced`, `failed`, `uncertain` or `halted`. */
@@ -45,20 +45,25 @@ export interface CopilotDeliveryFailure {
   readonly openedAt: Date;
 }
 
-/** The open delivery failures, newest first, a page at a time. */
+/** The open delivery failures waiting longest, and how many are open. */
 export interface CopilotDeliveryFailuresPort {
-  listOpen(workspaceId: string, query: { agentId?: string; cursor?: string; limit: number }): Promise<{
+  longestWaiting(workspaceId: string, query: { agentId?: string; limit: number }): Promise<{
+    readonly total: number;
     readonly items: ReadonlyArray<CopilotDeliveryFailure>;
-    readonly nextCursor: string | null;
   }>;
 }
 
 /**
  * Replies an agent wrote in review that wait for a teammate, read through handoff's operator port
- * as the signed-in teammate. They are approvals: the `approvals` source lists them beside the
- * routine decisions, and `held_replies` reads them whole.
+ * as the signed-in teammate. They are approvals: the `approvals` source ranks the longest waits
+ * beside the routine decisions, and `held_replies` reads them whole.
  */
-export type CopilotHeldRepliesPort = Pick<HeldReplyService, "list" | "current">;
+export type CopilotHeldRepliesPort = Pick<HeldReplyService, "list" | "current" | "longestWaiting">;
+
+/** The held replies waiting longest, and how many wait: what the escalation sources rank. */
+export type CopilotHeldReplyQueuePort = Pick<CopilotHeldRepliesPort, "longestWaiting">;
+
+type CopilotHeldReplyWait = Awaited<ReturnType<CopilotHeldReplyQueuePort["longestWaiting"]>>["items"][number];
 
 /** Records a source Ray could not read, so a swallowed failure is still traceable in support. */
 export interface CopilotTriageLogPort {
@@ -133,60 +138,29 @@ export const readAuthorizedSource = async <TRow, TSource extends CopilotTriageSo
   }
 };
 
-const OPEN_ROW_PAGE_SIZE = 100;
-/**
- * How many of a paged source's open rows are returned, longest wait first. Open delivery failures
- * and held replies are the exception — each is a reply a person has to look at — so every page is
- * read and counted; only the rows kept are bounded, which keeps a pathological backlog's memory flat.
+/*
+ * Open delivery failures and held replies are each a reply a person has to look at, so their totals
+ * count every open row. The owning reader ranks and counts them in the database: one bounded
+ * oldest-first read of the `limit` rows listed and one count, however long the backlog.
  */
-const OPEN_ROW_RANKING_WINDOW = 1_000;
 
-/**
- * Every page of a newest-first reader, counted in full, keeping the `OPEN_ROW_RANKING_WINDOW`
- * longest waits. The longest waits are on its last page, so a reader that stopped early would
- * report a partial total and rank newer rows as the longest waiting.
- */
-const readLongestWaits = async <TRow>(
-  waitingSince: (row: TRow) => Date,
-  readPage: (cursor: string | null) => Promise<{ readonly items: ReadonlyArray<TRow>; readonly nextCursor: string | null }>,
-): Promise<AuthorizedSourceRead<TRow>> => {
-  const byLongestWait = (left: TRow, right: TRow): number => waitingSince(left).getTime() - waitingSince(right).getTime();
-  let kept: TRow[] = [];
-  let total = 0;
-  let cursor: string | null = null;
-  do {
-    const page = await readPage(cursor);
-    total += page.items.length;
-    kept = [...kept, ...page.items].sort(byLongestWait).slice(0, OPEN_ROW_RANKING_WINDOW);
-    cursor = page.nextCursor;
-  } while (cursor !== null);
-  return { total, items: kept };
-};
-
-/** A workspace's open delivery failures, longest wait first. */
+/** A workspace's open delivery failures waiting longest, up to `limit`, with how many are open. */
 export const readOpenDeliveryFailures = (
   port: CopilotDeliveryFailuresPort,
   workspaceId: string,
   agentId: string | null,
+  limit: number,
 ): Promise<AuthorizedSourceRead<CopilotDeliveryFailure>> =>
-  readLongestWaits((failure) => failure.openedAt, (cursor) => port.listOpen(workspaceId, {
-    ...(agentId === null ? {} : { agentId }),
-    ...(cursor === null ? {} : { cursor }),
-    limit: OPEN_ROW_PAGE_SIZE,
-  }));
+  port.longestWaiting(workspaceId, { ...(agentId === null ? {} : { agentId }), limit });
 
-/** The held replies waiting for a teammate, longest wait first, read as the signed-in teammate. */
+/** The held replies waiting longest for a teammate, up to `limit`, with how many wait, read as the signed-in teammate. */
 export const readOpenHeldReplies = (
-  port: CopilotHeldRepliesPort,
+  port: CopilotHeldReplyQueuePort,
   actor: OwnershipActor,
   agentId: string | null,
-): Promise<AuthorizedSourceRead<HeldReplyView>> =>
-  readLongestWaits((heldReply) => heldReply.createdAt, (cursor) => port.list(actor, {
-    attention: "open",
-    ...(agentId === null ? {} : { agentId }),
-    ...(cursor === null ? {} : { cursor }),
-    limit: OPEN_ROW_PAGE_SIZE,
-  }));
+  limit: number,
+): Promise<AuthorizedSourceRead<CopilotHeldReplyWait>> =>
+  port.longestWaiting(actor, { ...(agentId === null ? {} : { agentId }), limit });
 
 /** The teammate a Ray turn reads as, for the operator ports that take one. */
 export const copilotOperatorActor = (context: CopilotToolInvocationContext): OwnershipActor => ({

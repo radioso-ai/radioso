@@ -5,7 +5,13 @@ import type { ConversationEmailFacts, ConversationEmailFactsReader } from "../fa
 import type { EngagementMode } from "../mailboxes/effectiveMode.js";
 import { defaultEngagementMode } from "../mailboxes/mailboxService.js";
 import { deriveReceivingState } from "../mailboxes/receivingState.js";
-import type { DomainReceivingStatus, DomainSendingStatus, EmailDomainRecord, EmailDomainRepository } from "../persistence/emailDomainRepository.js";
+import type {
+  DomainReceivingStatus,
+  DomainRegistrationStatus,
+  DomainSendingStatus,
+  EmailDomainRecord,
+  EmailDomainRepository,
+} from "../persistence/emailDomainRepository.js";
 import type { EmailMailboxRecord, EmailMailboxRepository } from "../persistence/emailMailboxRepository.js";
 
 // Every projection below picks its fields one by one at runtime (NB-2). Never spread a record
@@ -28,6 +34,8 @@ interface EmailMailboxCopilotView {
 interface EmailDomainCopilotView {
   id: string;
   domain: string;
+  /** `needs_reconciliation`: the provider already holds the domain; an operator's reconcile adopts it. */
+  registrationStatus: DomainRegistrationStatus;
   sendingStatus: DomainSendingStatus;
   receivingStatus: DomainReceivingStatus;
   records: Pick<DnsRecordView, "purpose" | "type" | "name" | "status">[];
@@ -39,6 +47,12 @@ interface EmailEventLogCopilotSummary {
   byDisposition: Record<string, number>;
   failed: number;
   lastReceivedAt: string | null;
+}
+
+interface EmailEventCopilotCounts {
+  window: string;
+  byDisposition: Record<string, number>;
+  failed: number;
 }
 
 interface EmailConversationCopilotFacts {
@@ -60,9 +74,24 @@ interface EmailConversationCopilotFacts {
 const toDomainView = (domain: EmailDomainRecord): EmailDomainCopilotView => ({
   id: domain.id,
   domain: domain.domain,
+  registrationStatus: domain.registrationStatus,
   sendingStatus: domain.sendingStatus,
   receivingStatus: domain.receivingStatus,
   records: domain.dnsRecords.map((record) => ({ purpose: record.purpose, type: record.type, name: record.name, status: record.status })),
+});
+
+const toSummaryView = (summary: EmailEventLogCopilotSummary): EmailEventLogCopilotSummary => ({
+  mailboxId: summary.mailboxId,
+  window: summary.window,
+  byDisposition: { ...summary.byDisposition },
+  failed: summary.failed,
+  lastReceivedAt: summary.lastReceivedAt,
+});
+
+const toCountsView = (window: string, counts: { byDisposition: Record<string, number>; failed: number }): EmailEventCopilotCounts => ({
+  window,
+  byDisposition: { ...counts.byDisposition },
+  failed: counts.failed,
 });
 
 const toFactsView = (facts: ConversationEmailFacts): EmailConversationCopilotFacts => ({
@@ -95,7 +124,7 @@ export class EmailChannelCopilotView {
   constructor(private readonly deps: {
     mailboxes: Pick<EmailMailboxRepository, "listActive">;
     domains: Pick<EmailDomainRepository, "listActive" | "findById">;
-    events: Pick<EventLogReader, "summarize">;
+    events: Pick<EventLogReader, "summarize" | "summarizeWorkspace">;
     facts: Pick<ConversationEmailFactsReader, "read">;
     supportedModes: readonly EngagementMode[];
     clock: () => Date;
@@ -121,23 +150,28 @@ export class EmailChannelCopilotView {
     };
   }
 
-  /** Event log summaries over the last `windowHours`, for one mailbox or every active one. */
+  /**
+   * Event log summaries over the last `windowHours`: one mailbox's, or every active one's with the
+   * workspace's mail none of them received (for an address no mailbox has, or a removed mailbox's
+   * retained events), which the one-mailbox read leaves null.
+   */
   async eventSummaries(
     workspaceId: string,
     query: { mailboxId: string | null; windowHours: number },
-  ): Promise<{ summaries: EmailEventLogCopilotSummary[] }> {
-    const mailboxIds = query.mailboxId
-      ? [query.mailboxId]
-      : (await this.deps.mailboxes.listActive(workspaceId)).map((mailbox) => mailbox.id);
-    const summaries = await Promise.all(mailboxIds.map((mailboxId) => this.deps.events.summarize(workspaceId, mailboxId, query.windowHours)));
+  ): Promise<{
+    summaries: EmailEventLogCopilotSummary[];
+    noMailbox: EmailEventCopilotCounts | null;
+    removedMailboxes: EmailEventCopilotCounts | null;
+  }> {
+    if (query.mailboxId) {
+      const summary = await this.deps.events.summarize(workspaceId, query.mailboxId, query.windowHours);
+      return { summaries: [toSummaryView(summary)], noMailbox: null, removedMailboxes: null };
+    }
+    const workspace = await this.deps.events.summarizeWorkspace(workspaceId, query.windowHours);
     return {
-      summaries: summaries.map((summary) => ({
-        mailboxId: summary.mailboxId,
-        window: summary.window,
-        byDisposition: { ...summary.byDisposition },
-        failed: summary.failed,
-        lastReceivedAt: summary.lastReceivedAt,
-      })),
+      summaries: workspace.mailboxes.map(toSummaryView),
+      noMailbox: toCountsView(workspace.window, workspace.noMailbox),
+      removedMailboxes: toCountsView(workspace.window, workspace.removedMailboxes),
     };
   }
 

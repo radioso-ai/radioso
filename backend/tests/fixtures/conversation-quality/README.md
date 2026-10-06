@@ -40,6 +40,18 @@ turn trace, and `turn_persists_no_reply` checks that the conversation gained no 
 message. A runner without a `review` port scores review cases as errors instead of running
 them live. The `email`-tagged cases are review cases.
 
+The live runner publishes the seeded agent before it runs review cases, so a review turn runs
+the published revision, as the email channel does. Publishing refuses a routine whose tool step
+names a skill the agent lacks, so the runner adds every skill the seeded routines dispatch as a
+webhook skill on a loopback destination, publishes, and removes them before any case runs. A live
+case that reaches one of those steps therefore finds no such skill, whichever cases the run
+selects. When a routine starts dispatching a new skill, add it to `seededRoutineSkillNames` in
+`scripts/runEvals.ts`; a unit test fails until you do.
+
+A live review turn can ask the customer which sense they mean instead of answering. That ask is a
+non-retrieval reply, so its facts carry no grounding or coverage verdict, and the `email` cases
+assert only `turn_persists_no_reply`.
+
 ## Running it
 
 ```bash

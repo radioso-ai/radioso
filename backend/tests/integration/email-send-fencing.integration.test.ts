@@ -15,6 +15,7 @@ import {
   counterValue,
   createApiNode,
   deliveryFailuresOf,
+  expireOutboxClaims,
   makeReconcileDue,
   openEmailConversation,
   outboxActionsOf,
@@ -142,6 +143,45 @@ describeIntegration("email send fencing (Postgres, research B18)", () => {
       expect(reconciler.logger.messages()).not.toContain("email_send_uncertain");
     },
   );
+
+  it("never halts a send another claim froze after a stale claim read it: the claim that froze it sends it once", async () => {
+    const { conversationId, messageId, domain } = await queuedReply();
+    const key = emailSendKey.message(messageId);
+    const setSendingStatus = (status: string) =>
+      database.execute("UPDATE email_domains SET sending_status = $2 WHERE id = $1", [domain.id, status]);
+    const [stale, current] = [workerNode(), workerNode()];
+    // Claim A finds the domain unverified and stalls before its halt lands.
+    await setSendingStatus("failed");
+    const halting = stale.seams.pauseAt("writer.apply", "before");
+    const staleDispatch = stale.dispatch();
+    await halting.reached;
+
+    // The domain verifies again; A's lease runs out, and claim B freezes the request and enters the provider call.
+    await setSendingStatus("verified");
+    await expireOutboxClaims(database, conversationId);
+    const posting = current.seams.pauseAt("driver.send", "before");
+    const currentDispatch = current.dispatch();
+    await posting.reached;
+
+    halting.release();
+    expect(await staleDispatch).toMatchObject({ dispatched: 0, retried: 0, failed: 0 });
+    const frozen = await sendIntentOf(database, messageId);
+    expect(frozen).toMatchObject({ state: "queued", haltReason: null, providerMessageId: null });
+    expect(frozen.request).not.toBeNull();
+    expect(await deliveryFailuresOf(database, conversationId)).toEqual([]);
+    expect(counterValue(stale.metrics, CONFLICTS, { writer: "handler" })).toBe(1);
+    expect(stale.logger.messages()).toContain("email_send_left_to_freezing_claim");
+
+    posting.release();
+    expect(await currentDispatch).toMatchObject({ dispatched: 1, failed: 0 });
+    const [accepted, ...others] = await providerAcceptsUnder(spool.dir, key);
+    expect(others).toEqual([]);
+    expect(await sendIntentOf(database, messageId)).toMatchObject({ state: "accepted", haltReason: null, providerMessageId: accepted?.providerMessageId });
+    expect(stale.provider.sendKeys).toEqual([]);
+    expect(current.provider.sendKeys).toEqual([key]);
+    expect(await deliveryFailuresOf(database, conversationId)).toEqual([]);
+    expect(await outboxActionsOf(database, conversationId)).toEqual([expect.objectContaining({ status: "dispatched", attempts: 2 })]);
+  });
 
   it("makes an unknown outcome uncertain without a re-POST once the sending authority is revoked", async () => {
     const { conversationId, messageId, domain, workspaceId } = await queuedReply();

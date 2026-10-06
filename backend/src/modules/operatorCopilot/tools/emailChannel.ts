@@ -15,7 +15,7 @@ export interface EmailChannelCopilotToolDependencies {
   /** Null when the deployment has no email provider, so there is no channel to read. */
   readonly emailChannel: CopilotEmailChannelPort | null;
   /** Absent where no channel's held replies are composed into Ray; `held_replies` then reads none. */
-  readonly heldReplies?: CopilotHeldRepliesPort;
+  readonly heldReplies?: Pick<CopilotHeldRepliesPort, "list" | "current">;
 }
 
 const DEFAULT_WINDOW_HOURS = 24;
@@ -32,6 +32,7 @@ const configurationOutputSchema = z.object({
   domains: z.array(z.object({
     id: z.string(),
     domain: z.string(),
+    registrationStatus: z.enum(["registering", "needs_reconciliation", "registered"]),
     sendingStatus: z.enum(["pending", "verified", "failed"]),
     receivingStatus: z.enum(["not_requested", "pending", "verified", "failed"]),
     records: z.array(z.object({
@@ -61,6 +62,11 @@ const eventsInputSchema = z.object({
   windowHours: z.number().int().min(1).max(MAX_WINDOW_HOURS).optional()
     .describe(`How far back to count, in hours (default ${DEFAULT_WINDOW_HOURS}, at most ${MAX_WINDOW_HOURS}).`),
 }).strict();
+const eventCountsSchema = z.object({
+  window: z.string(),
+  byDisposition: z.record(z.number().int().min(0)),
+  failed: z.number().int().min(0),
+}).strict();
 const eventsOutputSchema = z.object({
   configured: z.boolean(),
   summaries: z.array(z.object({
@@ -70,6 +76,8 @@ const eventsOutputSchema = z.object({
     failed: z.number().int().min(0),
     lastReceivedAt: z.string().nullable(),
   }).strict()),
+  noMailbox: eventCountsSchema.nullable(),
+  removedMailboxes: eventCountsSchema.nullable(),
   truncation: truncationRecordSchema,
 }).strict();
 
@@ -139,7 +147,7 @@ const heldRepliesOutputSchema = z.object({
 }).strict();
 
 const CONFIGURATION_DESCRIPTION = "Read the workspace's email channel: the engagement modes this deployment runs, each sending domain with its DNS record readiness, and each mailbox with its agent, mode, receiving state (waiting, ok or silent), sending readiness and budgets. Relay addresses, setup-check addresses and record values are excluded.";
-const EVENTS_DESCRIPTION = "Summarize email channel event logs: per mailbox, how many messages arrived by disposition (ingest_only, run_review_turn, drop) and how many failed, over a recent window, with the last time mail arrived. Use it to tell whether forwarding works and whether mail is being dropped or failing.";
+const EVENTS_DESCRIPTION = "Summarize email channel event logs: per mailbox, how many messages arrived by disposition (ingest_only, run_review_turn, drop) and how many failed, over a recent window, with the last time mail arrived. Without mailboxId it also counts the workspace's mail no active mailbox received: noMailbox for mail accepted for an address no mailbox has, removedMailboxes for removed mailboxes' retained events (both null for one mailbox). Use it to tell whether forwarding works and whether mail is being dropped, failing, or arriving for an address with no mailbox.";
 const FACTS_DESCRIPTION = "Read an email conversation's facts: the mailbox it came to, the participant's display name, the latest subject, sending readiness, the send budget, and per-message subject, CC count, attachments and whether the raw message is stored. Answers facts: null for a conversation that is not an email conversation. Addresses other than the mailbox's own and message content are excluded.";
 
 const HELD_REPLIES_DESCRIPTION = "Read agent replies held for a teammate's review before they reach the customer. With conversationId, heldReply is that conversation's newest held reply, whatever its state, or null when it has none. Without, items is a page of the workspace's held replies, newest first: the ones waiting for a teammate, or with attention=all every one. Each carries its state (pending, queued_auto, released, edited, discarded, superseded), the hold reason code, the review turn's facts, the skills whose effects were held back, and the draft as written with any teammate edit. Teammates release or discard a draft in the Inbox; this tool only reads.";
@@ -211,12 +219,12 @@ export const createEmailChannelCopilotTools = (
       inputSchema: eventsInputSchema,
       outputSchema: eventsOutputSchema,
       invoke: async ({ mailboxId, windowHours }) => {
-        if (!deps.emailChannel) return { configured: false, summaries: [] };
-        const { summaries } = await deps.emailChannel.eventSummaries(context.workspaceId, {
+        if (!deps.emailChannel) return { configured: false, summaries: [], noMailbox: null, removedMailboxes: null };
+        const { summaries, noMailbox, removedMailboxes } = await deps.emailChannel.eventSummaries(context.workspaceId, {
           mailboxId: mailboxId ?? null,
           windowHours: windowHours ?? DEFAULT_WINDOW_HOURS,
         });
-        return boundPayload({ configured: true, summaries });
+        return boundPayload({ configured: true, summaries, noMailbox, removedMailboxes });
       },
     }),
   },

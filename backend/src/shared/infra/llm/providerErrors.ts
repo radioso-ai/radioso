@@ -21,16 +21,28 @@ interface ProviderHttpErrorInput {
   bodyJson?: Record<string, unknown>;
 }
 
+const CREDENTIAL_ERROR_CODE = "invalid_api_key";
+const GENERIC_PROVIDER_HTTP_ERROR_CODE = "provider_http_error";
+// Structural shape of a machine code (`RESOURCE_EXHAUSTED`, `overloaded_error`), never prose.
+const MACHINE_CODE_SHAPE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
+
+const machineCode = (value: string | undefined): string | undefined =>
+  value !== undefined && MACHINE_CODE_SHAPE.test(value) ? value : undefined;
+
 /**
  * Structured error thrown by raw HTTP provider adapters (Gemini / Claude / generic
  * fetch-based clients). Mirrors the OpenAI SDK's error shape so
  * `isProviderCredentialError` can detect auth failures uniformly.
+ *
+ * `message` may echo provider text, which can include customer content; it is for
+ * in-process handling only. Telemetry records `code` and `status`, never `message`.
  */
 export class ProviderHttpError extends Error implements ProviderErrorShape {
   readonly status: number;
   readonly provider: string;
   readonly operation: string;
-  readonly code?: string;
+  /** The provider's machine code (code, status enum, or error type), never prose. */
+  readonly code: string;
   readonly error?: ProviderErrorShape["error"];
   readonly bodyText: string;
 
@@ -47,9 +59,10 @@ export class ProviderHttpError extends Error implements ProviderErrorShape {
     // Surface 401 for auth failures so existing detection (status === 401)
     // works for vendors that report invalid API keys with a different HTTP code.
     this.status = looksLikeAuth ? 401 : input.status;
-    if (looksLikeAuth) {
-      this.code = "invalid_api_key";
-    }
+    this.code = looksLikeAuth
+      ? CREDENTIAL_ERROR_CODE
+      : machineCode(innerError?.code) ?? machineCode(innerError?.status) ?? machineCode(innerError?.type)
+        ?? GENERIC_PROVIDER_HTTP_ERROR_CODE;
     if (innerError) {
       this.error = {
         message: innerError.message,
@@ -99,7 +112,7 @@ const isAuthFailureResponse = (
   if (innerError?.type === "authentication_error") {
     return true;
   }
-  if (innerError?.code === "invalid_api_key") {
+  if (innerError?.code === CREDENTIAL_ERROR_CODE) {
     return true;
   }
   return false;
@@ -143,10 +156,10 @@ export const isProviderCredentialError = (error: unknown): error is ProviderErro
   const code = getCode(providerError);
   const status = getStatus(providerError);
 
-  return code === "invalid_api_key" || status === 401;
+  return code === CREDENTIAL_ERROR_CODE || status === 401;
 };
 
-export const getProviderCredentialErrorMessage = () =>
+const getProviderCredentialErrorMessage = () =>
   "The AI provider rejected the credentials. Replace the workspace API key at Settings → Credentials, or update the matching environment variable (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENAI_COMPATIBLE_API_KEY) and restart Radioso.";
 
 export const normalizeProviderCredentialError = (error: unknown) => {

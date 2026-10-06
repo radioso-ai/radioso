@@ -7,6 +7,7 @@ import {
 import type { Kysely } from "kysely";
 
 import { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
+import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
 import type { ConversationActivityRecorder } from "../../modules/conversationActivity/contracts/index.js";
 import { EmailMailboxRepository, type MailboxPolicyChangeUnitOfWork } from "../../modules/emailChannel/public.js";
@@ -24,8 +25,11 @@ import { lockConversationsInOrder, runTransactionWithDeadlockRetry } from "./con
  * The locks follow the conversation lock protocol (`conversationLockOrder.ts`): each live draft's
  * conversation and ownership row before the mailbox, so a release, which holds them before it locks
  * the mailbox `FOR SHARE`, queues behind the change or the change behind it, and neither holds what
- * the other waits for. Only a draft born after the change locked its conversations can still meet a
- * release out of order; a deadlock victim's whole transaction runs again, a bounded number of times.
+ * the other waits for. A hand-off locks its conversation before it may create the ownership row, so
+ * a takeover, which locks the conversation first too, queues behind the change even when no
+ * ownership row exists yet. Only a draft born after the change locked its conversations can still
+ * meet a release or a claim out of order; a deadlock victim's whole transaction runs again, a
+ * bounded number of times.
  *
  * The dashboard hears once the change has committed: of the drafts it superseded, of the ones it
  * returned to or re-bound for a teammate, and of the hand-offs.
@@ -49,13 +53,14 @@ export const createPostgresMailboxPolicyChangeUnitOfWork = (deps: {
     const result = await runTransactionWithDeadlockRetry(deps.db, (trx) => {
       notices = new Map();
       const heldReplies = new HeldReplyRepository(trx);
-      // The workspace of the change, named when it locks its conversations.
+      // The workspace of the change, named when it locks its conversations, and the ones it locked.
       let workspaceId: string | null = null;
+      let locked: ReadonlySet<string> = new Set();
       return work({
         conversations: {
           lockWithLiveDrafts: async (input) => {
             workspaceId = input.workspaceId;
-            await lockConversationsInOrder(trx, input.workspaceId, await heldReplies.liveConversationIds(input.policyRef));
+            locked = await lockConversationsInOrder(trx, input.workspaceId, await heldReplies.liveConversationIds(input.policyRef));
           },
         },
         mailboxes: new EmailMailboxRepository(trx),
@@ -73,6 +78,13 @@ export const createPostgresMailboxPolicyChangeUnitOfWork = (deps: {
         },
         handoffs: {
           requestHumanOwnership: async (input) => {
+            // A hand-off may create the ownership row, so its conversation is locked first. One whose
+            // draft was born after the change locked its conversations is locked only now, out of
+            // order; a deadlock that meets is retried whole. One gone by now has no one to hand to.
+            if (!locked.has(input.conversationId)
+              && !(await new ConversationRepository(trx).lockForUpdate(input.conversationId, input.workspaceId))) {
+              return { changed: false };
+            }
             const { changed } = await deps.ownership.requestHumanOwnership({
               ownership: new ConversationOwnershipRepository(trx),
               activity: { record: (event) => deps.activity.record(trx, event) },

@@ -41,13 +41,20 @@ const copilotView = () => {
     setupCheckStartedAt: NOW,
     lastReceivedAt: new Date("2026-10-03T11:00:00.000Z"),
   });
+  const summaryOf = (mailboxId: string, windowHours: number) => ({
+    mailboxId,
+    window: `${windowHours}h`,
+    byDisposition: { ingest_only: 4, drop: 1 },
+    failed: 1,
+    lastReceivedAt: "2026-10-03T11:00:00.000Z",
+  });
   const events = {
-    summarize: vi.fn(async (_workspaceId: string, mailboxId: string, windowHours: number) => ({
-      mailboxId,
+    summarize: vi.fn(async (_workspaceId: string, mailboxId: string, windowHours: number) => summaryOf(mailboxId, windowHours)),
+    summarizeWorkspace: vi.fn(async (_workspaceId: string, windowHours: number) => ({
       window: `${windowHours}h`,
-      byDisposition: { ingest_only: 4, drop: 1 },
-      failed: 1,
-      lastReceivedAt: "2026-10-03T11:00:00.000Z",
+      mailboxes: [summaryOf(mailbox.id, windowHours)],
+      noMailbox: { byDisposition: { drop: 3 }, failed: 0 },
+      removedMailboxes: { byDisposition: { ingest_only: 2 }, failed: 1 },
     })),
   };
   const facts = {
@@ -217,7 +224,7 @@ describe("email channel Ray tools", () => {
     expect(JSON.stringify(output)).not.toContain("setupCheck");
   });
 
-  it("summarizes the event log for one mailbox or every one", async () => {
+  it("summarizes the event log for one mailbox, or for every one with the mail no active mailbox received", async () => {
     const { view, mailbox, events } = copilotView();
     const { invoke } = toolsOver(view);
 
@@ -225,8 +232,10 @@ describe("email channel Ray tools", () => {
     expect(every).toEqual({
       configured: true,
       summaries: [{ mailboxId: mailbox.id, window: "24h", byDisposition: { ingest_only: 4, drop: 1 }, failed: 1, lastReceivedAt: "2026-10-03T11:00:00.000Z" }],
+      noMailbox: { window: "24h", byDisposition: { drop: 3 }, failed: 0 },
+      removedMailboxes: { window: "24h", byDisposition: { ingest_only: 2 }, failed: 1 },
     });
-    await invoke("email_channel_events", { mailboxId: mailbox.id, windowHours: 72 });
+    expect(await invoke("email_channel_events", { mailboxId: mailbox.id, windowHours: 72 })).toMatchObject({ noMailbox: null, removedMailboxes: null });
     expect(events.summarize).toHaveBeenLastCalledWith(WORKSPACE_ID, mailbox.id, 72);
     expect(() => toolsOver(view).byName.get("email_channel_events")?.inputSchema.parse({ windowHours: 0 })).toThrow();
   });
@@ -275,7 +284,7 @@ describe("email channel Ray tools", () => {
       domains: [],
       mailboxes: [],
     });
-    expect(await invoke("email_channel_events", {})).toEqual({ configured: false, summaries: [] });
+    expect(await invoke("email_channel_events", {})).toEqual({ configured: false, summaries: [], noMailbox: null, removedMailboxes: null });
     expect(await invoke("email_conversation_facts", { conversationId: CONVERSATION_ID })).toEqual({ facts: null });
   });
 });
@@ -305,7 +314,11 @@ const oversizedChannel = (): CopilotEmailChannelPort => {
   });
   return {
     configuration: async () => ({ supportedModes: ["draft"], defaultMode: "draft", domains: [], mailboxes: Array.from({ length: 41 }, (_, index) => mailboxView(index)) }),
-    eventSummaries: async () => ({ summaries: Array.from({ length: 41 }, (_, index) => summary(index)) }),
+    eventSummaries: async () => ({
+      summaries: Array.from({ length: 41 }, (_, index) => summary(index)),
+      noMailbox: { window: "24h", byDisposition: { drop: 1 }, failed: 0 },
+      removedMailboxes: { window: "24h", byDisposition: {}, failed: 0 },
+    }),
     conversationFacts: async () => ({
       facts: {
         mailbox: { id: "mailbox-0", address: "support@customer.test", displayName: "Support", engagementMode: "draft" as const },

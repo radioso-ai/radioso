@@ -57,6 +57,7 @@ type ConversationHeldReplies = Pick<HeldReplySupersedeScope, "supersedePendingFo
  */
 export interface OwnershipChangeUnitOfWork {
   run<T>(work: (scope: {
+    conversations: Pick<ConversationRepository, "lockForUpdate">;
     ownership: Pick<ConversationOwnershipRepository, "loadForUpdate" | "takeOver" | "transfer" | "handBack">;
     outbox: TransferNoticeOutboxPort;
     activity: ConversationActivityWriter;
@@ -176,8 +177,15 @@ export class ConversationOwnershipService {
     reason?: string;
     auditContext?: OwnershipAuditContext;
   }): Promise<OwnershipCommandResult> {
-    const [, operator] = await this.readConversationAndOperator(actor, input.conversationId);
-    const result = await this.dependencies.changes.run(async ({ ownership, activity, heldReplies }) => {
+    const [conversation, operator] = await this.readConversationAndOperator(actor, input.conversationId);
+    const result = await this.dependencies.changes.run(async ({ conversations, ownership, activity, heldReplies }) => {
+      // A claim may create the ownership row, and an absent row locks nothing, so the conversation
+      // row stands in for it: locked first, as every unit that may create one does, the claim
+      // queues behind a change already holding the conversation instead of inserting a row that
+      // change will wait on while this claim waits on its drafts (`conversationLockOrder.ts`).
+      if (!(await conversations.lockForUpdate(conversation.id, conversation.workspaceId))) {
+        throw notFound("Conversation not found");
+      }
       const claimed = await ownership.takeOver(this.claimInput(actor, operator, input));
       if (claimed.ok && claimed.changed) {
         await activity.record(claimedActivity(actor, input.conversationId));

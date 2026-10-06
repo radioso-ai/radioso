@@ -209,6 +209,58 @@ describe("ProviderDeliveryEvents", () => {
       expect(h.failures.rows).toHaveLength(1);
       expect(h.failures.openFor(SEND_IDS.message)).toMatchObject({ kind: "bounced", detailCode: "Permanent:General:5.1.1" });
     });
+
+    describe("after a teammate resent it, and the resend became uncertain too", () => {
+      const RESEND_PROVIDER_ID = "re_provider_resend";
+      const hardBounce = status("bounced", { type: "Permanent", subType: "General", statusCode: "5.1.1" });
+
+      /** The original's doubt resolved by a resend, as the resolver leaves it, and the resend unsettled a day on. */
+      const resentAndUncertain = async () => {
+        const h = await uncertain();
+        const original = h.onlyIntent();
+        const decided = await h.writer.apply(original, { kind: "operator_resolution", decision: "resend", userId: "user-1" }, { writer: "operator" });
+        expect(decided.outcome).toBe("applied");
+        const opened = h.failures.openFor(SEND_IDS.message);
+        await h.failures.clear({ reason: "operator_resolved", failureId: opened?.id ?? "", userId: "user-1" });
+        h.driver.send.mockResolvedValueOnce({ dispatched: true, providerMessageId: RESEND_PROVIDER_ID, deliveredMessageId: null });
+        await h.deliver({
+          payload: { trigger: "audited_resend" },
+          context: { idempotencyKey: emailSendKey.resend(SEND_IDS.message, 1) },
+        });
+        h.advance(DAY);
+        await h.reconciler.run({ maxJobs: 5 });
+        const resend = [...h.intents.rows.values()].find((intent) => intent.id !== original.id);
+        expect(resend).toMatchObject({ trigger: "audited_resend", state: "uncertain", providerMessageId: RESEND_PROVIDER_ID });
+        expect(h.failures.openFor(SEND_IDS.message)).toMatchObject({ kind: "uncertain" });
+        return { h, original, resend: resend! };
+      };
+
+      it("records a late bounce of the original on the original only: the resend's failure stays uncertain, so still resolvable", async () => {
+        const { h, original, resend } = await resentAndUncertain();
+        const resendFailure = h.failures.openFor(SEND_IDS.message);
+
+        expect(await webhook(h, hardBounce)).toBe("applied");
+
+        expect(h.intents.rows.get(original.id)).toMatchObject({
+          state: "bounced",
+          failureCode: "Permanent:General:5.1.1",
+          uncertainResolution: "resend_authorized",
+        });
+        expect(h.intents.rows.get(resend.id)).toMatchObject({ state: "uncertain", uncertainResolution: null });
+        expect(h.failures.openFor(SEND_IDS.message)).toEqual(resendFailure);
+        expect(h.failures.openFor(SEND_IDS.message)).toMatchObject({ kind: "uncertain", detailCode: null });
+      });
+
+      it("still settles the resend on its own late evidence", async () => {
+        const { h, resend } = await resentAndUncertain();
+        await webhook(h, hardBounce);
+
+        expect(await webhook(h, hardBounce, RESEND_PROVIDER_ID)).toBe("applied");
+
+        expect(h.intents.rows.get(resend.id)).toMatchObject({ state: "bounced", uncertainResolution: "provider_evidence" });
+        expect(h.failures.openFor(SEND_IDS.message)).toMatchObject({ kind: "bounced", detailCode: "Permanent:General:5.1.1" });
+      });
+    });
   });
 });
 

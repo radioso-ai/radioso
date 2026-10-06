@@ -129,7 +129,6 @@ describe("Resend domain provisioner: registration", () => {
       ok: true,
       providerDomainId: DOMAIN_ID,
       region: "eu-west-1",
-      createdAt: new Date("2026-10-03T13:29:18.978Z"),
       readiness: {
         sending: "pending",
         receiving: "pending",
@@ -242,7 +241,6 @@ describe("Resend domain provisioner: finding a registration by name", () => {
       providerDomainId: DOMAIN_ID,
       region: "eu-west-1",
       readiness: { sending: "pending", receiving: "pending" },
-      createdAt: new Date("2026-10-03T13:29:18.978Z"),
     });
     expect(found?.readiness.records.map((record) => record.purpose)).toEqual([
       "dkim",

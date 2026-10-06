@@ -91,10 +91,22 @@ export interface DeliveryFailurePage {
   nextCursor: string | null;
 }
 
+/** An open failure as a waiting queue ranks it: what failed, and since when. */
+export interface DeliveryFailureWait {
+  id: string;
+  conversationId: string;
+  kind: DeliveryFailureKind;
+  /** The provider's code, sanitized; never its bounce message. */
+  detailCode: string | null;
+  openedAt: Date;
+}
+
 /** Operator surfaces' read of the failures waiting for attention. */
 interface DeliveryFailureReaderPort {
   /** A workspace's open failures, newest first; with `agentId`, only on that agent's conversations. */
   listOpen(workspaceId: string, query: { agentId?: string; cursor?: string; limit: number }): Promise<DeliveryFailurePage>;
+  /** The open failures waiting longest, up to `limit`, with how many are open; with `agentId`, on that agent's conversations. */
+  longestWaiting(workspaceId: string, query: { agentId?: string; limit: number }): Promise<{ total: number; items: DeliveryFailureWait[] }>;
 }
 
 /** Where a page of open failures ends: newest first, so the next page holds the ones before it. */
@@ -130,6 +142,10 @@ export interface DeliveryFailureReadStore {
   listAll(workspaceId: string, query: DeliveryFailureListQuery): Promise<DeliveryFailureRecord[]>;
   /** The workspace's failure `failureId`, open or cleared; null when the workspace has none of that id. */
   find(workspaceId: string, failureId: string): Promise<DeliveryFailureRecord | null>;
+  /** Up to `limit` of the open failures, oldest first; with `agentId`, on that agent's conversations. */
+  listOldestOpen(workspaceId: string, query: { agentId: string | undefined; limit: number }): Promise<DeliveryFailureWait[]>;
+  /** How many failures are open; with `agentId`, how many on that agent's conversations. */
+  countOpen(workspaceId: string, query: { agentId: string | undefined }): Promise<number>;
 }
 
 /** One failure change and the activity it records, bound to one transaction. */
@@ -252,6 +268,18 @@ export class DeliveryFailures implements DeliveryFailureRecorderPort, DeliveryFa
     query: { agentId?: string; cursor?: string; limit: number },
   ): Promise<DeliveryFailurePage> {
     return this.list(workspaceId, { ...query, state: "open" });
+  }
+
+  /**
+   * The open failures waiting longest, up to `limit`, with how many are open: one bounded read and
+   * one count however long the backlog, so a queue reader never pages through it.
+   */
+  async longestWaiting(workspaceId: string, query: { agentId?: string; limit: number }): Promise<{ total: number; items: DeliveryFailureWait[] }> {
+    const [items, total] = await Promise.all([
+      this.deps.reads.listOldestOpen(workspaceId, { agentId: query.agentId, limit: query.limit }),
+      this.deps.reads.countOpen(workspaceId, { agentId: query.agentId }),
+    ]);
+    return { total, items };
   }
 
   /** A workspace's failures newest first: the open ones, or with `state: "all"` the cleared ones too. */

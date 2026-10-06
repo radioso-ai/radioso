@@ -48,6 +48,7 @@ const snapshotOf = (intent: EmailSendIntentRecord): SendIntentSnapshot => ({
   providerMessageId: intent.providerMessageId,
   deliveredRfcMessageId: intent.deliveredRfcMessageId,
   failureCode: intent.failureCode,
+  requestFrozen: intent.request !== null,
   outcomeUnknown: intent.outcomeUnknown,
   uncertainResolution: intent.uncertainResolution,
   uncertainResolvedByUserId: intent.uncertainResolvedByUserId,
@@ -186,7 +187,7 @@ export class InMemoryEmailSendIntents implements Pick<
     if (current.version !== expectedVersion) return { outcome: "conflict", current: copy(current) };
     const result = nextSendIntentState(snapshotOf(current), event);
     if ("ignored" in result) return { outcome: "ignored", reason: result.ignored, intent: copy(current) };
-    const { next, effects } = result;
+    const { next: { requestFrozen: _requestFrozen, ...next }, effects } = result;
     const now = this.clock();
     const schedule = effects.find((effect) => effect.kind === "schedule_reconcile");
     const settles = isTerminalSendIntentState(next.state);
@@ -464,6 +465,7 @@ export const createSendPathHarness = (options: { now?: Date; sendingStatus?: "pe
   const channelScope = new EmailHeldReplyChannelScope({
     mailboxes,
     domains,
+    reviews: threads,
     autoSend: { threads, ownership, intents, provider: "resend", createId },
   });
   const autoReplyView = () => ({

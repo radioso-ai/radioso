@@ -16,19 +16,22 @@ import {
   relayAddressOf,
   seedSupportMailbox,
 } from "./support/emailChannelHarness.js";
+import { outboxActionsOf } from "./support/emailSendHarness.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Research B17 against Postgres: a review completes only its own revision, so a worker overtaken by
 // newer mail leaves the newer review due and holds its own draft superseded; a worker that dies
 // after holding a draft and before completing leaves the review ref behind, so the next claim
 // completes without running the model again; a worker stalled past its lease does nothing once
-// another claim took R over; and mail set aside is noted and completed in one transaction.
+// another claim took R over, even one that publishes only after the claim that took over set R
+// aside; and mail set aside is noted and completed in one transaction.
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 const FIRST = "mime/first-contact.eml";
 const FOLLOW_UP = "mime/pre-reply-follow-up.eml";
 const DRAFTING = ["operator_only", "draft"] as const;
+const AUTO = ["operator_only", "draft", "auto"] as const;
 
 type WorkerNode = ReturnType<typeof createWorkerNode>;
 type Respond = (input: ConnectorRespondInput) => Promise<ConnectorTurnResult>;
@@ -77,8 +80,8 @@ describeIntegration("email review revisions (Postgres, research B17)", () => {
     await suite?.close();
   }, 30_000);
 
-  const workerNode = (respond?: Respond, checks?: EmailReviewChecks): WorkerNode => {
-    const node = createWorkerNode(suite.url, { spoolDir: spool.dir, supportedModes: DRAFTING, respond, checks });
+  const workerNode = (respond?: Respond, checks?: EmailReviewChecks, supportedModes: readonly ("operator_only" | "draft" | "auto")[] = DRAFTING): WorkerNode => {
+    const node = createWorkerNode(suite.url, { spoolDir: spool.dir, supportedModes, respond, checks });
     nodes.push(node);
     return node;
   };
@@ -229,6 +232,55 @@ describeIntegration("email review revisions (Postgres, research B17)", () => {
       expect.objectContaining({ state: "pending", review_ref: `email:${conversationId}:1`, draft_text: "From the claim that took over." }),
     ]);
     expect(await reviewLink(conversationId)).toMatchObject({ review_revision: 1, review_completed_revision: 1, review_due_at: null });
+    expect(stalled.logger.messages()).toContain("email_review_claim_lost");
+  }, 60_000);
+
+  it("queues no send from a claim stalled in its completeness check after the claim that took over set R aside (research B17)", async () => {
+    const seeded = await seedSupportMailbox(database, { engagementMode: "auto", withAgent: true });
+    const target = { mailbox: seeded.mailbox, domain: seeded.domain.domain };
+    await receiveAndIngest(workerNode(undefined, undefined, AUTO), FIRST, target);
+    const [conversationId] = await conversationsOfMailbox(database, target.mailbox);
+    await makeReviewsDue(conversationId);
+
+    // The stalled claim's draft passes every gate and waits in the completeness check.
+    let reachCheck = (): void => undefined;
+    let finishCheck = (): void => undefined;
+    const checkReached = new Promise<void>((resolve) => {
+      reachCheck = resolve;
+    });
+    const checkFinished = new Promise<void>((resolve) => {
+      finishCheck = resolve;
+    });
+    const stalledChecks: EmailReviewChecks = {
+      replyTriage: { assess: async () => "yes" },
+      replyCompleteness: {
+        assess: async () => {
+          reachCheck();
+          await checkFinished;
+          return { completeness: "complete", unansweredAsks: 0 };
+        },
+      },
+    };
+    const stalled = workerNode(async (input) => draft(input, "From the stalled claim."), stalledChecks, AUTO);
+    const staleRun = stalled.worker.drain({ maxJobs: 5, stage: "review" });
+    await checkReached;
+
+    // Its lease runs out; another worker claims R, finds the mail needs no reply, and completes R with the note.
+    await expireReviewLease(conversationId);
+    const takeover = workerNode(undefined, noReplyNeeded, AUTO);
+    expect(await takeover.worker.drain({ maxJobs: 5, stage: "review" })).toMatchObject({ reviewed: 1 });
+    expect(await reviewLink(conversationId)).toMatchObject({ review_revision: 1, review_completed_revision: 1 });
+
+    finishCheck();
+    expect(await staleRun).toMatchObject({ reviewed: 1 });
+
+    expect(await heldRepliesOf(conversationId)).toEqual([]);
+    expect(await outboxActionsOf(database, conversationId)).toEqual([]);
+    expect(await setAsideNotesOf(conversationId)).toHaveLength(1);
+    expect(await database.queryOne<{ auto_sends_since_renewal: number }>(
+      "SELECT auto_sends_since_renewal FROM email_thread_links WHERE conversation_id = $1",
+      [conversationId],
+    )).toEqual({ auto_sends_since_renewal: 0 });
     expect(stalled.logger.messages()).toContain("email_review_claim_lost");
   }, 60_000);
 

@@ -1,11 +1,21 @@
 import type { Db } from "../../../shared/infra/kysely/types.js";
-import type { EmailBacklogCounts, EmailBacklogReader } from "../maintenance/emailChannelSweep.js";
+
+/** The channel's work, across every workspace, still waiting past its stage's deadline. */
+interface EmailBacklogCounts {
+  /** Inbound events received before the cutoff and not yet processed, by state. */
+  inboundPending: number;
+  inboundProcessing: number;
+  /** Threads whose review fell due before the cutoff and has not run. */
+  reviewsDue: number;
+  /** Send intents created before the cutoff that the provider has not accepted. */
+  sendsQueued: number;
+}
 
 /**
- * Counts the channel's overdue work across every workspace for the sweep's backlog gauge. Each
- * count reads only rows in a waiting state, which the drains' partial indexes already cover.
+ * Counts the channel's overdue work across every workspace for the backlog gauge. Each count
+ * reads only rows in a waiting state, which the drains' partial indexes already cover.
  */
-export class EmailBacklogRepository implements EmailBacklogReader {
+export class EmailBacklogRepository {
   constructor(private readonly db: Db) {}
 
   async countOverdue(input: { inboundReceivedBefore: Date; reviewDueBefore: Date; sendQueuedBefore: Date }): Promise<EmailBacklogCounts> {

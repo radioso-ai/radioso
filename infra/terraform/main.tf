@@ -8,7 +8,9 @@ locals {
   # the wrapper supplies the public app URL or discovered frontend run.app URL.
   app_base_url            = coalesce(var.app_base_url_override, "https://example.invalid")
   operator_mcp_configured = var.radioso_mcp_enabled && var.mcp_public_origin != null
-  # The email channel's Resend region follows the stack's, so an EU stack keeps channel mail in the EU.
+  # The region the email channel's Resend sending domain is created in follows the stack's.
+  # That only places the sending and receiving infrastructure: Resend stores account data,
+  # email metadata, logs and received message content in the United States regardless of region.
   resend_channel_region = startswith(var.region, "europe-") ? "eu-west-1" : "us-east-1"
   # The document worker self-references its own public URL for Cloud Tasks
   # retry dispatch, so Terraform cannot use a direct reference and we keep the

@@ -128,12 +128,10 @@ const domainOf = (providerDomainId: string): string => {
   return name;
 };
 
-/** Local registration is idempotent and never refused as already registered, so its age never matters. */
 const providerDomainOf = (domain: string, state: LocalDomainState): ProviderDomain => ({
   providerDomainId: `${PROVIDER_ID_PREFIX}${domain}`,
   region: null,
   readiness: readinessOf(domain, state),
-  createdAt: null,
 });
 
 const readinessOf = (domain: string, state: LocalDomainState): DomainReadiness => {

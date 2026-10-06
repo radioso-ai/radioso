@@ -77,8 +77,9 @@ describe("lockConversationsInOrder", () => {
     const { db, log, statements } = createRecordingKysely(({ sql, parameters }) =>
       (kindOf(sql) === "lock_conversation" ? { rows: [{ id: parameters[0] }] } : undefined));
 
-    await lockConversationsInOrder(db, workspaceId, ["conversation-b", "conversation-a", "conversation-b"]);
+    const locked = await lockConversationsInOrder(db, workspaceId, ["conversation-b", "conversation-a", "conversation-b"]);
 
+    expect(locked).toEqual(new Set(["conversation-a", "conversation-b"]));
     expect(log.map((entry) => kindOf(entry))).toEqual(["lock_conversation", "lock_ownership", "lock_conversation", "lock_ownership"]);
     expect(statements.map((statement) => statement.parameters[0])).toEqual(["conversation-a", "conversation-a", "conversation-b", "conversation-b"]);
     expect(statements.filter((statement) => kindOf(statement.sql) === "lock_conversation").map((statement) => statement.parameters[1]))
@@ -88,8 +89,9 @@ describe("lockConversationsInOrder", () => {
   it("leaves a conversation outside the workspace alone, ownership row included", async () => {
     const { db, log } = createRecordingKysely(() => undefined);
 
-    await lockConversationsInOrder(db, workspaceId, ["conversation-elsewhere"]);
+    const locked = await lockConversationsInOrder(db, workspaceId, ["conversation-elsewhere"]);
 
+    expect(locked).toEqual(new Set());
     expect(log.map((entry) => kindOf(entry))).toEqual(["lock_conversation"]);
   });
 });

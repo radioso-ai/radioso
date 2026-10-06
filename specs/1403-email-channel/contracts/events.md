@@ -24,6 +24,8 @@ They are recorded through the existing `AuditService`, using the `eventType` + `
 | eventType | action | When | Metadata (ids and enums only) |
 |---|---|---|---|
 | `email_channel.domain` | `registered` | sending domain added (directly or by a mailbox) | domainId, domain, provider, region |
+| `email_channel.domain` | `reconciliation_required` | the provider already holds a claimed domain; it waits for an operator's reconcile | domainId, domain, provider |
+| `email_channel.domain` | `reconciled` | an operator adopted the provider's registration, or registered the domain afresh when the provider no longer held it | domainId, domain, provider, region, outcome (`adopted`/`registered`) |
 | `email_channel.domain` | `readiness_changed` | sending or receiving status transition (FR-003) | domainId, capability (`sending`/`receiving`), from, to |
 | `email_channel.domain` | `receiving_enabled` | advanced direct MX confirmed (FR-006a) | domainId, confirmedByUserId |
 | `email_channel.domain` | `removed` | authority revoked (FR-006b) | domainId, haltedSendCount |
@@ -75,7 +77,7 @@ Counters use `metricsRegistry.incrementCounter`, like `agentSkillTurnSkillProvid
 | `email_send_intents_total` | counter | `trigger`, `state` |
 | `email_send_provider_calls_total` | counter | `result` (`accepted`/`rejected`/`unknown`) |
 | `email_domain_readiness_transitions_total` | counter | `capability`, `to` |
-| `email_backlog` | gauge (sampled by the sweep, after its recovery steps) | `table`, `state`: `inbound_events` `pending`/`processing` received more than 10 min ago; `reviews_due` `due` more than 5 min ago; `send_intents` `queued` created more than 10 min ago. Counts only work past its deadline, so a draining queue reads 0. |
+| `email_backlog` | gauge (sampled from the database by the API when `/metrics` is scraped, at most every 30 s) | `table`, `state`: `inbound_events` `pending`/`processing` received more than 10 min ago; `reviews_due` `due` more than 5 min ago; `send_intents` `queued` created more than 10 min ago. Counts only work past its deadline, so a draining queue reads 0. |
 | `held_replies_total` | counter | `transition` (`created`/`released`/`edited`/`discarded`/`superseded`) |
 | `agent_skill_effect_suppressed_total` | counter | `mode`, `site` (`turn`/`staged`). Added in S3 beside the unchanged `agent_skill_safe_test_dispatch_total`; R2 does not rename anything. |
 | `email_drain_requests_total` | counter | `stage`, `scheduled` (`true`/`false`), `result` |

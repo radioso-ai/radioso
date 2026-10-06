@@ -148,7 +148,7 @@ groups:
 
 The outbox and email-backlog alerts earn their place the same way. While the action outbox is stalled, customer-facing work — a contact request, a notification — sits undelivered and nothing else reports it. There is no error and no failed request; the queue just stops.
 
-`radioso_email_backlog` counts only work that has waited past its deadline, so a busy queue that keeps draining reads zero. The email channel's sweep samples it on every run: on the scheduler job's cadence (every five minutes by default) in the Google Cloud deployment, and on the worker's own sweep interval elsewhere. It carries one series per stage:
+`radioso_email_backlog` counts only work that has waited past its deadline, so a busy queue that keeps draining reads zero. The API samples it from the database when its metrics endpoint is scraped, at most once every 30 seconds per instance; scrapes in between report the last sample. The counts cover every workspace, so each API instance reports the same value, which is why the alert takes the `max`. It carries one series per stage:
 
 | `table` | `state` | Counts |
 |---|---|---|
@@ -156,7 +156,7 @@ The outbox and email-backlog alerts earn their place the same way. While the act
 | `reviews_due` | `due` | Threads whose review fell due more than 5 minutes ago and has not run |
 | `send_intents` | `queued` | Sends created more than 10 minutes ago that the provider has not accepted |
 
-The gauge lives on the process that runs the sweep, and only while metrics are enabled. A deployment with the email channel turned off has no sweep, so the series is absent and the alert stays quiet.
+The gauge exists only on an API with metrics enabled and the email channel configured. A deployment with the channel turned off never samples it, so the series is absent and the alert stays quiet. When a sample fails, the gauge keeps its previous values and the API logs `email_backlog_sample_failed`.
 
 ## Rate limits
 

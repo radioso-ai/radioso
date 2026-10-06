@@ -87,6 +87,8 @@ const setup = () => {
   const reads: DeliveryFailureReadStore = {
     listOpen: vi.fn(async () => []),
     listAll: vi.fn(async () => []),
+    listOldestOpen: vi.fn(async () => []),
+    countOpen: vi.fn(async () => 0),
     find: vi.fn(async () => null),
   };
   const failures = new DeliveryFailures({ writes, reads });
@@ -332,10 +334,31 @@ describe("DeliveryFailures reader", () => {
     }
     const failures = new DeliveryFailures({
       writes: { run: vi.fn() },
-      reads: { listOpen, listAll, find: vi.fn() },
+      reads: { listOpen, listAll, listOldestOpen: vi.fn(), countOpen: vi.fn(), find: vi.fn() },
     });
     return { failures, listOpen, listAll };
   };
+
+  it("reads the longest waits as one bounded oldest-first read and a count, never page by page", async () => {
+    const oldest = failure("failure-1", "2026-10-03T10:00:01.000Z");
+    const listOldestOpen = vi.fn<DeliveryFailureReadStore["listOldestOpen"]>(async () => [oldest]);
+    const countOpen = vi.fn<DeliveryFailureReadStore["countOpen"]>(async () => 100_000);
+    const listOpen = vi.fn<DeliveryFailureReadStore["listOpen"]>();
+    const failures = new DeliveryFailures({
+      writes: { run: vi.fn() },
+      reads: { listOpen, listAll: vi.fn(), listOldestOpen, countOpen, find: vi.fn() },
+    });
+
+    await expect(failures.longestWaiting(WORKSPACE, { agentId: "agent-1", limit: 1 })).resolves.toEqual({ total: 100_000, items: [oldest] });
+    await failures.longestWaiting(WORKSPACE, { limit: 5 });
+
+    expect(listOldestOpen.mock.calls).toEqual([
+      [WORKSPACE, { agentId: "agent-1", limit: 1 }],
+      [WORKSPACE, { agentId: undefined, limit: 5 }],
+    ]);
+    expect(countOpen.mock.calls).toEqual([[WORKSPACE, { agentId: "agent-1" }], [WORKSPACE, { agentId: undefined }]]);
+    expect(listOpen).not.toHaveBeenCalled();
+  });
 
   it("filters to one agent's conversations and pages newest first through an opaque cursor", async () => {
     const newest = failure("failure-3", "2026-10-03T10:00:03.000Z");

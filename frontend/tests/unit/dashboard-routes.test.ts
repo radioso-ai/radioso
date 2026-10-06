@@ -100,15 +100,15 @@ describe('dashboard route state', () => {
       workspacePublicRouteKey: 'support-abc123',
       activityTab: 'needs-attention',
       historyItemKind: 'inbox',
-      historyItemId: 'approval:agent-1:second',
+      historyItemId: 'inbox:approval:conversation-1:approval:agent-1:second',
     })
 
-    expect(href).toBe('/w/support-abc123/activity?tab=needs-attention&itemKind=inbox&itemId=approval%3Aagent-1%3Asecond')
+    expect(href).toBe('/w/support-abc123/activity?tab=needs-attention&itemKind=inbox&itemId=inbox%3Aapproval%3Aconversation-1%3Aapproval%3Aagent-1%3Asecond')
     expect(parseDashboardRoute(['activity'], new URLSearchParams(href.split('?')[1]))).toEqual({
       section: 'activity',
       activityTab: 'needs-attention',
       historyItemKind: 'inbox',
-      historyItemId: 'approval:agent-1:second',
+      historyItemId: 'inbox:approval:conversation-1:approval:agent-1:second',
     })
   })
 

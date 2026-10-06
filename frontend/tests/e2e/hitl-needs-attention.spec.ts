@@ -129,6 +129,14 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   await handoffRow.click();
 
   const response = page.getByLabel("Response", { exact: true });
+  await expect(page).toHaveURL(new RegExp(`tab=needs-attention.*itemKind=chat.*itemId=${conversationId}`));
+  await page.reload();
+  await expect(response.getByText("Verified visitor")).toBeVisible();
+  await page.goBack();
+  await expect(page).not.toHaveURL(/itemKind=chat/);
+  await expect(response.getByText("Select an item from the queue to respond.")).toBeVisible();
+  await page.goForward();
+
   await expect(response.getByText("Verified visitor")).toBeVisible();
   await expect(response.getByRole("link", { name: "https://corsi.example.com/yoga" })).toBeVisible();
   await expect(response.getByText(/Handed off — agent had no weekly schedule information/)).toBeVisible();
@@ -540,6 +548,14 @@ test("operator opens a recently closed feedback conversation from Needs-you", as
   await closedRow.click();
 
   const response = page.getByLabel("Response", { exact: true });
+  await expect(page).toHaveURL(new RegExp(`tab=needs-attention.*itemKind=chat.*itemId=${conversationId}`));
+  await page.reload();
+  await expect(response.getByText("Who is Nikola Tesla?")).toBeVisible();
+  await page.goBack();
+  await expect(page).not.toHaveURL(/itemKind=chat/);
+  await expect(response.getByText("Select an item from the queue to respond.")).toBeVisible();
+  await page.goForward();
+
   await expect(closedRow).toHaveAttribute("aria-current", "true");
   await expect(response.getByText("Who is Nikola Tesla?")).toBeVisible();
   await expect(response.getByText("Nikola Tesla was an inventor and electrical engineer.")).toBeVisible();

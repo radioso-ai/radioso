@@ -28,6 +28,7 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import { useOptionalAuth } from '@/lib/auth-context'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { decideDefaultInboxLens, hasBlockingInboxLoadError } from '@/lib/inbox-default-lens'
+import { resolveNeedsAttentionRouteSelection } from '@/lib/needs-attention-route'
 import { useInboxAttentionSignal } from '@/hooks/use-inbox-attention-signal'
 import {
   buildInboxModel,
@@ -85,6 +86,15 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     anchor: HTMLElement | null
   } | null>(null)
   const [statusAnnouncement, setStatusAnnouncement] = useState('')
+  const [notFoundNotice, setNotFoundNotice] = useState<string | null>(null)
+  // A route reconciliation must never overwrite a selection the operator just
+  // made while a previous render's effect was still queued.
+  const selectionWriteRef = useRef(0)
+  const pendingClearConversationIdRef = useRef<string | null>(null)
+  const [selectionWrite, setSelectionWrite] = useState(0)
+  const routeConversationId = routeState.historyItemKind === 'chat'
+    ? routeState.historyItemId
+    : undefined
 
   const patchLatestQuality = useCallback((messageId: string, triage: QualityTriageRecord, remove: boolean) => {
     patchQualityTriage(queryClient, attentionQueries.commentedFeedback.queryKey, messageId, triage, remove)
@@ -184,13 +194,96 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     [items, filters, currentUserId],
   )
 
-  const recentlyClosed = useInboxRecentlyClosed(workspaceId)
+  const recentlyClosedQuery = useInboxRecentlyClosed(workspaceId)
+  const recentlyClosed = recentlyClosedQuery.items
   const filteredRecentlyClosed = useMemo(() => {
     const query = filters.search.trim().toLowerCase()
     return query.length === 0
       ? recentlyClosed
       : recentlyClosed.filter((item) => item.title.toLowerCase().includes(query))
   }, [recentlyClosed, filters.search])
+  const isSelectionDataReady = attentionQueries.policy.queriesEnabled
+    && !isLoading
+    && !recentlyClosedQuery.isLoading
+    && !approvalError
+    && !conversationError
+    && !qualityLoadState.hasLoadFailure
+    && !recentlyClosedQuery.hasLoadFailure
+  const routeSelection = useMemo(
+    () => resolveNeedsAttentionRouteSelection({
+      conversationId: routeConversationId,
+      items,
+      recentlyClosed,
+      isReady: isSelectionDataReady,
+    }),
+    [isSelectionDataReady, items, recentlyClosed, routeConversationId],
+  )
+
+  const beginSelectionWrite = useCallback(() => {
+    const next = selectionWriteRef.current + 1
+    selectionWriteRef.current = next
+    setSelectionWrite(next)
+  }, [])
+
+  const clearSelectionRoute = useCallback((conversationId: string) => {
+    // An operator can select another row while a prior action or detail fetch
+    // is finishing. Only clear the route that action/fetch actually opened.
+    const live = new URLSearchParams(window.location.search)
+    if (live.get('itemKind') !== 'chat' || live.get('itemId') !== conversationId) {
+      return
+    }
+    beginSelectionWrite()
+    pendingClearConversationIdRef.current = conversationId
+    setSelectedInboxItem(null)
+    setSelectedRecentlyClosedItem(null)
+    router.replace(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'activity',
+      activityTab: 'needs-attention',
+      historyItemKind: undefined,
+      historyItemId: undefined,
+      historyMessageId: undefined,
+    }))
+  }, [accountId, beginSelectionWrite, routeState, router])
+
+  /* eslint-disable react-hooks/set-state-in-effect -- This consumes the browser route into queue-local row data once the queues load. */
+  useEffect(() => {
+    const live = new URLSearchParams(window.location.search)
+    const liveConversationId = live.get('itemKind') === 'chat' ? live.get('itemId') ?? undefined : undefined
+    if (liveConversationId !== routeConversationId || selectionWriteRef.current !== selectionWrite) {
+      return
+    }
+    if (pendingClearConversationIdRef.current === routeConversationId) {
+      return
+    }
+    if (pendingClearConversationIdRef.current !== null) {
+      pendingClearConversationIdRef.current = null
+    }
+
+    if (routeSelection.kind === 'item') {
+      setSelectedInboxItem(routeSelection.item)
+      setSelectedRecentlyClosedItem(null)
+      return
+    }
+    if (routeSelection.kind === 'recently-closed') {
+      setSelectedInboxItem(null)
+      setSelectedRecentlyClosedItem(routeSelection.item)
+      return
+    }
+    if (routeSelection.kind === 'pending') {
+      setSelectedInboxItem(null)
+      setSelectedRecentlyClosedItem(null)
+      return
+    }
+    if (routeSelection.kind === 'missing' && routeConversationId) {
+      setNotFoundNotice('This conversation is no longer available.')
+      clearSelectionRoute(routeConversationId)
+      return
+    }
+    setSelectedInboxItem(null)
+    setSelectedRecentlyClosedItem(null)
+  }, [clearSelectionRoute, routeConversationId, routeSelection, selectionWrite])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const qualityReviewHref = useMemo(
     () => buildDashboardHref(accountId, {
@@ -241,8 +334,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         // above; the response pane must drop the same item, or it keeps
         // offering Done/resolution actions for a feedback item another
         // operator already closed.
-        setSelectedInboxItem((current2) =>
-          current2?.type === 'negative_feedback' && current2.assistantMessageId === messageId ? null : current2)
+        clearSelectionRoute(item.conversationId)
         setStatusAnnouncement('Another operator already closed this feedback. It was removed from the inbox.')
       } else {
         setQualitySnapshot((previous) =>
@@ -250,20 +342,51 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         patchLatestQuality(messageId, current, false)
       }
     }
-  }, [patchLatestQuality])
+  }, [clearSelectionRoute, patchLatestQuality])
 
   const handleSelectItem = useCallback((item: InboxItem) => {
+    beginSelectionWrite()
+    pendingClearConversationIdRef.current = null
+    setNotFoundNotice(null)
     setSelectedInboxItem(item)
     setSelectedRecentlyClosedItem(null)
+    router.push(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'activity',
+      activityTab: 'needs-attention',
+      historyItemKind: 'chat',
+      historyItemId: item.conversationId,
+      historyMessageId: undefined,
+    }))
     if (item.type === 'negative_feedback' && item.triageState === 'open') {
       void handleAcknowledge(item)
     }
-  }, [handleAcknowledge])
+  }, [accountId, beginSelectionWrite, handleAcknowledge, routeState, router])
 
   const handleSelectRecentlyClosed = useCallback((item: RecentlyClosedInboxItem) => {
+    beginSelectionWrite()
+    pendingClearConversationIdRef.current = null
+    setNotFoundNotice(null)
     setSelectedInboxItem(null)
     setSelectedRecentlyClosedItem(item)
-  }, [])
+    router.push(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'activity',
+      activityTab: 'needs-attention',
+      historyItemKind: 'chat',
+      historyItemId: item.conversationId,
+      historyMessageId: undefined,
+    }))
+  }, [accountId, beginSelectionWrite, routeState, router])
+
+  const handleReadingPaneItemNotFound = useCallback(() => {
+    const conversationId = selectedInboxItem?.conversationId ?? selectedRecentlyClosedItem?.conversationId
+    if (!conversationId) {
+      return
+    }
+    setNotFoundNotice('This conversation is no longer available.')
+    clearSelectionRoute(conversationId)
+  }, [clearSelectionRoute, selectedInboxItem, selectedRecentlyClosedItem])
 
   const handleOperatorChanged = useCallback(async (result: OperatorActionResult) => {
     if (result.kind === 'ownership') {
@@ -271,14 +394,15 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       if (result.ownershipState === 'ai_owned') {
         // A hand-back just closed this handoff item - Done's single wrap-up
         // action, so clear the selection and let the operator pick the next one.
-        setSelectedInboxItem((current) =>
-          current?.type === 'handoff' && current.conversationId === result.conversationId ? null : current)
+        clearSelectionRoute(result.conversationId)
       }
     } else if (result.kind === 'decision_resolved') {
       invalidateDashboardQueries(['hitl.decision_resolved'])
       // Only the selected approval can produce this result (decision buttons
       // render only for the item currently open in the response view).
-      setSelectedInboxItem((current) => current?.type === 'approval' ? null : current)
+      if (selectedInboxItem?.type === 'approval') {
+        clearSelectionRoute(selectedInboxItem.conversationId)
+      }
     } else if (result.kind === 'refresh') {
       invalidateDashboardQueries(
         result.reason === 'conflict' ? ['conversation.ownership_changed'] : ['hitl.decision_resolved'],
@@ -289,7 +413,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       // the next poll cycle.
       invalidateDashboardQueries(['conversation.ownership_changed'])
     }
-  }, [invalidateDashboardQueries])
+  }, [clearSelectionRoute, invalidateDashboardQueries, selectedInboxItem])
 
   const requestCloseReview = useCallback((item: InboxItem, anchor: HTMLElement) => {
     setTriageError(null)
@@ -314,7 +438,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       })
       setQualitySnapshot((previous) => removeQualityInboxTurn(previous, messageId))
       patchLatestQuality(messageId, triage, true)
-      setSelectedInboxItem((current) => current?.key === item.key ? null : current)
+      clearSelectionRoute(item.conversationId)
       setCloseReview(null)
       setStatusAnnouncement(state === 'resolved' ? 'Marked resolved.' : 'Dismissed as not actionable.')
     } catch (caught) {
@@ -346,7 +470,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         return next
       })
     }
-  }, [closeReview, patchLatestQuality])
+  }, [clearSelectionRoute, closeReview, patchLatestQuality])
 
   const debugSelectedItem: SelectedHistoryItem = useMemo(
     () => debugConversationId ? { kind: 'chat', id: debugConversationId } : null,
@@ -484,14 +608,15 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
                 onOperatorChanged={handleOperatorChanged}
                 onRequestFeedbackClose={requestCloseReview}
                 onOpenDebugView={setDebugConversationId}
-                emptyPlaceholder={isQueueEmpty ? (
+                onItemNotFound={handleReadingPaneItemNotFound}
+                emptyPlaceholder={notFoundNotice ?? (isQueueEmpty ? (
                   <InboxEmptyState
                     qualityReviewHref={qualityReviewHref}
                     untriagedQualityCount={qualityPresentation.reviewCount}
                     qualityPermissionDenied={qualityPresentation.permissionDenied}
                     qualityLoadFailed={qualityPresentation.hasLoadFailure}
                   />
-                ) : undefined}
+                ) : undefined)}
               />
             )}
           </div>

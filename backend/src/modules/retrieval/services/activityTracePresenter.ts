@@ -5,7 +5,7 @@ import type {
   ActivitySummary,
 } from "../domain/retrievalPipelineTypes.js";
 
-export interface AnswerOutcomeInput {
+interface AnswerOutcomeInput {
   answer: string;
   stream: boolean;
   hadContexts: boolean;

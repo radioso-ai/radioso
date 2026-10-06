@@ -37,7 +37,7 @@ A customer-owned domain verified for sending on behalf of one workspace. Its rec
 | `workspace_id` | uuid | no | FK `workspaces(id)` ON DELETE CASCADE |
 | `domain` | text | no | lowercase IDNA A-label; CHECK `domain = lower(domain)` |
 | `provider` | text | no | CHECK IN (`resend`, `local`) |
-| `provider_domain_id` | text | yes | |
+| `provider_domain_id` | text | yes | null while the row is a registration claim |
 | `provider_region` | text | yes | |
 | `dns_records` | jsonb | no | default `'[]'`; `DnsRecordView[]` |
 | `sending_status` | text | no | default `pending`; CHECK IN (`pending`,`verified`,`failed`) |
@@ -51,6 +51,7 @@ A customer-owned domain verified for sending on behalf of one workspace. Its rec
 | `created_at`, `updated_at` | timestamptz | no | default `now()` |
 
 - Unique: `email_domains_active_domain_uniq` ON (`domain`) WHERE `removed_at IS NULL` (FR-003).
+- Registration claim: an active row with a null `provider_domain_id`. The workspace inserts it, holding the domain, before calling the provider, then records the provider's id, region, records and statuses on the same row. It has no `next_check_at`, so the readiness refresh skips it. When the answer was lost or never recorded, the next registration attempt, a verify, or a removal finds the provider's registration by name and records it on the claim; a claim the provider refuses, or whose name the provider holds outside this deployment, is deleted (nothing references a claim). Another workspace's attempt meets the claim and is refused `claimed_elsewhere` without calling the provider. Provider cleanup skips a removed row whose registration an active row has since adopted.
 - Indexes: (`workspace_id`); (`next_check_at`) WHERE `removed_at IS NULL`; (`domain`) WHERE `receiving_status = 'verified' AND removed_at IS NULL` (direct-rule lookup).
 
 `DnsRecordView`: `{ purpose: "dkim" | "spf" | "return_path" | "receiving_mx" | "dmarc", type: "TXT" | "MX" | "CNAME", name, value, priority?, status: "pending" | "verified" | "failed" | "advisory" }`.

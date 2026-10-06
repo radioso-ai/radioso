@@ -75,7 +75,7 @@ Counters use `metricsRegistry.incrementCounter`, like `agentSkillTurnSkillProvid
 | `email_send_intents_total` | counter | `trigger`, `state` |
 | `email_send_provider_calls_total` | counter | `result` (`accepted`/`rejected`/`unknown`) |
 | `email_domain_readiness_transitions_total` | counter | `capability`, `to` |
-| `email_backlog` | gauge (sampled by the sweep) | `table` (`inbound_events`/`reviews_due`/`send_intents`), `state` |
+| `email_backlog` | gauge (sampled by the sweep, after its recovery steps) | `table`, `state`: `inbound_events` `pending`/`processing` received more than 10 min ago; `reviews_due` `due` more than 5 min ago; `send_intents` `queued` created more than 10 min ago. Counts only work past its deadline, so a draining queue reads 0. |
 | `held_replies_total` | counter | `transition` (`created`/`released`/`edited`/`discarded`/`superseded`) |
 | `agent_skill_effect_suppressed_total` | counter | `mode`, `site` (`turn`/`staged`). Added in S3 beside the unchanged `agent_skill_safe_test_dispatch_total`; R2 does not rename anything. |
 | `email_drain_requests_total` | counter | `stage`, `scheduled` (`true`/`false`), `result` |
@@ -124,8 +124,8 @@ Every line carries ids and codes only.
 
 | Alert | Condition | Severity |
 |---|---|---|
-| Inbound events stuck | `email_backlog{table="inbound_events",state="pending"}` has rows older than 10 min for 10 min | page |
-| Reviews overdue | `email_backlog{table="reviews_due"}` has rows due more than 5 min ago for 10 min | ticket |
+| Inbound events stuck | `email_backlog{table="inbound_events",state="pending"} > 0` for 10 min (the gauge counts events received more than 10 min ago) | page |
+| Reviews overdue | `email_backlog{table="reviews_due"} > 0` for 10 min (the gauge counts reviews due more than 5 min ago) | ticket |
 | Webhook authentication failing | `email_webhook_requests_total{result=~"bad_signature\|stale_timestamp"}` above 5 in 5 min while no `persisted` | page (signing-key rotation or attack) |
 | Uncertain sends accumulating | any `email_send_intents_total{state="uncertain"}` increase in 1 h | ticket |
 | Domain readiness lost | `email_domain_readiness_transitions_total{capability="sending",to!="verified"}` from `verified` | ticket |

@@ -29,6 +29,10 @@ Add a mailbox and bind it to an agent. Radioso returns a relay address on its in
 
 **Microsoft 365** blocks external automatic forwarding until a tenant admin changes the outbound anti-spam policy to allow it. Do that first; only then create the forwarding rule pointed at the relay address, or the forward fails with a bounce instead of going through.
 
+If a relay address leaks or you want a fresh one, **Replace relay address** on the mailbox card issues a new one. The old address keeps forwarding for seven days, so update your forwarding rule before then.
+
+**Disable mailbox** pauses a mailbox without removing it: mail sent to it is recorded in the event log and nothing answers it, its pending drafts are discarded unsent, and their conversations go to a person. **Enable mailbox** turns it back on for new mail.
+
 A mailbox that's received mail before and then gone quiet past its silence threshold shows a notice with the last time anything arrived — a dropped forwarding rule is invisible to Radioso otherwise, so this is the only signal you get.
 
 ## Verify sending
@@ -116,6 +120,8 @@ Each one shows in the mailbox's event log, and as a note on the conversation whe
 ## Direct receiving (advanced)
 
 Instead of forwarding, you can point an entire customer-owned domain or subdomain's MX record at Radioso. This is a deliberate trade-off: once you confirm it by typing the domain's name, *every* address on that domain routes to Radioso, not just the mailboxes you've connected. Forwarding is the default for a reason — reach for direct receiving only when you want Radioso to be the domain's mail server outright.
+
+Mail to an address on that domain that no mailbox has is still recorded. It shows in the workspace's event log, `GET /api/v1/workspaces/{workspaceId}/email-channel/events`, with the reason `no_mailbox`; the same log keeps a removed mailbox's events, and `mailboxId` narrows it to one mailbox.
 
 ## Common failure modes
 

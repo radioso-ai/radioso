@@ -535,14 +535,16 @@ that's already settled returns `409` with code `held_reply_not_pending`.
 
 ### What replaces a draft
 
-A newer inbound message, a free-form operator reply, a takeover, or a
-change to the mailbox's mode, agent, or enabled flag all supersede a
-pending held reply before an operator acts on it: the draft is replaced,
-not released, and nothing is sent for it. Where there's a new customer
-message behind the supersede, a fresh review turn runs in its place.
-Switching a mailbox from `auto` to `draft` keeps its drafts instead: queued
-replies return to `pending` and pending ones stay, all bound to the
-mailbox's new policy version so a release goes through.
+A newer inbound message, a free-form operator reply, a takeover, a change
+to the mailbox's mode, agent, or enabled flag, or removing the mailbox all
+supersede a pending held reply before an operator acts on it: the draft is
+replaced, not released, and nothing is sent for it. Where there's a new
+customer message behind the supersede, a fresh review turn runs in its
+place; a mailbox change hands the conversation to a person instead.
+Switching a mailbox from `auto` to `draft`, or changing its thread send
+budget, keeps its drafts instead: queued replies return to `pending` and
+pending ones stay, all bound to the mailbox's new policy version so a
+release goes through.
 
 An automatic reply never gets around a takeover. The same events supersede
 a `queued_auto` reply, and the send worker writes the agent's message only
@@ -564,8 +566,10 @@ for each failed send; the flag belongs to no single channel, so any
 channel's deliverer can open one.
 
 A `delivery_failed` flag clears itself when later evidence from the
-provider shows the message was actually delivered, or when an operator
-acts on it below.
+provider shows the message was actually delivered, or when a later reply on
+the same conversation is delivered: that delivery clears the flags of every
+reply sent before it, and leaves a reply sent after it flagged. An operator
+can also act on it below.
 
 ### List open delivery failures
 
@@ -601,6 +605,12 @@ sending is ready again; a domain still unverified returns `409` with code
 `email_sending_not_verified`. Radioso never resends a send on its own — this
 is the only path to a second attempt. A send that is not `uncertain` or
 `halted` returns `409` with code `not_resolvable`.
+
+A decision applies to the failure you named and to nothing else. If that
+failure was cleared or changed after you read it — a teammate already
+resolved it and their resend failed again, say, which opens a new failure on
+the same message — the request returns `409` with code `not_resolvable` and
+nothing is sent. Read the open failures again and decide on the current one.
 
 ## Live updates
 

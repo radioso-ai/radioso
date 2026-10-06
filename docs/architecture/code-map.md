@@ -308,6 +308,15 @@ Public surfaces and key files:
 - `backend/src/modules/emailChannel/outbound/` — the `email.send` outbox
   handler, send intents, authority checks, outbound headers, and
   reconciliation.
+- `backend/src/modules/emailChannel/persistence/` — the channel's
+  repositories, including `emailBacklogRepository.ts`, which counts overdue
+  inbound events, thread reviews and queued sends across workspaces for the
+  sweep's backlog gauge.
+- `backend/src/app/composition/conversationLockOrder.ts` — the conversation
+  lock protocol every held-reply, ingest, ownership and mailbox-policy unit
+  of work follows (conversation, ownership, channel policy, held reply,
+  message, delivery), with the bounded deadlock-victim retry those units
+  run under.
 - `backend/src/modules/connectors/plugins/email/` — the pure decisions
   `emailInboundClassification.ts` (RFC 3834 and delivery-status headers),
   `emailEngagementDisposition.ts`, `emailThreadResolution.ts`, and

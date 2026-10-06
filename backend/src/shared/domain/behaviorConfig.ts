@@ -224,6 +224,9 @@ export const RETRIEVAL_BEHAVIOR = {
   promptContextTokenBudget: 4800,
   finalContextTopK: 12,
   promptContextMaxCharsPerContext: 900,
+  // Caps how many of the final prompt contexts may come from the same document, so one
+  // long document cannot crowd out every other source in the answer.
+  promptContextMaxPerDocument: 2,
   promptContextMinUsefulChars: 24,
   rewriteConversationContextMaxMessages: 10,
   promptHistoryMaxMessages: 4,

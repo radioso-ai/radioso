@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   createDefaultSkillCapabilityRegistry,
+  SkillCapabilityRegistry,
   type SkillCapabilityDescriptor,
   skillCapabilityIds,
 } from "../../../src/modules/skills/capabilityRegistry.js";
 import { defaultRetrievalSettings } from "../../../src/modules/settings/contracts/retrieval.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../src/shared/domain/behaviorConfig.js";
 
 const rootSettingKey = (key: string) => key.split(".")[0] ?? key;
 
@@ -219,5 +221,57 @@ describe("SkillCapabilityRegistry", () => {
     );
     expect(notifyByKey.get("delivery.recipientEmails")?.showValueToCopilot).not.toBe(true);
     expect(notifyByKey.get("delivery.webhook.url")?.showValueToCopilot).not.toBe(true);
+  });
+
+  it("declares the answer candidate pool on vectorTopK, raised by rerankTopK", () => {
+    const registry = createDefaultSkillCapabilityRegistry();
+    const vectorTopK = registry.get("retrieve")?.settingsFields.find((field) => field.key === "vectorTopK");
+    const rerankTopK = registry.get("retrieve")?.settingsFields.find((field) => field.key === "rerankTopK");
+
+    expect(vectorTopK?.usageCap).toEqual({
+      raisedByKey: "rerankTopK",
+      floor: RETRIEVAL_BEHAVIOR.finalContextTopK,
+      ceiling: RETRIEVAL_BEHAVIOR.rerank.candidateLimit,
+      notice: expect.stringContaining("{cap}"),
+    });
+    // rerankTopK itself must not claim headroom the reranker's own candidate limit does not honor.
+    expect(rerankTopK?.max).toBe(RETRIEVAL_BEHAVIOR.rerank.candidateLimit);
+  });
+
+  it("rejects a usageCap whose raisedByKey does not name a sibling number field", () => {
+    const badDescriptor: SkillCapabilityDescriptor = {
+      ...(createDefaultSkillCapabilityRegistry().get("retrieve") as SkillCapabilityDescriptor),
+      id: "retrieve",
+      storedKind: "retrieve",
+      settingsFields: [
+        { key: "vectorTopK", label: "Vector top K", type: "number", usageCap: { raisedByKey: "doesNotExist", floor: 1, ceiling: 2, notice: "x" } },
+      ],
+    };
+
+    expect(() => new SkillCapabilityRegistry([badDescriptor])).toThrow(/usageCap.raisedByKey/);
+  });
+
+  const descriptorWithFields = (settingsFields: SkillCapabilityDescriptor["settingsFields"]): SkillCapabilityDescriptor => ({
+    ...(createDefaultSkillCapabilityRegistry().get("retrieve") as SkillCapabilityDescriptor),
+    settingsFields,
+  });
+  const rerankTopK = { key: "rerankTopK", label: "Rerank top K", type: "number" } as const;
+
+  it("rejects a usageCap on a field that is not a number field", () => {
+    const descriptor = descriptorWithFields([
+      { key: "instruction", label: "Instruction", type: "text", usageCap: { raisedByKey: "rerankTopK", floor: 1, ceiling: 2, notice: "x" } },
+      rerankTopK,
+    ]);
+
+    expect(() => new SkillCapabilityRegistry([descriptor])).toThrow(/usageCap.*number settings field/);
+  });
+
+  it("rejects a usageCap whose floor is above its ceiling", () => {
+    const descriptor = descriptorWithFields([
+      { key: "vectorTopK", label: "Vector top K", type: "number", usageCap: { raisedByKey: "rerankTopK", floor: 50, ceiling: 12, notice: "x" } },
+      rerankTopK,
+    ]);
+
+    expect(() => new SkillCapabilityRegistry([descriptor])).toThrow(/usageCap.floor/);
   });
 });

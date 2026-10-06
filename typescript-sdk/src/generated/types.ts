@@ -20580,6 +20580,12 @@ export interface operations {
                                 }[];
                                 min?: number;
                                 max?: number;
+                                usageCap?: {
+                                    raisedByKey: string;
+                                    floor: number;
+                                    ceiling: number;
+                                    notice: string;
+                                };
                                 group?: string;
                                 advanced?: boolean;
                                 defaultValue?: string | number | boolean;

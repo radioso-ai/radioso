@@ -96,7 +96,15 @@ imports from `services/` or `infra/`.
 - Candidate ranking or filtering: `candidate*`, `metadataRuleScoringService.ts`,
   `rerankService.ts`.
 - Context and prompt shape: `contextSelectionStage.ts`,
-  `promptAssemblyStage.ts`, `promptBuilder.ts`.
+  `promptAssemblyStage.ts`, `promptBuilder.ts`. `domain/answerCandidatePool.ts`
+  holds the one answer-candidate pool size formula (raised by `rerankTopK`,
+  floored and capped by `RETRIEVAL_BEHAVIOR.finalContextTopK` and
+  `RETRIEVAL_BEHAVIOR.rerank.candidateLimit`); `promptContextSelectorService.ts`
+  then caps the final prompt at `finalContextTopK` passages,
+  `promptContextMaxPerDocument` per document, each at most
+  `promptContextMaxCharsPerContext` characters. `vectorTopK` sets fetch depth
+  before candidate preparation filters, boosts, and merges; the pool size
+  bounds what reaches the answer.
 - Diagnostics: `retrievalActivityTraceAssembler.ts`,
   `retrievalPipelineActivityTraceBuilder.ts`,
   `retrievalDiagnosticsStage.ts`.

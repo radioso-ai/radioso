@@ -1,6 +1,7 @@
 import { RETRIEVAL_ANSWER_ADAPTER, retrieveSkillConfigSchema } from "../../retrieval/public.js";
 import { defaultRetrievalSettings } from "../../settings/contracts/retrieval.js";
 import type { SkillCapabilityDescriptor } from "../capabilityRegistry.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
 // Only the per-field defaults are read from this record; the workspaceId it
 // embeds never leaves this module, so a placeholder is safe here.
@@ -64,10 +65,16 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       key: "vectorTopK",
       label: "Vector top K",
       type: "number",
-      help: "How many chunks are fetched from the vector index before filtering and reranking.",
+      help: `How many chunks each vector search fetches, before filters, boosts and merging. The top Rerank top K of the result (at least ${RETRIEVAL_BEHAVIOR.finalContextTopK}) go on to the answer.`,
       defaultValue: retrieveSettingsDefaults.vectorTopK,
       min: 1,
       max: 300,
+      usageCap: {
+        raisedByKey: "rerankTopK",
+        floor: RETRIEVAL_BEHAVIOR.finalContextTopK,
+        ceiling: RETRIEVAL_BEHAVIOR.rerank.candidateLimit,
+        notice: "The answer draws on the top {cap} candidates after filters and boosts. To use more, raise Rerank top K with Rerank results on.",
+      },
       group: "Retrieval tuning",
       advanced: true,
       showValueToCopilot: true,
@@ -88,11 +95,11 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       key: "rerankTopK",
       label: "Rerank top K",
       type: "number",
-      help: "How many chunks survive reranking and are passed to the answer.",
+      help: `How many top candidates go on to the answer, reordered by the reranker when it's on. Values below ${RETRIEVAL_BEHAVIOR.finalContextTopK} act as ${RETRIEVAL_BEHAVIOR.finalContextTopK}; max ${RETRIEVAL_BEHAVIOR.rerank.candidateLimit}. The answer uses up to ${RETRIEVAL_BEHAVIOR.finalContextTopK} of them, at most ${RETRIEVAL_BEHAVIOR.promptContextMaxPerDocument} per document, each cut to ${RETRIEVAL_BEHAVIOR.promptContextMaxCharsPerContext} characters.`,
       defaultValue: retrieveSettingsDefaults.rerankTopK,
       dependsOnKey: "rerankEnabled",
       min: 1,
-      max: 100,
+      max: RETRIEVAL_BEHAVIOR.rerank.candidateLimit,
       group: "Retrieval tuning",
       advanced: true,
       showValueToCopilot: true,

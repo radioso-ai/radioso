@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 
 import { AgentSkillsService } from "../../../src/modules/agentSkills/service.js";
 import { AgentRetrievalAuthoringService } from "../../../src/modules/agentSkills/retrievalAuthoring.js";
@@ -107,6 +108,30 @@ describe("Operator MCP retrieval authoring", () => {
     expect(preparePatch).toHaveBeenCalledWith({ workspaceId, agentId, patch: { citationHoldEnabled: false } });
     // Retrieval settings stay a draft until publication, so chat confirmation is enough.
     expect(output.confirmation).toEqual({ requirement: "conversation", effect: { exposure: "draft", reversibility: "reversible", metered: false } });
+  });
+
+  it("rejects a rerankTopK patch above the reranker's own candidate limit", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const preparePatch = vi.fn();
+    const [, prepare] = createRetrievalAuthoringCopilotTools({
+      retrievalAuthoring: { preparePatch } as never,
+      proposalRepository: { createProposal: vi.fn() },
+      proposalAdapters: [],
+      auditService: { record: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+    });
+    const context = {
+      workspaceId,
+      operatorUserId: "operator-1",
+      copilotConversationId: randomUUID(),
+      currentAuthorization: { hasAllPermissions: vi.fn(async () => true) },
+    };
+
+    await expect(
+      prepare.createTool(context as never).invoke({ agentId, patch: { rerankTopK: 51 } }, {} as never),
+    ).rejects.toBeInstanceOf(ZodError);
+    expect(preparePatch).not.toHaveBeenCalled();
   });
 
   it("presents code-owned defaults separately from the existing agent retrieval override", async () => {

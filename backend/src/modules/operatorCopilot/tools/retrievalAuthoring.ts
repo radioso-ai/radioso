@@ -6,6 +6,12 @@ import { requireCurrentCopilotPermissions } from "../authorization.js";
 import { reviewedConfirmationSchema } from "../reviewedOperation.js";
 import { persistReviewedPreparation, reviewedPreparationConfirmation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
 import type { CopilotProposalToolDependencies } from "./shared.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+
+// Both tools carry the pool rule so Ray sees it whether it reads settings or prepares a patch.
+const answerPoolRule = `vectorTopK sets how deep each search fetches before metadata filters, boosts and merging; only the top max(rerankTopK, ${RETRIEVAL_BEHAVIOR.finalContextTopK}) results, capped at ${RETRIEVAL_BEHAVIOR.rerank.candidateLimit}, go on to the answer, which uses at most ${RETRIEVAL_BEHAVIOR.finalContextTopK} passages, ${RETRIEVAL_BEHAVIOR.promptContextMaxPerDocument} per document. A deeper fetch helps when filters or boosts promote lower-ranked chunks; otherwise raise rerankTopK with it.`;
+const retrievalSettingsDescription = `Read code-owned retrieval defaults and this agent's writable default retrieval skill. System defaults are read-only. ${answerPoolRule}`;
+const prepareRetrievalSettingsDescription = `Prepare an omission-preserving per-agent retrieval settings patch for review. It does not change retrieval behavior. ${answerPoolRule}`;
 
 const id = z.string().uuid();
 const settingsPatch = z.object({
@@ -14,7 +20,7 @@ const settingsPatch = z.object({
   retrievalStrategy: z.enum(["fixed", "reasoning", "auto"]).optional(),
   vectorTopK: z.number().int().min(1).max(300).optional(),
   rerankEnabled: z.boolean().optional(),
-  rerankTopK: z.number().int().min(1).max(100).optional(),
+  rerankTopK: z.number().int().min(1).max(RETRIEVAL_BEHAVIOR.rerank.candidateLimit).optional(),
   citationHoldEnabled: z.boolean().optional(),
   queryRewriteEnabled: z.boolean().optional(),
   temporalStructuredLookupEnabled: z.boolean().optional(),
@@ -62,16 +68,16 @@ export const createRetrievalAuthoringCopilotTools = (
 ): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "retrieval_settings", shape: "read", verificationCost: () => 0, uiLabel: "Reading retrieval settings", contributingModule: "agentSkills", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
-    description: "Read code-owned retrieval defaults and this agent's writable default retrieval skill. System defaults are read-only.", inputSchema: inspectInput, outputSchema: inspectOutput,
+    description: retrievalSettingsDescription, inputSchema: inspectInput, outputSchema: inspectOutput,
     createTool: (context) => ({
-      name: "retrieval_settings", description: "Read code-owned retrieval defaults and this agent's writable default retrieval skill. System defaults are read-only.", inputSchema: inspectInput, outputSchema: inspectOutput,
+      name: "retrieval_settings", description: retrievalSettingsDescription, inputSchema: inspectInput, outputSchema: inspectOutput,
       invoke: async ({ agentId }) => deps.retrievalAuthoring.inspect({ workspaceId: context.workspaceId, agentId }),
     }),
     describeEntity: (input) => ({ type: "agent", id: (input as { agentId: string }).agentId }),
   },
   {
     name: "prepare_retrieval_settings", shape: "propose", verificationCost: () => 0, uiLabel: "Preparing retrieval settings", contributingModule: "agentSkills", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"], surfaces: ["mcp"],
-    description: "Prepare an omission-preserving per-agent retrieval settings patch for review. It does not change retrieval behavior.", inputSchema: prepareInput, outputSchema: prepareOutput,
+    description: prepareRetrievalSettingsDescription, inputSchema: prepareInput, outputSchema: prepareOutput,
     reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
       if (!invocation.operationId) return { status: "conflict" };
       const recovered = await deps.proposalRecovery.recoverOperatorMcpProposal({ invocationId: invocation.id, grantId: invocation.grantId, workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, operationId: invocation.operationId, descriptorName: "prepare_retrieval_settings", inputDigest: invocation.inputDigest, staleBefore, now });
@@ -82,7 +88,7 @@ export const createRetrievalAuthoringCopilotTools = (
       return { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), confirmation, ...snapshot.data } };
     },
     createTool: (context) => ({
-      name: "prepare_retrieval_settings", description: "Prepare an omission-preserving per-agent retrieval settings patch for review. It does not change retrieval behavior.", inputSchema: prepareInput, outputSchema: prepareOutput,
+      name: "prepare_retrieval_settings", description: prepareRetrievalSettingsDescription, inputSchema: prepareInput, outputSchema: prepareOutput,
       invoke: async (rawInput) => {
         const input = prepareInput.parse(rawInput);
         await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);

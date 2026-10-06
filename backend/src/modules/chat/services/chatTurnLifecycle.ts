@@ -268,6 +268,7 @@ interface BuildTurnTraceForPresentationInput {
   session: PreparedSession;
   presentation: ChatPresentedAnswer;
   requestReceivedAt: number;
+  answerStartedAt: number;
   stream: boolean;
   engineTrace?: ConversationTrace;
   modelCallTrace?: ModelCallTraceCollector;
@@ -327,6 +328,7 @@ export const buildTurnTraceForPresentation = (
   // `messages.total_latency_ms` column and the trace's answer stage, so the quality
   // dashboard and debug trace cannot report different durations for a turn.
   const totalLatencyMs = Date.now() - input.requestReceivedAt;
+  const generationLatencyMs = Date.now() - input.answerStartedAt;
   const activitySummary = {
     ...activitySummaryPresenter.present(retrieval.diagnostics, {
       execution,
@@ -348,6 +350,7 @@ export const buildTurnTraceForPresentation = (
           hadContexts: retrieval.contexts.length > 0,
           retrievalSkipped: retrieval.diagnostics.retrievalSkipped,
           durationMs: totalLatencyMs,
+          generationDurationMs: generationLatencyMs,
           answerOutcome: input.presentation.answerOutcome,
           skillName: skillTurnOutcome.skillName,
           skillOutcome: skillTurnOutcome.outcome,
@@ -636,6 +639,8 @@ export class ChatTurnLifecycle {
     presentation: ChatPresentedAnswer;
     /** Time the turn entered ChatService, before any queueing or preparation work. */
     requestReceivedAt: number;
+    /** Time answer generation began, after session preparation. */
+    answerStartedAt: number;
     stream: boolean;
     /** Suppresses customer-facing effects while retaining the synthetic messages and trace. */
     executionMode?: TurnExecutionMode;
@@ -684,6 +689,7 @@ export class ChatTurnLifecycle {
       session: input.session,
       presentation: input.presentation,
       requestReceivedAt: input.requestReceivedAt,
+      answerStartedAt: input.answerStartedAt,
       stream: input.stream,
       engineTrace: input.engineTrace,
       modelCallTrace: input.modelCallTrace,

@@ -927,6 +927,7 @@ export class ChatService {
       const responseLanguagePromise = this.planAwareResponseLanguagePromise(input, session);
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, there is no retrieval — the routine renders its own reply.
+      const routineStartedAt = Date.now();
       this.checkTurnCancellation(coordination, "routing");
       // A suspended routine keeps the turn without running: it waits for an operator's
       // decision, not for this input, so the attempt is bypassed and only described.
@@ -957,6 +958,7 @@ export class ChatService {
           session,
           presentation: routineTurn.presentation,
           requestReceivedAt,
+          answerStartedAt: routineStartedAt,
           stream: input.stream,
           executionMode: input.executionMode,
           engineTrace: routineTurn.engineTrace,
@@ -982,6 +984,7 @@ export class ChatService {
       // direct and silently drop the document scope.
       const resolvedRetrievalSense = clarification.resolution?.kind === "retrieval_sense";
       const retrievalInput = retrievalInputForResolvedSense(input, clarification.resolution);
+      const answerStartedAt = Date.now();
       if (!this.turnInterpreter && (this.retrievalSenseDetector || resolvedRetrievalSense)) {
         const interpreted = await this.chatTurnAssembly.interpretChatTurnForPreparation({
           request: {
@@ -1064,6 +1067,7 @@ export class ChatService {
           session,
           presentation,
           requestReceivedAt,
+          answerStartedAt,
           stream: input.stream,
           executionMode: input.executionMode,
           engineTrace,
@@ -1133,6 +1137,7 @@ export class ChatService {
         session,
         presentation,
         requestReceivedAt,
+        answerStartedAt,
         stream: input.stream,
         executionMode: input.executionMode,
         engineTrace,
@@ -1395,6 +1400,7 @@ export class ChatService {
 
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, stream its rendered reply and finish — no retrieval.
+      const routineStartedAt = Date.now();
       this.checkTurnCancellation(coordination, "routing");
       const routineResult: { value: Awaited<ReturnType<ChatTurnAssembly["attemptRoutineTurn"]>> } = { value: null };
       if (suspendedRoutine) {
@@ -1436,6 +1442,7 @@ export class ChatService {
           session,
           presentation: routineTurn.presentation,
           requestReceivedAt,
+          answerStartedAt: routineStartedAt,
           stream: input.stream,
           engineTrace: routineTurn.engineTrace,
           modelCallTrace,
@@ -1467,6 +1474,7 @@ export class ChatService {
       // direct and silently drop the document scope.
       const resolvedRetrievalSense = clarification.resolution?.kind === "retrieval_sense";
       const retrievalInput = retrievalInputForResolvedSense(input, clarification.resolution);
+      const answerStartedAt = Date.now();
       const useSenseCompatiblePath = Boolean(!this.turnInterpreter && (this.retrievalSenseDetector || resolvedRetrievalSense));
       let clarificationTurn:
         | {
@@ -1548,6 +1556,7 @@ export class ChatService {
             session,
             presentation: clarificationTurn.presentation,
             requestReceivedAt,
+            answerStartedAt,
             stream: input.stream,
             engineTrace: clarificationTurn.engineTrace,
             modelCallTrace,
@@ -1687,6 +1696,7 @@ export class ChatService {
         session: preparedSession,
         presentation,
         requestReceivedAt,
+        answerStartedAt,
         stream: input.stream,
         engineTrace,
         modelCallTrace,

@@ -383,6 +383,7 @@ export class WorkbenchReplayRunner {
     const activeRoutine = await routineStore.loadActive({
       sessionId: session.conversation.id,
     });
+    const answerStartedAt = Date.now();
     const routineResult = await assembly.attemptRoutineTurn(session, {
       accountId: input.accountId ?? undefined,
       responseLanguage: responseLanguagePromise,
@@ -400,6 +401,7 @@ export class WorkbenchReplayRunner {
         presentation: routineResult.presentation,
         engineTrace: routineResult.engineTrace,
         requestReceivedAt,
+        answerStartedAt,
         actions: routineResult.actions,
         pendingDecisionTransition: routineResult.pendingDecisionTransition,
         handoff: routineResult.handoff,
@@ -431,6 +433,7 @@ export class WorkbenchReplayRunner {
       presentation: rendered.presentation,
       engineTrace: rendered.engineTrace,
       requestReceivedAt,
+      answerStartedAt,
       actions: rendered.actions,
       continuation: this.continuation(effects, session.conversation.id, routineStore),
     });
@@ -587,6 +590,7 @@ export class WorkbenchReplayRunner {
     presentation: ChatPresentedAnswer;
     engineTrace?: Parameters<typeof buildTurnTraceForPresentation>[0]["engineTrace"];
     requestReceivedAt: number;
+    answerStartedAt: number;
     actions?: RoutineActionRequest[];
     pendingDecisionTransition?: ChatTurnAssemblyRoutineResult["pendingDecisionTransition"];
     handoff?: ChatTurnAssemblyRoutineResult["handoff"];
@@ -600,6 +604,7 @@ export class WorkbenchReplayRunner {
       session: input.session,
       presentation: input.presentation,
       requestReceivedAt: input.requestReceivedAt,
+      answerStartedAt: input.answerStartedAt,
       stream: false,
       engineTrace: input.engineTrace,
     });

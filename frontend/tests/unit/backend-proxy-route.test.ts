@@ -381,6 +381,118 @@ describe('backend proxy route', () => {
     expect(response.status).toBe(200)
   })
 
+  it('signs embed config source facts and relays only rate-limit response headers', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    vi.stubEnv('RADIOSO_EDGE_PROOF_SECRET', EDGE_PROOF_SECRET)
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'rate_limited' } }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'RateLimit-Limit': '60',
+          'RateLimit-Remaining': '0',
+          'RateLimit-Reset': '30',
+          'Retry-After': '30',
+          'X-Upstream-Private': 'do-not-relay',
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { GET } = await import('@/app/api/embed/config/[token]/route')
+    const response = await GET(new Request('https://frontend.example.com/api/embed/config/token-1', {
+      headers: {
+        Origin: 'https://embed.example.com',
+        'X-Forwarded-For': '203.0.113.9, 35.191.0.1',
+        ...CLIENT_SUPPLIED_EDGE_HEADERS,
+      },
+    }), { params: Promise.resolve({ token: 'token-1' }) })
+
+    const headers = Object.fromEntries(new Headers(fetchMock.mock.calls[0][1].headers).entries())
+    const verification = verifyEdgeFactsProof({
+      headers,
+      method: 'GET',
+      path: '/api/v1/public/chat/token-1/embed-config',
+      secret: EDGE_PROOF_SECRET,
+    })
+
+    expect(verification).toMatchObject({ ok: true, facts: { forwardedFor: '203.0.113.9, 35.191.0.1' } })
+    expect(response.status).toBe(429)
+    expect(response.headers.get('ratelimit-limit')).toBe('60')
+    expect(response.headers.get('ratelimit-remaining')).toBe('0')
+    expect(response.headers.get('ratelimit-reset')).toBe('30')
+    expect(response.headers.get('retry-after')).toBe('30')
+    expect(response.headers.get('access-control-expose-headers')).toBe(
+      'RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset, Retry-After',
+    )
+    expect(response.headers.get('x-upstream-private')).toBeNull()
+  })
+
+  it('does not relay per-visitor rate-limit headers on cacheable embed config responses', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ assistantName: 'Radioso' }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'RateLimit-Limit': '60',
+          'RateLimit-Remaining': '59',
+          'RateLimit-Reset': '30',
+          'Retry-After': '30',
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { GET } = await import('@/app/api/embed/config/[token]/route')
+    const response = await GET(new Request('https://frontend.example.com/api/embed/config/token-1', {
+      headers: { Origin: 'https://embed.example.com' },
+    }), { params: Promise.resolve({ token: 'token-1' }) })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('public, max-age=60, s-maxage=300')
+    expect(response.headers.get('ratelimit-limit')).toBeNull()
+    expect(response.headers.get('ratelimit-remaining')).toBeNull()
+    expect(response.headers.get('ratelimit-reset')).toBeNull()
+    expect(response.headers.get('retry-after')).toBeNull()
+    expect(response.headers.get('access-control-expose-headers')).toBeNull()
+  })
+
+  it('relays only rate-limit response headers for embed sessions', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'rate_limited' } }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'RateLimit-Limit': '10',
+          'RateLimit-Remaining': '0',
+          'RateLimit-Reset': '15',
+          'Retry-After': '15',
+          'X-Upstream-Private': 'do-not-relay',
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { POST } = await import('@/app/api/embed/session/[token]/route')
+    const response = await POST(new Request('https://frontend.example.com/api/embed/session/token-1', {
+      method: 'POST',
+      headers: { Origin: 'https://embed.example.com', 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }), { params: Promise.resolve({ token: 'token-1' }) })
+
+    expect(response.status).toBe(429)
+    expect(response.headers.get('ratelimit-limit')).toBe('10')
+    expect(response.headers.get('ratelimit-remaining')).toBe('0')
+    expect(response.headers.get('ratelimit-reset')).toBe('15')
+    expect(response.headers.get('retry-after')).toBe('15')
+    expect(response.headers.get('access-control-expose-headers')).toBe(
+      'RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset, Retry-After',
+    )
+    expect(response.headers.get('x-upstream-private')).toBeNull()
+  })
+
   it('forwards bearer auth for document search proxy requests', async () => {
     vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
 

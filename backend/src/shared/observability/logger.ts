@@ -175,11 +175,23 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
 const httpCredentialHeaderNames = ["cookie", "authorization", "x-radioso-public-session", "set-cookie"].filter(shouldRedactKey);
 const httpRequestCredentialHeaderNames = httpCredentialHeaderNames.filter((headerName) => headerName !== "set-cookie");
 const httpResponseCredentialHeaderNames = httpCredentialHeaderNames.filter((headerName) => headerName === "set-cookie");
+const httpRequestClientAddressHeaderNames = [
+  "x-forwarded-for",
+  "forwarded",
+  "x-real-ip",
+  "cf-connecting-ip",
+  "true-client-ip",
+  "x-client-ip",
+  "x-cluster-client-ip",
+  "fastly-client-ip",
+  "x-envoy-external-address",
+];
 const httpHeaderRedactPath = (target: "req" | "res", headerName: string): string =>
   `${target}.headers["${headerName}"]`;
 
 const httpLoggerRedactPaths = [
   ...httpRequestCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
+  ...httpRequestClientAddressHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
   httpHeaderRedactPath("req", WORKER_TASK_AUTH_HEADER_LOWERCASE),
   httpHeaderRedactPath("req", "x-workspace-id"),
   // The frontend's signed edge facts carry the visitor's forwarded-for chain,

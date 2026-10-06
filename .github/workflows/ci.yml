@@ -32,6 +32,7 @@ jobs:
       crawler: ${{ steps.filter.outputs.crawler }}
       census: ${{ steps.filter.outputs.census }}
       ee: ${{ steps.filter.outputs.ee }}
+      terraform: ${{ steps.filter.outputs.terraform }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -57,6 +58,7 @@ jobs:
           crawler=false
           census=false
           ee=false
+          terraform=false
 
           mark_all() {
             backend=true
@@ -67,6 +69,7 @@ jobs:
             crawler=true
             census=true
             ee=true
+            terraform=true
           }
 
           # Fail safe: if the diff cannot be computed (e.g. no merge base), run
@@ -148,6 +151,7 @@ jobs:
             echo "crawler=${crawler}"
             echo "census=${census}"
             echo "ee=${ee}"
+            echo "terraform=${terraform}"
           } >> "$GITHUB_OUTPUT"
 
   lint:
@@ -714,6 +718,35 @@ jobs:
         working-directory: ee
         run: pnpm test
 
+  terraform:
+    name: Terraform
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TF_IN_AUTOMATION: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+
+      - name: Terraform fmt
+        run: terraform -chdir="infra/terraform" fmt -check -recursive
+
+      # The Terraform workflow validates one environment, and only when someone runs it before a
+      # deploy. This checks every root on the pull request instead, with no backend and no cloud
+      # credentials. The lock files are readonly, so a provider change that skipped the lock file
+      # update fails here instead of being quietly re-resolved on the runner.
+      - name: Terraform validate
+        run: |
+          set -euo pipefail
+          for root in environments/staging environments/live environments/live-eu foundation bootstrap; do
+            echo "::group::infra/terraform/${root}"
+            terraform -chdir="infra/terraform/${root}" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="infra/terraform/${root}" validate
+            echo "::endgroup::"
+          done
+
   ci-gate:
     name: CI Gate
     needs:
@@ -728,6 +761,7 @@ jobs:
       - crawler
       - census
       - ee
+      - terraform
     if: always()
     runs-on: ubuntu-latest
     env:
@@ -750,6 +784,8 @@ jobs:
       CENSUS_RESULT: ${{ needs.census.result }}
       EE_SELECTED: ${{ needs.changes.outputs.ee }}
       EE_RESULT: ${{ needs.ee.result }}
+      TERRAFORM_SELECTED: ${{ needs.changes.outputs.terraform }}
+      TERRAFORM_RESULT: ${{ needs.terraform.result }}
     steps:
       - name: Verify selected CI checks
         run: |
@@ -791,3 +827,4 @@ jobs:
           check_selected_job "Crawler Package" "$CRAWLER_SELECTED" "$CRAWLER_RESULT"
           check_selected_job "Census Package" "$CENSUS_SELECTED" "$CENSUS_RESULT"
           check_selected_job "Enterprise Edition" "$EE_SELECTED" "$EE_RESULT"
+          check_selected_job "Terraform" "$TERRAFORM_SELECTED" "$TERRAFORM_RESULT"

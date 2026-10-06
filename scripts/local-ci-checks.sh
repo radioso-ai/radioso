@@ -54,6 +54,7 @@ crawler=false
 census=false
 ee=false
 bootstrap=false
+terraform=false
 
 mark_all() {
   backend=true
@@ -65,6 +66,7 @@ mark_all() {
   census=true
   ee=true
   bootstrap=true
+  terraform=true
 }
 
 if [ "$RUN_ALL" = true ]; then
@@ -140,7 +142,7 @@ else
   done < <(git diff --name-only "$BASE_REF...HEAD")
 fi
 
-if [ "$backend$frontend$docs$typescript_sdk$mcp_server$crawler$census$ee$bootstrap" = "falsefalsefalsefalsefalsefalsefalsefalsefalse" ]; then
+if [ "$backend$frontend$docs$typescript_sdk$mcp_server$crawler$census$ee$bootstrap$terraform" = "falsefalsefalsefalsefalsefalsefalsefalsefalsefalse" ]; then
   echo "No CI-relevant changes detected against $BASE_REF."
   exit 0
 fi
@@ -248,6 +250,7 @@ echo "  crawler=$crawler"
 echo "  census=$census"
 echo "  ee=$ee"
 echo "  bootstrap=$bootstrap"
+echo "  terraform=$terraform"
 
 # Lint and the dead-code ratchet are workspace-wide, so they run on every invocation
 # rather than behind a path filter, matching the CI job of the same name.
@@ -259,6 +262,20 @@ run_sh "node --test tests/release/*.test.mjs"
 
 if [ "$bootstrap" = true ]; then
   run_sh "node --test tests/bootstrap/*.test.mjs"
+fi
+
+# Matches CI's Terraform job: formatting, then every root validated with no backend and no cloud
+# credentials. The lock files are readonly, so a provider change must ship its lock file update.
+if [ "$terraform" = true ]; then
+  if ! command -v terraform >/dev/null 2>&1; then
+    echo "Terraform is required for infra/ changes: https://developer.hashicorp.com/terraform/install" >&2
+    exit 1
+  fi
+  run terraform -chdir=infra/terraform fmt -check -recursive
+  for root in environments/staging environments/live environments/live-eu foundation bootstrap; do
+    run terraform -chdir="infra/terraform/${root}" init -backend=false -input=false -lockfile=readonly
+    run terraform -chdir="infra/terraform/${root}" validate
+  done
 fi
 
 if [ "$backend" = true ]; then

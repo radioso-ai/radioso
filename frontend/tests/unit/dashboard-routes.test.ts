@@ -94,6 +94,24 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('round-trips Needs-you row identities through the existing item fields', () => {
+    const href = buildDashboardHref('account-1', {
+      section: 'activity',
+      workspacePublicRouteKey: 'support-abc123',
+      activityTab: 'needs-attention',
+      historyItemKind: 'inbox',
+      historyItemId: 'inbox:approval:conversation-1:approval:agent-1:second',
+    })
+
+    expect(href).toBe('/w/support-abc123/activity?tab=needs-attention&itemKind=inbox&itemId=inbox%3Aapproval%3Aconversation-1%3Aapproval%3Aagent-1%3Asecond')
+    expect(parseDashboardRoute(['activity'], new URLSearchParams(href.split('?')[1]))).toEqual({
+      section: 'activity',
+      activityTab: 'needs-attention',
+      historyItemKind: 'inbox',
+      historyItemId: 'inbox:approval:conversation-1:approval:agent-1:second',
+    })
+  })
+
   // The backend mints this exact shape for operator escalation email links — see
   // `conversationPermalink` in backend/src/shared/domain/dashboardLinks.ts. If the parser stops
   // honouring it, those emails start pointing at the dashboard's not-found redirect.

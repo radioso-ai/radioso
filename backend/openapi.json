@@ -11799,18 +11799,11 @@
           },
           "lexicalQuery": {
             "type": "string"
-          },
-          "constraintSummary": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           }
         },
         "required": [
           "semanticQuery",
-          "lexicalQuery",
-          "constraintSummary"
+          "lexicalQuery"
         ]
       },
       "CandidateCounts": {

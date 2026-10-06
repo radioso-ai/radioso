@@ -55,8 +55,8 @@ const baseCandidateRetrievalInput = (documentScope?: string[]) => ({
     updatedAt: new Date(),
   },
   contextWindow: { selectedMessages: [], truncated: false, selectionReason: "full-history" },
-  originalParsedQuery: { semanticQuery: "yoga", lexicalQuery: "yoga", constraints: [] },
-  originalPreparedQuery: { semanticQuery: "yoga", lexicalQuery: "yoga", constraints: [] },
+  originalParsedQuery: { semanticQuery: "yoga", lexicalQuery: "yoga" },
+  originalPreparedQuery: { semanticQuery: "yoga", lexicalQuery: "yoga" },
   rewrittenQuery: {
     originalQuery: "tell me about yoga",
     rewrittenQuery: "tell me about yoga",
@@ -71,7 +71,7 @@ const baseCandidateRetrievalInput = (documentScope?: string[]) => ({
   },
   responseIntent: "retrieval" as const,
   activeQuery: "tell me about yoga",
-  activeParsedQuery: { semanticQuery: "yoga", lexicalQuery: "yoga", constraints: [] },
+  activeParsedQuery: { semanticQuery: "yoga", lexicalQuery: "yoga" },
   activeSemanticQuery: "yoga",
   activeRetrievalSubqueries: [
     {
@@ -1772,13 +1772,11 @@ describe("retrieval pipeline stages", () => {
         originalQuery: "what about her later work?",
         semanticQuery: "what about her later work?",
         lexicalQuery: "what about her later work?",
-        constraints: [],
       },
       originalPreparedQuery: {
         originalQuery: "what about her later work?",
         semanticQuery: "what about her later work?",
         lexicalQuery: "what about her later work?",
-        constraints: [],
       },
       rewrittenQuery: {
         originalQuery: "what about her later work?",
@@ -1797,7 +1795,6 @@ describe("retrieval pipeline stages", () => {
         originalQuery: "what about her later work?",
         semanticQuery: "what about her later work?",
         lexicalQuery: "what about her later work?",
-        constraints: [],
       },
       activeSemanticQuery: "what about her later work?",
       activeRetrievalSubqueries: [

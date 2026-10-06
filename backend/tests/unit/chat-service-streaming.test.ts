@@ -561,7 +561,6 @@ describe("chat service streaming", () => {
             originalQuery: input.query,
             semanticQuery: input.query,
             lexicalQuery: input.query,
-            constraints: [],
           },
           triggerAnalysis: {
             status: "skipped_non_retrieval",
@@ -614,7 +613,7 @@ describe("chat service streaming", () => {
           finalContextCount: 0,
           candidateFallbackApplied: false,
           fallbackApplied: false,
-          parsedQuery: { semanticQuery: "missing topic", lexicalQuery: "missing topic", constraints: [] },
+          parsedQuery: { semanticQuery: "missing topic", lexicalQuery: "missing topic" },
         },
         responseSettings: { citationDisplayEnabled: true },
       };
@@ -645,7 +644,7 @@ describe("chat service streaming", () => {
           finalContextCount: 1,
           candidateFallbackApplied: false,
           fallbackApplied: false,
-          parsedQuery: { semanticQuery: "known topic", lexicalQuery: "known topic", constraints: [] },
+          parsedQuery: { semanticQuery: "known topic", lexicalQuery: "known topic" },
         },
         responseSettings: { citationDisplayEnabled: true },
       };
@@ -4299,7 +4298,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -4386,7 +4384,6 @@ describe("chat service streaming", () => {
           originalQuery: "page do",
           semanticQuery: "page do",
           lexicalQuery: "page do",
-          constraintSummary: [],
         }),
         candidateCounts: {
           semantic: 1,
@@ -4471,7 +4468,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "start meditating",
               lexicalQuery: "start meditating",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -4569,7 +4565,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "grounded topic",
               lexicalQuery: "grounded topic",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -4664,7 +4659,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "start meditating",
               lexicalQuery: "start meditating",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -4768,7 +4762,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "start meditating",
               lexicalQuery: "start meditating",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -4907,7 +4900,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -4987,7 +4979,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -5099,7 +5090,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -5421,7 +5411,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "what can you do with these documents",
               lexicalQuery: "what can you do with these documents",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -5487,7 +5476,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "I like potato chips",
               lexicalQuery: "I like potato chips",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -5582,7 +5570,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "kaibemaks",
               lexicalQuery: "kaibemaks",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -5670,7 +5657,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "does narayani work with arudra",
               lexicalQuery: "does narayani work with arudra",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -5742,7 +5728,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
         };
@@ -5850,7 +5835,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
         };
@@ -5974,7 +5958,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "",
               lexicalQuery: "",
-              constraints: [],
             },
           },
         };
@@ -6084,7 +6067,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6165,7 +6147,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6242,7 +6223,7 @@ describe("chat service streaming", () => {
             finalContextCount: 1,
             candidateFallbackApplied: false,
             fallbackApplied: false,
-            parsedQuery: { semanticQuery: "page do", lexicalQuery: "page do", constraints: [] },
+            parsedQuery: { semanticQuery: "page do", lexicalQuery: "page do" },
           },
           responseSettings: { citationDisplayEnabled: true },
         };
@@ -6312,7 +6293,7 @@ describe("chat service streaming", () => {
             finalContextCount: 1,
             candidateFallbackApplied: false,
             fallbackApplied: false,
-            parsedQuery: { semanticQuery: "page do", lexicalQuery: "page do", constraints: [] },
+            parsedQuery: { semanticQuery: "page do", lexicalQuery: "page do" },
           },
           responseSettings: { citationDisplayEnabled: true },
         };
@@ -6392,7 +6373,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "guide cover",
               lexicalQuery: "guide cover",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6487,7 +6467,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "guide cover",
               lexicalQuery: "guide cover",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6567,7 +6546,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6647,7 +6625,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6765,7 +6742,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "who is narayani",
               lexicalQuery: "who is narayani",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6859,7 +6835,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6953,7 +6928,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "who is mahiya",
               lexicalQuery: "mahiya",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7063,7 +7037,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "who is mahiya",
               lexicalQuery: "mahiya",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7262,7 +7235,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "who is mahiya",
               lexicalQuery: "mahiya",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7358,7 +7330,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "quali libri ha scritto narayani",
               lexicalQuery: "narayani libri",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7454,7 +7425,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "assisi videos next page",
               lexicalQuery: "assisi videos page 3",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7552,7 +7522,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: query.toLowerCase(),
               lexicalQuery: query.toLowerCase(),
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7684,7 +7653,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: query.toLowerCase(),
               lexicalQuery: query.toLowerCase(),
-              constraints: [],
             },
             rewriteProposal: pivotTurn
               ? {
@@ -7817,7 +7785,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "guide cover",
               lexicalQuery: "guide cover",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7921,7 +7888,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "archive cover",
               lexicalQuery: "archive cover",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -8030,7 +7996,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "retreat planning",
               lexicalQuery: "retreat planning",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -8139,7 +8104,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "read more",
               lexicalQuery: "read more",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -8294,7 +8258,6 @@ describe("chat service streaming", () => {
               originalQuery: "Thanks for the help",
               semanticQuery: "Thanks for the help",
               lexicalQuery: "Thanks for the help",
-              constraints: [],
             },
             triggerAnalysis: {
               status: "skipped_non_retrieval",
@@ -8490,7 +8453,6 @@ describe("chat service streaming", () => {
               originalQuery: "Remind me what you do around here",
               semanticQuery: "Remind me what you do around here",
               lexicalQuery: "Remind me what you do around here",
-              constraints: [],
             },
             triggerAnalysis: {
               status: "skipped_non_retrieval",

@@ -46,8 +46,8 @@ const buildInterpretation = (
       request,
       settings: baseSettings(),
       contextWindow: { selectedMessages: [], truncated: false, selectionReason: "no history" },
-      originalParsedQuery: { semanticQuery: request.query, lexicalQuery: request.query, constraints: [] },
-      originalPreparedQuery: { semanticQuery: request.query, lexicalQuery: request.query, constraints: [] },
+      originalParsedQuery: { semanticQuery: request.query, lexicalQuery: request.query },
+      originalPreparedQuery: { semanticQuery: request.query, lexicalQuery: request.query },
       rewrittenQuery: {
         originalQuery: request.query,
         rewrittenQuery: overrides.semanticQuery ?? request.query,
@@ -61,7 +61,7 @@ const buildInterpretation = (
         confidence: 0.9,
       },
       activeQuery: overrides.semanticQuery ?? request.query,
-      activeParsedQuery: { semanticQuery: request.query, lexicalQuery: request.query, constraints: [] },
+      activeParsedQuery: { semanticQuery: request.query, lexicalQuery: request.query },
       activeSemanticQuery: overrides.semanticQuery ?? request.query,
       activeRetrievalSubqueries: [],
       triggerAnalysis: {

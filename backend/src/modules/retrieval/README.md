@@ -94,7 +94,7 @@ imports from `services/` or `infra/`.
   retrieval queries. Trigger analysis is a separate retrieval-only stage so it can
   run alongside candidate retrieval after interpretation.
 - Candidate ranking or filtering: `candidate*`, `metadataRuleScoringService.ts`,
-  `attributeMatchScoringService.ts`, `rerankService.ts`.
+  `rerankService.ts`.
 - Context and prompt shape: `contextSelectionStage.ts`,
   `promptAssemblyStage.ts`, `promptBuilder.ts`.
 - Diagnostics: `retrievalActivityTraceAssembler.ts`,

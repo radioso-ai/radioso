@@ -134,6 +134,30 @@ describe("routine slot filling (authoring → compile → runtime)", () => {
     expect(t3.trace?.terminalKind).toBe("complete");
   });
 
+  it("fast-forwards a later satisfied compiler auto-gate without another selector call", async () => {
+    const compiled = compileRoutineDefinition(authored);
+    const askMessageEdge = compiled.transitions.find((transition) => transition.from === "ask_message");
+    expect(askMessageEdge?.origin).toBe("compiler_slot_gate");
+    const select = vi.fn(async () => ({
+      nextStepId: "ask_message",
+      variables: { email: "alex@example.com", message: "Please call me about pricing." },
+    }));
+    const runner = new DefaultRoutineRunner([compiled], { select }, echoRenderer);
+
+    const result = await runner.resume({
+      turn: turnWith("alex@example.com — please call me about pricing"),
+      state: { sessionId: "s1", routineId: compiled.id, path: ["ask_email"], variables: {}, status: "active" },
+    });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(result.nextState).toBeNull();
+    expect(result.trace?.steps.map((step) => `${step.stepId}:${step.event}`)).toEqual([
+      "ask_email:advanced",
+      "ask_message:fast_forwarded",
+      "done:rendered",
+    ]);
+  });
+
   it("drops a key activation hands the engine that the routine's schema does not declare (#1388)", async () => {
     // Mirrors what the turn planner / ranked activation produce: free-form field
     // names alongside a real slot value, read from the opening message before the

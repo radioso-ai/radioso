@@ -275,7 +275,13 @@ describe("file authoring store round-trips the full authoring contract", () => {
           guard: { kind: "field", ref: "slots.consent", op: "is_true" },
         },
         { from: "c", to: "done", condition: "fallback", guard: { kind: "default" } },
-        { from: "d", to: "done", condition: "the model decides", guard: { kind: "llm" } },
+        {
+          from: "d",
+          to: "done",
+          condition: "the model decides",
+          guard: { kind: "llm" },
+          origin: "compiler_slot_gate",
+        },
       ],
     };
 

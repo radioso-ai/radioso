@@ -7,6 +7,7 @@ import type {
   ConversationRoutineStepRenderer,
   Routine,
   RoutineContextRenderer,
+  RoutineInputBinding,
   RoutineState,
   TurnContext,
 } from "@radioso/conversation-contract";
@@ -125,7 +126,7 @@ describe("DefaultRoutineRunner", () => {
     };
     const contextRenderer: RoutineContextRenderer = {
       render: vi.fn(({ name, stagedContext }) => {
-        const staged = stagedContext.find((entry) => entry.id === name);
+        const staged = stagedContext.find((entry: TurnContext["stagedContext"][number]) => entry.id === name);
         return staged ? `<page>${String((staged.data as { pageUrl: string }).pageUrl)}</page>` : null;
       }),
     };
@@ -667,7 +668,7 @@ describe("DefaultRoutineRunner", () => {
         { id: "bail", kind: "terminal", action: "Bail out." },
       ],
       transitions: [
-        { from: "ask_name", to: "ask_email", condition: "name was provided" },
+        { from: "ask_name", to: "ask_email", condition: "name was provided", origin: "compiler_slot_gate" },
         { from: "ask_email", to: "done", condition: "email was provided" },
         { from: "ask_email", to: "bail", condition: "the user gave up" },
       ],
@@ -755,7 +756,7 @@ describe("DefaultRoutineRunner", () => {
         { id: "bail", kind: "terminal", action: "Bail out." },
       ],
       transitions: [
-        { from: "ask_name", to: "ask_email", condition: "name was provided" },
+        { from: "ask_name", to: "ask_email", condition: "name was provided", origin: "compiler_slot_gate" },
         { from: "ask_email", to: "done", condition: "email was provided" },
         { from: "ask_email", to: "bail", condition: "the user gave up" },
       ],
@@ -873,8 +874,8 @@ describe("DefaultRoutineRunner", () => {
         { id: "done", kind: "terminal", action: "Confirm intake." },
       ],
       transitions: [
-        { from: "ask_name", to: "ask_email", condition: "name was provided" },
-        { from: "ask_email", to: "done", condition: "email was provided" },
+        { from: "ask_name", to: "ask_email", condition: "name was provided", origin: "compiler_slot_gate" },
+        { from: "ask_email", to: "done", condition: "email was provided", origin: "compiler_slot_gate" },
       ],
     };
     const select = vi.fn(async () => ({
@@ -1083,10 +1084,10 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     let collected: Record<string, unknown> | undefined;
     const dispatch: ConversationRoutineSkillDispatcher["dispatch"] = vi.fn(async (input) => {
       collected = {};
-      for (const [key, binding] of Object.entries(input.inputBindings ?? {})) {
+      for (const [key, binding] of Object.entries<RoutineInputBinding>(input.inputBindings ?? {})) {
         if (binding.kind === "literal") {
           collected[key] = binding.value;
-        } else if (input.state.variables[binding.ref] !== undefined) {
+        } else if (binding.kind === "variableRef" && input.state.variables[binding.ref] !== undefined) {
           collected[key] = input.state.variables[binding.ref];
         }
       }
@@ -1888,8 +1889,8 @@ describe("DefaultRoutineRunner trace", () => {
       { id: "done", kind: "terminal", action: "Confirm sent." },
     ],
     transitions: [
-      { from: "ask_email", to: "ask_message", condition: "The user provided {{slot.email}}." },
-      { from: "ask_message", to: "done", condition: "The user provided {{slot.message}}." },
+      { from: "ask_email", to: "ask_message", condition: "The user provided {{slot.email}}.", origin: "compiler_slot_gate" },
+      { from: "ask_message", to: "done", condition: "The user provided {{slot.message}}.", origin: "compiler_slot_gate" },
     ],
   };
 
@@ -2942,10 +2943,10 @@ describe("DefaultRoutineRunner satisfied slot steps (#1371, #1372)", () => {
     expect(selector.select).toHaveBeenCalledTimes(1);
   });
 
-  it("skips a step whose only exit is taken once its required slots are filled, optional slot empty", async () => {
+  it("skips a step along its compiler slot gate once its required slots are filled, optional slot empty", async () => {
     const booking = bookingWith([
       { from: "dates", to: "contact", condition: "", guard: { kind: "slot_filled", slots: ["arrival", "departure"] } },
-      { from: "contact", to: "done", condition: "The user provided {{slot.full_name}}." },
+      { from: "contact", to: "done", condition: "The user provided {{slot.full_name}}.", origin: "compiler_slot_gate" },
     ]);
     const runner = new DefaultRoutineRunner([booking], stayingSelector(answeredDatesAndName), renderer());
 
@@ -3200,6 +3201,52 @@ describe("DefaultRoutineRunner a satisfied step whose only exit is a rule (#1391
     const nightsEntry = result.trace?.steps.find((entry) => entry.stepId === "nights");
     expect(nightsEntry).toMatchObject({ event: "rendered", readOpeningMessage: true, capturedSlotKeys: ["nights"] });
   });
+
+  it("asks an authored confirmation before emitting an action when its slot was filled on the previous step", async () => {
+    const confirmationRoutine: Routine = {
+      id: "confirm_contact",
+      rootStepId: "ask_name",
+      slots: [
+        { id: "slot_name", key: "name", type: "text", required: true },
+        { id: "slot_email", key: "email", type: "email", required: true },
+      ],
+      steps: [
+        { id: "ask_name", kind: "chat", action: "Ask for their name.", metadata: { collectsSlots: ["name"] } },
+        { id: "confirm_email", kind: "chat", action: "Ask them to confirm {{slot.email}}.", metadata: { collectsSlots: ["email"] } },
+        { id: "send", kind: "action", actionType: "contact.send" },
+        { id: "done", kind: "terminal", action: "Say the message was sent." },
+      ],
+      transitions: [
+        { from: "ask_name", to: "confirm_email", condition: "The visitor provided their name." },
+        { from: "confirm_email", to: "send", condition: "The visitor confirmed the email address." },
+        { from: "send", to: "done", condition: "Sent." },
+      ],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>()
+      .mockResolvedValueOnce({
+        nextStepId: "confirm_email",
+        variables: { name: "Giulia", email: "giulia@example.com" },
+      })
+      .mockResolvedValueOnce({ nextStepId: "confirm_email" });
+    const runner = new DefaultRoutineRunner([confirmationRoutine], { select }, renderer());
+
+    const result = await runner.resume({
+      turn: {
+        ...turn,
+        inputEvent: { ...turn.inputEvent, content: "Giulia, giulia@example.com" },
+      },
+      state: { ...state(["ask_name"]), routineId: confirmationRoutine.id },
+    });
+
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(result.response.answer).toBe("[confirm_email]");
+    expect(result.actions).toBeUndefined();
+    expect(result.nextState).toMatchObject({
+      path: ["ask_name", "confirm_email"],
+      variables: { name: "Giulia", email: "giulia@example.com" },
+    });
+    expect(events(result)).toEqual(["ask_name:advanced", "confirm_email:rendered"]);
+  });
 });
 
 describe("DefaultRoutineRunner a chat step a tool step lands on (#1390)", () => {
@@ -3222,7 +3269,12 @@ describe("DefaultRoutineRunner a chat step a tool step lands on (#1390)", () => 
     transitions: [
       { from: "program", to: "availability", condition: "The user named a program." },
       { from: "availability", to: "party", condition: "The check ran." },
-      { from: "party", to: "recap", condition: "", guard: { kind: "slot_filled", slots: ["adults"] } },
+      {
+        from: "party",
+        to: "recap",
+        condition: "The user provided {{slot.adults}}.",
+        origin: "compiler_slot_gate",
+      },
       { from: "recap", to: "done", condition: "The user confirmed." },
     ],
   };

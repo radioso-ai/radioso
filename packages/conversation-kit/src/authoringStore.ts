@@ -386,7 +386,11 @@ const parseRoutineTransition = (value: unknown): RoutineTransition | null => {
     return null;
   }
   const guard = parseOptional(value.guard, parseRoutineGuard);
-  if (isInvalid(guard)) {
+  const origin = parseOptional(
+    value.origin,
+    literalUnionParser<NonNullable<RoutineTransition["origin"]>>(["compiler_slot_gate"]),
+  );
+  if (isInvalid(guard) || isInvalid(origin)) {
     return null;
   }
   return {
@@ -394,6 +398,7 @@ const parseRoutineTransition = (value: unknown): RoutineTransition | null => {
     to: value.to,
     condition: value.condition,
     guard,
+    origin,
   };
 };
 

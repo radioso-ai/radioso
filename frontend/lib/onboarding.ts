@@ -5,15 +5,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { documentsApi, workspaceApi, type DocumentSummary } from '@/lib/api'
 import { API_BASE } from '@/lib/api-client'
 import {
+  hasOnboardingAnalyticsMarker,
   isOnboardingActive as getOnboardingActiveFlag,
   isOnboardingCompleted as getOnboardingCompletedFlag,
+  markOnboardingAnalyticsMarker,
   markOnboardingActive,
   markOnboardingCompleted,
 } from '@/lib/onboarding-storage'
 import {
   BeaconFrontendProductAnalyticsSink,
   createFrontendProductAnalyticsEmitter,
-  type FrontendProductAnalyticsEventName,
 } from '@/lib/product-analytics'
 
 const SAMPLE_DOCUMENTS = [
@@ -71,14 +72,28 @@ const onboardingAnalyticsEmitter = createFrontendProductAnalyticsEmitter({
 })
 
 export const trackOnboardingAnalytics = (
-  eventName: 'onboarding.first_question' | 'onboarding.sample_imported' | 'onboarding.shown' | 'onboarding.skipped' | 'onboarding.step_completed',
+  eventName: 'onboarding.chat_opened' | 'onboarding.first_question' | 'onboarding.sample_imported' | 'onboarding.shown' | 'onboarding.skipped' | 'onboarding.step_completed',
   properties: Record<string, unknown> = {},
 ) => {
   void onboardingAnalyticsEmitter.track({
-    eventName: eventName as FrontendProductAnalyticsEventName,
+    eventName,
     properties,
     source: 'frontend',
   })
+}
+
+const trackOnboardingAnalyticsOnce = (
+  workspaceId: string,
+  marker: Parameters<typeof hasOnboardingAnalyticsMarker>[1],
+  eventName: Parameters<typeof trackOnboardingAnalytics>[0],
+  properties?: Record<string, unknown>,
+) => {
+  if (hasOnboardingAnalyticsMarker(workspaceId, marker)) {
+    return
+  }
+
+  markOnboardingAnalyticsMarker(workspaceId, marker)
+  trackOnboardingAnalytics(eventName, properties)
 }
 
 export interface WorkspaceOnboardingState {
@@ -146,6 +161,7 @@ export const useWorkspaceOnboarding = (
   const onboardingSummaryRef = useRef<{
     hasDocuments: boolean
     hasReadyDocuments: boolean
+    hasCompletedChat: boolean
     sampleDocumentsImported: boolean
   } | null>(null)
 
@@ -191,20 +207,27 @@ export const useWorkspaceOnboarding = (
       }
 
       const previousSummary = onboardingSummaryRef.current
-      if (previousSummary) {
-        if (!previousSummary.hasDocuments && summary.hasDocuments) {
-          trackOnboardingAnalytics('onboarding.step_completed', { step: 'documents_added' })
-        }
-        if (!previousSummary.hasReadyDocuments && summary.hasReadyDocuments) {
-          trackOnboardingAnalytics('onboarding.step_completed', { step: 'documents_processed' })
-        }
-        if (!previousSummary.sampleDocumentsImported && summary.sampleDocumentsImported) {
-          trackOnboardingAnalytics('onboarding.sample_imported')
-        }
+      const isObservingOnboarding = nextActive || getOnboardingActiveFlag(workspaceId)
+      if (isObservingOnboarding && summary.hasDocuments) {
+        trackOnboardingAnalyticsOnce(workspaceId, 'documents_added', 'onboarding.step_completed', { step: 'documents_added' })
+      }
+      if (isObservingOnboarding && summary.hasReadyDocuments) {
+        trackOnboardingAnalyticsOnce(workspaceId, 'documents_processed', 'onboarding.step_completed', { step: 'documents_processed' })
+      }
+      if (isObservingOnboarding && summary.sampleDocumentsImported) {
+        trackOnboardingAnalyticsOnce(workspaceId, 'sample_imported', 'onboarding.sample_imported')
+      }
+      if (
+        summary.hasCompletedChat &&
+        (previousSummary?.hasCompletedChat === false || (!previousSummary && isObservingOnboarding))
+      ) {
+        trackOnboardingAnalyticsOnce(workspaceId, 'first_question_step_completed', 'onboarding.step_completed', { step: 'first_question' })
+        trackOnboardingAnalyticsOnce(workspaceId, 'first_question', 'onboarding.first_question')
       }
       onboardingSummaryRef.current = {
         hasDocuments: summary.hasDocuments,
         hasReadyDocuments: summary.hasReadyDocuments,
+        hasCompletedChat: summary.hasCompletedChat,
         sampleDocumentsImported: summary.sampleDocumentsImported,
       }
 

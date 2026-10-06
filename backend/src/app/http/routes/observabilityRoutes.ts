@@ -52,7 +52,7 @@ const frontendOnboardingAnalyticsEnvelope = {
 const frontendOnboardingAnalyticsSchema = z.discriminatedUnion("eventName", [
   z.object({
     ...frontendOnboardingAnalyticsEnvelope,
-    eventName: z.enum(["onboarding.shown", "onboarding.skipped", "onboarding.sample_imported", "onboarding.first_question"]),
+    eventName: z.enum(["onboarding.shown", "onboarding.skipped", "onboarding.sample_imported", "onboarding.chat_opened", "onboarding.first_question"]),
     properties: z.object({}).strict(),
   }).strict(),
   z.object({

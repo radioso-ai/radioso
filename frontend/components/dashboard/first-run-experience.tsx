@@ -395,8 +395,7 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
                     <Button
                       size="sm"
                       onClick={() => {
-                        trackOnboardingAnalytics('onboarding.step_completed', { step: 'first_question' })
-                        trackOnboardingAnalytics('onboarding.first_question')
+                        trackOnboardingAnalytics('onboarding.chat_opened')
                         onboarding.markCompleted()
                         router.push(buildDashboardHref(accountId, {
                           section: 'agents',

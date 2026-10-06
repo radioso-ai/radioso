@@ -4145,7 +4145,7 @@ describe("chat service streaming", () => {
 
     const originalPrepare = ChatSessionPreparer.prototype.prepare;
     const prepare = vi.spyOn(ChatSessionPreparer.prototype, "prepare");
-    prepare.mockImplementation(async function (...args) {
+    prepare.mockImplementation(async function (this: ChatSessionPreparer, ...args) {
       vi.advanceTimersByTime(8000);
       return originalPrepare.apply(this, args);
     });
@@ -4162,7 +4162,7 @@ describe("chat service streaming", () => {
       expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
       const persistedAssistant = createMessage.mock.calls
         .map(([input]) => input)
-        .find((input) => input.role === "assistant");
+        .find((input) => input.role === "assistant") as { totalLatencyMs?: number } | undefined;
       expect(persistedAssistant?.totalLatencyMs).toBe(8000);
     } finally {
       prepare.mockRestore();

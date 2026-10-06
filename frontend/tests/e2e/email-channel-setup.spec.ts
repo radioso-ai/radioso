@@ -51,6 +51,7 @@ const relayAddress = "r7f3k2m9q@in.radioso.test";
 const rotatedRelayAddress = "r2x8w4n6p@in.radioso.test";
 const mailboxId = "mailbox-support";
 const domainId = "domain-customer";
+const sharedDomainId = "domain-shared";
 
 const sendingRecords = (): DnsRecord[] => [
   { purpose: "dkim", type: "TXT", name: "resend._domainkey.customer.test", value: "p=MIGfMA0GCSqGSIb3DQEBAQUAA4", status: "pending" },
@@ -108,6 +109,7 @@ const installEmailChannelBackend = async (
   const domains: Array<{
     id: string;
     domain: string;
+    registration: { status: "registering" | "needs_reconciliation" | "registered" };
     sending: { status: "pending" | "verified" | "failed"; checkedAt: string | null };
     receiving: { status: "not_requested" | "pending" | "verified" | "failed"; checkedAt: string | null };
     records: DnsRecord[];
@@ -163,6 +165,7 @@ const installEmailChannelBackend = async (
     domains.push({
       id: domainId,
       domain: "customer.test",
+      registration: { status: "registered" },
       sending: { status: "pending", checkedAt: null },
       receiving: { status: "not_requested", checkedAt: null },
       records: sendingRecords(),
@@ -207,10 +210,25 @@ const installEmailChannelBackend = async (
       if (domainName === "taken.test") {
         return refuse(route, 409, "domain_claimed_elsewhere", "Domain is claimed elsewhere");
       }
+      // The provider already holds shared.test: the domain is added, but awaits adoption.
+      if (domainName === "shared.test" && !domains.some((domain) => domain.domain === domainName)) {
+        domains.push({
+          id: sharedDomainId,
+          domain: domainName,
+          registration: { status: "needs_reconciliation" },
+          sending: { status: "pending", checkedAt: null },
+          receiving: { status: "not_requested", checkedAt: null },
+          records: [],
+        });
+      }
+      if (domains.some((domain) => domain.domain === domainName && domain.registration.status === "needs_reconciliation")) {
+        return refuse(route, 409, "domain_needs_reconciliation", "Reconcile the domain first");
+      }
       if (!domains.some((domain) => domain.domain === domainName)) {
         domains.push({
           id: domainId,
           domain: domainName,
+          registration: { status: "registered" },
           sending: { status: "pending", checkedAt: null },
           receiving: { status: "not_requested", checkedAt: null },
           records: sendingRecords(),
@@ -301,6 +319,16 @@ const installEmailChannelBackend = async (
         domain.sending = { status: "verified", checkedAt: nowIso };
         mailboxes.forEach((mailbox) => { mailbox.sending = { state: "ok" }; });
       }
+      return json(route, domain);
+    }
+
+    if (method === "POST" && path === `/domains/${sharedDomainId}/reconcile`) {
+      const domain = domains.find((candidate) => candidate.id === sharedDomainId);
+      if (domain?.registration.status !== "needs_reconciliation") {
+        return refuse(route, 409, "domain_not_awaiting_reconciliation", "The domain is not awaiting reconciliation");
+      }
+      domain.registration = { status: "registered" };
+      domain.records = sendingRecords().map((record) => ({ ...record, name: record.name.replace("customer.test", "shared.test") }));
       return json(route, domain);
     }
 
@@ -788,6 +816,49 @@ test("operator copies DNS records, checks them, and enables direct receiving wit
   await expect(domain.getByRole("row", { name: /Receiving MX/ }).getByText("Pending", { exact: true })).toBeVisible();
   await expect(announcer(page)).toHaveText("Direct receiving requested.");
   expect(backend.requests).toContainEqual({ method: "POST", path: `/domains/${domainId}/receiving`, body: { confirmation: "customer.test" } });
+});
+
+test("a domain the email provider already holds is adopted only after one confirmation, and then takes a mailbox", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page);
+  const reconciliations = () => backend.requests.filter((request) => request.path.endsWith("/reconcile"));
+
+  await openEmailChannel(page);
+  const card = page.locator("#email-channel");
+  await card.getByLabel("Address", { exact: true }).fill("help@shared.test");
+  await card.getByLabel("Display name").fill("Help");
+  await card.getByRole("button", { name: "Add mailbox" }).click();
+  await expect(card.getByRole("alert")).toHaveText(
+    "The email provider already holds this domain. Adopt its registration under Sending domains first.",
+  );
+
+  // The refusal adds the domain, which waits for an operator to say the registration is theirs.
+  const domain = card.getByRole("region", { name: "shared.test", exact: true });
+  await expect(domain.getByText("Registration: Needs adoption")).toBeVisible();
+  await expect(domain.getByRole("button", { name: "Check DNS" })).toHaveCount(0);
+  const adopt = domain.getByRole("button", { name: "Adopt existing registration" });
+
+  await adopt.click();
+  const confirmation = domain.getByRole("group", { name: "Confirm adopting the existing registration" });
+  await expect(confirmation).toContainText("Adopt the provider’s registration of shared.test for this workspace? Radioso records who adopted it.");
+  await expect(confirmation.getByRole("button", { name: "Confirm" })).toBeFocused();
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(adopt).toBeFocused();
+  expect(reconciliations()).toEqual([]);
+
+  await adopt.click();
+  await confirmation.getByRole("button", { name: "Confirm" }).click();
+  await expect(domain.getByText("Registration: Needs adoption")).toHaveCount(0);
+  await expect(domain.getByRole("row", { name: /DKIM/ }).getByText("Pending", { exact: true })).toBeVisible();
+  await expect(domain.getByRole("button", { name: "Check DNS" })).toBeVisible();
+  await expect(announcer(page)).toHaveText("Registration adopted.");
+  await expect(domain.getByRole("heading", { name: "shared.test" })).toBeFocused();
+  expect(reconciliations()).toEqual([{ method: "POST", path: `/domains/${sharedDomainId}/reconcile` }]);
+
+  await card.getByRole("button", { name: "Add mailbox" }).click();
+  await expect(card.getByRole("region", { name: "help@shared.test" })).toBeVisible();
 });
 
 test("operator retries a failed event and reads a forwarding confirmation in the raw view", async ({ page }) => {

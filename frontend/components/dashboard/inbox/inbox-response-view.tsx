@@ -26,7 +26,7 @@ import { hitlApi } from '@/lib/api-hitl'
 import { useOptionalAuth } from '@/lib/auth-context'
 import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
-import { emailSendUnavailableReason } from '@/lib/email-send-readiness'
+import { conversationSendUnavailableReason, type ConversationChannelRead } from '@/lib/email-send-readiness'
 import {
   doneControlTooltip,
   findFirstVisitorMessage,
@@ -229,7 +229,11 @@ export function InboxResponseView({
   } = useHistoryDocumentDialogState()
 
   const skillCatalog = useSkillCatalog(conversationId)
-  const isEmailConversation = conversationDetail?.channelContext?.provider === 'email'
+  // The channel comes with the conversation's detail; until that is read, nothing is known of it.
+  const channelRead: ConversationChannelRead = conversationDetail
+    ? { state: 'known', provider: conversationDetail.channelContext?.provider ?? null }
+    : detailError ? { state: 'failed' } : { state: 'pending' }
+  const isEmailConversation = channelRead.state === 'known' && channelRead.provider === 'email'
   const emailFacts = useConversationEmailFacts(workspaceId, conversationId, isEmailConversation)
   const refreshEmailFacts = emailFacts.refresh
 
@@ -290,15 +294,13 @@ export function InboxResponseView({
 
   const renderedMessages = effectiveConversationMessages.map((message) =>
     message.role === 'assistant' ? { ...message, persistedAssistantMessageId: message.id } : message)
-  // An email reply waits for a successful read of its mailbox that says it can send: unknown or
-  // stale facts never offer Send. A refused send reads the mailbox again.
-  const sendUnavailableReason = isEmailConversation ? emailSendUnavailableReason(emailFacts) : null
-  const sendReadiness: ChannelSendReadiness | undefined = isEmailConversation
-    ? { unavailableReason: sendUnavailableReason, readAt: emailFacts.readAt, reread: refreshEmailFacts }
-    : undefined
-  // A resend goes out through the conversation's channel, so it waits for the same readiness a reply
-  // does, and for the channel to be known at all.
-  const resendUnavailableReason = conversationDetail ? sendUnavailableReason : 'Checking whether this conversation can send.'
+  // A reply, a released draft and a resend all wait until the conversation's channel is known, and
+  // an email one until a successful read of its mailbox says it can send: unknown or stale facts
+  // never offer Send. A refused send reads the mailbox again.
+  const sendUnavailableReason = conversationSendUnavailableReason(channelRead, emailFacts)
+  const sendReadiness: ChannelSendReadiness | undefined = channelRead.state === 'known' && !isEmailConversation
+    ? undefined
+    : { unavailableReason: sendUnavailableReason, readAt: emailFacts.readAt, reread: refreshEmailFacts }
   const replyPreviews = useMemo(
     () => new Map(isEmailConversation ? effectiveConversationMessages.map((message) => [message.id, message.content]) : []),
     [effectiveConversationMessages, isEmailConversation],
@@ -390,7 +392,7 @@ export function InboxResponseView({
         <div className="shrink-0 px-6 pt-4">
           <DeliveryFailurePanel
             failure={effectiveItem.deliveryFailure}
-            resendUnavailableReason={resendUnavailableReason}
+            resendUnavailableReason={sendUnavailableReason}
             onChanged={handleChanged}
           />
         </div>

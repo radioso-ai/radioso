@@ -32,7 +32,7 @@ import {
   type HumanOwnedConversationSummary,
   type InboxItem,
 } from '@/lib/needs-attention'
-import { heldReplyReasoningLines } from '@/lib/needs-attention-reply-review'
+import { heldReplyHoldLine, heldReplyReasoningLines } from '@/lib/needs-attention-reply-review'
 
 const ownership = (overrides: Partial<ConversationOwnership> = {}): ConversationOwnership => ({
   conversationId: 'conversation-1',
@@ -1625,5 +1625,25 @@ describe('heldReplyReasoningLines', () => {
       handoffReason: null,
       suppressedEffects: [],
     })).toEqual([{ label: 'Turn', value: 'turn-1' }])
+  })
+})
+
+describe('heldReplyHoldLine', () => {
+  it('says why the channel held the reply, from its code alone', () => {
+    expect(heldReplyHoldLine('send_budget')).toBe('Held: this thread’s automatic replies are used up')
+    expect(heldReplyHoldLine('sending_not_verified')).toBe('Held: sending is not verified for this mailbox')
+    expect(heldReplyHoldLine('incomplete_answer')).toBe('Held: it may not answer everything asked')
+    expect(heldReplyHoldLine('draft_mode')).toBe('Held: this mailbox drafts every reply for review')
+    expect(heldReplyHoldLine('outcome_not_publishable')).toBe('Held: the answer can’t go out on its own')
+    expect(heldReplyHoldLine('authority_changed')).toBe('Held: ownership or mailbox settings changed meanwhile')
+  })
+
+  it('reads a code it does not know as words, never raw', () => {
+    expect(heldReplyHoldLine('dispatch_abandoned')).toBe('Held: dispatch abandoned')
+  })
+
+  it('says nothing for a reply that was queued to send rather than held, or no code at all', () => {
+    expect(heldReplyHoldLine('queued_auto')).toBeNull()
+    expect(heldReplyHoldLine('')).toBeNull()
   })
 })

@@ -18,6 +18,7 @@ import {
 } from '@/components/dashboard/quality/close-review-popover'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import type { SelectedHistoryItem } from '@/components/dashboard/history/history-list'
+import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
 import {
   getQualityTriageConflict,
@@ -26,7 +27,7 @@ import {
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { getHitlApiErrorStatus } from '@/lib/api-hitl'
-import type { DeliveryFailurePage, HeldReplyPage } from '@/lib/api-reply-review'
+import type { DeliveryFailure, HeldReply } from '@/lib/api-reply-review'
 import { useOptionalAuth } from '@/lib/auth-context'
 import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -59,6 +60,8 @@ import {
   qualitySnapshotFromQueries,
   useConversationSources,
   useNeedsAttentionQueries,
+  withoutAttentionItem,
+  type AttentionChunks,
 } from '@/lib/needs-attention-query-state'
 import { patchQualityTriage } from '@/lib/quality-query-state'
 import { useDashboardQueryInvalidation } from '@/components/providers/dashboard-query-provider'
@@ -154,8 +157,9 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     return [...new Set(deliveryFailures.map((failure) => failure.conversationId))].filter((id) => !loaded.has(id))
   }, [deliveryFailures, humanOwnedConversations])
   const failureConversations = useConversationSources(workspaceId, failureConversationIds)
-  // Each source reads up to its page limit; past it, the queue says some work is not shown.
-  const hasUnreadAttention = Boolean(attentionQueries.deliveryFailures.data?.nextCursor || attentionQueries.heldReplies.data?.nextCursor)
+  // Each source reads up to its page limit; past it, the queue says some work is not shown and
+  // offers to read on.
+  const { olderAttention } = attentionQueries
   const qualityPresentation = useMemo(() => qualityInboxPresentation(qualitySnapshot), [qualitySnapshot])
   const qualityLoadState = qualityLoadStateFromQueries(
     attentionQueries.commentedFeedback,
@@ -357,18 +361,16 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       // panel keeps the selection, its focus, and says what happened itself. The server's own
       // `hitl.decision_resolved` re-reads the rest; this view does not wait for it.
       if (result.outcome === 'released' || result.outcome === 'edited') {
-        queryClient.setQueryData<HeldReplyPage>(heldRepliesKey, (page) => page
-          ? { ...page, items: page.items.filter((heldReply) => heldReply.id !== result.heldReplyId) }
-          : page)
+        queryClient.setQueryData<AttentionChunks<HeldReply>>(heldRepliesKey, (chunks) =>
+          withoutAttentionItem(chunks, result.heldReplyId))
       }
       invalidateDashboardQueries(['hitl.decision_resolved'])
     } else if (result.kind === 'delivery_failure_cleared') {
       // No workspace event reports a cleared failure, so this view drops the row itself and
       // re-reads the failures and the recently-closed strip.
       const deliveryFailuresKey = dashboardQueryKeys.attention.deliveryFailures(workspaceId, { limit: NEEDS_ATTENTION_PAGE_SIZE })
-      queryClient.setQueryData<DeliveryFailurePage>(deliveryFailuresKey, (page) => page
-        ? { ...page, items: page.items.filter((failure) => failure.id !== result.failureId) }
-        : page)
+      queryClient.setQueryData<AttentionChunks<DeliveryFailure>>(deliveryFailuresKey, (chunks) =>
+        withoutAttentionItem(chunks, result.failureId))
       void queryClient.invalidateQueries({ queryKey: deliveryFailuresKey })
       void queryClient.invalidateQueries({
         queryKey: dashboardQueryKeys.attention.recentlyClosed(workspaceId, { limit: RECENTLY_CLOSED_LIMIT }),
@@ -538,9 +540,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
             {heldReplyError}
           </div>
         ) : null}
-        {hasUnreadAttention ? (
-          <div className="m-3 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-            Older drafts or delivery failures are waiting beyond what the Inbox shows.
+        {olderAttention.available ? (
+          <div className="m-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+            <span>Older drafts or delivery failures are waiting beyond what the Inbox shows.</span>
+            <Button type="button" size="sm" variant="outline" disabled={olderAttention.loading} onClick={olderAttention.load}>
+              {olderAttention.loading ? 'Loading…' : 'Load older'}
+            </Button>
           </div>
         ) : null}
 

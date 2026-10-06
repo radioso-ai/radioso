@@ -106,6 +106,8 @@ const installDraftReviewBackend = async (
     refuseRelease?: "policy_changed" | "channel_not_ready" | "email_sending_not_verified";
     /** The mailbox refuses an operator's reply before anything is written. */
     refuseReplies?: boolean;
+    /** The held reply the review produced, where it differs from the default draft. */
+    heldReply?: Partial<HeldReply>;
   } = {},
 ) => {
   let ownership = {
@@ -124,7 +126,7 @@ const installDraftReviewBackend = async (
   const messages: ThreadMessage[] = [
     { id: "message-1", role: "user", source: "customer", content: "Order 4417 arrived broken. Please refund it.", createdAt: nowIso },
   ];
-  const heldReplies: HeldReply[] = [heldReply()];
+  const heldReplies: HeldReply[] = [heldReply(options.heldReply)];
   const releases: Array<{ heldReplyId: string; body: Record<string, unknown> }> = [];
   const discards: string[] = [];
   const replies: unknown[] = [];
@@ -371,6 +373,24 @@ test("a draft mailbox's inbound becomes an approval whose panel shows the outcom
   ]);
 });
 
+test("a grounded draft held for the send budget says why, though the turn's reasoning is unreadable", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDraftReviewBackend(page, {
+    heldReply: {
+      holdReason: "send_budget",
+      facts: { grounding: "grounded", coverage: "answered", handoff: { requested: false, reason: null }, outcome: "answered" },
+      dependsOnSuppressedAction: false,
+      suppressedEffects: [],
+      trace: null,
+    },
+  });
+
+  const { panel } = await openDraft(page);
+  await expect(panel.getByText("Grounded · Fully answered")).toBeVisible();
+  await expect(panel.getByText("Held: this thread’s automatic replies are used up")).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Reasoning" })).toHaveCount(0);
+});
+
 test("sending the draft unchanged releases it as written, keeps focus, and announces it", async ({ page }) => {
   await seedDashboardStorage(page);
   const backend = await installDraftReviewBackend(page);
@@ -497,6 +517,56 @@ test("every waiting draft and delivery failure reaches the Inbox, past the first
   await expect(queue.getByRole("button", { name: /Delivery failure/ })).toHaveCount(2);
   // Everything waiting was read, so nothing says some is missing.
   await expect(page.getByText("Older drafts or delivery failures are waiting beyond what the Inbox shows.")).toHaveCount(0);
+});
+
+test("past the Inbox's read limit, Load older reads on until the oldest draft and delivery failure show", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/quality/turns**", (route) =>
+    json(route, { items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }));
+
+  // One item to a page: the twenty pages one read follows stop an item short of the oldest of each.
+  const minutesAgo = (minutes: number) => new Date(Date.parse(nowIso) - minutes * 60_000).toISOString();
+  const drafts = Array.from({ length: 21 }, (_, index) => heldReply({
+    id: `held-${index}`,
+    conversationId: `conversation-draft-${index}`,
+    draftText: index === 20 ? "The oldest draft waits past the read limit." : `Draft number ${index}.`,
+    createdAt: minutesAgo(index + 1),
+  }));
+  const failures = Array.from({ length: 21 }, (_, index) => ({
+    id: `failure-${index}`,
+    conversationId: `conversation-failure-${index}`,
+    messageId: `message-failure-${index}`,
+    provider: "email",
+    kind: "bounced",
+    detailCode: "mailbox_full",
+    openedAt: minutesAgo(index + 1),
+    clearedAt: null,
+    clearReason: null,
+  }));
+  const pageAt = <T>(items: T[], route: Route) => {
+    const index = Number(new URL(route.request().url()).searchParams.get("cursor") ?? 0);
+    return json(route, { items: [items[index]], nextCursor: index < items.length - 1 ? String(index + 1) : null });
+  };
+  await page.route("**/backend/api/v1/held-replies**", (route) => pageAt(drafts, route));
+  await page.route("**/backend/api/v1/delivery-failures**", (route) => pageAt(failures, route));
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  const queue = page.getByLabel("Inbox queue");
+  const oldestDraft = queue.getByRole("button", { name: /Approval.*The oldest draft waits past the read limit/ });
+  const failureRows = queue.getByRole("button", { name: /Delivery failure/ });
+  const notice = page.getByText("Older drafts or delivery failures are waiting beyond what the Inbox shows.");
+  await expect(page.getByText("Needs you · 40")).toBeVisible();
+  await expect(notice).toBeVisible();
+  await expect(oldestDraft).toHaveCount(0);
+  await expect(failureRows).toHaveCount(20);
+
+  await page.getByRole("button", { name: "Load older" }).click();
+  await expect(page.getByText("Needs you · 42")).toBeVisible();
+  await expect(oldestDraft).toBeVisible();
+  await expect(failureRows).toHaveCount(21);
+  await expect(notice).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Load older" })).toHaveCount(0);
 });
 
 test("a newer inbound replaces the draft in place, and Send releases the newer one", async ({ page }) => {

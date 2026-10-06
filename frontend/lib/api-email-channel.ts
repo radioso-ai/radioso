@@ -18,6 +18,8 @@ export type EmailDnsRecord = {
 export type EmailDomain = {
   id: string
   domain: string
+  /** `needs_reconciliation`: the email provider already holds this domain; only `reconcileDomain` adopts it. */
+  registration: { status: 'registering' | 'needs_reconciliation' | 'registered' }
   sending: { status: 'pending' | 'verified' | 'failed'; checkedAt: string | null }
   receiving: { status: 'not_requested' | 'pending' | 'verified' | 'failed'; checkedAt: string | null }
   records: EmailDnsRecord[]
@@ -194,6 +196,11 @@ export const emailChannelApi = {
 
   verifyDomain(workspaceId: string, domainId: string): Promise<EmailDomain> {
     return request<EmailDomain>(domainPath(workspaceId, domainId, '/verify'), post())
+  },
+
+  /** Adopts the email provider's existing registration of a `needs_reconciliation` domain for this workspace. */
+  reconcileDomain(workspaceId: string, domainId: string): Promise<EmailDomain> {
+    return request<EmailDomain>(domainPath(workspaceId, domainId, '/reconcile'), post())
   },
 
   /** `confirmation` must equal the domain: direct receiving routes all of the domain's mail to Radioso. */

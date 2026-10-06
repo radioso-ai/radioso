@@ -10,8 +10,6 @@ export const presentParsedQuery = (parsedQuery: ParsedQueryInterpretation): NonN
   originalQuery: parsedQuery.originalQuery ?? parsedQuery.semanticQuery,
   semanticQuery: parsedQuery.semanticQuery,
   lexicalQuery: parsedQuery.lexicalQuery,
-  // Required by the public ParsedQuery contract; retrieval no longer parses query constraints.
-  constraintSummary: [],
 });
 
 interface ActivitySummaryPresenterOptions {

@@ -362,7 +362,6 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       originalQuery: z.string().optional(),
       semanticQuery: z.string(),
       lexicalQuery: z.string(),
-      constraintSummary: z.array(z.string()),
     }),
   );
 

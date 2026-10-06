@@ -4384,7 +4384,6 @@ describe("chat service streaming", () => {
           originalQuery: "page do",
           semanticQuery: "page do",
           lexicalQuery: "page do",
-          constraintSummary: [],
         }),
         candidateCounts: {
           semantic: 1,

@@ -62,7 +62,6 @@ describe("hybrid activity summary", () => {
         originalQuery: "retreats in Estonia",
         semanticQuery: "retreats",
         lexicalQuery: "retreats",
-        constraintSummary: [],
       },
       candidateCounts: {
         semantic: 6,

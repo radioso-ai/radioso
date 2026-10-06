@@ -231,4 +231,57 @@ describe("SendReconciler", () => {
       expect(h.threads.index).toContainEqual(expect.objectContaining({ rfcMessageId: "<ses-9@email.amazonses.com>", origin: "provider_delivered" }));
     });
   });
+  describe("a late acceptance on an uncertain attempt (FR-036)", () => {
+    /** An attempt the outbox gave up on while its provider call was out, whose acceptance then came back. */
+    const lateAcceptance = async () => {
+      const h = createSendPathHarness();
+      let release: () => void = () => undefined;
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let enter: () => void = () => undefined;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      h.driver.send.mockImplementationOnce(async () => {
+        enter();
+        await released;
+        return { dispatched: true, providerMessageId: "re_provider_1", deliveredMessageId: null };
+      });
+      const stalled = h.deliver({ context: { attempt: 4 } });
+      await entered;
+      await h.handler.recordFailureOutcome({ payload: { ...h.payload() }, context: h.context({ attempt: 5 }), outcome: "failed", error: "x" });
+      release();
+      await stalled;
+      expect(h.onlyIntent()).toMatchObject({ state: "uncertain", providerMessageId: "re_provider_1" });
+      h.driver.lookup.mockClear();
+      return h;
+    };
+
+    it("looks the attempt up once its lookup is due, and settles it on the provider's evidence", async () => {
+      const h = await lateAcceptance();
+      h.advance(DAY);
+      h.driver.lookup.mockResolvedValueOnce(lookupResult("delivered"));
+
+      expect(await h.reconciler.run({ maxJobs: 5 })).toMatchObject({ claimed: 1, settled: 1 });
+
+      expect(h.driver.lookup).toHaveBeenCalledExactlyOnceWith("re_provider_1");
+      expect(h.onlyIntent()).toMatchObject({ state: "delivered", uncertainResolution: "provider_evidence", nextReconcileAt: null });
+      expect(h.failures.openFor(SEND_IDS.message)).toBeUndefined();
+    });
+
+    it("leaves it uncertain for a teammate when the lookup cannot settle it, and looks it up no more", async () => {
+      const h = await lateAcceptance();
+      h.advance(DAY);
+      h.driver.lookup.mockResolvedValueOnce(lookupResult("sent"));
+
+      expect(await h.reconciler.run({ maxJobs: 5 })).toMatchObject({ claimed: 1, uncertain: 1 });
+
+      expect(h.onlyIntent()).toMatchObject({ state: "uncertain", nextReconcileAt: null, reconcileLeaseUntil: null });
+      expect(h.failures.openFor(SEND_IDS.message)).toMatchObject({ kind: "uncertain" });
+      h.advance(DAY);
+      expect((await h.reconciler.run({ maxJobs: 5 })).claimed).toBe(0);
+      expect(h.driver.send).toHaveBeenCalledOnce();
+    });
+  });
 });

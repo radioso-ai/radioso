@@ -224,6 +224,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       publisher: input.publisher,
       checks: reviewChecks,
       maxAttempts: options.reviewMaxAttempts ?? EMAIL_REVIEW_MAX_ATTEMPTS,
+      logger,
     }),
     drains: input.drains,
     metrics,

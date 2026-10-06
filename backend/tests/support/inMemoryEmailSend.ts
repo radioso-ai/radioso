@@ -13,6 +13,7 @@ import {
   emailSendKey,
   ProviderDeliveryEvents,
   ProviderSendAttempt,
+  SendCommitment,
   SendIntentWriter,
   SendReconciler,
   type EmailSendActionPayload,
@@ -197,7 +198,7 @@ export class InMemoryEmailSendIntents implements Pick<
       nextReconcileAt: schedule && schedule.kind === "schedule_reconcile" ? new Date(now.getTime() + schedule.afterSeconds * 1000) : null,
       reconcileLeaseUntil: null,
       outcomeUnknownSince: next.outcomeUnknown && current.outcomeUnknownSince === null ? now : current.outcomeUnknownSince,
-      acceptedAt: next.state === "accepted" && current.state !== "accepted" ? now : current.acceptedAt,
+      acceptedAt: next.providerMessageId !== null && current.providerMessageId === null ? now : current.acceptedAt,
       settledAt: settles ? now : current.settledAt,
       request: settles && current.request !== null ? { ...current.request, body: null } : current.request,
       version: expectedVersion + 1,
@@ -488,13 +489,27 @@ export const createSendPathHarness = (options: { now?: Date; sendingStatus?: "pe
     return { ok: true, messageId: SEND_IDS.autoMessage };
   });
 
+  const messageReader = { findByIdAndWorkspaceId: async (_workspaceId: string, messageId: string) => messages.get(messageId) ?? null };
+  // The commitment's transaction, counted with the send path's units so a test sees none open at the provider call.
+  const commitment = new SendCommitment({
+    unitOfWork: {
+      run: (work) => unitOfWork.run(() => work({
+        conversations: { lockOwnership: async ({ conversationId }) => ownership.load(conversationId) },
+        mailboxes,
+        domains,
+        threads,
+        messages: messageReader,
+        intents,
+      })),
+    },
+  });
   const handler = new EmailSendActionHandler({
     intents,
     unitOfWork,
-    messages: { findByIdAndWorkspaceId: async (_workspaceId, messageId) => messages.get(messageId) ?? null },
+    commitment,
+    messages: messageReader,
     mailboxes,
     domains,
-    threads,
     ownership,
     heldReplies: { materializeAuto },
     attempt,

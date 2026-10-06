@@ -349,6 +349,16 @@ export class EmailDomainRepository {
     return row ? mapDomain(row) : null;
   }
 
+  /**
+   * Locks the domain row `FOR SHARE`, removed or not, for the rest of the caller's transaction: a
+   * send's commitment reads its sending readiness under it, so a readiness refresh or a removal
+   * either committed first, and is read here, or waits until the send has frozen.
+   */
+  async lockForSend(domainId: string): Promise<EmailDomainRecord | null> {
+    const row = await this.db.selectFrom("email_domains").selectAll().where("id", "=", domainId).forShare().executeTakeFirst();
+    return row ? mapDomain(row) : null;
+  }
+
   async listActive(workspaceId: string): Promise<EmailDomainRecord[]> {
     const rows = await this.db
       .selectFrom("email_domains")

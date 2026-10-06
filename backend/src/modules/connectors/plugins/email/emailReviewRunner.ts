@@ -89,9 +89,23 @@ interface EmailReviewConversationReader {
   humanOwned(conversationId: string): Promise<boolean>;
 }
 
-/** Hands the conversation to a person with the reason, recording it, when the AI owns it. */
+/** The claim a review's writes are fenced on: its claim count and the lease it took. */
+type ReviewWriteClaim = { attempt: number; leaseUntil: Date };
+
+/**
+ * Hands the conversation to a person with the reason, recording it, when the AI owns it — only
+ * while `claim` still holds the thread's review. The check and the hand-off are one unit of work,
+ * taken in the conversation lock protocol's order: the conversation, its ownership row, then the
+ * thread's link, under which the claim is checked. `claim_lost`: another worker took the review over
+ * or completed it, and nothing was written.
+ */
 interface EmailReviewHandoffPort {
-  requestHumanOwnership(input: { workspaceId: string; conversationId: string; reason: string }): Promise<void>;
+  requestHumanOwnership(input: {
+    workspaceId: string;
+    conversationId: string;
+    reason: string;
+    claim: ReviewWriteClaim;
+  }): Promise<"requested" | "claim_lost">;
 }
 
 /**
@@ -208,8 +222,11 @@ const reviewClaimOf = (claim: ClaimedReview): ReviewClaim => ({
   leaseUntil: claim.reviewLeaseUntil,
 });
 
-/** The claim a review's result is published under: email's scope checks it in the publishing transaction. */
-const publicationClaimOf = (claim: ClaimedReview): NonNullable<QueueAutoInput["reviewClaim"]> => ({
+/**
+ * The claim a review's result is published, its generation charged and its hand-off made under:
+ * each checks it under the thread's lock in its own transaction.
+ */
+const writeClaimOf = (claim: ClaimedReview): NonNullable<QueueAutoInput["reviewClaim"]> & ReviewWriteClaim => ({
   attempt: claim.reviewAttempts,
   leaseUntil: claim.reviewLeaseUntil,
 });
@@ -241,10 +258,10 @@ const decisionReason = (decision: PublicationDecision): string => {
  *    held-reply service refuses to queue is held instead;
  * 8. completes revision R only, so mail that made R+1 meanwhile keeps its due time and runs next.
  *
- * Every write is the claim's: a worker whose lease ran out and was claimed over checks its claim
- * before it charges or hands off, publishes only while the held-reply transaction finds the claim
- * still holding under the thread's lock, and its completion, release and retry are fenced on the
- * claim, so it stops without touching what the claim that took over decided. A failure retries
+ * Every write is the claim's: a worker whose lease ran out and was claimed over charges,
+ * publishes and hands off only while the write's own transaction finds the claim still holding
+ * under the thread's lock, and its completion, release and retry are fenced on the claim, so it
+ * stops without touching what the claim that took over decided. A failure retries
  * at a backoff, and the last attempt hands the thread off as `review_unavailable`.
  */
 export class EmailReviewRunner {
@@ -332,7 +349,6 @@ export class EmailReviewRunner {
     if (respondToMessageId === null) {
       throw new Error("email_review_without_customer_message");
     }
-    await this.ensureClaimed(claim);
     if (!(await this.reserveGeneration(claim))) {
       await this.handOff(claim, GENERATION_BUDGET);
       return { outcome: "budget_exhausted", reviewAgainUnder: null };
@@ -363,7 +379,7 @@ export class EmailReviewRunner {
       ownershipVersion: turn.ownershipVersion,
       policy: { ref: emailMailboxPolicyRef(mailbox.id), version: mailbox.policyVersion },
       reviewRef,
-      reviewClaim: publicationClaimOf(claim),
+      reviewClaim: writeClaimOf(claim),
       // An incomplete verdict shows as the held reply's coverage, so a teammate reads why it waits.
       facts: factsWithCompleteness(turn.facts, completeness),
       draft: turn.draft,
@@ -428,14 +444,19 @@ export class EmailReviewRunner {
     };
   }
 
-  /** Charges revision R to the mailbox's generation budget (research B8); false when the budget is spent. */
+  /**
+   * Charges revision R to the mailbox's generation budget (research B8), under the claim; false when
+   * the budget is spent. A claim taken over charges nothing and stops.
+   */
   private async reserveGeneration(claim: ClaimedReview): Promise<boolean> {
     const reservation = await this.deps.mailboxes.reserveGeneration({
       mailboxId: claim.mailboxId,
       conversationId: claim.conversationId,
+      claim: writeClaimOf(claim),
       revision: claim.reviewRevision,
       at: this.deps.clock(),
     });
+    if (reservation === "claim_lost") throw new ReviewClaimLost();
     if (reservation !== "exhausted") return true;
     this.count("email_budget_hits_total", "Automatic email behavior a budget stopped, by budget.", { budget: "mailbox_generation" });
     return false;
@@ -560,10 +581,15 @@ export class EmailReviewRunner {
     return "retrying";
   }
 
-  /** Hands the thread to a person, only while this worker still holds its claim. */
+  /** Hands the thread to a person, only while this worker still holds its claim, checked in the hand-off's transaction. */
   private async handOff(claim: ClaimedReview, reason: string): Promise<void> {
-    await this.ensureClaimed(claim);
-    await this.deps.handoffs.requestHumanOwnership({ workspaceId: claim.workspaceId, conversationId: claim.conversationId, reason });
+    const handedOff = await this.deps.handoffs.requestHumanOwnership({
+      workspaceId: claim.workspaceId,
+      conversationId: claim.conversationId,
+      reason,
+      claim: writeClaimOf(claim),
+    });
+    if (handedOff === "claim_lost") throw new ReviewClaimLost();
   }
 
   /** Stops this worker when another claimed its review after its lease ran out. */

@@ -10,12 +10,15 @@ import type { DB, Db } from "../../shared/infra/kysely/types.js";
  *
  *   1. the conversation row (`FOR NO KEY UPDATE`);
  *   2. its ownership row (`FOR UPDATE`);
- *   3. the channel's policy: an email mailbox row (`FOR SHARE` to read it, `FOR UPDATE` to change
- *      it), then the thread's row on `email_thread_links` (`FOR UPDATE`), which carries both the
- *      review claim a result is published under and the thread's send budget;
+ *   3. the channel's policy: an email mailbox row (`FOR SHARE` to read it, `FOR UPDATE` or
+ *      `FOR NO KEY UPDATE` to change it); then its sending domain's row on `email_domains`
+ *      (`FOR SHARE`), where a send's commitment reads whether the domain may still send; then the
+ *      thread's row on `email_thread_links` (`FOR UPDATE`, or `FOR SHARE` to read it), which
+ *      carries the review claim a result is published under and the thread's send budget;
  *   4. the held reply, by a conditional update;
  *   5. the message written;
- *   6. the delivery queued on the action outbox, or the send intent a materialization records.
+ *   6. the delivery queued on the action outbox, or the send intent a materialization records or a
+ *      send's commitment freezes.
  *
  * A unit takes any subset, but never a later step before an earlier one, so two units can only
  * wait on each other in one direction. Rows a unit inserts with a fresh key contend with nothing, so
@@ -42,10 +45,22 @@ import type { DB, Db } from "../../shared/infra/kysely/types.js";
  *   then — for a hold or queue under a review claim — the thread's row, checking the claim still
  *   holds and (a queue) reserving the send budget, then the held reply, the message, then the
  *   delivery or the send intent.
- * - A review's generation charge (`EmailMailboxRepository.reserveGeneration`) is one statement that
- *   locks the thread link before it updates the mailbox. The only units that take the two the other
- *   way round on the same thread are holding or queueing that review's own result, which run after
- *   it under the same review lease, so they never overlap.
+ * - A send's commitment (`SendCommitment`, `createPostgresEmailSendCommitmentUnitOfWork`): for an
+ *   automatic send the conversation and its ownership row; then the mailbox and its domain
+ *   `FOR SHARE`, the thread's link `FOR SHARE`, and last the send intent's freeze. The provider call
+ *   comes after it commits. A revocation — a policy change, a takeover, a removal, a readiness
+ *   refresh — that committed first is read and refuses the send; one that comes later waits for the
+ *   freeze, which is the send's commitment.
+ * - A review's generation charge (`EmailMailboxRepository.reserveGeneration`): the mailbox
+ *   `FOR NO KEY UPDATE`, then the thread's link `FOR UPDATE`, under which the review's claim is
+ *   checked, then the charge.
+ * - A review's hand-off (`createPostgresReviewHandoffs`): the conversation, its ownership row, then
+ *   the thread's link, under which the review's claim is checked before the ownership row is
+ *   created or changed.
+ *
+ * The domain row has no step of its own before the mailbox: every write to it — a readiness refresh,
+ * a removal, a claim or an adoption — is a statement on `email_domains` alone, so a unit holding it
+ * never waits on a later step.
  *
  * Only a change that finds a draft born after it locked its conversations takes a conversation out
  * of order: it locks that conversation when it hands it off. Postgres then aborts one of the two as a

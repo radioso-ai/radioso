@@ -54,7 +54,8 @@ It does not own:
   routing (`mailboxRouting.ts`), engagement-mode ordering
   (`effectiveMode.ts`), the hourly generation window
   (`generationBudget.ts`, which `EmailMailboxRepository.reserveGeneration`
-  charges once per thread review revision), receiving-state derivation
+  charges once per thread review revision, under the review's claim, locking
+  the mailbox before the thread link), receiving-state derivation
   (`receivingState.ts`), and the policy change-of-record
   (`mailboxPolicyChangeUnitOfWork.ts`), which supersedes the drafts bound
   to the version it replaces and hands their conversations to a person.
@@ -110,15 +111,20 @@ It does not own:
   payload (v1, ids and authority only) and the three key formats;
   `emailSendActionHandler.ts` materializes the intent by key (an
   `auto_reply` through the held-reply dispatch port's `materializeAuto`),
-  revalidates on the first attempt only, freezes the request and sends through
+  commits the send on the first attempt only through `sendCommitment.ts` —
+  the authority check and the request's freeze in one transaction, under the
+  conversation lock protocol's locks (bound by
+  `createPostgresEmailSendCommitmentUnitOfWork`) — and sends through
   `providerSendAttempt.ts` with no transaction held across the provider
   call; `sendReconciler.ts` re-POSTs unknown outcomes inside 23 hours while
-  the trigger's authority holds (`repostAuthorized`) and looks accepted sends
-  up after 24; `providerDeliveryEvents.ts` applies
+  the trigger's authority holds (`repostAuthorized`) and looks accepted sends,
+  and `uncertain` attempts whose acceptance arrived late, up after 24;
+  `providerDeliveryEvents.ts` applies
   provider delivery events and inbound DSN bounces. Every writer applies
   `sendIntentTransitions.ts` through `sendIntentWriter.ts`, whose unit of
   work (bound in `backend/src/app/composition/emailChannel/outbound.ts`) commits the
-  fenced transition with the delivery failure it raises or clears. The
+  fenced transition with the delivery failure it raises or clears, and which
+  logs an event the machine ignores at info with ids only. The
   `email.send` handler is registered by `createEmailChannelApplicationModule`.
 
 ## Focused checks

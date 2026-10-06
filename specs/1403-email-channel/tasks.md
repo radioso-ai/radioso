@@ -868,6 +868,16 @@ Not fixed on this branch; each is small and needs its own change.
 3. **A provider acceptance after an intent went `uncertain` is dropped** (pre-existing): a provider acceptance that arrives after its send intent went `uncertain` is discarded rather than recorded on the intent. Decide whether a late acceptance is recorded (without resolving the intent) so later provider evidence for that send correlates.
 4. **Forwarding fixtures still need tenants**: the Google Workspace and Microsoft 365 forwarded-mail fixtures (S1 follow-up 7) remain `it.todo` until the S0 tenant checks (T007, T009, T010) supply real captures.
 
+## Review rounds before the PR (2026-10-06/07)
+
+Three rounds of scoped Codex review (seven areas per round, plus an orchestrator architecture pass and a dependency map) with fix waves between them. Round one: 47 findings, 40 fixed, the rest recorded here. Round two: 33 findings including the regressions the round-one fixes introduced (time-based domain adoption, freeze-loser races), all fixed. Round three (send and review paths only): 2 blocking and 3 should-fix, all fixed. Remaining items acceptable after merge:
+
+- Chat-turn hand-offs (`PostgresAssistantTurnPersistence`) create ownership before the conversation lock; the chat transaction has no deadlock retry. Documented exception in `conversationLockOrder.ts`.
+- Usage events still store `Error.message`.
+- A provider acceptance that arrives after an intent went `uncertain` on an unfrozen attempt is still dropped (pre-existing behaviour on other outbox actions).
+- Forwarded-mail fixtures (Google Workspace, Microsoft 365) still need real tenants; the receiver and thread-protocol todos remain.
+- Live eval samples showed clarification menus on 2 of 5 (covered) and 4 of 5 (uncovered) email questions; clarification on email is a deliberate open decision.
+
 ## Dependencies & Execution Order
 
 ### Phase dependencies

@@ -189,7 +189,7 @@ const runThroughChannel = async (fixture: string, verdict: AdapterVerdict) => {
       queueAuto: async () => ({ ok: true, heldReplyId: randomUUID(), duplicate: false }),
       findByReviewRef: async () => null,
     },
-    handoffs: { requestHumanOwnership: async () => undefined },
+    handoffs: { requestHumanOwnership: async () => "requested" as const },
     checks: passingReviewChecks(),
     revisions: { run: (work) => work({ threads, inbound, activity: { record: async (event) => void activity.push(event) } }) },
     drains,

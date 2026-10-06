@@ -46,6 +46,7 @@ export class InMemoryEmailDomains implements Pick<
   | "findActiveByDomain"
   | "findActive"
   | "findById"
+  | "lockForSend"
   | "listActive"
   | "findReceivingVerified"
   | "listDueForRefresh"
@@ -173,6 +174,11 @@ export class InMemoryEmailDomains implements Pick<
     return this.records.get(domainId) ?? null;
   }
 
+  /** As {@link findById}: one test step runs at a time, so the row lock has nothing to wait on. */
+  async lockForSend(domainId: string) {
+    return this.findById(domainId);
+  }
+
   async listActive(workspaceId: string) {
     return [...this.records.values()].filter((record) => record.workspaceId === workspaceId && record.removedAt === null);
   }
@@ -290,6 +296,7 @@ export class InMemoryEmailMailboxes implements Pick<
   | "markRemoved"
   | "lockForPolicyChange"
   | "lockPolicy"
+  | "lockForSend"
   | "appendPolicyVersion"
   | "reserveGeneration"
 > {
@@ -297,6 +304,8 @@ export class InMemoryEmailMailboxes implements Pick<
   readonly history: MailboxPolicyVersion[] = [];
   /** `email_thread_links.generation_reserved_revision`, by conversation. */
   readonly generationReservations = new Map<string, number>();
+  /** The review claims a generation charge is fenced on, as the thread's link row holds them; unfenced while unset. */
+  reviewClaims: Pick<InMemoryEmailThreads, "holdsReviewClaim"> | null = null;
   /** Every call, in order, so a test can assert the lock came first. */
   readonly calls: string[] = [];
 
@@ -443,6 +452,12 @@ export class InMemoryEmailMailboxes implements Pick<
     return this.findActiveById(mailboxId);
   }
 
+  /** Removed or not, as the repository locks it for a send's commitment. */
+  async lockForSend(mailboxId: string) {
+    this.calls.push("lockForSend");
+    return this.findById(mailboxId);
+  }
+
   async appendPolicyVersion(input: Args<EmailMailboxRepository["appendPolicyVersion"]>[0]) {
     this.calls.push("appendPolicyVersion");
     const record = this.records.get(input.mailboxId);
@@ -465,11 +480,17 @@ export class InMemoryEmailMailboxes implements Pick<
     });
   }
 
-  /** The repository's conditional charge (research B8): once per conversation revision, never past the budget. */
-  async reserveGeneration(input: Args<EmailMailboxRepository["reserveGeneration"]>[0]): Promise<GenerationReservation> {
+  /**
+   * The repository's conditional charge (research B8): only under a review claim that still holds,
+   * once per conversation revision and never for an older one, never past the budget.
+   */
+  async reserveGeneration(input: Args<EmailMailboxRepository["reserveGeneration"]>[0]): Promise<GenerationReservation | "claim_lost"> {
     const record = this.records.get(input.mailboxId);
     if (!record) throw new Error("The mailbox to charge does not exist");
-    if (this.generationReservations.get(input.conversationId) === input.revision) return "already_reserved";
+    if (this.reviewClaims && !(await this.reviewClaims.holdsReviewClaim({ conversationId: input.conversationId, ...input.claim }))) {
+      return "claim_lost";
+    }
+    if ((this.generationReservations.get(input.conversationId) ?? -1) >= input.revision) return "already_reserved";
     const startedAt = record.generationWindowStartedAt;
     const open = startedAt !== null && startedAt.getTime() > generationWindowOpenAfter(input.at).getTime();
     if (open && record.generationWindowCount >= record.hourlyGenerationBudget) return "exhausted";
@@ -978,6 +999,7 @@ export class InMemoryEmailThreads implements Pick<
   EmailThreadRepository,
   | "upsertLink"
   | "findLink"
+  | "lockLinkForSend"
   | "findLinkByThreadToken"
   | "participantsOf"
   | "recordLatestInbound"
@@ -1052,6 +1074,11 @@ export class InMemoryEmailThreads implements Pick<
 
   async findLink(conversationId: string) {
     return this.links.get(conversationId) ?? null;
+  }
+
+  /** As {@link findLink}: one test step runs at a time, so the row lock has nothing to wait on. */
+  async lockLinkForSend(conversationId: string) {
+    return this.findLink(conversationId);
   }
 
   async findLinkByThreadToken(mailboxId: string, threadToken: string) {

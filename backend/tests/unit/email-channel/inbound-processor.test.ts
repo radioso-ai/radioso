@@ -152,7 +152,7 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
       queueAuto: async () => ({ ok: true, heldReplyId: randomUUID(), duplicate: false }),
       findByReviewRef: async () => null,
     },
-    handoffs: { requestHumanOwnership: vi.fn(async () => undefined) },
+    handoffs: { requestHumanOwnership: vi.fn(async () => "requested" as const) },
     checks: passingReviewChecks(),
     revisions: threadProtocol,
     drains: { requestDrain },
@@ -556,6 +556,23 @@ describe("EmailInboundProcessor: fetch retries", () => {
     expect(await h.runEvent(event.id)).toBe("ignored");
     expect(h.inbound.events.get(event.id)?.state).toBe("ignored");
     expect(h.fetchMessage).not.toHaveBeenCalled();
+    expect(h.logger.info).toHaveBeenCalledWith(
+      { eventId: event.id, eventKind: "delivery_status", attempt: 1, reason: "no_status" },
+      "email_inbound_event_ignored",
+    );
+  });
+
+  it("logs a settlement a claim taken over could not make, by event, at info", async () => {
+    const h = harness();
+    const event = h.inbound.seedEvent({ eventKind: "delivery_status" });
+    vi.spyOn(h.inbound, "settleEvent").mockResolvedValueOnce(false);
+
+    expect(await h.runEvent(event.id)).toBe("superseded");
+
+    expect(h.logger.info).toHaveBeenCalledWith(
+      { eventId: event.id, eventKind: "delivery_status", attempt: 1, state: "ignored", reason: "claim_lost" },
+      "email_inbound_settle_ignored",
+    );
   });
 });
 
@@ -573,12 +590,16 @@ describe("EmailInboundProcessor: evidence about sent mail", () => {
     expect(h.fetchMessage).not.toHaveBeenCalled();
   });
 
-  it("settles an event about mail it did not send as ignored", async () => {
+  it("settles an event about mail it did not send as ignored, and logs it by event", async () => {
     const h = harness();
     h.deliveryEvents.applyStatus.mockResolvedValueOnce("foreign");
     const event = h.inbound.seedEvent({ eventKind: "delivery_status", providerObjectId: "re_transactional", envelope: { status: { type: "delivered", bounce: null } } });
 
     expect(await h.runEvent(event.id)).toBe("ignored");
+    expect(h.logger.info).toHaveBeenCalledWith(
+      { eventId: event.id, eventKind: "delivery_status", attempt: 1, reason: "foreign_send" },
+      "email_inbound_event_ignored",
+    );
   });
 
   it("does not read bounce detail that is not the provider's sanitized tokens", async () => {
@@ -1173,11 +1194,15 @@ describe("EmailInboundProcessor: provider domain events (FR-003)", () => {
     expect(h.fetchMessage).not.toHaveBeenCalled();
   });
 
-  it("ignores an event about a domain no workspace holds", async () => {
+  it("ignores an event about a domain no workspace holds, and logs it by event", async () => {
     const h = harness();
     const event = domainEvent(h, "provider-unknown.test");
 
     expect(await h.runEvent(event.id)).toBe("ignored");
+    expect(h.logger.info).toHaveBeenCalledWith(
+      { eventId: event.id, eventKind: "domain_status", attempt: 1, reason: "unknown_domain" },
+      "email_inbound_event_ignored",
+    );
   });
 
   it("retries an event whose refresh could not be requested", async () => {

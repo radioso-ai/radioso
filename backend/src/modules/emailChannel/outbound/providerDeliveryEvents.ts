@@ -1,7 +1,7 @@
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type { DeliveryStatusFacts } from "../../mail/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
-import { recordEmailChannelAudit, type EmailChannelLogger } from "../emailChannelAudit.js";
+import { recordEmailChannelAudit, type EmailChannelJobLogger } from "../emailChannelAudit.js";
 import type { EmailSendIntentRecord, EmailSendIntentRepository } from "../persistence/emailSendIntentRepository.js";
 import type { SendIntentEvent } from "./sendIntentTransitions.js";
 import type { SendIntentWriter } from "./sendIntentWriter.js";
@@ -34,7 +34,8 @@ export class ProviderDeliveryEvents {
     writer: Pick<SendIntentWriter, "apply">;
     audit: Pick<AuditPort, "record">;
     metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
-    logger: EmailChannelLogger;
+    /** Audit failures at warn; an event it drops at info, with ids only. */
+    logger: EmailChannelJobLogger;
   }) {}
 
   async applyStatus(input: { provider: string; providerMessageId: string; status: DeliveryStatusFacts }): Promise<ProviderDeliveryOutcome> {
@@ -89,7 +90,13 @@ export class ProviderDeliveryEvents {
 
   /** A complaint changes no delivery state: it is recorded once, and audited (research A6). */
   private async recordComplaint(intent: EmailSendIntentRecord): Promise<"applied" | "ignored"> {
-    if (!(await this.deps.intents.recordComplaint(intent.id))) return "ignored";
+    if (!(await this.deps.intents.recordComplaint(intent.id))) {
+      this.deps.logger.info(
+        { sendIntentId: intent.id, workspaceId: intent.workspaceId, conversationId: intent.conversationId, event: "complained", reason: "already_recorded" },
+        "email_send_event_ignored",
+      );
+      return "ignored";
+    }
     await recordEmailChannelAudit(this.deps, {
       eventType: "email_channel.send",
       action: "complained",

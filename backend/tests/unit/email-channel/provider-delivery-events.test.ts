@@ -146,6 +146,39 @@ describe("ProviderDeliveryEvents", () => {
       expect(h.failures.rows).toEqual([]);
     });
 
+    it("logs each event it drops at info with the intent, the event and the state it found, never the event's content", async () => {
+      const h = await accepted();
+      await webhook(h, status("delivered"));
+      const intent = h.onlyIntent();
+
+      expect(await webhook(h, status("bounced", { type: "Permanent", subType: "General", statusCode: "5.1.1" }))).toBe("ignored");
+
+      expect(h.logger.info).toHaveBeenCalledWith({
+        sendIntentId: intent.id,
+        workspaceId: SEND_IDS.workspace,
+        conversationId: SEND_IDS.conversation,
+        writer: "webhook",
+        attempt: null,
+        event: "provider_status",
+        status: "bounced",
+        source: "webhook",
+        state: "delivered",
+        reason: "terminal",
+      }, "email_send_event_ignored");
+    });
+
+    it("logs a repeated complaint it drops at info, by intent", async () => {
+      const h = await accepted();
+      expect(await webhook(h, status("complained"))).toBe("applied");
+
+      expect(await webhook(h, status("complained"))).toBe("ignored");
+
+      expect(h.logger.info).toHaveBeenCalledWith(
+        { sendIntentId: h.onlyIntent().id, workspaceId: SEND_IDS.workspace, conversationId: SEND_IDS.conversation, event: "complained", reason: "already_recorded" },
+        "email_send_event_ignored",
+      );
+    });
+
     it("re-applies an event to the intent another writer moved first, and drops it once the send is settled", async () => {
       const h = await accepted();
       const competing = h.onlyIntent();

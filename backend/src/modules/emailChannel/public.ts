@@ -43,6 +43,7 @@ export { EMAIL_SEND_ACTION_TYPE, emailSendKey, type EmailSendActionPayload } fro
 export { EmailSendActionHandler } from "./outbound/emailSendActionHandler.js";
 export { ProviderDeliveryEvents } from "./outbound/providerDeliveryEvents.js";
 export { ProviderSendAttempt } from "./outbound/providerSendAttempt.js";
+export { SendCommitment, type EmailSendCommitmentUnitOfWork } from "./outbound/sendCommitment.js";
 export { SendIntentWriter, type EmailSendScope, type EmailSendUnitOfWork } from "./outbound/sendIntentWriter.js";
 export { SendReconciler } from "./outbound/sendReconciler.js";
 export { CloudTasksEmailChannelDrainDispatcher } from "./infra/cloudTasksEmailChannelDrainDispatcher.js";

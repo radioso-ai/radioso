@@ -374,10 +374,11 @@ type EmailChannelContext = {
 | State | Event | Next | Side effects |
 |---|---|---|---|
 | (none) | handler first claim (operator triggers) or materialize (auto) | `queued` | |
-| `queued`, request not frozen | first-attempt revalidation fails (every trigger) | `halted` | `delivery_failed` (`halted`); resend only through audited resolution |
-| `queued`, request not frozen | automatic authority or budget narrowed before the freeze (`auto_reply`) | `failed` | `delivery_failed` (`failed`, the refusal's code) |
-| `queued`, request frozen | a revalidation or revocation read before another claim froze the request | unchanged | refused on the row as it is; the claim that lost leaves the send to the claim that froze it and returns the action to the outbox |
-| `queued` | provider accepted | `accepted` | ids recorded; `next_reconcile_at = now() + 24h` |
+| `queued`, request not frozen | send commitment: the authority its trigger needs holds under its locks | `queued`, request frozen | `request_snapshot`, `first_attempt_at`. The freeze is the send's commitment: one transaction locks, in the conversation lock protocol's order, an automatic send's conversation and ownership rows, then the mailbox and its domain `FOR SHARE`, then the thread link `FOR SHARE`, and freezes last; the provider call follows the commit. A policy change, takeover, budget change, mailbox or domain removal, or readiness downgrade committed before it refuses the send; one that commits after it waits for the freeze |
+| `queued`, request not frozen | send commitment: the mailbox can no longer send as its address (every trigger) | `halted` | `delivery_failed` (`halted`); resend only through audited resolution |
+| `queued`, request not frozen | send commitment: automatic authority or budget narrowed (`auto_reply`) | `failed` | `delivery_failed` (`failed`, the refusal's code) |
+| `queued`, request frozen | a refusal read before another claim froze the request | unchanged | refused on the row as it is; `email_send_event_ignored` at info; the claim that lost leaves the send to the claim that froze it and returns the action to the outbox |
+| `queued` | provider accepted | `accepted` | ids recorded; `accepted_at`; `next_reconcile_at = now() + 24h` |
 | `queued` | definite rejection | `failed` | `delivery_failed` |
 | `queued` | unknown outcome, authority still valid, inside `first_attempt_at + 23h` | `queued` | `outcome_unknown_since`; scheduled re-POST, same key and same snapshot |
 | `queued` | unknown outcome and authority since revoked, or past the window | `uncertain` | `delivery_failed` (`uncertain`); never re-POSTed |
@@ -391,9 +392,11 @@ type EmailChannelContext = {
 | `uncertain`, unresolved | late provider evidence: bounced or failed | `bounced` / `failed` | resolution `provider_evidence`; failure retargeted |
 | `uncertain`, resolved `marked_sent` | late provider evidence | `delivered` / `bounced` / `failed` | resolution kept; a bounce or failure opens a new `delivery_failed` |
 | `uncertain`, resolved `resend_authorized` | late provider evidence for this attempt's provider id or Message-ID | `delivered` / `bounced` / `failed` | resolution kept; recorded on this attempt only. The resend owns the message's failure, which stays resolvable by its own evidence or an operator |
+| `uncertain`, request frozen, no provider id | provider accepted: the claim that froze the request returns after the outbox gave up on the action, a newer claim having lost the freeze and exhausted it | `uncertain` | provider id and delivered id recorded on this attempt; `accepted_at`; outbound thread index rows; `next_reconcile_at = now() + 24h` (lookup); `email_send_late_acceptance` at info. Any operator resolution is kept, and no failure is cleared or retargeted, so a resend's failure stays the resend's; the attempt's later evidence settles it as the rows above |
+| `uncertain`, with a provider id | the late acceptance's lookup cannot settle it | `uncertain` | lookup consumed, nothing scheduled again; the failure stays open for a teammate |
 | `uncertain` | operator `marked_sent` | `uncertain` (resolved) | audit; failure cleared `operator_resolved` |
 | `uncertain`, `halted` | operator `resend` (audited) | unchanged (resolved) | new intent under `…:resend:<n>` |
-| terminal | any later event | unchanged | metric only |
+| terminal | any later event | unchanged | metric; `email_send_event_ignored` at info with the intent id, writer, attempt, event kind, current state and reason |
 
 ### Sending domain (receiving is identical over `receiving_status`)
 
@@ -420,13 +423,16 @@ type EmailChannelContext = {
 | event | `pending` | claimed | `processing` |
 | event | `processing` | fetched; deliveries inserted with `route_rule` and `accepted_policy_version` | `processing` |
 | event | `processing` | all deliveries `done` | `processed` |
-| event | `processing` | not ours | `ignored` |
+| event | `processing` | not ours: an unsupported kind, no readable status, mail Radioso did not send, an unknown domain, or no mailbox | `ignored`; `email_inbound_event_ignored` at info with the event id, kind, attempt and reason |
+| event | `processing` | its settlement is refused: another claim took the event over | unchanged; that claim's settlement stands; `email_inbound_settle_ignored` at info with the event id, kind, attempt and state |
 | event | `processing` | retries exhausted | `failed` |
 | delivery | `pending` | normalized and classified | `fetched` |
 | delivery | `fetched` | disposition `drop` | `done` (+ `channel_exception` when a thread exists) |
 | delivery | `fetched` | thread resolved and reserved (B15 step 1) | `resolved` |
 | delivery | `resolved` | `ingest` committed | `ingested` |
 | delivery | `ingested` | link and index written; review scheduled when needed | `done` |
+| delivery | `pending`, `fetched`, `resolved`, `ingested` | under the event's claim: the event's retries exhausted, or the mailbox a resumed delivery was bound to was removed | `failed` with a sanitized `last_error_code` and `processed_at`; an exhausted event settles `failed` with the same code, and the event log offers the retry |
+| delivery | `failed` | operator retry (FR-008), refused while its event is `processing` | its resume state: `ingested` with a conversation, `resolved` with a reserved one, `fetched` when classified, otherwise `pending`; `last_error_code` and `processed_at` cleared. In the same transaction, its event row locked first, the event returns to `pending`, due now, with its lease and error cleared; audit `email_channel.event` `retried` |
 
 ### Review schedule (per thread link, B17)
 

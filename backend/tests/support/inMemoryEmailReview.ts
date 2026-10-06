@@ -155,9 +155,19 @@ export const createEmailReviewHarness = (options: {
   const requestDrain = vi.fn(async () => undefined);
   const logger = { info: vi.fn(), warn: vi.fn() };
   const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
-  const requestHumanOwnership = vi.fn(async (input: { workspaceId: string; conversationId: string; reason: string }) => {
+  // The review's charge is fenced on its claim, as the repository checks it under the thread's lock.
+  mailboxes.reviewClaims = threads;
+  /** The hand-off unit as composition binds it: under the thread's lock, only while the claim still holds. */
+  const requestHumanOwnership = vi.fn(async (input: {
+    workspaceId: string;
+    conversationId: string;
+    reason: string;
+    claim: { attempt: number; leaseUntil: Date };
+  }): Promise<"requested" | "claim_lost"> => {
+    if (!(await threads.lockReviewClaim({ conversationId: input.conversationId, ...input.claim }))) return "claim_lost";
     handoffs.push({ conversationId: input.conversationId, reason: input.reason });
-    await ownership.requestHandoff({ ...input, reason: input.reason });
+    await ownership.requestHandoff({ workspaceId: input.workspaceId, conversationId: input.conversationId, reason: input.reason });
+    return "requested";
   });
 
   const runner = new EmailReviewRunner({

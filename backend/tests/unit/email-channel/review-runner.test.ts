@@ -114,6 +114,52 @@ describe("EmailReviewRunner", () => {
       expect(h.handoffs).toHaveLength(1);
     });
 
+    it("charges no generation once its claim was taken over before the charge, and does nothing more", async () => {
+      const { h, mailbox, conversationId } = await dueThread();
+      h.respond.mockImplementation(async () => h.draftTurn(conversationId, {}, "Held by the claim that took over."));
+      const reserve = h.mailboxes.reserveGeneration.bind(h.mailboxes);
+      let takeover: Awaited<ReturnType<typeof h.drain>> | undefined;
+      vi.spyOn(h.mailboxes, "reserveGeneration").mockImplementationOnce(async (input) => {
+        // This worker passed its checks and stalls past its lease as it charges R; another claims R,
+        // charges it once and holds its draft. The stalled charge is then checked under its claim.
+        h.advance(LEASE_MS + 1_000);
+        takeover = await h.drain();
+        return reserve(input);
+      });
+
+      expect(await h.drain()).toMatchObject({ claimed: 1, reclaimed: 1, held: 0 });
+
+      expect(takeover).toMatchObject({ claimed: 1, held: 1 });
+      expect(h.respond).toHaveBeenCalledOnce();
+      expect(h.mailboxes.records.get(mailbox.id)).toMatchObject({ generationWindowCount: 1 });
+      expect(h.mailboxes.generationReservations.get(conversationId)).toBe(1);
+      expect(h.handoffs).toEqual([]);
+    });
+
+    it("hands nothing off when its claim was taken over between its last check and the hand-off (research B17)", async () => {
+      const { h, mailbox, conversationId } = await dueThread();
+      h.mailboxes.records.set(mailbox.id, { ...mailbox, engagementMode: "operator_only" });
+      const handOff = h.requestHumanOwnership.getMockImplementation()!;
+      let takeover: Awaited<ReturnType<typeof h.drain>> | undefined;
+      h.requestHumanOwnership.mockImplementationOnce(async (input) => {
+        // This worker's claim held when it decided to hand off; it stalls past its lease, and
+        // another claim takes R over, hands the thread off itself and completes R.
+        h.advance(LEASE_MS + 1_000);
+        takeover = await h.drain();
+        return handOff(input);
+      });
+
+      expect(await h.drain()).toMatchObject({ claimed: 1, reclaimed: 1, not_runnable: 0 });
+
+      expect(takeover).toMatchObject({ claimed: 1, not_runnable: 1 });
+      expect(h.handoffs).toEqual([{ conversationId, reason: "operator_only_mailbox" }]);
+      expect(h.requestHumanOwnership).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        conversationId,
+        claim: { attempt: 1, leaseUntil: expect.any(Date) },
+      }));
+      expect(h.logger.warn).toHaveBeenCalledWith(expect.objectContaining({ conversationId, revision: 1 }), "email_review_claim_lost");
+    });
+
     it("queues no send once the claim that took over set R aside while this one checked completeness", async () => {
       const h = createEmailReviewHarness({ supportedModes: ["operator_only", "draft", "auto"] });
       const { conversationId } = await h.openThread(h.seedMailbox({ engagementMode: "auto" }));

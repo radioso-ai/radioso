@@ -46,7 +46,9 @@ const emptyRun = (): SendReconcileRun => ({ claimed: 0, reposted: 0, settled: 0,
  * - an accepted send is looked up 24 hours on: provider evidence settles it, and a send the
  *   lookup cannot settle becomes `uncertain`. A lookup the provider refuses for good makes it
  *   `uncertain` at once; one it cannot answer for now is retried until 48 hours after acceptance,
- *   and then the send becomes `uncertain` too. Later provider evidence still settles it.
+ *   and then the send becomes `uncertain` too. Later provider evidence still settles it;
+ * - an `uncertain` attempt whose acceptance arrived late is looked up the same way: evidence settles
+ *   it, and a lookup that cannot leaves it to a teammate and is not scheduled again.
  *
  * It never mints a new key: a second provider call under a new one is an audited operator resend.
  */
@@ -94,7 +96,8 @@ export class SendReconciler {
 
   private async reconcile(intent: EmailSendIntentRecord): Promise<ReconcileResult> {
     if (intent.state === "queued") return this.repost(intent);
-    if (intent.state === "accepted") return this.lookup(intent);
+    // An uncertain attempt is due only when a late acceptance scheduled its lookup (FR-036).
+    if (intent.state === "accepted" || intent.state === "uncertain") return this.lookup(intent);
     return "skipped";
   }
 

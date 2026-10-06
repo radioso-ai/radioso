@@ -284,6 +284,41 @@ describeIntegration("email review revisions (Postgres, research B17)", () => {
     expect(stalled.logger.messages()).toContain("email_review_claim_lost");
   }, 60_000);
 
+  it("hands nothing off from a claim stalled past its lease at its hand-off once another claim took R over (research B17)", async () => {
+    const target = await draftMailbox();
+    await receiveAndIngest(workerNode(), FIRST, target);
+    const [conversationId] = await conversationsOfMailbox(database, target.mailbox);
+    await makeReviewsDue(conversationId);
+    // The mailbox's generation budget is spent: the claim's review decides to hand the thread off.
+    await database.execute(
+      "UPDATE email_mailboxes SET generation_window_started_at = now(), generation_window_count = hourly_generation_budget WHERE id = $1",
+      [target.mailbox.id],
+    );
+    const stalled = workerNode(async (input) => draft(input, "From the stalled claim."));
+    const paused = stalled.seams.pauseAt("handoffs.requestHumanOwnership", "before");
+    const staleRun = stalled.worker.drain({ maxJobs: 5, stage: "review" });
+    await paused.reached;
+
+    // The budget frees up; the stalled claim's lease runs out, and another worker claims R, answers it
+    // and completes it.
+    await database.execute("UPDATE email_mailboxes SET generation_window_count = 0 WHERE id = $1", [target.mailbox.id]);
+    await expireReviewLease(conversationId);
+    const takeover = workerNode(async (input) => draft(input, "From the claim that took over."));
+    expect(await takeover.worker.drain({ maxJobs: 5, stage: "review" })).toMatchObject({ reviewed: 1 });
+
+    paused.release();
+    expect(await staleRun).toMatchObject({ reviewed: 1 });
+
+    // The stale hand-off wrote nothing: the conversation stays the AI's, with the current draft.
+    expect(await database.queryOptional("SELECT state FROM conversation_ownership WHERE conversation_id = $1", [conversationId])).toBeNull();
+    expect((await activityOf(database, conversationId)).map((entry) => entry.kind)).not.toContain("handoff_requested");
+    expect(await heldRepliesOf(conversationId)).toEqual([
+      expect.objectContaining({ state: "pending", draft_text: "From the claim that took over." }),
+    ]);
+    expect(await reviewLink(conversationId)).toMatchObject({ review_revision: 1, review_completed_revision: 1, review_due_at: null });
+    expect(stalled.logger.messages()).toContain("email_review_claim_lost");
+  }, 60_000);
+
   it("notes and completes a set-aside revision together: a crash between them leaves neither, and the retry leaves one note", async () => {
     const target = await draftMailbox();
     const intake = workerNode();

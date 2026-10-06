@@ -9,7 +9,11 @@ import {
   createEmailChannelComposition,
   createEmailHeldReplyChannelRegistration,
 } from "../../../src/app/composition/emailChannel/index.js";
-import { createPostgresEmailSendUnitOfWork } from "../../../src/app/composition/emailChannel/outbound.js";
+import {
+  createPostgresEmailSendCommitmentUnitOfWork,
+  createPostgresEmailSendUnitOfWork,
+} from "../../../src/app/composition/emailChannel/outbound.js";
+import { createPostgresReviewHandoffs } from "../../../src/app/composition/emailChannel/review.js";
 import type { ApplicationModuleRegistrationContext } from "../../../src/app/composition/applicationModule.js";
 import { parseEmailChannelConfig } from "../../../src/app/config/env.js";
 import { EmailPlugin } from "../../../src/modules/connectors/plugins/email/emailPlugin.js";
@@ -327,6 +331,73 @@ describe("email channel composition", () => {
 
     expect(execute).toHaveBeenCalledOnce();
     expect(scope.mailboxes).toBeInstanceOf(EmailMailboxRepository);
+  });
+});
+
+/** The row locks and writes a unit of work sent, named; anything else by its SQL. */
+const lockKindOf = (sql: string): string => {
+  if (/^select "id" from "conversations" .*for no key update$/u.test(sql)) return "lock_conversation";
+  if (/FROM conversation_ownership o[\s\S]*FOR UPDATE OF o/u.test(sql)) return "lock_ownership";
+  if (/^select "conversation_id" from "email_thread_links" .*for update$/u.test(sql)) return "lock_review_claim";
+  return sql;
+};
+
+describe("the review hand-off unit (research B17)", () => {
+  const conversationId = "66666666-6666-4666-8666-666666666666";
+  const workspaceId = "11111111-1111-4111-8111-111111111111";
+  const claim = { attempt: 2, leaseUntil: new Date("2026-10-04T09:05:00.000Z") };
+
+  const handoffs = (claimHolds: boolean) => {
+    const { db, log, statements } = createRecordingKysely(({ sql }) => {
+      const kind = lockKindOf(sql);
+      if (kind === "lock_conversation") return { rows: [{ id: conversationId }] };
+      if (kind === "lock_review_claim") return { rows: claimHolds ? [{ conversation_id: conversationId }] : [] };
+      return undefined;
+    });
+    const ownership = { requestHumanOwnership: vi.fn(async () => ({ changed: true })) };
+    const publisher = { enqueue: vi.fn(), publish: vi.fn() };
+    const port = createPostgresReviewHandoffs({ db, activity: { record: vi.fn() }, ownership: ownership as never, publisher });
+    return { port, ownership, publisher, log, statements };
+  };
+
+  it("hands off in one transaction, locking the conversation, its ownership row, then the thread's claim", async () => {
+    const { port, ownership, log, statements } = handoffs(true);
+
+    expect(await port.requestHumanOwnership({ workspaceId, conversationId, reason: "generation_budget", claim })).toBe("requested");
+
+    expect(log.map(lockKindOf)).toEqual(["BEGIN", "lock_conversation", "lock_ownership", "lock_review_claim", "COMMIT"]);
+    expect(statements.find((statement) => lockKindOf(statement.sql) === "lock_review_claim")?.parameters)
+      .toEqual([conversationId, claim.attempt, claim.leaseUntil]);
+    expect(ownership.requestHumanOwnership).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ ownership: expect.anything(), activity: expect.anything() }),
+      { workspaceId, conversationId, reason: "generation_budget" },
+    );
+  });
+
+  it("writes nothing and reports claim_lost once another claim took the review over", async () => {
+    const { port, ownership, publisher } = handoffs(false);
+
+    expect(await port.requestHumanOwnership({ workspaceId, conversationId, reason: "generation_budget", claim })).toBe("claim_lost");
+
+    expect(ownership.requestHumanOwnership).not.toHaveBeenCalled();
+    expect(publisher.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("the send commitment unit (FR-025, FR-032)", () => {
+  it("binds the commitment to one transaction, an automatic send's ownership locked after its conversation", async () => {
+    const { db, log } = createRecordingKysely(() => undefined);
+    const unitOfWork = createPostgresEmailSendCommitmentUnitOfWork({ db });
+
+    const scope = await unitOfWork.run(async (unit) => {
+      await unit.conversations.lockOwnership({ workspaceId: "11111111-1111-4111-8111-111111111111", conversationId: "66666666-6666-4666-8666-666666666666" });
+      return unit;
+    });
+
+    expect(log.map(lockKindOf)).toEqual(["BEGIN", "lock_conversation", "lock_ownership", "COMMIT"]);
+    expect(scope.mailboxes).toBeInstanceOf(EmailMailboxRepository);
+    expect(scope.intents).toBeInstanceOf(EmailSendIntentRepository);
+    expect(scope.threads).toBeInstanceOf(EmailThreadRepository);
   });
 });
 

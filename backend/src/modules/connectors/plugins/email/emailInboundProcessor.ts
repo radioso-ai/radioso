@@ -87,6 +87,9 @@ const HUMAN_OWNERSHIP_BY_REASON: ReadonlyMap<string, string> = new Map<IngestOnl
 
 export type InboundEventOutcome = "processed" | "ignored" | "retrying" | "failed" | "superseded";
 
+/** Why an event was settled `ignored`: logged with its ids, never its content. */
+type IgnoredEventReason = "unsupported_event" | "no_status" | "foreign_send" | "unknown_domain" | "no_mailbox";
+
 /** What a conversation reached by a thread is called by, in its channel context and its link. */
 interface ThreadIdentity {
   threadKey: string;
@@ -160,8 +163,11 @@ export interface EmailInboundProcessorDependencies {
   chat: Pick<ConnectorChatPort, "ingest">;
   drains: EmailChannelDrainDispatcherPort;
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
-  /** Failure and degradation lines only, with ids and codes. */
-  logger: { warn(fields: Record<string, unknown>, message: string): void };
+  /** Failure and degradation lines at warn; an event or a settlement it ignores at info. Ids and codes only. */
+  logger: {
+    info(fields: Record<string, unknown>, message: string): void;
+    warn(fields: Record<string, unknown>, message: string): void;
+  };
   clock: () => Date;
   createId: () => string;
   randomBytes: (size: number) => Uint8Array;
@@ -228,7 +234,7 @@ export class EmailInboundProcessor {
       return this.applyDomainStatus(event, event.providerObjectId);
     }
     if (event.eventKind !== "message_received" || event.providerObjectId === null) {
-      return this.settle(event, "ignored", null);
+      return this.ignore(event, "unsupported_event");
     }
     const envelope = readEnvelope(event.envelope);
     const fetched = await this.fetch(event, event.providerObjectId);
@@ -256,10 +262,10 @@ export class EmailInboundProcessor {
   /** A provider event about mail Radioso sent: it settles the send it names, if it names one. */
   private async applyDeliveryStatus(event: InboundEventRecord, providerMessageId: string): Promise<InboundEventOutcome> {
     const status = readDeliveryStatus(event.envelope);
-    if (!status) return this.settle(event, "ignored", null);
+    if (!status) return this.ignore(event, "no_status");
     try {
       const applied = await this.deps.deliveryEvents.applyStatus({ provider: event.provider, providerMessageId, status });
-      return this.settle(event, applied === "foreign" ? "ignored" : "processed", null);
+      return applied === "foreign" ? this.ignore(event, "foreign_send") : this.settle(event, "processed", null);
     } catch (error) {
       this.deps.logger.warn({ eventId: event.id, attempt: event.attempts, errorName: errorName(error) }, "email_delivery_status_failed");
       return hasAttemptsLeft(event) ? this.retryLater(event, PROCESSING_FAILED) : this.settle(event, "failed", PROCESSING_FAILED);
@@ -274,7 +280,7 @@ export class EmailInboundProcessor {
   private async applyDomainStatus(event: InboundEventRecord, providerDomainId: string): Promise<InboundEventOutcome> {
     try {
       const expedited = await this.deps.domains.expediteRefresh({ provider: event.provider, providerDomainId });
-      return this.settle(event, expedited ? "processed" : "ignored", null);
+      return expedited ? this.settle(event, "processed", null) : this.ignore(event, "unknown_domain");
     } catch (error) {
       this.deps.logger.warn({ eventId: event.id, attempt: event.attempts, errorName: errorName(error) }, "email_domain_status_failed");
       return hasAttemptsLeft(event) ? this.retryLater(event, PROCESSING_FAILED) : this.settle(event, "failed", PROCESSING_FAILED);
@@ -299,7 +305,7 @@ export class EmailInboundProcessor {
       if (created) await this.advance({ ...content, ...created.context }, created.delivery);
     }
     if (opened.length === 0 && targets.mailboxes.length === 0) {
-      if (!targets.unrouted) return this.settle(event, "ignored", null);
+      if (!targets.unrouted) return this.ignore(event, "no_mailbox");
       await this.recordUnrouted(content, targets.unrouted.workspaceId);
     }
     return this.settle(event, "processed", null);
@@ -384,6 +390,16 @@ export class EmailInboundProcessor {
     return this.settle(event, "failed", code);
   }
 
+  /**
+   * Settles an event that asks nothing of the channel as `ignored`, with why: an event kind it does
+   * not act on, a delivery event with no status it reads, one about mail it did not send, a domain
+   * no workspace holds, or mail that reached no mailbox. Logged with ids, so it can be traced.
+   */
+  private async ignore(event: InboundEventRecord, reason: IgnoredEventReason): Promise<InboundEventOutcome> {
+    this.deps.logger.info({ eventId: event.id, eventKind: event.eventKind, attempt: event.attempts, reason }, "email_inbound_event_ignored");
+    return this.settle(event, "ignored", null);
+  }
+
   private async settle(
     event: InboundEventRecord,
     state: "processed" | "ignored" | "failed",
@@ -391,7 +407,13 @@ export class EmailInboundProcessor {
   ): Promise<InboundEventOutcome> {
     const settled = await this.deps.inbound.settleEvent(event.id, { attempt: event.attempts, state, errorCode });
     this.count("email_inbound_events_total", "Inbound provider events by kind and final state.", { kind: event.eventKind, state });
-    return settled ? state : "superseded";
+    if (settled) return state;
+    // Another claim took the event over: its settlement stands, and this one is on record by event.
+    this.deps.logger.info(
+      { eventId: event.id, eventKind: event.eventKind, attempt: event.attempts, state, reason: "claim_lost" },
+      "email_inbound_settle_ignored",
+    );
+    return "superseded";
   }
 
   /**

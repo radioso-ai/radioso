@@ -220,7 +220,9 @@ const transitionBookkeeping = (current: EmailSendIntentRecord, next: SendIntentS
     next_reconcile_at: schedule ? nowPlusSeconds(schedule.afterSeconds) : null,
     reconcile_lease_until: null,
     ...(next.outcomeUnknown && current.outcomeUnknownSince === null ? { outcome_unknown_since: currentTimestamp() } : {}),
-    ...(next.state === "accepted" && current.state !== "accepted" ? { accepted_at: currentTimestamp() } : {}),
+    // When the provider's acceptance is first recorded, whether it moves the send to `accepted` or
+    // reaches an attempt already `uncertain` (a late acceptance).
+    ...(next.providerMessageId !== null && current.providerMessageId === null ? { accepted_at: currentTimestamp() } : {}),
     ...(settles ? { settled_at: currentTimestamp() } : {}),
     // The body is customer content kept only for replay; a settled send never replays.
     ...(settles && current.request !== null ? { request_snapshot: toJsonb({ ...current.request, body: null }) } : {}),

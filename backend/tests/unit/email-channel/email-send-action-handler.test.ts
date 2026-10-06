@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { emailSendKey } from "../../../src/modules/emailChannel/public.js";
 import { EmailSendError } from "../../../src/modules/mail/public.js";
@@ -268,19 +268,20 @@ describe("EmailSendActionHandler", () => {
         expect(h.driver.send).not.toHaveBeenCalled();
       });
 
-      it("never fails it on a revocation read before another claim froze it: the claim that froze it sends it (research B18)", async () => {
+      it("never fails it on a refusal another claim's freeze overtook before it landed: the claim that froze it sends it (research B18)", async () => {
         const h = await materializedThenCrashed();
+        // Claim A's commitment finds the thread's budget lowered below its reservation, and refuses.
+        h.mailboxes.seed({ ...h.mailbox, engagementMode: "auto", threadSendBudget: 1 });
         const call = heldProviderCall(h);
         const claims: Promise<void>[] = [];
-        const readMailbox = h.mailboxes.findById.bind(h.mailboxes);
-        vi.spyOn(h.mailboxes, "findById").mockImplementationOnce(async (mailboxId) => {
-          // Claim A has read the intent unfrozen and stalls. Its lease runs out; claim B freezes the
-          // request and enters the provider call; then a teammate takes the conversation over.
+        h.intents.beforeWrite = async () => {
+          // Before A's settlement lands, a teammate raises the budget again; A's lease runs out, and
+          // claim B commits the send and enters the provider call.
+          h.intents.beforeWrite = null;
+          h.mailboxes.seed({ ...h.mailbox, engagementMode: "auto", threadSendBudget: 5 });
           claims.push(h.deliverAuto(3));
           await call.entered;
-          h.owners.set(SEND_IDS.conversation, { state: "human_owned", version: 1 });
-          return readMailbox(mailboxId);
-        });
+        };
 
         await expect(h.deliverAuto(2)).rejects.toThrow(FROZEN_ELSEWHERE);
 
@@ -292,6 +293,11 @@ describe("EmailSendActionHandler", () => {
           "email_send_left_to_freezing_claim",
         );
         expect(h.logger.warn).not.toHaveBeenCalledWith(expect.anything(), "email_auto_send_revoked_before_send");
+        // The refusal it dropped is on record by intent and attempt.
+        expect(h.logger.info).toHaveBeenCalledWith(
+          expect.objectContaining({ sendIntentId: h.onlyIntent().id, writer: "handler", attempt: 2, event: "authority_revoked", state: "queued", reason: "not_applicable" }),
+          "email_send_event_ignored",
+        );
 
         call.release();
         await Promise.all(claims);
@@ -639,6 +645,50 @@ describe("EmailSendActionHandler", () => {
       expect(h.failures.openFor(SEND_IDS.message)).toMatchObject({ kind: "uncertain" });
       call.release();
       await Promise.all(claims);
+      expect(h.driver.send).toHaveBeenCalledOnce();
+    });
+
+    it("records a frozen attempt's late acceptance after the outbox gave up on it, so its later evidence correlates (FR-036)", async () => {
+      const h = createSendPathHarness();
+      // Attempt 4 froze the request and is in its provider call past its lease.
+      const call = heldProviderCall(h);
+      const stalled = h.deliver({ context: { attempt: 4 } });
+      await call.entered;
+      // Attempt 5 lost the freeze to it, and its final failure exhausted the action.
+      await exhaust(h);
+      expect(h.onlyIntent()).toMatchObject({ state: "uncertain", providerMessageId: null, nextReconcileAt: null });
+
+      call.release();
+      await stalled;
+
+      const intent = h.onlyIntent();
+      expect(intent).toMatchObject({
+        state: "uncertain",
+        providerMessageId: "re_provider_frozen_by_b",
+        uncertainResolution: null,
+        acceptedAt: h.clock(),
+        nextReconcileAt: new Date(h.clock().getTime() + 24 * HOUR),
+      });
+      expect(h.threads.index).toContainEqual(expect.objectContaining({
+        direction: "outbound",
+        rfcMessageId: intent.suppliedRfcMessageId,
+        sendIntentId: intent.id,
+        messageId: SEND_IDS.message,
+      }));
+      // The doubt stays a teammate's until evidence settles it.
+      expect(h.failures.openFor(SEND_IDS.message)).toMatchObject({ kind: "uncertain" });
+      expect(h.logger.info).toHaveBeenCalledWith(
+        { sendIntentId: intent.id, workspaceId: SEND_IDS.workspace, conversationId: SEND_IDS.conversation, attempt: 4 },
+        "email_send_late_acceptance",
+      );
+
+      expect(await h.deliveryEvents.applyStatus({
+        provider: "resend",
+        providerMessageId: "re_provider_frozen_by_b",
+        status: { type: "delivered", bounce: null },
+      })).toBe("applied");
+      expect(h.onlyIntent()).toMatchObject({ state: "delivered", uncertainResolution: "provider_evidence" });
+      expect(h.failures.openFor(SEND_IDS.message)).toBeUndefined();
       expect(h.driver.send).toHaveBeenCalledOnce();
     });
 

@@ -180,6 +180,21 @@ export class EmailThreadRepository {
     return row ? mapLink(row) : null;
   }
 
+  /**
+   * The conversation's link, locked `FOR SHARE` for the rest of the caller's transaction: a send's
+   * commitment reads the thread's send budget and the headers it replies under, and a reservation
+   * or a renewal waits until the send has frozen.
+   */
+  async lockLinkForSend(conversationId: string): Promise<EmailThreadLinkRecord | null> {
+    const row = await this.db
+      .selectFrom("email_thread_links")
+      .selectAll()
+      .where("conversation_id", "=", conversationId)
+      .forShare()
+      .executeTakeFirst();
+    return row ? mapLink(row) : null;
+  }
+
   /** The token lookup, scoped to the destination mailbox (FR-010). */
   async findLinkByThreadToken(mailboxId: string, threadToken: string): Promise<EmailThreadLinkRecord | null> {
     const row = await this.db

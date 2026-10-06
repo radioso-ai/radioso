@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { buildEdgeFactsHeaders } from '../../../../../lib/server/edge-facts'
+import { relayRateLimitResponseHeaders } from '../../../../../lib/server/rate-limit-headers'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,7 +15,6 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
   Vary: 'Origin',
 }
-
 const withCorsHeaders = (
   origin: string | null,
   headers?: HeadersInit,
@@ -111,15 +111,17 @@ export async function POST(
     })
 
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
+    const responseHeaders = new Headers({
+      'Content-Type': contentType,
+      'Cache-Control': 'no-store',
+    })
+    relayRateLimitResponseHeaders(upstream.headers, responseHeaders)
 
     return new Response(upstream.body, {
       status: upstream.status,
       headers: withCorsHeaders(
         requestOrigin,
-        {
-          'Content-Type': contentType,
-          'Cache-Control': 'no-store',
-        },
+        responseHeaders,
         { allowOrigin: upstream.ok },
       ),
     })

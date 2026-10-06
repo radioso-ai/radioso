@@ -46,6 +46,10 @@ describe("HTTP logger redaction", () => {
       .set("x-radioso-worker-token", "worker-task-secret")
       .set("x-radioso-public-session", "public-session-secret")
       .set("x-workspace-id", "workspace-secret")
+      .set("x-forwarded-for", "203.0.113.9, 10.0.0.4")
+      .set("x-real-ip", "203.0.113.10")
+      .set("forwarded", "for=203.0.113.11;proto=https")
+      .set("cf-connecting-ip", "203.0.113.12")
       .set(EDGE_FACTS_HEADERS.facts, "edge-facts-forwarded-chain")
       .set(EDGE_FACTS_HEADERS.signature, "edge-facts-signature")
       .set("x-visible-header", "visible-value")
@@ -60,6 +64,10 @@ describe("HTTP logger redaction", () => {
     expect(JSON.stringify(requestLog)).not.toContain("worker-task-secret");
     expect(JSON.stringify(requestLog)).not.toContain("public-session-secret");
     expect(JSON.stringify(requestLog)).not.toContain("workspace-secret");
+    expect(JSON.stringify(requestLog)).not.toContain("203.0.113.9");
+    expect(JSON.stringify(requestLog)).not.toContain("203.0.113.10");
+    expect(JSON.stringify(requestLog)).not.toContain("203.0.113.11");
+    expect(JSON.stringify(requestLog)).not.toContain("203.0.113.12");
     expect(JSON.stringify(requestLog)).not.toContain("edge-facts-forwarded-chain");
     expect(JSON.stringify(requestLog)).not.toContain("edge-facts-signature");
     expect(JSON.stringify(requestLog)).not.toContain("secret-response-cookie");

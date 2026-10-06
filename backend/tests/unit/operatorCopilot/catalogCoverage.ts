@@ -67,6 +67,7 @@ const catalogToolCoverage = {
   getEmailChannel: "email_channel_configuration",
   getEmailMailbox: "email_channel_configuration",
   listEmailMailboxEvents: "email_channel_events",
+  listEmailChannelEvents: "email_channel_events",
   getConversationEmailFacts: "email_conversation_facts",
   listDeliveryFailures: "needs_attention",
   listHeldReplies: "held_replies",

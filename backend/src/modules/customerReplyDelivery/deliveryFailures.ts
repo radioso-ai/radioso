@@ -50,11 +50,18 @@ interface DeliveryFailureRetargetInput {
   detailCode: string | null;
 }
 
-/** A teammate's resolution names the teammate; the channel's own clears name nobody. */
-type DeliveryFailureClearInput = { conversationId: string; messageId: string | null } & (
-  | { reason: "later_delivery" | "provider_evidence" }
-  | { reason: "operator_resolved"; userId: string }
-);
+/**
+ * What a clear names. Provider evidence settles one message's failure, and a later delivered send
+ * those of every message it vouches for, as the channel lists them: never a newer send's. A
+ * teammate's resolution clears exactly the failure they decided on, and names them; the channel's
+ * own clears name nobody.
+ */
+type DeliveryFailureClearInput =
+  | { reason: "later_delivery" | "provider_evidence"; conversationId: string; messageIds: readonly string[] }
+  | { reason: "operator_resolved"; failureId: string; userId: string };
+
+/** Which open failures a clear matches: those on the conversation's listed messages, or one by id. */
+type DeliveryFailureClearTarget = { conversationId: string; messageIds: readonly string[] } | { failureId: string };
 
 /** How a delivering channel raises, settles and clears the failures of the replies it carries. */
 export interface DeliveryFailureRecorderPort {
@@ -65,11 +72,17 @@ export interface DeliveryFailureRecorderPort {
    * send; a no-op when none is open, or it already is of `kind`.
    */
   retarget(input: DeliveryFailureRetargetInput): Promise<void>;
-  /**
-   * Clears the message's open failure, or with `messageId: null` every open failure on the
-   * conversation; returns how many it cleared.
-   */
+  /** Clears the open failures the input names; returns how many it cleared. */
   clear(input: DeliveryFailureClearInput): Promise<number>;
+}
+
+/**
+ * A delivering channel's hold on the failure a teammate decided on, inside the transaction that
+ * settles the decision, so a stale request can never act on a failure other than the one it named.
+ */
+export interface DeliveryFailureLockPort {
+  /** The workspace's failure `failureId` while it is still open, locked until the transaction ends; null once cleared. */
+  lockOpen(input: { workspaceId: string; failureId: string }): Promise<DeliveryFailureRecord | null>;
 }
 
 export interface DeliveryFailurePage {
@@ -96,13 +109,14 @@ export interface DeliveryFailureWriteStore {
   insertOpen(input: DeliveryFailureOpenInput): Promise<DeliveryFailureRecord | null>;
   /** The message's open failure, now of `kind`; null when none is open, or it already was. */
   retargetOpen(input: DeliveryFailureRetargetInput): Promise<DeliveryFailureRecord | null>;
-  /** The open failures cleared: the message's, or with `messageId: null` the conversation's. */
+  /** The open failures `target` names, now cleared. */
   clearOpen(input: {
-    conversationId: string;
-    messageId: string | null;
+    target: DeliveryFailureClearTarget;
     reason: DeliveryFailureClearReason;
     clearedByUserId: string | null;
   }): Promise<DeliveryFailureRecord[]>;
+  /** The workspace's open failure `failureId`, row-locked for the rest of the transaction; null when it has no such open failure. */
+  lockOpen(input: { workspaceId: string; failureId: string }): Promise<DeliveryFailureRecord | null>;
   /** The workspace's open failure `failureId`, now acknowledged by `userId`; null when it has no such open failure. */
   acknowledgeOpen(input: { workspaceId: string; failureId: string; userId: string }): Promise<DeliveryFailureRecord | null>;
 }
@@ -151,9 +165,10 @@ const clearedActivity = (
 
 /**
  * The recorder bound to a transaction its caller holds, such as the send path's fenced transition,
- * so a failure is raised, settled or cleared with the change that caused it, or not at all.
+ * so a failure is raised, settled or cleared with the change that caused it, or not at all; and,
+ * for a teammate's decision, the lock on the failure it settles.
  */
-export const bindDeliveryFailureRecorder = (scope: DeliveryFailureWriteScope): DeliveryFailureRecorderPort => ({
+export const bindDeliveryFailureRecorder = (scope: DeliveryFailureWriteScope): DeliveryFailureRecorderPort & DeliveryFailureLockPort => ({
   async open(input) {
     const opened = await scope.failures.insertOpen(input);
     if (opened) {
@@ -168,17 +183,16 @@ export const bindDeliveryFailureRecorder = (scope: DeliveryFailureWriteScope): D
   },
   async clear(input) {
     const clearedByUserId = input.reason === "operator_resolved" ? input.userId : null;
-    const cleared = await scope.failures.clearOpen({
-      conversationId: input.conversationId,
-      messageId: input.messageId,
-      reason: input.reason,
-      clearedByUserId,
-    });
+    const target: DeliveryFailureClearTarget = input.reason === "operator_resolved"
+      ? { failureId: input.failureId }
+      : { conversationId: input.conversationId, messageIds: input.messageIds };
+    const cleared = await scope.failures.clearOpen({ target, reason: input.reason, clearedByUserId });
     for (const failure of cleared) {
       await scope.activity.record(clearedActivity(failure, input.reason, clearedByUserId));
     }
     return cleared.length;
   },
+  lockOpen: (input) => scope.failures.lockOpen(input),
 });
 
 const CURSOR_KEYS = ["openedAt", "id"] as const;

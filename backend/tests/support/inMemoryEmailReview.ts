@@ -7,7 +7,11 @@ import type { ConversationRecord } from "../../src/db/repositories/conversationR
 import type { ReplyCompletenessResult } from "../../src/modules/connectors/plugins/email/emailReplyCompleteness.js";
 import type { ReplyTriageVerdict } from "../../src/modules/connectors/plugins/email/emailReplyTriage.js";
 import type { EmailReviewSubject } from "../../src/modules/connectors/plugins/email/emailReviewChecks.js";
-import { EmailReviewRunner, type EmailReviewChecks } from "../../src/modules/connectors/plugins/email/emailReviewRunner.js";
+import {
+  EmailReviewRunner,
+  type EmailReviewChecks,
+  type EmailReviewRevisionScope,
+} from "../../src/modules/connectors/plugins/email/emailReviewRunner.js";
 import { EMAIL_MAILBOX_POLICY_REF_PREFIX, EmailHeldReplyChannelScope, type EngagementMode } from "../../src/modules/emailChannel/public.js";
 import type { EmailMailboxRecord } from "../../src/modules/emailChannel/persistence/emailMailboxRepository.js";
 import { HeldReplyService } from "../../src/modules/handoff/public.js";
@@ -109,11 +113,44 @@ export const createEmailReviewHarness = (options: {
   const replyCompleteness = vi.fn<(input: EmailReviewSubject & { draft: { text: string } }) => Promise<ReplyCompletenessResult>>(
     async () => ({ completeness: "complete", unansweredAsks: 0 }),
   );
-  /** Thread notes a review left: mail it set aside without a turn. */
-  const notes: { conversationId: string; messageId: string; code: string }[] = [];
-  const recordSetAside = vi.fn(async (input: { workspaceId: string; conversationId: string; messageId: string; code: string }) => {
-    notes.push({ conversationId: input.conversationId, messageId: input.messageId, code: input.code });
-  });
+  /** Thread notes a review left: mail it set aside without a turn, named by its message's delivery. */
+  const notes: { conversationId: string; deliveryId: string; code: string }[] = [];
+  /** The delivery each customer message was ingested from, as the inbound log records it. */
+  const deliveryIdOf = (messageId: string): string => `delivery-of-${messageId}`;
+  /**
+   * The revision's unit of work, as composition binds it to one transaction: a write that throws
+   * rolls back the unit's other writes, so a test can stop it between the note and the completion.
+   */
+  const revisionUnits = { committed: 0, rolledBack: 0 };
+  const revisions = {
+    run: async <T>(work: (scope: EmailReviewRevisionScope) => Promise<T>): Promise<T> => {
+      const linksBefore = new Map([...threads.links].map(([id, link]) => [id, { ...link }]));
+      const leasesBefore = new Map(threads.reviewLeases);
+      const notesBefore = notes.length;
+      try {
+        const result = await work({
+          threads,
+          inbound: { findDeliveryIdForMessage: async (_conversationId, messageId) => deliveryIdOf(messageId) },
+          activity: {
+            record: async (event) => {
+              if (event.kind !== "channel_exception") throw new Error("A review records only its set-aside note");
+              notes.push({ conversationId: event.conversationId, deliveryId: event.detail.deliveryId, code: event.detail.code });
+            },
+          },
+        });
+        revisionUnits.committed += 1;
+        return result;
+      } catch (error) {
+        threads.links.clear();
+        for (const [id, link] of linksBefore) threads.links.set(id, link);
+        threads.reviewLeases.clear();
+        for (const [id, lease] of leasesBefore) threads.reviewLeases.set(id, lease);
+        notes.splice(notesBefore);
+        revisionUnits.rolledBack += 1;
+        throw error;
+      }
+    },
+  };
   const requestDrain = vi.fn(async () => undefined);
   const logger = { info: vi.fn(), warn: vi.fn() };
   const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
@@ -136,11 +173,10 @@ export const createEmailReviewHarness = (options: {
       hold: (input) => heldReplies.hold(input),
       queueAuto: (input) => heldReplies.queueAuto(input),
       findByReviewRef: (conversationId, reviewRef) => heldReplies.findByReviewRef(conversationId, reviewRef),
-      supersedePendingForConversation: (conversationId, reason) => heldRows.supersedePendingForConversation(conversationId, reason),
     },
     handoffs: { requestHumanOwnership },
     checks: { replyTriage: { assess: replyTriage }, replyCompleteness: { assess: replyCompleteness } },
-    notes: { recordSetAside },
+    revisions,
     drains: { requestDrain },
     metrics,
     logger,
@@ -171,9 +207,13 @@ export const createEmailReviewHarness = (options: {
     return mailbox;
   };
 
-  /** A customer message lands on the thread: the message row, and a review scheduled as the inbound processor does. */
+  /**
+   * A customer message lands on the thread as the host's ingest and the inbound processor record it:
+   * the message row, which supersedes the thread's live draft (`newer_inbound`), and a review scheduled.
+   */
   const receive = async (conversationId: string, text = "Where is my order?"): Promise<string> => {
     const messageId = randomUUID();
+    if (customerMessages.has(conversationId)) await heldRows.supersedePendingForConversation(conversationId, "newer_inbound");
     customerMessages.set(conversationId, [...(customerMessages.get(conversationId) ?? []), messageId]);
     history.push({ conversationId, id: messageId, role: "user", content: text });
     const mailbox = mailboxOf(conversationId);
@@ -231,7 +271,8 @@ export const createEmailReviewHarness = (options: {
     replyTriage,
     replyCompleteness,
     notes,
-    recordSetAside,
+    deliveryIdOf,
+    revisionUnits,
     requestHumanOwnership,
     requestDrain,
     logger,

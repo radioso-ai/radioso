@@ -13,6 +13,7 @@ import {
   NoopEmailChannelDrainDispatcher,
 } from "../../src/modules/emailChannel/public.js";
 import type { Database } from "../../src/shared/infra/database.js";
+import { LocalEmailDomainProvisioner } from "../../src/modules/mail/adapters/localDomainProvisioner.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import {
   INBOUND_DOMAIN,
@@ -31,6 +32,7 @@ import {
   mountWebhook,
   opaqueToken,
   ownershipOf,
+  postDomainEvent,
   postReceived,
   readFixture,
   relayAddressOf,
@@ -305,12 +307,22 @@ describeIntegration("email inbound end to end (Postgres, local receiver)", () =>
 
       expect(await postReceived(webhook, { emailId: unknownEmail, receivedFor: [care] })).toBe(200);
       await drain();
-      expect(await deliveriesOfEmail(database, unknownEmail)).toEqual([expect.objectContaining({
-        workspace_id: workspaceId,
-        mailbox_id: null,
-        disposition: "drop",
-        disposition_reason: "no_mailbox",
-      })]);
+      const [dropped, ...others] = await deliveriesOfEmail(database, unknownEmail);
+      expect(others).toEqual([]);
+      expect(dropped).toMatchObject({ workspace_id: workspaceId, mailbox_id: null, state: "done", disposition: "drop", disposition_reason: "no_mailbox" });
+      // What the operator needs to identify the dropped mail (FR-015, FR-016) is kept with it.
+      expect(await database.queryOne(
+        `SELECT classification, sender_address, subject, auth_results, received_for, raw_mime IS NOT NULL AS has_raw
+           FROM email_inbound_deliveries WHERE id = $1`,
+        [dropped.id],
+      )).toEqual({
+        classification: "person",
+        sender_address: "frank@example.test",
+        subject: "Return authorization",
+        auth_results: expect.objectContaining({ spf: expect.any(String), dkim: expect.any(String), dmarc: expect.any(String) }),
+        received_for: expect.any(Array),
+        has_raw: true,
+      });
 
       // Once the address is a mailbox, the same mail routes to it by the direct rule.
       const mailbox = await seedMailbox(database, { workspaceId, domain: receiving, local: "care" });
@@ -323,6 +335,30 @@ describeIntegration("email inbound end to end (Postgres, local receiver)", () =>
         disposition: "ingest_only",
       });
       expect(await conversationsOfMailbox(database, mailbox)).toHaveLength(1);
+    });
+
+    it.each([
+      ["verified", "pending", "a revoked domain loses"],
+      ["pending", "verified", "a newly verified domain gains"],
+    ] as const)("refreshes the domain a provider event names (%s to %s): %s its sending readiness at once (FR-003)", async (before, after, _change) => {
+      const { workspaceId } = await seedWorkspace(database);
+      const domain = await seedDomain(database, workspaceId, uniqueCustomerDomain());
+      await database.execute("UPDATE email_domains SET sending_status = $2 WHERE id = $1", [domain.id, before]);
+      // The provider's side of the change: the local provider reports a domain verified once marked so.
+      if (after === "verified") await new LocalEmailDomainProvisioner({ spoolDir: spool.dir }).markVerified(domain.domain);
+
+      expect(await postDomainEvent(webhook, { providerDomainId: domain.providerDomainId ?? "" })).toBe(200);
+      expect(await drain()).toMatchObject({ processed: 1, errored: 0 });
+      const due = await database.queryOne<{ next_check_at: Date }>("SELECT next_check_at FROM email_domains WHERE id = $1", [domain.id]);
+      expect(due.next_check_at.getTime()).toBeLessThanOrEqual(Date.now());
+
+      await channel.worker.sweep({ maxJobs: 50 });
+      expect(await database.queryOne("SELECT sending_status FROM email_domains WHERE id = $1", [domain.id])).toEqual({ sending_status: after });
+    });
+
+    it("ignores a provider event about a domain no workspace holds", async () => {
+      expect(await postDomainEvent(webhook, { providerDomainId: `local:${uniqueCustomerDomain()}` })).toBe(200);
+      expect(await drain()).toMatchObject({ ignored: 1, errored: 0 });
     });
 
     it("drops mail for a disabled mailbox as mailbox_disabled and logs it", async () => {

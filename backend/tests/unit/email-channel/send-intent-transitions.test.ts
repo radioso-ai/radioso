@@ -45,6 +45,7 @@ const EVERY_EVENT: readonly SendIntentEvent[] = [
   { kind: "revalidation_failed", haltReason: "sending_not_verified" },
   { kind: "provider_accepted", providerMessageId: "re_2", deliveredMessageId: null },
   { kind: "provider_rejected", code: "validation_error" },
+  { kind: "authority_revoked", code: "human_owned" },
   { kind: "outcome_unknown", authorityValid: true, withinWindow: true },
   { kind: "outcome_unknown", authorityValid: false, withinWindow: true },
   status("sent"),
@@ -125,6 +126,18 @@ describe("nextSendIntentState: queued", () => {
       next: snapshot("failed", { failureCode: "validation_error" }),
       effects: [{ kind: "open_delivery_failure", failureKind: "failed", detailCode: "validation_error" }],
     });
+  });
+
+  it("fails an automatic send whose authority narrowed before its request froze, flagging it with the refusal's code", () => {
+    expect(applied(snapshot("queued"), { kind: "authority_revoked", code: "human_owned" })).toEqual({
+      next: snapshot("failed", { failureCode: "human_owned" }),
+      effects: [{ kind: "open_delivery_failure", failureKind: "failed", detailCode: "human_owned" }],
+    });
+  });
+
+  it("ignores a revoked authority once an attempt's outcome is unknown, since that send may have gone out", () => {
+    expect(nextSendIntentState(snapshot("queued", { outcomeUnknown: true }), { kind: "authority_revoked", code: "human_owned" }))
+      .toEqual({ ignored: "not_applicable" });
   });
 
   it("stays queued on an unknown outcome while authority holds inside the window, and schedules a re-POST", () => {

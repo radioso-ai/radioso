@@ -38,6 +38,23 @@ export interface EmailDomainRecord {
   createdAt: Date;
 }
 
+interface ClaimEmailDomainInput {
+  workspaceId: string;
+  domain: string;
+  provider: string;
+  createdByUserId: string | null;
+}
+
+/** What the provider reported for a claimed domain once it holds the registration. */
+interface DomainRegistrationWrite {
+  providerDomainId: string;
+  providerRegion: string | null;
+  dnsRecords: readonly DnsRecordView[];
+  sendingStatus: DomainSendingStatus;
+  receivingStatus: DomainReceivingStatus;
+  nextCheckAt: Date;
+}
+
 interface InsertEmailDomainInput {
   workspaceId: string;
   domain: string;
@@ -110,9 +127,88 @@ const mapDomain = (row: DomainRow): EmailDomainRecord => ({
   createdAt: row.created_at,
 });
 
-/** Sending (and direct-receiving) domains. A removed domain keeps its row for history. */
+/** A claim can lose a race to another claim and then to that claim's removal; each try settles one. */
+const CLAIM_ATTEMPTS = 3;
+
+/**
+ * Sending (and direct-receiving) domains. A removed domain keeps its row for history.
+ *
+ * An active row with no `provider_domain_id` is a registration claim: the workspace holds the
+ * domain, but the provider's answer for it has not been recorded yet. The claim is taken before
+ * the provider is called, so an answer lost on the way back can be recovered by the same
+ * workspace, and by no other.
+ */
 export class EmailDomainRepository {
   constructor(private readonly db: Db) {}
+
+  /**
+   * The active row holding `domain`: a new registration claim for `workspaceId`, or the row,
+   * claimed or registered, that already holds it in this workspace or another.
+   */
+  async claim(input: ClaimEmailDomainInput): Promise<EmailDomainRecord> {
+    for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
+      const claimed = await this.db
+        .insertInto("email_domains")
+        .values({
+          workspace_id: input.workspaceId,
+          domain: input.domain,
+          provider: input.provider,
+          created_by_user_id: input.createdByUserId,
+        })
+        .onConflict((oc) => oc.column("domain").where("removed_at", "is", null).doNothing())
+        .returningAll()
+        .executeTakeFirst();
+      if (claimed) return mapDomain(claimed);
+      const holder = await this.findActiveByDomain(input.domain);
+      if (holder) return holder;
+    }
+    throw new Error("The email domain claim did not settle");
+  }
+
+  /** Records the provider's registration on a claim. Null unless the row is still an active claim. */
+  async recordRegistration(domainId: string, registration: DomainRegistrationWrite): Promise<EmailDomainRecord | null> {
+    const row = await this.db
+      .updateTable("email_domains")
+      .set({
+        provider_domain_id: registration.providerDomainId,
+        provider_region: registration.providerRegion,
+        dns_records: toJsonb(registration.dnsRecords),
+        sending_status: registration.sendingStatus,
+        receiving_status: registration.receivingStatus,
+        last_checked_at: currentTimestamp(),
+        next_check_at: registration.nextCheckAt,
+        status_changed_at: currentTimestamp(),
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", domainId)
+      .where("provider_domain_id", "is", null)
+      .where("removed_at", "is", null)
+      .returningAll()
+      .executeTakeFirst();
+    return row ? mapDomain(row) : null;
+  }
+
+  /** Drops a claim the provider will not register. Nothing references a claim, so it leaves no history. */
+  async releaseClaim(domainId: string): Promise<void> {
+    await this.db
+      .deleteFrom("email_domains")
+      .where("id", "=", domainId)
+      .where("provider_domain_id", "is", null)
+      .where("removed_at", "is", null)
+      .execute();
+  }
+
+  /** Whether an active row holds this provider registration, as one that adopted it does. */
+  async isProviderDomainActive(provider: string, providerDomainId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom("email_domains")
+      .select("id")
+      .where("provider", "=", provider)
+      .where("provider_domain_id", "=", providerDomainId)
+      .where("removed_at", "is", null)
+      .executeTakeFirst();
+    return row !== undefined;
+  }
 
   /** Null when the domain is already active, in this workspace or another. */
   async insertActive(input: InsertEmailDomainInput): Promise<EmailDomainRecord | null> {
@@ -229,6 +325,22 @@ export class EmailDomainRepository {
       .where("id", "=", domainId)
       .where("removed_at", "is", null)
       .execute();
+  }
+
+  /**
+   * A provider's domain event (FR-003): the active domain registered under `providerDomainId` falls
+   * due for its readiness refresh now, so the sweep's refresh records any transition and retries a
+   * failed read. False when no active domain holds that registration.
+   */
+  async expediteRefresh(input: { provider: string; providerDomainId: string }): Promise<boolean> {
+    const result = await this.db
+      .updateTable("email_domains")
+      .set({ next_check_at: currentTimestamp(), updated_at: currentTimestamp() })
+      .where("provider", "=", input.provider)
+      .where("provider_domain_id", "=", input.providerDomainId)
+      .where("removed_at", "is", null)
+      .executeTakeFirst();
+    return result.numUpdatedRows > 0n;
   }
 
   /** The typed confirmation for direct receiving (FR-006a), with the readiness it produced. */

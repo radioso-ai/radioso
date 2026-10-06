@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 
 import type { ConnectorRespondInput, ConnectorTurnResult } from "@radioso/connector-api";
-import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
+import { sql } from "kysely";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 
 import { createEmailHeldReplyChannelRegistration } from "../../src/app/composition/emailChannel.js";
 import type { HeldReplyChannelRegistration } from "../../src/app/composition/heldReplyUnitOfWork.js";
@@ -300,13 +301,13 @@ describeIntegration("held reply release (Postgres, research B1)", () => {
     expect(await ownershipRowOf(scenario.conversationId)).toEqual(ownershipBefore);
   }, 60_000);
 
-  it("refuses a release with policy_changed when a policy change locked the mailbox first, and sends nothing", async () => {
+  it("refuses a release once a policy change that locked the conversation first superseded its draft, and sends nothing", async () => {
     const scenario = await pendingDraft();
     const versionBefore = await policyVersionOf(scenario.mailbox.id);
     const messagesBefore = await messagesOf(database, scenario.conversationId);
 
-    // The policy change holds the mailbox FOR UPDATE with the draft superseded but uncommitted;
-    // the release reads the draft as still pending and waits on the policy lock.
+    // The policy change holds the draft's conversation and the mailbox with the draft superseded but
+    // uncommitted; the release waits on the conversation row, and then finds the draft superseded.
     const held = gate();
     const change = downgradeToOperatorOnly(gatedPolicyChange(held), scenario);
     await held.reached;
@@ -316,7 +317,7 @@ describeIntegration("held reply release (Postgres, research B1)", () => {
     const [, refused] = await Promise.all([change, release]);
 
     expect(refused.status).toBe(409);
-    expect((refused.body as RefusalBody).error.code).toBe("policy_changed");
+    expect((refused.body as RefusalBody).error.code).toBe("held_reply_not_pending");
     // The held reply as it is now: superseded by the change that won, waiting for no one.
     expect((refused.body as RefusalBody).error.details.heldReply).toMatchObject({
       id: scenario.heldReplyId,
@@ -363,6 +364,69 @@ describeIntegration("held reply release (Postgres, research B1)", () => {
     await scenario.worker.dispatch();
     expect(await providerAcceptsUnder(spool.dir, emailSendKey.message(messageId))).toHaveLength(1);
     expect(await ownershipRowOf(scenario.conversationId)).toEqual(ownershipBefore);
+  }, 60_000);
+
+  it("takes its locks in the conversation lock protocol's order against a release, so the two queue on the conversation and never deadlock", async () => {
+    const scenario = await pendingDraft();
+    // A conversation with an ownership row: the release locks it before the mailbox.
+    await database.execute(
+      "INSERT INTO conversation_ownership (conversation_id, workspace_id, state, version) VALUES ($1, $2, 'ai_owned', 0)",
+      [scenario.conversationId, scenario.workspaceId],
+    );
+    const versionBefore = await policyVersionOf(scenario.mailbox.id);
+    const blocker = new Database(suite.url);
+    apiDatabases.push(blocker);
+    const policyLogger = { warn: vi.fn() };
+
+    // A third transaction holds the draft's row, so the change stops once it holds everything else it locks.
+    let unblock: () => void = () => undefined;
+    const unblocked = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const blocking = blocker.kysely.transaction().execute(async (trx) => {
+      await sql`SELECT id FROM held_replies WHERE id = ${scenario.heldReplyId} FOR UPDATE`.execute(trx);
+      await unblocked;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const change = downgradeToOperatorOnly(mailboxSettings(createPolicyChanges(database, { logger: policyLogger })), scenario);
+    await lockWaiters(1);
+    const release = apiNode().releaseHeldReply(scenario.teammate, scenario.target).then((response) => response);
+    await lockWaiters(2);
+
+    const waiting = (await database.query<{ query: string }>(
+      "SELECT query FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+    )).map((row) => row.query);
+    unblock();
+    const [, changed, refused] = await Promise.all([blocking, change, release]);
+
+    // The release waited on the conversation the change locked first, not on the mailbox it held.
+    expect(waiting).toEqual(expect.arrayContaining([expect.stringMatching(/from "conversations"/u)]));
+    expect(waiting).not.toEqual(expect.arrayContaining([expect.stringMatching(/from "email_mailboxes"/u)]));
+
+    expect(changed).toMatchObject({ engagementMode: "operator_only", policyVersion: versionBefore + 1 });
+    expect(refused.status).toBe(409);
+    expect((refused.body as RefusalBody).error.code).toBe("held_reply_not_pending");
+    expect(policyLogger.warn).not.toHaveBeenCalled();
+    expect(await heldRepliesOf(scenario.conversationId)).toEqual([
+      expect.objectContaining({ state: "superseded", superseded_reason: "policy_changed" }),
+    ]);
+    expect(await ownershipRowOf(scenario.conversationId)).toMatchObject({ state: "human_owned", owner_user_id: null });
+    expect(await emailSendsOf(scenario.conversationId)).toEqual([]);
+  }, 60_000);
+
+  it("supersedes a removed mailbox's pending draft and hands its conversation to a person, so nothing waits on a mailbox that cannot send (S6)", async () => {
+    const scenario = await pendingDraft();
+
+    await mailboxSettings(createPolicyChanges(database)).remove({ userId: scenario.teammate.userId }, scenario.workspaceId, scenario.mailbox.id);
+
+    expect(await heldRepliesOf(scenario.conversationId)).toEqual([
+      expect.objectContaining({ id: scenario.heldReplyId, state: "superseded", superseded_reason: "policy_changed" }),
+    ]);
+    expect(await database.queryOne("SELECT state, reason, owner_user_id FROM conversation_ownership WHERE conversation_id = $1", [scenario.conversationId]))
+      .toEqual({ state: "human_owned", reason: "operator_only_mailbox", owner_user_id: null });
+    const refused = await apiNode().releaseHeldReply(scenario.teammate, scenario.target);
+    expect(refused.status).toBe(409);
+    expect(await emailSendsOf(scenario.conversationId)).toEqual([]);
   }, 60_000);
 
   it("gives an unforced race between a release and a policy change exactly one winner", async () => {

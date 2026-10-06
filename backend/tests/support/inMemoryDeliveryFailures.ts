@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  bindDeliveryFailureRecorder,
   DeliveryFailures,
   type DeliveryFailureReadStore,
   type DeliveryFailureRecord,
@@ -55,15 +56,22 @@ export const createInMemoryDeliveryFailures = (options: { agentOf?: (conversatio
       return copy(row);
     },
     async clearOpen(input) {
+      const { target } = input;
       const cleared = rows.filter((row) =>
         row.clearedAt === null
-        && row.conversationId === input.conversationId
-        && (input.messageId === null || row.messageId === input.messageId));
+        && ("failureId" in target
+          ? row.id === target.failureId
+          : row.conversationId === target.conversationId && row.messageId !== null && target.messageIds.includes(row.messageId)));
       const at = tick();
       for (const row of cleared) {
         Object.assign(row, { clearedAt: at, clearReason: input.reason, clearedByUserId: input.clearedByUserId });
       }
       return cleared.map(copy);
+    },
+    async lockOpen(input) {
+      const row = rows.find((candidate) =>
+        candidate.id === input.failureId && candidate.workspaceId === input.workspaceId && candidate.clearedAt === null);
+      return row ? copy(row) : null;
     },
     async acknowledgeOpen(input) {
       const row = rows.find((candidate) =>
@@ -99,12 +107,10 @@ export const createInMemoryDeliveryFailures = (options: { agentOf?: (conversatio
     },
   };
 
-  const failures = new DeliveryFailures({
-    writes: {
-      run: async (work) => work({ failures: writes, activity: { record: async (event) => { activities.push(event); } } }),
-    },
-    reads,
-  });
+  const activity = { record: async (event: ConversationActivityEvent) => { activities.push(event); } };
+  const failures = new DeliveryFailures({ writes: { run: async (work) => work({ failures: writes, activity }) }, reads });
+  /** The recorder as a channel binds it inside its own transaction, with the lock a decision takes. */
+  const recorder = bindDeliveryFailureRecorder({ failures: writes, activity });
 
-  return { rows, activities, failures };
+  return { rows, activities, failures, recorder };
 };

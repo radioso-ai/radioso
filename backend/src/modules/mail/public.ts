@@ -35,6 +35,7 @@ export type {
   DnsRecordView,
   DomainReadiness,
   EmailDomainProvisioner,
+  ProviderDomain,
 } from "./emailDomainProvisioner.js";
 export { ResendEmailDeliveryError, ResendEmailDriver } from "./adapters/resendDriver.js";
 export {

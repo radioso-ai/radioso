@@ -24,7 +24,7 @@ export type SendIntentWriterName = "handler" | "webhook" | "reconciler" | "opera
  * records. All commit together, or none does.
  */
 export interface EmailSendScope {
-  intents: Pick<EmailSendIntentRepository, "materialize" | "transition" | "recordDeliveredMessageId">;
+  intents: Pick<EmailSendIntentRepository, "materialize" | "transition" | "recordDeliveredMessageId" | "listMessagesSentThrough">;
   threads: Pick<EmailThreadRepository, "insertIndexEntries" | "renewSendBudget">;
   failures: DeliveryFailureRecorderPort;
 }
@@ -79,7 +79,7 @@ export class SendIntentWriter {
       const result = await this.deps.unitOfWork.run(async (scope) => {
         const transition = await scope.intents.transition(intent.id, expectedVersion, event);
         if (transition.outcome === "applied") {
-          await applyFailureEffects(scope.failures, transition);
+          await applyFailureEffects(scope, transition);
           await options.onApplied?.(scope, transition.intent);
         }
         return transition;
@@ -108,16 +108,17 @@ export class SendIntentWriter {
   }
 }
 
-const applyFailureEffects = async (failures: DeliveryFailureRecorderPort, applied: Applied): Promise<void> => {
+const applyFailureEffects = async (scope: Pick<EmailSendScope, "intents" | "failures">, applied: Applied): Promise<void> => {
   const { intent } = applied;
-  for (const effect of applied.effects) await applyFailureEffect(failures, intent, effect);
+  for (const effect of applied.effects) await applyFailureEffect(scope, intent, effect);
 };
 
 const applyFailureEffect = async (
-  failures: DeliveryFailureRecorderPort,
+  scope: Pick<EmailSendScope, "intents" | "failures">,
   intent: EmailSendIntentRecord,
   effect: SendIntentEffect,
 ): Promise<void> => {
+  const { failures } = scope;
   switch (effect.kind) {
     case "open_delivery_failure":
       await failures.open({
@@ -137,16 +138,24 @@ const applyFailureEffect = async (
         detailCode: effect.detailCode,
       });
       return;
-    case "clear_delivery_failure": {
-      const target = { conversationId: intent.conversationId, messageId: intent.messageId };
-      if (effect.reason !== "operator_resolved") {
-        await failures.clear({ ...target, reason: effect.reason });
-        return;
+    case "clear_delivery_failure":
+      switch (effect.reason) {
+        case "provider_evidence":
+          await failures.clear({ reason: effect.reason, conversationId: intent.conversationId, messageIds: [intent.messageId] });
+          return;
+        case "later_delivery":
+          // Every earlier reply this delivery vouches for; a newer send's failure stands.
+          await failures.clear({
+            reason: effect.reason,
+            conversationId: intent.conversationId,
+            messageIds: await scope.intents.listMessagesSentThrough(intent),
+          });
+          return;
+        case "operator_resolved":
+          // The resolution clears the failure the teammate decided on, by its id, in its own unit.
+          throw new Error("An operator resolution clears its failure through the delivery-failure resolver.");
       }
-      if (intent.uncertainResolvedByUserId === null) throw new Error("An operator resolution names its teammate.");
-      await failures.clear({ ...target, reason: effect.reason, userId: intent.uncertainResolvedByUserId });
       return;
-    }
     // The repository turns a schedule into `next_reconcile_at`; a resend is the resolver's.
     case "schedule_reconcile":
     case "create_resend_intent":

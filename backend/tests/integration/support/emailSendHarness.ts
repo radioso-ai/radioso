@@ -31,6 +31,7 @@ import { MessageRepository } from "../../../src/db/repositories/messageRepositor
 import { UserRepository } from "../../../src/db/repositories/userRepository.js";
 import type { AuditEventInput } from "../../../src/modules/audit/contracts/index.js";
 import { AssistantHistoryService, ChatHistoryService } from "../../../src/modules/chat/composition.js";
+import { ReviewTurnAuditReader } from "../../../src/modules/chat/contracts/index.js";
 import type { PublicConversationEvent } from "../../../src/modules/chat/services/publicConversationEventBus.js";
 import { CustomerReplyDeliveryDispatcher, DeliveryFailureDecisions } from "../../../src/modules/customerReplyDelivery/public.js";
 import { EmailSendIntentRepository, NoopEmailChannelDrainDispatcher } from "../../../src/modules/emailChannel/public.js";
@@ -248,7 +249,11 @@ export const createApiNode = (
     conversationOperatorDirectory: { list: async () => [], find: async () => null },
     conversationOwnershipService: ownership,
   }));
-  app.use("/api/v1", createHeldReplyRoutes({ ...sessionDependencies(sessions), heldReplies }));
+  app.use("/api/v1", createHeldReplyRoutes({
+    ...sessionDependencies(sessions),
+    heldReplies,
+    reviewTurnAudits: new ReviewTurnAuditReader(new AuditEventRepository(db)),
+  }));
   app.use("/api/v1/history", createHistoryRoutes({
     ...sessionDependencies(sessions),
     assistantHistoryService: new AssistantHistoryService(history),

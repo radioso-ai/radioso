@@ -46,22 +46,11 @@ const resolverFor = (h: Harness) => {
     unitOfWork,
     metrics: h.metrics,
   });
+  /** The message's open failure, as a teammate's request read it. */
   const openFailure = (): DeliveryFailureRecord => {
     const row = h.failures.openFor(SEND_IDS.message);
     if (!row) throw new Error("no open failure on the message");
-    return {
-      id: "failure-1",
-      workspaceId: row.workspaceId,
-      conversationId: row.conversationId,
-      messageId: row.messageId,
-      provider: row.provider,
-      kind: row.kind as DeliveryFailureRecord["kind"],
-      detailCode: row.detailCode,
-      openedAt: h.clock(),
-      clearedAt: null,
-      clearedByUserId: null,
-      clearReason: null,
-    };
+    return h.failures.recordOf(row);
   };
   const resolve = (decision: "marked_sent" | "resend", failure: DeliveryFailureRecord = openFailure()) =>
     resolver.resolve({ workspaceId: SEND_IDS.workspace, failure, decision, userId: TEAMMATE });
@@ -199,11 +188,44 @@ describe("EmailDeliveryFailureResolver", () => {
       const h = await uncertain();
       const r = resolverFor(h);
       const failure = r.openFailure();
-      await h.failures.clear({ conversationId: SEND_IDS.conversation, messageId: SEND_IDS.message, reason: "provider_evidence" });
+      await h.failures.clear({ conversationId: SEND_IDS.conversation, messageIds: [SEND_IDS.message], reason: "provider_evidence" });
 
       await expect(r.resolve("resend", failure)).rejects.toMatchObject({ statusCode: 409, code: "not_resolvable" });
       expect(h.onlyIntent().uncertainResolution).toBeNull();
       expect(r.actions).toEqual([]);
+    });
+
+    it("refuses a stale decision on a failure a resend already replaced with a newer one, resending nothing more", async () => {
+      const h = await halted();
+      const r = resolverFor(h);
+      h.domains.seed({ ...h.domain, sendingStatus: "verified" });
+      // Two teammates read the same failure; the first resolves it.
+      const read = r.openFailure();
+      await r.resolve("resend", read);
+      // Its resend halts in turn, opening a second failure on the same message.
+      h.domains.seed({ ...h.domain, sendingStatus: "pending" });
+      await h.handler.handle({ payload: r.actions[0].payload, context: h.context({ idempotencyKey: r.actions[0].idempotencyKey ?? null }) });
+      h.domains.seed({ ...h.domain, sendingStatus: "verified" });
+      const newer = r.openFailure();
+      expect(newer.id).not.toBe(read.id);
+
+      // The second teammate's request still names the first failure.
+      await expect(r.resolve("resend", read)).rejects.toMatchObject({ statusCode: 409, code: "not_resolvable" });
+
+      expect(r.actions).toHaveLength(1);
+      expect(h.failures.openFor(SEND_IDS.message)).toMatchObject({ id: newer.id, kind: "halted", cleared: null });
+      const [, resent] = await h.intents.listByMessageId(SEND_IDS.message);
+      expect(resent).toMatchObject({ trigger: "audited_resend", state: "halted", uncertainResolution: null });
+    });
+
+    it("refuses a decision made on a failure whose kind changed since it was read", async () => {
+      const h = await uncertain();
+      const r = resolverFor(h);
+      const read = r.openFailure();
+      await h.failures.retarget({ conversationId: SEND_IDS.conversation, messageId: SEND_IDS.message, kind: "bounced", detailCode: "5.1.1" });
+
+      await expect(r.resolve("marked_sent", read)).rejects.toMatchObject({ statusCode: 409, code: "not_resolvable" });
+      expect(h.onlyIntent().uncertainResolution).toBeNull();
     });
 
     it("re-applies the decision to an intent another writer moved first", async () => {

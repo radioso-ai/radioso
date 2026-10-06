@@ -91,29 +91,48 @@ const keepsDraftsForReview = (from: EngagementMode, to: EngagementMode, changed:
 const handoffReasonAfter = (after: EmailMailboxRecord): PolicyChangeHandoffReason =>
   after.engagementMode === "operator_only" || !after.enabled || after.agentId === null ? "operator_only_mailbox" : "policy_changed";
 
+type HeldReplySettlementScope = { heldReplies: PolicyChangeHeldReplies; handoffs: PolicyChangeHandoffs };
+
 /**
- * Supersedes the drafts bound to `before`'s policy version and hands their conversations to a
- * person, or holds the drafts for review under `after`'s.
+ * Holds the drafts bound to the mailbox's policy for review under `policyVersion`: queued automatic
+ * replies return to a teammate, and pending drafts are re-bound so a release can still send them.
+ */
+const holdForReview = async (scope: HeldReplySettlementScope, mailboxId: string, policyVersion: number): Promise<HeldReplyChanges> => {
+  const held = await scope.heldReplies.holdLiveForPolicy(emailMailboxPolicyRef(mailboxId), policyVersion, "policy_changed");
+  return { ...NO_HELD_REPLY_CHANGES, returnedHeldReplies: held.returned, reboundHeldReplies: held.rebound };
+};
+
+/** Supersedes the drafts bound to the mailbox's policy and hands their conversations to a person for `reason`. */
+const supersedeAndHandOff = async (
+  scope: HeldReplySettlementScope,
+  mailbox: EmailMailboxRecord,
+  reason: PolicyChangeHandoffReason,
+): Promise<HeldReplyChanges> => {
+  const conversationIds = await scope.heldReplies.supersedePendingForPolicy(emailMailboxPolicyRef(mailbox.id), "policy_changed");
+  let handedOffConversations = 0;
+  for (const conversationId of conversationIds) {
+    const { changed: handedOff } = await scope.handoffs.requestHumanOwnership({ workspaceId: mailbox.workspaceId, conversationId, reason });
+    if (handedOff) handedOffConversations += 1;
+  }
+  return { ...NO_HELD_REPLY_CHANGES, supersededHeldReplies: conversationIds.length, handedOffConversations };
+};
+
+/**
+ * What a new policy version does to the drafts bound to `before`'s: a policy change supersedes them
+ * and hands their conversations to a person, or, when `auto` drops to `draft`, holds them for review
+ * under `after`'s; a send budget change alone holds them for review too, so a queued automatic reply
+ * reserved under the old budget goes back to a teammate.
  */
 const settleHeldReplies = async (
-  scope: { heldReplies: PolicyChangeHeldReplies; handoffs: PolicyChangeHandoffs },
+  scope: HeldReplySettlementScope,
   before: EmailMailboxRecord,
   after: EmailMailboxRecord,
   changed: readonly PolicyField[],
 ): Promise<HeldReplyChanges> => {
-  const policyRef = emailMailboxPolicyRef(before.id);
-  if (keepsDraftsForReview(before.engagementMode, after.engagementMode, changed)) {
-    const held = await scope.heldReplies.holdLiveForPolicy(policyRef, after.policyVersion, "policy_changed");
-    return { ...NO_HELD_REPLY_CHANGES, returnedHeldReplies: held.returned, reboundHeldReplies: held.rebound };
+  if (changed.length === 0 || keepsDraftsForReview(before.engagementMode, after.engagementMode, changed)) {
+    return holdForReview(scope, before.id, after.policyVersion);
   }
-  const conversationIds = await scope.heldReplies.supersedePendingForPolicy(policyRef, "policy_changed");
-  const reason = handoffReasonAfter(after);
-  let handedOffConversations = 0;
-  for (const conversationId of conversationIds) {
-    const { changed: handedOff } = await scope.handoffs.requestHumanOwnership({ workspaceId: after.workspaceId, conversationId, reason });
-    if (handedOff) handedOffConversations += 1;
-  }
-  return { ...NO_HELD_REPLY_CHANGES, supersededHeldReplies: conversationIds.length, handedOffConversations };
+  return supersedeAndHandOff(scope, after, handoffReasonAfter(after));
 };
 
 /** The operator's explicit consent to automatic sending, required to put a mailbox into `auto`. */
@@ -168,7 +187,7 @@ interface MailboxAgentDirectory {
 interface MailboxServiceDependencies extends EmailChannelAuditDependencies {
   mailboxes: Pick<
     EmailMailboxRepository,
-    "createWithPolicy" | "findActive" | "findActiveById" | "listActive" | "rotateRelayToken" | "startSetupCheck" | "recordReceipt" | "markRemoved"
+    "createWithPolicy" | "findActive" | "findActiveById" | "listActive" | "rotateRelayToken" | "startSetupCheck" | "recordReceipt"
   >;
   domainRecords: Pick<EmailDomainRepository, "findById" | "listActive">;
   sendingDomains: Pick<SendingDomainService, "ensureRegistered">;
@@ -310,13 +329,14 @@ export class MailboxService {
   }
 
   /**
-   * Updates settings and policy together. Mode, enabled and agent changes go through the
-   * policy-change unit of work: the row is locked, a stale `expectedPolicyVersion` is refused, and
-   * a real change writes the next version with its history row. The drafts bound to the version it
-   * replaced, which no release could send any more, are superseded (FR-025, FR-030) and the
-   * conversations they would have answered handed to a person — or, when `auto` drops to `draft`,
+   * Updates settings and policy together, in the policy-change unit of work: the conversations of
+   * the mailbox's live drafts and then its row are locked, a stale `expectedPolicyVersion` is
+   * refused, and a real change of mode, enabled, agent or thread send budget writes the next
+   * version with its history row. The drafts bound to the version it replaced, which no release
+   * could send any more, are superseded (FR-025, FR-030) and the conversations they would have
+   * answered handed to a person — or, when `auto` drops to `draft` or only the send budget changed,
    * the drafts are held for review and re-bound to the new version, queued automatic replies
-   * included.
+   * included. The send budget is part of what an automatic reply was authorized under (FR-022).
    */
   async update(
     actor: EmailChannelActor,
@@ -327,7 +347,8 @@ export class MailboxService {
     const settings = validatedSettings(request);
     if (request.agentId) await this.requireAgent(workspaceId, request.agentId);
 
-    const outcome = await this.deps.policyChanges.run(async ({ mailboxes, heldReplies, handoffs }) => {
+    const outcome = await this.deps.policyChanges.run(async ({ conversations, mailboxes, heldReplies, handoffs }) => {
+      await conversations.lockWithLiveDrafts({ workspaceId, policyRef: emailMailboxPolicyRef(mailboxId) });
       const current = await mailboxes.lockForPolicyChange(workspaceId, mailboxId);
       if (!current) return { kind: "not_found" as const };
       if (request.expectedPolicyVersion !== undefined && request.expectedPolicyVersion !== current.policyVersion) {
@@ -349,7 +370,7 @@ export class MailboxService {
 
       let after = current;
       let heldReplyChanges = NO_HELD_REPLY_CHANGES;
-      if (policyChanges.length > 0) {
+      if (policyChanges.length > 0 || settingChanges.includes("threadSendBudget")) {
         after = this.written(await mailboxes.appendPolicyVersion({
           mailboxId: current.id,
           expectedVersion: current.policyVersion,
@@ -378,15 +399,33 @@ export class MailboxService {
     return this.viewOf(outcome.after);
   }
 
+  /**
+   * Removes the mailbox in the policy-change unit of work, locked as a change is. No release or
+   * automatic send can go out under a removed mailbox, so its live drafts are superseded and the
+   * conversations they would have answered handed to a person, as an `operator_only` mailbox's
+   * inbound would be (FR-018), in the same transaction.
+   */
   async remove(actor: EmailChannelActor, workspaceId: string, mailboxId: string): Promise<void> {
-    const removed = await this.deps.mailboxes.markRemoved(workspaceId, mailboxId);
-    if (!removed) throw notFound("Mailbox was not found");
+    const outcome = await this.deps.policyChanges.run(async ({ conversations, mailboxes, heldReplies, handoffs }) => {
+      await conversations.lockWithLiveDrafts({ workspaceId, policyRef: emailMailboxPolicyRef(mailboxId) });
+      if (!(await mailboxes.lockForPolicyChange(workspaceId, mailboxId))) return null;
+      const removed = this.written(await mailboxes.markRemoved(workspaceId, mailboxId));
+      return { removed, heldReplyChanges: await supersedeAndHandOff({ heldReplies, handoffs }, removed, "operator_only_mailbox") };
+    });
+    if (!outcome) throw notFound("Mailbox was not found");
+    const { removed, heldReplyChanges } = outcome;
     await recordEmailChannelAudit(this.deps, {
       eventType: "email_channel.mailbox",
       action: "removed",
       actor,
       workspaceId,
-      metadata: { mailboxId: removed.id, domainId: removed.domainId, agentId: removed.agentId },
+      metadata: {
+        mailboxId: removed.id,
+        domainId: removed.domainId,
+        agentId: removed.agentId,
+        supersededHeldReplies: heldReplyChanges.supersededHeldReplies,
+        handedOffConversations: heldReplyChanges.handedOffConversations,
+      },
     });
   }
 
@@ -447,7 +486,8 @@ export class MailboxService {
     },
   ): Promise<void> {
     const { before, after } = outcome;
-    if (outcome.policyChanges.some((field) => field !== "agentId")) {
+    const modeChanged = outcome.policyChanges.some((field) => field !== "agentId");
+    if (modeChanged) {
       await recordEmailChannelAudit(this.deps, {
         eventType: "email_channel.mailbox",
         action: "mode_changed",
@@ -470,7 +510,15 @@ export class MailboxService {
         action: "updated",
         actor,
         workspaceId,
-        metadata: { mailboxId: after.id, domainId: after.domainId, agentId: after.agentId, changedFields, policyVersion: after.policyVersion },
+        metadata: {
+          mailboxId: after.id,
+          domainId: after.domainId,
+          agentId: after.agentId,
+          changedFields,
+          policyVersion: after.policyVersion,
+          // A mode change's audit carries them already.
+          ...(modeChanged ? {} : outcome.heldReplyChanges),
+        },
       });
     }
   }

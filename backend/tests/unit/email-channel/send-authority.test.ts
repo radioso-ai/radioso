@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { autoSendAuthority, operatorSendAuthority, repostAuthorized } from "../../../src/modules/emailChannel/outbound/sendAuthority.js";
+import {
+  autoDispatchAuthority,
+  autoSendAuthority,
+  firstAttemptAuthority,
+  operatorSendAuthority,
+  repostAuthorized,
+} from "../../../src/modules/emailChannel/outbound/sendAuthority.js";
 
 const REMOVED = new Date("2026-10-01T00:00:00.000Z");
 
@@ -101,5 +107,71 @@ describe("repostAuthorized (research B6: after an unknown outcome, re-POST only 
     const operatorFacts = { ...autoFacts, mailbox: { ...autoFacts.mailbox, engagementMode: "draft" as const, policyVersion: 9 }, ownership: { state: "human_owned" as const, version: 7 } };
     expect(repostAuthorized({ trigger: "operator_reply", authority }, operatorFacts)).toBe(true);
     expect(repostAuthorized({ trigger: "held_release", authority }, { ...operatorFacts, domain: { sendingStatus: "pending", removedAt: null } })).toBe(false);
+  });
+});
+
+describe("autoDispatchAuthority (FR-022, FR-032: an automatic send as it is dispatched, against the thread's budget)", () => {
+  const autoMailbox = { removedAt: null, enabled: true, engagementMode: "auto" as const, policyVersion: 4, threadSendBudget: 3 };
+  const facts = (overrides: Partial<Parameters<typeof autoDispatchAuthority>[0]> = {}): Parameters<typeof autoDispatchAuthority>[0] => ({
+    mailbox: autoMailbox,
+    domain: readyDomain,
+    ownership: { state: "ai_owned", version: 2 },
+    bound: { policyVersion: 4, ownershipVersion: 2 },
+    // The thread's automatic sends since its last renewal, this one's reservation among them.
+    reservedAutoSends: 3,
+    ...overrides,
+  });
+
+  it("authorizes a send whose reservation, counted with the thread's others, still fits the mailbox's budget", () => {
+    expect(autoDispatchAuthority(facts())).toEqual({ authorized: true });
+  });
+
+  it("refuses with send_budget once the budget was lowered below the thread's reserved sends", () => {
+    expect(autoDispatchAuthority(facts({ mailbox: { ...autoMailbox, threadSendBudget: 2 } }))).toEqual({ authorized: false, code: "send_budget" });
+  });
+
+  it("refuses with send_budget when the thread has no budget to count against", () => {
+    expect(autoDispatchAuthority(facts({ reservedAutoSends: null }))).toEqual({ authorized: false, code: "send_budget" });
+  });
+
+  it("names a revoked authority before the budget", () => {
+    expect(autoDispatchAuthority(facts({ ownership: { state: "human_owned", version: 3 }, reservedAutoSends: 9 })))
+      .toEqual({ authorized: false, code: "human_owned" });
+  });
+});
+
+describe("firstAttemptAuthority (research B6, B9: what a send is checked against before its request freezes)", () => {
+  const autoMailbox = { removedAt: null, enabled: true, engagementMode: "auto" as const, policyVersion: 4, threadSendBudget: 3 };
+  const facts = (overrides: Partial<Parameters<typeof firstAttemptAuthority>[1]> = {}): Parameters<typeof firstAttemptAuthority>[1] => ({
+    mailbox: autoMailbox,
+    domain: readyDomain,
+    ownership: { state: "ai_owned", version: 2 },
+    reservedAutoSends: 1,
+    ...overrides,
+  });
+  const auto = { trigger: "auto_reply", authority: { policyVersion: 4, ownershipVersion: 2 } };
+
+  it("checks an operator-authorized send only against the mailbox's ability to send", () => {
+    const operator = { trigger: "held_release", authority: { policyVersion: 1, ownershipVersion: 0 } };
+    expect(firstAttemptAuthority(operator, facts({ ownership: { state: "human_owned", version: 9 }, reservedAutoSends: null }))).toEqual({ verdict: "allow" });
+    expect(firstAttemptAuthority(operator, facts({ domain: { sendingStatus: "pending", removedAt: null } })))
+      .toEqual({ verdict: "halt", haltReason: "sending_not_verified" });
+  });
+
+  it("allows an automatic send whose automatic authority and budget still hold", () => {
+    expect(firstAttemptAuthority(auto, facts())).toEqual({ verdict: "allow" });
+  });
+
+  it("halts an automatic send whose mailbox can no longer send as its address, as any send", () => {
+    expect(firstAttemptAuthority(auto, facts({ mailbox: { ...autoMailbox, removedAt: REMOVED } })))
+      .toEqual({ verdict: "halt", haltReason: "mailbox_removed" });
+  });
+
+  it.each([
+    ["a person took the conversation", { ownership: { state: "human_owned" as const, version: 3 } }, "human_owned"],
+    ["the policy changed", { mailbox: { ...autoMailbox, engagementMode: "draft" as const, policyVersion: 5 } }, "policy_changed"],
+    ["the budget was lowered below the reservation", { mailbox: { ...autoMailbox, threadSendBudget: 1 }, reservedAutoSends: 2 }, "send_budget"],
+  ] as const)("revokes an automatic send when %s", (_label, overrides, code) => {
+    expect(firstAttemptAuthority(auto, facts(overrides))).toEqual({ verdict: "revoked", code });
   });
 });

@@ -37,6 +37,8 @@ export { CONTACT_SEND_ACTION_TYPE } from "../services/routines/contactRoutine.js
 export { appendDirectiveSteeringStage } from "../services/directiveTracePresenter.js";
 export { appendConversationSummaryStage } from "../services/conversationSummaryTracePresenter.js";
 export type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
+// A held reply's reasoning: a review turn writes no message row, so its audit record is read back.
+export { ReviewTurnAuditReader, type ReviewTurnAuditRecord } from "../services/reviewTurnAuditReader.js";
 export type { GroundingSummary } from "../services/groundingAssertions.js";
 export type { ChatConversationDetail, ChatConversationTail } from "../services/chatHistoryService.js";
 export type { ProbeConversationReadPort } from "../services/probeConversationReader.js";

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { EmailChannelCopilotView } from "../../../src/modules/emailChannel/public.js";
 import { filterCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
 import { operatorMcpToolSchemas } from "../../../src/modules/operatorCopilot/mcpToolSchema.js";
-import { createEmailChannelCopilotTools } from "../../../src/modules/operatorCopilot/tools/emailChannel.js";
+import { createEmailChannelCopilotTools, type CopilotEmailChannelPort } from "../../../src/modules/operatorCopilot/tools/emailChannel.js";
 import { InMemoryEmailDomains, InMemoryEmailMailboxes } from "../../support/inMemoryEmailChannel.js";
 
 const NOW = new Date("2026-10-03T12:00:00.000Z");
@@ -277,6 +277,67 @@ describe("email channel Ray tools", () => {
     });
     expect(await invoke("email_channel_events", {})).toEqual({ configured: false, summaries: [] });
     expect(await invoke("email_conversation_facts", { conversationId: CONVERSATION_ID })).toEqual({ facts: null });
+  });
+});
+
+/** A channel view whose reads are larger than one tool result may carry, so each is compacted. */
+const oversizedChannel = (): CopilotEmailChannelPort => {
+  const mailboxView = (index: number) => ({
+    id: `mailbox-${index}`,
+    address: `support${index}@customer.test`,
+    agentId: null,
+    engagementMode: "draft" as const,
+    enabled: true,
+    receivingState: "ok" as const,
+    lastReceivedAt: null,
+    sendingState: "ok" as const,
+    threadSendBudget: 3,
+    hourlyGenerationBudget: 30,
+  });
+  const summary = (index: number) => ({ mailboxId: `mailbox-${index}`, window: "24h", byDisposition: { ingest_only: 1 }, failed: 0, lastReceivedAt: null });
+  const message = (index: number) => ({
+    messageId: `message-${index}`,
+    direction: "inbound" as const,
+    subject: "s".repeat(600),
+    ccCount: 0,
+    attachments: [],
+    hasRaw: false,
+  });
+  return {
+    configuration: async () => ({ supportedModes: ["draft"], defaultMode: "draft", domains: [], mailboxes: Array.from({ length: 41 }, (_, index) => mailboxView(index)) }),
+    eventSummaries: async () => ({ summaries: Array.from({ length: 41 }, (_, index) => summary(index)) }),
+    conversationFacts: async () => ({
+      facts: {
+        mailbox: { id: "mailbox-0", address: "support@customer.test", displayName: "Support", engagementMode: "draft" as const },
+        participant: { displayName: null },
+        latest: { subject: "s".repeat(600), ccCount: 0, inboundAt: null },
+        sending: { state: "ok" as const },
+        sendBudget: { used: 0, limit: 3, renewedAt: null },
+        messages: Array.from({ length: 41 }, (_, index) => message(index)),
+      },
+    }),
+  };
+};
+
+describe("email channel Ray tools over a compacted result", () => {
+  const invokeRaw = async (name: string, input: unknown) => {
+    const descriptor = createEmailChannelCopilotTools({ emailChannel: oversizedChannel() }).find((candidate) => candidate.name === name);
+    if (!descriptor) throw new Error(`No ${name} tool`);
+    const output = await descriptor.createTool(context).invoke(descriptor.inputSchema.parse(input), {} as never);
+    return { descriptor, output };
+  };
+
+  it.each([
+    ["email_channel_configuration", {}],
+    ["email_channel_events", {}],
+    ["email_conversation_facts", { conversationId: CONVERSATION_ID }],
+  ])("%s validates against its own output schema and says what it cut", async (name, input) => {
+    const { descriptor, output } = await invokeRaw(name, input);
+
+    const parsed = descriptor.outputSchema.safeParse(output);
+
+    expect(parsed.success).toBe(true);
+    expect((parsed.data as { truncation?: unknown }).truncation).toEqual(expect.objectContaining({ truncated: true }));
   });
 });
 

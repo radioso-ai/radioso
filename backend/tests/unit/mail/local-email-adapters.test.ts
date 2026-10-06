@@ -238,6 +238,19 @@ describe("local email domain provisioner", () => {
     expect(readiness.receiving).toBe("verified");
   });
 
+  it("finds a registered domain by name, with its current readiness", async () => {
+    expect(await provisioner.findByName("customer.test")).toBeNull();
+    const registration = await provisioner.registerSendingDomain("customer.test");
+    if (!registration.ok) throw new Error("expected registration");
+    await provisioner.markVerified("customer.test");
+
+    const found = await provisioner.findByName("Customer.Test");
+
+    expect(found).toMatchObject({ providerDomainId: registration.providerDomainId, region: null, createdAt: null });
+    expect(found?.readiness.sending).toBe("verified");
+    expect(await provisioner.findByName("../etc")).toBeNull();
+  });
+
   it("forgets the verified state on removal", async () => {
     const registration = await provisioner.registerSendingDomain("customer.test");
     if (!registration.ok) throw new Error("expected registration");

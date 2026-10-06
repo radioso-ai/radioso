@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS email_domains (
   -- An IDNA A-label.
   domain TEXT NOT NULL CHECK (domain = lower(domain)),
   provider TEXT NOT NULL CHECK (provider IN ('resend', 'local')),
+  -- Null while the row is only a registration claim: the workspace holds the domain, and the
+  -- provider's answer has not been recorded yet.
   provider_domain_id TEXT,
   provider_region TEXT,
   -- DnsRecordView[]: purpose, type, name, value, priority, status.

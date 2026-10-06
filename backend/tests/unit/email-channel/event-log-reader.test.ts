@@ -23,6 +23,7 @@ const entry = (patch: Partial<EventLogEntry>): EventLogEntry => ({
   conversationId: null,
   threadConflict: false,
   hasRaw: true,
+  mailboxId: null,
   ...patch,
 });
 
@@ -32,7 +33,8 @@ const setup = () => {
   const deliveries = {
     listMailboxLog: vi.fn(async () => ({ entries: [entry({}), entry({ state: "resolved", authResults: {} }), entry({ state: "failed" })], nextCursor: "cursor-id" })),
     countMailboxEvents: vi.fn(async () => ({ byDisposition: { drop: 2, ingest_only: 5 }, failed: 1 })),
-    findLogEntry: vi.fn(async () => null),
+    listWorkspaceLog: vi.fn(async () => ({ entries: [entry({ dispositionReason: "no_mailbox", disposition: "drop" })], nextCursor: null })),
+    findLogEntry: vi.fn(async (): Promise<EventLogEntry | null> => null),
   };
   const reader = new EventLogReader({ mailboxes, deliveries, clock: () => now });
   return { reader, deliveries, mailbox };
@@ -58,6 +60,7 @@ describe("EventLogReader", () => {
       threadConflict: false,
       hasRaw: true,
       retryable: false,
+      mailboxId: null,
     });
     expect(page.items[1]).toMatchObject({ state: "fetched", auth: { spf: "unknown", dkim: "unknown", dmarc: "unknown" } });
     expect(page.items[2]).toMatchObject({ state: "failed", retryable: true });
@@ -82,6 +85,29 @@ describe("EventLogReader", () => {
     const { reader, mailbox } = setup();
     const error = await reader.list("22222222-2222-4222-8222-222222222222", mailbox.id, {}).catch((caught: unknown) => caught);
     expect(error).toMatchObject({ statusCode: 404, code: "not_found" });
+  });
+
+  it("lists the workspace's log, mail no mailbox matched included, optionally narrowed to one mailbox", async () => {
+    const { reader, deliveries, mailbox } = setup();
+
+    const page = await reader.listWorkspace(workspaceId, { limit: 20, state: "fetched" });
+    await reader.listWorkspace(workspaceId, { mailboxId: mailbox.id, disposition: "drop" });
+
+    expect(page).toEqual({ items: [expect.objectContaining({ mailboxId: null, reason: "no_mailbox", disposition: "drop" })], nextCursor: null });
+    expect(deliveries.listWorkspaceLog.mock.calls).toEqual([
+      [workspaceId, { mailboxId: null, cursor: null, limit: 20, disposition: null, states: ["fetched", "resolved"] }],
+      [workspaceId, { mailboxId: mailbox.id, cursor: null, limit: 50, disposition: "drop", states: null }],
+    ]);
+    const error = await reader.listWorkspace(workspaceId, { cursor: "not-a-cursor" }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ statusCode: 400, code: "invalid_cursor" });
+  });
+
+  it("reads one delivery of the workspace whether or not a mailbox received it", async () => {
+    const { reader, deliveries } = setup();
+    deliveries.findLogEntry.mockResolvedValueOnce(entry({ dispositionReason: "no_mailbox" }));
+
+    expect(await reader.get(workspaceId, "99999999-9999-4999-8999-999999999999")).toMatchObject({ mailboxId: null, reason: "no_mailbox" });
+    await expect(reader.get(workspaceId, "99999999-9999-4999-8999-999999999999")).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("summarizes a window of the mailbox's events", async () => {

@@ -5,10 +5,13 @@ email: sending and receiving domains, mailboxes and their relay tokens,
 engagement mode and budgets, the inbound event log and its retention, raw
 message storage and the sanitized view of it, thread-message-id bookkeeping,
 and the read-only facts an email conversation shows in the inbox. Mailbox
-policy changes (mode, enabled, agent) live here too, through
-`MailboxPolicyChangeUnitOfWork` — the one seam that supersedes a pending
-held reply in the same transaction as the change that invalidated it, and
-hands that draft's conversation to a person through its `handoffs` port.
+policy changes (mode, enabled, agent, thread send budget) and a mailbox's
+removal live here too, through `MailboxPolicyChangeUnitOfWork` — the one
+seam that supersedes a pending held reply in the same transaction as the
+change that invalidated it, and hands that draft's conversation to a person
+through its `handoffs` port. It locks the drafts' conversations before the
+mailbox, in the conversation lock protocol's order
+(`backend/src/app/composition/conversationLockOrder.ts`).
 
 It does not own:
 
@@ -64,7 +67,9 @@ It does not own:
   where the deployment runs `auto`: `reserveAutoSend` spends the thread's
   send budget, `enqueueAutoSend` queues an `auto_reply` `email.send` under
   `email:send:held:<heldReplyId>` with no message, `authorizeAutoDispatch`
-  rechecks FR-032 at materialization (`outbound/sendAuthority.ts`), and
+  rechecks FR-032 and the thread's budget at materialization
+  (`outbound/sendAuthority.ts`, which the send handler applies again to a
+  recovered automatic send before its request freezes), and
   `recordMaterialized` writes the send intent with the message. Without the
   capability every automatic send is refused (`auto_unsupported`).
   `createEmailHeldReplyChannelRegistration` in
@@ -78,7 +83,8 @@ It does not own:
 - `eventLog/`, `facts/`, `copilot/` — the mailbox event log with its
   operator actions (retry a failed delivery, open its audited raw message),
   the conversation-level email facts, and the read-only Ray projection.
-- `persistence/` — one repository per table, no business rules.
+- `persistence/` — one repository per table, no business rules, plus
+  `EmailBacklogRepository`, the cross-table overdue counts the sweep samples.
 - `drains.ts` — the drain and sweep ports the worker and the task routes
   call; `infra/` holds the Cloud Tasks drain dispatcher built on the shared
   `scheduleAt` dispatcher.
@@ -88,7 +94,9 @@ It does not own:
   or in progress (the outbox gave up before materializing) to `pending`
   through the held-reply dispatch port's `returnAbandonedAuto`. Where the
   deployment does not run `auto`, it also returns every stale `queued_auto`
-  held reply to `pending` (the rollback path).
+  held reply to `pending` (the rollback path). Where metrics are on, each run
+  ends by sampling the work past its stage's deadline into the
+  `email_backlog` gauge.
 - `operator/` — the `email` customer reply deliverer registered in the
   shared reply dispatcher. It refuses `409 email_sending_not_verified`
   (naming the missing step) before anything is written, and otherwise

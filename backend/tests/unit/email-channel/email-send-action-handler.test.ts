@@ -187,6 +187,79 @@ describe("EmailSendActionHandler", () => {
       expect(h.counted("email_auto_dispatch_total")).toEqual([{ result: "not_queued" }]);
     });
 
+    it("returns the held reply to pending, with no message, when the thread's budget was lowered below its reservation before dispatch", async () => {
+      const h = autoHarness();
+      // The publish reserved the thread's second send under a budget of three; the operator lowered it to one.
+      h.mailboxes.seed({ ...h.mailbox, engagementMode: "auto", threadSendBudget: 1 });
+
+      await h.deliverAuto();
+
+      expect(await h.materializeAuto.mock.results[0]?.value).toEqual({ ok: false, reason: "returned_to_pending" });
+      expect(h.autoReply.state).toBe("pending");
+      expect(h.driver.send).not.toHaveBeenCalled();
+      expect(h.intents.rows.size).toBe(0);
+    });
+
+    describe("a send recovered after its materialization committed and the worker stopped before freezing it", () => {
+      /** The first claim's materialization committed; the worker died before the request froze. */
+      const materializedThenCrashed = async () => {
+        const h = autoHarness();
+        expect(await h.materializeAuto(SEND_IDS.heldReply)).toEqual({ ok: true, messageId: SEND_IDS.autoMessage });
+        h.materializeAuto.mockClear();
+        expect(h.onlyIntent()).toMatchObject({ trigger: "auto_reply", state: "queued", request: null });
+        return h;
+      };
+
+      it("sends it on re-claim while its automatic authority still holds", async () => {
+        const h = await materializedThenCrashed();
+
+        await h.deliverAuto(2);
+
+        expect(h.materializeAuto).not.toHaveBeenCalled();
+        expect(h.driver.send).toHaveBeenCalledOnce();
+        expect(h.onlyIntent()).toMatchObject({ state: "accepted" });
+      });
+
+      it.each([
+        ["a teammate took the conversation over", (h: Awaited<ReturnType<typeof materializedThenCrashed>>) => {
+          h.owners.set(SEND_IDS.conversation, { state: "human_owned", version: 1 });
+        }, "human_owned"],
+        ["the mailbox dropped to draft", (h: Awaited<ReturnType<typeof materializedThenCrashed>>) => {
+          h.mailboxes.seed({ ...h.mailbox, engagementMode: "draft", policyVersion: h.mailbox.policyVersion + 1 });
+        }, "policy_changed"],
+        ["the thread's budget was lowered below its reservation", (h: Awaited<ReturnType<typeof materializedThenCrashed>>) => {
+          h.mailboxes.seed({ ...h.mailbox, engagementMode: "auto", threadSendBudget: 1 });
+        }, "send_budget"],
+      ] as const)("never sends it once %s, and flags the unsent reply for a teammate", async (_label, revoke, code) => {
+        const h = await materializedThenCrashed();
+        revoke(h);
+
+        await h.deliverAuto(2);
+
+        expect(h.driver.send).not.toHaveBeenCalled();
+        expect(h.onlyIntent()).toMatchObject({ trigger: "auto_reply", state: "failed", failureCode: code, request: null, haltReason: null });
+        expect(h.failures.openFor(SEND_IDS.autoMessage)).toMatchObject({ kind: "failed", detailCode: code, provider: "email" });
+        expect(h.logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({ sendIntentId: h.onlyIntent().id, conversationId: SEND_IDS.conversation, code }),
+          "email_auto_send_revoked_before_send",
+        );
+
+        // A redelivery finds it settled and sends nothing.
+        await h.deliverAuto(3);
+        expect(h.driver.send).not.toHaveBeenCalled();
+      });
+
+      it("halts it, as any send, when its mailbox can no longer send as its address", async () => {
+        const h = await materializedThenCrashed();
+        h.domains.seed({ ...h.domain, sendingStatus: "pending" });
+
+        await h.deliverAuto(2);
+
+        expect(h.driver.send).not.toHaveBeenCalled();
+        expect(h.onlyIntent()).toMatchObject({ state: "halted", haltReason: "sending_not_verified" });
+      });
+    });
+
     it("after materialization, a frozen request whose authority was then revoked becomes uncertain: never halted, never a draft again", async () => {
       const h = autoHarness();
       h.driver.send.mockRejectedValueOnce(new EmailSendError("retryable", "rate_limited"));

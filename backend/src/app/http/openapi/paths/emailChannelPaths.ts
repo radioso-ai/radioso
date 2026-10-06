@@ -180,6 +180,24 @@ export const registerEmailChannelPaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: `${SETTINGS}/events`,
+    tags: TAGS,
+    summary: "List the workspace's email event log",
+    description: "Every delivery attributed to the workspace, newest first: its mailboxes' events, a removed mailbox's retained events, and mail a verified receiving domain accepted for an address no mailbox has (`mailboxId: null`, reason `no_mailbox`). `mailboxId` narrows the log to one mailbox, removed or not.",
+    operationId: "listEmailChannelEvents",
+    security: sec,
+    request: { params: WorkspaceParams, query: email.ListEmailChannelEventsQuerySchema },
+    responses: {
+      200: { description: "A page of the event log", content: json(email.EmailEventPageSchema) },
+      400: errorResponse("`invalid_cursor`, or an invalid query"),
+      401: unauthenticated,
+      403: settingsReadRequired,
+      503: notConfigured,
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: `${SETTINGS}/events/{deliveryId}/retry`,
     tags: TAGS,

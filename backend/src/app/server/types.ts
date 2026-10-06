@@ -82,6 +82,7 @@ import type {
   ContactHistoryProviderPort,
   ConversationIngestPort,
   PublicChatActionAdvertiserPort,
+  ReviewTurnAuditReader,
 } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillAuthoringCatalog, SkillCatalogService } from "../../modules/skills/public.js";
@@ -260,6 +261,8 @@ export interface AppDependencies {
   deliveryFailures: DeliveryFailureDecisions;
   /** Replies an agent wrote in review that wait for a teammate: the Inbox lists them, and a teammate releases or discards one. */
   heldReplies: Pick<HeldReplyService, "list" | "current" | "release" | "discard">;
+  /** A review turn's audit record, read back as a held reply's reasoning: ids and codes, never text. */
+  reviewTurnAudits: Pick<ReviewTurnAuditReader, "find">;
   workbenchReplayRunner: WorkbenchReplayRunner;
   /** Operator-only immutable candidate test executions; never mounted on public chat. */
   testExecutionService: TestExecutionService;

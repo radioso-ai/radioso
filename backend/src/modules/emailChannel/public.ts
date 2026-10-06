@@ -9,6 +9,7 @@ export {
 export { routeAddress, type MailboxRoute } from "./mailboxes/mailboxRouting.js";
 export { generateOpaqueToken, parsePlusToken } from "./mailboxes/relayTokens.js";
 export { extractCustomerText } from "./content/customerText.js";
+export { EmailBacklogRepository } from "./persistence/emailBacklogRepository.js";
 export { EmailDomainRepository } from "./persistence/emailDomainRepository.js";
 export {
   EmailInboundRepository,

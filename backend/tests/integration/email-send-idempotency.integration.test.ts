@@ -287,6 +287,74 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
     expect(await outboxActionsOf(database, conversationId)).toHaveLength(2);
   });
 
+  it("refuses a stale resolution whose failure a resend already replaced, never resending against the newer one", async () => {
+    const conversation = await openConversation();
+    const { conversationId, domain, teammate, workspaceId } = conversation;
+    const messageId = await replyFromInbox(database, api, conversation, REPLY);
+    await setSendingStatus(domain.id, "failed");
+    expect(await workerNode().dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    // Two teammates read the same open failure.
+    const [read] = (await api.decisions.list(workspaceId, { state: "open", limit: 10 })).items;
+    expect(read).toMatchObject({ messageId, kind: "halted" });
+
+    // The first resolves it; its resend halts in turn and opens a newer failure on the same message.
+    await setSendingStatus(domain.id, "verified");
+    await api.decisions.resolve(teammate, read.id, "resend");
+    await setSendingStatus(domain.id, "failed");
+    expect(await workerNode().dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    const [newer, ...otherOpen] = (await api.decisions.list(workspaceId, { state: "open", limit: 10 })).items;
+    expect(otherOpen).toEqual([]);
+    expect(newer).toMatchObject({ messageId, kind: "halted" });
+    expect(newer.id).not.toBe(read.id);
+    await setSendingStatus(domain.id, "verified");
+
+    // The second teammate's request, decided on the first failure, reaches the channel only now.
+    await expect(api.channel.deliveryFailureResolver.resolve({ workspaceId, failure: read, decision: "resend", userId: teammate.userId }))
+      .rejects.toMatchObject({ statusCode: 409, code: "not_resolvable" });
+
+    expect((await outboxActionsOf(database, conversationId)).map((action) => action.idempotency_key)).toEqual([
+      emailSendKey.message(messageId),
+      emailSendKey.resend(messageId, 1),
+    ]);
+    expect((await deliveryFailuresOf(database, conversationId)).find((failure) => failure.id === newer.id)).toMatchObject({ clear_reason: null });
+    expect(await sendIntentsOf(database, messageId)).toEqual([
+      expect.objectContaining({ trigger: "operator_reply", uncertainResolution: "resend_authorized" }),
+      expect.objectContaining({ trigger: "audited_resend", state: "halted", uncertainResolution: null }),
+    ]);
+  });
+
+  it("clears an earlier reply's failure once a later reply on the conversation is delivered, never a newer reply's (FR-040)", async () => {
+    const first = await acceptedReply();
+    const { conversationId } = first;
+    const sendReply = async (text: string) => {
+      const messageId = await replyFromInbox(database, api, first, text);
+      expect(await workerNode().dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+      return sendIntentOf(database, messageId);
+    };
+    const later = await sendReply("Following up: the invoice is attached.");
+    const newer = await sendReply("One more thing about your plan.");
+    const events = workerNode();
+    const app = await events.webhook();
+    const bounce = { type: "Permanent", subType: "General", message: "550 5.1.1 unknown user" };
+    for (const sent of [first.intent, newer]) {
+      expect(await postDeliveryEvent(app, { type: "email.bounced", providerMessageId: sent.providerMessageId ?? "", bounce })).toBe(200);
+    }
+    expect(await events.worker.drain({ maxJobs: 5, stage: "inbound" })).toMatchObject({ claimed: 2, processed: 2 });
+    expect((await deliveryFailuresOf(database, conversationId)).map((failure) => [failure.message_id, failure.clear_reason])).toEqual(
+      expect.arrayContaining([[first.messageId, null], [newer.messageId, null]]),
+    );
+
+    // The reply between them reaches the customer.
+    expect(await postDeliveryEvent(app, { type: "email.delivered", providerMessageId: later.providerMessageId ?? "" })).toBe(200);
+    expect(await events.worker.drain({ maxJobs: 5, stage: "inbound" })).toMatchObject({ claimed: 1, processed: 1 });
+
+    expect(await sendIntentOf(database, later.messageId)).toMatchObject({ state: "delivered" });
+    const failures = await deliveryFailuresOf(database, conversationId);
+    expect(failures.find((failure) => failure.message_id === first.messageId)).toMatchObject({ clear_reason: "later_delivery" });
+    // The newer reply went out after the delivered one: its bounce still needs a teammate.
+    expect(failures.find((failure) => failure.message_id === newer.messageId)).toMatchObject({ clear_reason: null });
+  });
+
   it("marks a bounced send bounced, flags the conversation, and keeps only the sanitized detail", async () => {
     const { conversationId, messageId, intent, workspaceId } = await acceptedReply();
     const providerMessageId = intent.providerMessageId ?? "";

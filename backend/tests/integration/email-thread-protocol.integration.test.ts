@@ -236,11 +236,17 @@ describeIntegration("email thread protocol interleavings (Postgres, research B15
 
     const parentEmail = await receive(a, PARENT, target);
     expect(await drainOne(a)).toMatchObject({ processed: 1 });
-    expect(await deliveryOfEmail(database, parentEmail)).toMatchObject({
+    const parent = await deliveryOfEmail(database, parentEmail);
+    expect(parent).toMatchObject({
       thread_match: "reverse_reference",
       conversation_id: child.conversation_id,
     });
     await expectOneThread(mailbox, [parentEmail, childEmail]);
+    // The child left a placeholder for the parent's Message-Id; the parent's own entry replaced it.
+    expect(await database.queryOne(
+      "SELECT direction, origin, message_id, inbound_delivery_id, subject FROM email_thread_messages WHERE mailbox_id = $1 AND rfc_message_id = $2",
+      [mailbox.id, PARENT_ID],
+    )).toEqual({ direction: "inbound", origin: "inbound", message_id: parent.message_id, inbound_delivery_id: parent.id, subject: expect.any(String) });
   });
 
   it("(vii) fans one message for two mailboxes out to one conversation in each", async () => {
@@ -292,6 +298,56 @@ describeIntegration("email thread protocol interleavings (Postgres, research B15
     expect(salesConversations[0]).not.toBe(supportParent.conversation_id);
     expect(await customerMessagesOf(database, salesParent.conversation_id ?? "")).toHaveLength(1);
     expect(await indexedMessageIdsOf(database, salesParent.conversation_id ?? "")).toEqual([PARENT_ID]);
+  });
+
+  it("(viii) stops a worker whose lease was reclaimed while it held a fetched snapshot: one conversation, one message", async () => {
+    const { mailbox, domain } = await seedSupportMailbox(database);
+    const [a, b] = [workerNode(), workerNode()];
+    const stalled = a.seams.pauseAt("inbound.recordFetched", "after");
+
+    const parentEmail = await receive(a, PARENT, { mailbox, domain: domain.domain });
+    const staleRun = drainOne(a);
+    await stalled.reached;
+    await expireLease(database, (await eventOfEmail(database, parentEmail)).id);
+    expect(await drainOne(b)).toMatchObject({ claimed: 1, processed: 1 });
+
+    stalled.release();
+    expect(await staleRun).toMatchObject({ claimed: 1, superseded: 1, processed: 0 });
+
+    const conversations = await conversationsOfMailbox(database, mailbox);
+    expect(conversations).toHaveLength(1);
+    expect(await customerMessagesOf(database, conversations[0])).toHaveLength(1);
+    expect(await deliveryOfEmail(database, parentEmail)).toMatchObject({ state: "done", conversation_id: conversations[0] });
+    expect(await eventOfEmail(database, parentEmail)).toMatchObject({ state: "processed", attempts: 2 });
+    expect(a.logger.messages()).toContain("email_inbound_claim_lost");
+  });
+
+  it("(ix) indexes once when two workers hold the same ingested snapshot: the review revision moves once", async () => {
+    const { mailbox, domain } = await seedSupportMailbox(database, { engagementMode: "draft", withAgent: true });
+    const drafting = () => {
+      const node = createWorkerNode(suite.url, { spoolDir: spool.dir, supportedModes: ["operator_only", "draft"] });
+      nodes.push(node);
+      return node;
+    };
+    const [a, b] = [drafting(), drafting()];
+    const stalled = a.seams.pauseAt("inbound.recordIngested", "after");
+
+    const parentEmail = await receive(a, PARENT, { mailbox, domain: domain.domain });
+    const staleRun = drainOne(a);
+    await stalled.reached;
+    await expireLease(database, (await eventOfEmail(database, parentEmail)).id);
+    expect(await drainOne(b)).toMatchObject({ claimed: 1, processed: 1 });
+
+    stalled.release();
+    expect(await staleRun).toMatchObject({ claimed: 1, superseded: 1 });
+
+    const delivery = await deliveryOfEmail(database, parentEmail);
+    expect(delivery).toMatchObject({ state: "done", disposition: "run_review_turn" });
+    expect(await database.queryOne<{ review_revision: number }>(
+      "SELECT review_revision FROM email_thread_links WHERE conversation_id = $1",
+      [delivery.conversation_id],
+    )).toEqual({ review_revision: 1 });
+    expect(await eventOfEmail(database, parentEmail)).toMatchObject({ state: "processed", attempts: 2 });
   });
 
   it.todo("joins a reply whose forwarder rewrote its threading headers by the plus token (mime/forwarder-rewrite.eml, after T010)");

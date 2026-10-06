@@ -26,6 +26,7 @@ import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
+import { ReviewTurnAuditReader } from "../../src/modules/chat/contracts/index.js";
 import { RevisionGreetingStarterPromptReader } from "../../src/modules/chat/services/agentStarterPromptReader.js";
 import {
   createRouteScopedDirectiveSteering,
@@ -2692,6 +2693,7 @@ export const createTestDependencies = (overrides: {
       logger,
     }),
     heldReplies,
+    reviewTurnAudits: new ReviewTurnAuditReader(auditEventRepository),
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
     revisionEvalRunService,

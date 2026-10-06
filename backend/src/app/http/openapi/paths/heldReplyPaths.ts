@@ -17,7 +17,7 @@ export const registerHeldReplyPaths = (
   schemas: OpenApiSchemas,
   security: OpenApiSecurity,
 ) => {
-  const heldReplies = registerHeldReplySchemas(registry, schemas);
+  const heldReplies = registerHeldReplySchemas(registry);
   const sec = [{ [security.bearerAuthScheme.name]: [] }];
   const json = (schema: z.ZodTypeAny) => ({ "application/json": { schema } });
   const errorResponse = (description: string) => ({ description, content: json(schemas.ErrorResponseSchema) });

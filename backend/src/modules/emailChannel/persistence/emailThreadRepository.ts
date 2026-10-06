@@ -1,4 +1,4 @@
-import type { Selectable } from "kysely";
+import { sql, type ExpressionBuilder, type Selectable } from "kysely";
 
 import { currentTimestamp, nowPlusSeconds, toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../../shared/infra/kysely/types.js";
@@ -53,6 +53,22 @@ interface ThreadIndexEntry {
   inboundDeliveryId: string | null;
   /** The send intent an outbound id belongs to; absent or null for inbound and referenced ids. */
   sendIntentId?: string | null;
+}
+
+/**
+ * A worker's claim on a thread's due review: the claim count and the lease it took (research B17).
+ * Every write the claim makes is fenced on both, so a worker whose lease was reclaimed writes
+ * nothing, even once a later claim has reset the count.
+ */
+interface ReviewClaim {
+  conversationId: string;
+  attempt: number;
+  leaseUntil: Date;
+}
+
+/** A claimed review: the link as the claim read it, with the lease that fences the claim's writes. */
+interface ClaimedReviewRecord extends EmailThreadLinkRecord {
+  reviewLeaseUntil: Date;
 }
 
 export interface ThreadIndexRecord extends ThreadIndexEntry {
@@ -115,6 +131,9 @@ const mapIndex = (row: IndexRow): ThreadIndexRecord => ({
 
 const changed = (result: readonly { numUpdatedRows: bigint }[]): boolean =>
   result.some((entry) => entry.numUpdatedRows > 0n);
+
+/** A review lease at the millisecond precision a claim's token carries back through the driver. */
+const reviewLease = (seconds: number) => sql<Date>`date_trunc('milliseconds', ${nowPlusSeconds(seconds)})`;
 
 /** Thread links (one per email conversation) and the committed Message-Id index. */
 export class EmailThreadRepository {
@@ -249,7 +268,13 @@ export class EmailThreadRepository {
     return row ? { rfcMessageId: row.rfcMessageId, referenceIds: row.referenceIds ?? [] } : null;
   }
 
-  /** Inserts index rows; a Message-Id the mailbox already indexed is skipped. Returns the count written. */
+  /**
+   * Inserts index rows; a Message-Id the mailbox already indexed is skipped, with one exception: a
+   * `referenced` placeholder of the same conversation, which a follow-up processed before its parent
+   * left, becomes the parent's own entry, so its metadata and delivery reach the thread's facts. A
+   * real entry is never overwritten, and another conversation's placeholder keeps its thread.
+   * Returns the count written.
+   */
   async insertIndexEntries(entries: readonly ThreadIndexEntry[]): Promise<number> {
     if (entries.length === 0) return 0;
     const rows = await this.db
@@ -268,7 +293,25 @@ export class EmailThreadRepository {
         inbound_delivery_id: entry.inboundDeliveryId,
         send_intent_id: entry.sendIntentId ?? null,
       })))
-      .onConflict((oc) => oc.columns(["mailbox_id", "rfc_message_id"]).doNothing())
+      .onConflict((oc) =>
+        oc
+          .columns(["mailbox_id", "rfc_message_id"])
+          .doUpdateSet((eb) => ({
+            message_id: eb.ref("excluded.message_id"),
+            direction: eb.ref("excluded.direction"),
+            origin: eb.ref("excluded.origin"),
+            subject: eb.ref("excluded.subject"),
+            cc_addresses: eb.ref("excluded.cc_addresses"),
+            attachments: eb.ref("excluded.attachments"),
+            inbound_delivery_id: eb.ref("excluded.inbound_delivery_id"),
+            send_intent_id: eb.ref("excluded.send_intent_id"),
+          }))
+          .where((eb) => eb.and([
+            eb("email_thread_messages.direction", "=", "referenced"),
+            eb("excluded.direction", "<>", "referenced"),
+            eb("email_thread_messages.conversation_id", "=", eb.ref("excluded.conversation_id")),
+          ])),
+      )
       .returning("id")
       .execute();
     return rows.length;
@@ -338,13 +381,14 @@ export class EmailThreadRepository {
 
   /**
    * Claims up to `limit` threads whose review is due and not leased, oldest due first, each under a
-   * lease and with its claim counted. The returned link carries the revision the claim reviews.
+   * lease and with its claim counted. The returned link carries the revision the claim reviews and
+   * the lease that is the claim's token.
    */
-  async claimDueReviews(input: { limit: number; leaseSeconds: number }): Promise<EmailThreadLinkRecord[]> {
+  async claimDueReviews(input: { limit: number; leaseSeconds: number }): Promise<ClaimedReviewRecord[]> {
     const rows = await this.db
       .updateTable("email_thread_links")
       .set((eb) => ({
-        review_lease_until: nowPlusSeconds(input.leaseSeconds),
+        review_lease_until: reviewLease(input.leaseSeconds),
         review_attempts: eb("review_attempts", "+", 1),
         updated_at: currentTimestamp(),
       }))
@@ -361,14 +405,29 @@ export class EmailThreadRepository {
       )
       .returningAll()
       .execute();
-    return rows.map(mapLink);
+    return rows.map((row) => {
+      if (!row.review_lease_until) throw new Error("A claimed review has no lease");
+      return { ...mapLink(row), reviewLeaseUntil: row.review_lease_until };
+    });
+  }
+
+  /** Whether `claim` still holds its thread's review: no other claim took the lease since. */
+  async holdsReviewClaim(claim: ReviewClaim): Promise<boolean> {
+    const row = await this.db
+      .selectFrom("email_thread_links")
+      .select("conversation_id")
+      .where("conversation_id", "=", claim.conversationId)
+      .where("review_attempts", "=", claim.attempt)
+      .where("review_lease_until", "=", claim.leaseUntil)
+      .executeTakeFirst();
+    return row !== undefined;
   }
 
   /**
-   * Completes revision `revision` only: a worker overtaken by newer mail never clears the newer
-   * due time (research B17).
+   * Completes revision `revision` under `claim` only: a worker overtaken by newer mail never clears
+   * the newer due time, and one whose claim was taken over completes nothing (research B17).
    */
-  async completeReview(conversationId: string, revision: number): Promise<boolean> {
+  async completeReview(claim: ReviewClaim & { revision: number }): Promise<boolean> {
     const result = await this.db
       .updateTable("email_thread_links")
       .set({
@@ -376,35 +435,30 @@ export class EmailThreadRepository {
         review_lease_until: null,
         review_attempts: 0,
         review_last_error_code: null,
-        review_completed_revision: revision,
+        review_completed_revision: claim.revision,
         updated_at: currentTimestamp(),
       })
-      .where("conversation_id", "=", conversationId)
-      .where("review_revision", "=", revision)
+      .where("review_revision", "=", claim.revision)
+      .where((eb) => this.heldBy(eb, claim))
       .execute();
     return changed(result);
   }
 
   /**
-   * Gives up the claim `attempt` of a review a newer revision overtook, leaving its due time, so
-   * the newer revision is claimable at once. A claim that lost its lease to another changes nothing.
+   * Gives up `claim` on a review a newer revision overtook, leaving its due time, so the newer
+   * revision is claimable at once. A claim that lost its lease to another changes nothing.
    */
-  async releaseReview(conversationId: string, attempt: number): Promise<boolean> {
+  async releaseReview(claim: ReviewClaim): Promise<boolean> {
     const result = await this.db
       .updateTable("email_thread_links")
       .set({ review_lease_until: null, review_attempts: 0, updated_at: currentTimestamp() })
-      .where("conversation_id", "=", conversationId)
-      .where("review_attempts", "=", attempt)
-      .where("review_lease_until", "is not", null)
+      .where((eb) => this.heldBy(eb, claim))
       .execute();
     return changed(result);
   }
 
-  /** Puts the claim `attempt` of a failed review back, due at `nextAttemptAt`, with its error code. */
-  async retryReviewLater(
-    conversationId: string,
-    input: { attempt: number; nextAttemptAt: Date; errorCode: string },
-  ): Promise<boolean> {
+  /** Puts `claim`'s failed review back, due at `nextAttemptAt`, with its error code. */
+  async retryReviewLater(claim: ReviewClaim, input: { nextAttemptAt: Date; errorCode: string }): Promise<boolean> {
     const result = await this.db
       .updateTable("email_thread_links")
       .set({
@@ -413,10 +467,16 @@ export class EmailThreadRepository {
         review_last_error_code: input.errorCode,
         updated_at: currentTimestamp(),
       })
-      .where("conversation_id", "=", conversationId)
-      .where("review_attempts", "=", input.attempt)
-      .where("review_lease_until", "is not", null)
+      .where((eb) => this.heldBy(eb, claim))
       .execute();
     return changed(result);
+  }
+
+  private heldBy(eb: ExpressionBuilder<DB, "email_thread_links">, claim: ReviewClaim) {
+    return eb.and([
+      eb("conversation_id", "=", claim.conversationId),
+      eb("review_attempts", "=", claim.attempt),
+      eb("review_lease_until", "=", claim.leaseUntil),
+    ]);
   }
 }

@@ -363,6 +363,7 @@ const declarations: readonly PolicyDeclaration[] = [
     ["POST", "/api/v1/workspaces/:workspaceId/email-channel/mailboxes/:mailboxId/relay-token/rotate", "workspace.settings.manage"],
     ["POST", "/api/v1/workspaces/:workspaceId/email-channel/mailboxes/:mailboxId/setup-check", "workspace.settings.manage"],
     ["GET", "/api/v1/workspaces/:workspaceId/email-channel/mailboxes/:mailboxId/events", "workspace.settings.read"],
+    ["GET", "/api/v1/workspaces/:workspaceId/email-channel/events", "workspace.settings.read"],
     ["POST", "/api/v1/workspaces/:workspaceId/email-channel/events/:deliveryId/retry", "workspace.settings.manage"],
     // Raw customer mail also takes workspace.conversation.takeover, which the route checks on top.
     ["GET", "/api/v1/workspaces/:workspaceId/email-channel/events/:deliveryId/raw", "workspace.settings.read"],

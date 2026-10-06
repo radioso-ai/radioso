@@ -21197,6 +21197,14 @@
           },
           "retryable": {
             "type": "boolean"
+          },
+          "mailboxId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The mailbox that received it; null for mail a verified receiving domain accepted for an address no mailbox has."
           }
         },
         "required": [
@@ -21213,7 +21221,8 @@
           "conversationId",
           "threadConflict",
           "hasRaw",
-          "retryable"
+          "retryable",
+          "mailboxId"
         ]
       },
       "EmailEventPage": {
@@ -21797,6 +21806,70 @@
         ],
         "additionalProperties": false
       },
+      "HeldReplyTrace": {
+        "type": "object",
+        "properties": {
+          "turnId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The review turn that wrote the draft."
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How the turn answered, as its answer-outcome code (for example `grounded_success`, `coverage_partial`, `no_context_refusal`); null when its record names none."
+          },
+          "groundingVerdict": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "grounded",
+              "degraded",
+              "no_support"
+            ],
+            "description": "Whether the draft's claims are supported by the sources it cites; null when the turn did not check."
+          },
+          "coverage": {
+            "type": "string",
+            "description": "How completely the turn covered the customer's question, as the producing channel's code."
+          },
+          "handoffReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the turn asked for a person; null when it did not."
+          },
+          "suppressedEffects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skillName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "skillName"
+              ]
+            },
+            "description": "The skills whose effects the turn was not allowed to run."
+          }
+        },
+        "required": [
+          "turnId",
+          "outcome",
+          "groundingVerdict",
+          "coverage",
+          "handoffReason",
+          "suppressedEffects"
+        ],
+        "description": "The review turn's reasoning, as identifiers and codes; never prompt, completion or customer text."
+      },
       "HeldReply": {
         "type": "object",
         "properties": {
@@ -21930,7 +22003,7 @@
           "trace": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/TurnTraceEnvelope"
+                "$ref": "#/components/schemas/HeldReplyTrace"
               },
               {
                 "type": "null"
@@ -21938,7 +22011,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The review turn's reasoning; null when its record is not readable."
           }
         },
         "required": [
@@ -43178,6 +43252,140 @@
           },
           "404": {
             "description": "Mailbox not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`email_channel_not_configured`: this deployment has no email provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/email-channel/events": {
+      "get": {
+        "tags": [
+          "Email Channel"
+        ],
+        "summary": "List the workspace's email event log",
+        "description": "Every delivery attributed to the workspace, newest first: its mailboxes' events, a removed mailbox's retained events, and mail a verified receiving domain accepted for an address no mailbox has (`mailboxId: null`, reason `no_mailbox`). `mailboxId` narrows the log to one mailbox, removed or not.",
+        "operationId": "listEmailChannelEvents",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ingest_only",
+                "run_review_turn",
+                "drop"
+              ]
+            },
+            "required": false,
+            "name": "disposition",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "fetched",
+                "ingested",
+                "done",
+                "failed"
+              ]
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "mailboxId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the event log",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailEventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_cursor`, or an invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace settings permission required",
             "content": {
               "application/json": {
                 "schema": {

@@ -15,6 +15,7 @@ export type ResendFailureKind =
   | "rate_limited"
   | "idempotency_mismatch"
   | "idempotency_in_flight"
+  | "unrecognized_conflict"
   | "rejected"
   | "unavailable"
   | "timeout"
@@ -24,6 +25,7 @@ export type ResendFailureKind =
 const RETRYABLE_KINDS: ReadonlySet<ResendFailureKind> = new Set([
   "rate_limited",
   "idempotency_in_flight",
+  "unrecognized_conflict",
   "unavailable",
   "timeout",
   "unreachable",
@@ -141,6 +143,10 @@ const kindForStatus = (status: number, providerErrorName: string | null): Resend
   if (status === 408) return "timeout";
   if (status === 409 && providerErrorName === "concurrent_idempotent_requests") return "idempotency_in_flight";
   if (status === 409 && providerErrorName === "invalid_idempotent_request") return "idempotency_mismatch";
+  // A conflict whose body is unreadable or names nothing we know may still be an earlier request
+  // under the same key in progress; calling it a rejection would end reconciliation of a send
+  // that can still go out.
+  if (status === 409) return "unrecognized_conflict";
   if (status === 429) return "rate_limited";
   if (status >= 500) return "unavailable";
   return "rejected";

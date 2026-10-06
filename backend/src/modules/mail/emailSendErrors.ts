@@ -22,6 +22,7 @@ export type EmailProviderFailureCode =
   | "rate_limited"
   | "idempotency_body_mismatch"
   | "idempotency_in_flight"
+  | "unrecognized_conflict"
   | "unavailable"
   | "timeout"
   | "unreachable"

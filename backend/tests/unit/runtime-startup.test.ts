@@ -543,7 +543,8 @@ describe("runtime startup", () => {
         enabled,
         events: { claimDueEvents: vi.fn(async () => []) },
         processor: { process: vi.fn() },
-        sweep: { run: vi.fn() },
+        reviews: { runDue: vi.fn() },
+        sweep: { run: vi.fn(), reconcileSends: vi.fn() },
         logger: { warn: vi.fn(), error: vi.fn() },
       });
 

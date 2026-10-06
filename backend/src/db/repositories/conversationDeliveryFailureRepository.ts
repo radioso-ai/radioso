@@ -70,16 +70,29 @@ export class ConversationDeliveryFailureRepository implements DeliveryFailureWri
   }
 
   async clearOpen(input: Parameters<DeliveryFailureWriteStore["clearOpen"]>[0]): Promise<DeliveryFailureRecord[]> {
-    let update = this.db
+    const { target } = input;
+    if ("messageIds" in target && target.messageIds.length === 0) return [];
+    const update = this.db
       .updateTable("conversation_delivery_failures")
       .set({ cleared_at: currentTimestamp(), clear_reason: input.reason, cleared_by_user_id: input.clearedByUserId })
-      .where("conversation_id", "=", input.conversationId)
       .where("cleared_at", "is", null);
-    if (input.messageId !== null) {
-      update = update.where("message_id", "=", input.messageId);
-    }
-    const rows = await update.returningAll().execute();
+    const targeted = "failureId" in target
+      ? update.where("id", "=", target.failureId)
+      : update.where("conversation_id", "=", target.conversationId).where("message_id", "in", [...target.messageIds]);
+    const rows = await targeted.returningAll().execute();
     return rows.map(mapFailure).sort(oldestFirst);
+  }
+
+  async lockOpen(input: Parameters<DeliveryFailureWriteStore["lockOpen"]>[0]): Promise<DeliveryFailureRecord | null> {
+    const row = await this.db
+      .selectFrom("conversation_delivery_failures")
+      .selectAll()
+      .where("id", "=", input.failureId)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("cleared_at", "is", null)
+      .forUpdate()
+      .executeTakeFirst();
+    return row ? mapFailure(row) : null;
   }
 
   async acknowledgeOpen(input: Parameters<DeliveryFailureWriteStore["acknowledgeOpen"]>[0]): Promise<DeliveryFailureRecord | null> {

@@ -163,6 +163,62 @@ describe("SendReconciler", () => {
       expect(h.counted("email_send_intents_total")).toContainEqual({ trigger: "operator_reply", state: "uncertain" });
     });
 
+    it("makes the send uncertain at once when the provider refuses the lookup for good, and flags the message", async () => {
+      const h = createSendPathHarness();
+      await h.deliver();
+      h.advance(DAY);
+      h.driver.lookup.mockRejectedValueOnce(new EmailLookupError(false, "auth"));
+
+      expect(await h.reconciler.run({ maxJobs: 5 })).toMatchObject({ claimed: 1, uncertain: 1, deferred: 0 });
+
+      expect(h.onlyIntent()).toMatchObject({ state: "uncertain", nextReconcileAt: null });
+      expect(h.failures.openFor(SEND_IDS.message)?.kind).toBe("uncertain");
+      expect(h.logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ sendIntentId: h.onlyIntent().id, code: "auth", retryable: false }),
+        "email_send_lookup_abandoned",
+      );
+      expect(h.driver.send).toHaveBeenCalledOnce();
+    });
+
+    it("defers a lookup the provider cannot answer for now, and makes the send uncertain once the lookup deadline passed", async () => {
+      const h = createSendPathHarness();
+      await h.deliver();
+      h.advance(DAY);
+      h.driver.lookup.mockRejectedValue(new EmailLookupError(true, "unavailable"));
+
+      expect(await h.reconciler.run({ maxJobs: 5 })).toMatchObject({ claimed: 1, deferred: 1 });
+      expect(h.onlyIntent()).toMatchObject({ state: "accepted" });
+
+      // Still inside the deadline: the outage keeps being retried, a lease at a time.
+      h.advance(23 * HOUR);
+      expect(await h.reconciler.run({ maxJobs: 5 })).toMatchObject({ claimed: 1, deferred: 1 });
+      expect(h.onlyIntent()).toMatchObject({ state: "accepted" });
+
+      // Two days after the provider accepted it, nobody can settle it any more: it goes to a teammate.
+      h.advance(HOUR + 1);
+      expect(await h.reconciler.run({ maxJobs: 5 })).toMatchObject({ claimed: 1, uncertain: 1, deferred: 0 });
+      expect(h.onlyIntent()).toMatchObject({ state: "uncertain", nextReconcileAt: null });
+      expect(h.failures.openFor(SEND_IDS.message)?.kind).toBe("uncertain");
+      expect(h.logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "unavailable", retryable: true }),
+        "email_send_lookup_abandoned",
+      );
+    });
+
+    it("still settles from evidence that arrives after an abandoned lookup made the send uncertain", async () => {
+      const h = createSendPathHarness();
+      await h.deliver();
+      h.advance(DAY);
+      h.driver.lookup.mockRejectedValueOnce(new EmailLookupError(false, "not_found"));
+      await h.reconciler.run({ maxJobs: 5 });
+      expect(h.onlyIntent().state).toBe("uncertain");
+
+      await h.deliveryEvents.applyStatus({ provider: "resend", providerMessageId: "re_provider_1", status: { type: "delivered", bounce: null } });
+
+      expect(h.onlyIntent()).toMatchObject({ state: "delivered", uncertainResolution: "provider_evidence" });
+      expect(h.failures.openFor(SEND_IDS.message)).toBeUndefined();
+    });
+
     it("records the delivered Message-Id the lookup reports", async () => {
       const h = createSendPathHarness();
       await h.deliver();

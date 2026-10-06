@@ -2406,6 +2406,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/email-channel/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the workspace's email event log
+         * @description Every delivery attributed to the workspace, newest first: its mailboxes' events, a removed mailbox's retained events, and mail a verified receiving domain accepted for an address no mailbox has (`mailboxId: null`, reason `no_mailbox`). `mailboxId` narrows the log to one mailbox, removed or not.
+         */
+        get: operations["listEmailChannelEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/email-channel/events/{deliveryId}/retry": {
         parameters: {
             query?: never;
@@ -9563,6 +9583,11 @@ export interface components {
             threadConflict: boolean;
             hasRaw: boolean;
             retryable: boolean;
+            /**
+             * Format: uuid
+             * @description The mailbox that received it; null for mail a verified receiving domain accepted for an address no mailbox has.
+             */
+            mailboxId: string | null;
         };
         EmailEventPage: {
             items: components["schemas"]["EmailEvent"][];
@@ -9706,6 +9731,29 @@ export interface components {
             /** @enum {string} */
             decision: "marked_sent" | "resend";
         };
+        /** @description The review turn's reasoning, as identifiers and codes; never prompt, completion or customer text. */
+        HeldReplyTrace: {
+            /**
+             * Format: uuid
+             * @description The review turn that wrote the draft.
+             */
+            turnId: string;
+            /** @description How the turn answered, as its answer-outcome code (for example `grounded_success`, `coverage_partial`, `no_context_refusal`); null when its record names none. */
+            outcome: string | null;
+            /**
+             * @description Whether the draft's claims are supported by the sources it cites; null when the turn did not check.
+             * @enum {string|null}
+             */
+            groundingVerdict: "grounded" | "degraded" | "no_support" | null;
+            /** @description How completely the turn covered the customer's question, as the producing channel's code. */
+            coverage: string;
+            /** @description Why the turn asked for a person; null when it did not. */
+            handoffReason: string | null;
+            /** @description The skills whose effects the turn was not allowed to run. */
+            suppressedEffects: {
+                skillName: string;
+            }[];
+        };
         HeldReply: {
             /** Format: uuid */
             id: string;
@@ -9750,7 +9798,8 @@ export interface components {
             editorUserId: string | null;
             /** @description Whether the conversation still waits for a teammate because of this reply. A discarded draft keeps it open until a teammate replies or takes over. */
             attentionOpen: boolean;
-            trace: components["schemas"]["TurnTraceEnvelope"] | null;
+            /** @description The review turn's reasoning; null when its record is not readable. */
+            trace: components["schemas"]["HeldReplyTrace"] | null;
         };
         HeldReplyPage: {
             items: components["schemas"]["HeldReply"][];
@@ -20846,6 +20895,70 @@ export interface operations {
             };
             /** @description Mailbox not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listEmailChannelEvents: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                disposition?: "ingest_only" | "run_review_turn" | "drop";
+                state?: "pending" | "fetched" | "ingested" | "done" | "failed";
+                mailboxId?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the event log */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailEventPage"];
+                };
+            };
+            /** @description `invalid_cursor`, or an invalid query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

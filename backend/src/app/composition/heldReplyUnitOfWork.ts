@@ -3,9 +3,10 @@ import type { Kysely } from "kysely";
 import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
 import { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
+import { DirectiveStateRepository } from "../../db/repositories/directiveStateRepository.js";
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
-import { publishedDraftReply, type ActionDrainDispatcherPort } from "../../modules/chat/composition.js";
+import { reviewedDraftWriter, type ActionDrainDispatcherPort } from "../../modules/chat/composition.js";
 import type { ConversationActivityRecorder } from "../../modules/conversationActivity/contracts/index.js";
 import {
   EMAIL_MAILBOX_POLICY_REF_PREFIX,
@@ -18,6 +19,7 @@ import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import { pushActionDrainAfterCommit, type QueuedOutboxRow } from "./actionDrainAfterCommit.js";
+import { runTransactionWithDeadlockRetry } from "./conversationLockOrder.js";
 
 /** A producing channel's side of held-reply transactions: the policy-ref prefix it owns, and its scope bound to one. */
 export interface HeldReplyChannelRegistration {
@@ -53,10 +55,13 @@ const channelRegistry = (
  * one Postgres transaction, binding to it the conversation and ownership locks, the held replies,
  * the producing channel's scope (found by the draft's policy-ref prefix, bound once per
  * transaction), the message a release or materialization writes with its delivery on the action
- * outbox, and the activity. The lock order is the held-reply service's: conversation, ownership,
- * the channel's policy, the conditional held-reply write, the message, then the delivery — a queued
+ * outbox, the directive firing memory advance an unchanged draft deferred, and the activity. The lock order is the conversation lock protocol's
+ * (`conversationLockOrder.ts`), as the held-reply service takes it: conversation, ownership, the
+ * channel's policy, the conditional held-reply write, the message, then the delivery — a queued
  * send's on the outbox, a materialized one's as the channel's send record, in the same transaction.
- * The drain push goes out only after commit, when a delivery was queued, and is best-effort.
+ * A policy change meeting a draft born after it locked its conversations can make Postgres abort
+ * the command as a deadlock victim; its whole transaction then runs again, a bounded number of
+ * times. The drain push goes out only after commit, when a delivery was queued, and is best-effort.
  */
 export const createPostgresHeldReplyUnitOfWork = (deps: {
   db: Kysely<DB>;
@@ -70,7 +75,9 @@ export const createPostgresHeldReplyUnitOfWork = (deps: {
   return {
     async run(work) {
       let queued: QueuedOutboxRow | null = null;
-      const result = await deps.db.transaction().execute((trx) => {
+      const result = await runTransactionWithDeadlockRetry(deps.db, (trx) => {
+        // An aborted attempt queued nothing.
+        queued = null;
         const conversations = new ConversationRepository(trx);
         const messages = new MessageRepository(trx);
         const outbox = new ActionRequestRepository(trx);
@@ -99,10 +106,10 @@ export const createPostgresHeldReplyUnitOfWork = (deps: {
               },
             },
           },
-          drafts: { writeAgentMessage: (input) => messages.create(publishedDraftReply(input)) },
+          drafts: reviewedDraftWriter({ messages, directiveStates: new DirectiveStateRepository(trx) }),
           activity: { record: (event) => deps.activity.record(trx, event) },
         });
-      });
+      }, { unit: "held_reply", logger: deps.logger });
       if (queued) {
         await pushActionDrainAfterCommit(deps, "held_reply_release_drain_push_failed", queued);
       }

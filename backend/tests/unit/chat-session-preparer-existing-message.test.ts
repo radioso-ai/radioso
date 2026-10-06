@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
@@ -103,6 +103,26 @@ describe("ChatSessionPreparer existing user message", () => {
     );
 
     expect(session.history.map((entry) => entry.id)).toEqual(earlier.map((entry) => entry.id));
+  });
+
+  it("keeps the whole window before the answered message when later messages outnumber it", async () => {
+    const { preparer, messageRepository, conversation, earlier, requestMessage, record } = await harness();
+    for (const content of ["Also, can I pay by invoice?", "Or by card?", "Never mind, thanks."]) {
+      await record(conversation.id, "user", content);
+    }
+    const listedBefore = vi.spyOn(messageRepository, "listBeforeByConversationId");
+
+    const session = await preparer.prepare(
+      { workspaceId: WORKSPACE_ID, conversationId: conversation.id, query: requestMessage.content, executionMode: "review" },
+      { skipRetrieval: true, existingUserMessage: { message: requestMessage, historyWindow: { maxMessages: 3 } } },
+    );
+
+    expect(session.history.map((entry) => entry.id)).toEqual(earlier.slice(-3).map((entry) => entry.id));
+    // The boundary is the repository's to apply, before it orders and limits.
+    expect(listedBefore).toHaveBeenCalledWith(WORKSPACE_ID, conversation.id, {
+      before: { createdAt: requestMessage.createdAt, id: requestMessage.id },
+      limit: 3,
+    });
   });
 
   it("rejects a message from another conversation in the same workspace", async () => {

@@ -1,4 +1,4 @@
-import type { Selectable } from "kysely";
+import type { ExpressionBuilder, Selectable } from "kysely";
 
 import { currentTimestamp, nowPlusSeconds, toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../../shared/infra/kysely/types.js";
@@ -52,6 +52,10 @@ const THREAD_MATCHES: readonly ThreadMatch[] = ["in_reply_to", "references", "re
 
 /** Deliveries whose thread decision is persisted: the reservation log of research B15. */
 const RESERVED_STATES: readonly DeliveryState[] = ["resolved", "ingested", "done"];
+/** Deliveries a step can still advance; retention keeps them, and only they can fail. */
+const UNFINISHED_STATES: readonly DeliveryState[] = ["pending", "fetched", "resolved", "ingested"];
+/** Events a worker holds or will claim again; retention keeps their deliveries. */
+const UNSETTLED_EVENT_STATES: readonly InboundEventState[] = ["pending", "processing"];
 
 export interface InboundEventRecord {
   id: string;
@@ -102,6 +106,16 @@ export interface InboundDeliveryRecord {
   lastErrorCode: string | null;
   createdAt: Date;
   processedAt: Date | null;
+}
+
+/**
+ * The event claim a delivery write is made under (research B15): the delivery, and the `attempts`
+ * its event's claim returned. Each step's write lands only while that claim still holds the event,
+ * so a worker whose lease was reclaimed writes nothing and stops.
+ */
+interface DeliveryClaim {
+  deliveryId: string;
+  attempt: number;
 }
 
 interface InsertInboundEventInput {
@@ -190,6 +204,20 @@ export interface EventLogEntry {
   conversationId: string | null;
   threadConflict: boolean;
   hasRaw: boolean;
+  /** Null for mail the workspace accepted for an address no mailbox has. */
+  mailboxId: string | null;
+}
+
+interface EventLogPageQuery {
+  cursor: string | null;
+  limit: number;
+  disposition: Disposition | null;
+  states: readonly DeliveryState[] | null;
+}
+
+interface EventLogPage {
+  entries: EventLogEntry[];
+  nextCursor: string | null;
 }
 
 interface MailboxEventCounts {
@@ -285,6 +313,22 @@ const mapDelivery = (row: DeliveryRow): InboundDeliveryRecord => ({
 const changed = (result: readonly { numUpdatedRows: bigint }[]): boolean =>
   result.some((entry) => entry.numUpdatedRows > 0n);
 
+/**
+ * The fence on a delivery step's write: the delivery's event is still `processing` under the claim
+ * that made `attempt`. The event row is share-locked, so a concurrent reclaim waits for this write
+ * to commit, and a reclaim that committed first is seen.
+ */
+const heldByClaim = (attempt: number) => (eb: ExpressionBuilder<DB, "email_inbound_deliveries">) =>
+  eb.exists(
+    eb
+      .selectFrom("email_inbound_events as claim")
+      .select("claim.id")
+      .whereRef("claim.id", "=", "email_inbound_deliveries.inbound_event_id")
+      .where("claim.attempts", "=", attempt)
+      .where("claim.state", "=", "processing")
+      .forShare(),
+  );
+
 interface LogEntryRow {
   id: string;
   created_at: Date;
@@ -300,6 +344,7 @@ interface LogEntryRow {
   conversation_id: string | null;
   thread_conflict: boolean;
   has_raw: unknown;
+  mailbox_id: string | null;
 }
 
 const toLogEntry = (row: LogEntryRow): EventLogEntry => ({
@@ -317,6 +362,7 @@ const toLogEntry = (row: LogEntryRow): EventLogEntry => ({
   conversationId: row.conversation_id,
   threadConflict: row.thread_conflict,
   hasRaw: row.has_raw === true,
+  mailboxId: row.mailbox_id,
 });
 
 /**
@@ -491,8 +537,8 @@ export class EmailInboundRepository {
     return rows.map(mapDelivery);
   }
 
-  /** `pending` → `fetched`, with the normalized content and its classification. */
-  async recordFetched(deliveryId: string, content: FetchedDeliveryContent): Promise<boolean> {
+  /** `pending` → `fetched` under `claim`, with the normalized content and its classification. */
+  async recordFetched(claim: DeliveryClaim, content: FetchedDeliveryContent): Promise<boolean> {
     const result = await this.db
       .updateTable("email_inbound_deliveries")
       .set({
@@ -514,17 +560,18 @@ export class EmailInboundRepository {
         raw_size_bytes: content.rawSizeBytes,
         raw_truncated: content.rawTruncated,
       })
-      .where("id", "=", deliveryId)
+      .where("id", "=", claim.deliveryId)
       .where("state", "=", "pending")
+      .where(heldByClaim(claim.attempt))
       .execute();
     return changed(result);
   }
 
   /**
-   * `fetched` → `resolved`: persists the thread decision and the planned ids, so a crash resumes
-   * at ingest with the same ids. Run under the thread-resolution lock (research B15 step 1).
+   * `fetched` → `resolved` under `claim`: persists the thread decision and the planned ids, so a
+   * crash resumes at ingest with the same ids. Run under the thread-resolution lock (research B15 step 1).
    */
-  async reserveThread(deliveryId: string, reservation: ThreadReservation): Promise<boolean> {
+  async reserveThread(claim: DeliveryClaim, reservation: ThreadReservation): Promise<boolean> {
     const result = await this.db
       .updateTable("email_inbound_deliveries")
       .set({
@@ -538,8 +585,9 @@ export class EmailInboundRepository {
         planned_thread_key: reservation.plannedThreadKey,
         planned_thread_token: reservation.plannedThreadToken,
       })
-      .where("id", "=", deliveryId)
+      .where("id", "=", claim.deliveryId)
       .where("state", "=", "fetched")
+      .where(heldByClaim(claim.attempt))
       .execute();
     return changed(result);
   }
@@ -627,10 +675,10 @@ export class EmailInboundRepository {
   }
 
   /**
-   * `fetched` → `done` for a dropped delivery, with the thread it reached if any. A drop reserves
-   * nothing, so a later message referencing this one never joins a thread through it.
+   * `fetched` → `done` under `claim` for a dropped delivery, with the thread it reached if any. A
+   * drop reserves nothing, so a later message referencing this one never joins a thread through it.
    */
-  async settleDropped(deliveryId: string, drop: DroppedDelivery): Promise<boolean> {
+  async settleDropped(claim: DeliveryClaim, drop: DroppedDelivery): Promise<boolean> {
     const result = await this.db
       .updateTable("email_inbound_deliveries")
       .set({
@@ -641,65 +689,65 @@ export class EmailInboundRepository {
         thread_conflict: drop.threadConflict,
         processed_at: currentTimestamp(),
       })
-      .where("id", "=", deliveryId)
+      .where("id", "=", claim.deliveryId)
       .where("state", "=", "fetched")
+      .where(heldByClaim(claim.attempt))
       .execute();
     return changed(result);
   }
 
-  /** `resolved` → `ingested`, once host ingest has committed the conversation and message. */
-  async recordIngested(deliveryId: string, input: { conversationId: string; messageId: string }): Promise<boolean> {
+  /** `resolved` → `ingested` under `claim`, once host ingest has committed the conversation and message. */
+  async recordIngested(claim: DeliveryClaim, input: { conversationId: string; messageId: string }): Promise<boolean> {
     const result = await this.db
       .updateTable("email_inbound_deliveries")
       .set({ state: "ingested", conversation_id: input.conversationId, message_id: input.messageId })
-      .where("id", "=", deliveryId)
+      .where("id", "=", claim.deliveryId)
       .where("state", "=", "resolved")
-      .execute();
-    return changed(result);
-  }
-
-  /** Terminal: `done`, or `failed` with a sanitized code. A settled delivery stays settled. */
-  async settleDelivery(deliveryId: string, input: { state: "done" | "failed"; errorCode: string | null }): Promise<boolean> {
-    const result = await this.db
-      .updateTable("email_inbound_deliveries")
-      .set({ state: input.state, last_error_code: input.errorCode, processed_at: currentTimestamp() })
-      .where("id", "=", deliveryId)
-      .where("state", "not in", ["done", "failed"])
+      .where(heldByClaim(claim.attempt))
       .execute();
     return changed(result);
   }
 
   /**
-   * A mailbox's event log, newest first. The cursor is the last id of the previous page; its
-   * position is read back from the row, so paging keeps the column's full precision.
+   * `ingested` → `done` under `claim`: acquires the indexing step. Run first in the step's
+   * transaction, so of two workers holding the same `ingested` snapshot only one writes the link,
+   * the index and the review (research B15 step 3); the other's transaction writes nothing.
    */
-  async listMailboxLog(
-    mailboxId: string,
-    query: { cursor: string | null; limit: number; disposition: Disposition | null; states: readonly DeliveryState[] | null },
-  ): Promise<{ entries: EventLogEntry[]; nextCursor: string | null }> {
-    let select = this.selectLogEntries().where("d.mailbox_id", "=", mailboxId);
-    if (query.disposition) select = select.where("d.disposition", "=", query.disposition);
-    if (query.states) select = select.where("d.state", "in", [...query.states]);
-    const cursor = query.cursor;
-    if (cursor) {
-      select = select.where((eb) => {
-        const cursorCreatedAt = eb
-          .selectFrom("email_inbound_deliveries as c")
-          .select("c.created_at")
-          .where("c.id", "=", cursor)
-          .where("c.mailbox_id", "=", mailboxId);
-        return eb.or([
-          eb("d.created_at", "<", cursorCreatedAt),
-          eb.and([eb("d.created_at", "=", cursorCreatedAt), eb("d.id", "<", cursor)]),
-        ]);
-      });
-    }
-    const rows = await select.orderBy("d.created_at", "desc").orderBy("d.id", "desc").limit(query.limit + 1).execute();
-    const page = rows.slice(0, query.limit);
-    return {
-      entries: page.map(toLogEntry),
-      nextCursor: rows.length > query.limit ? (page.at(-1)?.id ?? null) : null,
-    };
+  async markIndexed(claim: DeliveryClaim): Promise<boolean> {
+    const result = await this.db
+      .updateTable("email_inbound_deliveries")
+      .set({ state: "done", last_error_code: null, processed_at: currentTimestamp() })
+      .where("id", "=", claim.deliveryId)
+      .where("state", "=", "ingested")
+      .where(heldByClaim(claim.attempt))
+      .execute();
+    return changed(result);
+  }
+
+  /** An unfinished delivery → `failed` under `claim`, with a sanitized code. A settled delivery stays settled. */
+  async failDelivery(claim: DeliveryClaim, errorCode: string): Promise<boolean> {
+    const result = await this.db
+      .updateTable("email_inbound_deliveries")
+      .set({ state: "failed", last_error_code: errorCode, processed_at: currentTimestamp() })
+      .where("id", "=", claim.deliveryId)
+      .where("state", "in", UNFINISHED_STATES)
+      .where(heldByClaim(claim.attempt))
+      .execute();
+    return changed(result);
+  }
+
+  /** A mailbox's event log, newest first. */
+  async listMailboxLog(mailboxId: string, query: EventLogPageQuery): Promise<EventLogPage> {
+    return this.pageLog({ workspaceId: null, mailboxId }, query);
+  }
+
+  /**
+   * A workspace's event log, newest first: every delivery attributed to it — its mailboxes', a
+   * removed mailbox's retained ones, and mail accepted for an address no mailbox has — or one
+   * mailbox's when `mailboxId` is set.
+   */
+  async listWorkspaceLog(workspaceId: string, query: EventLogPageQuery & { mailboxId: string | null }): Promise<EventLogPage> {
+    return this.pageLog({ workspaceId, mailboxId: query.mailboxId }, query);
   }
 
   async findDelivery(workspaceId: string, deliveryId: string): Promise<InboundDeliveryRecord | null> {
@@ -725,15 +773,13 @@ export class EmailInboundRepository {
     return row?.id ?? null;
   }
 
-  /** One mailbox delivery of the workspace as its event log shows it; null when there is none. */
-  async findLogEntry(workspaceId: string, deliveryId: string): Promise<(EventLogEntry & { mailboxId: string }) | null> {
+  /** One delivery of the workspace as its event log shows it; null when there is none. */
+  async findLogEntry(workspaceId: string, deliveryId: string): Promise<EventLogEntry | null> {
     const row = await this.selectLogEntries()
-      .select("d.mailbox_id")
       .where("d.id", "=", deliveryId)
       .where("d.workspace_id", "=", workspaceId)
       .executeTakeFirst();
-    if (!row || row.mailbox_id === null) return null;
-    return { ...toLogEntry(row), mailboxId: row.mailbox_id };
+    return row ? toLogEntry(row) : null;
   }
 
   /** The stored raw message of a workspace's delivery; `raw` is null when none was kept. */
@@ -816,20 +862,25 @@ export class EmailInboundRepository {
   }
 
   /**
-   * Retention (research B10): deletes deliveries created before `cutoff` that never reached a
-   * conversation, then the settled events left with no delivery. A delivery attached to a
-   * conversation is kept; it goes when its conversation does.
+   * Retention (research B10): deletes settled deliveries created before `cutoff` that never reached
+   * a conversation, then the settled events left with no delivery. A delivery attached to a
+   * conversation is kept; it goes when its conversation does. An unfinished delivery, or one whose
+   * event is still pending or claimed, is a processing checkpoint and is never purged, however old:
+   * its reserved ids are what keep a recovered retry from ingesting twice.
    */
   async purgeUnattachedBefore(cutoff: Date, limit: number): Promise<{ deliveries: number; events: number }> {
     const deliveries = await this.db
       .deleteFrom("email_inbound_deliveries")
       .where("id", "in", (eb) =>
         eb
-          .selectFrom("email_inbound_deliveries")
-          .select("id")
-          .where("conversation_id", "is", null)
-          .where("created_at", "<", cutoff)
-          .orderBy("created_at", "asc")
+          .selectFrom("email_inbound_deliveries as d")
+          .innerJoin("email_inbound_events as e", "e.id", "d.inbound_event_id")
+          .select("d.id")
+          .where("d.conversation_id", "is", null)
+          .where("d.created_at", "<", cutoff)
+          .where("d.state", "not in", UNFINISHED_STATES)
+          .where("e.state", "not in", UNSETTLED_EVENT_STATES)
+          .orderBy("d.created_at", "asc")
           .limit(limit),
       )
       .returning("id")
@@ -852,6 +903,39 @@ export class EmailInboundRepository {
       .execute();
     return { deliveries: deliveries.length, events: events.length };
   }
+  /**
+   * One page of an event log, newest first. The cursor is the last id of the previous page; its
+   * position is read back from a row in the same scope, so paging keeps the column's full precision.
+   */
+  private async pageLog(
+    scope: { workspaceId: string | null; mailboxId: string | null },
+    query: EventLogPageQuery,
+  ): Promise<EventLogPage> {
+    let select = this.selectLogEntries();
+    if (scope.workspaceId !== null) select = select.where("d.workspace_id", "=", scope.workspaceId);
+    if (scope.mailboxId !== null) select = select.where("d.mailbox_id", "=", scope.mailboxId);
+    if (query.disposition) select = select.where("d.disposition", "=", query.disposition);
+    if (query.states) select = select.where("d.state", "in", [...query.states]);
+    const cursor = query.cursor;
+    if (cursor) {
+      select = select.where((eb) => {
+        let cursorRow = eb.selectFrom("email_inbound_deliveries as c").select("c.created_at").where("c.id", "=", cursor);
+        if (scope.workspaceId !== null) cursorRow = cursorRow.where("c.workspace_id", "=", scope.workspaceId);
+        if (scope.mailboxId !== null) cursorRow = cursorRow.where("c.mailbox_id", "=", scope.mailboxId);
+        return eb.or([
+          eb("d.created_at", "<", cursorRow),
+          eb.and([eb("d.created_at", "=", cursorRow), eb("d.id", "<", cursor)]),
+        ]);
+      });
+    }
+    const rows = await select.orderBy("d.created_at", "desc").orderBy("d.id", "desc").limit(query.limit + 1).execute();
+    const page = rows.slice(0, query.limit);
+    return {
+      entries: page.map(toLogEntry),
+      nextCursor: rows.length > query.limit ? (page.at(-1)?.id ?? null) : null,
+    };
+  }
+
   private selectLogEntries() {
     return this.db
       .selectFrom("email_inbound_deliveries as d")
@@ -869,6 +953,7 @@ export class EmailInboundRepository {
         "d.spam_verdict",
         "d.conversation_id",
         "d.thread_conflict",
+        "d.mailbox_id",
         eb("d.raw_mime", "is not", null).as("has_raw"),
       ]);
   }

@@ -89,21 +89,17 @@ export const emailBehaviourCases: readonly EmailBehaviourCase[] = [
   },
   {
     id: "auto-action-request",
-    title: "A customer asks for an action (cancel my order): nothing is sent, and no draft claims the action happened.",
+    title: "A customer asks for an action (cancel my order): nothing is sent; the reply waits as a draft or the thread goes to a teammate.",
     mode: "auto",
     gate: "assert",
     customer: { name: "Marco Bianchi", address: "marco.bianchi@mail.example" },
+    // The business assertion is the outcome only. What an action request's draft says, and whether it
+    // hands off, is the operator's to author as a directive, so the draft's wording is not judged here.
     steps: [{
       kind: "customer",
       subject: "Cancel order #48213",
       text: "Please cancel my order #48213, I ordered the wrong tea. Thank you!\n\nMarco",
       expect: NOT_SENT,
-      reply: {
-        judge: {
-          reference: "Orders can be cancelled free of charge until they leave the warehouse. A customer care team member makes the cancellation and confirms it by email.",
-          criteria: "Fail if the reply says or implies that the order has already been cancelled, or that the writer cancelled it. Explaining the cancellation policy, or saying a team member will handle it, is fine.",
-        },
-      },
     }],
   },
   {

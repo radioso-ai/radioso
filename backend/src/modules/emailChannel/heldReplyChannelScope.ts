@@ -6,7 +6,7 @@ import { emailSendingRefusal } from "./operator/emailSendingRefusal.js";
 import { emailSendKey, enqueueEmailSendAction, type EmailSendActionPayload } from "./outbound/emailSendAction.js";
 import { outboundMessageId } from "./outbound/outboundHeaders.js";
 import {
-  autoSendAuthority,
+  autoDispatchAuthority,
   operatorSendAuthority,
   ownershipFactsOf,
   type AutoSendVerdict,
@@ -144,23 +144,26 @@ export class EmailHeldReplyChannelScope implements HeldReplyChannelScope {
   }
 
   /**
-   * Whether the queued send may still go out (FR-032): the mailbox enabled and in `auto` at the
-   * bound policy version, the conversation the AI's at the bound ownership version, and the domain
-   * verified for sending.
+   * Whether the queued send may still go out (FR-022, FR-032): the mailbox enabled and in `auto` at
+   * the bound policy version, the conversation the AI's at the bound ownership version, the domain
+   * verified for sending, and the send's reservation still inside the thread's budget as the
+   * locked mailbox states it now.
    */
   async authorizeAutoDispatch(heldReply: HeldReplyAuthorityView): Promise<AutoDispatchVerdict> {
     const autoSend = this.deps.autoSend;
     if (!autoSend) return AUTO_UNSUPPORTED;
     const mailbox = await this.lockedMailbox(heldReply.policyRef);
-    const [domain, ownership] = await Promise.all([
+    const [domain, ownership, link] = await Promise.all([
       mailbox ? this.deps.domains.findById(mailbox.domainId) : null,
       autoSend.ownership.load(heldReply.conversationId),
+      autoSend.threads.findLink(heldReply.conversationId),
     ]);
-    return autoSendAuthority({
+    return autoDispatchAuthority({
       mailbox,
       domain,
       ownership: ownershipFactsOf(ownership),
       bound: { policyVersion: heldReply.policyVersion, ownershipVersion: heldReply.ownershipVersion },
+      reservedAutoSends: link?.autoSendsSinceRenewal ?? null,
     });
   }
 

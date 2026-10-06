@@ -14,3 +14,7 @@ const packageDirectoryOf = (directory: string): string => {
  * whatever directory they start in.
  */
 export const LOCAL_EMAIL_SPOOL_DIR = join(packageDirectoryOf(dirname(fileURLToPath(import.meta.url))), ".email-spool");
+
+/** Whether a file-system failure carries `code`, such as `ENOENT` for a missing spool file. */
+export const hasFileErrorCode = (error: unknown, code: string): boolean =>
+  error instanceof Error && "code" in error && error.code === code;

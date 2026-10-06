@@ -94,6 +94,8 @@ export interface ReviewServiceHarnessOptions {
   /** Earlier messages recorded before the answered one (alternating customer and agent). */
   earlierMessages?: number;
   agentSkillTurnSkillProvider?: ChatServiceOptions["agentSkillTurnSkillProvider"];
+  directiveSteering?: ChatServiceOptions["directiveSteering"];
+  directiveStateStore?: ChatServiceOptions["directiveStateStore"];
 }
 
 /**
@@ -194,6 +196,8 @@ export const reviewServiceHarness = async (options: ReviewServiceHarnessOptions 
     actionOutbox,
     ...(options.persistence === "port" ? { assistantTurnPersistence } : {}),
     ...(options.agentSkillTurnSkillProvider ? { agentSkillTurnSkillProvider: options.agentSkillTurnSkillProvider } : {}),
+    ...(options.directiveSteering ? { directiveSteering: options.directiveSteering } : {}),
+    ...(options.directiveStateStore ? { directiveStateStore: options.directiveStateStore } : {}),
   });
   const review = (overrides: { maxMessages?: number; existingUserMessageId?: string } = {}) => service.review({
     workspaceId: REVIEW_WORKSPACE_ID,

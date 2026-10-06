@@ -27,6 +27,7 @@ const agentId = "44444444-4444-4444-8444-444444444444";
 const CUSTOMER = "alice@example.test";
 const MINUTE_MS = 60_000;
 const COALESCE_SECONDS = 60;
+const LEASE_SECONDS = 300;
 
 const token = () => generateOpaqueToken((size) => randomBytes(size));
 
@@ -150,11 +151,10 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
       hold: async () => ({ heldReplyId: randomUUID(), state: "pending", duplicate: false }),
       queueAuto: async () => ({ ok: true, heldReplyId: randomUUID(), duplicate: false }),
       findByReviewRef: async () => null,
-      supersedePendingForConversation: async () => 0,
     },
     handoffs: { requestHumanOwnership: vi.fn(async () => undefined) },
     checks: passingReviewChecks(),
-    notes: { recordSetAside: async () => undefined },
+    revisions: threadProtocol,
     drains: { requestDrain },
     metrics,
     logger,
@@ -207,7 +207,7 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
   });
 
   const runEvent = async (eventId: string) => {
-    const claimed = (await inbound.claimDueEvents({ limit: 50, leaseSeconds: 300 })).find((event) => event.id === eventId);
+    const claimed = (await inbound.claimDueEvents({ limit: 50, leaseSeconds: LEASE_SECONDS })).find((event) => event.id === eventId);
     if (!claimed) throw new Error("event is not due");
     return processor.process(claimed);
   };
@@ -220,7 +220,20 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
     return { outcome, event: inbound.events.get(event.id)!, deliveries: await inbound.listEventDeliveries(event.id) };
   };
 
+  /**
+   * Another worker reclaims the event once its lease runs out, as after this worker stalled, and
+   * runs it to the end; returns that worker's outcome.
+   */
+  const reclaimAndFinish = async (eventId: string) => {
+    now = new Date(now.getTime() + (LEASE_SECONDS + 1) * 1000);
+    const reclaimed = (await inbound.claimDueEvents({ limit: 50, leaseSeconds: LEASE_SECONDS })).find((event) => event.id === eventId);
+    if (!reclaimed) throw new Error("event was not reclaimable");
+    return processor.process(reclaimed);
+  };
+
   return {
+    processor,
+    reclaimAndFinish,
     inbound,
     threads,
     mailboxes,
@@ -336,6 +349,37 @@ describe("EmailInboundProcessor: routing", () => {
       dispositionReason: "no_mailbox",
     })]);
     expect(h.ingest).not.toHaveBeenCalled();
+  });
+
+  it("keeps the dropped mail's sender, subject, authentication and bounded raw message on its no_mailbox delivery (FR-015, FR-016)", async () => {
+    const h = harness();
+    h.seedMailbox();
+    const relayAddress = `${token()}@${INBOUND_DOMAIN}`;
+    const dropped = h.message({
+      from: { address: "Mallory@Example.TEST", displayName: "Mallory" },
+      subject: "Invoice question",
+      deliveredTo: [relayAddress],
+      authentication: { spf: "pass", dkim: "fail", dmarc: "fail" },
+      raw: Buffer.alloc(100, "r"),
+    });
+
+    const { deliveries } = await h.receive(dropped);
+
+    expect(deliveries).toEqual([expect.objectContaining({
+      state: "done",
+      dispositionReason: "no_mailbox",
+      classification: "person",
+      senderAddress: "mallory@example.test",
+      senderDisplayName: "Mallory",
+      subject: "Invoice question",
+      rfcMessageId: dropped.rfcMessageId,
+      receivedFor: [relayAddress],
+      authResults: { spf: "pass", dkim: "fail", dmarc: "fail" },
+      rawSizeBytes: 100,
+      rawTruncated: true,
+    })]);
+    // Bounded by the configured raw size, as a routed delivery's is.
+    expect((deliveries[0] as { rawMime: Buffer | null }).rawMime).toHaveLength(64);
   });
 
   it("attributes an unknown address on a direct-receiving domain to the domain's workspace", async () => {
@@ -623,7 +667,7 @@ describe("EmailInboundProcessor: thread protocol", () => {
 
     await h.receive(h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
 
-    const order = ["lockThread", "reserveThread", "ingest", "recordIngested", "upsertLink", "insertIndexEntries", "settleDelivery:done"];
+    const order = ["lockThread", "reserveThread", "ingest", "recordIngested", "markIndexed", "upsertLink", "insertIndexEntries"];
     expect(h.log.filter((entry) => order.includes(entry))).toEqual(order);
   });
 
@@ -784,8 +828,8 @@ describe("EmailInboundProcessor: review scheduling (stage 2)", () => {
       reviewPolicyVersion: deliveries[0].acceptedPolicyVersion,
     });
     expect(h.requestDrain).toHaveBeenCalledWith({ maxJobs: expect.any(Number), stage: "review", scheduleAt: dueAt });
-    // Scheduled with the thread's link and index, in the same protocol step that settles the delivery.
-    const order = ["upsertLink", "insertIndexEntries", "scheduleReview", "settleDelivery:done"];
+    // Scheduled with the thread's link and index, in the protocol step the delivery's settle acquires first.
+    const order = ["markIndexed", "upsertLink", "insertIndexEntries", "scheduleReview"];
     expect(h.log.filter((entry) => order.includes(entry))).toEqual(order);
   });
 
@@ -935,5 +979,136 @@ describe("EmailInboundProcessor: the mailbox generation budget (FR-023)", () => 
 
     expect(deliveries[0]).toMatchObject({ disposition: "run_review_turn", dispositionReason: "accepted" });
     expect(budgetHits(h)).toEqual([]);
+  });
+});
+
+describe("EmailInboundProcessor: retries resume from the delivery's binding", () => {
+  it("resumes a delivery on the mailbox it was bound to after the relay token rotated past its grace", async () => {
+    const h = harness();
+    const mailbox = h.seedMailbox();
+    h.ingestFailures.push(new Error("connection reset"));
+    const first = await h.receive(h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
+    expect(first.outcome).toBe("retrying");
+    // The token the mail was addressed to no longer routes anywhere.
+    h.mailboxes.records.set(mailbox.id, { ...h.mailboxes.records.get(mailbox.id)!, relayToken: token(), previousRelayToken: null });
+
+    h.setNow(h.inbound.events.get(first.event.id)!.nextAttemptAt);
+    expect(await h.runEvent(first.event.id)).toBe("processed");
+
+    expect(await h.inbound.listEventDeliveries(first.event.id)).toEqual([
+      expect.objectContaining({ mailboxId: mailbox.id, state: "done", conversationId: first.deliveries[0].plannedConversationId }),
+    ]);
+    expect(h.conversations.size).toBe(1);
+  });
+
+  it("fails a delivery whose mailbox was removed before its retry, visibly, rather than settling the event over it", async () => {
+    const h = harness();
+    const mailbox = h.seedMailbox();
+    h.ingestFailures.push(new Error("connection reset"));
+    const first = await h.receive(h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
+    await h.mailboxes.markRemoved(mailbox.workspaceId, mailbox.id);
+
+    h.setNow(h.inbound.events.get(first.event.id)!.nextAttemptAt);
+    expect(await h.runEvent(first.event.id)).toBe("processed");
+
+    expect(await h.inbound.listEventDeliveries(first.event.id)).toEqual([
+      expect.objectContaining({ mailboxId: mailbox.id, state: "failed", lastErrorCode: "mailbox_removed" }),
+    ]);
+    expect(h.ingest).toHaveBeenCalledOnce();
+    expect(h.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: first.event.id, code: "mailbox_removed" }),
+      "email_inbound_delivery_unresumable",
+    );
+  });
+});
+
+describe("EmailInboundProcessor: overlapping workers (research B15)", () => {
+  /** Runs `after` once, right after the first call of the inbound repository's `method` returns. */
+  const afterFirst = <K extends "recordFetched" | "recordIngested">(
+    h: ReturnType<typeof harness>,
+    method: K,
+    after: () => Promise<unknown>,
+  ) => {
+    const original = h.inbound[method].bind(h.inbound) as (...args: unknown[]) => Promise<boolean>;
+    let fired = false;
+    vi.spyOn(h.inbound, method).mockImplementation((async (...args: unknown[]) => {
+      const won = await original(...args);
+      if (!fired) {
+        fired = true;
+        await after();
+      }
+      return won;
+    }) as never);
+  };
+
+  it("stops a worker whose claim was reclaimed while it held a fetched snapshot: one conversation, one message", async () => {
+    const h = harness();
+    const mailbox = h.seedMailbox();
+    const providerObjectId = randomUUID();
+    h.messages.set(providerObjectId, h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
+    const event = h.inbound.seedEvent({ providerObjectId });
+    let reclaimed: string | undefined;
+    afterFirst(h, "recordFetched", async () => {
+      reclaimed = await h.reclaimAndFinish(event.id);
+    });
+
+    const stale = await h.runEvent(event.id);
+
+    expect(reclaimed).toBe("processed");
+    expect(stale).toBe("superseded");
+    expect(h.ingest).toHaveBeenCalledOnce();
+    expect(h.conversations.size).toBe(1);
+    expect(await h.inbound.listEventDeliveries(event.id)).toEqual([expect.objectContaining({ state: "done" })]);
+    expect(h.inbound.events.get(event.id)).toMatchObject({ state: "processed", attempts: 2 });
+    expect(h.logger.warn).toHaveBeenCalledWith({ eventId: event.id, attempt: 1, step: "reserve_thread" }, "email_inbound_claim_lost");
+  });
+
+  it("indexes once when two workers hold the same ingested snapshot: the review revision moves once", async () => {
+    const h = harness({ supportedModes: ["operator_only", "draft"] });
+    const mailbox = h.seedMailbox({ engagementMode: "draft", agentId });
+    const providerObjectId = randomUUID();
+    h.messages.set(providerObjectId, h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
+    const event = h.inbound.seedEvent({ providerObjectId });
+    afterFirst(h, "recordIngested", () => h.reclaimAndFinish(event.id));
+
+    expect(await h.runEvent(event.id)).toBe("superseded");
+
+    const [delivery] = await h.inbound.listEventDeliveries(event.id);
+    expect(delivery.state).toBe("done");
+    expect(h.threads.links.get(delivery.conversationId!)).toMatchObject({ reviewRevision: 1 });
+    expect(h.log.filter((entry) => entry === "scheduleReview")).toHaveLength(1);
+    expect(h.inbound.events.get(event.id)).toMatchObject({ state: "processed", attempts: 2 });
+  });
+});
+
+describe("EmailInboundProcessor: provider domain events (FR-003)", () => {
+  const domainEvent = (h: ReturnType<typeof harness>, providerDomainId: string) =>
+    h.inbound.seedEvent({ eventKind: "domain_status", providerObjectId: providerDomainId, envelope: {} });
+
+  it("makes the domain the event names due for its readiness refresh now", async () => {
+    const h = harness();
+    h.domains.records.set(h.domain.id, { ...h.domain, nextCheckAt: new Date(h.now().getTime() + 24 * 60 * MINUTE_MS) });
+    const event = domainEvent(h, h.domain.providerDomainId!);
+
+    expect(await h.runEvent(event.id)).toBe("processed");
+
+    expect(h.domains.records.get(h.domain.id)?.nextCheckAt).toEqual(h.now());
+    expect(h.fetchMessage).not.toHaveBeenCalled();
+  });
+
+  it("ignores an event about a domain no workspace holds", async () => {
+    const h = harness();
+    const event = domainEvent(h, "provider-unknown.test");
+
+    expect(await h.runEvent(event.id)).toBe("ignored");
+  });
+
+  it("retries an event whose refresh could not be requested", async () => {
+    const h = harness();
+    vi.spyOn(h.domains, "expediteRefresh").mockRejectedValueOnce(new Error("connection reset"));
+    const event = domainEvent(h, h.domain.providerDomainId!);
+
+    expect(await h.runEvent(event.id)).toBe("retrying");
+    expect(h.logger.warn).toHaveBeenCalledWith(expect.objectContaining({ eventId: event.id }), "email_domain_status_failed");
   });
 });

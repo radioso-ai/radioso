@@ -32,6 +32,10 @@ type Args<T extends (...args: never[]) => unknown> = Parameters<T>;
 /** In-memory `email_domains`, honouring the active-domain uniqueness and the database clock. */
 export class InMemoryEmailDomains implements Pick<
   EmailDomainRepository,
+  | "claim"
+  | "recordRegistration"
+  | "releaseClaim"
+  | "isProviderDomainActive"
   | "insertActive"
   | "findActiveByDomain"
   | "findActive"
@@ -41,6 +45,7 @@ export class InMemoryEmailDomains implements Pick<
   | "listDueForRefresh"
   | "recordReadiness"
   | "deferRefresh"
+  | "expediteRefresh"
   | "confirmReceiving"
   | "markRemoved"
   | "listCleanupDue"
@@ -74,6 +79,31 @@ export class InMemoryEmailDomains implements Pick<
     return record;
   }
 
+  async claim(input: Args<EmailDomainRepository["claim"]>[0]) {
+    return this.activeByDomain(input.domain) ?? this.seed({ ...input, providerDomainId: null });
+  }
+
+  async recordRegistration(domainId: string, registration: Args<EmailDomainRepository["recordRegistration"]>[1]) {
+    const record = this.records.get(domainId);
+    if (!record || record.removedAt || record.providerDomainId !== null) return null;
+    return this.update(record, {
+      ...registration,
+      dnsRecords: [...registration.dnsRecords],
+      lastCheckedAt: this.clock(),
+      statusChangedAt: this.clock(),
+    });
+  }
+
+  async releaseClaim(domainId: string) {
+    const record = this.records.get(domainId);
+    if (record && !record.removedAt && record.providerDomainId === null) this.records.delete(domainId);
+  }
+
+  async isProviderDomainActive(provider: string, providerDomainId: string) {
+    return [...this.records.values()].some((record) =>
+      record.removedAt === null && record.provider === provider && record.providerDomainId === providerDomainId);
+  }
+
   async insertActive(input: Args<EmailDomainRepository["insertActive"]>[0]) {
     if (await this.findActiveByDomain(input.domain)) return null;
     return this.seed({
@@ -85,6 +115,11 @@ export class InMemoryEmailDomains implements Pick<
   }
 
   async findActiveByDomain(domain: string) {
+    return this.activeByDomain(domain);
+  }
+
+  /** Synchronous, so a claim checks and takes the domain without another claim interleaving. */
+  private activeByDomain(domain: string) {
     return [...this.records.values()].find((record) => record.domain === domain && record.removedAt === null) ?? null;
   }
 
@@ -130,6 +165,14 @@ export class InMemoryEmailDomains implements Pick<
   async deferRefresh(domainId: string, nextCheckAt: Date) {
     const record = this.records.get(domainId);
     if (record && !record.removedAt) this.update(record, { nextCheckAt });
+  }
+
+  async expediteRefresh(input: { provider: string; providerDomainId: string }) {
+    const record = [...this.records.values()].find((candidate) =>
+      !candidate.removedAt && candidate.provider === input.provider && candidate.providerDomainId === input.providerDomainId);
+    if (!record) return false;
+    this.update(record, { nextCheckAt: this.clock() });
+    return true;
   }
 
   async confirmReceiving(domainId: string, input: Args<EmailDomainRepository["confirmReceiving"]>[1]) {
@@ -416,17 +459,30 @@ export const inMemoryPolicyChanges = (mailboxes: InMemoryEmailMailboxes) => {
       return { changed: !handoffs.humanOwned.has(input.conversationId) };
     },
   };
+  const conversations = {
+    /** The live-draft conversations each change locked, with the mailbox calls it had made by then. */
+    locked: [] as { workspaceId: string; policyRef: string; mailboxCallsBefore: string[]; inUnit: boolean }[],
+    lockWithLiveDrafts: async (input: { workspaceId: string; policyRef: string }): Promise<void> => {
+      conversations.locked.push({ ...input, mailboxCallsBefore: [...mailboxes.calls], inUnit: unit.open });
+    },
+  };
   const unit = {
     runs: 0,
     /** True while a unit's work runs. */
     open: false,
+    conversations,
     heldReplies,
     handoffs,
-    async run<T>(work: (scope: { mailboxes: InMemoryEmailMailboxes; heldReplies: typeof heldReplies; handoffs: typeof handoffs }) => Promise<T>): Promise<T> {
+    async run<T>(work: (scope: {
+      conversations: typeof conversations;
+      mailboxes: InMemoryEmailMailboxes;
+      heldReplies: typeof heldReplies;
+      handoffs: typeof handoffs;
+    }) => Promise<T>): Promise<T> {
       unit.runs += 1;
       unit.open = true;
       try {
-        return await work({ mailboxes, heldReplies, handoffs });
+        return await work({ conversations, mailboxes, heldReplies, handoffs });
       } finally {
         unit.open = false;
       }
@@ -450,6 +506,8 @@ export interface InMemoryDelivery extends InboundDelivery {
 }
 
 const RESERVED_STATES: readonly InboundDelivery["state"][] = ["resolved", "ingested", "done"];
+const UNFINISHED_STATES: readonly InboundDelivery["state"][] = ["pending", "fetched", "resolved", "ingested"];
+type DeliveryClaim = Args<EmailInboundRepository["markIndexed"]>[0];
 
 /**
  * In-memory `email_inbound_events` and `email_inbound_deliveries`, honouring the dedupe keys, the
@@ -471,9 +529,12 @@ export class InMemoryEmailInbound implements Pick<
   | "findReverseReferences"
   | "findReservedThreads"
   | "recordIngested"
-  | "settleDelivery"
+  | "markIndexed"
+  | "failDelivery"
+  | "findDeliveryIdForMessage"
   | "purgeUnattachedBefore"
   | "listMailboxLog"
+  | "listWorkspaceLog"
   | "countMailboxEvents"
   | "findDelivery"
   | "findLogEntry"
@@ -608,8 +669,8 @@ export class InMemoryEmailInbound implements Pick<
       .map((delivery) => ({ ...delivery }));
   }
 
-  async recordFetched(deliveryId: string, content: FetchedContent) {
-    return this.transition(deliveryId, "pending", "recordFetched", {
+  async recordFetched(claim: DeliveryClaim, content: FetchedContent) {
+    return this.transition(claim, ["pending"], "recordFetched", {
       state: "fetched",
       classification: content.classification,
       senderAddress: content.senderAddress,
@@ -628,12 +689,12 @@ export class InMemoryEmailInbound implements Pick<
     });
   }
 
-  async reserveThread(deliveryId: string, reservation: Args<EmailInboundRepository["reserveThread"]>[1]) {
-    return this.transition(deliveryId, "fetched", "reserveThread", { state: "resolved", ...reservation });
+  async reserveThread(claim: DeliveryClaim, reservation: Args<EmailInboundRepository["reserveThread"]>[1]) {
+    return this.transition(claim, ["fetched"], "reserveThread", { state: "resolved", ...reservation });
   }
 
-  async settleDropped(deliveryId: string, drop: Args<EmailInboundRepository["settleDropped"]>[1]) {
-    return this.transition(deliveryId, "fetched", "settleDropped", {
+  async settleDropped(claim: DeliveryClaim, drop: Args<EmailInboundRepository["settleDropped"]>[1]) {
+    return this.transition(claim, ["fetched"], "settleDropped", {
       state: "done",
       disposition: "drop",
       dispositionReason: drop.dispositionReason,
@@ -679,21 +740,28 @@ export class InMemoryEmailInbound implements Pick<
     return threads;
   }
 
-  async recordIngested(deliveryId: string, input: { conversationId: string; messageId: string }) {
-    return this.transition(deliveryId, "resolved", "recordIngested", { state: "ingested", ...input });
+  async recordIngested(claim: DeliveryClaim, input: { conversationId: string; messageId: string }) {
+    return this.transition(claim, ["resolved"], "recordIngested", { state: "ingested", ...input });
   }
 
-  async settleDelivery(deliveryId: string, input: { state: "done" | "failed"; errorCode: string | null }) {
-    const delivery = this.deliveries.get(deliveryId);
-    if (!delivery || delivery.state === "done" || delivery.state === "failed") return false;
-    this.deliveries.set(deliveryId, { ...delivery, state: input.state, lastErrorCode: input.errorCode, processedAt: this.clock() });
-    this.log.push(`settleDelivery:${input.state}`);
-    return true;
+  async markIndexed(claim: DeliveryClaim) {
+    return this.transition(claim, ["ingested"], "markIndexed", { state: "done", lastErrorCode: null, processedAt: this.clock() });
+  }
+
+  async failDelivery(claim: DeliveryClaim, errorCode: string) {
+    return this.transition(claim, UNFINISHED_STATES, "failDelivery", { state: "failed", lastErrorCode: errorCode, processedAt: this.clock() });
+  }
+
+  async findDeliveryIdForMessage(conversationId: string, messageId: string) {
+    return [...this.deliveries.values()]
+      .find((delivery) => delivery.conversationId === conversationId && delivery.messageId === messageId)?.id ?? null;
   }
 
   async purgeUnattachedBefore(cutoff: Date, limit: number) {
     const deliveries = [...this.deliveries.values()]
       .filter((delivery) => delivery.conversationId === null && delivery.createdAt.getTime() < cutoff.getTime())
+      .filter((delivery) => !UNFINISHED_STATES.includes(delivery.state))
+      .filter((delivery) => !["pending", "processing"].includes(this.events.get(delivery.inboundEventId)?.state ?? "processed"))
       .slice(0, limit);
     for (const delivery of deliveries) this.deliveries.delete(delivery.id);
     const attached = new Set([...this.deliveries.values()].map((delivery) => delivery.inboundEventId));
@@ -706,8 +774,17 @@ export class InMemoryEmailInbound implements Pick<
   }
 
   async listMailboxLog(mailboxId: string, query: Args<EmailInboundRepository["listMailboxLog"]>[1]) {
+    return this.pageLog((delivery) => delivery.mailboxId === mailboxId, query);
+  }
+
+  async listWorkspaceLog(workspaceId: string, query: Args<EmailInboundRepository["listWorkspaceLog"]>[1]) {
+    return this.pageLog((delivery) => delivery.workspaceId === workspaceId
+      && (query.mailboxId === null || delivery.mailboxId === query.mailboxId), query);
+  }
+
+  private pageLog(inScope: (delivery: InMemoryDelivery) => boolean, query: Args<EmailInboundRepository["listMailboxLog"]>[1]) {
     const newestFirst = [...this.deliveries.values()]
-      .filter((delivery) => delivery.mailboxId === mailboxId
+      .filter((delivery) => inScope(delivery)
         && (query.disposition === null || delivery.disposition === query.disposition)
         && (query.states === null || query.states.includes(delivery.state)))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
@@ -739,8 +816,8 @@ export class InMemoryEmailInbound implements Pick<
 
   async findLogEntry(workspaceId: string, deliveryId: string) {
     const delivery = this.deliveries.get(deliveryId);
-    if (!delivery || delivery.workspaceId !== workspaceId || delivery.mailboxId === null) return null;
-    return { ...this.logEntryOf(delivery), mailboxId: delivery.mailboxId };
+    if (!delivery || delivery.workspaceId !== workspaceId) return null;
+    return this.logEntryOf(delivery);
   }
 
   async readRawMessage(workspaceId: string, deliveryId: string) {
@@ -779,6 +856,7 @@ export class InMemoryEmailInbound implements Pick<
       conversationId: delivery.conversationId,
       threadConflict: delivery.threadConflict,
       hasRaw: delivery.rawMime !== null,
+      mailboxId: delivery.mailboxId,
     };
   }
 
@@ -787,15 +865,18 @@ export class InMemoryEmailInbound implements Pick<
       .filter((delivery) => delivery.mailboxId === mailboxId && RESERVED_STATES.includes(delivery.state));
   }
 
+  /** A delivery step's write, fenced as the repository fences it: by the state and the event's claim. */
   private transition(
-    deliveryId: string,
-    from: InboundDelivery["state"],
+    claim: DeliveryClaim,
+    from: readonly InboundDelivery["state"][],
     operation: string,
     patch: Partial<InMemoryDelivery>,
   ): boolean {
-    const delivery = this.deliveries.get(deliveryId);
-    if (!delivery || delivery.state !== from) return false;
-    this.deliveries.set(deliveryId, { ...delivery, ...patch });
+    const delivery = this.deliveries.get(claim.deliveryId);
+    const event = delivery ? this.events.get(delivery.inboundEventId) : undefined;
+    if (!delivery || !from.includes(delivery.state)) return false;
+    if (!event || event.state !== "processing" || event.attempts !== claim.attempt) return false;
+    this.deliveries.set(claim.deliveryId, { ...delivery, ...patch });
     this.log.push(operation);
     return true;
   }
@@ -808,6 +889,7 @@ export class InMemoryEmailInbound implements Pick<
 }
 
 type ThreadIndexEntry = Args<EmailThreadRepository["insertIndexEntries"]>[0][number];
+type ReviewClaim = Args<EmailThreadRepository["releaseReview"]>[0];
 
 /** In-memory `email_thread_links` and `email_thread_messages`. Writes are appended to `log`. */
 export class InMemoryEmailThreads implements Pick<
@@ -826,6 +908,7 @@ export class InMemoryEmailThreads implements Pick<
   | "findLatestInboundThreading"
   | "scheduleReview"
   | "claimDueReviews"
+  | "holdsReviewClaim"
   | "completeReview"
   | "releaseReview"
   | "retryReviewLater"
@@ -914,9 +997,16 @@ export class InMemoryEmailThreads implements Pick<
   async insertIndexEntries(entries: readonly ThreadIndexEntry[]) {
     let written = 0;
     for (const entry of entries) {
-      if (this.index.some((existing) => existing.mailboxId === entry.mailboxId && existing.rfcMessageId === entry.rfcMessageId)) continue;
-      this.index.push(entry);
-      written += 1;
+      const at = this.index.findIndex((existing) => existing.mailboxId === entry.mailboxId && existing.rfcMessageId === entry.rfcMessageId);
+      const existing = this.index[at];
+      if (!existing) {
+        this.index.push(entry);
+        written += 1;
+      } else if (existing.direction === "referenced" && entry.direction !== "referenced" && existing.conversationId === entry.conversationId) {
+        // A same-conversation placeholder becomes the message's own entry, as the repository upgrades it.
+        this.index[at] = entry;
+        written += 1;
+      }
     }
     this.log.push("insertIndexEntries");
     return written;
@@ -966,40 +1056,51 @@ export class InMemoryEmailThreads implements Pick<
       .slice(0, input.limit);
     return due.map((link) => {
       const claimed = { ...link, reviewAttempts: link.reviewAttempts + 1 };
+      const lease = new Date(now + input.leaseSeconds * 1000);
       this.links.set(link.conversationId, claimed);
-      this.reviewLeases.set(link.conversationId, new Date(now + input.leaseSeconds * 1000));
+      this.reviewLeases.set(link.conversationId, lease);
       this.log.push("claimDueReviews");
-      return { ...claimed };
+      return { ...claimed, reviewLeaseUntil: lease };
     });
   }
 
-  async completeReview(conversationId: string, revision: number) {
-    const link = this.links.get(conversationId);
-    if (!link || link.reviewRevision !== revision) return false;
-    this.links.set(conversationId, { ...link, reviewDueAt: null, reviewAttempts: 0, reviewCompletedRevision: revision });
-    this.reviewLeases.delete(conversationId);
-    this.reviewErrors.delete(conversationId);
+  async holdsReviewClaim(claim: ReviewClaim) {
+    return this.heldBy(claim);
+  }
+
+  async completeReview(claim: ReviewClaim & { revision: number }) {
+    const link = this.links.get(claim.conversationId);
+    if (!link || link.reviewRevision !== claim.revision || !this.heldBy(claim)) return false;
+    this.links.set(claim.conversationId, { ...link, reviewDueAt: null, reviewAttempts: 0, reviewCompletedRevision: claim.revision });
+    this.reviewLeases.delete(claim.conversationId);
+    this.reviewErrors.delete(claim.conversationId);
     this.log.push("completeReview");
     return true;
   }
 
-  async releaseReview(conversationId: string, attempt: number) {
-    const link = this.links.get(conversationId);
-    if (!link || link.reviewAttempts !== attempt || !this.reviewLeases.has(conversationId)) return false;
-    this.links.set(conversationId, { ...link, reviewAttempts: 0 });
-    this.reviewLeases.delete(conversationId);
+  async releaseReview(claim: ReviewClaim) {
+    const link = this.links.get(claim.conversationId);
+    if (!link || !this.heldBy(claim)) return false;
+    this.links.set(claim.conversationId, { ...link, reviewAttempts: 0 });
+    this.reviewLeases.delete(claim.conversationId);
     this.log.push("releaseReview");
     return true;
   }
 
-  async retryReviewLater(conversationId: string, input: Args<EmailThreadRepository["retryReviewLater"]>[1]) {
-    const link = this.links.get(conversationId);
-    if (!link || link.reviewAttempts !== input.attempt || !this.reviewLeases.has(conversationId)) return false;
-    this.links.set(conversationId, { ...link, reviewDueAt: input.nextAttemptAt });
-    this.reviewLeases.delete(conversationId);
-    this.reviewErrors.set(conversationId, input.errorCode);
+  async retryReviewLater(claim: ReviewClaim, input: Args<EmailThreadRepository["retryReviewLater"]>[1]) {
+    const link = this.links.get(claim.conversationId);
+    if (!link || !this.heldBy(claim)) return false;
+    this.links.set(claim.conversationId, { ...link, reviewDueAt: input.nextAttemptAt });
+    this.reviewLeases.delete(claim.conversationId);
+    this.reviewErrors.set(claim.conversationId, input.errorCode);
     this.log.push("retryReviewLater");
     return true;
+  }
+
+  /** The claim still holds the review: its count and its lease are the link's. */
+  private heldBy(claim: ReviewClaim): boolean {
+    return this.links.get(claim.conversationId)?.reviewAttempts === claim.attempt
+      && this.reviewLeases.get(claim.conversationId)?.getTime() === claim.leaseUntil.getTime();
   }
 }
 

@@ -311,6 +311,22 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
   }
 
   /**
+   * The conversations with a live draft bound to the policy, in id order: what a change to the
+   * policy locks before the policy itself (`app/composition/conversationLockOrder.ts`).
+   */
+  async liveConversationIds(policyRef: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom("held_replies")
+      .select("conversation_id")
+      .distinct()
+      .where("policy_ref", "=", policyRef)
+      .where("state", "in", heldReplyEventSources("supersede"))
+      .orderBy("conversation_id")
+      .execute();
+    return rows.map((row) => row.conversation_id);
+  }
+
+  /**
    * The automatic sends still queued since before `before` under policies with the prefix, oldest
    * first: the rollback sweep returns them to a teammate where `auto` is not run.
    */

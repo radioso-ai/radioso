@@ -124,6 +124,8 @@ const kindOf = (sql: string): string | null => {
   if (/^select \* from "email_domains"/u.test(sql)) return "read_domain";
   if (/^insert into "routine_action_requests"/u.test(sql)) return "enqueue";
   if (/^update "held_replies" set "released_message_id"/u.test(sql)) return "attach_message";
+  if (/^select .* from "directive_states"/u.test(sql)) return "load_directive_state";
+  if (/^insert into "directive_states"/u.test(sql)) return "save_directive_state";
   return null;
 };
 
@@ -135,8 +137,11 @@ const harness = (options: {
   /** Registers a fake automatic-sending channel under email's prefix, in place of `channels`. */
   autoChannel?: { budgetLeft: boolean; dispatch: { authorized: true } | { authorized: false; code: string } };
   drainFails?: boolean;
+  /** How many times the release's conditional update is aborted as a deadlock victim before it goes through. */
+  deadlocks?: number;
 } = {}) => {
   let messageId: string | null = null;
+  let deadlocks = options.deadlocks ?? 0;
   const { db, statements, log } = createRecordingKysely(({ sql, parameters }): RecordedAnswer => {
     switch (kindOf(sql)) {
       case "lock_conversation":
@@ -158,6 +163,10 @@ const harness = (options: {
             : { ...options.heldReply, state: "released", release_kind: "auto", decided_at: at })],
         };
       case "release_held_reply":
+        if (deadlocks > 0) {
+          deadlocks -= 1;
+          throw Object.assign(new Error("deadlock detected"), { code: "40P01" });
+        }
         return { rows: [heldReplyRow({ ...options.heldReply, state: "released", release_kind: "operator", releaser_user_id: dana.userId })] };
       case "insert_message":
         messageId = String(parameters[0]);
@@ -289,6 +298,20 @@ describe("createPostgresHeldReplyUnitOfWork", () => {
     expect(new Set(statements.map((statement) => statement.transaction))).toEqual(new Set([1]));
   });
 
+  it("runs the whole release again when Postgres aborted it as a deadlock victim, pushing the drain once", async () => {
+    const { service, sent, logger, actionDrain } = harness({ deadlocks: 1 });
+
+    expect(await release(service)).toMatchObject({ ok: true });
+
+    const locks = ["lock_conversation", "lock_ownership", "read_held_reply", "lock_policy"];
+    expect(sent().slice(0, 7)).toEqual(["BEGIN", ...locks, "release_held_reply", "ROLLBACK"]);
+    expect(sent().slice(7, 13)).toEqual(["BEGIN", ...locks, "release_held_reply"]);
+    expect(sent().slice(-2)).toEqual(["COMMIT", "drain"]);
+    expect(sent().filter((entry) => entry === "enqueue")).toHaveLength(1);
+    expect(actionDrain.requestDrain).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith({ unit: "held_reply", attempt: 1, maxAttempts: 3 }, "transaction_deadlock_retried");
+  });
+
   it("writes the unchanged draft as the agent's message, with the presentation its review produced", async () => {
     const { service, statements } = harness();
 
@@ -304,6 +327,33 @@ describe("createPostgresHeldReplyUnitOfWork", () => {
       "retrieval.answer",
       "grounded",
     ]));
+  });
+
+  it("applies the directive firing memory advance the draft deferred, after its message, in the release's transaction", async () => {
+    const { service, statements, sent } = harness({
+      heldReply: {
+        draft_presentation: { skillName: "retrieval.answer", directiveTransition: { fromTurnSeq: 2, firedNames: ["vip-greeting"] } },
+      },
+    });
+
+    await release(service);
+
+    const order = sent();
+    expect(order.indexOf("insert_message")).toBeLessThan(order.indexOf("load_directive_state"));
+    expect(order.indexOf("load_directive_state")).toBeLessThan(order.indexOf("save_directive_state"));
+    expect(order.indexOf("save_directive_state")).toBeLessThan(order.indexOf("COMMIT"));
+    const saved = statements.find((statement) => kindOf(statement.sql) === "save_directive_state");
+    expect(saved?.parameters).toEqual(expect.arrayContaining([conversationId, 3]));
+    expect(new Set(statements.map((statement) => statement.transaction))).toEqual(new Set([1]));
+  });
+
+  it("touches no directive firing memory when the draft deferred none", async () => {
+    const { service, sent } = harness();
+
+    await release(service);
+
+    expect(sent()).not.toContain("load_directive_state");
+    expect(sent()).not.toContain("save_directive_state");
   });
 
   it("queues the release on the transaction's outbox as email's held_release send, keyed by the message", async () => {
@@ -454,6 +504,22 @@ describe("createPostgresHeldReplyUnitOfWork", () => {
       expect(new Set(statements.map((statement) => statement.transaction))).toEqual(new Set([1]));
       // The send was enqueued when it was queued; materializing pushes no drain of its own.
       expect(actionDrain.requestDrain).not.toHaveBeenCalled();
+    });
+
+    it("applies the deferred directive firing memory advance when an automatic send materializes", async () => {
+      const { service, sent } = harness({
+        heldReply: {
+          state: "queued_auto",
+          hold_reason: "queued_auto",
+          draft_presentation: { skillName: "retrieval.answer", directiveTransition: { fromTurnSeq: 0, firedNames: ["vip-greeting"] } },
+        },
+        autoChannel: { budgetLeft: true, dispatch: { authorized: true } },
+      });
+
+      expect(await service.materializeAuto(heldReplyId)).toMatchObject({ ok: true });
+      const order = sent();
+      expect(order.indexOf("insert_message")).toBeLessThan(order.indexOf("save_directive_state"));
+      expect(order.indexOf("save_directive_state")).toBeLessThan(order.indexOf("COMMIT"));
     });
 
     it("returns an unauthorized send to pending in its transaction, writing no message and no send record", async () => {

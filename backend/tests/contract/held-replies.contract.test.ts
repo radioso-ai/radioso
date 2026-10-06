@@ -20,7 +20,7 @@ const OTHER_AGENT = "22222222-2222-4222-8222-222222222222";
 const harness = async (options: Omit<Parameters<typeof createInMemoryHeldReplyService>[0], "audit"> = {}) => {
   const audit = { record: vi.fn(async (_event: unknown) => undefined) };
   const held = createInMemoryHeldReplyService({ ...options, audit });
-  const { app, dependencies } = createTestApp({ heldReplies: held.service });
+  const { app, dependencies, repositories } = createTestApp({ heldReplies: held.service });
   const signIn = async () => {
     const session = await issueTestSession(app, `held-replies-${randomUUID()}@example.com`);
     return { ...session, headers: adminSessionHeaders(session) };
@@ -32,7 +32,7 @@ const harness = async (options: Omit<Parameters<typeof createInMemoryHeldReplySe
     const conversationId = overrides.conversationId ?? held.seedConversation(workspaceId, overrides.ownershipVersion ?? 0);
     return held.heldReplies.seed({ agentId: AGENT, ...overrides, workspaceId, conversationId });
   };
-  return { app, dependencies, audit, held, owner, signIn, seed };
+  return { app, dependencies, repositories, audit, held, owner, signIn, seed };
 };
 
 type Harness = Awaited<ReturnType<typeof harness>>;
@@ -60,6 +60,34 @@ const release = (h: Harness, held: { conversationId: string; id: string }, body:
 
 const discard = (h: Harness, held: { conversationId: string; id: string }, headers: Headers = h.owner.headers) =>
   request(h.app).post(`/api/v1/conversations/${held.conversationId}/held-replies/${held.id}/discard`).set(headers);
+
+const REVIEW_TURN = "99999999-9999-4999-8999-999999999999";
+const DRAFT_SENTINEL = "SENTINEL-draft-in-an-old-audit-row";
+
+/**
+ * The review turn's `chat.answer` audit record, keyed on the message the held reply answers and
+ * recorded before it was held, as the review completion writes it.
+ */
+const recordReview = (h: Harness, held: HeldReplyRecord, metadata: Record<string, unknown> = {}) => {
+  h.repositories.auditEventRepository.items.push({
+    id: randomUUID(),
+    accountId: null,
+    workspaceId: held.workspaceId,
+    eventType: "chat.answer",
+    eventStatus: "success",
+    metadata: {
+      executionMode: "review",
+      conversationId: held.conversationId,
+      userMessageId: held.answersMessageId,
+      requestMessageId: held.answersMessageId,
+      turnId: REVIEW_TURN,
+      answerOutcome: "coverage_partial",
+      groundingVerdict: "degraded",
+      ...metadata,
+    },
+    createdAt: new Date(held.createdAt.getTime() - 1_000),
+  });
+};
 
 /** The wire shape of a pending held reply as it was seeded: operator-facing, with the draft's presentation left out. */
 const pendingWire = (record: HeldReplyRecord) => ({
@@ -156,6 +184,62 @@ describe("held replies contract", () => {
       await current(h, held.conversationId, stranger.headers).expect(404);
       await current(h, randomUUID()).expect(404);
       await current(h, "not-a-uuid").expect(400);
+    });
+  });
+
+  describe("reasoning", () => {
+    it("carries the review turn's reasoning from its audit record, as ids and codes only", async () => {
+      const h = await harness();
+      const held = h.seed({
+        facts: {
+          outcome: "answered",
+          grounding: "grounded",
+          coverage: "partial",
+          handoff: { requested: true, reason: "refund_over_limit" },
+          suppressedEffects: [{ skillName: "issue_refund" }],
+          citationCount: 1,
+        },
+      });
+      recordReview(h, held, { answerSegments: [{ text: DRAFT_SENTINEL }], turnTrace: { answer: { text: DRAFT_SENTINEL } } });
+      const trace = {
+        turnId: REVIEW_TURN,
+        outcome: "coverage_partial",
+        groundingVerdict: "degraded",
+        coverage: "partial",
+        handoffReason: "refund_over_limit",
+        suppressedEffects: [{ skillName: "issue_refund" }],
+      };
+
+      const read = await current(h, held.conversationId).expect(200);
+      const listed = await request(h.app).get("/api/v1/held-replies").set(h.owner.headers).expect(200);
+      const released = await release(h, held).expect(201);
+
+      expect(read.body.heldReply.trace).toEqual(trace);
+      expect(listed.body.items).toEqual([expect.objectContaining({ id: held.id, trace })]);
+      expect(released.body.heldReply.trace).toEqual(trace);
+      for (const body of [read.body, listed.body, released.body]) {
+        expect(JSON.stringify(body)).not.toContain(DRAFT_SENTINEL);
+      }
+    });
+
+    it("answers a null trace when no review record of the message it answers is readable", async () => {
+      const h = await harness();
+      const unrecorded = h.seed();
+      const answeredElsewhere = h.seed();
+      recordReview(h, answeredElsewhere, { requestMessageId: randomUUID() });
+
+      expect((await current(h, unrecorded.conversationId).expect(200)).body.heldReply.trace).toBeNull();
+      expect((await current(h, answeredElsewhere.conversationId).expect(200)).body.heldReply.trace).toBeNull();
+    });
+
+    it("carries the reasoning on a refusal's held reply too", async () => {
+      const h = await harness();
+      const held = h.seed({ state: "discarded", discardedByUserId: randomUUID(), decidedAt: new Date() });
+      recordReview(h, held);
+
+      const refused = await release(h, held).expect(409);
+
+      expect(refused.body.error.details.heldReply.trace).toEqual(expect.objectContaining({ turnId: REVIEW_TURN }));
     });
   });
 

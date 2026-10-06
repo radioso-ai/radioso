@@ -57,6 +57,26 @@ describe("frontend product analytics routes", () => {
     }));
   });
 
+  it("accepts an honest first-run chat-opened event", async () => {
+    const { app, repositories } = createTestApp();
+
+    await request(app)
+      .post("/api/v1/observability/product-analytics")
+      .send({
+        eventName: "onboarding.chat_opened",
+        properties: {},
+        source: "frontend",
+      })
+      .expect(202);
+
+    expect(repositories.auditEventRepository.items).toContainEqual(expect.objectContaining({
+      eventType: "product.analytics",
+      metadata: {
+        analytics: expect.objectContaining({ eventName: "onboarding.chat_opened" }),
+      },
+    }));
+  });
+
   it("normalizes page view paths before persistence", async () => {
     const { app, repositories } = createTestApp();
 

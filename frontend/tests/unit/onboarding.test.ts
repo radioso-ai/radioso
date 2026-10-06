@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import {
+  hasOnboardingAnalyticsMarker,
+  markOnboardingAnalyticsMarker,
+} from '@/lib/onboarding-storage'
 import { getOnboardingProgress, shouldAutoActivateOnboarding } from '@/lib/onboarding'
 
 const createLocalStorage = (seed: Record<string, string> = {}) => {
@@ -96,5 +100,22 @@ describe('getOnboardingProgress', () => {
       hasReadyDocuments: true,
       hasCompletedChat: true,
     })).toBe(3)
+  })
+})
+
+describe('onboarding analytics markers', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps emitted funnel markers scoped to their workspace', () => {
+    vi.stubGlobal('window', {
+      localStorage: createLocalStorage(),
+    })
+
+    markOnboardingAnalyticsMarker('workspace-1', 'documents_added')
+
+    expect(hasOnboardingAnalyticsMarker('workspace-1', 'documents_added')).toBe(true)
+    expect(hasOnboardingAnalyticsMarker('workspace-2', 'documents_added')).toBe(false)
   })
 })

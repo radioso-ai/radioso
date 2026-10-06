@@ -71,6 +71,7 @@ describe("ChatTurnLifecycle rolling conversation summary trigger (#866)", () => 
       session: session(),
       presentation: presentation(),
       requestReceivedAt: Date.now(),
+      answerStartedAt: Date.now(),
       stream: false,
     });
 
@@ -92,6 +93,7 @@ describe("ChatTurnLifecycle rolling conversation summary trigger (#866)", () => 
         session: session(),
         presentation: presentation(),
         requestReceivedAt: Date.now(),
+        answerStartedAt: Date.now(),
         stream: false,
       }),
     ).resolves.toBeDefined();

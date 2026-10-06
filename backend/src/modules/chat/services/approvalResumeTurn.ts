@@ -166,6 +166,7 @@ export class ApprovalResumeTurn {
     }
 
     this.checkTurnCancellation(coordination, "routing");
+    const answerStartedAt = Date.now();
     const result = await this.options.conversationEngine.resumeAwaitingDecision({
       agent: toConversationAgentConfig(session.agent),
       turn: buildChatTurnContext(session),
@@ -203,6 +204,7 @@ export class ApprovalResumeTurn {
       session,
       presentation,
       requestReceivedAt,
+      answerStartedAt,
       stream: false,
       engineTrace: result.trace ? conversationTraceWithRoutineTrace(session.turnTrace, result.trace) : session.turnTrace,
       modelCallTrace,

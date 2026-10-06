@@ -13,6 +13,7 @@ const baseFilters: ConversationFilterState = {
   outcome: 'all',
   agentId: null,
   siteOrigin: null,
+  callerKind: null,
 }
 
 const conversation = (overrides: Partial<ChatConversationSummary> = {}): ChatConversationSummary => ({
@@ -122,6 +123,18 @@ describe('filterConversations', () => {
     expect(filterConversations(conversations, { ...baseFilters, siteOrigin: null }, NOW)).toHaveLength(2)
   })
 
+  it('filters by caller kind, treating null as no filter', () => {
+    const conversations = [
+      conversation({ id: 'human', callerKind: 'human' }),
+      conversation({ id: 'agent', callerKind: 'agent' }),
+    ]
+
+    expect(filterConversations(conversations, { ...baseFilters, callerKind: 'agent' }, NOW).map((c) => c.id)).toEqual([
+      'agent',
+    ])
+    expect(filterConversations(conversations, { ...baseFilters, callerKind: null }, NOW)).toHaveLength(2)
+  })
+
   it('combines all filters with AND semantics', () => {
     const conversations = [
       conversation({
@@ -161,6 +174,7 @@ describe('filterConversations', () => {
         outcome: 'completed',
         agentId: 'agent-1',
         siteOrigin: 'https://www.anandaedizioni.it',
+        callerKind: null,
       },
       NOW,
     )
@@ -201,17 +215,24 @@ describe('buildConversationSearchParams', () => {
     expect(buildConversationSearchParams({ ...baseFilters, siteOrigin: null })).toEqual({})
   })
 
+  it('passes callerKind through under its API name, omitting null', () => {
+    expect(buildConversationSearchParams({ ...baseFilters, callerKind: 'agent' })).toEqual({ callerKind: 'agent' })
+    expect(buildConversationSearchParams({ ...baseFilters, callerKind: null })).toEqual({})
+  })
+
   it('combines every active filter into one params object', () => {
     expect(buildConversationSearchParams({
       search: ' recupero ',
       outcome: 'completed',
       agentId: 'agent-1',
       siteOrigin: 'https://www.anandaedizioni.it',
+      callerKind: 'agent',
     })).toEqual({
       q: 'recupero',
       outcome: 'completed',
       agentId: 'agent-1',
       sourceOrigin: 'https://www.anandaedizioni.it',
+      callerKind: 'agent',
     })
   })
 })

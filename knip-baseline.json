@@ -564,7 +564,6 @@
   "types|ee/packages/operator-console/src/lib/byte-units.ts|ByteUnit",
   "types|ee/packages/operator-console/src/lib/byte-units.ts|ParsedByteLimit",
   "types|frontend/components/chat/public-chat-bubble-view.tsx|PublicChatBubbleComposerFormProps",
-  "types|frontend/components/dashboard/history/history-list-query.ts|HistoryListResponse",
   "types|frontend/components/dashboard/inbox/inbox-empty-state.tsx|InboxEmptyStateProps",
   "types|frontend/components/dashboard/inbox/use-inbox-confidence-summary.ts|InboxConfidenceSummary",
   "types|frontend/components/dashboard/settings/assistant-preview-rail.tsx|AssistantPreviewRailProps",

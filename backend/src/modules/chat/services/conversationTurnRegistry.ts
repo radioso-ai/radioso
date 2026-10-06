@@ -5,13 +5,13 @@ import type { ConversationTurnStage } from "../contracts/interruption.js";
 
 export type { ConversationTurnStage } from "../contracts/interruption.js";
 
-export interface ConversationTurnCancellation {
+interface ConversationTurnCancellation {
   conversationId: string;
-  reason: "superseded";
+  reason: "superseded" | "disconnect_timeout";
   stage: ConversationTurnStage;
 }
 
-export interface ConversationTurnInterruptionObserver {
+interface ConversationTurnInterruptionObserver {
   turnCancelled(input: ConversationTurnCancellation): void;
 }
 
@@ -31,6 +31,29 @@ export class ChatTurnSupersededError extends AppError {
   }
 }
 
+/**
+ * Raised when the presenter's post-disconnect ceiling (#885) cancels a turn that
+ * never settled after the client went away. Distinct from `ChatTurnSupersededError`
+ * (a newer message, not a lost client) so the generic failure path's audit trail
+ * never mislabels a resource-protection abort as a user-driven interruption.
+ */
+export class ChatTurnDisconnectAbortError extends AppError {
+  readonly conversationId: string;
+  readonly stage: ConversationTurnStage;
+
+  constructor(conversationId: string, stage: ConversationTurnStage) {
+    super(
+      500,
+      "chat_turn_aborted_after_disconnect",
+      "Chat turn aborted: the client disconnected and the turn did not settle within the presenter's ceiling.",
+      { conversationId, reason: "disconnect_timeout", stage },
+    );
+    this.name = "ChatTurnDisconnectAbortError";
+    this.conversationId = conversationId;
+    this.stage = stage;
+  }
+}
+
 export interface ConversationTurnLease {
   readonly conversationId: string;
   readonly signal: AbortSignal;
@@ -39,6 +62,15 @@ export interface ConversationTurnLease {
   throwIfCancelled(): void;
   beginEmission(): void;
   complete(): void;
+  /**
+   * Externally cancel this turn because the client disconnected and the
+   * presenter's post-disconnect ceiling elapsed before it settled (#885).
+   * Aborts the same signal already threaded into provider calls and
+   * cooperative checkpoints, and reports through the same cancellation
+   * observer supersession uses. The stream owner completes the lease when its
+   * normal cleanup finishes.
+   */
+  cancelAfterDisconnect(): void;
 }
 
 export interface ConversationTurnRegistry {
@@ -62,7 +94,7 @@ export class LoggingConversationTurnInterruptionObserver implements Conversation
       "Chat turn cancelled",
     );
     this.metricsRegistry?.incrementCounter("chat_turn_cancellations_total", {
-      help: "Total assistant chat turns cancelled by a newer message.",
+      help: "Total assistant chat turns cancelled before completion.",
       labels: {
         reason: input.reason,
         stage: input.stage,
@@ -126,6 +158,16 @@ export class InMemoryConversationTurnRegistry implements ConversationTurnRegistr
     const turn = createActiveTurn(conversationId);
     this.active.set(conversationId, turn);
     let completed = false;
+    const complete = () => {
+      if (completed) {
+        return;
+      }
+      completed = true;
+      turn.finish();
+      if (this.active.get(conversationId) === turn) {
+        this.active.delete(conversationId);
+      }
+    };
 
     return {
       conversationId,
@@ -142,15 +184,17 @@ export class InMemoryConversationTurnRegistry implements ConversationTurnRegistr
         turn.emissionStarted = true;
         turn.stage = "persisting";
       },
-      complete: () => {
-        if (completed) {
+      complete,
+      cancelAfterDisconnect: () => {
+        if (completed || turn.controller.signal.aborted) {
           return;
         }
-        completed = true;
-        turn.finish();
-        if (this.active.get(conversationId) === turn) {
-          this.active.delete(conversationId);
-        }
+        turn.controller.abort(new ChatTurnDisconnectAbortError(conversationId, turn.stage));
+        this.observer?.turnCancelled({
+          conversationId,
+          reason: "disconnect_timeout",
+          stage: turn.stage,
+        });
       },
     };
   }

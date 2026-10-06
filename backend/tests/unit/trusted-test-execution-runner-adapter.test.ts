@@ -25,6 +25,7 @@ const revision: AgentRevision = {
   sourceBasePublishedRevisionId: null,
   createdAt: new Date(0),
   publishedAt: null,
+  publishedVersion: null,
 };
 
 const continuation = exportTestExecutionReplayContinuation({
@@ -116,6 +117,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       revisions: { findRevision: async () => revision },
     });
 
+    const abort = new AbortController();
     await expect(adapter.run({
       workspaceId: "ws-1",
       agentId: "agent-1",
@@ -135,6 +137,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       }],
       executionMode: "safe_test",
       skillEffects: "allowed",
+      signal: abort.signal,
     })).resolves.toEqual({ answer: "actual answer", messageId: "ephemeral-message", continuation });
 
     expect(replay.run).toHaveBeenCalledWith(expect.objectContaining({
@@ -152,6 +155,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       // (test_chat_turn_trace); its trace lives in agent_test_execution_attempts under
       // Test Chat's own retention, unlike eval replay, which must never request this.
       includeSlotValues: true,
+      signal: abort.signal,
     }));
   });
 

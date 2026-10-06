@@ -6,6 +6,7 @@ import type { ConversationAgentConfig, Directive, Routine } from "@radioso/conve
 import { createConversationKit, type ConversationKit, type CreateConversationKitOptions } from "./composition.js";
 import { isDirectiveCoherenceError } from "./directiveCoherenceError.js";
 import { parseTurnRequestBody, isRecord, type TurnResponseBody } from "./httpTypes.js";
+import { isRoutineTransitionOrigin } from "./routineTransitionOrigin.js";
 import { createConversationKitClient, type ConversationKitClient } from "./sdk.js";
 
 export interface CreateConversationKitServerOptions {
@@ -134,10 +135,14 @@ const parseRoutineTransition = (value: unknown): Routine["transitions"][number] 
   ) {
     throw new Error("invalid_routine_request");
   }
+  if (value.origin !== undefined && !isRoutineTransitionOrigin(value.origin)) {
+    throw new Error("invalid_routine_request");
+  }
   return {
     from: value.from,
     to: value.to,
     condition: value.condition,
+    origin: value.origin,
   };
 };
 

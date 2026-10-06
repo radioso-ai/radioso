@@ -16,6 +16,7 @@ const snapshot = (state: SendIntentState, overrides: Partial<SendIntentSnapshot>
   providerMessageId: null,
   deliveredRfcMessageId: null,
   failureCode: null,
+  requestFrozen: false,
   outcomeUnknown: false,
   uncertainResolution: null,
   uncertainResolvedByUserId: null,
@@ -26,7 +27,11 @@ const accepted = (overrides: Partial<SendIntentSnapshot> = {}): SendIntentSnapsh
   snapshot("accepted", { providerMessageId: "re_1", deliveredRfcMessageId: "<ses-1@eu-west-1.amazonses.com>", ...overrides });
 
 const uncertain = (overrides: Partial<SendIntentSnapshot> = {}): SendIntentSnapshot =>
-  snapshot("uncertain", { providerMessageId: "re_1", outcomeUnknown: true, ...overrides });
+  snapshot("uncertain", { providerMessageId: "re_1", requestFrozen: true, outcomeUnknown: true, ...overrides });
+
+/** A queued send whose request froze: a claim may be in its provider call. */
+const frozen = (overrides: Partial<SendIntentSnapshot> = {}): SendIntentSnapshot =>
+  snapshot("queued", { requestFrozen: true, ...overrides });
 
 const status = (
   value: Extract<SendIntentEvent, { kind: "provider_status" }>["status"],
@@ -48,6 +53,7 @@ const EVERY_EVENT: readonly SendIntentEvent[] = [
   { kind: "authority_revoked", code: "human_owned" },
   { kind: "outcome_unknown", authorityValid: true, withinWindow: true },
   { kind: "outcome_unknown", authorityValid: false, withinWindow: true },
+  { kind: "dispatch_exhausted" },
   status("sent"),
   status("delivered"),
   status("delivery_delayed"),
@@ -138,6 +144,30 @@ describe("nextSendIntentState: queued", () => {
   it("ignores a revoked authority once an attempt's outcome is unknown, since that send may have gone out", () => {
     expect(nextSendIntentState(snapshot("queued", { outcomeUnknown: true }), { kind: "authority_revoked", code: "human_owned" }))
       .toEqual({ ignored: "not_applicable" });
+  });
+
+  it.each([
+    { kind: "authority_revoked", code: "human_owned" },
+    { kind: "revalidation_failed", haltReason: "sending_not_verified" },
+  ] as const)("never settles a send as unsent on $kind once its request froze: another claim may be sending it", (event) => {
+    expect(nextSendIntentState(frozen(), event)).toEqual({ ignored: "not_applicable" });
+  });
+
+  it("fails a send the outbox gave up on before its request froze: it never reached the provider", () => {
+    expect(applied(snapshot("queued"), { kind: "dispatch_exhausted" })).toEqual({
+      next: snapshot("failed", { failureCode: "dispatch_exhausted" }),
+      effects: [{ kind: "open_delivery_failure", failureKind: "failed", detailCode: "dispatch_exhausted" }],
+    });
+  });
+
+  it.each([
+    ["its request froze", frozen()],
+    ["an attempt's outcome is unknown", frozen({ outcomeUnknown: true })],
+  ])("makes a send the outbox gave up on uncertain once %s: it may have gone out, and only a teammate may resend it", (_label, current) => {
+    expect(applied(current, { kind: "dispatch_exhausted" })).toEqual({
+      next: { ...current, state: "uncertain", outcomeUnknown: true },
+      effects: [{ kind: "open_delivery_failure", failureKind: "uncertain", detailCode: null }],
+    });
   });
 
   it("stays queued on an unknown outcome while authority holds inside the window, and schedules a re-POST", () => {
@@ -284,13 +314,13 @@ describe("nextSendIntentState: uncertain, late provider evidence", () => {
     });
   });
 
-  it("retargets the still-open failure when evidence arrives after an authorized resend", () => {
+  it("records late evidence for an attempt a teammate resent as that attempt's history, never touching the resend's failure", () => {
     const resent = uncertain({ uncertainResolution: "resend_authorized", uncertainResolvedByUserId: "user-1" });
 
-    expect(applied(resent, status("failed", "webhook"))).toEqual({
-      next: { ...resent, state: "failed", failureCode: "failed" },
-      effects: [{ kind: "retarget_delivery_failure", failureKind: "failed", detailCode: "failed" }],
-    });
+    expect(applied(resent, status("bounced", "webhook", "5.1.1"))).toEqual({ next: { ...resent, state: "bounced", failureCode: "5.1.1" }, effects: [] });
+    expect(applied(resent, status("bounced", "dsn"))).toEqual({ next: { ...resent, state: "bounced", failureCode: "bounced" }, effects: [] });
+    expect(applied(resent, status("failed", "lookup"))).toEqual({ next: { ...resent, state: "failed", failureCode: "failed" }, effects: [] });
+    expect(applied(resent, status("delivered"))).toEqual({ next: { ...resent, state: "delivered" }, effects: [] });
   });
 
   it.each([

@@ -18,34 +18,52 @@ const readiness = (sending: DomainReadiness["sending"], receiving: DomainReadine
   records: [{ purpose: "dkim", type: "TXT", name: "resend._domainkey.customer.test", value: "p=abc", status: sending }],
 });
 
+/** A promise the test settles by hand, to pause a provider call at a chosen point. */
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
+
 const harness = () => {
   let now = new Date("2026-10-03T12:00:00.000Z");
   const clock = () => now;
   const domains = new InMemoryEmailDomains(clock);
-  // The provider account: one registration per name, as Resend keeps them, with when it was created.
-  const providerDomains = new Map<string, Date>();
-  const providerDomainOf = (domain: string, createdAt: Date) => ({
-    providerDomainId: `provider-${domain}`,
+  // The provider account: one registration per name, as Resend keeps them. A name registered
+  // again after its removal gets a new id.
+  const providerDomains = new Map<string, string>();
+  const registrations = new Map<string, number>();
+  const providerDomainOf = (providerDomainId: string) => ({
+    providerDomainId,
     region: "eu-west-1",
     readiness: readiness("pending"),
-    createdAt,
   });
+  const registerAtProvider = (domain: string): string => {
+    const generation = (registrations.get(domain) ?? 0) + 1;
+    registrations.set(domain, generation);
+    const providerDomainId = generation === 1 ? `provider-${domain}` : `provider-${domain}#${generation}`;
+    providerDomains.set(domain, providerDomainId);
+    return providerDomainId;
+  };
   const provisioner = {
     provider: "local",
     registerSendingDomain: vi.fn<EmailDomainProvisioner["registerSendingDomain"]>(async (domain) => {
       if (providerDomains.has(domain)) return { ok: false, refused: "already_registered" };
-      providerDomains.set(domain, now);
-      return { ok: true, ...providerDomainOf(domain, now) };
+      return { ok: true, ...providerDomainOf(registerAtProvider(domain)) };
     }),
     findByName: vi.fn<EmailDomainProvisioner["findByName"]>(async (domain) => {
-      const createdAt = providerDomains.get(domain);
-      return createdAt ? providerDomainOf(domain, createdAt) : null;
+      const providerDomainId = providerDomains.get(domain);
+      return providerDomainId ? providerDomainOf(providerDomainId) : null;
     }),
     enableReceiving: vi.fn<EmailDomainProvisioner["enableReceiving"]>(async () => readiness("verified", "pending")),
     requestVerification: vi.fn<EmailDomainProvisioner["requestVerification"]>(async () => undefined),
     readiness: vi.fn<EmailDomainProvisioner["readiness"]>(async () => readiness("pending")),
     remove: vi.fn<EmailDomainProvisioner["remove"]>(async (providerDomainId) => {
-      providerDomains.delete(providerDomainId.replace(/^provider-/u, ""));
+      for (const [domain, id] of providerDomains) if (id === providerDomainId) providerDomains.delete(domain);
     }),
   };
   const mailboxes = { countActiveOnDomain: vi.fn(async (_domainId: string) => 0) };
@@ -69,6 +87,7 @@ const harness = () => {
     domains,
     provisioner,
     providerDomains,
+    registerAtProvider,
     mailboxes,
     audit,
     auditMetadata,
@@ -103,6 +122,7 @@ describe("SendingDomainService", () => {
         provider: "local",
         providerDomainId: "provider-customer.test",
         providerRegion: "eu-west-1",
+        registrationStatus: "registered",
         sendingStatus: "pending",
         receivingStatus: "not_requested",
         createdByUserId: actor.userId,
@@ -133,6 +153,7 @@ describe("SendingDomainService", () => {
       const view = await service.add(actor, workspaceId, "  Bücher.Example  ");
       expect(view).toMatchObject({
         domain: "xn--bcher-kva.example",
+        registration: { status: "registered" },
         sending: { status: "pending" },
         receiving: { status: "not_requested" },
         records: [expect.objectContaining({ purpose: "dkim", status: "pending" })],
@@ -159,14 +180,6 @@ describe("SendingDomainService", () => {
 
       const error = await expectAppError(service.add(actor, workspaceId, "customer.test"), 409, "domain_claimed_elsewhere");
       expect(JSON.stringify({ message: error.message, details: error.details })).not.toContain(otherWorkspaceId);
-    });
-
-    it("gives the same refusal when the provider holds the name outside this deployment, keeping no claim", async () => {
-      const { service, provisioner, domains } = harness();
-      provisioner.registerSendingDomain.mockResolvedValueOnce({ ok: false, refused: "already_registered" });
-      expect(await service.ensureRegistered(actor, workspaceId, "customer.test")).toEqual({ ok: false, refused: "claimed_elsewhere" });
-      expect(provisioner.findByName).toHaveBeenCalledWith("customer.test");
-      expect(domains.records.size).toBe(0);
     });
 
     it("releases the claim when the provider refuses the name itself", async () => {
@@ -202,139 +215,315 @@ describe("SendingDomainService", () => {
     });
   });
 
-  describe("recovering an interrupted registration", () => {
+  describe("a name the provider already holds", () => {
     const loseTheAnswer = (h: ReturnType<typeof harness>) => {
       h.provisioner.registerSendingDomain.mockImplementationOnce(async (domain) => {
-        h.providerDomains.set(domain, h.now());
+        h.registerAtProvider(domain);
         throw new Error("socket hang up");
       });
     };
 
-    it("adopts the provider's registration on retry when the create was accepted but its answer was lost", async () => {
+    it("keeps the claim as needs_reconciliation and adopts nothing, even a registration made moments before", async () => {
       const h = harness();
       const { service, domains, provisioner, auditMetadata, logger } = h;
+      // Registered on the account seconds ago by operations, or by another deployment sharing it.
+      h.registerAtProvider("customer.test");
+
+      const view = await service.add(actor, workspaceId, "customer.test");
+
+      expect(view).toMatchObject({ domain: "customer.test", registration: { status: "needs_reconciliation" }, records: [] });
+      expect(await domains.findById(view.id)).toMatchObject({ workspaceId, providerDomainId: null, nextCheckAt: null });
+      expect(provisioner.findByName).not.toHaveBeenCalled();
+      expect(auditMetadata("reconciliation_required").map((event) => event.metadata)).toEqual([
+        expect.objectContaining({ domainId: view.id, domain: "customer.test" }),
+      ]);
+      expect(logger.warn).toHaveBeenCalledWith({ domainId: view.id }, "email_domain_needs_reconciliation");
+      expect(await service.list(workspaceId)).toEqual([view]);
+
+      // Nothing but the explicit reconcile adopts it: neither a mailbox, nor a check, nor adding it again.
+      await expectAppError(service.ensureRegistered(actor, workspaceId, "customer.test"), 409, "domain_needs_reconciliation");
+      await expectAppError(service.verify(actor, workspaceId, view.id), 409, "domain_needs_reconciliation");
+      await expectAppError(service.enableReceiving(actor, workspaceId, view.id, "customer.test"), 409, "domain_needs_reconciliation");
+      expect(await service.add(actor, workspaceId, "customer.test")).toEqual(view);
+      expect(provisioner.registerSendingDomain).toHaveBeenCalledTimes(1);
+      expect(provisioner.findByName).not.toHaveBeenCalled();
+      expect(provisioner.requestVerification).not.toHaveBeenCalled();
+      expect(await service.ensureRegistered(actor, otherWorkspaceId, "customer.test")).toEqual({ ok: false, refused: "claimed_elsewhere" });
+    });
+
+    it("waits for reconciliation when an unsuccessful attempt is followed by another writer's registration", async () => {
+      const h = harness();
+      const { service, domains, provisioner } = h;
+      provisioner.registerSendingDomain.mockRejectedValueOnce(new Error("socket hang up"));
+      await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
+      const [claim] = await service.list(workspaceId);
+      expect(claim).toMatchObject({ registration: { status: "registering" } });
+
+      h.advance(HOUR_MS);
+      h.registerAtProvider("customer.test");
+
+      await expectAppError(service.ensureRegistered(actor, workspaceId, "customer.test"), 409, "domain_needs_reconciliation");
+      expect(await domains.findById(claim.id)).toMatchObject({ registrationStatus: "needs_reconciliation", providerDomainId: null });
+      expect(provisioner.findByName).not.toHaveBeenCalled();
+    });
+
+    it("recovers a lost answer only through reconcile, which adopts the provider's registration and audits it", async () => {
+      const h = harness();
+      const { service, domains, provisioner, auditMetadata } = h;
       loseTheAnswer(h);
 
       await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
       const [claim] = [...domains.records.values()];
-      expect(claim).toMatchObject({ workspaceId, domain: "customer.test", providerDomainId: null, nextCheckAt: null });
+      expect(claim).toMatchObject({ workspaceId, domain: "customer.test", providerDomainId: null, registrationStatus: "registering" });
 
-      const retried = await service.ensureRegistered(actor, workspaceId, "customer.test");
+      expect(await service.add(actor, workspaceId, "customer.test")).toMatchObject({ registration: { status: "needs_reconciliation" } });
+      expect(provisioner.findByName).not.toHaveBeenCalled();
 
-      expect(retried).toEqual({
-        ok: true,
-        domain: expect.objectContaining({
-          id: claim?.id,
-          providerDomainId: "provider-customer.test",
-          providerRegion: "eu-west-1",
-          sendingStatus: "pending",
-        }),
-      });
+      const reconciled = await service.reconcile(actor, workspaceId, claim.id);
+
       expect(provisioner.findByName).toHaveBeenCalledWith("customer.test");
+      expect(reconciled).toMatchObject({
+        id: claim?.id,
+        registration: { status: "registered" },
+        records: [expect.objectContaining({ purpose: "dkim" })],
+      });
+      expect(await domains.findById(claim.id)).toMatchObject({ providerDomainId: "provider-customer.test", providerRegion: "eu-west-1" });
       expect(domains.records.size).toBe(1);
-      expect(auditMetadata("registered").map((event) => event.metadata)).toEqual([
-        expect.objectContaining({ domainId: claim?.id, recovered: true }),
+      expect(auditMetadata("reconciled").map((event) => event.metadata)).toEqual([
+        expect.objectContaining({ domainId: claim?.id, domain: "customer.test", outcome: "adopted", actorUserId: actor.userId }),
       ]);
-      expect(logger.warn).toHaveBeenCalledWith({ domainId: claim?.id }, "email_domain_registration_recovered");
+      expect(auditMetadata("registered")).toEqual([]);
+
+      expect((await service.ensureRegistered(actor, workspaceId, "customer.test")).ok).toBe(true);
+      expect(await service.reconcile(actor, workspaceId, claim.id)).toEqual(reconciled);
+      expect(provisioner.findByName).toHaveBeenCalledTimes(1);
     });
 
-    it("adopts the provider's registration when the earlier attempt stopped before recording it", async () => {
-      const { service, domains, provisioner, providerDomains } = harness();
+    it("waits for reconciliation when an attempt stopped before recording the registration it made", async () => {
+      const { service, domains, providerDomains } = harness();
       vi.spyOn(domains, "recordRegistration").mockRejectedValueOnce(new Error("connection terminated"));
 
       await expect(service.ensureRegistered(actor, workspaceId, "customer.test")).rejects.toThrow("connection terminated");
       expect(providerDomains.has("customer.test")).toBe(true);
 
-      const retried = await service.ensureRegistered(actor, workspaceId, "customer.test");
+      await expectAppError(service.ensureRegistered(actor, workspaceId, "customer.test"), 409, "domain_needs_reconciliation");
+      const [claim] = await service.list(workspaceId);
+      expect(await service.reconcile(actor, workspaceId, claim.id)).toMatchObject({ registration: { status: "registered" } });
+    });
 
-      expect(retried).toMatchObject({ ok: true, domain: { workspaceId, providerDomainId: "provider-customer.test" } });
+    it("registers afresh on reconcile when the provider no longer holds the name", async () => {
+      const h = harness();
+      const { service, provisioner, providerDomains, auditMetadata } = h;
+      h.registerAtProvider("customer.test");
+      const view = await service.add(actor, workspaceId, "customer.test");
+      providerDomains.delete("customer.test");
+
+      const reconciled = await service.reconcile(actor, workspaceId, view.id);
+
+      expect(reconciled).toMatchObject({ id: view.id, registration: { status: "registered" } });
       expect(provisioner.registerSendingDomain).toHaveBeenCalledTimes(2);
-      expect(domains.records.size).toBe(1);
+      expect(auditMetadata("reconciled").map((event) => event.metadata)).toEqual([
+        expect.objectContaining({ domainId: view.id, outcome: "registered" }),
+      ]);
     });
 
-    it("still refuses a second workspace while the first holds the claim, finished or not", async () => {
-      const h = harness();
-      const { service, provisioner } = h;
-      loseTheAnswer(h);
-      await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
-      provisioner.registerSendingDomain.mockClear();
-
-      expect(await service.ensureRegistered(actor, otherWorkspaceId, "customer.test")).toEqual({ ok: false, refused: "claimed_elsewhere" });
-      expect(provisioner.registerSendingDomain).not.toHaveBeenCalled();
-      expect(provisioner.findByName).not.toHaveBeenCalled();
-
-      expect((await service.ensureRegistered(actor, workspaceId, "customer.test")).ok).toBe(true);
-      expect(await service.ensureRegistered(actor, otherWorkspaceId, "customer.test")).toEqual({ ok: false, refused: "claimed_elsewhere" });
-    });
-
-    it("finishes an unfinished registration when the operator checks the domain", async () => {
-      const h = harness();
-      const { service, provisioner } = h;
-      loseTheAnswer(h);
-      await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
-      const [pending] = await service.list(workspaceId);
-      expect(pending).toMatchObject({ domain: "customer.test", sending: { status: "pending" }, records: [] });
-
-      const view = await service.verify(actor, workspaceId, pending.id);
-
-      expect(view).toMatchObject({ id: pending.id, records: [expect.objectContaining({ purpose: "dkim" })] });
-      expect(provisioner.requestVerification).toHaveBeenCalledWith("provider-customer.test");
-    });
-
-    it("records a fresh registration even when the provider does not say when it created it", async () => {
+    it("refuses to reconcile a claim the provider has not reported, and a domain of another workspace", async () => {
       const { service, provisioner } = harness();
-      provisioner.registerSendingDomain.mockResolvedValueOnce({
-        ok: true,
-        providerDomainId: "provider-customer.test",
-        region: null,
-        readiness: readiness("pending"),
-        createdAt: null,
-      });
+      provisioner.registerSendingDomain.mockRejectedValueOnce(new Error("socket hang up"));
+      await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
+      const [claim] = await service.list(workspaceId);
 
-      expect(await service.ensureRegistered(actor, workspaceId, "customer.test")).toMatchObject({
-        ok: true,
-        domain: { providerDomainId: "provider-customer.test" },
-      });
+      await expectAppError(service.reconcile(actor, workspaceId, claim.id), 409, "domain_not_awaiting_reconciliation");
+      await expectAppError(service.reconcile(actor, otherWorkspaceId, claim.id), 404, "not_found");
+      expect(provisioner.findByName).not.toHaveBeenCalled();
     });
 
-    it("never adopts a registration the provider account held before the claim", async () => {
-      const { service, domains, providerDomains, advance, now } = harness();
-      // Registered on the account by operations, or by another deployment sharing it.
-      providerDomains.set("customer.test", now());
-      advance(10 * MINUTE_MS);
+    it("reports a provider outage on reconcile and keeps the claim waiting", async () => {
+      const h = harness();
+      const { service, provisioner, domains } = h;
+      h.registerAtProvider("customer.test");
+      const view = await service.add(actor, workspaceId, "customer.test");
+      provisioner.findByName.mockRejectedValueOnce(new Error("provider down"));
 
-      expect(await service.ensureRegistered(actor, workspaceId, "customer.test")).toEqual({ ok: false, refused: "claimed_elsewhere" });
-      expect(domains.records.size).toBe(0);
+      await expectAppError(service.reconcile(actor, workspaceId, view.id), 502, "provider_unavailable");
+      expect(await domains.findById(view.id)).toMatchObject({ registrationStatus: "needs_reconciliation", providerDomainId: null });
+    });
+  });
+
+  describe("removal and cleanup", () => {
+    it("revokes the domain first and leaves the provider cleanup to the sweep", async () => {
+      const { service, domains, provisioner, mailboxes, auditMetadata, now } = harness();
+      const domain = domains.seed({ workspaceId, domain: "customer.test" });
+
+      mailboxes.countActiveOnDomain.mockResolvedValueOnce(1);
+      await expectAppError(service.remove(actor, workspaceId, domain.id), 409, "domain_has_mailboxes");
+      expect((await domains.findById(domain.id))?.removedAt).toBeNull();
+
+      await service.remove(actor, workspaceId, domain.id);
+      expect(await domains.findById(domain.id)).toMatchObject({ removedAt: now(), providerCleanupStatus: "pending" });
+      expect(await domains.findActiveByDomain("customer.test")).toBeNull();
+      expect(provisioner.remove).not.toHaveBeenCalled();
+      expect(auditMetadata("removed").map((event) => event.metadata)).toEqual([
+        expect.objectContaining({ domainId: domain.id, haltedSendCount: 0 }),
+      ]);
+      await expectAppError(service.remove(actor, workspaceId, domain.id), 404, "not_found");
+
+      expect(await service.cleanupRemoved(10)).toBe(1);
+      expect(provisioner.remove).toHaveBeenCalledWith("provider-customer.test");
+      expect((await domains.findById(domain.id))?.providerCleanupStatus).toBe("done");
+      expect(await service.cleanupRemoved(10)).toBe(0);
     });
 
-    it("records an unfinished claim's provider registration before removing it, so the cleanup removes that too", async () => {
+    it("retries a failed provider cleanup an hour later", async () => {
+      const { service, domains, provisioner, logger, advance, now } = harness();
+      const domain = domains.seed({ workspaceId, domain: "customer.test" });
+      await service.remove(actor, workspaceId, domain.id);
+
+      provisioner.remove.mockRejectedValueOnce(new Error("provider down"));
+      expect(await service.cleanupRemoved(10)).toBe(0);
+      expect(await domains.findById(domain.id)).toMatchObject({
+        providerCleanupStatus: "failed",
+        nextCheckAt: new Date(now().getTime() + HOUR_MS),
+      });
+      expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ domainId: domain.id }), "email_domain_cleanup_failed");
+
+      advance(30 * MINUTE_MS);
+      expect(await service.cleanupRemoved(10)).toBe(0);
+      advance(30 * MINUTE_MS);
+      expect(await service.cleanupRemoved(10)).toBe(1);
+      expect((await domains.findById(domain.id))?.providerCleanupStatus).toBe("done");
+    });
+
+    it("removes an unfinished claim without calling the provider, even while the provider is down", async () => {
+      const { service, domains, provisioner, auditMetadata } = harness();
+      provisioner.registerSendingDomain.mockRejectedValueOnce(new Error("socket hang up"));
+      await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
+      const [claim] = await service.list(workspaceId);
+      for (const call of [provisioner.registerSendingDomain, provisioner.findByName, provisioner.remove]) {
+        call.mockClear();
+        call.mockRejectedValue(new Error("provider down"));
+      }
+
+      await service.remove(actor, workspaceId, claim.id);
+
+      expect(await domains.findById(claim.id)).toMatchObject({ providerDomainId: null, providerCleanupStatus: "pending" });
+      expect(await service.list(workspaceId)).toEqual([]);
+      expect(auditMetadata("removed")).toHaveLength(1);
+      expect(await service.cleanupRemoved(10)).toBe(1);
+      expect((await domains.findById(claim.id))?.providerCleanupStatus).toBe("done");
+      for (const call of [provisioner.registerSendingDomain, provisioner.findByName, provisioner.remove]) {
+        expect(call).not.toHaveBeenCalled();
+      }
+    });
+
+    it("leaves a lost answer's registration for reconciliation, since nothing ties it to the removed claim", async () => {
+      const h = harness();
+      const { service, provisioner, providerDomains } = h;
+      provisioner.registerSendingDomain.mockImplementationOnce(async (domain) => {
+        h.registerAtProvider(domain);
+        throw new Error("socket hang up");
+      });
+      await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
+      const [claim] = await service.list(workspaceId);
+      await service.remove(actor, workspaceId, claim.id);
+      await service.cleanupRemoved(10);
+
+      expect(provisioner.remove).not.toHaveBeenCalled();
+      expect(providerDomains.get("customer.test")).toBe("provider-customer.test");
+      expect(await service.add(actor, otherWorkspaceId, "customer.test")).toMatchObject({ registration: { status: "needs_reconciliation" } });
+    });
+
+    it("hands a registration answered after its claim was removed to that claim's cleanup", async () => {
       const h = harness();
       const { service, domains, provisioner, providerDomains } = h;
-      loseTheAnswer(h);
-      await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
-      const [pending] = await service.list(workspaceId);
+      const answer = deferred<void>();
+      provisioner.registerSendingDomain.mockImplementationOnce(async (domain) => {
+        const providerDomainId = h.registerAtProvider(domain);
+        await answer.promise;
+        return { ok: true, providerDomainId, region: "eu-west-1", readiness: readiness("pending") };
+      });
+      const adding = service.add(actor, workspaceId, "customer.test");
+      await vi.waitFor(() => expect(provisioner.registerSendingDomain).toHaveBeenCalled());
+      const [claim] = await service.list(workspaceId);
+      await service.remove(actor, workspaceId, claim.id);
 
-      await service.remove(actor, workspaceId, pending.id);
+      answer.resolve();
+      await expectAppError(adding, 404, "not_found");
 
-      expect(await domains.findById(pending.id)).toMatchObject({ providerDomainId: "provider-customer.test", providerCleanupStatus: "pending" });
+      expect(await domains.findById(claim.id)).toMatchObject({ providerDomainId: "provider-customer.test", providerCleanupStatus: "pending" });
       expect(await service.cleanupRemoved(10)).toBe(1);
       expect(provisioner.remove).toHaveBeenCalledWith("provider-customer.test");
       expect(providerDomains.size).toBe(0);
-      expect((await service.ensureRegistered(actor, otherWorkspaceId, "customer.test")).ok).toBe(true);
     });
 
-    it("keeps a removed domain's provider registration once a new registration adopted it", async () => {
-      const { service, domains, provisioner } = harness();
-      const first = await service.ensureRegistered(actor, workspaceId, "customer.test");
-      if (!first.ok) throw new Error("not registered");
-      await service.remove(actor, workspaceId, first.domain.id);
+    it("refuses to add a domain again until its removal has been cleaned up at the provider", async () => {
+      const { service, domains, provisioner, advance } = harness();
+      const first = await service.add(actor, workspaceId, "customer.test");
+      await service.remove(actor, workspaceId, first.id);
+      provisioner.registerSendingDomain.mockClear();
 
-      const readded = await service.ensureRegistered(actor, otherWorkspaceId, "customer.test");
-      expect(readded).toMatchObject({ ok: true, domain: { workspaceId: otherWorkspaceId, providerDomainId: "provider-customer.test" } });
+      await expectAppError(service.add(actor, otherWorkspaceId, "customer.test"), 409, "domain_removal_pending");
+      await expectAppError(service.ensureRegistered(actor, workspaceId, "customer.test"), 409, "domain_removal_pending");
+      provisioner.remove.mockRejectedValueOnce(new Error("provider down"));
+      await service.cleanupRemoved(10);
+      expect((await domains.findById(first.id))?.providerCleanupStatus).toBe("failed");
+      await expectAppError(service.add(actor, otherWorkspaceId, "customer.test"), 409, "domain_removal_pending");
+      expect(provisioner.registerSendingDomain).not.toHaveBeenCalled();
+      expect(domains.records.size).toBe(1);
 
+      advance(HOUR_MS);
       expect(await service.cleanupRemoved(10)).toBe(1);
+      const readded = await service.add(actor, otherWorkspaceId, "customer.test");
+      expect(readded).toMatchObject({ registration: { status: "registered" } });
+      expect(await domains.findById(readded.id)).toMatchObject({ workspaceId: otherWorkspaceId, providerDomainId: "provider-customer.test#2" });
+    });
+
+    it("never lets a cleanup and a reconcile both act on one name: reconcile waits while the cleanup runs", async () => {
+      const { service, domains, provisioner, providerDomains } = harness();
+      const removed = await service.add(actor, workspaceId, "customer.test");
+      await service.remove(actor, workspaceId, removed.id);
+      // A claim taken while the removal committed: the provider still holds the removed domain's registration.
+      const claim = domains.seed({ workspaceId: otherWorkspaceId, domain: "customer.test", providerDomainId: null, registrationStatus: "needs_reconciliation" });
+      const deletion = deferred<void>();
+      provisioner.remove.mockImplementationOnce(async (providerDomainId) => {
+        await deletion.promise;
+        providerDomains.delete("customer.test");
+        expect(providerDomainId).toBe("provider-customer.test");
+      });
+
+      const cleaning = service.cleanupRemoved(10);
+      await vi.waitFor(() => expect(provisioner.remove).toHaveBeenCalled());
+      await expectAppError(service.reconcile(actor, otherWorkspaceId, claim.id), 409, "domain_removal_pending");
+      expect(provisioner.findByName).not.toHaveBeenCalled();
+
+      deletion.resolve();
+      expect(await cleaning).toBe(1);
+      const reconciled = await service.reconcile(actor, otherWorkspaceId, claim.id);
+      expect(reconciled).toMatchObject({ registration: { status: "registered" } });
+      expect(await domains.findById(claim.id)).toMatchObject({ providerDomainId: "provider-customer.test#2" });
+    });
+
+    it("never lets a reconcile adopt for a claim removed and cleaned up while its lookup ran", async () => {
+      const h = harness();
+      const { service, domains, provisioner } = h;
+      h.registerAtProvider("customer.test");
+      const view = await service.add(actor, workspaceId, "customer.test");
+      const lookup = deferred<void>();
+      const findByName = provisioner.findByName.getMockImplementation()!;
+      provisioner.findByName.mockImplementationOnce(async (domain) => {
+        await lookup.promise;
+        return findByName(domain);
+      });
+
+      const reconciling = service.reconcile(actor, workspaceId, view.id);
+      await vi.waitFor(() => expect(provisioner.findByName).toHaveBeenCalled());
+      await service.remove(actor, workspaceId, view.id);
+      expect(await service.cleanupRemoved(10)).toBe(1);
+
+      lookup.resolve();
+      await expectAppError(reconciling, 404, "not_found");
+      expect(await domains.findById(view.id)).toMatchObject({ providerDomainId: null, providerCleanupStatus: "done" });
       expect(provisioner.remove).not.toHaveBeenCalled();
-      expect((await domains.findById(first.domain.id))?.providerCleanupStatus).toBe("done");
     });
   });
 
@@ -385,6 +574,40 @@ describe("SendingDomainService", () => {
       expect(audit.record).not.toHaveBeenCalled();
     });
 
+    it("keeps a provider event that arrives during a refresh, so a revoked domain is read on the next sweep", async () => {
+      const { service, domains, provisioner, logger, advance, now } = harness();
+      const domain = domains.seed({ workspaceId, domain: "customer.test", sendingStatus: "verified", nextCheckAt: now() });
+      advance(1);
+      // The refresh reads the provider before the revocation; the provider's event arrives before it records.
+      const read = deferred<DomainReadiness>();
+      provisioner.readiness.mockImplementationOnce(() => read.promise);
+      const refreshing = service.refreshDue(10);
+      await vi.waitFor(() => expect(provisioner.readiness).toHaveBeenCalled());
+      expect(await domains.expediteRefresh({ provider: "local", providerDomainId: "provider-customer.test" })).toBe(true);
+      read.resolve(readiness("verified"));
+      expect(await refreshing).toBe(0);
+      expect((await domains.findById(domain.id))?.nextCheckAt?.getTime()).toBeLessThanOrEqual(now().getTime());
+
+      provisioner.readiness.mockResolvedValueOnce(readiness("failed"));
+      expect(await service.refreshDue(10)).toBe(1);
+      expect(await domains.findById(domain.id)).toMatchObject({ sendingStatus: "failed" });
+      expect(logger.warn).toHaveBeenCalledWith({ domainId: domain.id, to: "failed" }, "email_domain_readiness_lost");
+    });
+
+    it("keeps a provider event that arrives during a failed refresh due at once rather than deferred", async () => {
+      const { service, domains, provisioner, advance, now } = harness();
+      const domain = domains.seed({ workspaceId, domain: "customer.test", sendingStatus: "verified", nextCheckAt: now() });
+      advance(1);
+      const read = deferred<DomainReadiness>();
+      provisioner.readiness.mockImplementationOnce(() => read.promise);
+      const refreshing = service.refreshDue(10);
+      await vi.waitFor(() => expect(provisioner.readiness).toHaveBeenCalled());
+      await domains.expediteRefresh({ provider: "local", providerDomainId: "provider-customer.test" });
+      read.reject(new Error("provider down"));
+      expect(await refreshing).toBe(0);
+      expect((await domains.findById(domain.id))?.nextCheckAt?.getTime()).toBeLessThanOrEqual(now().getTime());
+    });
+
     it("verifies on request: asks the provider to check, then records the readiness it reads back", async () => {
       const { service, domains, provisioner, now } = harness();
       const domain = domains.seed({ workspaceId, domain: "customer.test", nextCheckAt: now() });
@@ -397,6 +620,19 @@ describe("SendingDomainService", () => {
       await expectAppError(service.verify(actor, otherWorkspaceId, domain.id), 404, "not_found");
       provisioner.requestVerification.mockRejectedValueOnce(new Error("provider down"));
       await expectAppError(service.verify(actor, workspaceId, domain.id), 502, "provider_unavailable");
+    });
+
+    it("finishes an unfinished registration when the operator checks the domain", async () => {
+      const { service, provisioner } = harness();
+      provisioner.registerSendingDomain.mockRejectedValueOnce(new Error("socket hang up"));
+      await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
+      const [pending] = await service.list(workspaceId);
+      expect(pending).toMatchObject({ domain: "customer.test", registration: { status: "registering" }, records: [] });
+
+      const view = await service.verify(actor, workspaceId, pending.id);
+
+      expect(view).toMatchObject({ id: pending?.id, registration: { status: "registered" }, records: [expect.objectContaining({ purpose: "dkim" })] });
+      expect(provisioner.requestVerification).toHaveBeenCalledWith("provider-customer.test");
     });
   });
 
@@ -455,50 +691,19 @@ describe("SendingDomainService", () => {
       ]);
       await expectAppError(service.enableReceiving(actor, otherWorkspaceId, domain.id, "customer.test"), 404, "not_found");
     });
-  });
 
-  describe("removal", () => {
-    it("revokes the domain first and leaves the provider cleanup to the sweep", async () => {
-      const { service, domains, provisioner, mailboxes, auditMetadata, now } = harness();
-      const domain = domains.seed({ workspaceId, domain: "customer.test" });
-
-      mailboxes.countActiveOnDomain.mockResolvedValueOnce(1);
-      await expectAppError(service.remove(actor, workspaceId, domain.id), 409, "domain_has_mailboxes");
-      expect((await domains.findById(domain.id))?.removedAt).toBeNull();
-
-      await service.remove(actor, workspaceId, domain.id);
-      expect(await domains.findById(domain.id)).toMatchObject({ removedAt: now(), providerCleanupStatus: "pending" });
-      expect(await domains.findActiveByDomain("customer.test")).toBeNull();
-      expect(provisioner.remove).not.toHaveBeenCalled();
-      expect(auditMetadata("removed").map((event) => event.metadata)).toEqual([
-        expect.objectContaining({ domainId: domain.id, haltedSendCount: 0 }),
-      ]);
-      await expectAppError(service.remove(actor, workspaceId, domain.id), 404, "not_found");
-
-      expect(await service.cleanupRemoved(10)).toBe(1);
-      expect(provisioner.remove).toHaveBeenCalledWith("provider-customer.test");
-      expect((await domains.findById(domain.id))?.providerCleanupStatus).toBe("done");
-      expect(await service.cleanupRemoved(10)).toBe(0);
-    });
-
-    it("retries a failed provider cleanup an hour later", async () => {
-      const { service, domains, provisioner, logger, advance, now } = harness();
-      const domain = domains.seed({ workspaceId, domain: "customer.test" });
-      await service.remove(actor, workspaceId, domain.id);
-
-      provisioner.remove.mockRejectedValueOnce(new Error("provider down"));
-      expect(await service.cleanupRemoved(10)).toBe(0);
-      expect(await domains.findById(domain.id)).toMatchObject({
-        providerCleanupStatus: "failed",
-        nextCheckAt: new Date(now().getTime() + HOUR_MS),
+    it("keeps a provider event that arrives while receiving is enabled due for the next sweep", async () => {
+      const { service, domains, provisioner, now } = harness();
+      const domain = domains.seed({ workspaceId, domain: "customer.test", sendingStatus: "verified", nextCheckAt: new Date(now().getTime() + HOUR_MS) });
+      provisioner.enableReceiving.mockImplementationOnce(async () => {
+        await domains.expediteRefresh({ provider: "local", providerDomainId: "provider-customer.test" });
+        return readiness("verified", "pending");
       });
-      expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ domainId: domain.id }), "email_domain_cleanup_failed");
 
-      advance(30 * MINUTE_MS);
-      expect(await service.cleanupRemoved(10)).toBe(0);
-      advance(30 * MINUTE_MS);
-      expect(await service.cleanupRemoved(10)).toBe(1);
-      expect((await domains.findById(domain.id))?.providerCleanupStatus).toBe("done");
+      await service.enableReceiving(actor, workspaceId, domain.id, "customer.test");
+
+      expect(await domains.findById(domain.id)).toMatchObject({ receivingConfirmedByUserId: actor.userId, receivingStatus: "pending" });
+      expect((await domains.findById(domain.id))?.nextCheckAt?.getTime()).toBeLessThanOrEqual(now().getTime());
     });
   });
 });

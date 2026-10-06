@@ -129,12 +129,12 @@ describeIntegration("MessageRepository (Postgres)", () => {
     }
     // A message sharing the boundary's timestamp orders by id: one sorting before it is earlier, one after it later.
     const tied = await repository.create({ conversationId, workspaceId, role: "user", content: "tied" });
-    const boundary = { ...created[4], createdAt: new Date("2026-06-01T00:00:04.000Z") };
+    const boundary = created[4];
     await setTime(tied.id, "2026-06-01T00:00:04.000Z");
     const tiedIsEarlier = tied.id < boundary.id;
 
     const window = await repository.listBeforeByConversationId(workspaceId, conversationId, {
-      before: { createdAt: boundary.createdAt, id: boundary.id },
+      beforeMessageId: boundary.id,
       limit: 3,
     });
 
@@ -143,13 +143,36 @@ describeIntegration("MessageRepository (Postgres)", () => {
       : [created[1].id, created[2].id, created[3].id];
     expect(window.map((message) => message.id)).toEqual(expected);
     expect(await repository.listBeforeByConversationId(workspaceId, conversationId, {
-      before: { createdAt: boundary.createdAt, id: boundary.id },
+      beforeMessageId: boundary.id,
       limit: 0,
     })).toEqual([]);
     expect(await repository.listBeforeByConversationId(randomUUID(), conversationId, {
-      before: { createdAt: boundary.createdAt, id: boundary.id },
+      beforeMessageId: boundary.id,
       limit: 3,
     })).toEqual([]);
+    // A boundary that is not a message of the conversation has nothing before it.
+    expect(await repository.listBeforeByConversationId(workspaceId, conversationId, {
+      beforeMessageId: randomUUID(),
+      limit: 3,
+    })).toEqual([]);
+  });
+
+  it("keeps a predecessor recorded within the same millisecond as the boundary, at full Postgres precision", async () => {
+    const earlier = await repository.create({ conversationId, workspaceId, role: "user", content: "earlier" });
+    const boundary = await repository.create({ conversationId, workspaceId, role: "user", content: "boundary" });
+    // Both read back as .123 in a JavaScript Date; only the microseconds order them.
+    await setTime(earlier.id, "2026-06-02T00:00:00.123100Z");
+    await setTime(boundary.id, "2026-06-02T00:00:00.123900Z");
+    // A later message within the same millisecond, sorting before the boundary by id or not, stays out.
+    const later = await repository.create({ conversationId, workspaceId, role: "user", content: "later" });
+    await setTime(later.id, "2026-06-02T00:00:00.123950Z");
+
+    const window = await repository.listBeforeByConversationId(workspaceId, conversationId, {
+      beforeMessageId: boundary.id,
+      limit: 1,
+    });
+
+    expect(window.map((message) => message.id)).toEqual([earlier.id]);
   });
 
   it("filters the newest messages by role before limiting, so a filtered-out row takes no place", async () => {

@@ -1,10 +1,29 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { emailSendKey } from "../../../src/modules/emailChannel/public.js";
 import { EmailSendError } from "../../../src/modules/mail/public.js";
 import { createSendPathHarness, SEND_IDS } from "../../support/inMemoryEmailSend.js";
 
 const HOUR = 60 * 60 * 1000;
+const FROZEN_ELSEWHERE = "email_send_frozen_by_another_claim";
+
+/** The next provider call, held open until released: the claim making it is in flight. */
+const heldProviderCall = (h: ReturnType<typeof createSendPathHarness>) => {
+  let enter: () => void = () => undefined;
+  let release: () => void = () => undefined;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  h.driver.send.mockImplementationOnce(async () => {
+    enter();
+    await released;
+    return { dispatched: true, providerMessageId: "re_provider_frozen_by_b", deliveredMessageId: null };
+  });
+  return { entered, release };
+};
 
 describe("EmailSendActionHandler", () => {
   describe("materialization", () => {
@@ -249,6 +268,39 @@ describe("EmailSendActionHandler", () => {
         expect(h.driver.send).not.toHaveBeenCalled();
       });
 
+      it("never fails it on a revocation read before another claim froze it: the claim that froze it sends it (research B18)", async () => {
+        const h = await materializedThenCrashed();
+        const call = heldProviderCall(h);
+        const claims: Promise<void>[] = [];
+        const readMailbox = h.mailboxes.findById.bind(h.mailboxes);
+        vi.spyOn(h.mailboxes, "findById").mockImplementationOnce(async (mailboxId) => {
+          // Claim A has read the intent unfrozen and stalls. Its lease runs out; claim B freezes the
+          // request and enters the provider call; then a teammate takes the conversation over.
+          claims.push(h.deliverAuto(3));
+          await call.entered;
+          h.owners.set(SEND_IDS.conversation, { state: "human_owned", version: 1 });
+          return readMailbox(mailboxId);
+        });
+
+        await expect(h.deliverAuto(2)).rejects.toThrow(FROZEN_ELSEWHERE);
+
+        expect(h.onlyIntent()).toMatchObject({ state: "queued", failureCode: null });
+        expect(h.onlyIntent().request).not.toBeNull();
+        expect(h.failures.rows).toEqual([]);
+        expect(h.logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({ sendIntentId: h.onlyIntent().id, conversationId: SEND_IDS.conversation }),
+          "email_send_left_to_freezing_claim",
+        );
+        expect(h.logger.warn).not.toHaveBeenCalledWith(expect.anything(), "email_auto_send_revoked_before_send");
+
+        call.release();
+        await Promise.all(claims);
+
+        expect(h.driver.send).toHaveBeenCalledOnce();
+        expect(h.onlyIntent()).toMatchObject({ state: "accepted", providerMessageId: "re_provider_frozen_by_b", failureCode: null });
+        expect(h.failures.rows).toEqual([]);
+      });
+
       it("halts it, as any send, when its mailbox can no longer send as its address", async () => {
         const h = await materializedThenCrashed();
         h.domains.seed({ ...h.domain, sendingStatus: "pending" });
@@ -423,6 +475,26 @@ describe("EmailSendActionHandler", () => {
       expect(intent.firstAttemptAt).toEqual(h.clock());
     });
 
+    it("leaves a request another claim froze first to that claim, never posting it alongside (research B18)", async () => {
+      const h = createSendPathHarness();
+      const call = heldProviderCall(h);
+      const claims: Promise<void>[] = [];
+      h.intents.beforeWrite = async () => {
+        // Claim A is about to freeze the request it read unfrozen; claim B freezes it first and posts it.
+        h.intents.beforeWrite = null;
+        claims.push(h.deliver({ context: { attempt: 2 } }));
+        await call.entered;
+      };
+
+      await expect(h.deliver()).rejects.toThrow(FROZEN_ELSEWHERE);
+      call.release();
+      await Promise.all(claims);
+
+      expect(h.driver.send).toHaveBeenCalledOnce();
+      expect(h.onlyIntent()).toMatchObject({ state: "accepted", providerMessageId: "re_provider_frozen_by_b" });
+      expect(h.failures.rows).toEqual([]);
+    });
+
     it("re-POSTs the frozen request, unchanged and under the same key, after a retryable refusal", async () => {
       const h = createSendPathHarness();
       h.driver.send.mockRejectedValueOnce(new EmailSendError("retryable", "rate_limited"));
@@ -544,6 +616,30 @@ describe("EmailSendActionHandler", () => {
 
       expect(h.onlyIntent()).toMatchObject({ state: "uncertain", nextReconcileAt: null });
       expect(h.failures.openFor(SEND_IDS.message)?.kind).toBe("uncertain");
+    });
+
+    it("makes a send another claim froze after the exhausted claim read it uncertain, never failed: it may have gone out", async () => {
+      const h = createSendPathHarness();
+      const link = h.threads.links.get(SEND_IDS.conversation)!;
+      h.threads.links.delete(SEND_IDS.conversation);
+      await expect(h.deliver()).rejects.toThrow("email_send_thread_not_found");
+      h.threads.links.set(SEND_IDS.conversation, link);
+      const call = heldProviderCall(h);
+      const claims: Promise<void>[] = [];
+      h.intents.beforeWrite = async () => {
+        // The exhausted claim read the request unfrozen; a stale claim freezes it and posts it first.
+        h.intents.beforeWrite = null;
+        claims.push(h.deliver({ context: { attempt: 4 } }));
+        await call.entered;
+      };
+
+      await exhaust(h);
+
+      expect(h.onlyIntent()).toMatchObject({ state: "uncertain", outcomeUnknown: true, failureCode: null });
+      expect(h.failures.openFor(SEND_IDS.message)).toMatchObject({ kind: "uncertain" });
+      call.release();
+      await Promise.all(claims);
+      expect(h.driver.send).toHaveBeenCalledOnce();
     });
 
     it("flags the message when its send never materialized", async () => {

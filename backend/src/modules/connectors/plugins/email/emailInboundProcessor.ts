@@ -137,7 +137,7 @@ export interface EmailInboundProcessorDependencies {
   receiver: Pick<InboundEmailReceiver, "provider" | "fetchMessage">;
   inbound: Pick<
     EmailInboundRepository,
-    | "insertDelivery"
+    | "insertClaimedDelivery"
     | "listEventDeliveries"
     | "recordFetched"
     | "settleDropped"
@@ -370,7 +370,12 @@ export class EmailInboundProcessor {
    */
   private async failTerminally(event: InboundEventRecord, code: string, deliveredTo: readonly string[]): Promise<InboundEventOutcome> {
     const targets = await routeDeliveredTo(deliveredTo, this.routeLookups());
-    for (const target of targets.mailboxes) await this.openDelivery(event, target);
+    try {
+      for (const target of targets.mailboxes) await this.openDelivery(event, target);
+    } catch (error) {
+      if (error instanceof DeliveryClaimLost) return this.yieldClaim(event, error.step);
+      throw error;
+    }
     for (const delivery of await this.deps.inbound.listEventDeliveries(event.id)) {
       // A lost write means another claim holds the event; its settle below is refused too.
       if (isUnfinished(delivery)) await this.deps.inbound.failDelivery(claimOf(event, delivery), code);
@@ -395,7 +400,7 @@ export class EmailInboundProcessor {
    * (FR-015, FR-016), and never processed further.
    */
   private async recordUnrouted(content: EventContent, workspaceId: string | null): Promise<void> {
-    const { deliveryId } = await this.deps.inbound.insertDelivery({
+    const deliveryId = await this.insertUnderClaim(content.event, {
       inboundEventId: content.event.id,
       workspaceId,
       mailboxId: null,
@@ -430,8 +435,9 @@ export class EmailInboundProcessor {
   // ── Delivery ───────────────────────────────────────────────────────
 
   /**
-   * The event's delivery for one mailbox, written once, with the policy version in force when the
-   * webhook accepted the event (research B16). Null for a mailbox removed since routing.
+   * The event's delivery for one mailbox, written once under the event's claim, with the policy
+   * version in force when the webhook accepted the event (research B16). Null for a mailbox removed
+   * since routing.
    */
   private async openDelivery(
     event: InboundEventRecord,
@@ -440,7 +446,7 @@ export class EmailInboundProcessor {
     const mailbox = await this.deps.mailboxes.findActiveById(target.mailboxId);
     if (!mailbox) return null;
     const accepted = await this.acceptedPolicyOf(event, mailbox);
-    const { deliveryId } = await this.deps.inbound.insertDelivery({
+    const deliveryId = await this.insertUnderClaim(event, {
       inboundEventId: event.id,
       workspaceId: mailbox.workspaceId,
       mailboxId: mailbox.id,
@@ -448,6 +454,20 @@ export class EmailInboundProcessor {
       acceptedPolicyVersion: accepted.version,
     });
     return { delivery: await this.findDelivery(event, deliveryId), context: { mailbox, authority: await this.authorityOf(event, mailbox) } };
+  }
+
+  /**
+   * Writes a delivery of the event while this worker's claim still holds it, under the event's lock:
+   * a worker that routed before its lease was reclaimed, on routing that may have changed since,
+   * leaves nothing for an event another claim settles, and stops.
+   */
+  private async insertUnderClaim(
+    event: InboundEventRecord,
+    input: Parameters<EmailInboundRepository["insertClaimedDelivery"]>[1],
+  ): Promise<string> {
+    const inserted = await this.deps.inbound.insertClaimedDelivery({ attempt: event.attempts }, input);
+    if (!inserted) throw new DeliveryClaimLost("insert_delivery");
+    return inserted.deliveryId;
   }
 
   private async findDelivery(event: InboundEventRecord, deliveryId: string): Promise<InboundDeliveryRecord> {

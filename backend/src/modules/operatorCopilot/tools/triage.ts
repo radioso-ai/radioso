@@ -16,7 +16,7 @@ import {
   MAX_TITLE_CHARS,
   type AuthorizedSourceRead,
   type CopilotDeliveryFailuresPort,
-  type CopilotHeldRepliesPort,
+  type CopilotHeldReplyQueuePort,
   type CopilotPendingApprovalsPort,
   type CopilotTriageLogPort,
 } from "./escalationSources.js";
@@ -52,7 +52,7 @@ export interface WorkspaceTriageCopilotToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly pendingApprovals: CopilotPendingApprovalsPort;
   /** Absent where no channel's held replies are composed into Ray; approvals are then the routine decisions alone. */
-  readonly heldReplies?: CopilotHeldRepliesPort;
+  readonly heldReplies?: CopilotHeldReplyQueuePort;
   /** Absent where no delivering channel's failures are composed into Ray, and then not a source. */
   readonly deliveryFailures?: CopilotDeliveryFailuresPort;
   readonly chatHistoryService: CopilotConversationHistoryPort;
@@ -196,7 +196,7 @@ const readApprovals = async (
   const { heldReplies } = deps;
   const [decisions, held] = await Promise.all([
     deps.pendingApprovals.listPending(context.workspaceId),
-    heldReplies ? readOpenHeldReplies(heldReplies, copilotOperatorActor(context), agentId) : { total: 0, items: [] },
+    heldReplies ? readOpenHeldReplies(heldReplies, copilotOperatorActor(context), agentId, MAX_ITEMS_PER_SOURCE) : { total: 0, items: [] },
   ]);
   const pending = decisions.filter((decision) => agentId === null || decision.agentId === agentId);
   const decisionItems = pending.map((decision): CopilotTriageItem => ({
@@ -210,11 +210,12 @@ const readApprovals = async (
     conversationId: decision.conversationId,
     subject: { type: "conversation", id: decision.conversationId },
   }));
+  // Titled by why it is held: the ranking read never carries a draft, and held_replies reads it whole.
   const heldReplyItems = held.items.map((heldReply): CopilotTriageItem => ({
     kind: "approval",
     urgency: "blocking",
-    title: heldReply.draftText,
-    detail: heldReply.holdReason,
+    title: heldReply.holdReason,
+    detail: null,
     since: heldReply.createdAt.toISOString(),
     count: 1,
     agentId: heldReply.agentId,
@@ -234,7 +235,7 @@ const readDeliveryFailures = async (
   workspaceId: string,
   agentId: string | null,
 ): Promise<SourceResult> => {
-  const open = await readOpenDeliveryFailures(deliveryFailures, workspaceId, agentId);
+  const open = await readOpenDeliveryFailures(deliveryFailures, workspaceId, agentId, MAX_ITEMS_PER_SOURCE);
   return {
     total: open.total,
     items: open.items.slice(0, MAX_ITEMS_PER_SOURCE).map((failure) => ({

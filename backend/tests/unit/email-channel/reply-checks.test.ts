@@ -225,6 +225,58 @@ describe("ModelEmailReplyCompleteness", () => {
     expect(input).toEqual({ customer_messages: [QUESTION[0].text], reply: draft.text, context: PASSAGES });
   });
 
+  /** The input the completeness check sent the model, parsed from its envelope. */
+  const completenessInput = (request: ModelInferenceRequest | undefined) =>
+    JSON.parse(request!.prompt.split("<email-reply-completeness-input>\n")[1].split("\n</email-reply-completeness-input>")[0]) as {
+      customer_messages: string[];
+      reply: string;
+      context: { title: string; text: string }[];
+    };
+
+  it("reads the candidate reply whole: an answer beyond character 4,000 reaches the check", async () => {
+    const model = stubModel(JSON.stringify({ completeness: "complete", unanswered_asks: 0 }));
+    const { check } = completeness(model);
+    const longReply: ConnectorReplyDraft = {
+      text: `${"Our tasting room is open on Saturdays from 10:00 to 18:00, and here is what a visit includes. ".repeat(45)}Students get 10% off with a valid card.`,
+      presentation: {},
+    };
+    expect(longReply.text.indexOf("Students get 10% off")).toBeGreaterThan(4_000);
+
+    expect(await check.assess({ ...subject, draft: longReply })).toEqual({ completeness: "complete", unansweredAsks: 0 });
+
+    expect(completenessInput(model.requests[0]).reply).toBe(longReply.text);
+  });
+
+  it("is unavailable, without a model call, when the customer's mail and the whole reply do not fit the check's budget", async () => {
+    const model = stubModel(JSON.stringify({ completeness: "complete", unanswered_asks: 0 }));
+    const { check, logger, metrics } = completeness(model);
+    const oversized: ConnectorReplyDraft = { text: "Our tasting room is open on Saturdays. ".repeat(2_000), presentation: {} };
+
+    expect(await check.assess({ ...subject, draft: oversized })).toEqual({ completeness: "unavailable", unansweredAsks: null });
+
+    expect(model.complete).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: subject.conversationId, omitted: "input_budget" }),
+      "email_review_input_incomplete",
+    );
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("email_completeness_checks_total", expect.objectContaining({ labels: { verdict: "unavailable" } }));
+  });
+
+  it("gives the passages only what the budget leaves after the mail and the whole reply, most relevant first", async () => {
+    const model = stubModel(JSON.stringify({ completeness: "complete", unanswered_asks: 0 }));
+    // Each bounded to 4,000 characters; the reply leaves room for two of them within the 64,000 budget.
+    const passages = ["first", "second", "third"].map((title) => ({ title, text: `${title} `.repeat(1_500) }));
+    const { check } = completeness(model, { passages: async () => passages });
+    const reply: ConnectorReplyDraft = { text: "r".repeat(64_000 - QUESTION[0].text.length - 2 * (5 + 4_000) - 100), presentation: {} };
+
+    await check.assess({ ...subject, draft: reply });
+
+    const input = completenessInput(model.requests[0]);
+    expect(input.reply).toBe(reply.text);
+    expect(input.context.map((passage) => passage.title)).toEqual(["first", "second"]);
+    expect(input.context.every((passage) => passage.text.length === 4_000)).toBe(true);
+  });
+
   it.each([
     ["the model fails", stubModel(async () => { throw new Error("provider down"); }), {}],
     ["the model answers outside the schema", stubModel(JSON.stringify({ completeness: "mostly", unanswered_asks: 0 })), {}],

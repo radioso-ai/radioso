@@ -43,8 +43,14 @@ export interface EmailReplyCompletenessPort {
 
 const PROMPT = "email-reply-completeness.md";
 const INPUT_TAG = "email-reply-completeness-input";
-/** The passages the model sees, most relevant first as the turn ranked them. */
+/** The passages the model sees at most, most relevant first as the turn ranked them. */
 const MAX_PASSAGES = 12;
+/**
+ * Everything one check reads, in characters: the customer's unanswered mail and the candidate reply,
+ * both whole, then as many of the turn's passages as fit in what is left. A reply that cannot be
+ * read whole beside the mail it answers gets no verdict, rather than one about part of what it says.
+ */
+const INPUT_CHARS_BUDGET = 64_000;
 /** A schema bound on the count, not a product limit. */
 const MAX_UNANSWERED_ASKS = 50;
 
@@ -87,10 +93,26 @@ const COVERAGE_OF_INCOMPLETE: Record<Exclude<ReplyCompleteness, "complete">, Con
 export const factsWithCompleteness = (facts: ConnectorTurnFacts, completeness: ReplyCompleteness | null): ConnectorTurnFacts =>
   completeness === null || completeness === "complete" ? facts : { ...facts, coverage: COVERAGE_OF_INCOMPLETE[completeness] };
 
+const charsOf = (texts: readonly string[]): number => texts.reduce((total, text) => total + text.length, 0);
+
+/** The turn's passages, each bounded, most relevant first, for as long as they fit in `room` characters. */
+const contextWithin = (passages: readonly { title: string; text: string }[], room: number): { title: string; text: string }[] => {
+  const context: { title: string; text: string }[] = [];
+  let left = room;
+  for (const passage of passages.slice(0, MAX_PASSAGES)) {
+    const bounded = { title: passage.title, text: boundText(passage.text) };
+    left -= bounded.title.length + bounded.text.length;
+    if (left < 0) break;
+    context.push(bounded);
+  }
+  return context;
+};
+
 /**
  * The completeness check (FR-020): before an automatic send, one structured call reads the
- * customer's unanswered mail, the candidate reply and the passages its turn drew on, and says
- * whether the reply answers every ask. It fails closed: anything but `complete` holds the reply.
+ * customer's unanswered mail and the whole candidate reply, with the passages its turn drew on as
+ * the budget allows, and says whether the reply answers every ask. It fails closed: anything but
+ * `complete` holds the reply.
  */
 export class ModelEmailReplyCompleteness implements EmailReplyCompletenessPort {
   constructor(private readonly deps: EmailReviewCheckDependencies & { grounding: EmailReviewGroundingReader }) {}
@@ -124,14 +146,19 @@ export class ModelEmailReplyCompleteness implements EmailReplyCompletenessPort {
     ]);
     // No customer mail to measure the reply against, or not all of it readable: no verdict, so the reply waits.
     if (incoming.length === 0 || omitted !== null) return UNAVAILABLE;
+    const room = INPUT_CHARS_BUDGET - charsOf(incoming) - draft.text.length;
+    if (room < 0) {
+      this.deps.logger.warn({ ...subjectIds(subject), omitted: "input_budget" }, "email_review_input_incomplete");
+      return UNAVAILABLE;
+    }
     return askStructured({
       deps: this.deps,
       subject,
       operation: "email_reply_completeness",
       prompt: promptWithInput(PROMPT, INPUT_TAG, {
         customer_messages: incoming,
-        reply: boundText(draft.text),
-        context: passages.slice(0, MAX_PASSAGES).map((passage) => ({ title: passage.title, text: boundText(passage.text) })),
+        reply: draft.text,
+        context: contextWithin(passages, room),
       }),
       responseFormat: RESPONSE_FORMAT,
       parse: (value) => {

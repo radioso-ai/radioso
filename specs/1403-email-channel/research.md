@@ -397,7 +397,7 @@ Interleavings added to SC-002 and SC-007:
   - bounced or suppressed → `bounced`;
   - failed → `failed`.
 
-  Each clears or retargets the open `delivery_failed` row. An audited `resend` creates a new intent under `…:resend:<n>` and is the only path to a second provider call.
+  Each clears or retargets the open `delivery_failed` row. An audited `resend` creates a new intent under `…:resend:<n>` and is the only path to a second provider call. Late evidence for an earlier attempt transitions that attempt's intent only: it never resolves, clears, or retargets the failure a newer resend owns, so the newer attempt stays resolvable on its own evidence.
 
 ### B19. Online migration strategy for shared tables (review #6, NB-5)
 

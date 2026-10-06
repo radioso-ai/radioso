@@ -2343,6 +2343,7 @@ CREATE TABLE public.email_domains (
     provider text NOT NULL,
     provider_domain_id text,
     provider_region text,
+    registration_status text DEFAULT 'registering'::text NOT NULL,
     dns_records jsonb DEFAULT '[]'::jsonb NOT NULL,
     sending_status text DEFAULT 'pending'::text NOT NULL,
     receiving_status text DEFAULT 'not_requested'::text NOT NULL,
@@ -2351,6 +2352,7 @@ CREATE TABLE public.email_domains (
     last_checked_at timestamp with time zone,
     next_check_at timestamp with time zone,
     status_changed_at timestamp with time zone,
+    refresh_requested_version integer DEFAULT 0 NOT NULL,
     removed_at timestamp with time zone,
     provider_cleanup_status text,
     created_by_user_id uuid,
@@ -2360,6 +2362,9 @@ CREATE TABLE public.email_domains (
     CONSTRAINT email_domains_provider_check CHECK ((provider = ANY (ARRAY['resend'::text, 'local'::text]))),
     CONSTRAINT email_domains_provider_cleanup_status_check CHECK ((provider_cleanup_status = ANY (ARRAY['pending'::text, 'done'::text, 'failed'::text]))),
     CONSTRAINT email_domains_receiving_status_check CHECK ((receiving_status = ANY (ARRAY['not_requested'::text, 'pending'::text, 'verified'::text, 'failed'::text]))),
+    CONSTRAINT email_domains_refresh_requested_version_check CHECK ((refresh_requested_version >= 0)),
+    CONSTRAINT email_domains_registration_check CHECK (((registration_status = 'registered'::text) = (provider_domain_id IS NOT NULL))),
+    CONSTRAINT email_domains_registration_status_check CHECK ((registration_status = ANY (ARRAY['registering'::text, 'needs_reconciliation'::text, 'registered'::text]))),
     CONSTRAINT email_domains_sending_status_check CHECK ((sending_status = ANY (ARRAY['pending'::text, 'verified'::text, 'failed'::text])))
 );
 
@@ -7284,6 +7289,13 @@ CREATE INDEX email_domains_next_check_idx ON public.email_domains USING btree (n
 --
 
 CREATE INDEX email_domains_receiving_verified_domain_idx ON public.email_domains USING btree (domain) WHERE ((receiving_status = 'verified'::text) AND (removed_at IS NULL));
+
+
+--
+-- Name: email_domains_removing_domain_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_domains_removing_domain_idx ON public.email_domains USING btree (domain) WHERE (provider_cleanup_status = ANY (ARRAY['pending'::text, 'failed'::text]));
 
 
 --

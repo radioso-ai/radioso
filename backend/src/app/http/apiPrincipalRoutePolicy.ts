@@ -369,6 +369,7 @@ const declarations: readonly PolicyDeclaration[] = [
     ["GET", "/api/v1/workspaces/:workspaceId/email-channel/events/:deliveryId/raw", "workspace.settings.read"],
     ["POST", "/api/v1/workspaces/:workspaceId/email-channel/domains", "workspace.settings.manage"],
     ["POST", "/api/v1/workspaces/:workspaceId/email-channel/domains/:domainId/verify", "workspace.settings.manage"],
+    ["POST", "/api/v1/workspaces/:workspaceId/email-channel/domains/:domainId/reconcile", "workspace.settings.manage"],
     ["POST", "/api/v1/workspaces/:workspaceId/email-channel/domains/:domainId/receiving", "workspace.settings.manage"],
     ["DELETE", "/api/v1/workspaces/:workspaceId/email-channel/domains/:domainId", "workspace.settings.manage"],
     ["POST", "/api/v1/workspaces/:workspaceId/slack/install/start", "workspace.agents.manage"],

@@ -88,6 +88,8 @@ const harness = (options: {
   live?: string[];
   /** How many times the supersede is aborted as a deadlock victim before it goes through. */
   deadlocks?: number;
+  /** Conversations deleted by the time they are locked. */
+  gone?: string[];
 } = {}) => {
   let deadlocks = options.deadlocks ?? 0;
   const { db, statements, log } = createRecordingKysely(({ sql, parameters }): RecordedAnswer => {
@@ -95,7 +97,7 @@ const harness = (options: {
       case "read_live_drafts":
         return { rows: (options.live ?? options.superseded ?? []).map((conversationId) => ({ conversation_id: conversationId })) };
       case "lock_conversation":
-        return { rows: [{ id: parameters[0] }] };
+        return options.gone?.includes(String(parameters[0])) ? { rows: [] } : { rows: [{ id: parameters[0] }] };
       case "lock_mailbox":
         return { rows: [mailboxRow({ engagement_mode: options.mode ?? "draft" })] };
       case "update_budget":
@@ -234,6 +236,58 @@ describe("createPostgresMailboxPolicyChangeUnitOfWork", () => {
     expect(published).toEqual([{ workspaceId, kinds: ["hitl.decision_resolved", "conversation.ownership_changed"], sentBefore: sent() }]);
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       metadata: expect.objectContaining({ action: "mode_changed", supersededHeldReplies: 2, handedOffConversations: 2 }),
+    }));
+  });
+
+  it("locks the conversation of a draft born after the change locked its conversations before creating its ownership row", async () => {
+    const { service, sent, statementsOf, published } = harness({
+      live: ["conversation-1"],
+      superseded: ["conversation-1", "conversation-2"],
+    });
+
+    await service.update(actor, workspaceId, mailboxId, { engagementMode: "operator_only" });
+
+    expect(sent()).toEqual([
+      "BEGIN",
+      "read_live_drafts",
+      "lock_conversation",
+      "load_ownership",
+      "lock_mailbox",
+      "bump_policy_with_history",
+      "supersede_held_replies",
+      // Already locked, in order.
+      "request_handoff",
+      "record_handoff_activity",
+      // Born after the change looked: its conversation is locked now, out of order, before an
+      // ownership row is created for it. A deadlock that meets is retried whole.
+      "lock_conversation",
+      "request_handoff",
+      "record_handoff_activity",
+      "COMMIT",
+    ]);
+    expect(statementsOf("lock_conversation").map((statement) => statement.parameters)).toEqual([
+      ["conversation-1", workspaceId],
+      ["conversation-2", workspaceId],
+    ]);
+    expect(published).toEqual([{ workspaceId, kinds: ["hitl.decision_resolved", "conversation.ownership_changed"], sentBefore: sent() }]);
+  });
+
+  it("hands nothing off for a late draft's conversation that is gone by the time the change locks it", async () => {
+    const { service, sent, audit } = harness({ live: [], superseded: ["conversation-1"], gone: ["conversation-1"] });
+
+    await service.update(actor, workspaceId, mailboxId, { engagementMode: "operator_only" });
+
+    expect(sent()).toEqual([
+      "BEGIN",
+      "read_live_drafts",
+      "lock_mailbox",
+      "bump_policy_with_history",
+      "supersede_held_replies",
+      "lock_conversation",
+      "COMMIT",
+    ]);
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ supersededHeldReplies: 1, handedOffConversations: 0 }),
     }));
   });
 

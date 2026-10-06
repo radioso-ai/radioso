@@ -46,7 +46,6 @@ interface ResendDomain {
   name: string;
   status: string;
   region: string | null;
-  createdAt: Date | null;
   sendingEnabled: boolean;
   receivingEnabled: boolean;
   records: readonly ResendDnsRecord[];
@@ -149,7 +148,6 @@ export class ResendEmailDomainProvisioner implements EmailDomainProvisioner {
       providerDomainId: domain.id,
       region: domain.region,
       readiness: await this.readinessOf(domain),
-      createdAt: domain.createdAt,
     };
   }
 
@@ -294,17 +292,10 @@ const parseDomain = (payload: unknown): ResendDomain => {
     name: payload.name,
     status: typeof payload.status === "string" ? payload.status : "",
     region: typeof payload.region === "string" ? payload.region : null,
-    createdAt: timestampOf(payload.created_at),
     sendingEnabled: capabilities.sending === "enabled",
     receivingEnabled: capabilities.receiving === "enabled",
     records: Array.isArray(payload.records) ? payload.records.flatMap(parseRecord) : [],
   };
-};
-
-/** Resend writes `2026-10-03 13:29:18.978423+00` on create and ISO 8601 elsewhere. */
-const timestampOf = (value: unknown): Date | null => {
-  const time = typeof value === "string" ? Date.parse(value) : Number.NaN;
-  return Number.isNaN(time) ? null : new Date(time);
 };
 
 const parseDomainList = (payload: unknown): { domains: ResendDomainListing[]; hasMore: boolean } => {

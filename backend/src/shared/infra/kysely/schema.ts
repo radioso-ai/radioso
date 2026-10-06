@@ -808,6 +808,8 @@ export interface EmailDomains {
   receiving_confirmed_at: Timestamp | null;
   receiving_confirmed_by_user_id: string | null;
   receiving_status: Generated<string>;
+  refresh_requested_version: Generated<number>;
+  registration_status: Generated<string>;
   removed_at: Timestamp | null;
   sending_status: Generated<string>;
   status_changed_at: Timestamp | null;

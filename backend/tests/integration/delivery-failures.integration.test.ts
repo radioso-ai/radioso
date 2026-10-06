@@ -305,5 +305,15 @@ describeIntegration("conversation delivery failures (Postgres)", () => {
       [...halted.messageIds, later.messageIds[0], otherAgent.messageIds[0]].sort(),
     );
     expect(everyAgent.nextCursor).toBeNull();
+
+    // The longest waits as one bounded read of the ranking columns, oldest first, beside one count.
+    const waits = await failures.longestWaiting(workspaceId, { limit: 2 });
+    expect(waits.total).toBe(everyAgent.items.length);
+    expect(waits.items).toEqual([...everyAgent.items].reverse().slice(0, 2).map((failure) => ({
+      id: failure.id, conversationId: failure.conversationId, kind: failure.kind, detailCode: failure.detailCode, openedAt: failure.openedAt,
+    })));
+    const agentWaits = await failures.longestWaiting(workspaceId, { agentId: otherAgentId, limit: 10 });
+    expect(agentWaits).toEqual({ total: 1, items: [expect.objectContaining({ conversationId: otherAgent.conversationId })] });
+    expect(await failures.longestWaiting(randomUUID(), { limit: 10 })).toEqual({ total: 0, items: [] });
   });
 });

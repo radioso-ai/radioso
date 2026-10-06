@@ -89,7 +89,7 @@ export interface EmailReviewCheckDependencies {
 const DEFAULT_TIMEOUT_MS = 30_000;
 /** The messages a check reads: the revision's own, and enough before them to see what was answered. */
 const TRANSCRIPT_WINDOW = 12;
-/** Bounds one earlier message, draft or passage in a prompt; email bodies and chunks can be long. */
+/** Bounds one earlier message or passage in a prompt; email bodies and chunks can be long. A reply is never cut. */
 const MAX_TEXT_CHARS = 4_000;
 /**
  * The customer's unanswered mail a check reads whole. Mail past it cannot be judged completely in

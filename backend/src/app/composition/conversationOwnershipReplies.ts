@@ -12,6 +12,7 @@ import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import type { DB } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import { pushActionDrainAfterCommit, type QueuedOutboxRow } from "./actionDrainAfterCommit.js";
+import { runTransactionWithDeadlockRetry } from "./conversationLockOrder.js";
 
 /**
  * Runs a teammate's reply in one Postgres transaction: the conversation and ownership rows are
@@ -19,8 +20,9 @@ import { pushActionDrainAfterCommit, type QueuedOutboxRow } from "./actionDrainA
  * check and the message insert; and the reply's channel delivery is queued on the action outbox in
  * the same transaction, so a reply commits with its delivery or not at all. A claim the reply makes
  * records its activity, and the held replies the reply replaces are superseded, in the same
- * transaction too, in the conversation lock protocol's order (`conversationLockOrder.ts`). The drain
- * push goes out only after commit, when a delivery was queued, and is best-effort.
+ * transaction too, in the conversation lock protocol's order (`conversationLockOrder.ts`); a
+ * deadlock victim's whole transaction runs again, a bounded number of times. The drain push goes out
+ * only after commit, when a delivery was queued, and is best-effort.
  */
 export const createPostgresOwnershipReplyUnitOfWork = (deps: {
   db: Kysely<DB>;
@@ -31,7 +33,9 @@ export const createPostgresOwnershipReplyUnitOfWork = (deps: {
 }): OwnershipReplyUnitOfWork => ({
   async run(work) {
     let queued: QueuedOutboxRow | null = null;
-    const result = await deps.db.transaction().execute((trx) => {
+    const result = await runTransactionWithDeadlockRetry(deps.db, (trx) => {
+      // Reset per attempt: an aborted attempt queued nothing.
+      queued = null;
       const conversations = new ConversationRepository(trx);
       const outbox = new ActionRequestRepository(trx);
       return work({
@@ -51,7 +55,7 @@ export const createPostgresOwnershipReplyUnitOfWork = (deps: {
         activity: { record: (event) => deps.activity.record(trx, event) },
         heldReplies: new HeldReplyRepository(trx),
       });
-    });
+    }, { unit: "conversation_ownership_reply", logger: deps.logger });
     if (queued) {
       await pushActionDrainAfterCommit(deps, "hitl_reply_delivery_drain_push_failed", queued);
     }

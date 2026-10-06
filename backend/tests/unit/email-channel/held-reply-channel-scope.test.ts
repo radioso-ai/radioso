@@ -49,6 +49,7 @@ const harness = async (options: { autoSend?: boolean } = {}) => {
   const scope = new EmailHeldReplyChannelScope({
     mailboxes,
     domains,
+    reviews: threads,
     autoSend: options.autoSend === false ? undefined : {
       threads,
       ownership: { load: async (conversationId) => owners.get(conversationId) ?? null },
@@ -254,6 +255,41 @@ describe("EmailHeldReplyChannelScope, automatic sends (research B8, B9)", () => 
 
       expect(h.threads.links.get(CONVERSATION_ID)?.autoSendsSinceRenewal).toBe(1);
     });
+  });
+});
+
+describe("EmailHeldReplyChannelScope, publication under a review claim (research B17)", () => {
+  /** The thread's review scheduled, due now, and claimed: the claim a review publishes under. */
+  const claimedReview = async (h: Harness) => {
+    await h.threads.scheduleReview(CONVERSATION_ID, { dueAt: NOW, policyVersion: 4 });
+    const [claimed] = await h.threads.claimDueReviews({ limit: 1, leaseSeconds: 300 });
+    return { revision: claimed.reviewRevision, claim: { attempt: claimed.reviewAttempts, leaseUntil: claimed.reviewLeaseUntil } };
+  };
+
+  it("authorizes publishing while the claim still holds the thread's review, with or without automatic sending", async () => {
+    for (const autoSend of [true, false]) {
+      const h = await harness({ autoSend });
+      const { claim } = await claimedReview(h);
+
+      expect(await h.scope.authorizePublication(CONVERSATION_ID, claim)).toBe(true);
+    }
+  });
+
+  it("refuses once the claim's review was completed by the claim that took it over", async () => {
+    const h = await harness();
+    const { claim, revision } = await claimedReview(h);
+    expect(await h.threads.completeReview({ conversationId: CONVERSATION_ID, ...claim, revision })).toBe(true);
+
+    expect(await h.scope.authorizePublication(CONVERSATION_ID, claim)).toBe(false);
+  });
+
+  it("refuses a claim whose lease another claim replaced, and a conversation with no thread", async () => {
+    const h = await harness();
+    const { claim } = await claimedReview(h);
+
+    expect(await h.scope.authorizePublication(CONVERSATION_ID, { ...claim, leaseUntil: new Date(claim.leaseUntil.getTime() + 1) })).toBe(false);
+    expect(await h.scope.authorizePublication(CONVERSATION_ID, { ...claim, attempt: claim.attempt + 1 })).toBe(false);
+    expect(await h.scope.authorizePublication(HELD_REPLY_ID, claim)).toBe(false);
   });
 });
 

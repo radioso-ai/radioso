@@ -12,6 +12,7 @@ import type {
   HeldReplyInsert,
   HeldReplyReadStore,
   HeldReplySupersedeScope,
+  HeldReplyWait,
   HeldReplyWriteStore,
 } from "../../modules/handoff/heldReplies/heldReplyService.js";
 import {
@@ -319,6 +320,30 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
     return this.list(workspaceId, query, { attentionOpenOnly: false });
   }
 
+  /** The ranking columns alone: a queue reader never pays for the draft, the facts or the trace. */
+  async listOldestOpen(workspaceId: string, query: Parameters<HeldReplyReadStore["listOldestOpen"]>[1]): Promise<HeldReplyWait[]> {
+    const rows = await this.waitingForTeammate(workspaceId, query.agentId)
+      .select(["id", "conversation_id", "agent_id", "hold_reason", "created_at"])
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
+      .limit(query.limit)
+      .execute();
+    return rows.map((row) => ({
+      id: row.id,
+      conversationId: row.conversation_id,
+      agentId: row.agent_id,
+      holdReason: row.hold_reason,
+      createdAt: row.created_at,
+    }));
+  }
+
+  async countOpen(workspaceId: string, query: Parameters<HeldReplyReadStore["countOpen"]>[1]): Promise<number> {
+    const row = await this.waitingForTeammate(workspaceId, query.agentId)
+      .select((eb) => eb.fn.countAll<string>().as("count"))
+      .executeTakeFirstOrThrow();
+    return Number(row.count);
+  }
+
   /**
    * The conversations with a live draft bound to the policy, in id order: what a change to the
    * policy locks before the policy itself (`app/composition/conversationLockOrder.ts`).
@@ -360,6 +385,16 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
       .set({ ...decisionColumns({ kind: "supersede", reason }), superseded_reason: reason })
       .where(column, "=", value)
       .where("state", "in", heldReplyEventSources("supersede"));
+  }
+
+  /** The workspace's held replies waiting for a teammate, as the attention index's predicate spells it. */
+  private waitingForTeammate(workspaceId: string, agentId: string | undefined) {
+    const select = this.db
+      .selectFrom("held_replies")
+      .where("workspace_id", "=", workspaceId)
+      .where("attention_cleared_at", "is", null)
+      .where("state", "<>", "queued_auto");
+    return agentId === undefined ? select : select.where("agent_id", "=", agentId);
   }
 
   private async list(

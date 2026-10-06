@@ -23,6 +23,7 @@ import type { CustomerChannelReplyDeliverer, DeliveryFailureResolverPort } from 
 import {
   EMAIL_EVENT_RETENTION_DAYS,
   EMAIL_SEND_ACTION_TYPE,
+  EmailBacklogRepository,
   EmailCustomerReplyDeliverer,
   EmailDomainRepository,
   EmailInboundRepository,
@@ -43,6 +44,7 @@ import type { ApplicationModule } from "../applicationModule.js";
 import type { HeldReplyChannelRegistration } from "../heldReplyUnitOfWork.js";
 import { createPostgresMailboxPolicyChangeUnitOfWork } from "../mailboxPolicyChange.js";
 import { channelProviderOf, providerAdapters, type EmailChannelConfig } from "./adapters.js";
+import { createEmailBacklogSampler } from "./backlogSampler.js";
 import { createEmailChannelSweepOverPostgres, createPostgresThreadProtocolUnitOfWork } from "./inbound.js";
 import { createEmailChannelOperatorServices, type EmailChannelOperatorServices } from "./operator.js";
 import { createEmailDeliveryFailureResolver, createEmailSendServices, createWorkerEmailSendHandler } from "./outbound.js";
@@ -244,11 +246,12 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       heldReplies: input.heldReplies,
       autoSend: AUTO_SEND,
       eventRetentionDays: options.eventRetentionDays ?? EMAIL_EVENT_RETENTION_DAYS,
-      metrics,
       logger,
       clock,
     }),
   });
+  // Sampled where `/metrics` is scraped (the API): the worker that sweeps exposes no metrics endpoint.
+  metrics?.registerCollector(createEmailBacklogSampler({ reader: new EmailBacklogRepository(db), metrics, logger, clock }));
 
   return {
     ...operator,

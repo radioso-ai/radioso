@@ -424,6 +424,21 @@ export class EmailThreadRepository {
   }
 
   /**
+   * Locks the thread's link row until the transaction ends and says whether `claim` still holds its
+   * review (research B17). A publication made under the claim in that transaction commits before
+   * any claim can take the review over or complete it; one taken over or completed first is refused.
+   */
+  async lockReviewClaim(claim: ReviewClaim): Promise<boolean> {
+    const row = await this.db
+      .selectFrom("email_thread_links")
+      .select("conversation_id")
+      .where((eb) => this.heldBy(eb, claim))
+      .forUpdate()
+      .executeTakeFirst();
+    return row !== undefined;
+  }
+
+  /**
    * Completes revision `revision` under `claim` only: a worker overtaken by newer mail never clears
    * the newer due time, and one whose claim was taken over completes nothing (research B17).
    */

@@ -86,7 +86,9 @@ It does not own:
   operator actions (retry a failed delivery, open its audited raw message),
   the conversation-level email facts, and the read-only Ray projection.
 - `persistence/` — one repository per table, no business rules, plus
-  `EmailBacklogRepository`, the cross-table overdue counts the sweep samples.
+  `EmailBacklogRepository`, the cross-table overdue counts behind the
+  `email_backlog` gauge, which the API samples when `/metrics` is scraped
+  (`app/composition/emailChannel/backlogSampler.ts`).
 - `drains.ts` — the drain and sweep ports the worker and the task routes
   call; `infra/` holds the Cloud Tasks drain dispatcher built on the shared
   `scheduleAt` dispatcher.
@@ -96,9 +98,7 @@ It does not own:
   or in progress (the outbox gave up before materializing) to `pending`
   through the held-reply dispatch port's `returnAbandonedAuto`. Where the
   deployment does not run `auto`, it also returns every stale `queued_auto`
-  held reply to `pending` (the rollback path). Where metrics are on, each run
-  ends by sampling the work past its stage's deadline into the
-  `email_backlog` gauge.
+  held reply to `pending` (the rollback path).
 - `operator/` — the `email` customer reply deliverer registered in the
   shared reply dispatcher. It refuses `409 email_sending_not_verified`
   (naming the missing step) before anything is written, and otherwise

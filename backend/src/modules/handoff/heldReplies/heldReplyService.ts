@@ -36,6 +36,15 @@ import {
   type SupersedeReason,
 } from "./heldReplyState.js";
 
+/**
+ * The producer's claim on the review a result came from, opaque to handoff: the claim count and the
+ * lease that fence the producer's writes. Its channel authorizes publishing under it.
+ */
+interface HeldReplyReviewClaim {
+  attempt: number;
+  leaseUntil: Date;
+}
+
 /** A review's result as its producer hands it over to be held. */
 export interface HoldReplyInput {
   workspaceId: string;
@@ -49,6 +58,12 @@ export interface HoldReplyInput {
   policy: { ref: string; version: number } | null;
   /** The producer's idempotency ref for the review; holding it again finds the first. */
   reviewRef: string | null;
+  /**
+   * The producer's claim on the review, when it publishes under one: the result is held or queued
+   * only while the producing channel finds the claim still holds, in the same transaction, so a
+   * producer whose claim was taken over publishes nothing.
+   */
+  reviewClaim?: HeldReplyReviewClaim;
   /** The producer's code for why it is held. */
   holdReason: string;
   facts: ReviewTurnFacts;
@@ -58,7 +73,9 @@ export interface HoldReplyInput {
 type HoldReplyResult =
   | { heldReplyId: string; state: "pending" | "superseded"; duplicate: false }
   /** The review was held before; its held reply as it is now. */
-  | { heldReplyId: string; state: HeldReplyState; duplicate: true };
+  | { heldReplyId: string; state: HeldReplyState; duplicate: true }
+  /** Nothing was recorded: the producer's review claim no longer holds. */
+  | { refused: "claim_lost" };
 
 /** A review's result to publish: as one to hold, without a hold reason, since it waits for no one. */
 export type QueueAutoInput = Omit<HoldReplyInput, "holdReason">;
@@ -66,7 +83,9 @@ export type QueueAutoInput = Omit<HoldReplyInput, "holdReason">;
 type QueueAutoResult =
   | { ok: true; heldReplyId: string; duplicate: boolean }
   /** Nothing was recorded; the producer holds the result for a teammate instead. */
-  | { ok: false; refused: AutoSendRefusal };
+  | { ok: false; refused: AutoSendRefusal }
+  /** Nothing was recorded: the producer's review claim no longer holds, so it publishes nothing. */
+  | { ok: false; refused: "claim_lost" };
 
 /**
  * How a channel's review runner hands its results over: to wait for a teammate, or queued for an
@@ -149,6 +168,11 @@ export interface HeldReplyChannelScope {
   authorizeAutoDispatch(heldReply: HeldReplyAuthorityView): Promise<{ authorized: true } | { authorized: false; code: string }>;
   /** Records the send of the message a materialization wrote, in the same transaction. */
   recordMaterialized(heldReply: HeldReplyAuthorityView, messageId: string): Promise<void>;
+  /**
+   * Locks the producer's claim on the conversation's review until the transaction ends, after the
+   * policy, and says whether it still holds; a claim taken over or settled since publishes nothing.
+   */
+  authorizePublication(conversationId: string, claim: HeldReplyReviewClaim): Promise<boolean>;
 }
 
 /**
@@ -210,6 +234,15 @@ interface HeldReplyPosition {
 
 type HeldReplyListQuery = { agentId: string | undefined; after: HeldReplyPosition | null; limit: number };
 
+/** A held reply waiting for a teammate as a queue ranks it: who waits, why and since when; never its draft. */
+export interface HeldReplyWait {
+  id: string;
+  conversationId: string;
+  agentId: string | null;
+  holdReason: string;
+  createdAt: Date;
+}
+
 export interface HeldReplyReadStore {
   findByReviewRef(conversationId: string, reviewRef: string): Promise<HeldReplyRecord | null>;
   /** The conversation's newest held reply in the workspace, whatever its state. */
@@ -218,6 +251,10 @@ export interface HeldReplyReadStore {
   listOpen(workspaceId: string, query: HeldReplyListQuery): Promise<HeldReplyRecord[]>;
   /** As {@link listOpen}, with every other held reply among them. */
   listAll(workspaceId: string, query: HeldReplyListQuery): Promise<HeldReplyRecord[]>;
+  /** Up to `limit` of the held replies waiting for a teammate, oldest first; with `agentId`, that agent's. */
+  listOldestOpen(workspaceId: string, query: { agentId: string | undefined; limit: number }): Promise<HeldReplyWait[]>;
+  /** How many held replies wait for a teammate; with `agentId`, how many of that agent's. */
+  countOpen(workspaceId: string, query: { agentId: string | undefined }): Promise<number>;
 }
 
 /**
@@ -287,6 +324,7 @@ type HeldReplyDiscardResult =
 interface HeldReplyOperatorPort {
   list(actor: OwnershipActor, query: { attention: "open" | "all"; agentId?: string; cursor?: string; limit: number }): Promise<HeldReplyPage>;
   current(actor: OwnershipActor, conversationId: string): Promise<{ heldReply: HeldReplyView | null }>;
+  longestWaiting(actor: OwnershipActor, query: { agentId?: string; limit: number }): Promise<{ total: number; items: HeldReplyWait[] }>;
   /** An unchanged release with `editedText` null; an edited release with it set. */
   release(actor: OwnershipActor, input: { conversationId: string; heldReplyId: string; editedText: string | null }): Promise<HeldReplyReleaseResult>;
   discard(actor: OwnershipActor, input: { conversationId: string; heldReplyId: string }): Promise<HeldReplyDiscardResult>;
@@ -393,6 +431,9 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyDispatc
       const policy = input.policy
         ? { bound: input.policy.version, current: await this.lockedPolicyVersion(scope, input.policy.ref) }
         : null;
+      if (!(await this.reviewClaimHolds(scope, input))) {
+        return null;
+      }
       const latestCustomerMessageId = await scope.heldReplies.latestCustomerMessageId(input.conversationId);
       const born = heldBirth({
         ownership: { bound: input.ownershipVersion, current: ownership?.version ?? 0 },
@@ -401,6 +442,9 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyDispatc
       });
       return scope.heldReplies.insert({ ...input, born });
     });
+    if (!outcome) {
+      return { refused: "claim_lost" };
+    }
     const { record } = outcome;
     if (!outcome.created) {
       return { heldReplyId: record.id, state: record.state, duplicate: true };
@@ -457,6 +501,9 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyDispatc
           : null,
         answersLatestCustomerMessage: (await scope.heldReplies.latestCustomerMessageId(input.conversationId)) === input.answersMessageId,
       });
+      if (!(await this.reviewClaimHolds(scope, input))) {
+        return { ok: false, refused: "claim_lost" };
+      }
       // No channel means no policy vouched for, which the refusal already names.
       if (refused || !channel) {
         return { ok: false, refused: refused ?? "policy_changed" };
@@ -582,6 +629,19 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyDispatc
     const items = rows.slice(0, query.limit).map(presentHeldReply);
     const last = items.at(-1);
     return { items, nextCursor: rows.length > query.limit && last ? encodePosition(last) : null };
+  }
+
+  /**
+   * The held replies waiting longest for a teammate, up to `limit`, with how many wait in all: one
+   * bounded read and one count however long the queue, so a backlog costs a queue reader neither
+   * a scan nor the drafts.
+   */
+  async longestWaiting(actor: OwnershipActor, query: { agentId?: string; limit: number }): Promise<{ total: number; items: HeldReplyWait[] }> {
+    const [items, total] = await Promise.all([
+      this.deps.reads.listOldestOpen(actor.workspaceId, { agentId: query.agentId, limit: query.limit }),
+      this.deps.reads.countOpen(actor.workspaceId, { agentId: query.agentId }),
+    ]);
+    return { total, items };
   }
 
   /** The conversation's current held reply: its newest, whatever its state; null when it has none. */
@@ -764,6 +824,17 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyDispatc
     }
     const verdict = await channel.authorizeAutoDispatch(authorityView(heldReply));
     return verdict.authorized ? { authorized: true, channel } : verdict;
+  }
+
+  /**
+   * Whether the producer may still publish under its review claim, asked of the channel its policy
+   * names, after the policy lock. A result under no claim, or bound to a policy no channel claims,
+   * needs no authorization: that one is born superseded or refused, so it publishes nothing.
+   */
+  private async reviewClaimHolds(scope: HeldReplyWriteScope, input: HoldReplyInput | QueueAutoInput): Promise<boolean> {
+    if (!input.reviewClaim || !input.policy) return true;
+    const channel = scope.channelFor(input.policy.ref);
+    return channel ? channel.authorizePublication(input.conversationId, input.reviewClaim) : true;
   }
 
   /** The policy's version as its channel locked it; null when no channel claims the policy or it is gone. */

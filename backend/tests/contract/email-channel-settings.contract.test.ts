@@ -179,6 +179,7 @@ describe("email channel settings contract", () => {
       await request(h.app).patch(`${h.owner.settings}/mailboxes/${created.body.id}`).set(h.owner.headers).send({ enabled: false }).expect(403);
       await request(h.app).post(`${h.owner.settings}/mailboxes/${created.body.id}/relay-token/rotate`).set(h.owner.headers).expect(403);
       await request(h.app).post(`${h.owner.settings}/domains`).set(h.owner.headers).send({ domain: "example.org" }).expect(403);
+      await request(h.app).post(`${h.owner.settings}/domains/${created.body.domainId}/reconcile`).set(h.owner.headers).expect(403);
     });
 
     it("refuses every route without workspace.settings.read", async () => {
@@ -508,6 +509,52 @@ describe("email channel settings contract", () => {
       vi.spyOn(h.provisioner, "requestVerification").mockRejectedValue(new Error("provider down"));
       const unavailable = await request(h.app).post(`${domain}/verify`).set(h.owner.headers).expect(502);
       expect(unavailable.body.error.code).toBe("provider_unavailable");
+    });
+
+    it("adopts a domain the provider already holds only when an operator reconciles it, and audits the adoption", async () => {
+      const h = await harness();
+      // Registered on the provider account outside this workspace's claim.
+      const existing = await h.provisioner.registerSendingDomain("example.org");
+      if (!existing.ok) throw new Error("expected a provider registration");
+      vi.spyOn(h.provisioner, "registerSendingDomain").mockResolvedValueOnce({ ok: false, refused: "already_registered" });
+
+      const added = await request(h.app).post(`${h.owner.settings}/domains`).set(h.owner.headers).send({ domain: "example.org" }).expect(201);
+      expect(added.body).toMatchObject({ domain: "example.org", registration: { status: "needs_reconciliation" }, records: [] });
+      const overview = await request(h.app).get(h.owner.settings).set(h.owner.headers).expect(200);
+      expect(overview.body.domains).toEqual([expect.objectContaining({ id: added.body.id, registration: { status: "needs_reconciliation" } })]);
+
+      const domain = `${h.owner.settings}/domains/${added.body.id}`;
+      const blockedMailbox = await createMailbox(h, { address: "support@example.org" }).expect(409);
+      expect(blockedMailbox.body.error.code).toBe("domain_needs_reconciliation");
+      const blockedCheck = await request(h.app).post(`${domain}/verify`).set(h.owner.headers).expect(409);
+      expect(blockedCheck.body.error.code).toBe("domain_needs_reconciliation");
+
+      const reconciled = await request(h.app).post(`${domain}/reconcile`).set(h.owner.headers).expect(200);
+      expect(reconciled.body).toMatchObject({ id: added.body.id, registration: { status: "registered" } });
+      expect(reconciled.body.records.length).toBeGreaterThan(0);
+      expect(auditActions(h, "email_channel.domain").map((event) => event.metadata)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ action: "reconciliation_required", domainId: added.body.id }),
+        expect.objectContaining({ action: "reconciled", domainId: added.body.id, outcome: "adopted" }),
+      ]));
+      await request(h.app).post(`${domain}/reconcile`).set(h.owner.headers).expect(200);
+      await createMailbox(h, { address: "support@example.org" }).expect(201);
+
+      const other = await h.signIn();
+      await request(h.app).post(`${other.settings}/domains/${added.body.id}/reconcile`).set(other.headers).expect(404);
+    });
+
+    it("refuses to reconcile a domain the provider has not reported, and to add a domain whose removal is still being cleaned up", async () => {
+      const h = await harness();
+      vi.spyOn(h.provisioner, "registerSendingDomain").mockRejectedValueOnce(new Error("socket hang up"));
+      await request(h.app).post(`${h.owner.settings}/domains`).set(h.owner.headers).send({ domain: "example.org" }).expect(502);
+      const [claim] = (await request(h.app).get(h.owner.settings).set(h.owner.headers).expect(200)).body.domains;
+      expect(claim).toMatchObject({ registration: { status: "registering" } });
+      const notAwaiting = await request(h.app).post(`${h.owner.settings}/domains/${claim.id}/reconcile`).set(h.owner.headers).expect(409);
+      expect(notAwaiting.body.error.code).toBe("domain_not_awaiting_reconciliation");
+
+      await request(h.app).delete(`${h.owner.settings}/domains/${claim.id}`).set(h.owner.headers).expect(204);
+      const pending = await request(h.app).post(`${h.owner.settings}/domains`).set(h.owner.headers).send({ domain: "example.org" }).expect(409);
+      expect(pending.body.error.code).toBe("domain_removal_pending");
     });
   });
 

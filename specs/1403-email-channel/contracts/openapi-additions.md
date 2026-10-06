@@ -11,7 +11,7 @@ Base: `/api/v1/workspaces/{workspaceId}/email-channel`. Reads require `workspace
 | Method | Path | operationId | Request | Response | Errors |
 |---|---|---|---|---|---|
 | GET | `` | `getEmailChannel` | none | `EmailChannelOverview` | 401, 403, 404 workspace |
-| POST | `/mailboxes` | `createEmailMailbox` | `CreateEmailMailboxRequest` | 201 `EmailMailbox` | 400 `invalid_address`, 409 `mailbox_exists`, 409 `domain_claimed_elsewhere`, 409 `engagement_mode_unavailable`, 503 `email_channel_not_configured` |
+| POST | `/mailboxes` | `createEmailMailbox` | `CreateEmailMailboxRequest` | 201 `EmailMailbox` | 400 `invalid_address`, 409 `mailbox_exists`, 409 `domain_claimed_elsewhere`, 409 `domain_needs_reconciliation`, 409 `domain_removal_pending`, 409 `engagement_mode_unavailable`, 502 `provider_unavailable`, 503 `email_channel_not_configured` |
 | GET | `/mailboxes/{mailboxId}` | `getEmailMailbox` | none | `EmailMailbox` | 404 |
 | PATCH | `/mailboxes/{mailboxId}` | `updateEmailMailbox` | `UpdateEmailMailboxRequest` | `EmailMailbox` | 400, 404, 409 `stale_policy_version`, 409 `engagement_mode_unavailable` |
 | DELETE | `/mailboxes/{mailboxId}` | `removeEmailMailbox` | none | 204 | 404 |
@@ -21,9 +21,10 @@ Base: `/api/v1/workspaces/{workspaceId}/email-channel`. Reads require `workspace
 | GET | `/events` | `listEmailChannelEvents` | query `mailboxId?`, `cursor?`, `limit≤100`, `disposition?`, `state?` | `EmailEventPage`: every delivery attributed to the workspace, including a removed mailbox's retained events and mail a verified receiving domain accepted for an address no mailbox has (`mailboxId: null`, reason `no_mailbox`); `mailboxId` narrows to one mailbox, removed or not | 400 `invalid_cursor` |
 | POST | `/events/{deliveryId}/retry` | `retryEmailInboundEvent` | none | 202 `EmailEvent` | 404, 409 `event_not_failed` |
 | GET | `/events/{deliveryId}/raw` | `getEmailInboundRawMessage` | none | `EmailRawMessageView` (any delivery in the workspace's event log, `mailboxId: null` included) | 403 (needs `workspace.conversation.takeover` as well), 404, 410 `raw_purged` |
-| POST | `/domains` | `addEmailSendingDomain` | `{ domain: string }` | 201 `EmailDomain` | 400 `invalid_domain`, 409 `domain_claimed_elsewhere` |
-| POST | `/domains/{domainId}/verify` | `verifyEmailDomain` | none | `EmailDomain` (refreshed) | 404, 502 `provider_unavailable` |
-| POST | `/domains/{domainId}/receiving` | `enableEmailDirectReceiving` | `{ confirmation: string }`, which must equal the domain | `EmailDomain` | 400 `confirmation_mismatch`, 404 |
+| POST | `/domains` | `addEmailSendingDomain` | `{ domain: string }` | 201 `EmailDomain`; `registration.status: needs_reconciliation` when the provider already holds the name | 400 `invalid_domain`, 409 `domain_claimed_elsewhere`, 409 `domain_removal_pending` (a removal of the name is still being cleaned up), 502 `provider_unavailable` |
+| POST | `/domains/{domainId}/verify` | `verifyEmailDomain` | none | `EmailDomain` (refreshed) | 404, 409 `domain_needs_reconciliation`, 502 `provider_unavailable` |
+| POST | `/domains/{domainId}/reconcile` | `reconcileEmailDomain` | none | `EmailDomain` (`registration.status: registered`): the provider's registration found by name and adopted for this workspace, or a fresh one when the provider no longer holds the name; audited `email_channel.domain` / `reconciled`. A registered domain is returned unchanged | 404, 409 `domain_not_awaiting_reconciliation` (still `registering`), 409 `domain_removal_pending`, 502 `provider_unavailable` |
+| POST | `/domains/{domainId}/receiving` | `enableEmailDirectReceiving` | `{ confirmation: string }`, which must equal the domain | `EmailDomain` | 400 `confirmation_mismatch`, 404, 409 `domain_needs_reconciliation` |
 | DELETE | `/domains/{domainId}` | `removeEmailDomain` | none | 204 | 404, 409 `domain_has_mailboxes` (remove mailboxes first) |
 
 Schema sketches:
@@ -39,6 +40,7 @@ EmailChannelOverview = {
 }
 EmailDomain = {
   id: string; domain: string;
+  registration: { status: "registering" | "needs_reconciliation" | "registered" };
   sending: { status: "pending" | "verified" | "failed"; checkedAt: string | null };
   receiving: { status: "not_requested" | "pending" | "verified" | "failed"; checkedAt: string | null };
   records: { purpose: "dkim" | "spf" | "return_path" | "receiving_mx" | "dmarc"; type: "TXT" | "MX" | "CNAME"; name: string; value: string; priority?: number; status: "pending" | "verified" | "failed" | "advisory" }[];
@@ -181,7 +183,7 @@ These are added in `backend/src/app/worker/emailChannelWorkerTaskRoutes.ts` behi
 | `getConversationEmailFacts` | tool `email_conversation_facts` | S1 |
 | `getEmailInboundRawMessage` | exclusion, `permanent`: raw customer mail and headers are never model input | S1 |
 | `rotateEmailMailboxRelayToken` | `neverListExclusion("secret_rotation")` (`catalogCoverage.ts:302-308`) | S1 |
-| `createEmailMailbox`, `updateEmailMailbox`, `removeEmailMailbox`, `startEmailMailboxSetupCheck`, `retryEmailInboundEvent`, `addEmailSendingDomain`, `verifyEmailDomain`, `enableEmailDirectReceiving`, `removeEmailDomain` | exclusion, `deferred`: excluded from Ray this release (FR-047); customer-visible routing would need a proposal card (`catalogCoverage.ts:165`) | S1 |
+| `createEmailMailbox`, `updateEmailMailbox`, `removeEmailMailbox`, `startEmailMailboxSetupCheck`, `retryEmailInboundEvent`, `addEmailSendingDomain`, `verifyEmailDomain`, `reconcileEmailDomain`, `enableEmailDirectReceiving`, `removeEmailDomain` | exclusion, `deferred`: excluded from Ray this release (FR-047); customer-visible routing would need a proposal card (`catalogCoverage.ts:165`) | S1 |
 | `listDeliveryFailures` | tool `needs_attention` (kind `delivery_failed`) | S2 |
 | `acknowledgeDeliveryFailure`, `resolveDeliveryFailure` | exclusion, `permanent`: audited delivery decisions stay with a person | S2 |
 | `listHeldReplies`, `getCurrentHeldReply` | tool `held_replies` | S3 |

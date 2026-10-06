@@ -45,8 +45,17 @@ export type SentEmailLastEvent =
 
 export interface SentEmailStatus { providerMessageId: string; deliveredMessageId: RfcMessageId | null; lastEvent: SentEmailLastEvent }
 
-export class EmailSendError extends Error {
-  constructor(readonly certainty: "rejected" | "unknown", readonly code: string) { super(code); }
+// emailSendErrors.ts. How certain a failed send is that nothing went out.
+export type EmailSendOutcome = "rejected" | "retryable" | "unknown";
+export type EmailProviderFailureCode =
+  | "rejected" | "auth" | "not_found" | "rate_limited" | "idempotency_body_mismatch" | "idempotency_in_flight"
+  | "unrecognized_conflict" | "unavailable" | "timeout" | "unreachable" | "malformed_response" | "invalid_header_value";
+
+export class EmailSendError extends Error {                // carries a classification and a sanitized code, never content
+  constructor(readonly outcome: EmailSendOutcome, readonly code: EmailProviderFailureCode, message?: string);
+}
+export class EmailLookupError extends Error {              // a failed `lookup`; `retryable`: a later lookup may succeed
+  constructor(readonly retryable: boolean, readonly code: EmailProviderFailureCode);
 }
 
 export interface EmailDriver {
@@ -54,6 +63,12 @@ export interface EmailDriver {
   lookup(providerMessageId: string): Promise<SentEmailStatus | null>;   // new; log and noop return null
 }
 ```
+
+`EmailSendError.outcome` decides recovery:
+
+- `rejected` (`auth`, `not_found`, `rejected`, `idempotency_body_mismatch`, `invalid_header_value`): the provider refused the request, or it never left Radioso. Nothing was sent, and the same request will not succeed; the attempt fails terminally.
+- `retryable` (`rate_limited`, `idempotency_in_flight`): the provider turned the request away without accepting it. Re-send it unchanged, with the same idempotency key; for `idempotency_in_flight` an earlier request under that key may still be accepted.
+- `unknown` (`unavailable`, `timeout`, `unreachable`, `malformed_response`, `unrecognized_conflict`): the provider may have accepted it. Only a re-send with the same idempotency key and an identical body, or a `lookup`, settles it; it is never treated as not sent.
 
 `providerMessageId` and `deliveredMessageId` are required, so these must change in the same task: `LogEmailDriver` and `NoopEmailDriver` (`emailService.ts`), `ResendEmailDriver`, and every `EmailDriver` / `EmailService` fake under `backend/tests/` (find them with `rg -l "EmailDriver|EmailSendResult" backend/tests`).
 
@@ -130,10 +145,7 @@ export interface DnsRecordView {
   status: ReadinessStatus | "advisory";
 }
 export interface DomainReadiness { sending: ReadinessStatus; receiving: ReadinessStatus | "not_requested"; records: readonly DnsRecordView[] }
-export interface ProviderDomain {
-  providerDomainId: string; region: string | null; readiness: DomainReadiness;
-  createdAt: Date | null;   // the provider's clock; null when it does not say
-}
+export interface ProviderDomain { providerDomainId: string; region: string | null; readiness: DomainReadiness }
 export type DomainRegistration =
   | ({ ok: true } & ProviderDomain)
   | { ok: false; refused: "already_registered" | "invalid_domain" };
@@ -153,7 +165,9 @@ Consumer: `emailChannel/domains/sendingDomainService.ts` only.
 
 - `already_registered` reports only that the provider account holds the name (Resend: `403 validation_error`, "registered already"). The provider cannot say for which workspace; the caller's own registration claim decides (`data-model.md`, `email_domains`).
 - `findByName` returns the registration of the name in this deployment's account and region, or null. Resend lists domains per account across regions (`GET /domains`, paged with `limit` and `after`), then reads the match for its records; a match in another region belongs to the deployment that region serves and is not returned. The local adapter returns its stored domain.
-- The service adopts a found registration only when it was created no earlier than the claim, less one minute of clock skew: no other workspace could have registered the name while the claim held it. An older one (an operations domain, another deployment sharing the account, or a removed domain whose cleanup has not run) is `claimed_elsewhere`. Every provider call runs outside a database transaction.
+- Nothing in a provider registration ties it to the attempt that created it: the account can hold an operations domain, another deployment's sharing the account, or one whose create answer was lost. So the service never adopts one on its own. When `registerSendingDomain` answers `already_registered`, the workspace's claim becomes `needs_reconciliation` (`data-model.md`, `email_domains`), and a mailbox, a check or receiving on it is refused `409 domain_needs_reconciliation`.
+- **Reconcile** (`SendingDomainService.reconcile`, `POST .../domains/{domainId}/reconcile`, `workspace.settings.manage`, audited `email_channel.domain` / `reconciled` with `outcome: adopted | registered`) is the operator's explicit adoption. It is refused `domain_removal_pending` while a removal of the name is still being cleaned up, checked before `findByName` and again, under the name's row locks, when the adoption is recorded (`EmailDomainRepository.adoptRegistration`). The first check keeps a lookup that ran while a cleanup was deleting the registration from adopting it afterwards; the second keeps a cleanup and an adoption from both acting. A found registration is recorded on the claim; when the provider no longer holds the name, the domain is registered afresh. A claim still `registering` is refused `domain_not_awaiting_reconciliation`; checking the domain finishes it.
+- Removing a claim calls no provider. The cleanup removes only a registration recorded on the row: one a create answered after its claim was removed is handed to the claim's cleanup (`recordRemovedClaimRegistration`); one whose answer was lost stays at the provider and surfaces as `needs_reconciliation` when the name is added again. A name being removed (cleanup `pending` or `failed`) can be neither claimed nor adopted until the cleanup finishes. Every provider call runs outside a database transaction.
 
 ## 2. Host port (`packages/connector-api/connectorPlugin.d.ts`)
 
@@ -331,6 +345,9 @@ export interface HeldReplyAuthorityView { id: string; conversationId: string; po
 export interface HeldReplyOperatorPort {
   list(actor: OwnershipActor, query: { attention: "open" | "all"; agentId?: string; cursor?: string; limit: number }): Promise<HeldReplyPage>;
   current(actor: OwnershipActor, conversationId: string): Promise<{ heldReply: HeldReplyView | null }>;    // object root (NB-3)
+  // Ray's escalation sources: one bounded oldest-first read of ranking fields (never the draft) and one count.
+  longestWaiting(actor: OwnershipActor, query: { agentId?: string; limit: number }):
+    Promise<{ total: number; items: { id: string; conversationId: string; agentId: string | null; holdReason: string; createdAt: Date }[] }>;
   release(actor: OwnershipActor, input: { conversationId: string; heldReplyId: string; editedText: string | null }):
     Promise<{ ok: true; heldReply: HeldReplyView; messageId: string } |
             { ok: false; refusal: "not_pending" | "ownership_changed" | "policy_changed" | "channel_not_ready"; current: HeldReplyView | null }>;
@@ -358,6 +375,9 @@ export interface DeliveryFailureRecorderPort {                       // producer
 }
 export interface DeliveryFailureReaderPort {                         // consumers: HTTP route, Ray needs_attention/triage
   listOpen(workspaceId: string, query: { agentId?: string; cursor?: string; limit: number }): Promise<DeliveryFailurePage>;
+  // Ray's escalation sources: one bounded oldest-first read of ranking fields and one count.
+  longestWaiting(workspaceId: string, query: { agentId?: string; limit: number }):
+    Promise<{ total: number; items: { id: string; conversationId: string; kind: DeliveryFailureKind; detailCode: string | null; openedAt: Date }[] }>;
 }
 ```
 
@@ -554,6 +574,10 @@ export interface EmailMailboxCopilotView {
   sendingState: "ok" | "not_verified" | "domain_removed"; threadSendBudget: number; hourlyGenerationBudget: number;
 }   // never: relayAddress, relay tokens, setup-check recipients, thread tokens, raw content
 export interface EmailEventLogCopilotSummary { mailboxId: string; window: string; byDisposition: Record<string, number>; failed: number; lastReceivedAt: string | null }
+export interface EmailEventCopilotCounts { window: string; byDisposition: Record<string, number>; failed: number }
+// eventSummaries: { summaries; noMailbox; removedMailboxes }. Without a mailboxId it reads the whole workspace log
+// (EventLogReader.summarizeWorkspace): every active mailbox, mail for an address no mailbox has, and removed
+// mailboxes' retained events. With one, noMailbox and removedMailboxes are null.
 ```
 
 ## 9. Composition seams (`backend/src/app/composition/`)

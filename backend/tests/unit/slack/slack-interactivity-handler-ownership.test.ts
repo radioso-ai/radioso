@@ -527,7 +527,7 @@ describe("SlackInteractivityHandler ownership rules through the ownership servic
     const service = new ConversationOwnershipService({
       conversations: { findByIdAndWorkspaceId: async (id: string) => ({ id }) as ConversationRecord },
       ownership,
-      changes: { run: (work) => work({ ownership, outbox, activity, heldReplies }) },
+      changes: { run: (work) => work({ conversations: { lockForUpdate: async () => true }, ownership, outbox, activity, heldReplies }) },
       replyWrites: {
         run: (work) => work({ conversations: { lockForUpdate: async () => true }, ownership, reply: replyScope, activity, heldReplies }),
       },

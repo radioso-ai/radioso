@@ -219,6 +219,7 @@ import { createDocumentCopilotProposalAdapter } from "../../src/modules/operator
 import { createIngestionSettingsCopilotProposalAdapter } from "../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/workspaceSettingProposalAdapter.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
+import type { CopilotHeldReplyQueuePort } from "../../src/modules/operatorCopilot/tools/escalationSources.js";
 import { assertPublicWebsiteUrl, normalizeBaseUrl } from "../../src/modules/websiteCrawler/public.js";
 import { createAgentCopilotProposalAdapter } from "../../src/modules/operatorCopilot/agentProposalAdapter.js";
 import { WebsiteAnalysisProbeService } from "../../src/modules/operatorCopilot/services/websiteAnalysisProbeService.js";
@@ -834,7 +835,7 @@ export const createTestDependencies = (overrides: {
   /** Delivery failures and the decisions on them; omitted means an empty in-memory store no channel resolves. */
   deliveryFailures?: AppDependencies["deliveryFailures"];
   /** Held replies and the decisions on them; omitted means a workspace with none. */
-  heldReplies?: AppDependencies["heldReplies"];
+  heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
   agentToolCatalog?: (readers: {
     agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
@@ -2059,12 +2060,18 @@ export const createTestDependencies = (overrides: {
     supersedePendingForConversation: async () => 0,
     clearDiscardedAttention: async () => 0,
   };
+  // Without row locks, "locking" a conversation is finding it in its workspace.
+  const lockableConversations = {
+    lockForUpdate: async (conversationId: string, workspaceId: string) =>
+      (await conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId)) !== null,
+  };
   const conversationOwnershipService = new ConversationOwnershipService({
     conversations: conversationRepository,
     ownership: conversationOwnershipRepository,
     // The in-memory stores have no transactions; atomicity is covered against Postgres.
     changes: {
       run: (work) => work({
+        conversations: lockableConversations,
         ownership: conversationOwnershipRepository,
         outbox: actionOutbox,
         activity: conversationActivity.writer(),
@@ -2073,10 +2080,7 @@ export const createTestDependencies = (overrides: {
     },
     replyWrites: {
       run: (work) => work({
-        conversations: {
-          lockForUpdate: async (conversationId, workspaceId) =>
-            (await conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId)) !== null,
-        },
+        conversations: lockableConversations,
         ownership: conversationOwnershipRepository,
         reply: { messages: messageRepository, conversations: conversationRepository, outbox: actionOutbox },
         activity: conversationActivity.writer(),
@@ -2292,9 +2296,10 @@ export const createTestDependencies = (overrides: {
     documentSources: documentSourceRepository,
   });
   const deliveryFailureRecords = createInMemoryDeliveryFailures().failures;
-  const heldReplies: AppDependencies["heldReplies"] = overrides.heldReplies ?? {
+  const heldReplies: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort = overrides.heldReplies ?? {
     list: async () => ({ items: [], nextCursor: null }),
     current: async () => ({ heldReply: null }),
+    longestWaiting: async () => ({ total: 0, items: [] }),
     release: async () => { throw notFound("Held reply not found"); },
     discard: async () => { throw notFound("Held reply not found"); },
   };
@@ -2852,7 +2857,7 @@ export const createTestApp = (overrides: {
   agentToolCatalog?: NonNullable<Parameters<typeof createTestDependencies>[0]>["agentToolCatalog"];
   emailChannel?: AppDependencies["emailChannel"];
   deliveryFailures?: AppDependencies["deliveryFailures"];
-  heldReplies?: AppDependencies["heldReplies"];
+  heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
 } = {}) => {
   const {
     dependencies,

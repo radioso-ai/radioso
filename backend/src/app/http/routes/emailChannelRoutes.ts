@@ -184,6 +184,11 @@ export const createEmailChannelRoutes = (dependencies: EmailChannelRouteDependen
     res.status(200).json(await channelOf(dependencies).sendingDomains.verify(actorOf(res), workspaceIdOf(req), uuidParam(req, "domainId")));
   }));
 
+  // Adopts the provider's existing registration of a domain waiting for reconciliation.
+  router.post(`${domain}/reconcile`, workspaceSession, settingsManage, handle(async (req, res) => {
+    res.status(200).json(await channelOf(dependencies).sendingDomains.reconcile(actorOf(res), workspaceIdOf(req), uuidParam(req, "domainId")));
+  }));
+
   router.post(`${domain}/receiving`, workspaceSession, settingsManage, validateBody(enableEmailDirectReceivingRequestSchema), handle(async (req, res) => {
     const { confirmation } = req.body as z.infer<typeof enableEmailDirectReceivingRequestSchema>;
     const enabled = await channelOf(dependencies).sendingDomains.enableReceiving(actorOf(res), workspaceIdOf(req), uuidParam(req, "domainId"), confirmation);

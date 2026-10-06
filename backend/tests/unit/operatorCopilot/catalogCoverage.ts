@@ -384,6 +384,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "retryEmailInboundEvent",
     "addEmailSendingDomain",
     "verifyEmailDomain",
+    "reconcileEmailDomain",
     "enableEmailDirectReceiving",
     "removeEmailDomain",
   ], emailChannelConfiguration),

@@ -29,13 +29,19 @@ import { InMemoryEmailSendIntents } from "./inMemoryEmailSend.js";
 type Clock = () => Date;
 type Args<T extends (...args: never[]) => unknown> = Parameters<T>;
 
-/** In-memory `email_domains`, honouring the active-domain uniqueness and the database clock. */
+/**
+ * In-memory `email_domains`, honouring the active-domain uniqueness, the removal fence on claims and
+ * adoptions, the refresh request version, and the database clock.
+ */
 export class InMemoryEmailDomains implements Pick<
   EmailDomainRepository,
   | "claim"
   | "recordRegistration"
+  | "markNeedsReconciliation"
+  | "isRemovalPending"
+  | "adoptRegistration"
+  | "recordRemovedClaimRegistration"
   | "releaseClaim"
-  | "isProviderDomainActive"
   | "insertActive"
   | "findActiveByDomain"
   | "findActive"
@@ -56,11 +62,13 @@ export class InMemoryEmailDomains implements Pick<
   constructor(private readonly clock: Clock) {}
 
   seed(overrides: Partial<EmailDomainRecord> & { workspaceId: string; domain: string }): EmailDomainRecord {
+    const providerDomainId = overrides.providerDomainId === undefined ? `provider-${overrides.domain}` : overrides.providerDomainId;
     const record: EmailDomainRecord = {
       id: randomUUID(),
       provider: "local",
-      providerDomainId: `provider-${overrides.domain}`,
+      providerDomainId,
       providerRegion: null,
+      registrationStatus: providerDomainId === null ? "registering" : "registered",
       dnsRecords: [],
       sendingStatus: "pending",
       receivingStatus: "not_requested",
@@ -69,6 +77,7 @@ export class InMemoryEmailDomains implements Pick<
       lastCheckedAt: null,
       nextCheckAt: null,
       statusChangedAt: null,
+      refreshRequestedVersion: 0,
       removedAt: null,
       providerCleanupStatus: null,
       createdByUserId: null,
@@ -79,19 +88,48 @@ export class InMemoryEmailDomains implements Pick<
     return record;
   }
 
+  /** Synchronous, so a claim checks and takes the domain without another claim interleaving. */
   async claim(input: Args<EmailDomainRepository["claim"]>[0]) {
-    return this.activeByDomain(input.domain) ?? this.seed({ ...input, providerDomainId: null });
+    const holder = this.activeByDomain(input.domain);
+    if (holder) return { status: "held" as const, domain: holder };
+    if (this.removing(input.domain)) return { status: "removal_pending" as const };
+    return { status: "held" as const, domain: this.seed({ ...input, providerDomainId: null }) };
   }
 
   async recordRegistration(domainId: string, registration: Args<EmailDomainRepository["recordRegistration"]>[1]) {
     const record = this.records.get(domainId);
     if (!record || record.removedAt || record.providerDomainId !== null) return null;
-    return this.update(record, {
+    return this.register(record, registration);
+  }
+
+  async markNeedsReconciliation(domainId: string) {
+    const record = this.records.get(domainId);
+    if (!record || record.removedAt || record.registrationStatus !== "registering") return null;
+    return this.update(record, { registrationStatus: "needs_reconciliation" });
+  }
+
+  async isRemovalPending(domain: string) {
+    return this.removing(domain);
+  }
+
+  async adoptRegistration(domainId: string, registration: Args<EmailDomainRepository["adoptRegistration"]>[1]) {
+    const record = this.records.get(domainId);
+    if (!record) return { status: "not_awaiting" as const };
+    if (this.removing(record.domain)) return { status: "removal_pending" as const };
+    if (record.removedAt || record.registrationStatus !== "needs_reconciliation") return { status: "not_awaiting" as const };
+    return { status: "adopted" as const, domain: this.register(record, registration) };
+  }
+
+  async recordRemovedClaimRegistration(domainId: string, registration: Args<EmailDomainRepository["recordRemovedClaimRegistration"]>[1]) {
+    const record = this.records.get(domainId);
+    if (!record?.removedAt || record.providerDomainId !== null || !this.isRemovingRecord(record)) return false;
+    this.update(record, {
       ...registration,
-      dnsRecords: [...registration.dnsRecords],
-      lastCheckedAt: this.clock(),
-      statusChangedAt: this.clock(),
+      registrationStatus: "registered",
+      providerCleanupStatus: "pending",
+      nextCheckAt: this.clock(),
     });
+    return true;
   }
 
   async releaseClaim(domainId: string) {
@@ -99,15 +137,11 @@ export class InMemoryEmailDomains implements Pick<
     if (record && !record.removedAt && record.providerDomainId === null) this.records.delete(domainId);
   }
 
-  async isProviderDomainActive(provider: string, providerDomainId: string) {
-    return [...this.records.values()].some((record) =>
-      record.removedAt === null && record.provider === provider && record.providerDomainId === providerDomainId);
-  }
-
   async insertActive(input: Args<EmailDomainRepository["insertActive"]>[0]) {
     if (await this.findActiveByDomain(input.domain)) return null;
     return this.seed({
       ...input,
+      registrationStatus: "registered",
       dnsRecords: [...input.dnsRecords],
       lastCheckedAt: this.clock(),
       statusChangedAt: this.clock(),
@@ -118,9 +152,16 @@ export class InMemoryEmailDomains implements Pick<
     return this.activeByDomain(domain);
   }
 
-  /** Synchronous, so a claim checks and takes the domain without another claim interleaving. */
   private activeByDomain(domain: string) {
     return [...this.records.values()].find((record) => record.domain === domain && record.removedAt === null) ?? null;
+  }
+
+  private removing(domain: string) {
+    return [...this.records.values()].some((record) => record.domain === domain && this.isRemovingRecord(record));
+  }
+
+  private isRemovingRecord(record: EmailDomainRecord) {
+    return record.removedAt !== null && (record.providerCleanupStatus === "pending" || record.providerCleanupStatus === "failed");
   }
 
   async findActive(workspaceId: string, domainId: string) {
@@ -151,35 +192,29 @@ export class InMemoryEmailDomains implements Pick<
 
   async recordReadiness(domainId: string, readiness: Args<EmailDomainRepository["recordReadiness"]>[1]) {
     const record = this.records.get(domainId);
-    if (!record || record.removedAt) return null;
-    return this.update(record, {
-      sendingStatus: readiness.sendingStatus,
-      receivingStatus: readiness.receivingStatus,
-      dnsRecords: [...readiness.dnsRecords],
-      lastCheckedAt: this.clock(),
-      nextCheckAt: readiness.nextCheckAt,
-      ...(readiness.statusChanged ? { statusChangedAt: this.clock() } : {}),
-    });
+    if (!record || record.removedAt || record.refreshRequestedVersion !== readiness.requestedVersion) return null;
+    return this.writeReadiness(record, readiness, readiness.nextCheckAt);
   }
 
-  async deferRefresh(domainId: string, nextCheckAt: Date) {
+  async deferRefresh(domainId: string, nextCheckAt: Date, requestedVersion: number) {
     const record = this.records.get(domainId);
-    if (record && !record.removedAt) this.update(record, { nextCheckAt });
+    if (record && !record.removedAt && record.refreshRequestedVersion === requestedVersion) this.update(record, { nextCheckAt });
   }
 
   async expediteRefresh(input: { provider: string; providerDomainId: string }) {
     const record = [...this.records.values()].find((candidate) =>
       !candidate.removedAt && candidate.provider === input.provider && candidate.providerDomainId === input.providerDomainId);
     if (!record) return false;
-    this.update(record, { nextCheckAt: this.clock() });
+    this.update(record, { nextCheckAt: this.clock(), refreshRequestedVersion: record.refreshRequestedVersion + 1 });
     return true;
   }
 
   async confirmReceiving(domainId: string, input: Args<EmailDomainRepository["confirmReceiving"]>[1]) {
     const record = this.records.get(domainId);
     if (!record || record.removedAt) return null;
-    this.update(record, { receivingConfirmedByUserId: input.confirmedByUserId, receivingConfirmedAt: this.clock() });
-    return this.recordReadiness(domainId, input.readiness);
+    const confirmed = this.update(record, { receivingConfirmedByUserId: input.confirmedByUserId, receivingConfirmedAt: this.clock() });
+    const nextCheckAt = record.refreshRequestedVersion === input.readiness.requestedVersion ? input.readiness.nextCheckAt : this.clock();
+    return this.writeReadiness(confirmed, input.readiness, nextCheckAt);
   }
 
   async markRemoved(workspaceId: string, domainId: string) {
@@ -192,15 +227,40 @@ export class InMemoryEmailDomains implements Pick<
   async listCleanupDue(limit: number) {
     const now = this.clock().getTime();
     return [...this.records.values()]
-      .filter((record) => record.removedAt !== null
-        && (record.providerCleanupStatus === "pending" || record.providerCleanupStatus === "failed")
-        && (record.nextCheckAt === null || record.nextCheckAt.getTime() <= now))
+      .filter((record) => this.isRemovingRecord(record) && (record.nextCheckAt === null || record.nextCheckAt.getTime() <= now))
       .slice(0, limit);
   }
 
   async recordCleanup(domainId: string, outcome: Args<EmailDomainRepository["recordCleanup"]>[1]) {
     const record = this.records.get(domainId);
-    if (record?.removedAt) this.update(record, { providerCleanupStatus: outcome.status, nextCheckAt: outcome.retryAt });
+    if (record && this.isRemovingRecord(record) && record.providerDomainId === outcome.providerDomainId) {
+      this.update(record, { providerCleanupStatus: outcome.status, nextCheckAt: outcome.retryAt });
+    }
+  }
+
+  private register(record: EmailDomainRecord, registration: Args<EmailDomainRepository["recordRegistration"]>[1]): EmailDomainRecord {
+    return this.update(record, {
+      ...registration,
+      registrationStatus: "registered",
+      dnsRecords: [...registration.dnsRecords],
+      lastCheckedAt: this.clock(),
+      statusChangedAt: this.clock(),
+    });
+  }
+
+  private writeReadiness(
+    record: EmailDomainRecord,
+    readiness: Args<EmailDomainRepository["recordReadiness"]>[1],
+    nextCheckAt: Date,
+  ): EmailDomainRecord {
+    return this.update(record, {
+      sendingStatus: readiness.sendingStatus,
+      receivingStatus: readiness.receivingStatus,
+      dnsRecords: [...readiness.dnsRecords],
+      lastCheckedAt: this.clock(),
+      nextCheckAt,
+      ...(readiness.statusChanged ? { statusChangedAt: this.clock() } : {}),
+    });
   }
 
   private update(record: EmailDomainRecord, patch: Partial<EmailDomainRecord>): EmailDomainRecord {
@@ -521,6 +581,7 @@ export class InMemoryEmailInbound implements Pick<
   | "retryEventLater"
   | "releaseExpiredLeases"
   | "insertDelivery"
+  | "insertClaimedDelivery"
   | "listEventDeliveries"
   | "recordFetched"
   | "reserveThread"
@@ -536,6 +597,7 @@ export class InMemoryEmailInbound implements Pick<
   | "listMailboxLog"
   | "listWorkspaceLog"
   | "countMailboxEvents"
+  | "countWorkspaceEvents"
   | "findDelivery"
   | "findLogEntry"
   | "readRawMessage"
@@ -661,6 +723,13 @@ export class InMemoryEmailInbound implements Pick<
     this.deliveries.set(delivery.id, delivery);
     this.log.push("insertDelivery");
     return { deliveryId: delivery.id, duplicate: false };
+  }
+
+  /** As the repository: the delivery is written only while the event is `processing` under `claim`. */
+  async insertClaimedDelivery(claim: { attempt: number }, input: Args<EmailInboundRepository["insertDelivery"]>[0]) {
+    const event = this.events.get(input.inboundEventId);
+    if (!event || event.attempts !== claim.attempt || event.state !== "processing") return null;
+    return this.insertDelivery(input);
   }
 
   async listEventDeliveries(inboundEventId: string) {
@@ -809,6 +878,19 @@ export class InMemoryEmailInbound implements Pick<
     return { byDisposition, failed };
   }
 
+  async countWorkspaceEvents(workspaceId: string, since: Date) {
+    const byMailbox = new Map<string | null, { mailboxId: string | null; byDisposition: Record<string, number>; failed: number }>();
+    for (const delivery of this.deliveries.values()) {
+      if (delivery.workspaceId !== workspaceId || delivery.createdAt.getTime() < since.getTime()) continue;
+      const counts = byMailbox.get(delivery.mailboxId) ?? { mailboxId: delivery.mailboxId, byDisposition: {}, failed: 0 };
+      const key = delivery.disposition ?? "undecided";
+      counts.byDisposition[key] = (counts.byDisposition[key] ?? 0) + 1;
+      if (delivery.state === "failed") counts.failed += 1;
+      byMailbox.set(delivery.mailboxId, counts);
+    }
+    return [...byMailbox.values()];
+  }
+
   async findDelivery(workspaceId: string, deliveryId: string) {
     const delivery = this.deliveries.get(deliveryId);
     return delivery && delivery.workspaceId === workspaceId ? { ...delivery } : null;
@@ -909,6 +991,7 @@ export class InMemoryEmailThreads implements Pick<
   | "scheduleReview"
   | "claimDueReviews"
   | "holdsReviewClaim"
+  | "lockReviewClaim"
   | "completeReview"
   | "releaseReview"
   | "retryReviewLater"
@@ -1065,6 +1148,11 @@ export class InMemoryEmailThreads implements Pick<
   }
 
   async holdsReviewClaim(claim: ReviewClaim) {
+    return this.heldBy(claim);
+  }
+
+  /** As {@link holdsReviewClaim}: one test step runs at a time, so the row lock has nothing to wait on. */
+  async lockReviewClaim(claim: ReviewClaim) {
     return this.heldBy(claim);
   }
 

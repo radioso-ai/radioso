@@ -14162,6 +14162,18 @@ components:
           format: uuid
         domain:
           type: string
+        registration:
+          type: object
+          properties:
+            status:
+              type: string
+              enum:
+                - registering
+                - needs_reconciliation
+                - registered
+              description: "`registering`: the provider has not answered yet; checking the domain finishes it. `needs_reconciliation`: the email provider already holds this domain, and only `reconcileEmailDomain` adopts that registration. `registered`: the provider holds the workspace's registration."
+          required:
+            - status
         sending:
           type: object
           properties:
@@ -14204,6 +14216,7 @@ components:
       required:
         - id
         - domain
+        - registration
         - sending
         - receiving
         - records
@@ -28047,7 +28060,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: "`mailbox_exists`, `domain_claimed_elsewhere` (names no other workspace) or `engagement_mode_unavailable`"
+          description: "`mailbox_exists`, `domain_claimed_elsewhere` (names no other workspace), `domain_needs_reconciliation` (reconcile the domain first), `domain_removal_pending` or `engagement_mode_unavailable`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: "`provider_unavailable`: the email provider could not register the address's domain"
           content:
             application/json:
               schema:
@@ -28619,6 +28638,7 @@ paths:
     post:
       tags: *a91
       summary: Add a sending domain
+      description: "Claims the domain for the workspace and registers it with the email provider. When the provider already holds the domain, it is added with `registration.status: needs_reconciliation` and adopted only by `reconcileEmailDomain`."
       operationId: addEmailSendingDomain
       security: *a92
       parameters:
@@ -28660,7 +28680,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: "`domain_claimed_elsewhere` (names no other workspace)"
+          description: "`domain_claimed_elsewhere` (names no other workspace) or `domain_removal_pending`: the domain's removal is still being cleaned up at the provider"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: "`provider_unavailable`"
           content:
             application/json:
               schema:
@@ -28711,6 +28737,75 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Domain not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`domain_needs_reconciliation`: reconcile the domain first"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: "`provider_unavailable`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: "`email_channel_not_configured`: this deployment has no email provider"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/workspaces/{workspaceId}/email-channel/domains/{domainId}/reconcile:
+    post:
+      tags: *a91
+      summary: Adopt the provider's existing registration of a domain
+      description: "For a domain in `registration.status: needs_reconciliation`: finds the email provider's registration of the domain by name and records it for this workspace, or registers the domain afresh when the provider no longer holds it. Audited. A registered domain is returned unchanged."
+      operationId: reconcileEmailDomain
+      security: *a92
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: domainId
+          in: path
+      responses:
+        "200":
+          description: Domain with its provider registration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailDomain"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace settings manage permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Domain not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`domain_not_awaiting_reconciliation` (the provider has not reported the domain as already registered) or `domain_removal_pending`: a removal of the domain is still being cleaned up at the provider"
           content:
             application/json:
               schema:
@@ -28780,6 +28875,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Domain not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`domain_needs_reconciliation`: reconcile the domain first"
           content:
             application/json:
               schema:

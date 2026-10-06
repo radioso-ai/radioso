@@ -118,9 +118,10 @@ describe("ChatSessionPreparer existing user message", () => {
     );
 
     expect(session.history.map((entry) => entry.id)).toEqual(earlier.slice(-3).map((entry) => entry.id));
-    // The boundary is the repository's to apply, before it orders and limits.
+    // The boundary is the repository's to resolve and apply, by the answered message's id, before it
+    // orders and limits: a JavaScript Date would drop the microseconds Postgres orders messages by.
     expect(listedBefore).toHaveBeenCalledWith(WORKSPACE_ID, conversation.id, {
-      before: { createdAt: requestMessage.createdAt, id: requestMessage.id },
+      beforeMessageId: requestMessage.id,
       limit: 3,
     });
   });

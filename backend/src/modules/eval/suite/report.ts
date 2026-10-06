@@ -3,7 +3,7 @@ import type { BaselineDiff, CaseOutcome } from "./baseline.js";
 import type { SuiteAssertionVerdict } from "./scoring.js";
 import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";
 
-export interface SuiteRunSummary {
+interface SuiteRunSummary {
   total: number;
   pass: number;
   fail: number;

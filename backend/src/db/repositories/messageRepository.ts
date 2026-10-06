@@ -73,13 +73,16 @@ export interface MessageRepositoryPort {
     options?: { roles?: readonly MessageRole[] },
   ): Promise<MessageRecord[]>;
   /**
-   * The newest `limit` messages recorded before `before` in `(created_at, id)` order, oldest first.
-   * The boundary applies before the limit, so messages recorded after it never take a place.
+   * The newest `limit` messages recorded before the conversation's message `beforeMessageId` in
+   * `(created_at, id)` order, oldest first. The boundary is that message's own `(created_at, id)`,
+   * read by id at the store's full timestamp precision, and applies before the limit, so messages
+   * recorded after it never take a place. A boundary that is not a message of the conversation has
+   * nothing before it.
    */
   listBeforeByConversationId(
     workspaceId: string,
     conversationId: string,
-    input: { before: { createdAt: Date; id: string }; limit: number },
+    input: { beforeMessageId: string; limit: number },
   ): Promise<MessageRecord[]>;
   countByConversationId(workspaceId: string, conversationId: string): Promise<number>;
   listWindowByConversationId(
@@ -297,24 +300,27 @@ export class MessageRepository implements MessageRepositoryPort {
   async listBeforeByConversationId(
     workspaceId: string,
     conversationId: string,
-    input: { before: { createdAt: Date; id: string }; limit: number },
+    input: { beforeMessageId: string; limit: number },
   ): Promise<MessageRecord[]> {
     if (input.limit <= 0) {
       return [];
     }
 
-    const { createdAt, id } = input.before;
+    // The boundary is resolved in Postgres: `created_at` carries microseconds (`clock_timestamp()`),
+    // and a JavaScript Date round trip would truncate them, dropping a predecessor recorded within the
+    // boundary's millisecond. No such message makes the row comparison null, so nothing matches.
     const rows = await this.db
       .selectFrom("messages")
       .select(messageColumns)
       .where("workspace_id", "=", workspaceId)
       .where("conversation_id", "=", conversationId)
-      .where((eb) =>
-        eb.or([
-          eb("created_at", "<", createdAt),
-          eb.and([eb("created_at", "=", createdAt), eb("id", "<", id)]),
-        ]),
-      )
+      .where(sql<boolean>`(created_at, id) < (
+        SELECT boundary.created_at, boundary.id
+          FROM messages boundary
+         WHERE boundary.id = ${input.beforeMessageId}
+           AND boundary.workspace_id = ${workspaceId}
+           AND boundary.conversation_id = ${conversationId}
+      )`)
       .orderBy("created_at", "desc")
       .orderBy("id", "desc")
       .limit(input.limit)

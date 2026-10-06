@@ -96,6 +96,7 @@ const gatedAfterPolicyLock = (held: Gate): HeldReplyChannelRegistration => {
         enqueueAutoSend: (heldReply, outbox) => scope.enqueueAutoSend(heldReply, outbox),
         authorizeAutoDispatch: (heldReply) => scope.authorizeAutoDispatch(heldReply),
         recordMaterialized: (heldReply, messageId) => scope.recordMaterialized(heldReply, messageId),
+        authorizePublication: (conversationId, claim) => scope.authorizePublication(conversationId, claim),
       };
     },
   };
@@ -411,6 +412,56 @@ describeIntegration("held reply release (Postgres, research B1)", () => {
       expect.objectContaining({ state: "superseded", superseded_reason: "policy_changed" }),
     ]);
     expect(await ownershipRowOf(scenario.conversationId)).toMatchObject({ state: "human_owned", owner_user_id: null });
+    expect(await emailSendsOf(scenario.conversationId)).toEqual([]);
+  }, 60_000);
+
+  it("serializes a takeover behind a policy change on the conversation row when no ownership row exists yet, so creating one never deadlocks", async () => {
+    const scenario = await pendingDraft();
+    // The normal case: an AI-owned conversation nobody has touched has no ownership row to lock.
+    expect(await ownershipRowOf(scenario.conversationId)).toBeNull();
+    const versionBefore = await policyVersionOf(scenario.mailbox.id);
+    const policyLogger = { warn: vi.fn() };
+
+    // The change holds the conversation, the mailbox and the superseded draft, and stops just before
+    // it creates the ownership row its hand-off writes.
+    const held = gate();
+    const changes = createPolicyChanges(database, { logger: policyLogger });
+    const gatedBeforeHandoff: MailboxPolicyChangeUnitOfWork = {
+      run: (work) => changes.run((scope) => work({
+        ...scope,
+        handoffs: {
+          requestHumanOwnership: async (input) => {
+            await held.hold();
+            return scope.handoffs.requestHumanOwnership(input);
+          },
+        },
+      })),
+    };
+    const change = downgradeToOperatorOnly(mailboxSettings(gatedBeforeHandoff), scenario);
+    await held.reached;
+    const takeover = apiNode().takeOver(scenario.teammate, scenario.conversationId).then((response) => response);
+    await lockWaiters(1);
+
+    const waiting = (await database.query<{ query: string }>(
+      "SELECT query FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+    )).map((row) => row.query);
+    held.open();
+    const [changed, taken] = await Promise.all([change, takeover]);
+
+    // The takeover queued on the conversation the change locked first: it created no ownership row
+    // the change's hand-off would then wait on.
+    expect(waiting).toEqual([expect.stringMatching(/from "conversations"/u)]);
+    expect(changed).toMatchObject({ engagementMode: "operator_only", policyVersion: versionBefore + 1 });
+    expect(taken.status).toBe(200);
+    expect(policyLogger.warn).not.toHaveBeenCalled();
+    // The change handed the conversation to a person; the teammate then claimed that hand-off.
+    expect(await ownershipRowOf(scenario.conversationId)).toMatchObject({
+      state: "human_owned",
+      owner_user_id: scenario.teammate.userId,
+    });
+    expect(await heldRepliesOf(scenario.conversationId)).toEqual([
+      expect.objectContaining({ state: "superseded", superseded_reason: "policy_changed" }),
+    ]);
     expect(await emailSendsOf(scenario.conversationId)).toEqual([]);
   }, 60_000);
 

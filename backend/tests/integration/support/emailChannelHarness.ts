@@ -681,6 +681,7 @@ type SendPath = ReturnType<typeof createSendPath>;
 /** The stage boundaries of inbound processing and of sending a test may pause at or kill the worker at. */
 const SEAMS = [
   "receiver.fetchMessage",
+  "inbound.insertClaimedDelivery",
   "inbound.recordFetched",
   "threadProtocol.run",
   "chat.ingest",

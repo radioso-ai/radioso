@@ -20,6 +20,7 @@ import {
 import {
   createApiNode,
   deliveryFailuresOf,
+  makeReconcileDue,
   messagesOf,
   openEmailConversation,
   outboxActionsOf,
@@ -320,6 +321,53 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
     expect(await sendIntentsOf(database, messageId)).toEqual([
       expect.objectContaining({ trigger: "operator_reply", uncertainResolution: "resend_authorized" }),
       expect.objectContaining({ trigger: "audited_resend", state: "halted", uncertainResolution: null }),
+    ]);
+  });
+
+  it("keeps a resend's uncertain failure resolvable when the original's bounce arrives late, and settles the resend on its own evidence", async () => {
+    const { conversationId, messageId, intent: original, teammate, workspaceId } = await acceptedReply();
+    /** No evidence settles the send within a day: the reconciler's lookup makes it uncertain. */
+    const lookUpUnsettled = async (sendIntentId: string) => {
+      await makeReconcileDue(database, sendIntentId);
+      expect(await workerNode().worker.drain({ maxJobs: 5, stage: "reconcile" })).toMatchObject({ reconciled: 1 });
+    };
+    const openFailures = async () => (await api.decisions.list(workspaceId, { state: "open", limit: 10 })).items;
+    await lookUpUnsettled(original.id);
+    const [first] = await openFailures();
+    expect(first).toMatchObject({ messageId, kind: "uncertain" });
+
+    // A teammate resends it; the resend is accepted, and no evidence settles it either.
+    await api.decisions.resolve(teammate, first.id, "resend");
+    expect(await workerNode().dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    const [, resend] = await sendIntentsOf(database, messageId);
+    expect(resend).toMatchObject({ trigger: "audited_resend", state: "accepted" });
+    await lookUpUnsettled(resend.id);
+    const [second, ...otherOpen] = await openFailures();
+    expect(otherOpen).toEqual([]);
+    expect(second).toMatchObject({ messageId, kind: "uncertain" });
+
+    // The original's bounce arrives late: it is the original's history, and the resend's failure stands.
+    const events = workerNode();
+    const app = await events.webhook();
+    const bounce = { type: "Permanent", subType: "General", message: "550 5.1.1 unknown user" };
+    expect(await postDeliveryEvent(app, { type: "email.bounced", providerMessageId: original.providerMessageId ?? "", bounce })).toBe(200);
+    expect(await events.worker.drain({ maxJobs: 5, stage: "inbound" })).toMatchObject({ claimed: 1, processed: 1 });
+
+    expect(await sendIntentsOf(database, messageId)).toEqual([
+      expect.objectContaining({ id: original.id, state: "bounced", failureCode: "Permanent:General:5.1.1", uncertainResolution: "resend_authorized" }),
+      expect.objectContaining({ id: resend.id, state: "uncertain", uncertainResolution: null }),
+    ]);
+    expect(await openFailures()).toEqual([expect.objectContaining({ id: second.id, messageId, kind: "uncertain" })]);
+
+    // A teammate can still decide on the resend, and its own late evidence still settles it.
+    expect(await api.decisions.resolve(teammate, second.id, "marked_sent")).toMatchObject({ clearReason: "operator_resolved" });
+    expect(await postDeliveryEvent(app, { type: "email.delivered", providerMessageId: resend.providerMessageId ?? "" })).toBe(200);
+    expect(await events.worker.drain({ maxJobs: 5, stage: "inbound" })).toMatchObject({ claimed: 1, processed: 1 });
+    expect((await sendIntentsOf(database, messageId))[1]).toMatchObject({ id: resend.id, state: "delivered", uncertainResolution: "marked_sent" });
+    expect(await openFailures()).toEqual([]);
+    expect((await deliveryFailuresOf(database, conversationId)).map((failure) => [failure.id, failure.failure_kind, failure.clear_reason])).toEqual([
+      [first.id, "uncertain", "operator_resolved"],
+      [second.id, "uncertain", "operator_resolved"],
     ]);
   });
 

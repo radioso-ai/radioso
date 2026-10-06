@@ -81,6 +81,7 @@ export const createEmailReviewHarness = (options: {
   const channelScope = new EmailHeldReplyChannelScope({
     mailboxes,
     domains,
+    reviews: threads,
     autoSend: supportedModes.includes("auto")
       ? { threads, ownership, intents: { materialize: notOnTheReviewPath }, provider: "resend", createId: randomUUID }
       : undefined,

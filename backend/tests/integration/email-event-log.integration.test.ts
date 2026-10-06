@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import { EmailDomainRepository, EmailInboundRepository, EmailMailboxRepository } from "../../src/modules/emailChannel/public.js";
+import { EmailDomainRepository, EmailInboundRepository, EmailMailboxRepository, EventLogReader } from "../../src/modules/emailChannel/public.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -139,6 +139,43 @@ describeIntegration("email event log, workspace scope (Postgres)", () => {
     expect(mailboxLog.entries.map((entry) => [entry.id, entry.mailboxId])).toEqual([[kept, mailbox.id]]);
     const drops = await inbound.listWorkspaceLog(workspaceId, { mailboxId: null, cursor: null, limit: 10, disposition: "drop", states: null });
     expect(drops.entries.map((entry) => entry.id)).toEqual([unmatched, unmatchedEarlier]);
+  });
+
+  it("summarizes a window of the workspace's log: each active mailbox, mail no mailbox matched, and a removed mailbox's retained events", async () => {
+    const { workspaceId, mailbox } = await seedWorkspace();
+    const removed = await mailboxes.createWithPolicy({
+      workspaceId,
+      domainId: mailbox.domainId,
+      agentId: null,
+      address: `old@${mailbox.address.split("@")[1]}`,
+      displayName: "Old",
+      relayToken: randomUUID().replaceAll("-", "").slice(0, 26).toUpperCase(),
+      engagementMode: "operator_only",
+      enabled: true,
+      threadSendBudget: 3,
+      hourlyGenerationBudget: 30,
+      silenceThresholdHours: 72,
+      createdByUserId: null,
+    });
+    if (!removed) throw new Error("mailbox fixture conflicted");
+    const other = await seedWorkspace();
+    await delivery({ workspaceId, mailboxId: mailbox.id, minutesAgo: 30 });
+    await delivery({ workspaceId, mailboxId: null, minutesAgo: 10 });
+    await delivery({ workspaceId, mailboxId: null, minutesAgo: 20 });
+    await delivery({ workspaceId, mailboxId: removed.id, minutesAgo: 40 });
+    await delivery({ workspaceId, mailboxId: null, minutesAgo: 3 * 60 });
+    await delivery({ workspaceId: other.workspaceId, mailboxId: null, minutesAgo: 5 });
+    expect(await mailboxes.markRemoved(workspaceId, removed.id)).not.toBeNull();
+    const reader = new EventLogReader({ mailboxes, deliveries: inbound, clock: () => new Date() });
+
+    const summary = await reader.summarizeWorkspace(workspaceId, 1);
+
+    expect(summary).toEqual({
+      window: "1h",
+      mailboxes: [{ mailboxId: mailbox.id, window: "1h", byDisposition: { undecided: 1 }, failed: 0, lastReceivedAt: null }],
+      noMailbox: { byDisposition: { drop: 2 }, failed: 0 },
+      removedMailboxes: { byDisposition: { undecided: 1 }, failed: 0 },
+    });
   });
 
   it("pages the workspace's log with a cursor scoped to it", async () => {

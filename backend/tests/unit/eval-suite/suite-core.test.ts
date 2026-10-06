@@ -923,22 +923,15 @@ describe("seed fixtures", () => {
     expect(() => parseConversationQualityCases([{ ...review, agentConfigOverride: {} }])).toThrow();
   });
 
-  it("ships two email review cases asserting grounding, coverage, and no persisted reply", () => {
+  it("ships two email review cases asserting only that no reply is persisted", () => {
+    // A live review turn can end without a grounding or coverage verdict, so the email cases
+    // assert the one review fact every sample carries.
     const emailCases = conversationQualityCases.filter((evalCase) => evalCase.tags?.includes("email"));
     expect(emailCases).toHaveLength(2);
     for (const evalCase of emailCases) {
       expect(evalCase.executionMode).toBe("review");
-      expect(evalCase.assertions.map((assertion) => assertion.type).sort()).toEqual([
-        "turn_answer_coverage",
-        "turn_grounding_verdict",
-        "turn_persists_no_reply",
-      ]);
+      expect(evalCase.assertions).toEqual([{ type: "turn_persists_no_reply" }]);
     }
-    expect(emailCases.map((evalCase) => evalCase.assertions.find((assertion) => assertion.type === "turn_answer_coverage")))
-      .toEqual([
-        { type: "turn_answer_coverage", coverage: "answered" },
-        { type: "turn_answer_coverage", coverage: "unanswered" },
-      ]);
   });
 
   it("rejects a dataset with duplicate case ids", () => {

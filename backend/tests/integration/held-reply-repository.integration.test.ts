@@ -329,7 +329,7 @@ describeIntegration("held replies (Postgres)", () => {
     });
   });
 
-  it("lists the drafts waiting for a teammate newest first, leaving queued automatic sends out", async () => {
+  it("lists the drafts waiting for a teammate newest first, ranks and counts them oldest first, and leaves queued automatic sends out", async () => {
     const { workspaceId, agentId } = await seedWorkspace();
     const otherAgentId = randomUUID();
     await database.execute("INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, 'Other')", [otherAgentId, workspaceId]);
@@ -363,6 +363,15 @@ describeIntegration("held replies (Postgres)", () => {
     expect(ids(await heldReplies.listOpen(workspaceId, { ...everything, after: { createdAt: last.createdAt, id: last.id } })))
       .toEqual([pending.id]);
     expect(await heldReplies.listOpen(randomUUID(), everything)).toEqual([]);
+
+    const waitOf = (record: HeldReplyRecord) => ({
+      id: record.id, conversationId: record.conversationId, agentId: record.agentId, holdReason: "draft_mode", createdAt: record.createdAt,
+    });
+    expect(await heldReplies.listOldestOpen(workspaceId, { agentId: undefined, limit: 2 })).toEqual([waitOf(pending), waitOf(discarded)]);
+    expect(await heldReplies.listOldestOpen(workspaceId, { agentId: otherAgentId, limit: 10 })).toEqual([waitOf(otherAgents)]);
+    expect(await heldReplies.countOpen(workspaceId, { agentId: undefined })).toBe(3);
+    expect(await heldReplies.countOpen(workspaceId, { agentId })).toBe(2);
+    expect(await heldReplies.countOpen(randomUUID(), { agentId: undefined })).toBe(0);
   });
 
   it("finds the conversation's current held reply and its newest customer message", async () => {

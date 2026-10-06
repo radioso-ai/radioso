@@ -9,6 +9,7 @@ import {
   safeTraceAttributes,
   shutdownTracing,
   startActiveSpan,
+  streamActiveSpan,
 } from "../../src/shared/observability/tracing/index.js";
 
 class RecordingExporter implements SpanExporter {
@@ -127,6 +128,103 @@ describe("OpenTelemetry tracing helpers", () => {
     expect(exporter.spans[0]?.status).toEqual({
       code: SpanStatusCode.ERROR,
       message: "TypeError",
+    });
+  });
+
+  describe("exception telemetry", () => {
+    const SENTINEL = "customer-sentinel@example.com said SECRET-7731";
+
+    const exportedText = (spans: readonly ReadableSpan[]): string =>
+      JSON.stringify(spans.map((span) => ({
+        attributes: span.attributes,
+        events: span.events,
+        status: span.status,
+      })));
+
+    class SentinelProviderError extends Error {
+      readonly code = "context_length_exceeded";
+      readonly status = 400;
+
+      constructor() {
+        super(`provider rejected input: ${SENTINEL}`);
+        this.name = "SentinelProviderError";
+        this.stack = `${this.name}: ${this.message}\n    at provider (${SENTINEL})`;
+      }
+    }
+
+    it("exports the error class, typed code, and status without message or stack text", async () => {
+      const exporter = new RecordingExporter();
+      initializeTracing(enabledConfig(exporter));
+
+      await expect(startActiveSpan("radioso.failure", { "radioso.request_id": "req-1" }, async () => {
+        throw new SentinelProviderError();
+      })).rejects.toThrow(SENTINEL);
+
+      const [span] = exporter.spans;
+      expect(exportedText(exporter.spans)).not.toContain("SECRET-7731");
+      expect(exportedText(exporter.spans)).not.toContain("customer-sentinel");
+      expect(span?.status).toEqual({ code: SpanStatusCode.ERROR, message: "SentinelProviderError" });
+      expect(span?.attributes).toMatchObject({
+        "error.type": "SentinelProviderError",
+        "radioso.request_id": "req-1",
+      });
+      expect(span?.events).toHaveLength(1);
+      expect(span?.events[0]?.name).toBe("exception");
+      expect(span?.events[0]?.attributes).toEqual({
+        "exception.type": "SentinelProviderError",
+        "exception.code": "context_length_exceeded",
+        "http.response.status_code": 400,
+      });
+    });
+
+    it("drops codes and class names that are not identifier-shaped", async () => {
+      const exporter = new RecordingExporter();
+      initializeTracing(enabledConfig(exporter));
+      const error = Object.assign(new Error(SENTINEL), { code: SENTINEL });
+      error.name = SENTINEL;
+
+      await expect(startActiveSpan("radioso.failure", {}, async () => {
+        throw error;
+      })).rejects.toBe(error);
+
+      expect(exportedText(exporter.spans)).not.toContain("SECRET-7731");
+      expect(exporter.spans[0]?.events[0]?.attributes).toEqual({ "exception.type": "Error" });
+    });
+
+    it("never exports the text of a thrown non-Error value", async () => {
+      const exporter = new RecordingExporter();
+      initializeTracing(enabledConfig(exporter));
+
+      await expect(startActiveSpan("radioso.failure", {}, async () => {
+        await Promise.resolve();
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- the policy must cover non-Error throws
+        throw SENTINEL;
+      })).rejects.toBe(SENTINEL);
+
+      expect(exportedText(exporter.spans)).not.toContain("SECRET-7731");
+      expect(exporter.spans[0]?.status.code).toBe(SpanStatusCode.ERROR);
+    });
+
+    it("keeps streamed span failures content-free", async () => {
+      const exporter = new RecordingExporter();
+      initializeTracing(enabledConfig(exporter));
+      async function* failing(): AsyncIterable<string> {
+        yield "first";
+        throw new SentinelProviderError();
+      }
+
+      const consume = async () => {
+        for await (const _value of streamActiveSpan("radioso.stream", {}, failing)) {
+          // drain
+        }
+      };
+      await expect(consume()).rejects.toThrow(SENTINEL);
+
+      expect(exporter.spans).toHaveLength(1);
+      expect(exportedText(exporter.spans)).not.toContain("SECRET-7731");
+      expect(exporter.spans[0]?.events[0]?.attributes).toMatchObject({
+        "exception.type": "SentinelProviderError",
+      });
     });
   });
 

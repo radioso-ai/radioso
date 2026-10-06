@@ -63,6 +63,24 @@ interface EmailEventLogSummary {
   lastReceivedAt: string | null;
 }
 
+interface EmailEventCounts {
+  byDisposition: Record<string, number>;
+  failed: number;
+}
+
+/**
+ * A window of the workspace's whole event log: each active mailbox's summary, and the deliveries
+ * none of them received, which no mailbox summary carries.
+ */
+interface EmailWorkspaceEventLogSummary {
+  window: string;
+  mailboxes: EmailEventLogSummary[];
+  /** Mail accepted for an address no mailbox has. */
+  noMailbox: EmailEventCounts;
+  /** Removed mailboxes' retained deliveries. */
+  removedMailboxes: EmailEventCounts;
+}
+
 interface EventLogQuery {
   cursor?: string | null;
   limit?: number;
@@ -96,6 +114,24 @@ const toEventView = (entry: EventLogEntry): EmailEventView => ({
 
 export const eventNotFound = (): AppError => notFound("Email event was not found");
 
+const summaryOf = (mailbox: EmailMailboxRecord, windowHours: number, counts: EmailEventCounts): EmailEventLogSummary => ({
+  mailboxId: mailbox.id,
+  window: `${windowHours}h`,
+  byDisposition: { ...counts.byDisposition },
+  failed: counts.failed,
+  lastReceivedAt: mailbox.lastReceivedAt?.toISOString() ?? null,
+});
+
+const NO_EVENTS: EmailEventCounts = { byDisposition: {}, failed: 0 };
+
+const addCounts = (total: EmailEventCounts, counts: EmailEventCounts): EmailEventCounts => {
+  const byDisposition = { ...total.byDisposition };
+  for (const [disposition, count] of Object.entries(counts.byDisposition)) {
+    byDisposition[disposition] = (byDisposition[disposition] ?? 0) + count;
+  }
+  return { byDisposition, failed: total.failed + counts.failed };
+};
+
 const pageSize = (requested: number | undefined): number =>
   requested === undefined || !Number.isFinite(requested)
     ? DEFAULT_PAGE_SIZE
@@ -119,8 +155,11 @@ const pageQuery = (query: EventLogQuery) => {
  */
 export class EventLogReader {
   constructor(private readonly deps: {
-    mailboxes: Pick<EmailMailboxRepository, "findActive">;
-    deliveries: Pick<EmailInboundRepository, "listMailboxLog" | "listWorkspaceLog" | "countMailboxEvents" | "findLogEntry">;
+    mailboxes: Pick<EmailMailboxRepository, "findActive" | "listActive">;
+    deliveries: Pick<
+      EmailInboundRepository,
+      "listMailboxLog" | "listWorkspaceLog" | "countMailboxEvents" | "countWorkspaceEvents" | "findLogEntry"
+    >;
     clock: () => Date;
   }) {}
 
@@ -149,15 +188,33 @@ export class EventLogReader {
   /** Counts by disposition, and failures, over the last `windowHours`. */
   async summarize(workspaceId: string, mailboxId: string, windowHours: number): Promise<EmailEventLogSummary> {
     const mailbox = await this.requireMailbox(workspaceId, mailboxId);
-    const since = new Date(this.deps.clock().getTime() - windowHours * HOUR_MS);
-    const counts = await this.deps.deliveries.countMailboxEvents(mailbox.id, since);
+    const counts = await this.deps.deliveries.countMailboxEvents(mailbox.id, this.windowStart(windowHours));
+    return summaryOf(mailbox, windowHours, counts);
+  }
+
+  /**
+   * As {@link summarize} for every active mailbox at once, with the rest of the workspace's log in
+   * the window: mail accepted for an address no mailbox has, and removed mailboxes' retained events.
+   */
+  async summarizeWorkspace(workspaceId: string, windowHours: number): Promise<EmailWorkspaceEventLogSummary> {
+    const [mailboxes, counts] = await Promise.all([
+      this.deps.mailboxes.listActive(workspaceId),
+      this.deps.deliveries.countWorkspaceEvents(workspaceId, this.windowStart(windowHours)),
+    ]);
+    const countsByMailbox = new Map(counts.map((entry) => [entry.mailboxId, entry]));
+    const active = new Set(mailboxes.map((mailbox) => mailbox.id));
     return {
-      mailboxId: mailbox.id,
       window: `${windowHours}h`,
-      byDisposition: counts.byDisposition,
-      failed: counts.failed,
-      lastReceivedAt: mailbox.lastReceivedAt?.toISOString() ?? null,
+      mailboxes: mailboxes.map((mailbox) => summaryOf(mailbox, windowHours, countsByMailbox.get(mailbox.id) ?? NO_EVENTS)),
+      noMailbox: counts.filter((entry) => entry.mailboxId === null).reduce(addCounts, NO_EVENTS),
+      removedMailboxes: counts
+        .filter((entry) => entry.mailboxId !== null && !active.has(entry.mailboxId))
+        .reduce(addCounts, NO_EVENTS),
     };
+  }
+
+  private windowStart(windowHours: number): Date {
+    return new Date(this.deps.clock().getTime() - windowHours * HOUR_MS);
   }
 
   private async requireMailbox(workspaceId: string, mailboxId: string): Promise<EmailMailboxRecord> {

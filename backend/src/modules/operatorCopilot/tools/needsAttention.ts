@@ -17,7 +17,7 @@ import {
   MAX_TITLE_CHARS,
   type AuthorizedSourceRead,
   type CopilotDeliveryFailuresPort,
-  type CopilotHeldRepliesPort,
+  type CopilotHeldReplyQueuePort,
   type CopilotPendingApprovalsPort,
   type CopilotTriageLogPort,
 } from "./escalationSources.js";
@@ -86,7 +86,7 @@ export interface NeedsAttentionCopilotToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly pendingApprovals: CopilotPendingApprovalsPort;
   /** Absent where no channel's held replies are composed into Ray; approvals are then the routine decisions alone. */
-  readonly heldReplies?: CopilotHeldRepliesPort;
+  readonly heldReplies?: CopilotHeldReplyQueuePort;
   /** Absent where no delivering channel's failures are composed into Ray, and then not a source. */
   readonly deliveryFailures?: CopilotDeliveryFailuresPort;
   readonly chatHistoryService: CopilotConversationHistoryPort;
@@ -138,7 +138,7 @@ type NeedsAttentionInput = z.infer<typeof needsAttentionInputSchema>;
 type NeedsAttentionReader = readonly [CopilotNeedsAttentionKind, () => Promise<AuthorizedSourceRead<NeedsAttentionRow>>];
 type NeedsAttentionOutput = z.infer<typeof needsAttentionOutputSchema>;
 
-const needsAttentionDescription = "Read the operator's working queue: the pending approvals (routine decisions, and agent replies held for review — titled by the draft, with the hold reason as detail and a heldReplyId), waiting handoffs, replies that may not have reached the customer (delivery_failed, titled by failure kind with the provider's sanitized code as detail), and written complaints where the next move is a person's, longest wait first. Each row carries the handle its follow-up needs — the decision handle to resolve, the held reply id (held_replies reads the whole draft by the row's conversationId), the assistant message id and triage version to transition, the owner of a claimed handoff. Sources report what they matched, so a bounded page is not an empty queue, and a source marked unauthorized or failed is unknown rather than zero. This is the queue to work through; workspace_triage is a one-shot digest that also covers failures and backlog, so do not call both for the same question. Act on a row with the identifiers it gives you — set_triage_state takes the assistantMessageId and triageVersion exactly as they appear here.";
+const needsAttentionDescription = "Read the operator's working queue: the pending approvals (routine decisions, and agent replies held for review — titled by the hold reason, with a heldReplyId), waiting handoffs, replies that may not have reached the customer (delivery_failed, titled by failure kind with the provider's sanitized code as detail), and written complaints where the next move is a person's, longest wait first. Each row carries the handle its follow-up needs — the decision handle to resolve, the held reply id (held_replies reads the whole draft by the row's conversationId), the assistant message id and triage version to transition, the owner of a claimed handoff. Sources report what they matched, so a bounded page is not an empty queue, and a source marked unauthorized or failed is unknown rather than zero. This is the queue to work through; workspace_triage is a one-shot digest that also covers failures and backlog, so do not call both for the same question. Act on a row with the identifiers it gives you — set_triage_state takes the assistantMessageId and triageVersion exactly as they appear here.";
 
 export const createNeedsAttentionCopilotTools = (
   deps: NeedsAttentionCopilotToolDependencies,
@@ -262,7 +262,7 @@ const readApprovalQueue = async (
   const { heldReplies } = deps;
   const [decisions, held] = await Promise.all([
     deps.pendingApprovals.listPending(context.workspaceId),
-    heldReplies ? readOpenHeldReplies(heldReplies, copilotOperatorActor(context), agentId) : { total: 0, items: [] },
+    heldReplies ? readOpenHeldReplies(heldReplies, copilotOperatorActor(context), agentId, limit) : { total: 0, items: [] },
   ]);
   const pending = decisions.filter((decision) => agentId === null || decision.agentId === agentId);
   const decisionRows = pending.map((decision): NeedsAttentionRow => ({
@@ -276,11 +276,12 @@ const readApprovalQueue = async (
     approvalHandle: decision.handle,
     subject: { type: "conversation", id: decision.conversationId },
   }));
+  // Titled by why it is held: the ranking read never carries a draft, and held_replies reads it whole.
   const heldReplyRows = held.items.map((heldReply): NeedsAttentionRow => ({
     ...emptyRowFields,
     kind: "approval",
-    title: heldReply.draftText,
-    detail: heldReply.holdReason,
+    title: heldReply.holdReason,
+    detail: null,
     since: heldReply.createdAt.toISOString(),
     agentId: heldReply.agentId,
     conversationId: heldReply.conversationId,
@@ -342,7 +343,7 @@ const readDeliveryFailureQueue = async (
   agentId: string | null,
   limit: number,
 ): Promise<AuthorizedSourceRead<NeedsAttentionRow>> => {
-  const open = await readOpenDeliveryFailures(deliveryFailures, workspaceId, agentId);
+  const open = await readOpenDeliveryFailures(deliveryFailures, workspaceId, agentId, limit);
   return {
     total: open.total,
     items: open.items.slice(0, limit).map((failure) => ({

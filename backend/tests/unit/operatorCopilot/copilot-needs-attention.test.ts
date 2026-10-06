@@ -75,17 +75,17 @@ const deliveryFailure = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const deliveryFailurePages = (...pages: Array<Array<ReturnType<typeof deliveryFailure>>>) => {
-  const listOpen = vi.fn(async (_workspaceId: string, query: { cursor?: string }) => {
-    const index = query.cursor === undefined ? 0 : Number(query.cursor);
-    return { items: pages[index] ?? [], nextCursor: index + 1 < pages.length ? String(index + 1) : null };
-  });
-  return { listOpen };
-};
+/** The owning reader: the open failures waiting longest, up to the limit, and how many are open. */
+const deliveryFailureQueue = (rows: Array<ReturnType<typeof deliveryFailure>>, total = rows.length) => ({
+  longestWaiting: vi.fn(async (_workspaceId: string, query: { agentId?: string; limit: number }) => ({
+    total,
+    items: [...rows].sort((left, right) => left.openedAt.getTime() - right.openedAt.getTime()).slice(0, query.limit),
+  })),
+});
 
 const dependencies = (overrides: Partial<NeedsAttentionCopilotToolDependencies> = {}): NeedsAttentionCopilotToolDependencies => ({
   pendingApprovals: { listPending: vi.fn(async () => []) },
-  deliveryFailures: deliveryFailurePages([]),
+  deliveryFailures: deliveryFailureQueue([]),
   chatHistoryService: {
     getConversation: vi.fn(),
     getConversationTurn: vi.fn(),
@@ -337,7 +337,7 @@ describe("needs_attention", () => {
 
 describe("needs_attention delivery failures", () => {
   it("lists a reply that may not have reached the customer by its wait, with its sanitized code", async () => {
-    const deps = populated({ deliveryFailures: deliveryFailurePages([deliveryFailure()]) });
+    const deps = populated({ deliveryFailures: deliveryFailureQueue([deliveryFailure()]) });
 
     const result = await list(deps);
 
@@ -356,34 +356,34 @@ describe("needs_attention delivery failures", () => {
   });
 
   it("reads the failures under the conversation takeover permission and states the gap without it", async () => {
-    const deps = populated({ deliveryFailures: deliveryFailurePages([deliveryFailure()]) });
+    const deps = populated({ deliveryFailures: deliveryFailureQueue([deliveryFailure()]) });
 
     const result = await list(deps, {}, context(new Set(["workspace.history.read", "workspace.quality.read"])));
 
     expect(result.items.map((item) => item.kind)).not.toContain("delivery_failed");
     expect(result.sources).toContainEqual({ source: "delivery_failures", status: "unauthorized", total: null, included: 0 });
-    expect(deps.deliveryFailures?.listOpen).not.toHaveBeenCalled();
+    expect(deps.deliveryFailures?.longestWaiting).not.toHaveBeenCalled();
   });
 
-  it("reads every page, because the reader is newest first and the longest wait is on its last page", async () => {
+  it("asks the owning reader for only the longest waits it lists, and reports every open failure it counted", async () => {
     const newest = deliveryFailure({ conversationId: "conversation-newest", openedAt: new Date("2026-08-26T09:00:00.000Z") });
     const oldest = deliveryFailure({ conversationId: "conversation-oldest", kind: "halted", detailCode: null, openedAt: new Date("2026-08-26T01:00:00.000Z") });
-    const deps = dependencies({ deliveryFailures: deliveryFailurePages([newest], [oldest]) });
+    const deps = dependencies({ deliveryFailures: deliveryFailureQueue([newest, oldest], 100_000) });
 
     const result = await list(deps, { kinds: ["delivery_failed"], limit: 1 });
 
     expect(result.items).toEqual([expect.objectContaining({ conversationId: "conversation-oldest", title: "halted", detail: null })]);
-    expect(result.sources).toEqual([{ source: "delivery_failures", status: "ok", total: 2, included: 1 }]);
-    expect(deps.deliveryFailures?.listOpen).toHaveBeenNthCalledWith(2, "workspace-1", expect.objectContaining({ cursor: "1" }));
+    expect(result.sources).toEqual([{ source: "delivery_failures", status: "ok", total: 100_000, included: 1 }]);
+    expect(deps.deliveryFailures?.longestWaiting).toHaveBeenCalledExactlyOnceWith("workspace-1", { limit: 1 });
   });
 
   it("scopes the failures to the requested agent and reads no other source when asked for this kind alone", async () => {
-    const deps = populated({ deliveryFailures: deliveryFailurePages([deliveryFailure()]) });
+    const deps = populated({ deliveryFailures: deliveryFailureQueue([deliveryFailure()]) });
 
     const result = await list(deps, { kinds: ["delivery_failed"], agentId: "11111111-1111-4111-8111-111111111111" });
 
     expect(result.sources.map((source) => source.source)).toEqual(["delivery_failures"]);
-    expect(deps.deliveryFailures?.listOpen).toHaveBeenCalledWith(
+    expect(deps.deliveryFailures?.longestWaiting).toHaveBeenCalledWith(
       "workspace-1",
       expect.objectContaining({ agentId: "11111111-1111-4111-8111-111111111111" }),
     );
@@ -391,7 +391,7 @@ describe("needs_attention delivery failures", () => {
   });
 
   it("reports a failure read that threw as failed rather than as no failures", async () => {
-    const deps = populated({ deliveryFailures: { listOpen: vi.fn(async () => { throw new Error("connection reset"); }) } });
+    const deps = populated({ deliveryFailures: { longestWaiting: vi.fn(async () => { throw new Error("connection reset"); }) } });
 
     const result = await list(deps);
 
@@ -399,40 +399,27 @@ describe("needs_attention delivery failures", () => {
   });
 });
 
+/** A held reply as the owning reader ranks it: who waits and since when, never its draft. */
 const heldReply = (overrides: Record<string, unknown> = {}) => ({
   id: "44444444-4444-4444-8444-444444444444",
   conversationId: "conversation-held",
   agentId: "11111111-1111-4111-8111-111111111111",
-  state: "pending" as const,
   holdReason: "draft_mode",
-  facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: false, reason: null } } as const,
-  dependsOnSuppressedAction: false,
-  suppressedEffects: [],
-  draftText: "Your refund was issued on Monday.",
-  editedText: null,
-  answersMessageId: "55555555-5555-4555-8555-555555555555",
-  releasedMessageId: null,
   createdAt: new Date("2026-08-26T05:45:00.000Z"),
-  decidedAt: null,
-  releaserUserId: null,
-  editorUserId: null,
-  discardedByUserId: null,
-  supersededReason: null,
-  attentionOpen: true,
   ...overrides,
 });
 
-const heldReplyPages = (...pages: Array<Array<ReturnType<typeof heldReply>>>) => ({
-  list: vi.fn(async (_actor: unknown, query: { cursor?: string }) => {
-    const index = query.cursor === undefined ? 0 : Number(query.cursor);
-    return { items: pages[index] ?? [], nextCursor: index + 1 < pages.length ? String(index + 1) : null };
-  }),
-  current: vi.fn(async () => ({ heldReply: null })),
+/** The owning reader: the held replies waiting longest, up to the limit, and how many wait. */
+const heldReplyQueue = (rows: Array<ReturnType<typeof heldReply>>, total = rows.length) => ({
+  longestWaiting: vi.fn(async (_actor: unknown, query: { agentId?: string; limit: number }) => ({
+    total,
+    items: [...rows].sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime()).slice(0, query.limit),
+  })),
 });
 
 describe("needs_attention held replies", () => {
   it("lists a held reply as an approval carrying its heldReplyId, ranked by wait with the routine decisions", async () => {
-    const deps = populated({ heldReplies: heldReplyPages([heldReply()]) });
+    const deps = populated({ heldReplies: heldReplyQueue([heldReply()]) });
 
     const result = await list(deps);
 
@@ -444,8 +431,8 @@ describe("needs_attention held replies", () => {
     ]);
     expect(result.items[0]).toEqual(expect.objectContaining({
       kind: "approval",
-      title: "Your refund was issued on Monday.",
-      detail: "draft_mode",
+      title: "draft_mode",
+      detail: null,
       since: "2026-08-26T05:45:00.000Z",
       agentId: "11111111-1111-4111-8111-111111111111",
       heldReplyId: "44444444-4444-4444-8444-444444444444",
@@ -456,7 +443,7 @@ describe("needs_attention held replies", () => {
   });
 
   it("leaves routine decisions as they were: the decision handle, and no held reply", async () => {
-    const result = await list(populated({ heldReplies: heldReplyPages([heldReply()]) }), { kinds: ["approval"] });
+    const result = await list(populated({ heldReplies: heldReplyQueue([heldReply()]) }), { kinds: ["approval"] });
 
     expect(result.items[1]).toEqual(expect.objectContaining({
       conversationId: "conversation-approval",
@@ -467,36 +454,34 @@ describe("needs_attention held replies", () => {
     }));
   });
 
-  it("reads every page of open held replies as the signed-in teammate, scoped to the requested agent", async () => {
+  it("reads only the longest-waiting held replies it lists as the signed-in teammate, scoped to the requested agent", async () => {
     const newest = heldReply({ id: "66666666-6666-4666-8666-666666666666", conversationId: "conversation-newest", createdAt: new Date("2026-08-26T09:00:00.000Z") });
     const oldest = heldReply({ conversationId: "conversation-oldest", createdAt: new Date("2026-08-26T01:00:00.000Z") });
-    const deps = dependencies({ heldReplies: heldReplyPages([newest], [oldest]) });
+    const deps = dependencies({ heldReplies: heldReplyQueue([newest, oldest], 100_000) });
 
     const result = await list(deps, { kinds: ["approval"], agentId: "11111111-1111-4111-8111-111111111111", limit: 1 });
 
     expect(result.items).toEqual([expect.objectContaining({ conversationId: "conversation-oldest", heldReplyId: oldest.id })]);
-    expect(result.sources).toEqual([{ source: "approvals", status: "ok", total: 2, included: 1 }]);
-    expect(deps.heldReplies?.list).toHaveBeenNthCalledWith(
-      1,
+    expect(result.sources).toEqual([{ source: "approvals", status: "ok", total: 100_000, included: 1 }]);
+    expect(deps.heldReplies?.longestWaiting).toHaveBeenCalledExactlyOnceWith(
       { workspaceId: "workspace-1", accountId: "account-1", userId: "operator-1" },
-      expect.objectContaining({ attention: "open", agentId: "11111111-1111-4111-8111-111111111111" }),
+      { agentId: "11111111-1111-4111-8111-111111111111", limit: 1 },
     );
-    expect(deps.heldReplies?.list).toHaveBeenNthCalledWith(2, expect.anything(), expect.objectContaining({ cursor: "1" }));
   });
 
   it("reads held replies under the approvals source's conversation takeover permission", async () => {
-    const deps = populated({ heldReplies: heldReplyPages([heldReply()]) });
+    const deps = populated({ heldReplies: heldReplyQueue([heldReply()]) });
 
     const result = await list(deps, {}, context(new Set(["workspace.history.read", "workspace.quality.read"])));
 
     expect(result.items.map((item) => item.kind)).not.toContain("approval");
     expect(result.sources).toContainEqual({ source: "approvals", status: "unauthorized", total: null, included: 0 });
-    expect(deps.heldReplies?.list).not.toHaveBeenCalled();
+    expect(deps.heldReplies?.longestWaiting).not.toHaveBeenCalled();
   });
 
   it("reports the approvals as failed when the held replies cannot be read, rather than as routine decisions alone", async () => {
     const deps = populated({
-      heldReplies: { list: vi.fn(async () => { throw new Error("connection reset"); }), current: vi.fn(async () => ({ heldReply: null })) },
+      heldReplies: { longestWaiting: vi.fn(async () => { throw new Error("connection reset"); }) },
     });
 
     const result = await list(deps);

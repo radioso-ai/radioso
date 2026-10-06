@@ -1,7 +1,9 @@
+import { randomBytes } from "node:crypto";
+
 import type { ConnectorRespondInput, ConnectorTurnResult } from "@radioso/connector-api";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { EMAIL_SEND_ACTION_TYPE, emailSendKey } from "../../src/modules/emailChannel/public.js";
+import { EMAIL_SEND_ACTION_TYPE, emailSendKey, generateOpaqueToken } from "../../src/modules/emailChannel/public.js";
 import type { Database } from "../../src/shared/infra/database.js";
 import {
   activityOf,
@@ -213,6 +215,37 @@ describeIntegration("email channel crash recovery (Postgres, SC-007)", () => {
       const delivery = deliveries.find((candidate) => candidate.mailbox_id === mailbox.id);
       expect((await customerMessagesOf(database, conversationId)).map((message) => message.id)).toEqual([delivery?.message_id]);
     }
+  });
+
+  it.each([
+    { name: "another claim took the event over", rotateRelayToken: false },
+    { name: "the relay token rotated and another claim routed the mail nowhere", rotateRelayToken: true },
+  ])("writes no delivery from a worker stalled before its first insert once $name (research B15)", async ({ rotateRelayToken }) => {
+    const { mailbox, domain } = await seedSupportMailbox(database);
+    const [stalled, takeover] = [workerNode(), workerNode()];
+    const paused = stalled.seams.pauseAt("inbound.insertClaimedDelivery", "before");
+    const emailId = await receive(stalled, FIRST, { mailbox, domain: domain.domain });
+    const staleRun = drainOne(stalled);
+    await paused.reached;
+
+    // The stalled worker routed the mail to the mailbox; its lease runs out before it writes the delivery.
+    if (rotateRelayToken) {
+      await database.execute(
+        "UPDATE email_mailboxes SET relay_token = $2, previous_relay_token = NULL, previous_relay_token_expires_at = NULL WHERE id = $1",
+        [mailbox.id, generateOpaqueToken((size) => randomBytes(size))],
+      );
+    }
+    await expireLease(database, (await eventOfEmail(database, emailId)).id);
+    expect(await drainOne(takeover)).toMatchObject({ claimed: 1, processed: 1 });
+
+    paused.release();
+    expect(await staleRun).toMatchObject({ claimed: 1, superseded: 1 });
+
+    expect((await deliveriesOfEmail(database, emailId)).map((delivery) => [delivery.mailbox_id, delivery.state, delivery.disposition_reason]))
+      .toEqual([rotateRelayToken ? [null, "done", "no_mailbox"] : [mailbox.id, "done", expect.any(String)]]);
+    expect(await eventOfEmail(database, emailId)).toMatchObject({ state: "processed", attempts: 2 });
+    expect(await conversationsOfMailbox(database, mailbox)).toHaveLength(rotateRelayToken ? 0 : 1);
+    expect(stalled.logger.messages()).toContain("email_inbound_claim_lost");
   });
 
   describe("sending: at most one provider accept per send intent", () => {

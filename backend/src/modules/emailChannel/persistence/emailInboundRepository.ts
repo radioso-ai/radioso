@@ -225,6 +225,11 @@ interface MailboxEventCounts {
   failed: number;
 }
 
+/** One receiving mailbox's counts within a workspace; `mailboxId` null for mail no mailbox received. */
+interface WorkspaceEventCounts extends MailboxEventCounts {
+  mailboxId: string | null;
+}
+
 type EventRow = Selectable<DB["email_inbound_events"]>;
 type DeliveryRow = Omit<Selectable<DB["email_inbound_deliveries"]>, "raw_mime" | "body_text" | "auth_results" | "attachments">;
 
@@ -328,6 +333,39 @@ const heldByClaim = (attempt: number) => (eb: ExpressionBuilder<DB, "email_inbou
       .where("claim.state", "=", "processing")
       .forShare(),
   );
+
+/** Writes the event's delivery for one mailbox once; a second write for the pair finds the first. */
+const insertDeliveryRow = async (db: Db, input: InsertDeliveryInput): Promise<{ deliveryId: string; duplicate: boolean }> => {
+  const inserted = await db
+    .insertInto("email_inbound_deliveries")
+    .values({
+      inbound_event_id: input.inboundEventId,
+      workspace_id: input.workspaceId,
+      mailbox_id: input.mailboxId,
+      route_rule: input.routeRule,
+      accepted_policy_version: input.acceptedPolicyVersion,
+      ...(input.settled
+        ? {
+            state: "done",
+            disposition: input.settled.disposition,
+            disposition_reason: input.settled.dispositionReason,
+            processed_at: currentTimestamp(),
+          }
+        : {}),
+    })
+    .onConflict((oc) => oc.doNothing())
+    .returning("id")
+    .executeTakeFirst();
+  if (inserted) return { deliveryId: inserted.id, duplicate: false };
+
+  const existing = await db
+    .selectFrom("email_inbound_deliveries")
+    .select("id")
+    .where("inbound_event_id", "=", input.inboundEventId)
+    .where((eb) => (input.mailboxId === null ? eb("mailbox_id", "is", null) : eb("mailbox_id", "=", input.mailboxId)))
+    .executeTakeFirstOrThrow();
+  return { deliveryId: existing.id, duplicate: true };
+};
 
 interface LogEntryRow {
   id: string;
@@ -495,35 +533,30 @@ export class EmailInboundRepository {
 
   /** One delivery per event and mailbox; a retried stage 1 finds the one it wrote before. */
   async insertDelivery(input: InsertDeliveryInput): Promise<{ deliveryId: string; duplicate: boolean }> {
-    const inserted = await this.db
-      .insertInto("email_inbound_deliveries")
-      .values({
-        inbound_event_id: input.inboundEventId,
-        workspace_id: input.workspaceId,
-        mailbox_id: input.mailboxId,
-        route_rule: input.routeRule,
-        accepted_policy_version: input.acceptedPolicyVersion,
-        ...(input.settled
-          ? {
-              state: "done",
-              disposition: input.settled.disposition,
-              disposition_reason: input.settled.dispositionReason,
-              processed_at: currentTimestamp(),
-            }
-          : {}),
-      })
-      .onConflict((oc) => oc.doNothing())
-      .returning("id")
-      .executeTakeFirst();
-    if (inserted) return { deliveryId: inserted.id, duplicate: false };
+    return insertDeliveryRow(this.db, input);
+  }
 
-    const existing = await this.db
-      .selectFrom("email_inbound_deliveries")
-      .select("id")
-      .where("inbound_event_id", "=", input.inboundEventId)
-      .where((eb) => (input.mailboxId === null ? eb("mailbox_id", "is", null) : eb("mailbox_id", "=", input.mailboxId)))
-      .executeTakeFirstOrThrow();
-    return { deliveryId: existing.id, duplicate: true };
+  /**
+   * As {@link insertDelivery}, under the event's claim (research B15): the event row is share-locked
+   * and must still be `processing` under the claim that made `claim.attempt`, so a worker whose
+   * lease was reclaimed — and whose routing may have gone stale meanwhile — writes no delivery under
+   * an event another claim settles. Null when the claim no longer holds the event.
+   */
+  async insertClaimedDelivery(
+    claim: { attempt: number },
+    input: InsertDeliveryInput,
+  ): Promise<{ deliveryId: string; duplicate: boolean } | null> {
+    return this.inTransaction(async (trx) => {
+      const held = await trx
+        .selectFrom("email_inbound_events")
+        .select("id")
+        .where("id", "=", input.inboundEventId)
+        .where("attempts", "=", claim.attempt)
+        .where("state", "=", "processing")
+        .forShare()
+        .executeTakeFirst();
+      return held ? insertDeliveryRow(trx, input) : null;
+    });
   }
 
   async listEventDeliveries(inboundEventId: string): Promise<InboundDeliveryRecord[]> {
@@ -859,6 +892,33 @@ export class EmailInboundRepository {
       failed += Number(row.failed);
     }
     return { byDisposition, failed };
+  }
+
+  /**
+   * As {@link countMailboxEvents} for every delivery attributed to the workspace since `since`, per
+   * receiving mailbox, removed ones included; `mailboxId` null for mail no mailbox received.
+   */
+  async countWorkspaceEvents(workspaceId: string, since: Date): Promise<WorkspaceEventCounts[]> {
+    const rows = await this.db
+      .selectFrom("email_inbound_deliveries")
+      .select((eb) => [
+        "mailbox_id",
+        "disposition",
+        eb.fn.countAll<string>().as("total"),
+        eb.fn.countAll<string>().filterWhere("state", "=", "failed").as("failed"),
+      ])
+      .where("workspace_id", "=", workspaceId)
+      .where("created_at", ">=", since)
+      .groupBy(["mailbox_id", "disposition"])
+      .execute();
+    const byMailbox = new Map<string | null, WorkspaceEventCounts>();
+    for (const row of rows) {
+      const counts = byMailbox.get(row.mailbox_id) ?? { mailboxId: row.mailbox_id, byDisposition: {}, failed: 0 };
+      counts.byDisposition[row.disposition ?? "undecided"] = Number(row.total);
+      counts.failed += Number(row.failed);
+      byMailbox.set(row.mailbox_id, counts);
+    }
+    return [...byMailbox.values()];
   }
 
   /**

@@ -246,7 +246,7 @@ describe("local email domain provisioner", () => {
 
     const found = await provisioner.findByName("Customer.Test");
 
-    expect(found).toMatchObject({ providerDomainId: registration.providerDomainId, region: null, createdAt: null });
+    expect(found).toMatchObject({ providerDomainId: registration.providerDomainId, region: null });
     expect(found?.readiness.sending).toBe("verified");
     expect(await provisioner.findByName("../etc")).toBeNull();
   });

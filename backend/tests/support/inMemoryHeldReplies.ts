@@ -205,6 +205,15 @@ implements HeldReplyWriteStore, HeldReplyReadStore, Pick<HeldReplySupersedeScope
     return this.page(workspaceId, query).slice(0, query.limit);
   }
 
+  async listOldestOpen(workspaceId: string, query: Parameters<HeldReplyReadStore["listOldestOpen"]>[1]) {
+    return this.page(workspaceId, { ...query, after: null }).filter(isHeldReplyAttentionOpen).reverse().slice(0, query.limit)
+      .map(({ id, conversationId, agentId, holdReason, createdAt }) => ({ id, conversationId, agentId, holdReason, createdAt }));
+  }
+
+  async countOpen(workspaceId: string, query: Parameters<HeldReplyReadStore["countOpen"]>[1]): Promise<number> {
+    return this.page(workspaceId, { ...query, after: null, limit: 0 }).filter(isHeldReplyAttentionOpen).length;
+  }
+
   async supersedePendingForConversation(
     conversationId: string,
     reason: Parameters<HeldReplySupersedeScope["supersedePendingForConversation"]>[1],
@@ -284,6 +293,7 @@ export const createInMemoryHeldReplyService = (options: {
   };
   const channelScope: HeldReplyChannelScope = options.channel?.scope ?? {
     lockPolicy: async () => (lockedPolicyVersion === null ? null : { version: lockedPolicyVersion }),
+    authorizePublication: async () => true,
     enqueueRelease: async (heldReply, messageId, onOutbox) => {
       await onOutbox.enqueue({
         type: "email.send",

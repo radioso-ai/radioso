@@ -9,8 +9,10 @@ import {
   type ConversationQualityCase,
 } from "../../../src/modules/eval/suite/index.js";
 import { conversationQualityCases } from "../../fixtures/conversation-quality/cases.js";
+import { conversationQualityRoutines } from "../../fixtures/conversation-quality/routines.js";
 import { CQ_AGENT_ID, CQ_WORKSPACE_ID, conversationQualityAgentConfig } from "../../fixtures/conversation-quality/index.js";
 import { createReviewTurnRunnerPort, createWorkbenchReplayRunnerPort } from "../../../scripts/evalRunnerAdapter.js";
+import { needsPublishedAgent, seededRoutineSkillNames } from "../../../scripts/runEvals.js";
 import { InMemoryConversationRepository, InMemoryMessageRepository } from "../../support/fakes.js";
 
 // The live conversation-quality runner (scripts/runEvals.ts) drives review cases through
@@ -186,5 +188,26 @@ describe("live conversation-quality runner, review cases", () => {
     const observed = await port.review(reviewCase());
 
     expect(observed.error?.message).toMatch(/person owns the conversation/);
+  });
+});
+
+describe("live conversation-quality runner, seeded agent", () => {
+  // Review cases run the published revision, and publishing refuses a routine whose tool step
+  // names a skill the agent lacks. The runner holds those skills on the agent while it publishes,
+  // so a routine that dispatches a skill it does not cover would fail every run with a review case.
+  it("publishes the agent only for a run that selects a review case", () => {
+    const committed = parseConversationQualityCases(conversationQualityCases);
+
+    expect(needsPublishedAgent(committed)).toBe(true);
+    expect(needsPublishedAgent(committed.filter((evalCase) => (evalCase.tags ?? []).includes("email")))).toBe(true);
+    expect(needsPublishedAgent(committed.filter((evalCase) => evalCase.executionMode !== "review"))).toBe(false);
+  });
+
+  it("holds every skill a seeded routine dispatches while it publishes, so the seeded agent can be published", () => {
+    const dispatched = conversationQualityRoutines.flatMap((routine) =>
+      routine.steps.flatMap((step) => (step.kind === "tool" && step.toolRef ? [step.toolRef] : [])));
+
+    expect(dispatched.length).toBeGreaterThan(0);
+    expect(dispatched.filter((skillName) => !seededRoutineSkillNames.includes(skillName))).toEqual([]);
   });
 });

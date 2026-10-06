@@ -24,15 +24,13 @@ import {
   type EmailSendOwnershipReader,
   type SendOwnershipFacts,
 } from "./sendAuthority.js";
+import { DISPATCH_EXHAUSTED } from "./sendIntentTransitions.js";
 import {
   countEmailSendIntentState,
   EMAIL_DELIVERY_PROVIDER,
   type EmailSendUnitOfWork,
   type SendIntentWriter,
 } from "./sendIntentWriter.js";
-
-/** The failure code of a send the outbox gave up on before any outcome was recorded. */
-const DISPATCH_EXHAUSTED = "dispatch_exhausted";
 
 /** The message a send delivers: its author and its text, read when the intent materializes and freezes. */
 interface EmailSendMessageReader {
@@ -47,6 +45,19 @@ type AutoMaterialization = Awaited<ReturnType<HeldReplyDispatchPort["materialize
 type FrozenRequest = SendRequestSnapshot & { body: NonNullable<SendRequestSnapshot["body"]> };
 
 const isRfcMessageId = (value: RfcMessageId | null): value is RfcMessageId => value !== null;
+
+/**
+ * Another claim froze the request after this one read the intent, and may be in its provider call:
+ * this claim writes nothing over that send. Thrown, so the outbox settles the claim: a superseded
+ * claim's failure is dropped, and a current one is retried, finding the outcome the other claim
+ * recorded or resuming the send if that claim stopped.
+ */
+class SendFrozenByAnotherClaimError extends Error {
+  constructor() {
+    super("email_send_frozen_by_another_claim");
+    this.name = "SendFrozenByAnotherClaimError";
+  }
+}
 
 /**
  * Delivers one `email.send` action (research B6). With no transaction held across the provider
@@ -74,6 +85,11 @@ const isRfcMessageId = (value: RfcMessageId | null): value is RfcMessageId => va
  * worker stopped between materializing and freezing it never goes out on authority since revoked:
  * it fails unsent and flags its message. After an unknown outcome a revoked authority makes it
  * `uncertain`.
+ *
+ * Two claims can hold one action across a lease expiry. Steps 2 and 3 are fenced on the intent
+ * read in step 1: whichever of the freeze and the unsent settlement lands first, the other is
+ * refused, and the claim that lost to a freeze leaves the send to the claim that froze it
+ * (research B18).
  */
 export class EmailSendActionHandler implements ActionHandler {
   constructor(private readonly deps: {
@@ -104,13 +120,14 @@ export class EmailSendActionHandler implements ActionHandler {
     const intent = payload.trigger === "auto_reply"
       ? await this.loadOrMaterializeAuto(payload, idempotencyKey)
       : await this.loadOrMaterialize(payload, idempotencyKey, input.context.workspaceId);
-    if (intent) await this.advance(intent, input.context.attempt, true);
+    if (intent) await this.advance(intent, input.context.attempt);
   }
 
   /**
    * The outbox gave up. A send never materialized still flags its message; one that never reached
    * an outcome becomes `failed`, or `uncertain` when its request was frozen, because a frozen
-   * request may have reached the provider, and only an operator may decide to send it again.
+   * request may have reached the provider, and only an operator may decide to send it again. The
+   * state machine decides which on the row as it is, so a freeze it did not read is still seen.
    */
   async recordFailureOutcome(input: {
     payload: Record<string, unknown>;
@@ -145,14 +162,7 @@ export class EmailSendActionHandler implements ActionHandler {
       return;
     }
     if (intent.state !== "queued") return;
-    const mayHaveSent = intent.outcomeUnknown || intent.request !== null;
-    await this.deps.writer.apply(
-      intent,
-      mayHaveSent
-        ? { kind: "outcome_unknown", authorityValid: true, withinWindow: false }
-        : { kind: "provider_rejected", code: DISPATCH_EXHAUSTED },
-      { writer: "handler" },
-    );
+    await this.deps.writer.apply(intent, { kind: "dispatch_exhausted" }, { writer: "handler" });
   }
 
   // ── Steps ──────────────────────────────────────────────────────────
@@ -229,7 +239,11 @@ export class EmailSendActionHandler implements ActionHandler {
     return intent;
   }
 
-  private async advance(intent: EmailSendIntentRecord, attempt: number, mayRetryFreeze: boolean): Promise<void> {
+  /**
+   * Steps 2 to 6 from the intent as this claim read it. `lostRace` once another claim moved it
+   * after that read: a request that claim froze is its to send, never resumed alongside it.
+   */
+  private async advance(intent: EmailSendIntentRecord, attempt: number, lostRace = false): Promise<void> {
     if (intent.state === "accepted") {
       // A redelivery after a crash between the acceptance and step 6.
       await this.deps.attempt.fetchDeliveredMessageId(intent);
@@ -239,10 +253,21 @@ export class EmailSendActionHandler implements ActionHandler {
     // the reconciler re-POSTs on its schedule.
     if (intent.state !== "queued" || intent.outcomeUnknown) return;
     if (intent.request !== null) {
+      if (lostRace) throw this.leftToFreezingClaim(intent, attempt);
       await this.resume(intent, attempt);
       return;
     }
+    const moved = await this.checkAndFreeze(intent, attempt);
+    // Another claim moved the intent first; continue from where it left it, once.
+    if (moved && !lostRace) await this.advance(moved, attempt, true);
+  }
 
+  /**
+   * Steps 2 and 3 on an intent this claim read unfrozen: the verdict lands as the freeze or as the
+   * unsent settlement, each fenced on that read. Returns the intent as another claim left it when
+   * that claim moved it first, and null once this claim's step landed.
+   */
+  private async checkAndFreeze(intent: EmailSendIntentRecord, attempt: number): Promise<EmailSendIntentRecord | null> {
     const facts = await this.sendFacts(intent);
     const verdict = await traceOperation({
       name: "email.send.revalidate",
@@ -252,26 +277,37 @@ export class EmailSendActionHandler implements ActionHandler {
         result: checked.verdict === "allow" ? "allow" : checked.verdict === "halt" ? checked.haltReason : checked.code,
       }),
     });
-    if (verdict.verdict === "halt") {
-      await this.deps.writer.apply(intent, { kind: "revalidation_failed", haltReason: verdict.haltReason }, { writer: "handler" });
-      return;
-    }
-    if (verdict.verdict === "revoked") {
-      this.deps.logger.warn(
-        { sendIntentId: intent.id, workspaceId: intent.workspaceId, conversationId: intent.conversationId, code: verdict.code },
-        "email_auto_send_revoked_before_send",
+    if (verdict.verdict !== "allow") {
+      const settled = await this.deps.writer.apply(
+        intent,
+        verdict.verdict === "halt"
+          ? { kind: "revalidation_failed", haltReason: verdict.haltReason }
+          : { kind: "authority_revoked", code: verdict.code },
+        { writer: "handler" },
       );
-      await this.deps.writer.apply(intent, { kind: "authority_revoked", code: verdict.code }, { writer: "handler" });
-      return;
+      if (settled.outcome === "ignored") return settled.intent;
+      if (settled.outcome === "applied" && verdict.verdict === "revoked") {
+        this.deps.logger.warn(
+          { sendIntentId: intent.id, workspaceId: intent.workspaceId, conversationId: intent.conversationId, code: verdict.code },
+          "email_auto_send_revoked_before_send",
+        );
+      }
+      return null;
     }
     const frozen = await this.deps.intents.freezeRequest(intent.id, intent.version, await this.buildRequest(intent, facts));
-    if (frozen.outcome === "not_found") return;
-    if (frozen.outcome === "conflict") {
-      // Another claim moved the intent first; continue from where it left it, once.
-      if (mayRetryFreeze) await this.advance(frozen.current, attempt, false);
-      return;
-    }
+    if (frozen.outcome === "not_found") return null;
+    if (frozen.outcome === "conflict") return frozen.current;
     await this.send(frozen.intent, attempt);
+    return null;
+  }
+
+  /** Another claim froze the request after this claim read it: that claim sends it and records the outcome. */
+  private leftToFreezingClaim(intent: EmailSendIntentRecord, attempt: number): SendFrozenByAnotherClaimError {
+    this.deps.logger.warn(
+      { sendIntentId: intent.id, workspaceId: intent.workspaceId, conversationId: intent.conversationId, attempt },
+      "email_send_left_to_freezing_claim",
+    );
+    return new SendFrozenByAnotherClaimError();
   }
 
   /**

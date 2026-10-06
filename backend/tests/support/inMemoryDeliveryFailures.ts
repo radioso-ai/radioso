@@ -105,6 +105,18 @@ export const createInMemoryDeliveryFailures = (options: { agentOf?: (conversatio
       const row = rows.find((candidate) => candidate.id === failureId && candidate.workspaceId === workspaceId);
       return row ? copy(row) : null;
     },
+    async listOldestOpen(workspaceId, query) {
+      return rows
+        .filter((row) => row.workspaceId === workspaceId && row.clearedAt === null)
+        .filter(ofAgent(query.agentId))
+        .sort(newestFirst)
+        .reverse()
+        .slice(0, query.limit)
+        .map(({ id, conversationId, kind, detailCode, openedAt }) => ({ id, conversationId, kind, detailCode, openedAt }));
+    },
+    async countOpen(workspaceId, query) {
+      return rows.filter((row) => row.workspaceId === workspaceId && row.clearedAt === null).filter(ofAgent(query.agentId)).length;
+    },
   };
 
   const activity = { record: async (event: ConversationActivityEvent) => { activities.push(event); } };

@@ -28,6 +28,11 @@ export const registerEmailChannelSchemas = (registry: OpenAPIRegistry) => {
   const EmailDomainSchema = registry.register("EmailDomain", z.object({
     id: z.string().uuid(),
     domain: z.string(),
+    registration: z.object({
+      status: z.enum(["registering", "needs_reconciliation", "registered"]).openapi({
+        description: "`registering`: the provider has not answered yet; checking the domain finishes it. `needs_reconciliation`: the email provider already holds this domain, and only `reconcileEmailDomain` adopts that registration. `registered`: the provider holds the workspace's registration.",
+      }),
+    }),
     sending: z.object({ status: z.enum(["pending", "verified", "failed"]), checkedAt: z.string().datetime().nullable() }),
     receiving: z.object({
       status: z.enum(["not_requested", "pending", "verified", "failed"]),

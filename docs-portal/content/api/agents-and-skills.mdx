@@ -202,7 +202,9 @@ routine flow bypasses terminal turn selection.
 
 `GET /api/v1/agents/{agentId}/skill-capabilities` returns the capability registry projection for the agent. Each capability includes its targets, whether it requires a target, input schema, outcomes, supported invocation modes, and availability.
 
-`GET /api/v1/agents/{agentId}/skills` returns the agent's named skills in one envelope:
+Every agent has three built-in answer skills: **Clarification answer**, **Retrieval answer**, and **Direct answer**. They are always present in the Skills list and cannot be edited or removed. Direct and clarification answers stay on. Turn **Retrieval answer** off in the dashboard to set the agent's existing `retrievalEnabled` setting to `false`; the agent then uses the direct answer path instead of workspace retrieval.
+
+`GET /api/v1/agents/{agentId}/skills` returns those read-only platform rows alongside workspace-authored skills. A platform row has `owner: "platform"` and a `catalog` entry. A workspace row has `owner: "workspace"` and a `skill` with:
 
 - `name`
 - `capability`

@@ -12,7 +12,17 @@ import { Switch } from '@/components/ui/switch'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { directivesApi } from '@/lib/api-directives'
 import { routinesApi } from '@/lib/api-routines'
-import { agentSkillsApi, type AgentSkill, type AgentSkillCapabilityId, type AgentSkillCreateInput, type SkillCapabilityDescriptor } from '@/lib/api-skills'
+import type { AssistantBehaviorSettings } from '@/lib/api-types'
+import {
+  agentSkillsApi,
+  type AgentSkill,
+  type AgentSkillCapabilityId,
+  type AgentSkillCreateInput,
+  type AgentSkillListItem,
+  type SkillCapabilityDescriptor,
+  workspaceSkillsFromList,
+} from '@/lib/api-skills'
+import { resolveAssistantRetrievalSettingsViewState } from '@/lib/assistant-retrieval-settings-view-state'
 import { cn } from '@/lib/utils'
 import { CapabilityPicker } from './CapabilityPicker'
 import { McpServersPanel } from './McpServersPanel'
@@ -32,8 +42,18 @@ const targetLabel = (skill: AgentSkill, capabilities: readonly SkillCapabilityDe
 const enabledTone = (enabled: boolean) =>
   enabled ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
 
-export function SkillList({ agentId }: { agentId: string }) {
-  const [skills, setSkills] = useState<AgentSkill[]>([])
+export function SkillList({
+  agentId,
+  assistantBehaviorSettings,
+  isAssistantBehaviorLoading,
+  onAssistantBehaviorDraft,
+}: {
+  agentId: string
+  assistantBehaviorSettings: AssistantBehaviorSettings | null
+  isAssistantBehaviorLoading: boolean
+  onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
+}) {
+  const [skills, setSkills] = useState<AgentSkillListItem[]>([])
   const [capabilities, setCapabilities] = useState<SkillCapabilityDescriptor[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [busyAction, setBusyAction] = useState<string | null>(null)
@@ -47,6 +67,11 @@ export function SkillList({ agentId }: { agentId: string }) {
   // used skill as an orphan, which is worse than saying nothing.
   const [usage, setUsage] = useState<Map<string, SkillUsage> | null>(null)
   const loadVersion = useRef(0)
+  const retrievalSettingsViewState = resolveAssistantRetrievalSettingsViewState({
+    isAssistantBehaviorLoading,
+    assistantBehaviorSettings,
+  })
+  const workspaceSkills = workspaceSkillsFromList(skills)
 
   const loadUsage = useCallback(async (version: number) => {
     const [directiveResult, routineResult] = await Promise.allSettled([
@@ -140,7 +165,11 @@ export function SkillList({ agentId }: { agentId: string }) {
     setError(null)
     try {
       const response = await agentSkillsApi.updateSkill(agentId, skill.id, { enabled })
-      setSkills((current) => current.map((item) => item.id === skill.id ? response.skill : item))
+      setSkills((current) => current.map((item) =>
+        item.owner === 'workspace' && item.skill.id === skill.id
+          ? { ...item, skill: response.skill }
+          : item,
+      ))
     } catch (updateError) {
       setError(getApiErrorMessage(updateError, 'Failed to update skill.'))
     } finally {
@@ -153,7 +182,7 @@ export function SkillList({ agentId }: { agentId: string }) {
     setError(null)
     try {
       await agentSkillsApi.deleteSkill(agentId, skill.id)
-      setSkills((current) => current.filter((item) => item.id !== skill.id))
+      setSkills((current) => current.filter((item) => item.owner !== 'workspace' || item.skill.id !== skill.id))
     } catch (deleteError) {
       setError(getApiErrorMessage(deleteError, 'Failed to delete skill.'))
     } finally {
@@ -182,15 +211,49 @@ export function SkillList({ agentId }: { agentId: string }) {
         </div>
       ) : null}
 
-      {!isLoading && skills.length === 0 ? (
+      {!isLoading ? (
+        <ul className="space-y-3">
+          {skills.filter((item) => item.owner === 'platform').map((item) => {
+            const skill = item.catalog
+            const isRetrievalAnswer = skill.name === 'retrieval.answer'
+            const retrievalEnabled = retrievalSettingsViewState === 'controls'
+            return (
+              <li key={skill.name}>
+                <article className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 shadow-sm">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-medium text-foreground">{skill.displayName}</span>
+                      <Badge variant="secondary">Built in</Badge>
+                      <Badge className={cn(enabledTone(isRetrievalAnswer ? retrievalEnabled : true))} variant="secondary">
+                        {isRetrievalAnswer ? (retrievalEnabled ? 'Enabled' : 'Disabled') : 'Always on'}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{skill.description}</p>
+                  </div>
+                  {isRetrievalAnswer ? (
+                    <Switch
+                      checked={retrievalEnabled}
+                      onCheckedChange={(retrievalEnabled) => onAssistantBehaviorDraft((current) => ({ ...current, retrievalEnabled }))}
+                      disabled={retrievalSettingsViewState === 'loading' || retrievalSettingsViewState === 'unavailable'}
+                      aria-label="Enable retrieval answers"
+                    />
+                  ) : null}
+                </article>
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
+
+      {!isLoading && workspaceSkills.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-          No skills yet. Add a named skill by choosing a capability type.
+          This agent always answers directly, from documents, or with a clarification. Add a named skill to extend it.
         </div>
       ) : null}
 
-      {skills.length > 0 ? (
+      {workspaceSkills.length > 0 ? (
         <ul className="space-y-3">
-          {skills.map((skill) => (
+          {workspaceSkills.map((skill) => (
             <li key={skill.id}>
               <article className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 shadow-sm">
                 <div className="min-w-0 space-y-1">
@@ -253,7 +316,7 @@ export function SkillList({ agentId }: { agentId: string }) {
         agentId={agentId}
         open={formOpen}
         capabilities={capabilities}
-        skills={skills}
+        skills={workspaceSkills}
         editingSkill={editingSkill}
         capabilityId={selectedCapabilityId}
         isSaving={busyAction === 'save'}

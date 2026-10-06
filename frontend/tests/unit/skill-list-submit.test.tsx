@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AgentSkillCreateInput } from '@/lib/api-skills'
+import type { AgentSkill, AgentSkillCreateInput } from '@/lib/api-skills'
 
 const apiMocks = vi.hoisted(() => ({
   getSkillCapabilities: vi.fn(),
@@ -75,7 +75,7 @@ const retrieveCapability = {
   unavailableReason: null,
 } as const
 
-const retrieveSkill = {
+const retrieveSkill: AgentSkill = {
   id: 'skill-1',
   workspaceId: 'workspace-1',
   agentId: 'agent-1',
@@ -88,7 +88,29 @@ const retrieveSkill = {
   enabled: true,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
-} as const
+}
+
+const platformSkills = [
+  {
+    owner: 'platform' as const,
+    catalog: { name: 'clarification.answer', displayName: 'Clarification answer', description: 'Ask for detail.' },
+  },
+  {
+    owner: 'platform' as const,
+    catalog: { name: 'retrieval.answer', displayName: 'Retrieval answer', description: 'Answer from documents.' },
+  },
+  {
+    owner: 'platform' as const,
+    catalog: { name: 'direct.answer', displayName: 'Direct answer', description: 'Answer directly.' },
+  },
+]
+
+const skillListItems = (skill: AgentSkill = retrieveSkill) => [
+  ...platformSkills,
+  { owner: 'workspace' as const, skill },
+]
+
+const assistantBehaviorSettings = { retrievalEnabled: true } as never
 
 const deferred = <T,>() => {
   let resolve!: (value: T) => void
@@ -104,7 +126,7 @@ describe('SkillList submit', () => {
 
   beforeEach(() => {
     apiMocks.getSkillCapabilities.mockResolvedValue({ capabilities: [retrieveCapability] })
-    apiMocks.listSkills.mockResolvedValue({ skills: [retrieveSkill] })
+    apiMocks.listSkills.mockResolvedValue({ skills: skillListItems() })
     apiMocks.createSkill.mockResolvedValue({ skill: retrieveSkill })
     apiMocks.updateSkill.mockResolvedValue({
       skill: {
@@ -131,7 +153,7 @@ describe('SkillList submit', () => {
 
   it('replaces config on edit so omitted defaulted fields clear stored overrides', async () => {
     await act(async () => {
-      root.render(<SkillList agentId="agent-1" />)
+      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} />)
     })
 
     await act(async () => {
@@ -153,8 +175,8 @@ describe('SkillList submit', () => {
 
   it('discards an older agent load that completes after the active agent load', async () => {
     const firstCapabilities = deferred<{ capabilities: readonly typeof retrieveCapability[] }>()
-    const firstSkills = deferred<{ skills: readonly typeof retrieveSkill[] }>()
-    const secondSkill = { ...retrieveSkill, id: 'skill-2', agentId: 'agent-2', name: 'second-answer' } as const
+    const firstSkills = deferred<{ skills: ReturnType<typeof skillListItems> }>()
+    const secondSkill: AgentSkill = { ...retrieveSkill, id: 'skill-2', agentId: 'agent-2', name: 'second-answer' }
 
     apiMocks.getSkillCapabilities.mockImplementation((agentId: string) =>
       agentId === 'agent-1'
@@ -164,17 +186,17 @@ describe('SkillList submit', () => {
     apiMocks.listSkills.mockImplementation((agentId: string) =>
       agentId === 'agent-1'
         ? firstSkills.promise
-        : Promise.resolve({ skills: [secondSkill] }),
+        : Promise.resolve({ skills: skillListItems(secondSkill) }),
     )
 
     await act(async () => {
-      root.render(<SkillList agentId="agent-1" />)
+      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} />)
     })
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
     await act(async () => {
-      root.render(<SkillList agentId="agent-2" />)
+      root.render(<SkillList agentId="agent-2" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} />)
     })
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -184,11 +206,27 @@ describe('SkillList submit', () => {
 
     await act(async () => {
       firstCapabilities.resolve({ capabilities: [retrieveCapability] })
-      firstSkills.resolve({ skills: [retrieveSkill] })
+      firstSkills.resolve({ skills: skillListItems() })
       await Promise.resolve()
     })
 
     expect(container.textContent).toContain('@second-answer')
     expect(container.textContent).not.toContain('@answer')
+  })
+
+  it('uses the existing agent behavior draft for the retrieval answer switch', async () => {
+    const onAssistantBehaviorDraft = vi.fn()
+    await act(async () => {
+      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={onAssistantBehaviorDraft} />)
+    })
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[aria-label="Enable retrieval answers"]')?.click()
+    })
+
+    const updater = onAssistantBehaviorDraft.mock.calls[0]?.[0] as (current: { retrievalEnabled?: boolean }) => { retrievalEnabled?: boolean }
+    expect(updater({ retrievalEnabled: true })).toEqual({ retrievalEnabled: false })
+    expect(document.querySelector('[aria-label="Edit retrieval.answer"]')).toBeNull()
+    expect(document.querySelector('[aria-label="Delete direct.answer"]')).toBeNull()
   })
 })

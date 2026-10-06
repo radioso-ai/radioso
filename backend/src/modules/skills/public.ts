@@ -26,6 +26,7 @@ export {
   type ResolvedSkillRun,
 } from "./domain.js";
 export { retrievalAnswerSkillDefinition } from "./definitions/retrieval.answer.js";
+export { clarificationAnswerSkillDefinition } from "./definitions/clarification.answer.js";
 export { retrievalContextSkillDefinition } from "./definitions/retrieval.context.js";
 export { createDefaultSkillCatalogRegistry } from "./defaultCatalog.js";
 export { directAnswerSkillDefinition } from "./definitions/direct.js";

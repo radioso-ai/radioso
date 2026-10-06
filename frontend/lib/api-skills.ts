@@ -4,12 +4,9 @@ import type { components } from '../../typescript-sdk/src/generated/types'
 type ApiSchemas = components['schemas']
 
 export type SkillCatalogEntry = ApiSchemas['SkillCatalogEntry']
-export type SkillCatalogResponse = ApiSchemas['SkillCatalogResponse']
-export type SkillDisplayMetadata = NonNullable<SkillCatalogEntry['display']>
+type SkillCatalogResponse = ApiSchemas['SkillCatalogResponse']
 export type SkillOwner = SkillCatalogEntry['owner']
 export type SkillOutcomeDefinition = NonNullable<SkillCatalogEntry['outcomes']>[number]
-export type SkillOutcomeStatus = SkillOutcomeDefinition['status']
-export type SkillOutcomeTone = NonNullable<SkillOutcomeDefinition['tone']>
 
 export const skillsApi = {
   async list(): Promise<SkillCatalogResponse> {
@@ -45,6 +42,21 @@ export type AgentSkill = {
   createdAt: string
   updatedAt: string
 }
+
+export type PlatformAgentSkill = {
+  owner: 'platform'
+  catalog: SkillCatalogEntry
+}
+
+export type WorkspaceAgentSkill = {
+  owner: 'workspace'
+  skill: AgentSkill
+}
+
+export type AgentSkillListItem = PlatformAgentSkill | WorkspaceAgentSkill
+
+export const workspaceSkillsFromList = (skills: AgentSkillListItem[]): AgentSkill[] =>
+  skills.flatMap((item) => item.owner === 'workspace' ? [item.skill] : [])
 
 export type SkillCapabilityInputSchema =
   | { source: 'discovered' }
@@ -95,7 +107,7 @@ export type AgentSkillCreateInput = {
   enabled: boolean
 }
 
-export type AgentSkillUpdateInput = {
+type AgentSkillUpdateInput = {
   target?: AgentSkillTarget
   config?: Record<string, unknown>
   replaceConfig?: Record<string, unknown>
@@ -112,8 +124,8 @@ export const agentSkillsApi = {
     )
   },
 
-  async listSkills(agentId: string): Promise<{ skills: AgentSkill[] }> {
-    return request<{ skills: AgentSkill[] }>(
+  async listSkills(agentId: string): Promise<{ skills: AgentSkillListItem[] }> {
+    return request<{ skills: AgentSkillListItem[] }>(
       `/agents/${agentId}/skills`,
       { method: 'GET' },
       { withSession: true },

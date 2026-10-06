@@ -49,6 +49,7 @@ import {
   type AgentSkillCapabilityId,
   type AgentSkillCreateInput,
   type SkillCapabilityDescriptor,
+  workspaceSkillsFromList,
 } from '@/lib/api-skills'
 import { normalizeSkillName } from '@/lib/external-skills'
 import {
@@ -780,7 +781,7 @@ export function AssistantDirectivesSection({
       void agentSkillsApi.listSkills(agentId)
         .then((response) => {
           if (!active) return
-          setAgentSkills(response.skills)
+          setAgentSkills(workspaceSkillsFromList(response.skills))
           setSkillsAgentId(agentId)
           setSkillLoadError(null)
         })

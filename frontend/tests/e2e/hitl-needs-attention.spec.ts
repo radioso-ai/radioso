@@ -129,11 +129,11 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   await handoffRow.click();
 
   const response = page.getByLabel("Response", { exact: true });
-  await expect(page).toHaveURL(new RegExp(`tab=needs-attention.*itemKind=chat.*itemId=${conversationId}`));
+  await expect(page).toHaveURL(new RegExp(`tab=needs-attention.*itemKind=inbox.*itemId=handoff%3A${conversationId}%3A1`));
   await page.reload();
   await expect(response.getByText("Verified visitor")).toBeVisible();
   await page.goBack();
-  await expect(page).not.toHaveURL(/itemKind=chat/);
+  await expect(page).not.toHaveURL(/itemKind=inbox/);
   await expect(response.getByText("Select an item from the queue to respond.")).toBeVisible();
   await page.goForward();
 
@@ -194,6 +194,15 @@ test("operator resolves a pending decision from the response view", async ({ pag
     deadline: null,
     createdAt: nowIso,
   };
+  const secondPendingDecision = {
+    ...pendingDecision,
+    handle: "decision-inbox-2",
+    reason: "Replace the damaged item?",
+    options: [
+      { id: "replace", label: "Replace", description: "Send a replacement." },
+      { id: "reject", label: "Reject" },
+    ],
+  };
   const conversationDetail = {
     conversationId,
     workspaceId,
@@ -237,7 +246,7 @@ test("operator resolves a pending decision from the response view", async ({ pag
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     conversationDetail,
-    pendingDecisions: [pendingDecision],
+    pendingDecisions: [pendingDecision, secondPendingDecision],
   });
   await page.route("**/backend/api/v1/quality/turns**", async (route) => {
     await route.fulfill({
@@ -249,16 +258,19 @@ test("operator resolves a pending decision from the response view", async ({ pag
 
   await page.goto(`/w/${workspaceKey}/activity`);
   const queue = page.getByLabel("Inbox queue");
-  await queue.getByRole("button", { name: /Apply a 20% goodwill discount/ }).click();
+  await queue.getByRole("button", { name: /Replace the damaged item/ }).click();
 
   const response = page.getByLabel("Response", { exact: true });
+  await expect(page).toHaveURL(/itemKind=inbox.*itemId=approval%3A.+decision-inbox-2/);
+  await page.reload();
   const decisionPanel = response.getByLabel("Pending approval");
-  await expect(decisionPanel.getByText("Apply a 20% goodwill discount?")).toBeVisible();
+  await expect(decisionPanel.getByText("Replace the damaged item?")).toBeVisible();
   // Approvals close on decision, not on a separate Done control.
   await expect(response.getByRole("button", { name: "Done" })).toHaveCount(0);
 
-  await decisionPanel.getByRole("button", { name: "Approve" }).click();
-  await expect(queue.getByRole("button", { name: /Apply a 20% goodwill discount/ })).toHaveCount(0);
+  await decisionPanel.getByRole("button", { name: "Replace" }).click();
+  await expect(queue.getByRole("button", { name: /Replace the damaged item/ })).toHaveCount(0);
+  await expect(queue.getByRole("button", { name: /Apply a 20% goodwill discount/ })).toBeVisible();
 });
 
 test("operator resolves negative feedback through Done, surviving a version conflict", async ({ page }) => {
@@ -425,6 +437,9 @@ test("operator resolves negative feedback through Done, surviving a version conf
   await expect.poll(() => triageRequests.some((r) => r.state === "acknowledged")).toBe(true);
 
   const response = page.getByLabel("Response", { exact: true });
+  await expect(page).toHaveURL(new RegExp(`itemKind=inbox.*itemId=quality%3A${assistantMessageId}`));
+  await page.reload();
+  await expect(response.getByRole("button", { name: "Done" })).toBeVisible();
   await response.getByRole("button", { name: "Done" }).click();
 
   await expect(page.getByRole("heading", { name: "Resolve review" })).toBeVisible();
@@ -548,12 +563,13 @@ test("operator opens a recently closed feedback conversation from Needs-you", as
   await closedRow.click();
 
   const response = page.getByLabel("Response", { exact: true });
-  await expect(page).toHaveURL(new RegExp(`tab=needs-attention.*itemKind=chat.*itemId=${conversationId}`));
+  await expect(page).toHaveURL(/tab=needs-attention.*itemKind=inbox.*itemId=closed%3A/);
   await page.reload();
   await expect(response.getByText("Who is Nikola Tesla?")).toBeVisible();
   await page.goBack();
-  await expect(page).not.toHaveURL(/itemKind=chat/);
-  await expect(response.getByText("Select an item from the queue to respond.")).toBeVisible();
+  await expect(page).not.toHaveURL(/itemKind=inbox/);
+  await expect(closedRow).not.toHaveAttribute("aria-current", "true");
+  await expect(response.getByText("Nothing needs you right now")).toBeVisible();
   await page.goForward();
 
   await expect(closedRow).toHaveAttribute("aria-current", "true");

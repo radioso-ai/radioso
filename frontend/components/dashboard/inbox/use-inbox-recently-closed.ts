@@ -1,5 +1,6 @@
 'use client'
 
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { useDashboardQueryPolicy } from '@/components/providers/dashboard-query-provider'
@@ -21,8 +22,9 @@ export const useInboxRecentlyClosed = (workspaceId: string) => {
     enabled: Boolean(workspaceId) && policy.queriesEnabled,
     refetchInterval: policy.intervalFor(queryKey),
   })
+  const items = useMemo(() => buildRecentlyClosedItems(query.data?.items ?? []), [query.data])
   return {
-    items: buildRecentlyClosedItems(query.data?.items ?? []),
+    items,
     isLoading: query.isLoading,
     hasLoadFailure: query.isError,
   }

@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, Loader2, RefreshCw } from 'lucide-react'
 
+import { ConfirmChange, useConfirmFocus } from '@/components/dashboard/settings/email-confirm-change'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -14,6 +15,9 @@ import { emailChannelApi, type EmailDnsRecord, type EmailDomain } from '@/lib/ap
 
 const REFUSAL_COPY: Readonly<Record<string, string>> = {
   domain_claimed_elsewhere: 'This domain is claimed by another workspace.',
+  domain_needs_reconciliation: 'The email provider already holds this domain. Adopt its registration under Sending domains first.',
+  domain_not_awaiting_reconciliation: 'This domain has no existing registration to adopt.',
+  domain_removal_pending: 'This domain is still being removed. Try again in a few minutes.',
   email_channel_not_configured: 'Email isn’t enabled on this server.',
   engagement_mode_unavailable: 'That mode isn’t available on this server.',
 }
@@ -37,6 +41,11 @@ const RECORD_STATUS_LABELS: Record<EmailDnsRecord['status'], string> = {
   verified: 'Verified',
   failed: 'Failed',
   advisory: 'Recommended',
+}
+
+const REGISTRATION_STATUS_LABELS: Record<Exclude<EmailDomain['registration']['status'], 'registered'>, string> = {
+  registering: 'Registering',
+  needs_reconciliation: 'Needs adoption',
 }
 
 const SENDING_STATUS_LABELS: Record<EmailDomain['sending']['status'], string> = {
@@ -144,14 +153,24 @@ function EmailDomainPanel({ workspaceId, domain, onDomainChanged, announce }: Em
   const headingId = useId()
   const headingRef = useRef<HTMLHeadingElement>(null)
   const focusHeadingRef = useRef(false)
-  const [busyAction, setBusyAction] = useState<'verify' | 'receiving' | null>(null)
+  const [busyAction, setBusyAction] = useState<'verify' | 'receiving' | 'reconcile' | null>(null)
+  const [confirmingAdoption, setConfirmingAdoption] = useState(false)
+  const {
+    controlRef: adoptRef,
+    confirmRef: confirmAdoptionRef,
+    focusControl: focusAdopt,
+    focusConfirm: focusConfirmAdoption,
+  } = useConfirmFocus(busyAction === 'reconcile')
   const [error, setError] = useState<string | null>(null)
   const [receivingOpen, setReceivingOpen] = useState(false)
   const [confirmation, setConfirmation] = useState('')
   const required = requiredSendingRecords(domain)
   const isPartial = domain.sending.status !== 'verified' && required.some((record) => record.status === 'verified')
 
-  // Enabling direct receiving replaces its form, so focus moves to the domain once that renders.
+  const needsAdoption = domain.registration.status === 'needs_reconciliation'
+
+  // Enabling direct receiving or adopting a registration replaces its control, so focus moves to
+  // the domain once that renders.
   useEffect(() => {
     if (!focusHeadingRef.current) return
     focusHeadingRef.current = false
@@ -170,6 +189,36 @@ function EmailDomainPanel({ workspaceId, domain, onDomainChanged, announce }: Em
       setError(emailChannelErrorMessage(caught, 'Failed to check DNS.'))
     } finally {
       setBusyAction(null)
+    }
+  }
+
+  const askAdoption = () => {
+    if (busyAction) return
+    setError(null)
+    setConfirmingAdoption(true)
+    focusConfirmAdoption()
+  }
+
+  const cancelAdoption = () => {
+    setConfirmingAdoption(false)
+    focusAdopt()
+  }
+
+  const adoptRegistration = async () => {
+    if (busyAction) return
+    setBusyAction('reconcile')
+    setError(null)
+    try {
+      const adopted = await emailChannelApi.reconcileDomain(workspaceId, domain.id)
+      onDomainChanged(adopted)
+      focusHeadingRef.current = true
+      announce('Registration adopted.')
+    } catch (caught) {
+      focusAdopt()
+      setError(emailChannelErrorMessage(caught, 'Failed to adopt the registration.'))
+    } finally {
+      setBusyAction(null)
+      setConfirmingAdoption(false)
     }
   }
 
@@ -196,6 +245,9 @@ function EmailDomainPanel({ workspaceId, domain, onDomainChanged, announce }: Em
           <h5 id={headingId} ref={headingRef} tabIndex={-1} className="text-sm font-medium text-foreground outline-none">
             {domain.domain}
           </h5>
+          {domain.registration.status !== 'registered' ? (
+            <Badge variant="secondary">Registration: {REGISTRATION_STATUS_LABELS[domain.registration.status]}</Badge>
+          ) : null}
           <Badge variant={domain.sending.status === 'verified' ? 'outline' : 'secondary'}>
             Sending: {SENDING_STATUS_LABELS[domain.sending.status]}
           </Badge>
@@ -205,11 +257,87 @@ function EmailDomainPanel({ workspaceId, domain, onDomainChanged, announce }: Em
             </Badge>
           ) : null}
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => void verify()} aria-busy={busyAction === 'verify' || undefined}>
-          {busyAction === 'verify' ? <Loader2 className="animate-spin" aria-hidden /> : <RefreshCw aria-hidden />}
-          Check DNS
-        </Button>
+        {needsAdoption ? null : (
+          <Button type="button" variant="outline" size="sm" onClick={() => void verify()} aria-busy={busyAction === 'verify' || undefined}>
+            {busyAction === 'verify' ? <Loader2 className="animate-spin" aria-hidden /> : <RefreshCw aria-hidden />}
+            Check DNS
+          </Button>
+        )}
       </div>
+
+      {needsAdoption ? (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            The email provider already holds {domain.domain}. Adopt that registration only if it’s yours.
+          </p>
+          <Button
+            ref={adoptRef}
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={askAdoption}
+            aria-disabled={busyAction === 'reconcile' || undefined}
+            aria-busy={busyAction === 'reconcile' || undefined}
+          >
+            Adopt existing registration
+          </Button>
+          {confirmingAdoption ? (
+            <ConfirmChange
+              label="Confirm adopting the existing registration"
+              confirmRef={confirmAdoptionRef}
+              isBusy={busyAction === 'reconcile'}
+              onConfirm={() => void adoptRegistration()}
+              onCancel={cancelAdoption}
+            >
+              {`Adopt the provider’s registration of ${domain.domain} for this workspace? Radioso records who adopted it.`}
+            </ConfirmChange>
+          ) : null}
+        </div>
+      ) : (
+        <DomainRecordsAndReceiving
+          headingId={headingId}
+          domain={domain}
+          isPartial={isPartial}
+          receivingOpen={receivingOpen}
+          onReceivingOpenChange={setReceivingOpen}
+          confirmation={confirmation}
+          onConfirmationChange={setConfirmation}
+          isEnablingReceiving={busyAction === 'receiving'}
+          onEnableReceiving={() => void enableDirectReceiving()}
+        />
+      )}
+
+      {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+    </section>
+  )
+}
+
+type DomainRecordsAndReceivingProps = {
+  headingId: string
+  domain: EmailDomain
+  isPartial: boolean
+  receivingOpen: boolean
+  onReceivingOpenChange: (open: boolean) => void
+  confirmation: string
+  onConfirmationChange: (value: string) => void
+  isEnablingReceiving: boolean
+  onEnableReceiving: () => void
+}
+
+/** A registered domain's DNS records with their statuses, and the typed confirmation for direct receiving. */
+function DomainRecordsAndReceiving({
+  headingId,
+  domain,
+  isPartial,
+  receivingOpen,
+  onReceivingOpenChange,
+  confirmation,
+  onConfirmationChange,
+  isEnablingReceiving,
+  onEnableReceiving,
+}: DomainRecordsAndReceivingProps) {
+  return (
+    <>
 
       {isPartial ? <p className="text-xs text-muted-foreground">{verifiedSummary(domain)}</p> : null}
 
@@ -248,7 +376,7 @@ function EmailDomainPanel({ workspaceId, domain, onDomainChanged, announce }: Em
         </table>
       </div>
 
-      <Collapsible open={receivingOpen} onOpenChange={setReceivingOpen}>
+      <Collapsible open={receivingOpen} onOpenChange={onReceivingOpenChange}>
         <CollapsibleTrigger asChild>
           <Button type="button" variant="ghost" size="sm" className="gap-1 px-2">
             Direct receiving
@@ -264,7 +392,7 @@ function EmailDomainPanel({ workspaceId, domain, onDomainChanged, announce }: Em
               className="max-w-md space-y-2"
               onSubmit={(event) => {
                 event.preventDefault()
-                void enableDirectReceiving()
+                onEnableReceiving()
               }}
             >
               <Label htmlFor={`${headingId}-confirm`} className="text-foreground">Type {domain.domain} to confirm</Label>
@@ -272,7 +400,7 @@ function EmailDomainPanel({ workspaceId, domain, onDomainChanged, announce }: Em
                 <Input
                   id={`${headingId}-confirm`}
                   value={confirmation}
-                  onChange={(event) => setConfirmation(event.target.value)}
+                  onChange={(event) => onConfirmationChange(event.target.value)}
                   autoComplete="off"
                   className="min-w-0 flex-1"
                 />
@@ -280,9 +408,9 @@ function EmailDomainPanel({ workspaceId, domain, onDomainChanged, announce }: Em
                   type="submit"
                   variant="outline"
                   disabled={confirmation !== domain.domain}
-                  aria-busy={busyAction === 'receiving' || undefined}
+                  aria-busy={isEnablingReceiving || undefined}
                 >
-                  {busyAction === 'receiving' ? <Loader2 className="animate-spin" aria-hidden /> : null}
+                  {isEnablingReceiving ? <Loader2 className="animate-spin" aria-hidden /> : null}
                   Enable direct receiving
                 </Button>
               </div>
@@ -292,8 +420,6 @@ function EmailDomainPanel({ workspaceId, domain, onDomainChanged, announce }: Em
           )}
         </CollapsibleContent>
       </Collapsible>
-
-      {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
-    </section>
+    </>
   )
 }

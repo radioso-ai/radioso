@@ -101,6 +101,30 @@ export const heldReplyFactsLine = (facts: HeldReply['facts']): string =>
     facts.handoff.requested ? handoffReasonLabel(facts.handoff.reason) ?? 'Asked for a person' : null,
   ].filter((part): part is string => Boolean(part)).join(' · ')
 
+// Why a channel held a reply, by its code. A reply queued to send automatically was not held.
+const HOLD_REASON_LABEL: Readonly<Record<string, string | null>> = {
+  draft_mode: 'this mailbox drafts every reply for review',
+  send_budget: 'this thread’s automatic replies are used up',
+  sending_not_verified: 'sending is not verified for this mailbox',
+  incomplete_answer: 'it may not answer everything asked',
+  outcome_not_publishable: 'the answer can’t go out on its own',
+  authority_changed: 'ownership or mailbox settings changed meanwhile',
+  policy_changed: 'the mailbox settings changed',
+  queued_auto: null,
+}
+
+/**
+ * Why the producing channel held the reply instead of sending it, as one line. It reads the hold's
+ * own code, so it stands whether or not the review turn's reasoning is readable.
+ */
+export const heldReplyHoldLine = (holdReason: string): string | null => {
+  if (!holdReason.trim()) return null
+  const label = holdReason in HOLD_REASON_LABEL
+    ? HOLD_REASON_LABEL[holdReason]
+    : codeAsWords(holdReason).toLowerCase()
+  return label ? `Held: ${label}` : null
+}
+
 const TRACE_GROUNDING_LABEL: Readonly<Record<NonNullable<HeldReplyTrace['groundingVerdict']>, string>> = {
   grounded: 'Grounded',
   degraded: 'Partly grounded',

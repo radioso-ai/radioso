@@ -53,7 +53,7 @@ export type HeldReply = {
   trace: HeldReplyTrace | null
 }
 
-export type HeldReplyPage = { items: HeldReply[]; nextCursor: string | null }
+type HeldReplyPage = { items: HeldReply[]; nextCursor: string | null }
 
 type HeldReplyQuery = {
   attention?: 'open' | 'all'
@@ -85,7 +85,7 @@ export type DeliveryFailure = {
   clearReason: 'acknowledged' | 'later_delivery' | 'provider_evidence' | 'operator_resolved' | null
 }
 
-export type DeliveryFailurePage = { items: DeliveryFailure[]; nextCursor: string | null }
+type DeliveryFailurePage = { items: DeliveryFailure[]; nextCursor: string | null }
 
 type DeliveryFailureQuery = {
   state?: 'open' | 'all'

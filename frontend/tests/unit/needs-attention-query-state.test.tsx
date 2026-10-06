@@ -15,6 +15,8 @@ import {
   NEEDS_ATTENTION_PAGE_SIZE,
   allAttentionSourcesTerminal,
   buildLatestAttentionSnapshot,
+  createRequestQueue,
+  flattenAttentionChunks,
   needsAttentionQualityInputs,
   qualityLoadStateFromQueries,
   qualitySnapshotFromQueries,
@@ -26,6 +28,7 @@ import {
   useConversationSources,
   useNeedsAttentionOpenCount,
   useNeedsAttentionQueries,
+  withoutAttentionItem,
 } from '@/lib/needs-attention-query-state'
 import { createEmptyQualityInboxSnapshot } from '@/lib/needs-attention-quality'
 import { countNewInboxItems } from '@/lib/needs-attention'
@@ -116,9 +119,11 @@ describe('Needs Attention query state', () => {
     })
     // Held replies are a second approval source, read beside routine decisions, never instead of them.
     expect(replyReviewApi.listHeldReplies).toHaveBeenCalledWith({ attention: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE }, expect.any(AbortSignal))
-    expect(client.getQueryData(dashboardQueryKeys.attention.heldReplies('workspace-1', { limit: NEEDS_ATTENTION_PAGE_SIZE }))).toEqual(noHeldReplies)
+    expect(client.getQueryData(dashboardQueryKeys.attention.heldReplies('workspace-1', { limit: NEEDS_ATTENTION_PAGE_SIZE })))
+      .toEqual({ pages: [noHeldReplies], pageParams: [null] })
     expect(replyReviewApi.listDeliveryFailures).toHaveBeenCalledWith({ state: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE }, expect.any(AbortSignal))
-    expect(client.getQueryData(dashboardQueryKeys.attention.deliveryFailures('workspace-1', { limit: NEEDS_ATTENTION_PAGE_SIZE }))).toEqual(noDeliveryFailures)
+    expect(client.getQueryData(dashboardQueryKeys.attention.deliveryFailures('workspace-1', { limit: NEEDS_ATTENTION_PAGE_SIZE })))
+      .toEqual({ pages: [noDeliveryFailures], pageParams: [null] })
     expect(hitlApi.listPendingDecisions).toHaveBeenCalledTimes(1)
     expect(chatApi.listChatHistory).toHaveBeenCalledWith({ limit: 50, offset: 0, ownership: 'human_owned' }, expect.any(AbortSignal))
     expect(client.getQueryData(dashboardQueryKeys.attention.decisions('workspace-1'))).toEqual({ decisions: [] })
@@ -274,6 +279,40 @@ describe('Needs Attention query state', () => {
     await act(async () => root.unmount())
   })
 
+  it('stops a long source at its read limit, and loading older reads on from where it stopped until the oldest', async () => {
+    vi.mocked(hitlApi.listPendingDecisions).mockResolvedValue({ decisions: [] })
+    vi.mocked(chatApi.listChatHistory).mockResolvedValue({ conversations: [], total: 0 } as never)
+    vi.mocked(qualityApi.listTurns).mockResolvedValue(page)
+    vi.mocked(replyReviewApi.listDeliveryFailures).mockResolvedValue(noDeliveryFailures)
+    // One draft to a page, so the twenty pages one read follows end a draft short of the oldest.
+    const drafts = Array.from({ length: 21 }, (_, index) => heldReply(`held-${index}`, `conversation-held-${index}`))
+    vi.mocked(replyReviewApi.listHeldReplies).mockImplementation(async (query) => {
+      const index = query?.cursor ? Number(query.cursor.replace('page-', '')) : 0
+      return { items: [drafts[index]], nextCursor: index < drafts.length - 1 ? `page-${index + 1}` : null }
+    })
+    type RailState = { rail: ReturnType<typeof useAttentionRailQueries> }
+    let latest: RailState | null = null
+    const { root } = await renderProbe((value) => { latest = value as RailState })
+    const rail = () => latest!.rail
+
+    await vi.waitFor(() => expect(rail().heldReplies.data?.items).toHaveLength(20))
+    expect(rail().heldReplies.data?.nextCursor).toBe('page-20')
+    expect(rail().olderAttention).toMatchObject({ available: true, loading: false })
+
+    await act(async () => rail().olderAttention.load())
+    await vi.waitFor(() => expect(rail().heldReplies.data?.items).toHaveLength(21))
+    expect(rail().heldReplies.data?.items.at(-1)?.id).toBe('held-20')
+    expect(rail().heldReplies.data?.nextCursor).toBeNull()
+    expect(rail().olderAttention).toMatchObject({ available: false, loading: false })
+    expect(replyReviewApi.listHeldReplies).toHaveBeenCalledWith(
+      { attention: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE, cursor: 'page-20' },
+      expect.any(AbortSignal),
+    )
+    // The failures had nothing older, so loading older read nothing more of them.
+    expect(replyReviewApi.listDeliveryFailures).toHaveBeenCalledTimes(1)
+    await act(async () => root.unmount())
+  })
+
   it('looks up the conversations of delivery failures the Inbox has not loaded, once each, by id', async () => {
     vi.mocked(chatApi.getHistoryConversation).mockImplementation(async (conversationId) => ({
       conversationId,
@@ -304,6 +343,56 @@ describe('Needs Attention query state', () => {
     expect(chatApi.getHistoryConversation).toHaveBeenCalledTimes(2)
     expect(chatApi.getHistoryConversation).toHaveBeenCalledWith('conversation-a', { limit: 1 }, expect.any(AbortSignal))
     await act(async () => root.unmount())
+  })
+
+  it('reads conversation lookups once, never on the dashboard poll, and a few at a time', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const pending: { conversationId: string; resolve: (value: unknown) => void }[] = []
+      vi.mocked(chatApi.getHistoryConversation).mockImplementation((conversationId) => new Promise((resolve) => {
+        pending.push({ conversationId, resolve })
+      }) as never)
+      const ids = Array.from({ length: 10 }, (_, index) => `conversation-${index}`)
+      const seen: unknown[][] = []
+      const Probe = () => {
+        const sources = useConversationSources('workspace-1', ids)
+        useEffect(() => { seen.push(sources) }, [sources])
+        return null
+      }
+      const container = document.createElement('div')
+      document.body.append(container)
+      const root = createRoot(container)
+      await act(async () => {
+        root.render(<DashboardQueryProvider workspaceId="workspace-1" interest={interest}><Probe /></DashboardQueryProvider>)
+      })
+
+      await vi.waitFor(() => expect(chatApi.getHistoryConversation).toHaveBeenCalledTimes(4))
+      await act(async () => { await vi.advanceTimersByTimeAsync(50) })
+      expect(chatApi.getHistoryConversation).toHaveBeenCalledTimes(4)
+
+      // Settles the reads in flight now; the ones they let start wait for the next call.
+      const settle = async () => {
+        const inFlight = pending.splice(0)
+        await act(async () => {
+          for (const read of inFlight) {
+            read.resolve({ conversationId: read.conversationId, title: read.conversationId, updatedAt: '2026-06-19T10:00:00.000Z', agentId: 'agent-email' })
+          }
+        })
+      }
+      await settle()
+      await vi.waitFor(() => expect(chatApi.getHistoryConversation).toHaveBeenCalledTimes(8))
+      await settle()
+      await vi.waitFor(() => expect(chatApi.getHistoryConversation).toHaveBeenCalledTimes(10))
+      await settle()
+      await vi.waitFor(() => expect(seen.at(-1)).toHaveLength(10))
+
+      // Well past every dashboard poll interval, nothing is read again.
+      await act(async () => { await vi.advanceTimersByTimeAsync(3 * 60_000) })
+      expect(chatApi.getHistoryConversation).toHaveBeenCalledTimes(10)
+      await act(async () => root.unmount())
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('represents initial 403 as permission state while preserving other source data', () => {
@@ -473,5 +562,73 @@ describe('readAllCursorPages', () => {
 
     await expect(readAllCursorPages(readPage, 2)).resolves.toEqual({ items: [{ id: 'first' }, { id: 'first+' }], nextCursor: 'first++' })
     expect(readPage).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('attention source chunks', () => {
+  const pageOf = (ids: string[], nextCursor: string | null) => ({ items: ids.map((id) => ({ id })), nextCursor })
+
+  it('starts a read where an earlier one stopped', async () => {
+    const readPage = vi.fn(async (cursor: string | null) => cursor === 'c3' ? pageOf(['c'], 'c4') : pageOf(['d'], null))
+
+    await expect(readAllCursorPages(readPage, 20, 'c3')).resolves.toEqual({ items: [{ id: 'c' }, { id: 'd' }], nextCursor: null })
+    expect(readPage.mock.calls.map(([cursor]) => cursor)).toEqual(['c3', 'c4'])
+  })
+
+  it('reads every chunk as one newest-first list, each item once, with where the unread rest starts', () => {
+    expect(flattenAttentionChunks({
+      pages: [pageOf(['a', 'b'], 'c3'), pageOf(['b', 'c'], 'c5')],
+      pageParams: [null, 'c3'],
+    })).toEqual({ items: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], nextCursor: 'c5' })
+    expect(flattenAttentionChunks({
+      pages: [pageOf(['a'], 'c2'), pageOf(['b'], null)],
+      pageParams: [null, 'c2'],
+    })).toEqual({ items: [{ id: 'a' }, { id: 'b' }], nextCursor: null })
+  })
+
+  it('drops a settled item from whichever chunk holds it, keeping each chunk\'s cursor', () => {
+    expect(withoutAttentionItem({
+      pages: [pageOf(['a', 'b'], 'c3'), pageOf(['c'], null)],
+      pageParams: [null, 'c3'],
+    }, 'c')).toEqual({ pages: [pageOf(['a', 'b'], 'c3'), pageOf([], null)], pageParams: [null, 'c3'] })
+    expect(withoutAttentionItem(undefined, 'a')).toBeUndefined()
+  })
+})
+
+describe('createRequestQueue', () => {
+  it('runs a few reads at once and starts the next as one settles', async () => {
+    const enqueue = createRequestQueue(2)
+    const reads = Array.from({ length: 3 }, () => Promise.withResolvers<string>())
+    const started: number[] = []
+    const results = reads.map((read, index) => enqueue(() => {
+      started.push(index)
+      return read.promise
+    }))
+    expect(started).toEqual([0, 1])
+
+    reads[0].resolve('first')
+    await expect(results[0]).resolves.toBe('first')
+    expect(started).toEqual([0, 1, 2])
+    reads[1].reject(new Error('boom'))
+    await expect(results[1]).rejects.toThrow('boom')
+    reads[2].resolve('third')
+    await expect(results[2]).resolves.toBe('third')
+  })
+
+  it('never starts a read cancelled while it waited', async () => {
+    const enqueue = createRequestQueue(1)
+    const first = Promise.withResolvers<string>()
+    const controller = new AbortController()
+    const waiting = vi.fn(async () => 'never')
+    void enqueue(() => first.promise)
+    const cancelled = enqueue(waiting, controller.signal)
+    const after = vi.fn(async () => 'after')
+    const next = enqueue(after)
+
+    controller.abort()
+    await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' })
+    first.resolve('first')
+    await expect(next).resolves.toBe('after')
+    expect(waiting).not.toHaveBeenCalled()
   })
 })

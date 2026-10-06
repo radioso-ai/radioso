@@ -17,7 +17,7 @@ import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/s
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { resolveEmailChannelStatus, type AgentChannelCatalogStatus } from '@/lib/agent-channel-catalog'
-import { getApiErrorStatus } from '@/lib/api-error'
+import { getApiErrorCode, getApiErrorStatus } from '@/lib/api-error'
 import {
   emailChannelApi,
   type EmailChannelOverview,
@@ -164,6 +164,8 @@ export function EmailChannelCard({ workspaceId, agentId }: EmailChannelCardProps
       void loadOverview({ quiet: true })
     } catch (error) {
       setCreateError(emailChannelErrorMessage(error, 'Failed to add the mailbox.'))
+      // The refusal still adds the domain to the workspace, where its registration can be adopted.
+      if (getApiErrorCode(error) === 'domain_needs_reconciliation') void loadOverview({ quiet: true })
     } finally {
       setIsCreating(false)
     }

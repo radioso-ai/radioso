@@ -175,12 +175,12 @@ interface OperatorComposerProps {
    */
   externalError?: string | null
   /**
-   * The conversation's channel, when it has one that can refuse a reply. While it is not ready,
-   * Send stays disabled and the reason shows in its place; the draft is kept. A send the server
-   * refuses for its channel holds Send with the server's reason and asks for a fresh read; that
-   * read then speaks for the channel, and once it finds sending ready Send is enabled again, with
-   * the refusal still said until the next attempt. Without a channel to read again, a refusal is
-   * said and Send stays enabled.
+   * The conversation's channel, while it is not yet known or when it can refuse a reply. While it
+   * is unknown or not ready, Send stays disabled and the reason shows in its place; the draft is
+   * kept. A send the server refuses for its channel holds Send with the server's reason and asks
+   * for a fresh read; that read then speaks for the channel, and once it finds sending ready Send
+   * is enabled again, with the refusal still said until the next attempt. Without a channel to
+   * read again, a refusal is said and Send stays enabled.
    */
   sendReadiness?: ChannelSendReadiness
 }

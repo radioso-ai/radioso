@@ -14,7 +14,7 @@ import { getApiErrorCode, getApiErrorMessage } from '@/lib/api-error'
 import { getHitlApiErrorStatus } from '@/lib/api-hitl'
 import { replyReviewApi, type HeldReply } from '@/lib/api-reply-review'
 import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
-import { heldReplyFactsLine, heldReplyOutcomeLabel, heldReplyReasoningLines } from '@/lib/needs-attention-reply-review'
+import { heldReplyFactsLine, heldReplyHoldLine, heldReplyOutcomeLabel, heldReplyReasoningLines } from '@/lib/needs-attention-reply-review'
 
 type OwnOutcome = 'released' | 'edited' | 'discarded'
 
@@ -231,6 +231,7 @@ export function HeldReplyPanel({
   const text = edit?.id === heldReply.id ? edit.text : heldReply.draftText
   const isEdited = text.trim() !== heldReply.draftText.trim()
   const factsLine = heldReplyFactsLine(heldReply.facts)
+  const holdLine = heldReplyHoldLine(heldReply.holdReason)
   const suppressedSkills = heldReply.suppressedEffects.map((effect) => effect.skillName)
   const reasoning = heldReply.trace ? heldReplyReasoningLines(heldReply.trace) : []
   const status = own?.id === heldReply.id
@@ -288,6 +289,7 @@ export function HeldReplyPanel({
         <p className="mt-1 text-xs text-muted-foreground">Not run: {suppressedSkills.join(', ')}</p>
       ) : null}
       {factsLine ? <p className="mt-1 text-xs text-muted-foreground">{factsLine}</p> : null}
+      {holdLine ? <p className="mt-1 text-xs text-muted-foreground">{holdLine}</p> : null}
 
       {reasoning.length > 0 ? (
         <Collapsible className="mt-2">

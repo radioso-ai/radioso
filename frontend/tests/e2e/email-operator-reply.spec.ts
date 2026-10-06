@@ -51,8 +51,14 @@ const installEmailReplyBackend = async (
     aiOwned?: boolean;
     /** The mailbox's facts cannot be read. */
     factsUnavailable?: boolean;
+    /** The conversation's detail, and with it its channel, waits until released, or cannot be read. */
+    conversationDetail?: "held" | "unavailable";
   },
 ) => {
+  let releaseDetail = () => {};
+  const detailHeld = options.conversationDetail === "held"
+    ? new Promise<void>((resolve) => { releaseDetail = resolve; })
+    : null;
   let sending = options.sending;
   let refuseSends = options.refuseSends ?? false;
   const initialState: "ai_owned" | "human_owned" = options.aiOwned ? "ai_owned" : "human_owned";
@@ -148,10 +154,12 @@ const installEmailReplyBackend = async (
   await page.route("**/backend/api/v1/quality/turns**", (route) =>
     json(route, { items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }));
 
-  await page.route(`**/backend/api/v1/history/chat/${conversationId}**`, (route) => {
+  await page.route(`**/backend/api/v1/history/chat/${conversationId}**`, async (route) => {
     if (new URL(route.request().url()).pathname.endsWith("/tail")) {
       return json(route, { messages: [], cursor: null, ownership, activity: [] });
     }
+    if (options.conversationDetail === "unavailable") return refuse(route, 500, "internal_error", "Conversation unavailable");
+    if (detailHeld) await detailHeld;
     return json(route, {
       ...summary(),
       conversationId,
@@ -246,6 +254,7 @@ const installEmailReplyBackend = async (
     acknowledged,
     resolutions,
     ownershipState: () => ownership.state,
+    releaseDetail: () => releaseDetail(),
     setSending: (next: SendingState) => { sending = next; },
     setRefuseSends: (next: boolean) => { refuseSends = next; },
     /** The provider reports where the reply stands; a bounce raises a failure with its sanitized code. */
@@ -345,6 +354,36 @@ test("a mailbox whose facts cannot be read never offers Send, and says why", asy
   const send = response.getByRole("button", { name: "Send" });
   await expect(send).toBeDisabled();
   await expect(send).toHaveAccessibleDescription("Can’t confirm this mailbox can send right now.", factsPoll);
+  expect(backend.replies).toEqual([]);
+  expect(backend.takeovers).toEqual([]);
+});
+
+test("Send waits until the conversation's channel is known, and says why", async ({ page }) => {
+  await seedDashboardStorage(page);
+  const backend = await installEmailReplyBackend(page, { sending: "ok", conversationDetail: "held" });
+
+  const response = await openEmailConversation(page);
+  await response.getByRole("textbox", { name: "Reply to the visitor" }).fill("We are tracking it now.");
+  const send = response.getByRole("button", { name: "Send" });
+  await expect(send).toBeDisabled();
+  await expect(send).toHaveAccessibleDescription("Checking whether this conversation can send.");
+
+  backend.releaseDetail();
+  await expect(send).toBeEnabled(factsPoll);
+  await send.click();
+  await expect(response.getByRole("list", { name: "Reply delivery" })).toContainText("Queued");
+  expect(backend.replies).toHaveLength(1);
+});
+
+test("a conversation that cannot be read never offers Send, and says why", async ({ page }) => {
+  await seedDashboardStorage(page);
+  const backend = await installEmailReplyBackend(page, { sending: "ok", conversationDetail: "unavailable" });
+
+  const response = await openEmailConversation(page);
+  await response.getByRole("textbox", { name: "Reply to the visitor" }).fill("We are tracking it now.");
+  const send = response.getByRole("button", { name: "Send" });
+  await expect(send).toBeDisabled();
+  await expect(send).toHaveAccessibleDescription("Can’t confirm this conversation can send right now.");
   expect(backend.replies).toEqual([]);
   expect(backend.takeovers).toEqual([]);
 });

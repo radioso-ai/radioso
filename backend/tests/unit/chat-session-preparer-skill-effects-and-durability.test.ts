@@ -38,7 +38,7 @@ const fixedRetrievalResult = (request: RetrievalPipelineRequest): RetrievalPipel
       finalContextCount: 0,
       candidateFallbackApplied: false,
       fallbackApplied: false,
-      parsedQuery: { semanticQuery: request.query, lexicalQuery: request.query, constraints: [] },
+      parsedQuery: { semanticQuery: request.query, lexicalQuery: request.query },
     },
     trace: { traceId: "trace-1", startedAt: now, completedAt: now, totalDurationMs: 0, stages: [], links: [] },
   };

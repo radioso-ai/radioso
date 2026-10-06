@@ -713,7 +713,6 @@ describeIfDatabase("persistence integration", () => {
           parsedQuery: {
             semanticQuery: "retreats",
             lexicalQuery: "retreats",
-            constraints: [],
           },
           appliedConstraints: [],
           candidateFallbackApplied: false,
@@ -734,7 +733,6 @@ describeIfDatabase("persistence integration", () => {
           finalContextCount: 4,
           parsedSemanticQuery: "retreats",
           parsedLexicalQuery: "retreats",
-          parsedConstraintCount: 0,
           appliedConstraintCount: 0,
           candidateFallbackApplied: false,
           fallbackApplied: true,

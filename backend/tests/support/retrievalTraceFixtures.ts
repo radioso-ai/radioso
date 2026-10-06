@@ -34,13 +34,11 @@ export const activityTraceInputFixture = (): ActivityTraceAssemblerInput => ({
       originalQuery: "who is freya and tomas?",
       semanticQuery: "who is freya and tomas?",
       lexicalQuery: "who is freya and tomas?",
-      constraints: [],
     },
     originalPreparedQuery: {
       originalQuery: "who is freya and tomas?",
       semanticQuery: "who is freya and tomas?",
       lexicalQuery: "who is freya and tomas?",
-      constraints: [],
     },
     rewrittenQuery: {
       originalQuery: "who is freya and tomas?",
@@ -63,7 +61,6 @@ export const activityTraceInputFixture = (): ActivityTraceAssemblerInput => ({
       originalQuery: "who is freya and tomas?",
       semanticQuery: "who is freya and tomas?",
       lexicalQuery: "who is freya and tomas?",
-      constraints: [],
     },
     activeSemanticQuery: "who is freya and tomas?",
     activeRetrievalSubqueries: [
@@ -229,7 +226,6 @@ export const activityTraceInputFixture = (): ActivityTraceAssemblerInput => ({
       originalQuery: "who is freya and tomas?",
       semanticQuery: "who is freya and tomas?",
       lexicalQuery: "who is freya and tomas?",
-      constraints: [],
     },
     appliedConstraints: [
       {

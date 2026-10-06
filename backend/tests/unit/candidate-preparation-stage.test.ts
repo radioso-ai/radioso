@@ -67,13 +67,11 @@ const buildInput = (rewrittenContexts: RetrievedChunk[]): CandidateRetrievalStag
     originalQuery: "when is the next family camp?",
     semanticQuery: "when is the next family camp?",
     lexicalQuery: "next family camp",
-    constraints: [],
   },
   originalPreparedQuery: {
     originalQuery: "when is the next family camp?",
     semanticQuery: "when is the next family camp?",
     lexicalQuery: "next family camp",
-    constraints: [],
   },
   rewrittenQuery: {
     originalQuery: "when is the next family camp?",
@@ -101,7 +99,6 @@ const buildInput = (rewrittenContexts: RetrievedChunk[]): CandidateRetrievalStag
     originalQuery: "when is the next family camp?",
     semanticQuery: "when is the next family camp?",
     lexicalQuery: "next family camp",
-    constraints: [],
   },
   activeSemanticQuery: "when is the next family camp?",
   activeRetrievalSubqueries: [

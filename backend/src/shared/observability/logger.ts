@@ -45,7 +45,6 @@ interface RetrievalLogFields {
   finalContextCount: number;
   parsedSemanticQuery?: string;
   parsedLexicalQuery?: string;
-  parsedConstraintCount: number;
   appliedConstraintCount: number;
   candidateFallbackApplied: boolean;
   fallbackApplied: boolean;
@@ -146,13 +145,6 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
     typeof fields.parsedQuery.lexicalQuery === "string"
       ? fields.parsedQuery.lexicalQuery
       : undefined;
-  const parsedConstraintCount =
-    fields.parsedQuery &&
-    typeof fields.parsedQuery === "object" &&
-    "constraints" in fields.parsedQuery &&
-    Array.isArray(fields.parsedQuery.constraints)
-      ? fields.parsedQuery.constraints.length
-      : 0;
   const appliedConstraintCount = Array.isArray(fields.appliedConstraints) ? fields.appliedConstraints.length : 0;
 
   return {
@@ -165,7 +157,6 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
     finalContextCount: fields.finalContextCount,
     parsedSemanticQuery,
     parsedLexicalQuery,
-    parsedConstraintCount,
     appliedConstraintCount,
     candidateFallbackApplied: fields.candidateFallbackApplied,
     fallbackApplied: fields.fallbackApplied,

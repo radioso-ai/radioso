@@ -61,6 +61,7 @@ export const dashboardQueryKeys = {
           optional(input.searchParams.outcome),
           optional(input.searchParams.agentId),
           optional(input.searchParams.sourceOrigin),
+          optional(input.searchParams.callerKind),
         ] : []),
       ),
   },

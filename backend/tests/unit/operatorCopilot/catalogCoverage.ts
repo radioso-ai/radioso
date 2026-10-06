@@ -210,6 +210,9 @@ export const internalRuntimeCoverageExclusions = {
   providerInputTokenCaching: permanent(
     "Permanent exclusion: provider input-token caching is internal request rendering and bounded telemetry, not a workspace operation Ray can read, propose, or apply.",
   ),
+  activityCallerKindFilter: permanent(
+    "Permanent exclusion: caller kind is a read-only Activity view control. conversation_history_search already reads the underlying conversation data, including caller kind; Ray cannot operate a dashboard filter.",
+  ),
 } as const;
 
 /** Every OpenAPI operation is deliberately reachable through a family reader or explicitly planned/excluded. */

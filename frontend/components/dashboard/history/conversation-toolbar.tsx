@@ -13,17 +13,23 @@ import {
 } from '@/components/ui/select'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import type { ChatConversationSummary } from '@/lib/api'
-import type { ConversationFilterState, OutcomeFilter } from '@/lib/conversation-filters'
+import type { CallerKindFilter, ConversationFilterState, OutcomeFilter } from '@/lib/conversation-filters'
 
 // Radix Select can't hold an empty-string value for an "all" option.
 const ALL_AGENTS = '__all_agents__'
 const ALL_SITES = '__all_sites__'
+const ALL_CALLERS = '__all_callers__'
 
 const OUTCOME_OPTIONS: Array<{ value: OutcomeFilter; label: string }> = [
   { value: 'all', label: 'Outcome: all' },
   { value: 'in_progress', label: 'In progress' },
   { value: 'completed', label: 'Completed' },
   { value: 'handed_off', label: 'Handed off' },
+]
+
+const CALLER_KIND_OPTIONS: Array<{ value: CallerKindFilter; label: string }> = [
+  { value: 'human', label: 'Human' },
+  { value: 'agent', label: 'AI agent' },
 ]
 
 const siteLabel = (origin: string): string => {
@@ -134,6 +140,20 @@ export function ConversationToolbar({
             <SelectItem key={origin} value={origin}>
               {siteLabel(origin)}
             </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select
+        value={filters.callerKind ?? ALL_CALLERS}
+        onValueChange={(value) => onFiltersChange({ ...filters, callerKind: value === ALL_CALLERS ? null : value as CallerKindFilter })}
+      >
+        <SelectTrigger className="h-9 w-[150px]" aria-label="Filter by caller">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL_CALLERS}>Caller: all</SelectItem>
+          {CALLER_KIND_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
           ))}
         </SelectContent>
       </Select>

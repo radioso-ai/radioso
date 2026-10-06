@@ -460,6 +460,9 @@ const isDefaultTransition = (transition: RoutineTransition): boolean =>
 const isLlmTransition = (transition: RoutineTransition): boolean =>
   !transition.guard || transition.guard.kind === "llm";
 
+const isCompilerSlotGate = (transition: RoutineTransition): boolean =>
+  transition.origin === "compiler_slot_gate" && isLlmTransition(transition);
+
 const terminalKindFor = (step: RoutineStep): RoutineAuthoredTerminalKind | null => {
   if (step.kind !== "terminal") {
     return null;
@@ -713,15 +716,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     ): string | undefined =>
       (exits.find((exit) => !isDefaultTransition(exit) && !isLlmTransition(exit) && guardMatches(exit, step.id, variables))
         ?? exits.find(isDefaultTransition))?.to;
-    // Where a satisfied slot step goes when its structure decides: its only exit when that is
-    // an AI-decides exit — the compiler's gate on a plain collection step's single edge —
-    // else its rule exit.
+    // Where a satisfied slot step goes when its structure decides: its compiler-generated
+    // slot gate, else its rule exit. An unmarked AI-decides edge is authored and can leave
+    // only when the selector chooses it.
     const satisfiedStepExit = (
       step: RoutineStep,
       exits: readonly RoutineTransition[],
       variables: Record<string, unknown>,
     ): string | undefined =>
-      exits.length === 1 && isLlmTransition(exits[0])
+      exits.length === 1 && isCompilerSlotGate(exits[0])
         ? exits[0].to
         : ruleExit(step, exits, variables);
     type SelectNextInput = {
@@ -735,8 +738,6 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       alwaysExtract?: boolean;
       /** The step the visitor answered: a rejected value for one of its own slots holds it this turn. */
       answeredStep?: boolean;
-      /** An AI-decides exit leaves only when the selector chose it: a step reached after a transit step. */
-      judgedAiExitsOnly?: boolean;
     };
     const selectNextRaw = async (input: SelectNextInput): Promise<RoutineNextStepDecision> => {
       lastSelectorRan = false;
@@ -827,7 +828,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // done, so its rule or default exit moves on instead of asking again (#1372).
         const withDecision = { ...variables, ...(decision.variables ?? {}) };
         const exit = isSatisfiedSlotCollectionStep(routine, input.step, withDecision)
-          ? (input.judgedAiExitsOnly ? ruleExit : satisfiedStepExit)(input.step, input.transitions, withDecision)
+          ? satisfiedStepExit(input.step, input.transitions, withDecision)
           : undefined;
         if (exit !== undefined) {
           return { ...decision, nextStepId: exit };
@@ -946,7 +947,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // for a value the routine already holds. A satisfied step leaves by its structure — a
     // matching rule exit, else its default — with no model call: the latest message
     // answered an earlier step and has already been read (#1372). Only a step whose way on
-    // is an AI-decides exit asks the selector.
+    // is an authored AI-decides exit asks the selector. A marked compiler slot gate can
+    // advance without one.
     // A bounded loop (a `counter` back-edge into a satisfied step) would otherwise
     // fast-forward forever — track the steps visited this traversal, the transit steps it
     // runs through included, and on a revisit, stop and render the current step instead of
@@ -987,7 +989,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // action; judging it against the message that answered an earlier step could yield the
     // turn and run the tool again later. Such a step is asked.
     const fastForward = async ({ afterTransit }: { afterTransit: boolean }): Promise<boolean> => {
-      const structuralExit = afterTransit ? ruleExit : satisfiedStepExit;
+      const structuralExit = satisfiedStepExit;
       while (!held) {
         if (!isSatisfiedSlotCollectionStep(routine, step, variables)) {
           // Activation turn only (#1370): the message that starts the routine can state
@@ -1013,7 +1015,6 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
             transitions: landingEdges,
             variables,
             state: { ...state, path, variables, attempts, status: "active" },
-            ...(afterTransit ? { judgedAiExitsOnly: true } : {}),
           });
           const landingEntry = selectorEntry(step, beforeLanding, landingDecision);
           landingEntry.readOpeningMessage = true;

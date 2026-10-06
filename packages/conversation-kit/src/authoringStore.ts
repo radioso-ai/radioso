@@ -20,6 +20,8 @@ import type {
   RoutineTransition,
 } from "@radioso/conversation-contract";
 
+import { isRoutineTransitionOrigin } from "./routineTransitionOrigin.js";
+
 export type UpdateConversationKitAgentInput = Partial<Omit<ConversationAgentConfig, "id">>;
 export type UpdateConversationKitDirectiveInput = Partial<Omit<Directive, "id">>;
 export type UpdateConversationKitRoutineInput = Partial<Omit<Routine, "id">>;
@@ -386,7 +388,10 @@ const parseRoutineTransition = (value: unknown): RoutineTransition | null => {
     return null;
   }
   const guard = parseOptional(value.guard, parseRoutineGuard);
-  if (isInvalid(guard)) {
+  const origin = parseOptional(value.origin, (candidate) =>
+    isRoutineTransitionOrigin(candidate) ? candidate : INVALID,
+  );
+  if (isInvalid(guard) || isInvalid(origin)) {
     return null;
   }
   return {
@@ -394,6 +399,7 @@ const parseRoutineTransition = (value: unknown): RoutineTransition | null => {
     to: value.to,
     condition: value.condition,
     guard,
+    origin,
   };
 };
 

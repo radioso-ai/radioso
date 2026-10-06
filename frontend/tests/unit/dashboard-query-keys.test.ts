@@ -57,17 +57,19 @@ describe('dashboard query keys', () => {
     const withOutcome = dashboardQueryKeys.history.list(workspaceId, { variant: 'all', page: 1, pageSize: 50, searchParams: { outcome: 'completed' } })
     const withAgent = dashboardQueryKeys.history.list(workspaceId, { variant: 'all', page: 1, pageSize: 50, searchParams: { agentId: 'agent-a' } })
     const withSite = dashboardQueryKeys.history.list(workspaceId, { variant: 'all', page: 1, pageSize: 50, searchParams: { sourceOrigin: 'https://example.com' } })
+    const withCaller = dashboardQueryKeys.history.list(workspaceId, { variant: 'all', page: 1, pageSize: 50, searchParams: { callerKind: 'agent' } })
 
     // Passing an (empty) searchParams object is itself a different key from omitting it —
     // the two are handled by different react-query cache entries even though they'd
     // currently produce the same server request.
     const withoutSearchParams = dashboardQueryKeys.history.list(workspaceId, { variant: 'all', page: 1, pageSize: 50 })
     expect(noFilters).not.toEqual(withoutSearchParams);
-    [withQ, withOutcome, withAgent, withSite].forEach((key) => {
+    [withQ, withOutcome, withAgent, withSite, withCaller].forEach((key) => {
       expect(key).not.toEqual(noFilters)
     })
     expect(withQ).not.toEqual(withOutcome)
     expect(withAgent).not.toEqual(withSite)
+    expect(withSite).not.toEqual(withCaller)
   })
 
   it('normalizes scalar-or-array and all set-like quality filters, including action objects', () => {

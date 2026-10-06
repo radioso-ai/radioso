@@ -46,7 +46,7 @@ export function useHistoryListState({
   accountId: string
   routeState: DashboardRouteState
   /**
-   * The All lens's toolbar search/outcome/agent/site filters (issue #1126), already
+   * The All lens's toolbar search/outcome/agent/site/caller filters (issue #1126), already
    * debounced by the caller. Only applied to the `filter === 'all'` query — the other
    * variants keep filtering client-side (see `all-conversations-list-pane.tsx`).
    */

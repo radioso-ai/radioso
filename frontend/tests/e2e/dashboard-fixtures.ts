@@ -1525,14 +1525,15 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/history") {
-      // The All lens's search/outcome/agent/site filters are server-side (issue #1126):
+      // The All lens's search/outcome/agent/site/caller filters are server-side (issue #1126):
       // simulate just enough of that filtering here so an e2e test that types into the
       // toolbar search box exercises a real request round trip, not client-side narrowing.
       const url = new URL(request.url());
       const q = url.searchParams.get("q");
       const agentId = url.searchParams.get("agentId");
       const sourceOrigin = url.searchParams.get("sourceOrigin");
-      const hasFilter = Boolean(q || agentId || sourceOrigin || url.searchParams.get("outcome"));
+      const callerKind = url.searchParams.get("callerKind");
+      const hasFilter = Boolean(q || agentId || sourceOrigin || callerKind || url.searchParams.get("outcome"));
       const allItems = (historyItems as { items?: Array<Record<string, unknown>> }).items ?? [];
       const filteredItems = !hasFilter ? allItems : allItems.filter((item) => {
         if (item.kind !== "chat") {
@@ -1543,6 +1544,9 @@ export const installDashboardApiMocks = async (
           return false;
         }
         if (sourceOrigin && conversation.sourceOrigin !== sourceOrigin) {
+          return false;
+        }
+        if (callerKind && conversation.callerKind !== callerKind) {
           return false;
         }
         if (q) {

@@ -216,7 +216,7 @@ describe('history list query', () => {
     const signal = new AbortController().signal
     vi.mocked(chatApi.listHistory).mockResolvedValue(response)
     await fetchHistory({
-      queryKey: ['workspace', 'workspace-1', 'history', 'list', 'all', 1, 50, 'refund', 'completed', 'agent-1', 'https://example.com'],
+      queryKey: ['workspace', 'workspace-1', 'history', 'list', 'all', 1, 50, 'refund', 'completed', 'agent-1', 'https://example.com', 'agent'],
       signal,
     } as never)
     expect(chatApi.listHistory).toHaveBeenCalledWith({
@@ -226,6 +226,7 @@ describe('history list query', () => {
       outcome: 'completed',
       agentId: 'agent-1',
       sourceOrigin: 'https://example.com',
+      callerKind: 'agent',
     }, signal)
   })
 
@@ -233,7 +234,7 @@ describe('history list query', () => {
     const signal = new AbortController().signal
     vi.mocked(chatApi.listHistory).mockResolvedValue(response)
     await fetchHistory({
-      queryKey: ['workspace', 'workspace-1', 'history', 'list', 'all', 1, 50, null, null, 'agent-1', null],
+      queryKey: ['workspace', 'workspace-1', 'history', 'list', 'all', 1, 50, null, null, 'agent-1', null, null],
       signal,
     } as never)
     expect(chatApi.listHistory).toHaveBeenCalledWith({ limit: 50, offset: 0, agentId: 'agent-1' }, signal)

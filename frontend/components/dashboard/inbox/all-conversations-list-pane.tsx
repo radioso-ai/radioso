@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { CheckCircle2, Hand, Search } from 'lucide-react'
 
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
+import { AgentCallerChip } from '@/components/dashboard/caller-kind-chip'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -17,7 +18,12 @@ import type { ChatConversationSummary, ContactHistorySummary, DocumentSearchHist
 import { useCopilotEntity } from '@/lib/copilot-context'
 import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import { deriveConversationOutcome, type ConversationOutcome } from '@/lib/conversation-outcome'
-import { matchesConversationSearchText, type ConversationFilterState, type OutcomeFilter } from '@/lib/conversation-filters'
+import {
+  matchesConversationSearchText,
+  type CallerKindFilter,
+  type ConversationFilterState,
+  type OutcomeFilter,
+} from '@/lib/conversation-filters'
 import { formatConversationLocation } from '@/lib/history-source'
 import { stripTrackingParams } from '@/lib/inbox-response'
 import { formatInboxRowTimestamp } from '@/lib/needs-attention-format'
@@ -27,12 +33,18 @@ import type { HistoryListItem, SelectedHistoryItem } from '@/components/dashboar
 // Radix Select can't hold an empty-string value for an "all" option.
 const ALL_AGENTS = '__all_agents__'
 const ALL_SITES = '__all_sites__'
+const ALL_CALLERS = '__all_callers__'
 
 const OUTCOME_OPTIONS: Array<{ value: OutcomeFilter; label: string }> = [
   { value: 'all', label: 'Outcome: all' },
   { value: 'in_progress', label: 'In progress' },
   { value: 'completed', label: 'Completed' },
   { value: 'handed_off', label: 'Handed off' },
+]
+
+const CALLER_KIND_OPTIONS: Array<{ value: CallerKindFilter; label: string }> = [
+  { value: 'human', label: 'Human' },
+  { value: 'agent', label: 'AI agent' },
 ]
 
 const siteLabel = (origin: string): string => {
@@ -141,6 +153,7 @@ function ConversationRow({
           <span aria-hidden>·</span>
           <span className="min-w-0 truncate" title={trimmedEntryPageUrl ?? location.title ?? undefined}>{locationText}</span>
         </span>
+        {conversation.callerKind === 'agent' ? <AgentCallerChip /> : null}
         <OutcomeChip outcome={outcome} />
       </div>
     </RowShell>
@@ -243,7 +256,12 @@ export const filterAllLensItems = (
   now: Date,
 ): HistoryListItem[] => items.filter((entry) => {
   if (entry.kind !== 'chat') {
-    if (filters.outcome !== 'all' || filters.agentId !== null || filters.siteOrigin !== null) {
+    if (
+      filters.outcome !== 'all'
+      || filters.agentId !== null
+      || filters.siteOrigin !== null
+      || filters.callerKind !== null
+    ) {
       return false
     }
     const text = entry.kind === 'search' ? entry.search.query : entry.contact.messagePreview ?? ''
@@ -261,6 +279,9 @@ export const filterAllLensItems = (
     return false
   }
   if (filters.siteOrigin !== null && entry.conversation.sourceOrigin !== filters.siteOrigin) {
+    return false
+  }
+  if (filters.callerKind !== null && entry.conversation.callerKind !== filters.callerKind) {
     return false
   }
   return true
@@ -361,6 +382,20 @@ export function AllConversationsListPane({
               <SelectItem value={ALL_SITES}>Site: all</SelectItem>
               {siteOptions.map((origin) => (
                 <SelectItem key={origin} value={origin}>{siteLabel(origin)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={filters.callerKind ?? ALL_CALLERS}
+            onValueChange={(value) => onFiltersChange({ ...filters, callerKind: value === ALL_CALLERS ? null : value as CallerKindFilter })}
+          >
+            <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs" aria-label="Filter by caller">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_CALLERS}>Caller: all</SelectItem>
+              {CALLER_KIND_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>

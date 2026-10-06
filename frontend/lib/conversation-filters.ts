@@ -3,12 +3,14 @@ import { deriveConversationOutcome, type ConversationOutcome } from '@/lib/conve
 import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 
 export type OutcomeFilter = 'all' | ConversationOutcome['kind']
+export type CallerKindFilter = ChatConversationSummary['callerKind']
 
 export interface ConversationFilterState {
   search: string
   outcome: OutcomeFilter
   agentId: string | null
   siteOrigin: string | null
+  callerKind: CallerKindFilter | null
 }
 
 export const EMPTY_CONVERSATION_FILTERS: ConversationFilterState = {
@@ -16,6 +18,7 @@ export const EMPTY_CONVERSATION_FILTERS: ConversationFilterState = {
   outcome: 'all',
   agentId: null,
   siteOrigin: null,
+  callerKind: null,
 }
 
 /**
@@ -57,6 +60,10 @@ export function filterConversations(
       return false
     }
 
+    if (filters.callerKind !== null && conversation.callerKind !== filters.callerKind) {
+      return false
+    }
+
     return true
   })
 }
@@ -77,6 +84,7 @@ export interface ConversationSearchParams {
   outcome?: ConversationOutcome['kind']
   agentId?: string
   sourceOrigin?: string
+  callerKind?: CallerKindFilter
 }
 
 /**
@@ -86,7 +94,7 @@ export interface ConversationSearchParams {
  * `null`/empty filter into an absent key so an unset filter never appears in the request.
  */
 export function buildConversationSearchParams(
-  filters: Pick<ConversationFilterState, 'search' | 'outcome' | 'agentId' | 'siteOrigin'>,
+  filters: Pick<ConversationFilterState, 'search' | 'outcome' | 'agentId' | 'siteOrigin' | 'callerKind'>,
 ): ConversationSearchParams {
   const q = filters.search.trim()
   return {
@@ -94,5 +102,6 @@ export function buildConversationSearchParams(
     ...(filters.outcome !== 'all' ? { outcome: filters.outcome } : {}),
     ...(filters.agentId ? { agentId: filters.agentId } : {}),
     ...(filters.siteOrigin ? { sourceOrigin: filters.siteOrigin } : {}),
+    ...(filters.callerKind ? { callerKind: filters.callerKind } : {}),
   }
 }

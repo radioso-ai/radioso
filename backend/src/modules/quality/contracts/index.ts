@@ -112,6 +112,7 @@ export interface LowQualityTurn {
   skillName: string | null;
   skillOutcome: string | null;
   skillStatus: string | null;
+  /** Visitor-perceived time from request receipt through the final assistant answer, in milliseconds. */
   totalLatencyMs: number | null;
   grounding: GroundingDiagnosticSnapshot | null;
   createdAt: string;

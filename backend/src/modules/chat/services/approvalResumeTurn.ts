@@ -83,6 +83,7 @@ export class ApprovalResumeTurn {
   async resume(
     input: ApprovalResumeTurnInput,
   ): Promise<ApprovalResumeResult> {
+    const requestReceivedAt = Date.now();
     const coordination: ResumeCoordination = {
       lease: this.options.conversationTurnRegistry.start(input.record.conversationId),
     };
@@ -91,7 +92,7 @@ export class ApprovalResumeTurn {
       const modelCallTrace = createModelCallTraceCollector();
       return await runWithModelCallTrace(
         modelCallTrace,
-        () => this.resumeWithinTrace(input, coordination, modelCallTrace),
+        () => this.resumeWithinTrace(input, coordination, modelCallTrace, requestReceivedAt),
       );
     } catch (error) {
       let preferredError = error;
@@ -116,6 +117,7 @@ export class ApprovalResumeTurn {
     input: ApprovalResumeTurnInput,
     coordination: ResumeCoordination,
     modelCallTrace: ModelCallTraceCollector,
+    requestReceivedAt: number,
   ): Promise<ApprovalResumeResult> {
     if (!this.options.routineProvider || !this.options.suspendedRoutineReader) {
       throw new Error("approval_resume_routine_provider_missing");
@@ -200,7 +202,7 @@ export class ApprovalResumeTurn {
       accountId: input.decidedBy,
       session,
       presentation,
-      answerStartedAt: Date.now(),
+      requestReceivedAt,
       stream: false,
       engineTrace: result.trace ? conversationTraceWithRoutineTrace(session.turnTrace, result.trace) : session.turnTrace,
       modelCallTrace,

@@ -262,6 +262,7 @@ export class WorkbenchReplayRunner {
   constructor(private readonly options: WorkbenchReplayRunnerOptions) {}
 
   async run(input: WorkbenchReplayInput): Promise<WorkbenchReplayResult> {
+    const requestReceivedAt = Date.now();
     if (input.candidateRevision && input.executionMode !== "safe_test") {
       throw new Error("workbench_candidate_revision_requires_safe_test");
     }
@@ -382,7 +383,6 @@ export class WorkbenchReplayRunner {
     const activeRoutine = await routineStore.loadActive({
       sessionId: session.conversation.id,
     });
-    const answerStartedAt = Date.now();
     const routineResult = await assembly.attemptRoutineTurn(session, {
       accountId: input.accountId ?? undefined,
       responseLanguage: responseLanguagePromise,
@@ -399,7 +399,7 @@ export class WorkbenchReplayRunner {
         session,
         presentation: routineResult.presentation,
         engineTrace: routineResult.engineTrace,
-        answerStartedAt,
+        requestReceivedAt,
         actions: routineResult.actions,
         pendingDecisionTransition: routineResult.pendingDecisionTransition,
         handoff: routineResult.handoff,
@@ -430,7 +430,7 @@ export class WorkbenchReplayRunner {
       session: rendered.session,
       presentation: rendered.presentation,
       engineTrace: rendered.engineTrace,
-      answerStartedAt,
+      requestReceivedAt,
       actions: rendered.actions,
       continuation: this.continuation(effects, session.conversation.id, routineStore),
     });
@@ -586,7 +586,7 @@ export class WorkbenchReplayRunner {
     session: PreparedSession;
     presentation: ChatPresentedAnswer;
     engineTrace?: Parameters<typeof buildTurnTraceForPresentation>[0]["engineTrace"];
-    answerStartedAt: number;
+    requestReceivedAt: number;
     actions?: RoutineActionRequest[];
     pendingDecisionTransition?: ChatTurnAssemblyRoutineResult["pendingDecisionTransition"];
     handoff?: ChatTurnAssemblyRoutineResult["handoff"];
@@ -599,7 +599,7 @@ export class WorkbenchReplayRunner {
       accountId: input.input.accountId ?? undefined,
       session: input.session,
       presentation: input.presentation,
-      answerStartedAt: input.answerStartedAt,
+      requestReceivedAt: input.requestReceivedAt,
       stream: false,
       engineTrace: input.engineTrace,
     });

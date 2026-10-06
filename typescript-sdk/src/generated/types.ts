@@ -8384,6 +8384,7 @@ export interface components {
             skillName: string | null;
             skillOutcome: string | null;
             skillStatus: components["schemas"]["QualitySkillStatus"] | null;
+            /** @description Visitor-perceived time from chat request receipt through the final assistant answer, in milliseconds. */
             totalLatencyMs: number | null;
             grounding: components["schemas"]["GroundingDiagnostic"] | null;
             /** Format: date-time */
@@ -23594,7 +23595,9 @@ export interface operations {
                 resolutionFrom?: string;
                 /** @description Terminal triage closure time, exclusive. Distinct from assistant-turn `to`. */
                 resolutionTo?: string;
+                /** @description Minimum visitor-perceived request-to-answer time in milliseconds. */
                 minTotalLatencyMs?: number | null;
+                /** @description Maximum visitor-perceived request-to-answer time in milliseconds. */
                 maxTotalLatencyMs?: number | null;
                 offset?: number | null;
                 limit?: number;

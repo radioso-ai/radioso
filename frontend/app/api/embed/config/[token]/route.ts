@@ -1,3 +1,5 @@
+import { buildEdgeFactsHeaders } from '../../../../../lib/server/edge-facts'
+
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +17,25 @@ const BASE_CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'OPTIONS, GET',
   'Access-Control-Allow-Headers': 'Content-Type',
   Vary: 'Origin',
+}
+const RATE_LIMIT_RESPONSE_HEADER_NAMES = [
+  'ratelimit-limit',
+  'ratelimit-remaining',
+  'ratelimit-reset',
+  'retry-after',
+] as const
+
+const rateLimitResponseHeaders = (upstream: Response): Record<string, string> => {
+  const headers: Record<string, string> = {}
+
+  for (const name of RATE_LIMIT_RESPONSE_HEADER_NAMES) {
+    const value = upstream.headers.get(name)
+    if (value) {
+      headers[name] = value
+    }
+  }
+
+  return headers
 }
 
 // Short browser TTL, modest shared/edge TTL. Operator settings changes propagate
@@ -52,14 +73,17 @@ export async function GET(
 ) {
   const { token } = await context.params
   const requestOrigin = resolveOrigin(request.headers.get('origin'))
+  const upstreamMethod = 'GET'
+  const upstreamPath = `/api/v1/public/chat/${encodeURIComponent(token)}/embed-config`
 
   try {
-    const upstream = await fetch(`${BACKEND_BASE}/api/v1/public/chat/${encodeURIComponent(token)}/embed-config`, {
-      method: 'GET',
+    const upstream = await fetch(`${BACKEND_BASE}${upstreamPath}`, {
+      method: upstreamMethod,
       cache: 'no-store',
       headers: {
         'X-Forwarded-Prefix': '/backend',
         ...(requestOrigin ? { Origin: requestOrigin } : {}),
+        ...buildEdgeFactsHeaders(request, { method: upstreamMethod, path: upstreamPath }),
       },
     })
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
@@ -72,6 +96,7 @@ export async function GET(
       headers: corsHeaders(upstream.ok ? requestOrigin : null, {
         'Content-Type': contentType,
         'Cache-Control': upstream.ok ? CDN_CACHE_CONTROL : 'no-store',
+        ...rateLimitResponseHeaders(upstream),
       }),
     })
   } catch (error) {

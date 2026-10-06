@@ -14,6 +14,25 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
   Vary: 'Origin',
 }
+const RATE_LIMIT_RESPONSE_HEADER_NAMES = [
+  'ratelimit-limit',
+  'ratelimit-remaining',
+  'ratelimit-reset',
+  'retry-after',
+] as const
+
+const rateLimitResponseHeaders = (upstream: Response): Record<string, string> => {
+  const headers: Record<string, string> = {}
+
+  for (const name of RATE_LIMIT_RESPONSE_HEADER_NAMES) {
+    const value = upstream.headers.get(name)
+    if (value) {
+      headers[name] = value
+    }
+  }
+
+  return headers
+}
 
 const withCorsHeaders = (
   origin: string | null,
@@ -119,6 +138,7 @@ export async function POST(
         {
           'Content-Type': contentType,
           'Cache-Control': 'no-store',
+          ...rateLimitResponseHeaders(upstream),
         },
         { allowOrigin: upstream.ok },
       ),

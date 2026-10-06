@@ -8,6 +8,7 @@ import type {
   ActivityStageStatus,
 } from "../domain/retrievalPipelineTypes.js";
 import type { PromptAssemblyStageResult } from "./retrievalPipelineStages.js";
+import { presentParsedQuery } from "./activitySummaryPresenter.js";
 import { getContextSelectionClauses, summarizeResolvedSteps } from "./retrievalShapeResolver.js";
 import { getCandidateFusedScore, hasUsefulCandidateEvidence } from "./candidateScoring.js";
 
@@ -276,11 +277,9 @@ export class ActivityTraceAssembler {
           temporalQueryMode,
           rewriteEligible: prompt.rewrittenQuery.retrievalEligible,
           rewriteRan: diagnostics.rewriteRan ?? false,
-          parsedConstraints: prompt.activeParsedQuery.constraints.map((constraint) => constraint.summary),
         },
         metrics: {
           rewriteConfidence: Number(prompt.rewrittenQuery.confidence.toFixed(3)),
-          parsedConstraintCount: prompt.activeParsedQuery.constraints.length,
           promptHistoryCount: prompt.promptHistory.length,
         },
           reason: rewriteReason,
@@ -500,14 +499,7 @@ export class ActivityTraceAssembler {
       stages,
       links,
       summary: {
-        parsedQuery: diagnostics.parsedQuery
-          ? {
-              originalQuery: diagnostics.parsedQuery.originalQuery ?? diagnostics.parsedQuery.semanticQuery,
-              semanticQuery: diagnostics.parsedQuery.semanticQuery,
-              lexicalQuery: diagnostics.parsedQuery.lexicalQuery,
-              constraintSummary: diagnostics.parsedQuery.constraints.map((constraint) => constraint.summary),
-            }
-          : undefined,
+        parsedQuery: diagnostics.parsedQuery ? presentParsedQuery(diagnostics.parsedQuery) : undefined,
         retrievalSubqueries: (diagnostics.retrievalSubqueries ?? []).map((subquery) => ({
           id: subquery.id,
           label: subquery.label,

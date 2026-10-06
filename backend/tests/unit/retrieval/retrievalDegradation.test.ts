@@ -52,12 +52,10 @@ const input = {
   originalParsedQuery: {
     semanticQuery: "semantic outage",
     lexicalQuery: "semantic outage",
-    constraints: [],
   },
   originalPreparedQuery: {
     semanticQuery: "semantic outage",
     lexicalQuery: "semantic outage",
-    constraints: [],
   },
   rewrittenQuery: {
     originalQuery: "semantic outage",
@@ -76,7 +74,6 @@ const input = {
   activeParsedQuery: {
     semanticQuery: "semantic outage",
     lexicalQuery: "semantic outage",
-    constraints: [],
   },
   activeSemanticQuery: "semantic outage",
   activeRetrievalSubqueries: [{

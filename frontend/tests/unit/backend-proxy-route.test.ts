@@ -422,7 +422,40 @@ describe('backend proxy route', () => {
     expect(response.headers.get('ratelimit-remaining')).toBe('0')
     expect(response.headers.get('ratelimit-reset')).toBe('30')
     expect(response.headers.get('retry-after')).toBe('30')
+    expect(response.headers.get('access-control-expose-headers')).toBe(
+      'RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset, Retry-After',
+    )
     expect(response.headers.get('x-upstream-private')).toBeNull()
+  })
+
+  it('does not relay per-visitor rate-limit headers on cacheable embed config responses', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ assistantName: 'Radioso' }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'RateLimit-Limit': '60',
+          'RateLimit-Remaining': '59',
+          'RateLimit-Reset': '30',
+          'Retry-After': '30',
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { GET } = await import('@/app/api/embed/config/[token]/route')
+    const response = await GET(new Request('https://frontend.example.com/api/embed/config/token-1', {
+      headers: { Origin: 'https://embed.example.com' },
+    }), { params: Promise.resolve({ token: 'token-1' }) })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('public, max-age=60, s-maxage=300')
+    expect(response.headers.get('ratelimit-limit')).toBeNull()
+    expect(response.headers.get('ratelimit-remaining')).toBeNull()
+    expect(response.headers.get('ratelimit-reset')).toBeNull()
+    expect(response.headers.get('retry-after')).toBeNull()
+    expect(response.headers.get('access-control-expose-headers')).toBeNull()
   })
 
   it('relays only rate-limit response headers for embed sessions', async () => {
@@ -454,6 +487,9 @@ describe('backend proxy route', () => {
     expect(response.headers.get('ratelimit-remaining')).toBe('0')
     expect(response.headers.get('ratelimit-reset')).toBe('15')
     expect(response.headers.get('retry-after')).toBe('15')
+    expect(response.headers.get('access-control-expose-headers')).toBe(
+      'RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset, Retry-After',
+    )
     expect(response.headers.get('x-upstream-private')).toBeNull()
   })
 

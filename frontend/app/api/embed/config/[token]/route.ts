@@ -1,4 +1,5 @@
 import { buildEdgeFactsHeaders } from '../../../../../lib/server/edge-facts'
+import { relayRateLimitResponseHeaders } from '../../../../../lib/server/rate-limit-headers'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -18,26 +19,6 @@ const BASE_CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
   Vary: 'Origin',
 }
-const RATE_LIMIT_RESPONSE_HEADER_NAMES = [
-  'ratelimit-limit',
-  'ratelimit-remaining',
-  'ratelimit-reset',
-  'retry-after',
-] as const
-
-const rateLimitResponseHeaders = (upstream: Response): Record<string, string> => {
-  const headers: Record<string, string> = {}
-
-  for (const name of RATE_LIMIT_RESPONSE_HEADER_NAMES) {
-    const value = upstream.headers.get(name)
-    if (value) {
-      headers[name] = value
-    }
-  }
-
-  return headers
-}
-
 // Short browser TTL, modest shared/edge TTL. Operator settings changes propagate
 // immediately via CDN cache invalidation on save, so we don't need a long
 // serve-stale window here.
@@ -54,10 +35,11 @@ const resolveOrigin = (value: string | null) => {
   }
 }
 
-const corsHeaders = (origin: string | null, extra?: Record<string, string>) => {
-  const headers: Record<string, string> = { ...BASE_CORS_HEADERS, ...extra }
+const corsHeaders = (origin: string | null, extra?: HeadersInit) => {
+  const headers = new Headers(extra)
+  Object.entries(BASE_CORS_HEADERS).forEach(([key, value]) => headers.set(key, value))
   if (origin) {
-    headers['Access-Control-Allow-Origin'] = origin
+    headers.set('Access-Control-Allow-Origin', origin)
   }
   return headers
 }
@@ -87,17 +69,21 @@ export async function GET(
       },
     })
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
+    const responseHeaders = new Headers({
+      'Content-Type': contentType,
+      'Cache-Control': upstream.ok ? CDN_CACHE_CONTROL : 'no-store',
+    })
+
+    if (!upstream.ok) {
+      relayRateLimitResponseHeaders(upstream.headers, responseHeaders)
+    }
 
     return new Response(upstream.body, {
       status: upstream.status,
       // Only reflect the origin (and allow caching) when the backend accepted
       // it. A rejected origin gets no `Access-Control-Allow-Origin` and is never
       // cached.
-      headers: corsHeaders(upstream.ok ? requestOrigin : null, {
-        'Content-Type': contentType,
-        'Cache-Control': upstream.ok ? CDN_CACHE_CONTROL : 'no-store',
-        ...rateLimitResponseHeaders(upstream),
-      }),
+      headers: corsHeaders(upstream.ok ? requestOrigin : null, responseHeaders),
     })
   } catch (error) {
     const message =

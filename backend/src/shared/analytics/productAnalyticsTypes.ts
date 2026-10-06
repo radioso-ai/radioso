@@ -11,6 +11,12 @@ export const productAnalyticsEventNames = [
   "chat.citation_clicked",
   "chat.link_clicked",
   "frontend.page_view",
+  "onboarding.chat_opened",
+  "onboarding.first_question",
+  "onboarding.sample_imported",
+  "onboarding.shown",
+  "onboarding.skipped",
+  "onboarding.step_completed",
   "retrieval_settings.updated",
   "website_embed.loaded",
 ] as const;

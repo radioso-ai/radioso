@@ -3,10 +3,38 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   BeaconFrontendProductAnalyticsSink,
   createFrontendProductAnalyticsEmitter,
+  frontendProductAnalyticsEventNames,
+  NoopFrontendProductAnalyticsSink,
   sanitizePageViewPathname,
+  type FrontendProductAnalyticsEvent,
+  type FrontendProductAnalyticsEventName,
+  type FrontendProductAnalyticsInput,
+  type FrontendProductAnalyticsSink,
 } from '@/lib/product-analytics'
 
 describe('frontend product analytics', () => {
+  it('includes the typed first-run funnel event names', async () => {
+    expect(frontendProductAnalyticsEventNames).toEqual(expect.arrayContaining([
+      'onboarding.chat_opened',
+      'onboarding.first_question',
+      'onboarding.sample_imported',
+      'onboarding.shown',
+      'onboarding.skipped',
+      'onboarding.step_completed',
+    ]))
+
+    const eventName: FrontendProductAnalyticsEventName = 'onboarding.chat_opened'
+    const input: FrontendProductAnalyticsInput = { eventName }
+    const event: FrontendProductAnalyticsEvent = {
+      eventName,
+      timestamp: '2026-10-06T00:00:00.000Z',
+    }
+    const sink: FrontendProductAnalyticsSink = new NoopFrontendProductAnalyticsSink()
+
+    await sink.emit(event)
+    expect(input.eventName).toBe(event.eventName)
+  })
+
   it('emits a typed frontend analytics event to configured sinks', async () => {
     const sink = {
       emit: vi.fn().mockResolvedValue(undefined),

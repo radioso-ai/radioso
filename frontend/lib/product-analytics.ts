@@ -2,6 +2,12 @@ export const frontendProductAnalyticsEventNames = [
   'chat.citation_clicked',
   'chat.link_clicked',
   'frontend.page_view',
+  'onboarding.chat_opened',
+  'onboarding.first_question',
+  'onboarding.sample_imported',
+  'onboarding.shown',
+  'onboarding.skipped',
+  'onboarding.step_completed',
   'website_embed.loaded',
 ] as const
 

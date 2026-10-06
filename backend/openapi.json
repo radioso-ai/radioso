@@ -43287,10 +43287,40 @@
                           "updatedAt"
                         ]
                       }
+                    },
+                    "platformSkills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "owner": {
+                            "type": "string",
+                            "enum": [
+                              "platform"
+                            ]
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "owner",
+                          "name",
+                          "displayName",
+                          "description"
+                        ]
+                      }
                     }
                   },
                   "required": [
-                    "skills"
+                    "skills",
+                    "platformSkills"
                   ]
                 }
               }

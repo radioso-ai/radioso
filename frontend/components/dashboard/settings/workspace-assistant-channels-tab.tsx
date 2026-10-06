@@ -916,7 +916,14 @@ export function WorkspaceAssistantChannelsTab({
 
           {mode === 'assistant' && showSection('skills') ? (
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
-            {agentId ? <SkillList agentId={agentId} /> : null}
+            {agentId ? (
+              <SkillList
+                agentId={agentId}
+                assistantBehaviorSettings={assistantBehaviorSettings}
+                isAssistantBehaviorLoading={isAssistantBehaviorLoading}
+                onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
+              />
+            ) : null}
           </section>
           ) : null}
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { agentSkillCreateSchema, agentSkillUpdateSchema } from "../../../modules/agentSkills/public.js";
+import { builtInAnswerSkillDefinitions } from "../../../modules/chat/public.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
@@ -83,7 +84,13 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
     try {
       const { workspaceId, agentId } = await resolveAgent(req, res);
       const skills = await dependencies.agentSkillsService.list(workspaceId, agentId);
-      res.status(200).json({ skills });
+      const platformSkills = builtInAnswerSkillDefinitions.map((skill) => ({
+        owner: "platform" as const,
+        name: skill.name,
+        displayName: skill.displayName,
+        description: skill.description,
+      }));
+      res.status(200).json({ skills, platformSkills });
     } catch (error) {
       next(error);
     }

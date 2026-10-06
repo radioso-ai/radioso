@@ -10,7 +10,7 @@ import { documentsSearchSkillDefinition } from "./definitions/documents.search.j
 import { documentsDeleteSkillDefinition } from "./definitions/documents.delete.js";
 import { mcpDescribeCapabilitiesSkillDefinition } from "./definitions/mcp.describe_capabilities.js";
 
-export const customerEmailSkillCatalogEntry: SkillCatalogEntryDefinition = {
+const customerEmailSkillCatalogEntry: SkillCatalogEntryDefinition = {
   name: "customer_email.skill",
   displayName: "Customer email skill",
   description: "Invoke allowlisted customer-owned email draft/send skills through a workspace email connection.",
@@ -40,7 +40,7 @@ export const customerEmailSkillCatalogEntry: SkillCatalogEntryDefinition = {
   ],
 };
 
-export const webhookSkillCatalogEntry: SkillCatalogEntryDefinition = {
+const webhookSkillCatalogEntry: SkillCatalogEntryDefinition = {
   name: "webhook.skill",
   displayName: "Webhook skill",
   description: "Invoke allowlisted webhook destinations from agent routines with configured payload bindings.",
@@ -69,7 +69,7 @@ export const webhookSkillCatalogEntry: SkillCatalogEntryDefinition = {
 
 // Every built-in skill is a declarative `skill.json` under `definitions/`, loaded
 // via `loadSkillDefinition`. The catalog assembles them; it owns no skill data.
-export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
+const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
   assistantChatSkillDefinition,
   retrievalSearchSkillDefinition,
   retrievalAnswerSkillDefinition,

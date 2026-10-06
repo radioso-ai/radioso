@@ -4,11 +4,9 @@ import type { ConversationRecord } from "../../../src/db/repositories/conversati
 import type { MessageRecord } from "../../../src/db/repositories/messageRepository.js";
 import type { ConversationActivityEvent } from "../../../src/modules/conversationActivity/contracts/index.js";
 import type { CustomerReplyRoute } from "../../../src/modules/customerReplyDelivery/public.js";
+import { heldReplyEventSources, heldReplyEventTarget, isHeldReplyAttentionOpen } from "../../../src/modules/handoff/heldReplies/heldReplyState.js";
 import {
-  heldReplyEventSources,
-  heldReplyEventTarget,
   HeldReplyService,
-  isHeldReplyAttentionOpen,
   OperatorReplyService,
   type HeldReplyChannelScope,
   type HeldReplyInsert,
@@ -1136,7 +1134,7 @@ describe("HeldReplyService", () => {
       const { service } = createService();
       await service.hold(holdInput({
         facts: {
-          outcome: "handoff",
+          outcome: "no_context",
           grounding: "ungrounded",
           coverage: "partial",
           handoff: { requested: true, reason: "billing_dispute" },
@@ -1149,7 +1147,7 @@ describe("HeldReplyService", () => {
         heldReply: expect.objectContaining({
           holdReason: "draft_mode",
           facts: {
-            outcome: "handoff",
+            outcome: "no_context",
             grounding: "ungrounded",
             coverage: "partial",
             handoff: { requested: true, reason: "billing_dispute" },

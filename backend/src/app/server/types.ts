@@ -57,10 +57,9 @@ import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
-import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
+import type { ConnectorManagementPort, ConnectorRegistry } from "../../modules/connectors/services/public.js";
 import type { EmailChannelWorker } from "../../modules/connectors/plugins/index.js";
-import type { EmailChannelOperatorServices, EmailReviewChecks } from "../composition/emailChannel.js";
-import type { ConnectorManagementPort } from "../../modules/connectors/services/connectorManagementService.js";
+import type { EmailChannelOperatorServices, EmailReviewChecks } from "../composition/emailChannel/index.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { VisitorGeoResolver } from "../../shared/domain/visitorGeoResolver.js";

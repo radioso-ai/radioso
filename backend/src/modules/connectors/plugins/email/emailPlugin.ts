@@ -12,7 +12,7 @@ import { EmailChannelWorker } from "./emailChannelWorker.js";
 import { EmailInboundProcessor, type EmailInboundProcessorDependencies } from "./emailInboundProcessor.js";
 import { ModelEmailReplyCompleteness, type EmailReviewGroundingReader } from "./emailReplyCompleteness.js";
 import { ModelEmailReplyTriage } from "./emailReplyTriage.js";
-import type { EmailReviewCheckDependencies } from "./emailReviewChecks.js";
+import { emailReviewTranscript, type EmailReviewCheckDependencies, type EmailReviewMessageStore } from "./emailReviewChecks.js";
 import { EmailReviewRunner, type EmailReviewChecks, type EmailReviewRunnerDependencies } from "./emailReviewRunner.js";
 import { createEmailWebhookRouter, type EmailWebhookRouterOptions } from "./emailWebhook.js";
 
@@ -74,15 +74,19 @@ export const createEmailChannelConnector = (
 
 /**
  * The review's model checks over the structured inference composition hands in: the reply triage
- * before a turn and the completeness check before an automatic send. One object, read by the runner
- * on each call.
+ * before a turn and the completeness check before an automatic send. Both read the conversation
+ * through one transcript over the host's messages. One object, read by the runner on each call.
  */
 export const createEmailReviewChecks = (
-  deps: EmailReviewCheckDependencies & { grounding: EmailReviewGroundingReader },
-): EmailReviewChecks => ({
-  replyTriage: new ModelEmailReplyTriage(deps),
-  replyCompleteness: new ModelEmailReplyCompleteness(deps),
-});
+  deps: Omit<EmailReviewCheckDependencies, "transcript"> & { messages: EmailReviewMessageStore; grounding: EmailReviewGroundingReader },
+): EmailReviewChecks => {
+  const { messages, ...rest } = deps;
+  const checks = { ...rest, transcript: emailReviewTranscript(messages) };
+  return {
+    replyTriage: new ModelEmailReplyTriage(checks),
+    replyCompleteness: new ModelEmailReplyCompleteness(checks),
+  };
+};
 
 /**
  * The email channel as a connector: its one HTTP surface, the provider webhook. The channel's

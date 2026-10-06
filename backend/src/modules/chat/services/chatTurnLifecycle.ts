@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import type { ConversationTrace, RoutineActionRequest } from "@radioso/conversation-contract";
+import type { ConversationTrace, ReplyDraft, RoutineActionRequest } from "@radioso/conversation-contract";
 import {
   createNoopWorkspaceInvalidationPublisher,
   createPostCommitInvalidationReceipt,
@@ -73,7 +73,7 @@ import {
   type TurnExecutionMode,
 } from "../../../shared/domain/turnExecutionMode.js";
 import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
-import type { ReviewedTurnDraft, ReviewTurnFactsSource } from "../types/chatReview.js";
+import type { ReviewTurnFactsSource } from "../types/chatReview.js";
 import { CONTACT_SEND_ACTION_TYPE } from "./routines/contactRoutine.js";
 import {
   reviewedTurnDraft,
@@ -176,7 +176,7 @@ interface PersistedAssistantTurn {
  */
 interface DraftAssistantTurn {
   kind: "draft";
-  draft: ReviewedTurnDraft;
+  draft: ReplyDraft;
   facts: ReviewTurnFactsSource;
   correlation: ReviewTurnCorrelation;
   postCommitReceipt: PostCommitInvalidationReceipt;

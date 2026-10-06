@@ -54,6 +54,51 @@ export interface AnswerCoverageCriteria {
   reasons?: AnswerCoverageReason[];
 }
 
+/** A reply a turn wrote and did not publish. */
+export interface ReplyDraft {
+  readonly text: string;
+  /**
+   * What the published message row carries besides its text (skill outcome, grounding, citations
+   * and the rest of its metadata). Host-owned and opaque to channels: it is stored with the draft
+   * and written verbatim when the draft is published.
+   */
+  readonly presentation: Readonly<Record<string, unknown>>;
+}
+
+/*
+ * The codes a review turn's facts carry. Each `declare const` has its runtime value in `index.js`;
+ * the two change together. `unknown`, `not_assessed` and `unavailable` mean the host could not
+ * tell, and are never read as publishable.
+ */
+
+/** How the turn answered. */
+export declare const REPLY_OUTCOMES: readonly ["answered", "no_context", "out_of_scope", "unavailable"];
+export type ReplyOutcome = typeof REPLY_OUTCOMES[number];
+
+/** Whether the reply rests on the workspace's documents. */
+export declare const REPLY_GROUNDINGS: readonly ["grounded", "ungrounded", "not_applicable", "unknown"];
+export type ReplyGrounding = typeof REPLY_GROUNDINGS[number];
+
+/** How completely the reply covers what the customer asked. */
+export declare const REPLY_COVERAGES: readonly ["answered", "partial", "unanswered", "unclear", "unavailable", "not_assessed"];
+export type ReplyCoverage = typeof REPLY_COVERAGES[number];
+
+/**
+ * What a review turn recorded about itself, mapped by the host from its own turn record: what a
+ * channel's publication decision reads, and what a held reply keeps for a teammate to judge the
+ * draft by. Read on these facts, never on the reply's text.
+ */
+export interface ReviewTurnFacts {
+  outcome: ReplyOutcome;
+  grounding: ReplyGrounding;
+  coverage: ReplyCoverage;
+  /** A hand-off the turn asked for. It is reported, never applied: ownership is unchanged. */
+  handoff: { requested: false } | { requested: true; reason: string };
+  /** Skills the turn would have run but did not, because a review turn acts on nothing. */
+  suppressedEffects: readonly { skillName: string }[];
+  citationCount: number;
+}
+
 export type MessageSource =
   | "customer"
   | "ai_agent"

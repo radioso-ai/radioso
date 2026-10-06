@@ -19,7 +19,8 @@ import {
   type EmailSendScope,
   type EmailSendUnitOfWork,
 } from "../../src/modules/emailChannel/public.js";
-import { heldReplyEventSources, type HeldReplyState } from "../../src/modules/handoff/public.js";
+import { heldReplyEventSources } from "../../src/modules/handoff/heldReplies/heldReplyState.js";
+import type { HeldReplyState } from "../../src/modules/handoff/public.js";
 import type { EmailMessage, EmailSendResult, SentEmailStatus } from "../../src/modules/mail/public.js";
 import type {
   EmailSendIntentRecord,

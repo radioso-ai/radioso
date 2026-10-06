@@ -81,7 +81,7 @@ const heldReplyView = (overrides: Record<string, unknown> = {}) => ({
   agentId: "77777777-7777-4777-8777-777777777777",
   state: "pending" as const,
   holdReason: "draft_mode",
-  facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: true, reason: "refund_over_limit" } },
+  facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: true, reason: "refund_over_limit" } } as const,
   dependsOnSuppressedAction: true,
   suppressedEffects: [{ skillName: "issue_refund" }],
   draftText: "Your refund was issued on Monday.",

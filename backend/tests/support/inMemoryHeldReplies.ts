@@ -7,11 +7,9 @@ import type { ConversationRecord } from "../../src/db/repositories/conversationR
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import type { ConversationActivityEvent } from "../../src/modules/conversationActivity/contracts/index.js";
 import type { CustomerReplyRoute } from "../../src/modules/customerReplyDelivery/public.js";
+import { heldReplyEventSources, heldReplyEventTarget, isHeldReplyAttentionOpen } from "../../src/modules/handoff/heldReplies/heldReplyState.js";
 import {
-  heldReplyEventSources,
-  heldReplyEventTarget,
   HeldReplyService,
-  isHeldReplyAttentionOpen,
   OperatorReplyService,
   type HeldReplyChannelScope,
   type HeldReplyInsert,

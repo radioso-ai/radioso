@@ -12,12 +12,10 @@ import request from "supertest";
 import { createPostgresConversationIngestUnitOfWork } from "../../../src/app/composition/conversationIngest.js";
 import { createPostgresOwnershipChangeUnitOfWork } from "../../../src/app/composition/conversationOwnershipChanges.js";
 import { createPostgresOwnershipReplyUnitOfWork } from "../../../src/app/composition/conversationOwnershipReplies.js";
-import {
-  createEmailHeldReplyChannelRegistration,
-  createPostgresDeliveryFailures,
-  createPostgresEmailSendUnitOfWork,
-  createPostgresThreadProtocolUnitOfWork,
-} from "../../../src/app/composition/emailChannel.js";
+import { createPostgresDeliveryFailures } from "../../../src/app/composition/deliveryFailures.js";
+import { createPostgresThreadProtocolUnitOfWork } from "../../../src/app/composition/emailChannel/inbound.js";
+import { createEmailHeldReplyChannelRegistration } from "../../../src/app/composition/emailChannel/index.js";
+import { createPostgresEmailSendUnitOfWork } from "../../../src/app/composition/emailChannel/outbound.js";
 import { createPostgresHeldReplyUnitOfWork } from "../../../src/app/composition/heldReplyUnitOfWork.js";
 import { createPostgresMailboxPolicyChangeUnitOfWork } from "../../../src/app/composition/mailboxPolicyChange.js";
 import { ActionRequestRepository } from "../../../src/db/repositories/actionRequestRepository.js";
@@ -406,7 +404,7 @@ const noReviewTurn: ConnectorChatPort["respond"] = async () => {
 const createWorkerHeldReplies = (database: Database, guard: Guard) => {
   const db = database.kysely;
   const records = new HeldReplyRepository(db);
-  const email = createEmailHeldReplyChannelRegistration({ provider: "local" });
+  const email = createEmailHeldReplyChannelRegistration({ autoSend: true, provider: "local" });
   const service = new HeldReplyService({
     conversations: new ConversationRepository(db),
     writes: createPostgresHeldReplyUnitOfWork({

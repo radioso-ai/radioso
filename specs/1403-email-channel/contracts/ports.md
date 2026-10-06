@@ -189,23 +189,15 @@ export interface ConnectorRespondInput {
   historyWindow: { maxMessages: number };
 }
 
-export interface ConnectorTurnFacts {
-  outcome: ConnectorChatOutcome;
-  grounding: "grounded" | "ungrounded" | "not_applicable" | "unknown";
-  coverage: "answered" | "partial" | "unanswered" | "unclear" | "unavailable" | "not_assessed";
-  handoff: { requested: false } | { requested: true; reason: string };
-  suppressedEffects: readonly { skillName: string }[];
-  citationCount: number;
-}
-
-export interface ConnectorReplyDraft {
-  readonly text: string;
-  readonly presentation: Readonly<Record<string, unknown>>;            // host-owned; never inspected by plugins
-}
+// The facts and the draft are declared once, in `@radioso/conversation-contract` (below); the
+// connector names are aliases of them.
+export type ConnectorChatOutcome = ReplyOutcome;
+export type ConnectorTurnFacts = ReviewTurnFacts;
+export type ConnectorReplyDraft = ReplyDraft;
 
 export type ConnectorTurnResult =
-  | { kind: "draft"; conversationId: string; ownershipVersion: number; facts: ConnectorTurnFacts; draft: ConnectorReplyDraft }
-  | { kind: "no_draft"; conversationId: string; ownershipVersion: number; facts: ConnectorTurnFacts }
+  | { kind: "draft"; conversationId: string; ownershipVersion: number; facts: ReviewTurnFacts; draft: ReplyDraft }
+  | { kind: "no_draft"; conversationId: string; ownershipVersion: number; facts: ReviewTurnFacts }
   | { kind: "human_owned"; conversationId: string; ownershipVersion: number };
 
 export interface ConnectorChatPort {
@@ -215,7 +207,32 @@ export interface ConnectorChatPort {
 }
 ```
 
-`connectorChatPort.ts` maps `respond` to `ChatService.review` (§3), through the pure `connectorTurnFacts.ts` (research B3). `ingest` delegates to `ConversationIngestService`.
+`connectorChatPort.ts` maps `respond` to `ChatService.review` (§3), through the pure `connectorTurnFacts.ts` (research B3), and hands the turn's draft on as it is. `ingest` delegates to `ConversationIngestService`.
+
+The review turn's draft and facts (`packages/conversation-contract/index.d.ts`) are shared by chat, the connector contract, handoff, the held-reply OpenAPI schema and Ray's `held_replies` tool. Each code list is a runtime value in `packages/conversation-contract/index.js`, so the zod schemas derive their enums from it.
+
+```ts
+export interface ReplyDraft {
+  readonly text: string;
+  readonly presentation: Readonly<Record<string, unknown>>;            // host-owned; never inspected by plugins
+}
+
+export declare const REPLY_OUTCOMES: readonly ["answered", "no_context", "out_of_scope", "unavailable"];
+export declare const REPLY_GROUNDINGS: readonly ["grounded", "ungrounded", "not_applicable", "unknown"];
+export declare const REPLY_COVERAGES: readonly ["answered", "partial", "unanswered", "unclear", "unavailable", "not_assessed"];
+export type ReplyOutcome = typeof REPLY_OUTCOMES[number];
+export type ReplyGrounding = typeof REPLY_GROUNDINGS[number];
+export type ReplyCoverage = typeof REPLY_COVERAGES[number];
+
+export interface ReviewTurnFacts {
+  outcome: ReplyOutcome;
+  grounding: ReplyGrounding;
+  coverage: ReplyCoverage;
+  handoff: { requested: false } | { requested: true; reason: string };
+  suppressedEffects: readonly { skillName: string }[];
+  citationCount: number;
+}
+```
 
 ## 3. Backend turn execution (backend-internal)
 
@@ -237,7 +254,7 @@ export const resolveSkillEffectPolicy: (mode: TurnExecutionMode | undefined, req
 // backend/src/modules/chat/services/chatTurnLifecycle.ts (internal)
 type CompletedAssistantTurn =
   | { kind: "persisted"; response: ChatResponse; assistantMessageId: string; postCommitReceipt: PostCommitInvalidationReceipt }
-  | { kind: "draft"; draft: ReviewedTurnDraft; facts: ReviewTurnFactsSource;
+  | { kind: "draft"; draft: ReplyDraft; facts: ReviewTurnFactsSource;
       correlation: { requestMessageId: string; turnId: string }; postCommitReceipt: PostCommitInvalidationReceipt };
 
 // backend/src/modules/chat/types/chatReview.ts (new; ChatResponse is NOT changed)
@@ -245,7 +262,6 @@ export interface ChatReviewInput {
   workspaceId: string; agentId: string; conversationId: string;
   existingUserMessageId: string; historyWindow: { maxMessages: number };
 }
-export interface ReviewedTurnDraft { text: string; presentation: Readonly<Record<string, unknown>> }
 export interface ReviewTurnFactsSource {
   answerOutcome: AssistantTurnOutcome | null;
   answerCoverage: ChatAnswerCoverageAssessment | null;
@@ -255,7 +271,7 @@ export interface ReviewTurnFactsSource {
   citationCount: number;
 }
 export type ChatReviewResult =
-  | { kind: "draft"; conversationId: string; ownershipVersion: number; draft: ReviewedTurnDraft; facts: ReviewTurnFactsSource }
+  | { kind: "draft"; conversationId: string; ownershipVersion: number; draft: ReplyDraft; facts: ReviewTurnFactsSource }
   | { kind: "no_draft"; conversationId: string; ownershipVersion: number; facts: ReviewTurnFactsSource }
   | { kind: "human_owned"; conversationId: string; ownershipVersion: number };
 
@@ -276,7 +292,7 @@ export interface HoldReplyInput {
   answersMessageId: string; ownershipVersion: number;
   policy: { ref: string; version: number } | null;
   reviewRef: string | null;                              // idempotency (B17)
-  holdReason: string; facts: ConnectorTurnFacts; draft: ConnectorReplyDraft;
+  holdReason: string; facts: ReviewTurnFacts; draft: ReplyDraft;
 }
 
 /** Producer port, consumed by the email review runner. */
@@ -464,7 +480,7 @@ export interface EmailReplyTriagePort {
 export type ReplyCompleteness = "complete" | "partial" | "not_answered" | "unavailable";
 export interface ReplyCompletenessResult { completeness: ReplyCompleteness; unansweredAsks: number | null }
 export interface EmailReplyCompletenessPort {
-  assess(subject: EmailReviewSubject & { draft: ConnectorReplyDraft }): Promise<ReplyCompletenessResult>;
+  assess(subject: EmailReviewSubject & { draft: ReplyDraft }): Promise<ReplyCompletenessResult>;
 }
 ```
 
@@ -544,9 +560,15 @@ export interface EmailEventLogCopilotSummary { mailboxId: string; window: string
 
 | File | Assembles |
 |---|---|
-| `emailChannel.ts` | env → adapters; `EmailPlugin`; `EmailSendActionHandler` registration; `email` deliverer; worker, sweep and drain dispatcher; `supportedModes`; registers the email `HeldReplyChannelScope` under prefix `email_mailbox:`. Returns `null` when unconfigured. |
+| `emailChannel/index.ts` | `createEmailChannelComposition`: env → adapters; `EmailPlugin`; `email` deliverer; worker and sweep; `supportedModes`; the email `HeldReplyChannelRegistration`. Returns `null` when unconfigured. `createEmailChannelApplicationModule` registers the `email.send` handler. |
+| `emailChannel/adapters.ts` | provider selection: Resend or the local spool, for the receiver, the domain provisioner and the channel's sending driver |
+| `emailChannel/inbound.ts` | the thread-protocol unit of work (ownership read through handoff's `readConversationOwnershipState`) and the sweep over Postgres |
+| `emailChannel/outbound.ts` | the send path (handler, reconciler, provider events), the worker's `email.send` handler with its own held-reply dispatch, and the delivery-failure resolution unit of work |
+| `emailChannel/review.ts` | `createEmailHeldReplyChannelRegistration({ autoSend, provider })`, registering the email `HeldReplyChannelScope` under prefix `email_mailbox:`; the review runner's ports; the review checks over Postgres |
+| `emailChannel/operator.ts` | the operator services (sending domains, mailboxes, event log, inbound event actions, conversation facts) and Ray's copilot view |
+| `deliveryFailures.ts` | the channel-neutral `DeliveryFailures` store, each change committed with its activity |
 | `conversationIngest.ts` | `ConversationIngestUnitOfWork`: conversation, message, ownership, activity and held-reply supersede scope in one transaction |
-| `heldReplyUnitOfWork.ts` | release, discard, queue-auto and materialize-auto transactions: conversation lock → ownership lock → channel scope (policy lock, budget, authority) → held-reply conditional update → message → route enqueue or send-intent record; drain push after commit |
+| `heldReplyUnitOfWork.ts` | channel-neutral release, discard, queue-auto and materialize-auto transactions: conversation lock → ownership lock → channel scope (policy lock, budget, authority) → held-reply conditional update → message → route enqueue or send-intent record; drain push after commit |
 | `mailboxPolicyChange.ts` | mailbox row lock + policy history row + `supersedePendingForPolicy` |
 | `conversationOwnershipReplies.ts` (modified) | binds `HeldReplyRepository(trx)` into the reply and change scopes |
-| `emailChannel.ts` (review checks) | injects `reviewInference` (the workspace's answer-tier `ContextualStructuredInferenceFactory`), a transcript reader over the conversation's messages, and a grounding reader over the draft's recorded chunks into `ModelEmailReplyTriage` and `ModelEmailReplyCompleteness`; the review runner records a silenced triage's `no_reply_needed` note as a `channel_exception` activity. |
+| `emailChannel/review.ts` (review checks) | injects `reviewInference` (the workspace's answer-tier `ContextualStructuredInferenceFactory`), the message store, and a grounding reader over the draft's recorded chunks into `createEmailReviewChecks`; the plugin's `emailReviewChecks.ts` reads the transcript from the store (customer and business messages, system rows left out) for `ModelEmailReplyTriage` and `ModelEmailReplyCompleteness`. The review runner records a silenced triage's `no_reply_needed` note as a `channel_exception` activity. |

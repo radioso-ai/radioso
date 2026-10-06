@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type express from "express";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { createEmailChannelComposition } from "../../src/app/composition/emailChannel.js";
+import { createEmailChannelComposition } from "../../src/app/composition/emailChannel/index.js";
 import { parseEmailChannelConfig } from "../../src/app/config/env.js";
 import { ConversationActivityRepository } from "../../src/db/repositories/conversationActivityRepository.js";
 import {

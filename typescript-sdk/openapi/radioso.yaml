@@ -14961,8 +14961,22 @@ components:
           properties:
             grounding:
               type: string
+              enum:
+                - grounded
+                - ungrounded
+                - not_applicable
+                - unknown
+              description: Whether the draft rests on the workspace's documents; `unknown` when the turn could not tell.
             coverage:
               type: string
+              enum:
+                - answered
+                - partial
+                - unanswered
+                - unclear
+                - unavailable
+                - not_assessed
+              description: How completely the draft covers what the customer asked; `unavailable` and `not_assessed` when the turn could not tell.
             handoff:
               type: object
               properties:
@@ -14977,6 +14991,12 @@ components:
                 - reason
             outcome:
               type: string
+              enum:
+                - answered
+                - no_context
+                - out_of_scope
+                - unavailable
+              description: How the turn answered.
           required:
             - grounding
             - coverage

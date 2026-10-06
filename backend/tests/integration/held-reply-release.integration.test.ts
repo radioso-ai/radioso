@@ -4,7 +4,7 @@ import type { ConnectorRespondInput, ConnectorTurnResult } from "@radioso/connec
 import { sql } from "kysely";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 
-import { createEmailHeldReplyChannelRegistration } from "../../src/app/composition/emailChannel.js";
+import { createEmailHeldReplyChannelRegistration } from "../../src/app/composition/emailChannel/index.js";
 import type { HeldReplyChannelRegistration } from "../../src/app/composition/heldReplyUnitOfWork.js";
 import {
   EMAIL_SEND_ACTION_TYPE,
@@ -80,7 +80,7 @@ type Gate = ReturnType<typeof gate>;
 
 /** Email's held-reply registration, holding a release's transaction once it has locked the mailbox's policy. */
 const gatedAfterPolicyLock = (held: Gate): HeldReplyChannelRegistration => {
-  const email = createEmailHeldReplyChannelRegistration({ provider: "local" });
+  const email = createEmailHeldReplyChannelRegistration({ autoSend: true, provider: "local" });
   return {
     policyRefPrefix: email.policyRefPrefix,
     bind: (trx) => {

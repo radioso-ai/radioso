@@ -19,7 +19,8 @@ It does not own:
   webhook mount and the pure functions that decide what an inbound message
   means — `emailInboundClassification.ts`, `emailThreadResolution.ts`,
   `emailEngagementDisposition.ts`, `emailPublicationDecision.ts` — the two
-  review model checks built on the shared `emailReviewChecks.ts`,
+  review model checks built on the shared `emailReviewChecks.ts` (which reads
+  the conversation as the customer's and the business's messages),
   `emailReplyTriage.ts` and `emailReplyCompleteness.ts` — and the worker's
   two stages: `emailInboundProcessor.ts` (stage 1, which schedules a
   thread's coalesced review) and `emailReviewRunner.ts` (stage 2, which runs
@@ -72,9 +73,10 @@ It does not own:
   recovered automatic send before its request freezes), and
   `recordMaterialized` writes the send intent with the message. Without the
   capability every automatic send is refused (`auto_unsupported`).
-  `createEmailHeldReplyChannelRegistration` in
-  `backend/src/app/composition/emailChannel.ts` registers it under the
-  `email_mailbox:` prefix.
+  `createEmailHeldReplyChannelRegistration({ autoSend, provider })` in
+  `backend/src/app/composition/emailChannel/review.ts` registers it under the
+  `email_mailbox:` prefix; the composition passes `autoSend: true` where the
+  deployment runs `auto`, and `false` when no provider is configured.
 - `domains/` — sending-domain registration and readiness
   (`sendingDomainService.ts`, `sendingState.ts`).
 - `content/` — the quoted-history stripper (`quotedHistory.ts`), the
@@ -115,7 +117,7 @@ It does not own:
   up after 24; `providerDeliveryEvents.ts` applies
   provider delivery events and inbound DSN bounces. Every writer applies
   `sendIntentTransitions.ts` through `sendIntentWriter.ts`, whose unit of
-  work (bound in `backend/src/app/composition/emailChannel.ts`) commits the
+  work (bound in `backend/src/app/composition/emailChannel/outbound.ts`) commits the
   fenced transition with the delivery failure it raises or clears. The
   `email.send` handler is registered by `createEmailChannelApplicationModule`.
 

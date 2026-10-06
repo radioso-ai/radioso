@@ -6,10 +6,12 @@
   "engines": {
     "node": ">=24"
   },
+  "main": "./index.js",
   "types": "./index.d.ts",
   "exports": {
     ".": {
-      "types": "./index.d.ts"
+      "types": "./index.d.ts",
+      "default": "./index.js"
     }
   },
   "scripts": {

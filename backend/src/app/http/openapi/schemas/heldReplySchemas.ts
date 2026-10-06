@@ -1,3 +1,4 @@
+import { REPLY_COVERAGES, REPLY_GROUNDINGS, REPLY_OUTCOMES } from "@radioso/conversation-contract";
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
@@ -24,10 +25,10 @@ export const registerHeldReplySchemas = (registry: OpenAPIRegistry) => {
     }),
     holdReason: z.string().openapi({ description: "The producing channel's code for why the reply was held." }),
     facts: z.object({
-      grounding: z.string(),
-      coverage: z.string(),
+      grounding: z.enum(REPLY_GROUNDINGS).openapi({ description: "Whether the draft rests on the workspace's documents; `unknown` when the turn could not tell." }),
+      coverage: z.enum(REPLY_COVERAGES).openapi({ description: "How completely the draft covers what the customer asked; `unavailable` and `not_assessed` when the turn could not tell." }),
       handoff: z.object({ requested: z.boolean(), reason: z.string().nullable() }),
-      outcome: z.string(),
+      outcome: z.enum(REPLY_OUTCOMES).openapi({ description: "How the turn answered." }),
     }).openapi({ description: "What the review turn found, as the producing channel's codes." }),
     dependsOnSuppressedAction: z.boolean().openapi({ description: "The draft relies on an action the review turn was not allowed to run." }),
     suppressedEffects: z.array(z.object({ skillName: z.string() })),

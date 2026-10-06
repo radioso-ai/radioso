@@ -131,6 +131,9 @@ Primary paths:
 - `backend/src/app/composition/applicationModule.ts`
 - `backend/src/app/composition/builtIn/`
 - `backend/src/modules/*/composition.ts`
+- `backend/src/modules/connectors/services/public.ts` — the connector host
+  services application wiring builds: the chat and ingestion ports, the
+  registry, the management service, and the chunk ids a review draft drew on
 
 Useful searches:
 
@@ -285,7 +288,7 @@ budget, the coalescing window (`EMAIL_COALESCE_SECONDS`, 60s,
 its accepted and current policy. Tests and the behaviour harness override
 the coalescing window, the raw-MIME cap, event retention, the review retry
 limit and the local spool directory through `EmailChannelOptions`
-(`backend/src/app/composition/emailChannel.ts`), not env.
+(`backend/src/app/composition/emailChannel/index.ts`), not env.
 
 Should not own conversation or routine behavior, and does not reuse
 `backend/src/modules/customerEmail/` — that module sends through a
@@ -295,8 +298,19 @@ product surface documented separately.
 Public surfaces and key files:
 
 - `backend/src/modules/mail/public.ts` — provider-neutral ports:
-  `EmailDriver`, `InboundEmailReceiver`, `EmailDomainProvisioner`; Resend and
-  `local` adapters live in `backend/src/modules/mail/adapters/`.
+  `EmailDriver`, `InboundEmailReceiver`, `EmailDomainProvisioner`, and the
+  Resend and `local` adapters composition selects between (their code lives
+  in `backend/src/modules/mail/adapters/`).
+- `backend/src/app/composition/emailChannel/` — the channel's wiring, one
+  file per concern: `index.ts` (`createEmailChannelComposition`, the
+  `email.send` application module, the deployment's `supportedModes`),
+  `adapters.ts` (provider selection), `inbound.ts` (the thread-protocol unit
+  of work and the sweep), `outbound.ts` (the send path, the worker's
+  `email.send` handler, delivery-failure resolution), `review.ts` (the
+  review checks and ports over Postgres, and email's held-reply
+  registration, `createEmailHeldReplyChannelRegistration`) and `operator.ts`
+  (the settings, event log and inbox-facts services). The channel-neutral
+  delivery-failure store is wired in `backend/src/app/composition/deliveryFailures.ts`.
 - `backend/src/modules/emailChannel/public.ts` — `MailboxService`,
   `SendingDomainService`, `EventLogReader`, `ConversationEmailFactsReader`,
   `EmailChannelCopilotView`, and the `email_domains` / `email_mailboxes` /
@@ -325,7 +339,9 @@ Public surfaces and key files:
   the two review model checks, `emailReplyTriage.ts` (FR-017a, prompt
   `backend/prompts/email-reply-needed.md`) and `emailReplyCompleteness.ts`
   (prompt `backend/prompts/email-reply-completeness.md`), built on the
-  shared `emailReviewChecks.ts`; and the orchestration around them:
+  shared `emailReviewChecks.ts`, which also owns the transcript the checks
+  read (the customer's and the business's messages over the host's message
+  store, system rows left out); and the orchestration around them:
   `emailWebhook.ts` (verify and persist), `emailInboundProcessor.ts`
   (stage 1), `emailReviewRunner.ts` (stage 2: claims a due thread revision
   under a lease, reserves a generation, runs the reply triage, the
@@ -334,7 +350,10 @@ Public surfaces and key files:
   and `emailPlugin.ts`.
 - `backend/src/modules/handoff/heldReplies/` — `heldReplyService.ts` and
   `heldReplyState.ts`: the channel-neutral held reply, its release,
-  discard, and supersede rules.
+  discard, and supersede rules. The machine's events and refusals stay
+  inside handoff; `handoff/public.ts` exports the service, its ports and
+  views, `HELD_REPLY_STATES`, and the ownership readers the channel's
+  composition binds (`ownershipVersionOf`, `readConversationOwnershipState`).
 - `backend/src/modules/emailChannel/README.md`
 
 Useful searches:
@@ -885,7 +904,12 @@ Related docs:
 Owns product-independent conversation runtime contracts: agents, input events,
 directives, steering, skills, staged context, selection decisions, turn outcomes,
 trace events, renderer outputs, streaming deltas/finals, clarification contracts,
-and the `ConversationEngine` port.
+and the `ConversationEngine` port. It also owns what a review turn hands its
+host's channels: the unpublished `ReplyDraft` and the `ReviewTurnFacts` a
+publication decision reads and a held reply keeps, whose code lists
+(`REPLY_OUTCOMES`, `REPLY_GROUNDINGS`, `REPLY_COVERAGES`) are the package's
+only runtime values, in `index.js`. Chat, `@radioso/connector-api`, handoff,
+the held-reply OpenAPI schema and Ray's `held_replies` tool all type against them.
 
 Should not own Radioso product behavior. It must not import backend modules,
 database repositories, HTTP types, retrieval internals, workspace/auth modules,
@@ -895,6 +919,7 @@ and dashboard settings adapt into these contracts at composition time.
 Public surfaces and contracts:
 
 - `packages/conversation-contract/index.d.ts`
+- `packages/conversation-contract/index.js` (runtime values of the `declare const` code lists; change the two together)
 
 Useful searches:
 
@@ -1454,8 +1479,12 @@ Public surfaces and contracts:
 - `backend/src/app/composition/heldReplyUnitOfWork.ts` (release's one
   transaction: lock conversation and ownership, lock the producer's policy,
   the conditional pending→released/edited update, the delivered message,
-  the outbox enqueue) and `backend/src/modules/handoff/public.ts`
-  (`HeldReplyService`, `HeldReplySupersedeScope`, `HeldReplyView`)
+  the outbox enqueue; channel-neutral, finding each producer's
+  `HeldReplyChannelRegistration` by policy-ref prefix — email's comes from
+  `createEmailHeldReplyChannelRegistration` in
+  `backend/src/app/composition/emailChannel/review.ts`) and
+  `backend/src/modules/handoff/public.ts` (`HeldReplyService`,
+  `HeldReplySupersedeScope`, `HeldReplyView`)
 
 Focused checks:
 

@@ -1,6 +1,6 @@
 import type { Router } from "express";
 import type { QueryResultRow } from "pg";
-import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { ConversationChannelContext, ReplyDraft, ReplyOutcome, ReviewTurnFacts } from "@radioso/conversation-contract";
 import type { ConfigFieldDefinition } from "./configSchema.js";
 
 /**
@@ -16,11 +16,8 @@ export interface ConnectorDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
 }
 
-export type ConnectorChatOutcome =
-  | "answered"
-  | "no_context"
-  | "out_of_scope"
-  | "unavailable";
+/** How a turn answered: the host's reply outcome codes. */
+export type ConnectorChatOutcome = ReplyOutcome;
 
 /**
  * A customer message a connector records without running a turn. The connector allocates both
@@ -67,32 +64,22 @@ export interface ConnectorRespondInput {
  * connector decides on these facts and never on the reply's text. `unknown`,
  * `not_assessed` and `unavailable` mean the host could not tell; treat them as not publishable.
  */
-export interface ConnectorTurnFacts {
-  outcome: ConnectorChatOutcome;
-  grounding: "grounded" | "ungrounded" | "not_applicable" | "unknown";
-  coverage: "answered" | "partial" | "unanswered" | "unclear" | "unavailable" | "not_assessed";
-  /** A hand-off the turn asked for. It is reported, never applied: ownership is unchanged. */
-  handoff: { requested: false } | { requested: true; reason: string };
-  /** Skills the turn would have run but did not, because a review turn acts on nothing. */
-  suppressedEffects: readonly { skillName: string }[];
-  citationCount: number;
-}
+export type ConnectorTurnFacts = ReviewTurnFacts;
 
-/** An unpublished reply. */
-export interface ConnectorReplyDraft {
-  readonly text: string;
-  /** Host-owned; a connector stores it and hands it back unchanged, never inspecting it. */
-  readonly presentation: Readonly<Record<string, unknown>>;
-}
+/**
+ * An unpublished reply. Its presentation is host-owned; a connector stores it and hands it back
+ * unchanged, never inspecting it.
+ */
+export type ConnectorReplyDraft = ReplyDraft;
 
 /**
  * How a `respond` turn ended. `ownershipVersion` is the ownership the turn read; a
  * connector compares it before publishing, since a person may have taken over meanwhile.
  */
 export type ConnectorTurnResult =
-  | { kind: "draft"; conversationId: string; ownershipVersion: number; facts: ConnectorTurnFacts; draft: ConnectorReplyDraft }
+  | { kind: "draft"; conversationId: string; ownershipVersion: number; facts: ReviewTurnFacts; draft: ReplyDraft }
   /** No reviewable reply: no text, or the model could not be reached. `facts.handoff` names who should take it. */
-  | { kind: "no_draft"; conversationId: string; ownershipVersion: number; facts: ConnectorTurnFacts }
+  | { kind: "no_draft"; conversationId: string; ownershipVersion: number; facts: ReviewTurnFacts }
   /** A person owns the conversation, so no turn ran. */
   | { kind: "human_owned"; conversationId: string; ownershipVersion: number };
 

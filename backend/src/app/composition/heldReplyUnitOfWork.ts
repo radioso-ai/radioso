@@ -8,12 +8,6 @@ import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.j
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import { reviewedDraftWriter, type ActionDrainDispatcherPort } from "../../modules/chat/composition.js";
 import type { ConversationActivityRecorder } from "../../modules/conversationActivity/contracts/index.js";
-import {
-  EMAIL_MAILBOX_POLICY_REF_PREFIX,
-  EmailDomainRepository,
-  EmailHeldReplyChannelScope,
-  EmailMailboxRepository,
-} from "../../modules/emailChannel/public.js";
 import type { HeldReplyChannelScope, HeldReplyUnitOfWork } from "../../modules/handoff/public.js";
 import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
@@ -26,15 +20,6 @@ export interface HeldReplyChannelRegistration {
   policyRefPrefix: string;
   bind(trx: Db): HeldReplyChannelScope;
 }
-
-/** Email's registration: drafts bound to a mailbox's policy, locked and sent through the transaction's repositories. */
-export const emailHeldReplyChannelRegistration: HeldReplyChannelRegistration = {
-  policyRefPrefix: EMAIL_MAILBOX_POLICY_REF_PREFIX,
-  bind: (trx) => new EmailHeldReplyChannelScope({
-    mailboxes: new EmailMailboxRepository(trx),
-    domains: new EmailDomainRepository(trx),
-  }),
-};
 
 /** Finds the registration a policy ref belongs to by its prefix; refuses prefixes that would let a ref name two channels. */
 const channelRegistry = (

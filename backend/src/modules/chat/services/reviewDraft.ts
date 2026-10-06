@@ -1,9 +1,11 @@
+import type { ReplyDraft } from "@radioso/conversation-contract";
+
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import { GROUNDING_VERDICTS, type GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
 import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
 import type { DirectiveStateStore } from "../../directives/public.js";
 import type { ChatAnswerCoverageAssessment } from "../contracts/answerCoverage.js";
-import type { ChatReviewResult, ReviewedTurnDraft, ReviewTurnFactsSource } from "../types/chatReview.js";
+import type { ChatReviewResult, ReviewTurnFactsSource } from "../types/chatReview.js";
 import { SKILL_TURN_OUTCOME, type AssistantTurnOutcome } from "./assistantTurnOutcomeTypes.js";
 import {
   applyDeferredDirectiveTransition,
@@ -29,7 +31,7 @@ export interface ReviewTurnCorrelation {
 export const reviewedTurnDraft = (
   reply: UnpersistedReply,
   directiveTransition: DeferredDirectiveTransition | null,
-): ReviewedTurnDraft => ({
+): ReplyDraft => ({
   text: reply.content,
   presentation: Object.fromEntries(Object.entries({
     skillName: reply.skillName,
@@ -49,7 +51,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * The directive firing memory advance a draft's turn deferred, read back from a draft that has
  * been stored since; null when it deferred none, or what is stored no longer reads as one.
  */
-export const deferredDirectiveTransitionOf = (draft: ReviewedTurnDraft): DeferredDirectiveTransition | null => {
+export const deferredDirectiveTransitionOf = (draft: ReplyDraft): DeferredDirectiveTransition | null => {
   const stored = draft.presentation.directiveTransition;
   if (!isRecord(stored)) return null;
   const { fromTurnSeq, firedNames } = stored;
@@ -91,7 +93,7 @@ const groundingField = (value: unknown): GroundingDiagnosticSnapshot | undefined
 export const publishedDraftReply = (input: {
   workspaceId: string;
   conversationId: string;
-  draft: ReviewedTurnDraft;
+  draft: ReplyDraft;
 }): UnpersistedReply => {
   const { presentation } = input.draft;
   return {
@@ -126,7 +128,7 @@ export const reviewedDraftWriter = (stores: ReviewedDraftPublicationStores) => (
   async writeAgentMessage(input: {
     workspaceId: string;
     conversationId: string;
-    draft: ReviewedTurnDraft;
+    draft: ReplyDraft;
   }): Promise<MessageRecord> {
     const message = await stores.messages.create(publishedDraftReply(input));
     const transition = deferredDirectiveTransitionOf(input.draft);
@@ -155,14 +157,14 @@ export const reviewTurnFacts = (input: {
 
 // A reply with no text, or the stand-in written when the model could not be reached, is
 // nothing a person could review.
-const isReviewable = (draft: ReviewedTurnDraft, facts: ReviewTurnFactsSource): boolean =>
+const isReviewable = (draft: ReplyDraft, facts: ReviewTurnFactsSource): boolean =>
   draft.text.trim().length > 0 && facts.skillOutcome !== SKILL_TURN_OUTCOME.RETRIEVAL_UNAVAILABLE.outcome;
 
 /** Maps a completed review turn to its result: a draft when it wrote a reviewable reply, otherwise no draft. */
 export const chatReviewResult = (input: {
   conversationId: string;
   ownershipVersion: number;
-  draft: ReviewedTurnDraft;
+  draft: ReplyDraft;
   facts: ReviewTurnFactsSource;
 }): ChatReviewResult =>
   isReviewable(input.draft, input.facts)

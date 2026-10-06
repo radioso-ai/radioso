@@ -9773,13 +9773,25 @@ export interface components {
             holdReason: string;
             /** @description What the review turn found, as the producing channel's codes. */
             facts: {
-                grounding: string;
-                coverage: string;
+                /**
+                 * @description Whether the draft rests on the workspace's documents; `unknown` when the turn could not tell.
+                 * @enum {string}
+                 */
+                grounding: "grounded" | "ungrounded" | "not_applicable" | "unknown";
+                /**
+                 * @description How completely the draft covers what the customer asked; `unavailable` and `not_assessed` when the turn could not tell.
+                 * @enum {string}
+                 */
+                coverage: "answered" | "partial" | "unanswered" | "unclear" | "unavailable" | "not_assessed";
                 handoff: {
                     requested: boolean;
                     reason: string | null;
                 };
-                outcome: string;
+                /**
+                 * @description How the turn answered.
+                 * @enum {string}
+                 */
+                outcome: "answered" | "no_context" | "out_of_scope" | "unavailable";
             };
             /** @description The draft relies on an action the review turn was not allowed to run. */
             dependsOnSuppressedAction: boolean;

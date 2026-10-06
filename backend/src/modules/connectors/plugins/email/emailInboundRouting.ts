@@ -20,7 +20,7 @@ interface DeliveryTargets {
   unrouted: { workspaceId: string | null } | null;
 }
 
-export interface MailboxRouteLookups {
+export interface InboundRouteLookups {
   inboundDomain: string;
   mailboxes: Pick<EmailMailboxRepository, "resolveRelayToken" | "findActiveByAddress">;
   domains: Pick<EmailDomainRepository, "findReceivingVerified">;
@@ -32,7 +32,7 @@ export interface MailboxRouteLookups {
  */
 export const routeDeliveredTo = async (
   addresses: readonly string[],
-  lookups: MailboxRouteLookups,
+  lookups: InboundRouteLookups,
 ): Promise<DeliveryTargets> => {
   const cache = new RouteLookupCache(lookups);
   const targets = new Map<string, MailboxTarget>();
@@ -61,7 +61,7 @@ class RouteLookupCache {
   private readonly receivingDomains = new Map<string, { workspaceId: string } | null>();
   private readonly directMailboxes = new Map<string, { mailboxId: string } | null>();
 
-  constructor(private readonly lookups: MailboxRouteLookups) {}
+  constructor(private readonly lookups: InboundRouteLookups) {}
 
   async route(address: string): Promise<MailboxRoute | null> {
     for (;;) {

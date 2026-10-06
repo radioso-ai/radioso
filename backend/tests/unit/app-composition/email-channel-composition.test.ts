@@ -8,8 +8,8 @@ import {
   createEmailChannelApplicationModule,
   createEmailChannelComposition,
   createEmailHeldReplyChannelRegistration,
-  createPostgresEmailSendUnitOfWork,
-} from "../../../src/app/composition/emailChannel.js";
+} from "../../../src/app/composition/emailChannel/index.js";
+import { createPostgresEmailSendUnitOfWork } from "../../../src/app/composition/emailChannel/outbound.js";
 import type { ApplicationModuleRegistrationContext } from "../../../src/app/composition/applicationModule.js";
 import { parseEmailChannelConfig } from "../../../src/app/config/env.js";
 import { EmailPlugin } from "../../../src/modules/connectors/plugins/email/emailPlugin.js";
@@ -113,7 +113,7 @@ describe("email channel composition", () => {
 
     expect(registration?.policyRefPrefix).toBe("email_mailbox:");
     expect(registration?.bind(fakeDb().db as never)).toBeInstanceOf(EmailHeldReplyChannelScope);
-    expect(createEmailHeldReplyChannelRegistration({ provider: "local" }).bind(fakeDb().db as never)).toBeInstanceOf(EmailHeldReplyChannelScope);
+    expect(createEmailHeldReplyChannelRegistration({ autoSend: true, provider: "local" }).bind(fakeDb().db as never)).toBeInstanceOf(EmailHeldReplyChannelScope);
   });
 
   it("routes replies on email conversations through the email.send deliverer, and resolves their delivery failures", () => {

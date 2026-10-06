@@ -4,7 +4,9 @@ export {
   canResume,
   isHumanOwned,
   ownerLabel,
+  ownershipVersionOf,
   presentOwnership,
+  readConversationOwnershipState,
 } from "./ownershipState.js";
 export { OperatorReplyService } from "./operatorReplyService.js";
 export { OperatorIdentityResolver, type OperatorIdentity } from "./operatorIdentity.js";
@@ -25,18 +27,10 @@ export type {
   ConversationOwnershipRecord,
   ConversationOwnershipScope,
 } from "./ownershipState.js";
+// The machine's events and refusals stay inside handoff: its service applies them, and the
+// repository (a handoff adapter) reads them from the state module itself.
 export {
-  autoDispatchRefusal,
-  autoSendRefusal,
-  heldBirth,
   HELD_REPLY_STATES,
-  heldReplyEventSources,
-  heldReplyEventTarget,
-  heldReplyTransition,
-  isHeldReplyAttentionOpen,
-  releaseRefusal,
-  type HeldReplyBindingCheck,
-  type HeldReplyEvent,
   type HeldReplyRecord,
   type HeldReplyState,
 } from "./heldReplies/heldReplyState.js";

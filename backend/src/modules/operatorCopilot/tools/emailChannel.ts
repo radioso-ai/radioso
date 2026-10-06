@@ -1,3 +1,4 @@
+import { REPLY_COVERAGES, REPLY_GROUNDINGS, REPLY_OUTCOMES } from "@radioso/conversation-contract";
 import { z } from "zod";
 
 import type { EmailChannelCopilotView } from "../../emailChannel/public.js";
@@ -114,9 +115,9 @@ const heldReplySchema = z.object({
   state: z.enum(HELD_REPLY_STATES),
   holdReason: z.string(),
   facts: z.object({
-    outcome: z.string(),
-    grounding: z.string(),
-    coverage: z.string(),
+    outcome: z.enum(REPLY_OUTCOMES),
+    grounding: z.enum(REPLY_GROUNDINGS),
+    coverage: z.enum(REPLY_COVERAGES),
     handoff: z.object({ requested: z.boolean(), reason: z.string().nullable() }).strict(),
   }).strict(),
   dependsOnSuppressedAction: z.boolean(),

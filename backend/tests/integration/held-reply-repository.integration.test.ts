@@ -4,7 +4,8 @@ import pg from "pg";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { HeldReplyRepository } from "../../src/db/repositories/heldReplyRepository.js";
-import { isHeldReplyAttentionOpen, type HeldReplyInsert, type HeldReplyRecord } from "../../src/modules/handoff/public.js";
+import { isHeldReplyAttentionOpen } from "../../src/modules/handoff/heldReplies/heldReplyState.js";
+import type { HeldReplyInsert, HeldReplyRecord } from "../../src/modules/handoff/public.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";

@@ -1,3 +1,4 @@
+import type { ReplyDraft, ReviewTurnFacts } from "@radioso/conversation-contract";
 import type { WorkspaceInvalidationKind, WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
@@ -29,11 +30,9 @@ import {
   isHeldReplyAttentionOpen,
   releaseRefusal,
   type AutoSendRefusal,
-  type HeldReplyDraft,
   type HeldReplyRecord,
   type HeldReplyReleaseRefusal,
   type HeldReplyState,
-  type HeldReplyTurnFacts,
   type SupersedeReason,
 } from "./heldReplyState.js";
 
@@ -52,8 +51,8 @@ export interface HoldReplyInput {
   reviewRef: string | null;
   /** The producer's code for why it is held. */
   holdReason: string;
-  facts: HeldReplyTurnFacts;
-  draft: HeldReplyDraft;
+  facts: ReviewTurnFacts;
+  draft: ReplyDraft;
 }
 
 type HoldReplyResult =
@@ -161,7 +160,7 @@ interface HeldReplyDraftMessageWriter {
     workspaceId: string;
     conversationId: string;
     agentId: string | null;
-    draft: HeldReplyDraft;
+    draft: ReplyDraft;
   }): Promise<MessageRecord>;
 }
 
@@ -250,10 +249,8 @@ export interface HeldReplyView {
   agentId: string | null;
   state: HeldReplyState;
   holdReason: string;
-  facts: {
-    outcome: string;
-    grounding: string;
-    coverage: string;
+  /** The review turn's facts, with its hand-off flattened for presentation. */
+  facts: Pick<ReviewTurnFacts, "outcome" | "grounding" | "coverage"> & {
     handoff: { requested: boolean; reason: string | null };
   };
   dependsOnSuppressedAction: boolean;

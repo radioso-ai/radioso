@@ -106,8 +106,10 @@ rows. Start at `test-execution/README.md` and
   discarded, and superseded drafts never consume it. The preparer applies the
   answered message's `(created_at, id)` boundary in the history query, before the
   window's limit. Usage is reserved as a reply on the conversation's channel.
-  `ConnectorChatPort.respond` maps the result through
-  `connectors/services/connectorTurnFacts.ts`.
+  The draft is `@radioso/conversation-contract`'s `ReplyDraft`, which a
+  connector and a held reply receive as the turn wrote it;
+  `ConnectorChatPort.respond` maps the turn's facts to the contract's
+  `ReviewTurnFacts` through `connectors/services/connectorTurnFacts.ts`.
 - `llmAdapters.ts`: LLM-provider registration for chat.
 - `retrievalSupport.ts`: narrow helpers used by retrieval answer assembly.
 

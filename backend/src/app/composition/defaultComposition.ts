@@ -1,6 +1,6 @@
 import { parseEmailChannelConfig, type Env } from "../config/env.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
-import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
+import { ConnectorRegistry } from "../../modules/connectors/services/public.js";
 import type { ConnectorPlugin } from "@radioso/connector-api";
 import {
   AmqpDocumentJobConsumer,
@@ -72,7 +72,7 @@ import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirecti
 import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
 import { createWebhookSendApplicationModule } from "./builtIn/webhookSendModule.js";
 import { createConversationTransferNoticeApplicationModule } from "./builtIn/conversationTransferNoticeModule.js";
-import { createEmailChannelApplicationModule, type EmailChannelOptions } from "./emailChannel.js";
+import { createEmailChannelApplicationModule, type EmailChannelOptions } from "./emailChannel/index.js";
 import { createCustomerEmailApplicationModule } from "../../modules/customerEmail/composition.js";
 import { createSlackApplicationModule } from "../../modules/slack/composition.js";
 import { createOssOrganizationCreationApplicationModule } from "../../modules/auth/composition.js";

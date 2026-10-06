@@ -6,7 +6,7 @@ import type { ConnectorContext, ConnectorPlugin } from "@radioso/connector-api";
 import express, { type Router } from "express";
 import request from "supertest";
 
-import type { EmailChannelOptions } from "../../src/app/composition/emailChannel.js";
+import type { EmailChannelOptions } from "../../src/app/composition/emailChannel/index.js";
 import { parseEmailChannelConfig, type Env } from "../../src/app/config/env.js";
 import { buildDependencies } from "../../src/app/server/dependencies.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
@@ -14,7 +14,8 @@ import type { ChatReviewInput, ChatReviewResult } from "../../src/modules/chat/c
 import { SKILL_TURN_OUTCOME } from "../../src/modules/chat/contracts/index.js";
 import { chatReviewResult, reviewTurnFacts } from "../../src/modules/chat/services/reviewDraft.js";
 import type { EngagementMode } from "../../src/modules/emailChannel/public.js";
-import { HELD_REPLY_STATES, isHeldReplyAttentionOpen, type HeldReplyState } from "../../src/modules/handoff/public.js";
+import { isHeldReplyAttentionOpen } from "../../src/modules/handoff/heldReplies/heldReplyState.js";
+import { HELD_REPLY_STATES, type HeldReplyState } from "../../src/modules/handoff/public.js";
 import { HeldReplyRepository } from "../../src/db/repositories/heldReplyRepository.js";
 import { LocalEmailDomainProvisioner } from "../../src/modules/mail/adapters/localDomainProvisioner.js";
 import { LOCAL_EMAIL_SPOOL_DIR } from "../../src/modules/mail/adapters/localSpool.js";

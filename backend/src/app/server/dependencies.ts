@@ -4,8 +4,17 @@ import { getEnv, parseEmailChannelConfig, type Env } from "../config/env.js";
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
-import { createEmailChannelComposition, createPostgresDeliveryFailures, type EmailChannelOptions } from "../composition/emailChannel.js";
-import { createConnectorChatPort } from "../../modules/connectors/services/connectorChatPort.js";
+import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
+import {
+  createEmailChannelComposition,
+  createEmailHeldReplyChannelRegistration,
+  type EmailChannelOptions,
+} from "../composition/emailChannel/index.js";
+import {
+  ConnectorManagementService,
+  createConnectorChatPort,
+  createConnectorIngestionPort,
+} from "../../modules/connectors/services/public.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import { requestSourceDigestPort } from "../http/middleware/requestSource.js";
 import {
@@ -71,8 +80,6 @@ import { ContextVariableRepository } from "../../db/repositories/contextVariable
 import { AccessGrantLifecycleUnitOfWork } from "../../db/repositories/accessGrantRepository.js";
 import { ContextVariableService } from "../../modules/context-variables/public.js";
 import { createAgentBundleServices } from "../composition/agentBundleComposition.js";
-import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
-import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { normalizeBaseUrl } from "../../modules/websiteCrawler/public.js";
@@ -124,7 +131,7 @@ import { createTeammateLabelReader } from "../composition/teammateLabelReader.js
 import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
 import { createConversationActivityComposition } from "../composition/conversationActivity.js";
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
-import { createPostgresHeldReplyUnitOfWork, emailHeldReplyChannelRegistration } from "../composition/heldReplyUnitOfWork.js";
+import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitOfWork.js";
 import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
 import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
@@ -562,8 +569,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversations: repositories.conversationRepository,
     writes: createPostgresHeldReplyUnitOfWork({
       db: infrastructure.database.kysely,
-      // The channel's own registration grants automatic sending where it runs `auto`.
-      channels: [emailChannel?.heldReplyChannel ?? emailHeldReplyChannelRegistration],
+      // The channel's own registration grants automatic sending where it runs `auto`. Without a
+      // configured provider, drafts held earlier can still be decided, and nothing sends automatically.
+      channels: [emailChannel?.heldReplyChannel ?? createEmailHeldReplyChannelRegistration({ autoSend: false })],
       activity: conversationActivity.recorder,
       actionDrain: chat.actionDrainDispatcher,
       logger,

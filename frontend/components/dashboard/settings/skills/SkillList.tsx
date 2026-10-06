@@ -18,9 +18,8 @@ import {
   type AgentSkill,
   type AgentSkillCapabilityId,
   type AgentSkillCreateInput,
-  type AgentSkillListItem,
+  type PlatformAnswerSkill,
   type SkillCapabilityDescriptor,
-  workspaceSkillsFromList,
 } from '@/lib/api-skills'
 import { resolveAssistantRetrievalSettingsViewState } from '@/lib/assistant-retrieval-settings-view-state'
 import { cn } from '@/lib/utils'
@@ -53,7 +52,8 @@ export function SkillList({
   isAssistantBehaviorLoading: boolean
   onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
 }) {
-  const [skills, setSkills] = useState<AgentSkillListItem[]>([])
+  const [skills, setSkills] = useState<AgentSkill[]>([])
+  const [platformSkills, setPlatformSkills] = useState<PlatformAnswerSkill[]>([])
   const [capabilities, setCapabilities] = useState<SkillCapabilityDescriptor[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [busyAction, setBusyAction] = useState<string | null>(null)
@@ -71,7 +71,6 @@ export function SkillList({
     isAssistantBehaviorLoading,
     assistantBehaviorSettings,
   })
-  const workspaceSkills = workspaceSkillsFromList(skills)
 
   const loadUsage = useCallback(async (version: number) => {
     const [directiveResult, routineResult] = await Promise.allSettled([
@@ -99,6 +98,7 @@ export function SkillList({
       if (version !== loadVersion.current) return
       setCapabilities(capabilityResponse.capabilities)
       setSkills(skillResponse.skills)
+      setPlatformSkills(skillResponse.platformSkills)
     } catch (loadError) {
       if (version !== loadVersion.current) return
       setError(getApiErrorMessage(loadError, 'Failed to load skills.'))
@@ -165,11 +165,7 @@ export function SkillList({
     setError(null)
     try {
       const response = await agentSkillsApi.updateSkill(agentId, skill.id, { enabled })
-      setSkills((current) => current.map((item) =>
-        item.owner === 'workspace' && item.skill.id === skill.id
-          ? { ...item, skill: response.skill }
-          : item,
-      ))
+      setSkills((current) => current.map((item) => item.id === skill.id ? response.skill : item))
     } catch (updateError) {
       setError(getApiErrorMessage(updateError, 'Failed to update skill.'))
     } finally {
@@ -182,7 +178,7 @@ export function SkillList({
     setError(null)
     try {
       await agentSkillsApi.deleteSkill(agentId, skill.id)
-      setSkills((current) => current.filter((item) => item.owner !== 'workspace' || item.skill.id !== skill.id))
+      setSkills((current) => current.filter((item) => item.id !== skill.id))
     } catch (deleteError) {
       setError(getApiErrorMessage(deleteError, 'Failed to delete skill.'))
     } finally {
@@ -213,8 +209,7 @@ export function SkillList({
 
       {!isLoading ? (
         <ul className="space-y-3">
-          {skills.filter((item) => item.owner === 'platform').map((item) => {
-            const skill = item.catalog
+          {platformSkills.map((skill) => {
             const isRetrievalAnswer = skill.name === 'retrieval.answer'
             const retrievalEnabled = retrievalSettingsViewState === 'controls'
             return (
@@ -245,15 +240,15 @@ export function SkillList({
         </ul>
       ) : null}
 
-      {!isLoading && workspaceSkills.length === 0 ? (
+      {!isLoading && skills.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
           This agent always answers directly, from documents, or with a clarification. Add a named skill to extend it.
         </div>
       ) : null}
 
-      {workspaceSkills.length > 0 ? (
+      {skills.length > 0 ? (
         <ul className="space-y-3">
-          {workspaceSkills.map((skill) => (
+          {skills.map((skill) => (
             <li key={skill.id}>
               <article className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 shadow-sm">
                 <div className="min-w-0 space-y-1">
@@ -316,7 +311,7 @@ export function SkillList({
         agentId={agentId}
         open={formOpen}
         capabilities={capabilities}
-        skills={workspaceSkills}
+        skills={skills}
         editingSkill={editingSkill}
         capabilityId={selectedCapabilityId}
         isSaving={busyAction === 'save'}

@@ -20648,39 +20648,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        skills: ({
+                        skills: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            name: string;
+                            /** @enum {string} */
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            target: {
+                                kind: string;
+                                /** Format: uuid */
+                                id: string | null;
+                            };
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+                            enabled: boolean;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                        platformSkills: {
                             /** @enum {string} */
                             owner: "platform";
-                            catalog: components["schemas"]["SkillCatalogEntry"];
-                        } | {
-                            /** @enum {string} */
-                            owner: "workspace";
-                            skill: {
-                                /** Format: uuid */
-                                id: string;
-                                /** Format: uuid */
-                                workspaceId: string;
-                                /** Format: uuid */
-                                agentId: string;
-                                name: string;
-                                /** @enum {string} */
-                                capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
-                                storedKind: string;
-                                target: {
-                                    kind: string;
-                                    /** Format: uuid */
-                                    id: string | null;
-                                };
-                                config: {
-                                    [key: string]: unknown;
-                                };
-                                /** @enum {string} */
-                                invocationMode: "default_answer" | "routine_named" | "agent_selectable";
-                                enabled: boolean;
-                                createdAt: string;
-                                updatedAt: string;
-                            };
-                        })[];
+                            name: string;
+                            displayName: string;
+                            description: string;
+                        }[];
                     };
                 };
             };

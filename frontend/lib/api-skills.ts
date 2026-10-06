@@ -43,20 +43,12 @@ export type AgentSkill = {
   updatedAt: string
 }
 
-export type PlatformAgentSkill = {
+export type PlatformAnswerSkill = {
   owner: 'platform'
-  catalog: SkillCatalogEntry
+  name: string
+  displayName: string
+  description: string
 }
-
-export type WorkspaceAgentSkill = {
-  owner: 'workspace'
-  skill: AgentSkill
-}
-
-export type AgentSkillListItem = PlatformAgentSkill | WorkspaceAgentSkill
-
-export const workspaceSkillsFromList = (skills: AgentSkillListItem[]): AgentSkill[] =>
-  skills.flatMap((item) => item.owner === 'workspace' ? [item.skill] : [])
 
 export type SkillCapabilityInputSchema =
   | { source: 'discovered' }
@@ -124,8 +116,8 @@ export const agentSkillsApi = {
     )
   },
 
-  async listSkills(agentId: string): Promise<{ skills: AgentSkillListItem[] }> {
-    return request<{ skills: AgentSkillListItem[] }>(
+  async listSkills(agentId: string): Promise<{ skills: AgentSkill[]; platformSkills: PlatformAnswerSkill[] }> {
+    return request<{ skills: AgentSkill[]; platformSkills: PlatformAnswerSkill[] }>(
       `/agents/${agentId}/skills`,
       { method: 'GET' },
       { withSession: true },

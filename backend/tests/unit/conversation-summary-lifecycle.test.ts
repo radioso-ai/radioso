@@ -70,6 +70,7 @@ describe("ChatTurnLifecycle rolling conversation summary trigger (#866)", () => 
       accountId: "acct_1",
       session: session(),
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
     });
@@ -91,6 +92,7 @@ describe("ChatTurnLifecycle rolling conversation summary trigger (#866)", () => 
         workspaceId: "ws_1",
         session: session(),
         presentation: presentation(),
+        requestReceivedAt: Date.now(),
         answerStartedAt: Date.now(),
         stream: false,
       }),

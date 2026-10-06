@@ -25,8 +25,8 @@ export const TURN_POPULATION_SOURCE = `FROM messages m
        JOIN conversations c ON c.id = m.conversation_id AND c.workspace_id = m.workspace_id`;
 
 /**
- * Turn latency, resolved from the column first and the turn's `chat.answer` audit event only
- * as a fallback.
+ * Visitor-perceived turn latency, resolved from the column first and the turn's `chat.answer`
+ * audit event only as a fallback.
  *
  * Migration 131 added `messages.total_latency_ms` and backfilled history, so the column
  * covers all but a narrow set of rows: turns written during a rolling deploy where the
@@ -41,12 +41,11 @@ export const TURN_POPULATION_SOURCE = `FROM messages m
  * index probe and JSONB walk per turn on every dashboard refresh. Guarding a join in its
  * `ON` clause or inner `WHERE` does not reliably avoid that.
  *
- * Source precedence is identical to migration 131's backfill, and must stay that way: the two
- * candidates are different quantities, so diverging here would make a fallback row and a
- * backfilled row report different things under one column name.
+ * New write-path values measure request receipt through the final assistant answer. Historical
+ * audit-only fallback rows retain their answer-stage timing because they predate request
+ * receipt; that timing cannot be reconstructed after the fact.
  *
- *   1. `activityTrace.stages[stageId='answer'].durationMs` — turn wall time, the same value
- *      the write path persists to `messages.total_latency_ms`.
+ *   1. `activityTrace.stages[stageId='answer'].durationMs` — legacy answer-stage timing.
  *   2. `activityTrace.totalDurationMs` — retrieval-pipeline time only, and 0 for turns that
  *      skipped retrieval. Kept solely for traces old enough to predate the answer stage.
  *

@@ -18037,7 +18037,8 @@
             "type": [
               "integer",
               "null"
-            ]
+            ],
+            "description": "Visitor-perceived time from chat request receipt through the final assistant answer, in milliseconds."
           },
           "grounding": {
             "anyOf": [
@@ -48151,9 +48152,11 @@
                 "integer",
                 "null"
               ],
-              "minimum": 0
+              "minimum": 0,
+              "description": "Minimum visitor-perceived request-to-answer time in milliseconds."
             },
             "required": false,
+            "description": "Minimum visitor-perceived request-to-answer time in milliseconds.",
             "name": "minTotalLatencyMs",
             "in": "query"
           },
@@ -48163,9 +48166,11 @@
                 "integer",
                 "null"
               ],
-              "minimum": 0
+              "minimum": 0,
+              "description": "Maximum visitor-perceived request-to-answer time in milliseconds."
             },
             "required": false,
+            "description": "Maximum visitor-perceived request-to-answer time in milliseconds.",
             "name": "maxTotalLatencyMs",
             "in": "query"
           },

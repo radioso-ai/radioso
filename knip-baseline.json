@@ -443,7 +443,6 @@
   "types|backend/src/modules/retrieval/domain/retrievalStrategySelection.ts|RetrievalStrategySelectionInput",
   "types|backend/src/modules/retrieval/domain/vectorFilter.ts|VectorChunkFilter",
   "types|backend/src/modules/retrieval/infra/pgChunkFilter.ts|ChunkFilter",
-  "types|backend/src/modules/retrieval/services/activityTracePresenter.ts|AnswerOutcomeInput",
   "types|backend/src/modules/retrieval/services/agenticActivityTraceBuilder.ts|AgenticTraceInput",
   "types|backend/src/modules/retrieval/services/agenticRetrievalRunner.ts|AgenticRetrievalRunInput",
   "types|backend/src/modules/retrieval/services/agenticRetrievalRunner.ts|AgenticRetrievalRunnerDeps",

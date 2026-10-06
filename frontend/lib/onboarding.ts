@@ -3,12 +3,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { documentsApi, workspaceApi, type DocumentSummary } from '@/lib/api'
+import { API_BASE } from '@/lib/api-client'
 import {
   isOnboardingActive as getOnboardingActiveFlag,
   isOnboardingCompleted as getOnboardingCompletedFlag,
   markOnboardingActive,
   markOnboardingCompleted,
 } from '@/lib/onboarding-storage'
+import {
+  BeaconFrontendProductAnalyticsSink,
+  createFrontendProductAnalyticsEmitter,
+  type FrontendProductAnalyticsEventName,
+} from '@/lib/product-analytics'
 
 const SAMPLE_DOCUMENTS = [
   {
@@ -50,6 +56,31 @@ Workspace settings control retrieval behavior such as rewrite, rerank, chunking,
   },
 ] as const
 
+export const SAMPLE_QUESTIONS = [
+  'How does Radioso turn documents into answers?',
+  'What configuration controls retrieval behavior?',
+  'How do I add a directive to an agent?',
+] as const
+
+const onboardingAnalyticsEmitter = createFrontendProductAnalyticsEmitter({
+  sinks: [
+    new BeaconFrontendProductAnalyticsSink({
+      endpoint: `${API_BASE}/observability/product-analytics`,
+    }),
+  ],
+})
+
+export const trackOnboardingAnalytics = (
+  eventName: 'onboarding.first_question' | 'onboarding.sample_imported' | 'onboarding.shown' | 'onboarding.skipped' | 'onboarding.step_completed',
+  properties: Record<string, unknown> = {},
+) => {
+  void onboardingAnalyticsEmitter.track({
+    eventName: eventName as FrontendProductAnalyticsEventName,
+    properties,
+    source: 'frontend',
+  })
+}
+
 export interface WorkspaceOnboardingState {
   isLoading: boolean
   refresh: () => Promise<void>
@@ -75,6 +106,10 @@ export const shouldAutoActivateOnboarding = (input: {
   documentCount: number
   conversationCount: number
 }): boolean => {
+  if (input.workspaceCount !== 1) {
+    return false
+  }
+
   if (input.documentCount > 0 || input.conversationCount > 0) {
     return false
   }
@@ -85,6 +120,12 @@ export const shouldAutoActivateOnboarding = (input: {
 
   return true
 }
+
+export const getOnboardingProgress = (input: {
+  hasDocuments: boolean
+  hasReadyDocuments: boolean
+  hasCompletedChat: boolean
+}): number => Number(input.hasDocuments) + Number(input.hasReadyDocuments) + Number(input.hasCompletedChat)
 
 export const useWorkspaceOnboarding = (
   workspaceId: string | null,
@@ -102,6 +143,11 @@ export const useWorkspaceOnboarding = (
   const [isOnboardingCompleted, setIsOnboardingCompleted] = useState(false)
   const [isImportingSampleDocs, setIsImportingSampleDocs] = useState(false)
   const loadedWorkspaceIdRef = useRef<string | null>(null)
+  const onboardingSummaryRef = useRef<{
+    hasDocuments: boolean
+    hasReadyDocuments: boolean
+    sampleDocumentsImported: boolean
+  } | null>(null)
 
   const refresh = useCallback(async () => {
     if (!workspaceId) {
@@ -113,6 +159,7 @@ export const useWorkspaceOnboarding = (
       setHasCompletedChat(false)
       setIsOnboardingActive(false)
       setIsOnboardingCompleted(false)
+      onboardingSummaryRef.current = null
       loadedWorkspaceIdRef.current = null
       setIsLoading(false)
       return
@@ -121,6 +168,7 @@ export const useWorkspaceOnboarding = (
     const isInitialWorkspaceLoad = loadedWorkspaceIdRef.current !== workspaceId
     if (isInitialWorkspaceLoad) {
       loadedWorkspaceIdRef.current = workspaceId
+      onboardingSummaryRef.current = null
       setIsLoading(true)
     }
 
@@ -140,6 +188,24 @@ export const useWorkspaceOnboarding = (
 
       if (nextActive) {
         markOnboardingActive(workspaceId)
+      }
+
+      const previousSummary = onboardingSummaryRef.current
+      if (previousSummary) {
+        if (!previousSummary.hasDocuments && summary.hasDocuments) {
+          trackOnboardingAnalytics('onboarding.step_completed', { step: 'documents_added' })
+        }
+        if (!previousSummary.hasReadyDocuments && summary.hasReadyDocuments) {
+          trackOnboardingAnalytics('onboarding.step_completed', { step: 'documents_processed' })
+        }
+        if (!previousSummary.sampleDocumentsImported && summary.sampleDocumentsImported) {
+          trackOnboardingAnalytics('onboarding.sample_imported')
+        }
+      }
+      onboardingSummaryRef.current = {
+        hasDocuments: summary.hasDocuments,
+        hasReadyDocuments: summary.hasReadyDocuments,
+        sampleDocumentsImported: summary.sampleDocumentsImported,
       }
 
       setSampleDocumentSlugs(summary.sampleDocumentSlugs)
@@ -236,6 +302,7 @@ export const useWorkspaceOnboarding = (
     }
 
     markOnboardingActive(workspaceId)
+    setIsOnboardingCompleted(false)
     setIsOnboardingActive(true)
   }, [workspaceId])
 

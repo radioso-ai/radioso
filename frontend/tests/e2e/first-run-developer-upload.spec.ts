@@ -29,28 +29,29 @@ test("first-run developer paths expose separate upload and chat instructions", a
   const chatApiButton = page.getByRole("button", { name: "Chat with API or SDK" });
   await uploadApiButton.click();
   await expect(uploadApiButton).toHaveAttribute("aria-expanded", "true");
-  await expect(chatApiButton).toHaveAttribute("aria-expanded", "true");
+  await expect(chatApiButton).toHaveAttribute("aria-expanded", "false");
 
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByText("Upload documents with the API or SDK")).toBeVisible();
-  await expect(page.getByText("Ask questions with the API or SDK")).toBeVisible();
   await expect(page.getByText("curl -sS -X POST http://localhost:8080/api/v1/document/")).toBeVisible();
-  await expect(page.getByText("curl -sS -X POST http://localhost:8080/api/v1/assistant/chat")).toBeVisible();
   await expect(page.getByText("client.documents.importFile")).toHaveCount(0);
   await expect(page.getByText("Create a credential in Settings → API access.").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy create from text with curl instruction" })).toBeVisible();
   await page.getByRole("button", { name: /^TypeScript$/ }).first().click();
   await expect(page.getByText("client.documents.create")).toBeVisible();
-  await expect(page.getByText("const response = await client.chat.create({")).toBeVisible();
   await expect(page.getByText("apiToken: 'YOUR_PERSONAL_OR_SERVICE_CREDENTIAL'").first()).toBeVisible();
+
+  await chatApiButton.click();
+  await expect(uploadApiButton).toHaveAttribute("aria-expanded", "true");
+  await expect(chatApiButton).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByText("Ask questions with the API or SDK")).toBeVisible();
+  await expect(page.getByText("const response = await client.chat.create({")).toBeVisible();
   await expect(page.getByText("client.chat.listHistory")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy ask a question with typescript instruction" })).toBeVisible();
 
-  await chatApiButton.click();
+  await uploadApiButton.click();
   await expect(uploadApiButton).toHaveAttribute("aria-expanded", "false");
-  await expect(chatApiButton).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByText("Upload documents with the API or SDK")).toHaveCount(0);
-  await expect(page.getByText("Ask questions with the API or SDK")).toHaveCount(0);
+  await expect(chatApiButton).toHaveAttribute("aria-expanded", "true");
 });
 
 test("first-run onboarding can be skipped and stays hidden", async ({ page }) => {
@@ -72,6 +73,11 @@ test("first-run onboarding can be skipped and stays hidden", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeVisible();
   await page.getByRole("button", { name: "Skip" }).click();
   await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeHidden();
+
+  await page.goto(`/w/${workspaceKey}/knowledge`);
+  await expect(page.getByRole("link", { name: "Resume setup" })).toBeVisible();
+  await page.getByRole("link", { name: "Resume setup" }).click();
+  await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeVisible();
 
   await page.reload();
 

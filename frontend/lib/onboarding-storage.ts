@@ -51,6 +51,7 @@ export const isOnboardingCompleted = (workspaceId: string) =>
   readBooleanMap(ONBOARDING_COMPLETED_KEY)[workspaceId] === true
 
 export const markOnboardingActive = (workspaceId: string) => {
+  setWorkspaceFlag(ONBOARDING_COMPLETED_KEY, workspaceId, false)
   setWorkspaceFlag(ONBOARDING_ACTIVE_KEY, workspaceId, true)
 }
 

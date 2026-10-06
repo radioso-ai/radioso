@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Check, Code2, FileText, LoaderCircle, MessageSquareText } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -11,7 +11,12 @@ import {
 } from '@/components/shared/api-snippets'
 import { Button } from '@/components/ui/button'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
-import { type WorkspaceOnboardingState } from '@/lib/onboarding'
+import {
+  getOnboardingProgress,
+  SAMPLE_QUESTIONS,
+  trackOnboardingAnalytics,
+  type WorkspaceOnboardingState,
+} from '@/lib/onboarding'
 import { useWorkspace } from '@/lib/workspace-context'
 import { cn } from '@/lib/utils'
 
@@ -255,15 +260,30 @@ export function FirstRunExperience(props: FirstRunExperienceProps) {
 function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperienceProps) {
   const router = useRouter()
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
-  const [areDeveloperInstructionsOpen, setAreDeveloperInstructionsOpen] = useState(() =>
+  const [isDeveloperUploadInstructionsOpen, setIsDeveloperUploadInstructionsOpen] = useState(() =>
     readDeveloperInstructionsOpen(activeWorkspaceId),
   )
+  const [isDeveloperChatInstructionsOpen, setIsDeveloperChatInstructionsOpen] = useState(false)
   const [developerExampleLanguage, setDeveloperExampleLanguage] = useState<ExampleLanguage>('curl')
+  const hasTrackedShownRef = useRef(false)
   const isProcessing = onboarding.isImportingSampleDocs || onboarding.hasPendingDocuments
   const isReady = onboarding.hasReadyDocuments && !onboarding.hasPendingDocuments
   const hasDocuments = onboarding.hasDocuments
   const hasSampleDocuments = onboarding.sampleDocumentsImported
-  const completedCount = Number(hasDocuments) + Number(isReady)
+  const completedCount = getOnboardingProgress({
+    hasDocuments,
+    hasReadyDocuments: isReady,
+    hasCompletedChat: onboarding.hasCompletedChat,
+  })
+
+  useEffect(() => {
+    if (hasTrackedShownRef.current) {
+      return
+    }
+
+    hasTrackedShownRef.current = true
+    trackOnboardingAnalytics('onboarding.shown')
+  }, [])
 
   const documentsHref = buildDashboardHref(accountId, {
     section: 'knowledge',
@@ -287,12 +307,16 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
     ? 'Open chat and ask the first question.'
     : 'Available once a document finishes processing.'
 
-  const toggleDeveloperInstructions = () => {
-    setAreDeveloperInstructionsOpen((value) => {
+  const toggleDeveloperUploadInstructions = () => {
+    setIsDeveloperUploadInstructionsOpen((value) => {
       const nextValue = !value
       storeDeveloperInstructionsOpen(activeWorkspaceId, nextValue)
       return nextValue
     })
+  }
+
+  const toggleDeveloperChatInstructions = () => {
+    setIsDeveloperChatInstructionsOpen((value) => !value)
   }
 
   return (
@@ -337,9 +361,9 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
                   ) : null}
                   <DeveloperUploadInstructions
                     exampleLanguage={developerExampleLanguage}
-                    isOpen={areDeveloperInstructionsOpen}
+                    isOpen={isDeveloperUploadInstructionsOpen}
                     onExampleLanguageChange={setDeveloperExampleLanguage}
-                    onToggle={toggleDeveloperInstructions}
+                    onToggle={toggleDeveloperUploadInstructions}
                   />
                 </>
               }
@@ -364,13 +388,15 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
               number={3}
               title="Ask a question"
               description={chatDescription}
-              tone={isReady ? 'active' : 'upcoming'}
+              tone={onboarding.hasCompletedChat ? 'done' : isReady ? 'active' : 'upcoming'}
               action={
                 <>
                   {isReady ? (
                     <Button
                       size="sm"
                       onClick={() => {
+                        trackOnboardingAnalytics('onboarding.step_completed', { step: 'first_question' })
+                        trackOnboardingAnalytics('onboarding.first_question')
                         onboarding.markCompleted()
                         router.push(buildDashboardHref(accountId, {
                           section: 'agents',
@@ -383,11 +409,20 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
                       Open chat
                     </Button>
                   ) : null}
+                  {isReady ? (
+                    <div className="flex w-full flex-wrap gap-2 pt-1" aria-label="Suggested questions">
+                      {SAMPLE_QUESTIONS.map((question) => (
+                        <span key={question} className="rounded-md border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground">
+                          {question}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   <DeveloperChatInstructions
                     exampleLanguage={developerExampleLanguage}
-                    isOpen={areDeveloperInstructionsOpen}
+                    isOpen={isDeveloperChatInstructionsOpen}
                     onExampleLanguageChange={setDeveloperExampleLanguage}
-                    onToggle={toggleDeveloperInstructions}
+                    onToggle={toggleDeveloperChatInstructions}
                   />
                 </>
               }
@@ -395,7 +430,10 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
           </ol>
 
           <div className="mt-4 flex justify-end">
-            <Button size="sm" variant="ghost" onClick={onboarding.markCompleted}>
+            <Button size="sm" variant="ghost" onClick={() => {
+              trackOnboardingAnalytics('onboarding.skipped')
+              onboarding.markCompleted()
+            }}>
               Skip
             </Button>
           </div>

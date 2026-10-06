@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { shouldAutoActivateOnboarding } from '@/lib/onboarding'
+import { getOnboardingProgress, shouldAutoActivateOnboarding } from '@/lib/onboarding'
 
 const createLocalStorage = (seed: Record<string, string> = {}) => {
   const store = new Map(Object.entries(seed))
@@ -39,7 +39,7 @@ describe('shouldAutoActivateOnboarding', () => {
     ).toBe(true)
   })
 
-  it('activates onboarding for later empty workspaces too', () => {
+  it('does not activate onboarding for a later empty workspace', () => {
     vi.stubGlobal('window', {
       localStorage: createLocalStorage(),
     })
@@ -51,7 +51,7 @@ describe('shouldAutoActivateOnboarding', () => {
         documentCount: 0,
         conversationCount: 0,
       })
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('activates onboarding even if another workspace completed the guided flow', () => {
@@ -86,5 +86,15 @@ describe('shouldAutoActivateOnboarding', () => {
         conversationCount: 0,
       })
     ).toBe(false)
+  })
+})
+
+describe('getOnboardingProgress', () => {
+  it('counts the completed chat as the third first-run step', () => {
+    expect(getOnboardingProgress({
+      hasDocuments: true,
+      hasReadyDocuments: true,
+      hasCompletedChat: true,
+    })).toBe(3)
   })
 })

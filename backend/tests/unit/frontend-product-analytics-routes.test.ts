@@ -33,6 +33,30 @@ describe("frontend product analytics routes", () => {
     }));
   });
 
+  it("captures first-run funnel events without accepting browser-supplied tenant identity", async () => {
+    const { app, repositories } = createTestApp();
+
+    await request(app)
+      .post("/api/v1/observability/product-analytics")
+      .send({
+        eventName: "onboarding.step_completed",
+        properties: { step: "documents_processed" },
+        source: "frontend",
+      })
+      .expect(202);
+
+    expect(repositories.auditEventRepository.items).toContainEqual(expect.objectContaining({
+      eventType: "product.analytics",
+      metadata: {
+        analytics: expect.objectContaining({
+          eventName: "onboarding.step_completed",
+          properties: { step: "documents_processed" },
+          source: "frontend",
+        }),
+      },
+    }));
+  });
+
   it("normalizes page view paths before persistence", async () => {
     const { app, repositories } = createTestApp();
 

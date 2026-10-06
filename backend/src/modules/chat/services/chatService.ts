@@ -843,6 +843,7 @@ export class ChatService {
 
   /** Internal composition seam for callers that need the persisted input/output pair. */
   async answerWithReceipt(input: ChatAnswerInput): Promise<ChatTurnReceipt> {
+    const requestReceivedAt = Date.now();
     const coordination: TurnCoordinationState = {
       lease: input.conversationId
         ? this.conversationTurnRegistry.start(input.conversationId)
@@ -856,7 +857,7 @@ export class ChatService {
         attributes: chatTurnTraceAttributes(input),
         run: () => runWithModelCallTrace(
           modelCallTrace,
-          () => this.answerWithinTrace(input, coordination, modelCallTrace),
+          () => this.answerWithinTrace(input, coordination, modelCallTrace, requestReceivedAt),
         ),
       });
     } finally {
@@ -868,6 +869,7 @@ export class ChatService {
     input: ChatAnswerInput,
     coordination: TurnCoordinationState,
     modelCallTrace: ModelCallTraceCollector,
+    requestReceivedAt: number,
   ): Promise<ChatTurnReceipt> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
@@ -955,6 +957,7 @@ export class ChatService {
           accountId: input.accountId,
           session,
           presentation: routineTurn.presentation,
+          requestReceivedAt,
           answerStartedAt: routineStartedAt,
           stream: input.stream,
           executionMode: input.executionMode,
@@ -1063,6 +1066,7 @@ export class ChatService {
           accountId: input.accountId,
           session,
           presentation,
+          requestReceivedAt,
           answerStartedAt,
           stream: input.stream,
           executionMode: input.executionMode,
@@ -1132,6 +1136,7 @@ export class ChatService {
         accountId: input.accountId,
         session,
         presentation,
+        requestReceivedAt,
         answerStartedAt,
         stream: input.stream,
         executionMode: input.executionMode,
@@ -1227,7 +1232,7 @@ export class ChatService {
     previewRoutineIds?: string[];
     routineInvocation?: RoutineInvocation;
   }): AsyncIterable<ChatStreamEvent> {
-    const streamStartedAt = Date.now();
+    const requestReceivedAt = Date.now();
     const coordination: TurnCoordinationState = {
       lease: input.conversationId
         ? this.conversationTurnRegistry.start(input.conversationId)
@@ -1244,7 +1249,7 @@ export class ChatService {
             input,
             coordination,
             modelCallTrace,
-            streamStartedAt,
+            requestReceivedAt,
           ),
         }));
     } finally {
@@ -1281,7 +1286,7 @@ export class ChatService {
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
     routineInvocation?: RoutineInvocation;
-  }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, streamStartedAt: number): AsyncIterable<ChatStreamEvent> {
+  }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, requestReceivedAt: number): AsyncIterable<ChatStreamEvent> {
     let firstAnswerChunkObserved = false;
     const observeFirstAnswerChunk = (
       route: "direct" | "retrieval" | "routine" | "other",
@@ -1291,7 +1296,7 @@ export class ChatService {
         return;
       }
       firstAnswerChunkObserved = true;
-      observeFirstAnswerChunkLatency(this.streamMetrics, Date.now() - streamStartedAt, {
+      observeFirstAnswerChunkLatency(this.streamMetrics, Date.now() - requestReceivedAt, {
         route,
         delivery_mode: deliveryMode,
       });
@@ -1436,6 +1441,7 @@ export class ChatService {
           accountId: input.accountId,
           session,
           presentation: routineTurn.presentation,
+          requestReceivedAt,
           answerStartedAt: routineStartedAt,
           stream: input.stream,
           engineTrace: routineTurn.engineTrace,
@@ -1549,6 +1555,7 @@ export class ChatService {
             accountId: input.accountId,
             session,
             presentation: clarificationTurn.presentation,
+            requestReceivedAt,
             answerStartedAt,
             stream: input.stream,
             engineTrace: clarificationTurn.engineTrace,
@@ -1688,6 +1695,7 @@ export class ChatService {
         accountId: input.accountId,
         session: preparedSession,
         presentation,
+        requestReceivedAt,
         answerStartedAt,
         stream: input.stream,
         engineTrace,

@@ -85,8 +85,12 @@ export const registerQualityPaths = (
         resolutionTo: z.string().datetime()
           .describe("Terminal triage closure time, exclusive. Distinct from assistant-turn `to`.")
           .optional(),
-        minTotalLatencyMs: z.coerce.number().int().min(0).optional(),
-        maxTotalLatencyMs: z.coerce.number().int().min(0).optional(),
+        minTotalLatencyMs: z.coerce.number().int().min(0)
+          .describe("Minimum visitor-perceived request-to-answer time in milliseconds.")
+          .optional(),
+        maxTotalLatencyMs: z.coerce.number().int().min(0)
+          .describe("Maximum visitor-perceived request-to-answer time in milliseconds.")
+          .optional(),
         offset: z.coerce.number().int().min(0).optional(),
         limit: z.coerce.number().int().min(1).max(100).optional(),
       }),

@@ -49,6 +49,7 @@ import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelI
 import { LlmResponseLanguageDetector } from "../../src/shared/services/responseLanguageDetector.js";
 import { ChatActionSuggestionRegistry } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionRegistry.js";
 import { ChatActionSuggestionService } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionService.js";
+import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { sendChatSse } from "../../src/app/http/presenters/chatPresenter.js";
 import { streamWithUsage } from "../../src/shared/infra/llm/providerStreaming.js";
 import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
@@ -3932,8 +3933,11 @@ describe("chat service streaming", () => {
   });
 
   it("can render a non-streaming answer through an injected conversation engine", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
+    const createMessage = vi.spyOn(messageRepository, "create");
     const auditService = createAuditService();
     const chatGateway: ChatGateway = {
       async answer() {
@@ -4012,16 +4016,31 @@ describe("chat service streaming", () => {
       conversationEngine,
     );
 
-    const response = await service.answer({
-      workspaceId: "workspace-1",
-      query: "I need help",
-      stream: false,
+    const originalPrepare = ChatSessionPreparer.prototype.prepare;
+    const prepare = vi.spyOn(ChatSessionPreparer.prototype, "prepare");
+    prepare.mockImplementation(async function (...args) {
+      vi.advanceTimersByTime(8000);
+      return originalPrepare.apply(this, args);
     });
+    try {
+      const response = await service.answer({
+        workspaceId: "workspace-1",
+        query: "I need help",
+        stream: false,
+      });
 
-    expect(processedSessionId).toBe(response.conversationId);
-    expect(response.answer).toBe("Normal answer.");
-    const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
-    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+      expect(processedSessionId).toBe(response.conversationId);
+      expect(response.answer).toBe("Normal answer.");
+      const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+      expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+      const persistedAssistant = createMessage.mock.calls
+        .map(([input]) => input)
+        .find((input) => input.role === "assistant");
+      expect(persistedAssistant?.totalLatencyMs).toBe(8000);
+    } finally {
+      prepare.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it("records the conversation engine trace in chat.answer audit metadata when the engine selects and dispatches", async () => {

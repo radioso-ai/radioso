@@ -23,7 +23,7 @@ export interface MessageRecord {
   skillName?: string;
   skillOutcome?: string;
   skillStatus?: string;
-  /** Turn wall time in milliseconds. Assistant turns only; absent when the turn produced no measurement. */
+  /** Visitor-perceived time from request receipt through the final assistant answer, in milliseconds. */
   totalLatencyMs?: number;
   grounding?: GroundingDiagnosticSnapshot;
   createdAt: Date;

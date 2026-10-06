@@ -262,6 +262,7 @@ export class WorkbenchReplayRunner {
   constructor(private readonly options: WorkbenchReplayRunnerOptions) {}
 
   async run(input: WorkbenchReplayInput): Promise<WorkbenchReplayResult> {
+    const requestReceivedAt = Date.now();
     if (input.candidateRevision && input.executionMode !== "safe_test") {
       throw new Error("workbench_candidate_revision_requires_safe_test");
     }
@@ -399,6 +400,7 @@ export class WorkbenchReplayRunner {
         session,
         presentation: routineResult.presentation,
         engineTrace: routineResult.engineTrace,
+        requestReceivedAt,
         answerStartedAt,
         actions: routineResult.actions,
         pendingDecisionTransition: routineResult.pendingDecisionTransition,
@@ -430,6 +432,7 @@ export class WorkbenchReplayRunner {
       session: rendered.session,
       presentation: rendered.presentation,
       engineTrace: rendered.engineTrace,
+      requestReceivedAt,
       answerStartedAt,
       actions: rendered.actions,
       continuation: this.continuation(effects, session.conversation.id, routineStore),
@@ -586,6 +589,7 @@ export class WorkbenchReplayRunner {
     session: PreparedSession;
     presentation: ChatPresentedAnswer;
     engineTrace?: Parameters<typeof buildTurnTraceForPresentation>[0]["engineTrace"];
+    requestReceivedAt: number;
     answerStartedAt: number;
     actions?: RoutineActionRequest[];
     pendingDecisionTransition?: ChatTurnAssemblyRoutineResult["pendingDecisionTransition"];
@@ -599,6 +603,7 @@ export class WorkbenchReplayRunner {
       accountId: input.input.accountId ?? undefined,
       session: input.session,
       presentation: input.presentation,
+      requestReceivedAt: input.requestReceivedAt,
       answerStartedAt: input.answerStartedAt,
       stream: false,
       engineTrace: input.engineTrace,

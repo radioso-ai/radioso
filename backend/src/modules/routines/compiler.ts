@@ -239,6 +239,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
             from: transition.fromStep,
             to: transition.toRef,
             condition: autoGateCondition(slotsCollectedByStep.get(transition.fromStep) ?? []),
+            origin: "compiler_slot_gate",
           };
         }
         const guard = guardFor(transition);

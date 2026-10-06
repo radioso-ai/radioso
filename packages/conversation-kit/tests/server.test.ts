@@ -3,10 +3,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ConversationModelGateway } from "@radioso/conversation-contract";
 
 import { createConversationKit } from "../src/index.js";
-import { createConversationKitServer } from "../src/server.js";
+import {
+  createConversationKitServer,
+  type ConversationKitListenAddress,
+  type ConversationKitServer,
+  type CreateConversationKitServerOptions,
+  type ListenOptions,
+} from "../src/server.js";
 
 describe("conversation kit HTTP server", () => {
-  const servers: Array<{ close: () => Promise<void> }> = [];
+  const servers: ConversationKitServer[] = [];
 
   afterEach(async () => {
     await Promise.all(servers.splice(0).map((server) => server.close()));
@@ -36,6 +42,55 @@ describe("conversation kit HTTP server", () => {
     await expect(response.json()).resolves.toMatchObject({
       sessionId: "session_http",
       reply: { answer: "http:hello over http" },
+    });
+  });
+
+  it("preserves compiler slot-gate provenance through a routine HTTP read and update", async () => {
+    const options: CreateConversationKitServerOptions = {
+      kitOptions: { modelGateway: { complete: vi.fn(async () => ({ text: "unused" })) } },
+    };
+    const server = createConversationKitServer(options);
+    servers.push(server);
+    const listenOptions: ListenOptions = { port: 0, host: "127.0.0.1" };
+    const address: ConversationKitListenAddress = await server.listen(listenOptions);
+    const routine = {
+      id: "routine_compiler_gate",
+      rootStepId: "collect",
+      steps: [
+        { id: "collect", kind: "chat", action: "Collect the visitor's email." },
+        { id: "done", kind: "terminal", action: "Confirm capture." },
+      ],
+      transitions: [{
+        from: "collect",
+        to: "done",
+        condition: "The visitor provided their email.",
+        origin: "compiler_slot_gate",
+      }],
+    };
+
+    const created = await fetch(`${address.url}/routines`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(routine),
+    });
+    expect(created.status).toBe(201);
+
+    const fetched = await fetch(`${address.url}/routines/${routine.id}`);
+    expect(fetched.status).toBe(200);
+    const { routine: fetchedRoutine } = await fetched.json() as { routine: typeof routine };
+    expect(fetchedRoutine.transitions[0]?.origin).toBe("compiler_slot_gate");
+
+    const updated = await fetch(`${address.url}/routines/${routine.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...fetchedRoutine, metadata: { version: 2 } }),
+    });
+    expect(updated.status).toBe(200);
+    await expect(updated.json()).resolves.toMatchObject({
+      routine: {
+        metadata: { version: 2 },
+        transitions: [{ origin: "compiler_slot_gate" }],
+      },
     });
   });
 

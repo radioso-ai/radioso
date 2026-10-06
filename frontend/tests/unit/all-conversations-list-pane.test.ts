@@ -143,6 +143,19 @@ describe('filterAllLensItems', () => {
 
     expect(result.map((entry) => entry.kind)).toEqual(['chat'])
   })
+
+  it('narrows to agent-caller chat rows only once a caller filter is set', () => {
+    const items = [
+      chatEntry({ id: 'human', callerKind: 'human' }),
+      chatEntry({ id: 'agent', callerKind: 'agent' }),
+      searchEntry(),
+      contactEntry(),
+    ]
+
+    const result = filterAllLensItems(items, filters({ callerKind: 'agent' }), NOW)
+
+    expect(result.map((entry) => entry.id)).toEqual(['agent'])
+  })
 })
 
 describe('buildAgentOptions / buildSiteOptions', () => {

@@ -17,6 +17,7 @@ import {
 } from '@/components/dashboard/shared/dashboard-table'
 import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
+import { AgentCallerChip } from '@/components/dashboard/caller-kind-chip'
 import { editionController } from '@/lib/edition-controller'
 import { type ChatConversationSummary, type ContactHistorySummary, type DocumentSearchHistoryEntry } from '@/lib/api'
 import { getAgentOperatorLabel, getAgentPublicNameHint } from '@/lib/agent-label'
@@ -176,6 +177,7 @@ function ConversationMetaLine({ conversation }: { conversation: ChatConversation
   return (
     <span className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
       <span className="shrink-0">{visitorLabel}</span>
+      {conversation.callerKind === 'agent' ? <AgentCallerChip /> : null}
       {conversation.visitorCountry ? (
         <>
           <span aria-hidden>·</span>

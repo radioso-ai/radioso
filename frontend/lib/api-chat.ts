@@ -24,12 +24,13 @@ export const chatApi = {
     offset?: number
     // Server-side All-lens toolbar filters (issue #1126): case-insensitive substring over
     // the conversation's generated title or first user message, agent, exact site origin,
-    // and outcome bucket. Each narrows results to chat rows only (search/contact rows have
+    // outcome bucket, and caller kind. Each narrows results to chat rows only (search/contact rows have
     // none of these facets).
     q?: string
     agentId?: string
     sourceOrigin?: string
     outcome?: 'in_progress' | 'completed' | 'handed_off'
+    callerKind?: 'human' | 'agent'
   }, signal?: AbortSignal): Promise<HistoryItemsResponse> {
     const response = await request<HistoryItemsApiResponse>(withQuery('/history', {
       limit: input?.limit,
@@ -38,6 +39,7 @@ export const chatApi = {
       agentId: input?.agentId,
       sourceOrigin: input?.sourceOrigin,
       outcome: input?.outcome,
+      callerKind: input?.callerKind,
     }), {
       method: 'GET',
       ...(signal ? { signal } : {}),

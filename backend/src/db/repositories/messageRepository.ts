@@ -62,7 +62,25 @@ export interface ConversationMessageSummary {
 export interface MessageRepositoryPort {
   findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null>;
   listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]>;
-  listRecentByConversationId(workspaceId: string, conversationId: string, limit: number): Promise<MessageRecord[]>;
+  /**
+   * The newest `limit` messages, oldest first. `roles` filters before the limit, so a filtered-out
+   * row never takes a place in the window.
+   */
+  listRecentByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    limit: number,
+    options?: { roles?: readonly MessageRole[] },
+  ): Promise<MessageRecord[]>;
+  /**
+   * The newest `limit` messages recorded before `before` in `(created_at, id)` order, oldest first.
+   * The boundary applies before the limit, so messages recorded after it never take a place.
+   */
+  listBeforeByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    input: { before: { createdAt: Date; id: string }; limit: number },
+  ): Promise<MessageRecord[]>;
   countByConversationId(workspaceId: string, conversationId: string): Promise<number>;
   listWindowByConversationId(
     workspaceId: string,
@@ -251,8 +269,14 @@ export class MessageRepository implements MessageRepositoryPort {
     return rows.map((row) => mapMessageRow(row as MessageRow));
   }
 
-  async listRecentByConversationId(workspaceId: string, conversationId: string, limit: number): Promise<MessageRecord[]> {
-    if (limit <= 0) {
+  async listRecentByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    limit: number,
+    options: { roles?: readonly MessageRole[] } = {},
+  ): Promise<MessageRecord[]> {
+    const { roles } = options;
+    if (limit <= 0 || roles?.length === 0) {
       return [];
     }
 
@@ -261,9 +285,39 @@ export class MessageRepository implements MessageRepositoryPort {
       .select(messageColumns)
       .where("workspace_id", "=", workspaceId)
       .where("conversation_id", "=", conversationId)
+      .$if(roles !== undefined, (qb) => qb.where("role", "in", [...(roles ?? [])]))
       .orderBy("created_at", "desc")
       .orderBy("id", "desc")
       .limit(limit)
+      .execute();
+
+    return rows.map((row) => mapMessageRow(row as MessageRow)).reverse();
+  }
+
+  async listBeforeByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    input: { before: { createdAt: Date; id: string }; limit: number },
+  ): Promise<MessageRecord[]> {
+    if (input.limit <= 0) {
+      return [];
+    }
+
+    const { createdAt, id } = input.before;
+    const rows = await this.db
+      .selectFrom("messages")
+      .select(messageColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("conversation_id", "=", conversationId)
+      .where((eb) =>
+        eb.or([
+          eb("created_at", "<", createdAt),
+          eb.and([eb("created_at", "=", createdAt), eb("id", "<", id)]),
+        ]),
+      )
+      .orderBy("created_at", "desc")
+      .orderBy("id", "desc")
+      .limit(input.limit)
       .execute();
 
     return rows.map((row) => mapMessageRow(row as MessageRow)).reverse();

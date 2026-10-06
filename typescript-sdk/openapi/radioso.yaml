@@ -14450,6 +14450,12 @@ components:
           type: boolean
         retryable:
           type: boolean
+        mailboxId:
+          type:
+            - string
+            - "null"
+          format: uuid
+          description: The mailbox that received it; null for mail a verified receiving domain accepted for an address no mailbox has.
       required:
         - id
         - createdAt
@@ -14465,6 +14471,7 @@ components:
         - threadConflict
         - hasRaw
         - retryable
+        - mailboxId
     EmailEventPage:
       type: object
       properties:
@@ -14874,6 +14881,53 @@ components:
       required:
         - decision
       additionalProperties: false
+    HeldReplyTrace:
+      type: object
+      properties:
+        turnId:
+          type: string
+          format: uuid
+          description: The review turn that wrote the draft.
+        outcome:
+          type:
+            - string
+            - "null"
+          description: How the turn answered, as its answer-outcome code (for example `grounded_success`, `coverage_partial`, `no_context_refusal`); null when its record names none.
+        groundingVerdict:
+          type:
+            - string
+            - "null"
+          enum:
+            - grounded
+            - degraded
+            - no_support
+          description: Whether the draft's claims are supported by the sources it cites; null when the turn did not check.
+        coverage:
+          type: string
+          description: How completely the turn covered the customer's question, as the producing channel's code.
+        handoffReason:
+          type:
+            - string
+            - "null"
+          description: Why the turn asked for a person; null when it did not.
+        suppressedEffects:
+          type: array
+          items:
+            type: object
+            properties:
+              skillName:
+                type: string
+            required:
+              - skillName
+          description: The skills whose effects the turn was not allowed to run.
+      required:
+        - turnId
+        - outcome
+        - groundingVerdict
+        - coverage
+        - handoffReason
+        - suppressedEffects
+      description: The review turn's reasoning, as identifiers and codes; never prompt, completion or customer text.
     HeldReply:
       type: object
       properties:
@@ -14970,9 +15024,10 @@ components:
           description: Whether the conversation still waits for a teammate because of this reply. A discarded draft keeps it open until a teammate replies or takes over.
         trace:
           anyOf:
-            - $ref: "#/components/schemas/TurnTraceEnvelope"
+            - $ref: "#/components/schemas/HeldReplyTrace"
             - type: "null"
             - type: "null"
+          description: The review turn's reasoning; null when its record is not readable.
       required:
         - id
         - conversationId
@@ -28295,7 +28350,7 @@ paths:
           in: query
         - schema:
             type: string
-            enum:
+            enum: &a93
               - ingest_only
               - run_review_turn
               - drop
@@ -28304,7 +28359,7 @@ paths:
           in: query
         - schema:
             type: string
-            enum:
+            enum: &a94
               - pending
               - fetched
               - ingested
@@ -28340,6 +28395,82 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Mailbox not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: "`email_channel_not_configured`: this deployment has no email provider"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/workspaces/{workspaceId}/email-channel/events:
+    get:
+      tags: *a91
+      summary: List the workspace's email event log
+      description: "Every delivery attributed to the workspace, newest first: its mailboxes' events, a removed mailbox's retained events, and mail a verified receiving domain accepted for an address no mailbox has (`mailboxId: null`, reason `no_mailbox`). `mailboxId` narrows the log to one mailbox, removed or not."
+      operationId: listEmailChannelEvents
+      security: *a92
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: string
+            enum: *a93
+          required: false
+          name: disposition
+          in: query
+        - schema:
+            type: string
+            enum: *a94
+          required: false
+          name: state
+          in: query
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: mailboxId
+          in: query
+      responses:
+        "200":
+          description: A page of the event log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailEventPage"
+        "400":
+          description: "`invalid_cursor`, or an invalid query"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace settings permission required
           content:
             application/json:
               schema:
@@ -28749,7 +28880,7 @@ paths:
         - Webhook Skills
       summary: List agent webhook skills
       operationId: listAgentWebhookSkills
-      security: &a93
+      security: &a95
         - bearerAuth: []
       parameters:
         - schema:
@@ -28806,7 +28937,7 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: &a94
+                            enum: &a96
                               - delivered
                               - missing_input
                               - destination_not_found
@@ -28852,7 +28983,7 @@ paths:
         - Webhook Skills
       summary: Create an agent webhook skill
       operationId: createAgentWebhookSkill
-      security: *a93
+      security: *a95
       parameters:
         - schema:
             type: string
@@ -28941,7 +29072,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a94
+                          enum: *a96
                       createdAt:
                         type: string
                       updatedAt:
@@ -28996,7 +29127,7 @@ paths:
         - Webhook Skills
       summary: Get an agent webhook skill
       operationId: getAgentWebhookSkill
-      security: *a93
+      security: *a95
       parameters:
         - schema:
             type: string
@@ -29056,7 +29187,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a94
+                          enum: *a96
                       createdAt:
                         type: string
                       updatedAt:
@@ -29098,7 +29229,7 @@ paths:
         - Webhook Skills
       summary: Update an agent webhook skill
       operationId: updateAgentWebhookSkill
-      security: *a93
+      security: *a95
       parameters:
         - schema:
             type: string
@@ -29182,7 +29313,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a94
+                          enum: *a96
                       createdAt:
                         type: string
                       updatedAt:
@@ -29230,7 +29361,7 @@ paths:
         - Webhook Skills
       summary: Delete an agent webhook skill
       operationId: deleteAgentWebhookSkill
-      security: *a93
+      security: *a95
       parameters:
         - schema:
             type: string
@@ -29271,7 +29402,7 @@ paths:
         - Slack Skills
       summary: List agent Slack skills
       operationId: listAgentSlackSkills
-      security: &a97
+      security: &a99
         - bearerAuth: []
       parameters:
         - schema:
@@ -29310,13 +29441,13 @@ paths:
                         boundInputs:
                           type: object
                           properties:
-                            channelId: &a95 {}
-                            text: *a95
-                            threadTs: *a95
+                            channelId: &a97 {}
+                            text: *a97
+                            threadTs: *a97
                         exposedInputs:
                           type: object
                           properties:
-                            channelId: &a96
+                            channelId: &a98
                               type: object
                               properties:
                                 description:
@@ -29326,15 +29457,15 @@ paths:
                                 required:
                                   type: boolean
                                   default: true
-                            text: *a96
-                            threadTs: *a96
+                            text: *a98
+                            threadTs: *a98
                         enabled:
                           type: boolean
                         outcomes:
                           type: array
                           items:
                             type: string
-                            enum: &a102
+                            enum: &a104
                               - enqueued
                               - missing_input
                               - failed
@@ -29379,7 +29510,7 @@ paths:
         - Slack Skills
       summary: Create an agent Slack skill
       operationId: createAgentSlackSkill
-      security: *a97
+      security: *a99
       parameters:
         - schema:
             type: string
@@ -29402,14 +29533,14 @@ paths:
                 boundInputs:
                   type: object
                   properties:
-                    channelId: &a98 {}
-                    text: *a98
-                    threadTs: *a98
+                    channelId: &a100 {}
+                    text: *a100
+                    threadTs: *a100
                   default: {}
                 exposedInputs:
                   type: object
                   properties:
-                    channelId: &a99
+                    channelId: &a101
                       type: object
                       properties:
                         description:
@@ -29419,8 +29550,8 @@ paths:
                         required:
                           type: boolean
                           default: true
-                    text: *a99
-                    threadTs: *a99
+                    text: *a101
+                    threadTs: *a101
                   default: {}
                 enabled:
                   type: boolean
@@ -29456,13 +29587,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a100 {}
-                          text: *a100
-                          threadTs: *a100
+                          channelId: &a102 {}
+                          text: *a102
+                          threadTs: *a102
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a101
+                          channelId: &a103
                             type: object
                             properties:
                               description:
@@ -29472,15 +29603,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a101
-                          threadTs: *a101
+                          text: *a103
+                          threadTs: *a103
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a102
+                          enum: *a104
                       createdAt:
                         type: string
                       updatedAt:
@@ -29535,7 +29666,7 @@ paths:
         - Slack Skills
       summary: Get an agent Slack skill
       operationId: getAgentSlackSkill
-      security: *a97
+      security: *a99
       parameters:
         - schema:
             type: string
@@ -29577,13 +29708,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a103 {}
-                          text: *a103
-                          threadTs: *a103
+                          channelId: &a105 {}
+                          text: *a105
+                          threadTs: *a105
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a104
+                          channelId: &a106
                             type: object
                             properties:
                               description:
@@ -29593,15 +29724,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a104
-                          threadTs: *a104
+                          text: *a106
+                          threadTs: *a106
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a102
+                          enum: *a104
                       createdAt:
                         type: string
                       updatedAt:
@@ -29643,7 +29774,7 @@ paths:
         - Slack Skills
       summary: Update an agent Slack skill
       operationId: updateAgentSlackSkill
-      security: *a97
+      security: *a99
       parameters:
         - schema:
             type: string
@@ -29667,13 +29798,13 @@ paths:
                 boundInputs:
                   type: object
                   properties:
-                    channelId: &a105 {}
-                    text: *a105
-                    threadTs: *a105
+                    channelId: &a107 {}
+                    text: *a107
+                    threadTs: *a107
                 exposedInputs:
                   type: object
                   properties:
-                    channelId: &a106
+                    channelId: &a108
                       type: object
                       properties:
                         description:
@@ -29683,8 +29814,8 @@ paths:
                         required:
                           type: boolean
                           default: true
-                    text: *a106
-                    threadTs: *a106
+                    text: *a108
+                    threadTs: *a108
                 enabled:
                   type: boolean
       responses:
@@ -29715,13 +29846,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a107 {}
-                          text: *a107
-                          threadTs: *a107
+                          channelId: &a109 {}
+                          text: *a109
+                          threadTs: *a109
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a108
+                          channelId: &a110
                             type: object
                             properties:
                               description:
@@ -29731,15 +29862,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a108
-                          threadTs: *a108
+                          text: *a110
+                          threadTs: *a110
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a102
+                          enum: *a104
                       createdAt:
                         type: string
                       updatedAt:
@@ -29787,7 +29918,7 @@ paths:
         - Slack Skills
       summary: Delete an agent Slack skill
       operationId: deleteAgentSlackSkill
-      security: *a97
+      security: *a99
       parameters:
         - schema:
             type: string
@@ -29828,7 +29959,7 @@ paths:
         - Agent Skills
       summary: List agent skill capabilities
       operationId: listAgentSkillCapabilities
-      security: &a110
+      security: &a112
         - bearerAuth: []
       parameters:
         - schema:
@@ -29852,7 +29983,7 @@ paths:
                       properties:
                         id:
                           type: string
-                          enum: &a111
+                          enum: &a113
                             - retrieve
                             - mcp_tool
                             - email
@@ -29948,13 +30079,13 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: &a109
+                            enum: &a111
                               - default_answer
                               - routine_named
                               - agent_selectable
                         defaultInvocationMode:
                           type: string
-                          enum: *a109
+                          enum: *a111
                         executorAdapter:
                           type: string
                         targets:
@@ -30018,7 +30149,7 @@ paths:
         - Agent Skills
       summary: List agent skills
       operationId: listAgentSkills
-      security: *a110
+      security: *a112
       parameters:
         - schema:
             type: string
@@ -30052,7 +30183,7 @@ paths:
                           type: string
                         capability:
                           type: string
-                          enum: *a111
+                          enum: *a113
                         storedKind:
                           type: string
                         target:
@@ -30073,7 +30204,7 @@ paths:
                           additionalProperties: {}
                         invocationMode:
                           type: string
-                          enum: *a109
+                          enum: *a111
                         enabled:
                           type: boolean
                         createdAt:
@@ -30118,7 +30249,7 @@ paths:
         - Agent Skills
       summary: Create an agent skill
       operationId: createAgentSkill
-      security: *a110
+      security: *a112
       parameters:
         - schema:
             type: string
@@ -30137,7 +30268,7 @@ paths:
                   type: string
                 capability:
                   type: string
-                  enum: *a111
+                  enum: *a113
                 target:
                   type: object
                   properties:
@@ -30157,7 +30288,7 @@ paths:
                   default: {}
                 invocationMode:
                   type: string
-                  enum: *a109
+                  enum: *a111
                   default: routine_named
                 enabled:
                   type: boolean
@@ -30190,7 +30321,7 @@ paths:
                         type: string
                       capability:
                         type: string
-                        enum: *a111
+                        enum: *a113
                       storedKind:
                         type: string
                       target:
@@ -30211,7 +30342,7 @@ paths:
                         additionalProperties: {}
                       invocationMode:
                         type: string
-                        enum: *a109
+                        enum: *a111
                       enabled:
                         type: boolean
                       createdAt:
@@ -30269,7 +30400,7 @@ paths:
         - Agent Skills
       summary: Update an agent skill
       operationId: updateAgentSkill
-      security: *a110
+      security: *a112
       parameters:
         - schema:
             type: string
@@ -30311,7 +30442,7 @@ paths:
                   additionalProperties: {}
                 invocationMode:
                   type: string
-                  enum: *a109
+                  enum: *a111
                 enabled:
                   type: boolean
       responses:
@@ -30338,7 +30469,7 @@ paths:
                         type: string
                       capability:
                         type: string
-                        enum: *a111
+                        enum: *a113
                       storedKind:
                         type: string
                       target:
@@ -30359,7 +30490,7 @@ paths:
                         additionalProperties: {}
                       invocationMode:
                         type: string
-                        enum: *a109
+                        enum: *a111
                       enabled:
                         type: boolean
                       createdAt:
@@ -30416,7 +30547,7 @@ paths:
         - Agent Skills
       summary: Delete an agent skill
       operationId: deleteAgentSkill
-      security: *a110
+      security: *a112
       parameters:
         - schema:
             type: string
@@ -32218,7 +32349,7 @@ paths:
       summary: List the teammates who can own a conversation
       description: Returns the active teammates who hold conversation takeover permission on the workspace, labelled by display name, else email. These are the valid transfer targets.
       operationId: listConversationOperators
-      security: &a112
+      security: &a114
         - bearerAuth: []
       responses:
         "200":
@@ -32246,7 +32377,7 @@ paths:
       summary: Take human ownership of a conversation
       description: Claims a conversation the AI owns or that waits for a teammate. A conversation another teammate holds returns 409; take it from them by transferring it to yourself.
       operationId: takeOverConversation
-      security: *a112
+      security: *a114
       parameters:
         - schema:
             type: string
@@ -32310,7 +32441,7 @@ paths:
       summary: Reply to a conversation as a human operator
       description: Only the teammate who owns the conversation replies. A reply to a conversation the AI owns, or one waiting for a teammate, claims it for you first. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
       operationId: replyToConversation
-      security: *a112
+      security: *a114
       parameters:
         - schema:
             type: string
@@ -32380,7 +32511,7 @@ paths:
       summary: Transfer human ownership of a conversation
       description: Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404 with code `transfer_target_unavailable`; a conversation that is not in the workspace returns 404 with code `not_found`.
       operationId: transferConversationOwnership
-      security: *a112
+      security: *a114
       parameters:
         - schema:
             type: string
@@ -32450,7 +32581,7 @@ paths:
       summary: Return a human-owned conversation to AI ownership
       description: Only the teammate who owns the conversation hands it back; anyone may while it waits unclaimed. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
       operationId: handBackConversation
-      security: *a112
+      security: *a114
       parameters:
         - schema:
             type: string
@@ -32510,12 +32641,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/delivery-failures:
     get:
-      tags: &a113
+      tags: &a115
         - Conversation Ownership
       summary: List delivery failures
       description: "Replies that may not have reached the customer, newest first: the open ones, or with `state=all` the cleared ones too."
       operationId: listDeliveryFailures
-      security: &a114
+      security: &a116
         - bearerAuth: []
       parameters:
         - schema:
@@ -32572,11 +32703,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/delivery-failures/{failureId}/acknowledge:
     post:
-      tags: *a113
+      tags: *a115
       summary: Acknowledge a delivery failure
       description: Clears the failure as seen by the signed-in teammate. Sends nothing.
       operationId: acknowledgeDeliveryFailure
-      security: *a114
+      security: *a116
       parameters:
         - schema:
             type: string
@@ -32623,11 +32754,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/delivery-failures/{failureId}/resolve:
     post:
-      tags: *a113
+      tags: *a115
       summary: Resolve a delivery failure
       description: An audited decision on a reply whose delivery failed. `marked_sent` settles an `uncertain` send as sent. `resend` sends an `uncertain` or `halted` reply once more, once its channel can send; it is the only way a reply goes out twice.
       operationId: resolveDeliveryFailure
-      security: *a114
+      security: *a116
       parameters:
         - schema:
             type: string
@@ -32680,12 +32811,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/held-replies:
     get:
-      tags: &a115
+      tags: &a117
         - Conversation Ownership
       summary: List held replies
       description: Replies an agent wrote in review that wait for a teammate, newest first. With `attention=all`, the decided, replaced and automatically queued ones too.
       operationId: listHeldReplies
-      security: &a116
+      security: &a118
         - bearerAuth: []
       parameters:
         - schema:
@@ -32742,11 +32873,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/held-reply:
     get:
-      tags: *a115
+      tags: *a117
       summary: Get a conversation's current held reply
       description: The conversation's newest held reply, whatever its state, under a `heldReply` root; null when it has none.
       operationId: getCurrentHeldReply
-      security: *a116
+      security: *a118
       parameters:
         - schema:
             type: string
@@ -32787,11 +32918,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/release:
     post:
-      tags: *a115
+      tags: *a117
       summary: Release a held reply
       description: Sends a pending draft to the customer. Without `editedText` it goes out as the agent wrote it, as the agent's message; with `editedText` the teammate's edit goes out as their own message and the draft is kept. Who owns the conversation does not change. Each refusal carries the held reply as it is now in `details.heldReply`.
       operationId: releaseHeldReply
-      security: *a116
+      security: *a118
       parameters:
         - schema:
             type: string
@@ -32850,11 +32981,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/discard:
     post:
-      tags: *a115
+      tags: *a117
       summary: Discard a held reply
       description: Sets a pending draft aside. The customer hears nothing, and the conversation keeps waiting for a teammate until one replies or takes it over.
       operationId: discardHeldReply
-      security: *a116
+      security: *a118
       parameters:
         - schema:
             type: string
@@ -33788,7 +33919,7 @@ paths:
                     type: array
                     items:
                       type: string
-                      enum: &a117
+                      enum: &a119
                         - directive
                         - agent
                         - agent_setting
@@ -33963,7 +34094,7 @@ paths:
                                     format: uuid
                                   targetType:
                                     type: string
-                                    enum: *a117
+                                    enum: *a119
                                   targetLabel:
                                     type: string
                                   summary:
@@ -34180,14 +34311,14 @@ paths:
                     format: uuid
                   targetType:
                     type: string
-                    enum: *a117
+                    enum: *a119
                   targetRef: {}
                   target:
                     type: object
                     properties:
                       type:
                         type: string
-                        enum: *a117
+                        enum: *a119
                       ref: {}
                     required:
                       - type
@@ -34501,7 +34632,7 @@ paths:
         - Evals
       summary: Run frozen Eval cases against immutable agent candidates
       operationId: createRevisionEvalRun
-      security: &a118
+      security: &a120
         - bearerAuth: []
       requestBody:
         required: true
@@ -34534,7 +34665,7 @@ paths:
         - Evals
       summary: Get frozen revision Eval evidence
       operationId: getRevisionEvalRun
-      security: *a118
+      security: *a120
       parameters:
         - schema:
             type: string
@@ -34567,7 +34698,7 @@ paths:
         - Evals
       summary: Retry one failed frozen revision Eval case
       operationId: retryRevisionEvalCase
-      security: *a118
+      security: *a120
       parameters:
         - schema:
             type: string
@@ -34612,7 +34743,7 @@ paths:
         - Evals
       summary: Capture an Eval snapshot
       operationId: createEvalSnapshot
-      security: &a119
+      security: &a121
         - sessionCookie: []
           workspaceSelection: []
         - bearerAuth: []
@@ -34668,7 +34799,7 @@ paths:
         - Evals
       summary: Get an Eval snapshot
       operationId: getEvalSnapshot
-      security: *a119
+      security: *a121
       parameters:
         - schema:
             type: string
@@ -34713,7 +34844,7 @@ paths:
         - Evals
       summary: Create an Eval case
       operationId: createEvalCase
-      security: *a119
+      security: *a121
       requestBody:
         required: true
         content:
@@ -34918,7 +35049,7 @@ paths:
         - Evals
       summary: List Eval cases and latest results
       operationId: listEvalCases
-      security: *a119
+      security: *a121
       responses:
         "200":
           description: Eval cases with each case's latest result
@@ -35084,7 +35215,7 @@ paths:
         - Evals
       summary: Get an Eval case and its run history
       operationId: getEvalCase
-      security: *a119
+      security: *a121
       parameters:
         - schema:
             type: string
@@ -35128,7 +35259,7 @@ paths:
         - Evals
       summary: Rename an Eval case
       operationId: renameEvalCase
-      security: *a119
+      security: *a121
       parameters:
         - schema:
             type: string
@@ -35186,7 +35317,7 @@ paths:
         - Evals
       summary: Replace an Eval case's assertions
       operationId: replaceEvalCaseAssertions
-      security: *a119
+      security: *a121
       parameters:
         - schema:
             type: string
@@ -35454,7 +35585,7 @@ paths:
       summary: Run an Eval case
       description: Replays are safe by default. A live-effect case requires a fresh allowLiveEffects confirmation from an interactive workspace session; API credentials and Ray-triggered replays remain safe.
       operationId: createEvalCaseRun
-      security: *a119
+      security: *a121
       parameters:
         - schema:
             type: string
@@ -35483,7 +35614,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: &a120
+                          enum: &a122
                             - openai
                             - openai-compatible
                             - gemini
@@ -35541,7 +35672,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: &a121
+                              enum: &a123
                                 - openai
                                 - openai-compatible
                                 - gemini
@@ -35576,7 +35707,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: &a122
+                          enum: &a124
                             - active
                             - suspended
                             - completed
@@ -35794,7 +35925,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a120
+                          enum: *a122
                         model:
                           type: string
                       required:
@@ -35848,7 +35979,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: *a121
+                              enum: *a123
                             model:
                               type: string
                           required:
@@ -35879,7 +36010,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: *a122
+                          enum: *a124
                         metadata:
                           type: object
                           additionalProperties: {}
@@ -35930,7 +36061,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a121
+                          enum: *a123
                         model:
                           type: string
                       required:
@@ -36042,7 +36173,7 @@ paths:
         - Agents
       summary: List private immutable revision tests
       operationId: listAgentTestExecutions
-      security: &a123
+      security: &a125
         - bearerAuth: []
       parameters:
         - schema:
@@ -36078,7 +36209,7 @@ paths:
       summary: Start an operator-private immutable revision test
       description: "A `single` execution may set `seedConversationId` to continue an existing conversation of the same workspace and agent: the side starts with that thread as its history and resumes its active routine, pending clarification, and directive state, skipping the greeting. The source conversation is unchanged."
       operationId: startAgentTestExecution
-      security: *a123
+      security: *a125
       parameters:
         - schema:
             type: string
@@ -36105,7 +36236,7 @@ paths:
         - Agents
       summary: Get private immutable revision test evidence
       operationId: getAgentTestExecution
-      security: *a123
+      security: *a125
       parameters:
         - schema:
             type: string
@@ -36132,7 +36263,7 @@ paths:
         - Agents
       summary: Run a fenced private test turn
       operationId: sendAgentTestExecutionMessage
-      security: *a123
+      security: *a125
       parameters:
         - schema:
             type: string
@@ -36165,7 +36296,7 @@ paths:
         - Agents
       summary: Continue one settled comparison version as a private test
       operationId: retainAgentTestExecutionSide
-      security: *a123
+      security: *a125
       parameters:
         - schema:
             type: string
@@ -36198,7 +36329,7 @@ paths:
         - Agents
       summary: Capture a private test response as immutable Eval evidence
       operationId: captureAgentTestExecutionEvalSnapshot
-      security: *a123
+      security: *a125
       parameters:
         - schema:
             type: string
@@ -36237,7 +36368,7 @@ paths:
         - Agents
       summary: Retry one failed private test side
       operationId: retryAgentTestExecutionSide
-      security: *a123
+      security: *a125
       parameters:
         - schema:
             type: string
@@ -37060,7 +37191,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Reconnect or distributed workspace/account/principal admission limit exceeded
-          headers: &a124
+          headers: &a126
             Retry-After:
               description: Minimum reconnect delay in whole seconds. The browser also applies its local jittered exponential backoff.
               schema:
@@ -37072,7 +37203,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: Realtime admission, broker subscription, or runtime capacity is temporarily unavailable
-          headers: *a124
+          headers: *a126
           content:
             application/json:
               schema:

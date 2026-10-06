@@ -27,7 +27,7 @@ const harness = async (options: { resolver?: "settles" | "refuses_unverified" | 
     if (options.resolver === "refuses_unverified") {
       throw new AppError(409, "email_sending_not_verified", "The sending domain is not verified.");
     }
-    await store.failures.clear({ conversationId: failure.conversationId, messageId: failure.messageId, reason: "operator_resolved", userId });
+    await store.failures.clear({ failureId: failure.id, reason: "operator_resolved", userId });
     return { sendIntentId: "send-intent-2" };
   });
   const deliveryFailures = new DeliveryFailureDecisions({

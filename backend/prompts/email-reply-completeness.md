@@ -23,6 +23,7 @@ Return:
 - `completeness`: `complete` when every ask is answered, or when the customer asked nothing;
   `partial` when at least one ask is answered and at least one is not; `not_answered` when no ask is
   answered.
-- `unanswered_asks`: how many asks the reply does not answer; 0 when `completeness` is `complete`.
+- `unanswered_asks`: how many asks the reply does not answer; 0 when `completeness` is `complete`,
+  and at least 1 when it is `partial` or `not_answered`.
 
 Judge by meaning, in whatever language the messages are written. Do not rely on specific words.

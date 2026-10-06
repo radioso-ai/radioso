@@ -97,6 +97,9 @@ const createEphemeralMessageRepository = (): MessageRepositoryPort => ({
   async listRecentByConversationId() {
     return [];
   },
+  async listBeforeByConversationId() {
+    return [];
+  },
   async countByConversationId() {
     return 0;
   },

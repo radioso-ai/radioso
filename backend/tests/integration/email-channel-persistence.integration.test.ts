@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import pg from "pg";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import { createPostgresMailboxPolicyChangeUnitOfWork } from "../../src/app/composition/mailboxPolicyChange.js";
 import { ConversationActivityRepository } from "../../src/db/repositories/conversationActivityRepository.js";
@@ -11,7 +11,9 @@ import {
   EmailMailboxRepository,
   EmailThreadRepository,
   lockThreadResolution,
+  SendingDomainService,
 } from "../../src/modules/emailChannel/public.js";
+import type { DomainReadiness, EmailDomainProvisioner } from "../../src/modules/mail/public.js";
 import { threadResolutionLockKey } from "../../src/modules/emailChannel/persistence/threadResolutionLock.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
@@ -170,6 +172,23 @@ describeIntegration("email channel persistence (Postgres)", () => {
     rawTruncated: false,
   });
 
+  /** Claims the event as a drain would: `processing`, its attempt counted, under a lease. */
+  const claimEvent = async (eventId: string): Promise<number> =>
+    (await database.queryOne<{ attempts: number }>(
+      `UPDATE email_inbound_events SET state = 'processing', attempts = attempts + 1, lease_until = now() + interval '1 minute'
+        WHERE id = $1 RETURNING attempts`,
+      [eventId],
+    )).attempts;
+
+  /** The claim a delivery's writes are made under: its event's current one. */
+  const claimOf = async (deliveryId: string) => ({
+    deliveryId,
+    attempt: (await database.queryOne<{ attempts: number }>(
+      "SELECT e.attempts FROM email_inbound_events e JOIN email_inbound_deliveries d ON d.inbound_event_id = e.id WHERE d.id = $1",
+      [deliveryId],
+    )).attempts,
+  });
+
   /** A delivery of `mailbox` carrying `rfcMessageId`, reserved to `conversationId`. */
   const reservedDelivery = async (
     mailbox: { id: string; workspaceId: string },
@@ -183,8 +202,9 @@ describeIntegration("email channel persistence (Postgres)", () => {
       routeRule: "relay",
       acceptedPolicyVersion: 1,
     });
-    expect(await inbound.recordFetched(deliveryId, fetchedContent(input))).toBe(true);
-    expect(await inbound.reserveThread(deliveryId, {
+    const claim = { deliveryId, attempt: await claimEvent(eventId) };
+    expect(await inbound.recordFetched(claim, fetchedContent(input))).toBe(true);
+    expect(await inbound.reserveThread(claim, {
       threadMatch: "new_thread",
       threadConflict: false,
       disposition: "ingest_only",
@@ -226,6 +246,104 @@ describeIntegration("email channel persistence (Postgres)", () => {
     const reclaimed = await createDomain(second.workspaceId, domain);
     expect(reclaimed.workspaceId).toBe(second.workspaceId);
     expect((await domains.listActive(first.workspaceId)).map((record) => record.id)).not.toContain(claimed.id);
+  });
+
+  it("claims a domain for one workspace at a time and records the provider's registration on the claim only", async () => {
+    const first = await seedWorkspace();
+    const second = await seedWorkspace();
+    const domain = uniqueDomain();
+    const claimOf = (workspaceId: string) => domains.claim({ workspaceId, domain, provider: "resend", createdByUserId: null });
+
+    const [a, b] = await Promise.all([claimOf(first.workspaceId), claimOf(second.workspaceId)]);
+    expect(a.id).toBe(b.id);
+    expect(a).toMatchObject({ providerDomainId: null, sendingStatus: "pending", nextCheckAt: null, dnsRecords: [] });
+    expect((await domains.listDueForRefresh(1000)).map((record) => record.id)).not.toContain(a.id);
+
+    const registration = {
+      providerDomainId: `p-${domain}`,
+      providerRegion: "eu-west-1",
+      dnsRecords: [{ purpose: "dkim" as const, type: "TXT" as const, name: `resend._domainkey.${domain}`, value: "p=abc", status: "pending" as const }],
+      sendingStatus: "pending" as const,
+      receivingStatus: "not_requested" as const,
+      nextCheckAt: new Date(Date.now() + HOUR_MS),
+    };
+    expect(await domains.recordRegistration(a.id, registration)).toMatchObject({ providerDomainId: `p-${domain}`, providerRegion: "eu-west-1" });
+    expect(await domains.recordRegistration(a.id, { ...registration, providerDomainId: "other" })).toBeNull();
+    await domains.releaseClaim(a.id);
+    expect((await domains.findById(a.id))?.providerDomainId).toBe(`p-${domain}`);
+    expect(await domains.isProviderDomainActive("resend", `p-${domain}`)).toBe(true);
+    expect(await domains.isProviderDomainActive("local", `p-${domain}`)).toBe(false);
+
+    const holder = await domains.findActiveByDomain(domain);
+    await domains.markRemoved(holder!.workspaceId, a.id);
+    expect(await domains.isProviderDomainActive("resend", `p-${domain}`)).toBe(false);
+    const unfinished = await claimOf(second.workspaceId);
+    await domains.releaseClaim(unfinished.id);
+    expect(await domains.findById(unfinished.id)).toBeNull();
+  });
+
+  it("recovers a registration whose provider answer was lost, for the claiming workspace only", async () => {
+    const first = await seedWorkspace();
+    const second = await seedWorkspace();
+    const domain = uniqueDomain();
+    const readiness: DomainReadiness = {
+      sending: "pending",
+      receiving: "not_requested",
+      records: [{ purpose: "dkim", type: "TXT", name: `resend._domainkey.${domain}`, value: "p=abc", status: "pending" }],
+    };
+    // The provider account: one registration per name, created at the provider's clock.
+    const held = new Map<string, Date>();
+    const providerDomainOf = (name: string, createdAt: Date) => ({ providerDomainId: `p-${name}`, region: "eu-west-1", readiness, createdAt });
+    const provisioner = {
+      provider: "resend",
+      registerSendingDomain: vi.fn<EmailDomainProvisioner["registerSendingDomain"]>(async (name) => {
+        if (held.has(name)) return { ok: false, refused: "already_registered" };
+        held.set(name, new Date());
+        return { ok: true, ...providerDomainOf(name, held.get(name)!) };
+      }),
+      findByName: vi.fn<EmailDomainProvisioner["findByName"]>(async (name) =>
+        (held.has(name) ? providerDomainOf(name, held.get(name)!) : null)),
+      enableReceiving: vi.fn<EmailDomainProvisioner["enableReceiving"]>(async () => readiness),
+      requestVerification: vi.fn<EmailDomainProvisioner["requestVerification"]>(async () => undefined),
+      readiness: vi.fn<EmailDomainProvisioner["readiness"]>(async () => readiness),
+      remove: vi.fn<EmailDomainProvisioner["remove"]>(async () => undefined),
+    };
+    const service = new SendingDomainService({
+      domains,
+      mailboxes,
+      provisioner,
+      audit: { record: async () => undefined },
+      logger: { warn: () => undefined },
+      metrics: null,
+      clock: () => new Date(),
+      inboundDomain: "in.radioso.test",
+    });
+    const actor = { userId: null, accountId: null };
+
+    // Accepted by the provider, answer lost on the way back.
+    provisioner.registerSendingDomain.mockImplementationOnce(async (name) => {
+      held.set(name, new Date());
+      throw new Error("socket hang up");
+    });
+    await expect(service.ensureRegistered(actor, first.workspaceId, domain)).rejects.toMatchObject({ code: "provider_unavailable" });
+    expect(await domains.findActiveByDomain(domain)).toMatchObject({ workspaceId: first.workspaceId, providerDomainId: null });
+    expect(await service.ensureRegistered(actor, second.workspaceId, domain)).toEqual({ ok: false, refused: "claimed_elsewhere" });
+
+    const recovered = await service.ensureRegistered(actor, first.workspaceId, domain);
+    expect(recovered).toMatchObject({ ok: true, domain: { workspaceId: first.workspaceId, providerDomainId: `p-${domain}` } });
+    expect(await service.ensureRegistered(actor, second.workspaceId, domain)).toEqual({ ok: false, refused: "claimed_elsewhere" });
+
+    // Accepted by the provider, stopped before the registration was recorded.
+    const other = uniqueDomain();
+    const interrupted = vi.spyOn(domains, "recordRegistration").mockRejectedValueOnce(new Error("connection terminated"));
+    await expect(service.ensureRegistered(actor, second.workspaceId, other)).rejects.toThrow("connection terminated");
+    interrupted.mockRestore();
+    expect(held.has(other)).toBe(true);
+    expect(await service.ensureRegistered(actor, second.workspaceId, other)).toMatchObject({
+      ok: true,
+      domain: { workspaceId: second.workspaceId, providerDomainId: `p-${other}` },
+    });
+    expect(await service.ensureRegistered(actor, first.workspaceId, other)).toEqual({ ok: false, refused: "claimed_elsewhere" });
   });
 
   it("refreshes readiness when due, confirms receiving, and leaves removed domains for asynchronous cleanup", async () => {
@@ -524,6 +642,123 @@ describeIntegration("email channel persistence (Postgres)", () => {
     expect(await inbound.settleEvent(settledId, { attempt: 1, state: "processed", errorCode: null })).toBe(false);
   });
 
+  it("fences each delivery step on its event's claim: a reclaimed worker's write lands nowhere", async () => {
+    const { mailbox } = await seedMailbox();
+    const eventId = await insertEvent();
+    const { deliveryId } = await inbound.insertDelivery({
+      inboundEventId: eventId,
+      workspaceId: mailbox.workspaceId,
+      mailboxId: mailbox.id,
+      routeRule: "relay",
+      acceptedPolicyVersion: 1,
+    });
+    const content = fetchedContent({ rfcMessageId: `<fenced.${randomUUID()}@example.org>` });
+    // Not claimed yet: no worker's write lands.
+    expect(await inbound.recordFetched({ deliveryId, attempt: 0 }, content)).toBe(false);
+
+    const stale = { deliveryId, attempt: await claimEvent(eventId) };
+    const current = { deliveryId, attempt: await claimEvent(eventId) };
+    expect(await inbound.recordFetched(stale, content)).toBe(false);
+    expect(await inbound.recordFetched(current, content)).toBe(true);
+    const ingested = await insertConversation(mailbox.workspaceId);
+    const reservation = {
+      threadMatch: "new_thread" as const,
+      threadConflict: false,
+      disposition: "run_review_turn" as const,
+      dispositionReason: "accepted" as const,
+      plannedConversationId: ingested.conversationId,
+      plannedMessageId: ingested.messageId,
+      plannedThreadKey: randomUUID(),
+      plannedThreadToken: token(),
+    };
+    expect(await inbound.reserveThread(stale, reservation)).toBe(false);
+    expect(await inbound.settleDropped(stale, { threadMatch: null, threadConflict: false, dispositionReason: "spam" })).toBe(false);
+    expect(await inbound.reserveThread(current, reservation)).toBe(true);
+    const ids = { conversationId: ingested.conversationId, messageId: ingested.messageId };
+    expect(await inbound.recordIngested(stale, ids)).toBe(false);
+    expect(await inbound.recordIngested(current, ids)).toBe(true);
+    expect(await inbound.markIndexed(stale)).toBe(false);
+    expect(await inbound.failDelivery(stale, "processing_failed")).toBe(false);
+    expect(await inbound.markIndexed(current)).toBe(true);
+    expect(await inbound.markIndexed(current)).toBe(false);
+
+    // A settled event takes no more writes, even from the claim that settled it.
+    const settledEvent = await insertEvent();
+    const { deliveryId: settledDelivery } = await inbound.insertDelivery({
+      inboundEventId: settledEvent,
+      workspaceId: mailbox.workspaceId,
+      mailboxId: mailbox.id,
+      routeRule: "relay",
+      acceptedPolicyVersion: 1,
+    });
+    const attempt = await claimEvent(settledEvent);
+    expect(await inbound.settleEvent(settledEvent, { attempt, state: "processed", errorCode: null })).toBe(true);
+    expect(await inbound.failDelivery({ deliveryId: settledDelivery, attempt }, "processing_failed")).toBe(false);
+  });
+
+  it("upgrades a referenced Message-ID placeholder of the same conversation to the message's own entry, and only that", async () => {
+    const { workspaceId, domain, mailbox } = await seedMailbox();
+    const otherMailbox = await createMailbox(workspaceId, domain, { local: "billing" });
+    const conversation = await insertConversation(workspaceId);
+    const elsewhere = await insertConversation(workspaceId);
+    const parentId = `<parent.${randomUUID()}@example.org>`;
+    const seenId = `<seen.${randomUUID()}@example.org>`;
+    const placeholder = (conversationId: string, rfcMessageId: string, mailboxId = mailbox.id) => ({
+      workspaceId,
+      mailboxId,
+      conversationId,
+      messageId: null,
+      direction: "referenced" as const,
+      origin: "referenced" as const,
+      rfcMessageId,
+      subject: null,
+      ccAddresses: [],
+      attachments: [],
+      inboundDeliveryId: null,
+    });
+    const parentDelivery = await reservedDelivery(mailbox, { rfcMessageId: parentId, conversationId: conversation.conversationId });
+    const actual = (conversationId: string, rfcMessageId: string) => ({
+      workspaceId,
+      mailboxId: mailbox.id,
+      conversationId,
+      messageId: conversation.messageId,
+      direction: "inbound" as const,
+      origin: "inbound" as const,
+      rfcMessageId,
+      subject: "Order 1234",
+      ccAddresses: ["cc@example.org"],
+      attachments: [{ name: "receipt.pdf", contentType: "application/pdf", sizeBytes: 900 }],
+      inboundDeliveryId: parentDelivery,
+    });
+
+    // The follow-up came first and only referenced the parent; then the parent itself is indexed.
+    expect(await threads.insertIndexEntries([placeholder(conversation.conversationId, parentId)])).toBe(1);
+    expect(await threads.insertIndexEntries([actual(conversation.conversationId, parentId)])).toBe(1);
+    expect((await threads.listIndexedMessages(conversation.conversationId)).find((entry) => entry.rfcMessageId === parentId)).toMatchObject({
+      messageId: conversation.messageId,
+      direction: "inbound",
+      origin: "inbound",
+      subject: "Order 1234",
+      ccAddresses: ["cc@example.org"],
+      attachments: [{ name: "receipt.pdf", contentType: "application/pdf", sizeBytes: 900 }],
+      inboundDeliveryId: parentDelivery,
+    });
+    expect(await threads.findLatestInboundThreading(conversation.conversationId)).toMatchObject({ rfcMessageId: parentId });
+
+    // A real entry is never overwritten, by a placeholder or by another real entry.
+    expect(await threads.insertIndexEntries([placeholder(conversation.conversationId, parentId)])).toBe(0);
+    expect(await threads.insertIndexEntries([{ ...actual(conversation.conversationId, parentId), subject: "Rewritten" }])).toBe(0);
+    expect((await threads.listIndexedMessages(conversation.conversationId)).find((entry) => entry.rfcMessageId === parentId))
+      .toMatchObject({ direction: "inbound", subject: "Order 1234" });
+
+    // Another conversation's placeholder keeps its thread: a conflict is not resolved by overwriting.
+    expect(await threads.insertIndexEntries([placeholder(elsewhere.conversationId, seenId)])).toBe(1);
+    expect(await threads.insertIndexEntries([actual(conversation.conversationId, seenId)])).toBe(0);
+    expect(await threads.findIndexedConversations(mailbox.id, [seenId])).toEqual([{ rfcMessageId: seenId, conversationId: elsewhere.conversationId }]);
+    // Another mailbox indexes the same Message-ID on its own.
+    expect(await threads.insertIndexEntries([placeholder(conversation.conversationId, parentId, otherMailbox.id)])).toBe(1);
+  });
+
   it("finds forward reservations and reverse references within the destination mailbox only", async () => {
     const { workspaceId, domain, mailbox } = await seedMailbox();
     const otherMailbox = await createMailbox(workspaceId, domain, { local: "sales" });
@@ -544,7 +779,8 @@ describeIntegration("email channel persistence (Postgres)", () => {
       routeRule: "relay",
       acceptedPolicyVersion: 1,
     });
-    await inbound.recordFetched(pending.deliveryId, fetchedContent({ rfcMessageId: unreservedId }));
+    await claimEvent(pendingEvent);
+    await inbound.recordFetched(await claimOf(pending.deliveryId), fetchedContent({ rfcMessageId: unreservedId }));
 
     expect(await inbound.findForwardReservations(mailbox.id, [parentId, unreservedId])).toEqual([
       { deliveryId: parentDelivery, rfcMessageId: parentId, conversationId: parent.conversationId, state: "resolved" },
@@ -556,14 +792,15 @@ describeIntegration("email channel persistence (Postgres)", () => {
       referenceIds: [rootId, parentId],
       conversationId: randomUUID(),
     });
-    expect(await inbound.recordIngested(childDelivery, parent)).toBe(true);
-    expect(await inbound.recordIngested(childDelivery, parent)).toBe(false);
+    const childClaim = await claimOf(childDelivery);
+    expect(await inbound.recordIngested(childClaim, parent)).toBe(true);
+    expect(await inbound.recordIngested(childClaim, parent)).toBe(false);
     expect(await inbound.findReverseReferences(mailbox.id, rootId)).toEqual([
       { deliveryId: childDelivery, conversationId: parent.conversationId, state: "ingested" },
     ]);
     expect(await inbound.findReverseReferences(otherMailbox.id, rootId)).toEqual([]);
-    expect(await inbound.settleDelivery(childDelivery, { state: "done", errorCode: null })).toBe(true);
-    expect(await inbound.settleDelivery(childDelivery, { state: "failed", errorCode: "late" })).toBe(false);
+    expect(await inbound.markIndexed(childClaim)).toBe(true);
+    expect(await inbound.failDelivery(childClaim, "late")).toBe(false);
     expect((await inbound.findReverseReferences(mailbox.id, parentId)).map((match) => match.state)).toEqual(["done"]);
 
     const threadToken = token();
@@ -639,8 +876,20 @@ describeIntegration("email channel persistence (Postgres)", () => {
     expect(await threads.scheduleReview(conversationId, { dueAt: firstDue, policyVersion: 1 })).toEqual({ revision: 1, dueAt: firstDue });
     expect(await threads.scheduleReview(conversationId, { dueAt: new Date(Date.now() + 120_000), policyVersion: 2 }))
       .toEqual({ revision: 2, dueAt: firstDue });
-    expect(await threads.completeReview(conversationId, 1)).toBe(false);
-    expect(await threads.completeReview(conversationId, 2)).toBe(true);
+    await database.execute("UPDATE email_thread_links SET review_due_at = now() - interval '1 second' WHERE conversation_id = $1", [conversationId]);
+    const claimed = (await threads.claimDueReviews({ limit: 100, leaseSeconds: 60 })).find((link) => link.conversationId === conversationId);
+    if (!claimed) throw new Error("the review was not claimed");
+    const claim = { conversationId, attempt: claimed.reviewAttempts, leaseUntil: claimed.reviewLeaseUntil };
+    expect(await threads.holdsReviewClaim(claim)).toBe(true);
+    expect(await threads.completeReview({ ...claim, revision: 1 })).toBe(false);
+    // A claim whose lease was taken over completes nothing, even at the revision that ran.
+    await database.execute("UPDATE email_thread_links SET review_lease_until = now() - interval '1 second' WHERE conversation_id = $1", [conversationId]);
+    const takeover = (await threads.claimDueReviews({ limit: 100, leaseSeconds: 60 })).find((link) => link.conversationId === conversationId);
+    if (!takeover) throw new Error("the review was not reclaimed");
+    expect(await threads.holdsReviewClaim(claim)).toBe(false);
+    expect(await threads.completeReview({ ...claim, revision: 2 })).toBe(false);
+    expect(await threads.releaseReview(claim)).toBe(false);
+    expect(await threads.completeReview({ conversationId, attempt: takeover.reviewAttempts, leaseUntil: takeover.reviewLeaseUntil, revision: 2 })).toBe(true);
     expect(await threads.findLink(conversationId)).toMatchObject({
       reviewRevision: 2,
       reviewCompletedRevision: 2,
@@ -665,8 +914,14 @@ describeIntegration("email channel persistence (Postgres)", () => {
       });
       created.push(deliveryId);
     }
-    await inbound.recordFetched(created[1], fetchedContent({ rfcMessageId: "<log@example.org>", raw: true }));
-    await inbound.settleDelivery(created[3], { state: "failed", errorCode: "fetch_failed" });
+    for (const deliveryId of [created[1], created[3]]) {
+      await database.execute(
+        "UPDATE email_inbound_events SET state = 'processing', attempts = 1 WHERE id = (SELECT inbound_event_id FROM email_inbound_deliveries WHERE id = $1)",
+        [deliveryId],
+      );
+    }
+    await inbound.recordFetched(await claimOf(created[1]), fetchedContent({ rfcMessageId: "<log@example.org>", raw: true }));
+    await inbound.failDelivery(await claimOf(created[3]), "fetch_failed");
     // Two rows share a timestamp, so the id breaks the tie.
     const base = Date.now();
     for (const [index, deliveryId] of created.entries()) {
@@ -720,12 +975,13 @@ describeIntegration("email channel persistence (Postgres)", () => {
     });
   });
 
-  it("purges only conversation-less deliveries past retention, and the settled events they leave behind", async () => {
+  it("purges only settled, conversation-less deliveries past retention, never an unfinished checkpoint, and the settled events they leave", async () => {
+    await database.execute("DELETE FROM email_inbound_deliveries WHERE conversation_id IS NULL");
     const { workspaceId, mailbox } = await seedMailbox();
     const conversation = await insertConversation(workspaceId);
-    const deliveryFor = async (state: "pending" | "processed") => {
+    const deliveryFor = async (event: "pending" | "processing" | "processed" | "failed", delivery: "pending" | "resolved" | "done" | "failed") => {
       const eventId = await insertEvent();
-      await database.execute("UPDATE email_inbound_events SET state = $2 WHERE id = $1", [eventId, state]);
+      await database.execute("UPDATE email_inbound_events SET state = $2 WHERE id = $1", [eventId, event]);
       const { deliveryId } = await inbound.insertDelivery({
         inboundEventId: eventId,
         workspaceId,
@@ -733,34 +989,47 @@ describeIntegration("email channel persistence (Postgres)", () => {
         routeRule: "relay",
         acceptedPolicyVersion: 1,
       });
+      await database.execute("UPDATE email_inbound_deliveries SET state = $2 WHERE id = $1", [deliveryId, delivery]);
       return { eventId, deliveryId };
     };
-    const oldDropped = await deliveryFor("processed");
-    const oldAttached = await deliveryFor("processed");
-    const oldInFlightEvent = await deliveryFor("pending");
-    const recent = await deliveryFor("processed");
+    const oldDropped = await deliveryFor("processed", "done");
+    const oldFailed = await deliveryFor("failed", "failed");
+    const oldAttached = await deliveryFor("processed", "done");
+    // A worker died after the host's ingest committed and before the delivery recorded it, and
+    // stayed down past retention: the reservation is the only thing keeping a retry from ingesting again.
+    const oldCrashedCheckpoint = await deliveryFor("processing", "resolved");
+    const oldPendingEvent = await deliveryFor("pending", "pending");
+    // Reopened by an operator: the delivery settled, its event due again.
+    const oldReopened = await deliveryFor("pending", "failed");
+    const recent = await deliveryFor("processed", "done");
     await database.execute("UPDATE email_inbound_deliveries SET conversation_id = $2 WHERE id = $1", [
       oldAttached.deliveryId,
       conversation.conversationId,
     ]);
-    for (const { eventId, deliveryId } of [oldDropped, oldAttached, oldInFlightEvent]) {
+    const old = [oldDropped, oldFailed, oldAttached, oldCrashedCheckpoint, oldPendingEvent, oldReopened];
+    for (const { eventId, deliveryId } of old) {
       await database.execute("UPDATE email_inbound_deliveries SET created_at = now() - interval '40 days' WHERE id = $1", [deliveryId]);
       await database.execute("UPDATE email_inbound_events SET received_at = now() - interval '40 days' WHERE id = $1", [eventId]);
     }
 
     const cutoff = new Date(Date.now() - 30 * 24 * HOUR_MS);
-    expect(await inbound.purgeUnattachedBefore(cutoff, 100)).toEqual({ deliveries: 2, events: 1 });
+    expect(await inbound.purgeUnattachedBefore(cutoff, 100)).toEqual({ deliveries: 2, events: 2 });
 
+    const all = [...old, recent];
     const remainingDeliveries = await database.query<{ id: string }>(
       "SELECT id FROM email_inbound_deliveries WHERE id = ANY($1::uuid[])",
-      [[oldDropped.deliveryId, oldAttached.deliveryId, oldInFlightEvent.deliveryId, recent.deliveryId]],
+      [all.map((entry) => entry.deliveryId)],
     );
-    expect(remainingDeliveries.map((row) => row.id).sort()).toEqual([oldAttached.deliveryId, recent.deliveryId].sort());
+    expect(remainingDeliveries.map((row) => row.id).sort()).toEqual(
+      [oldAttached, oldCrashedCheckpoint, oldPendingEvent, oldReopened, recent].map((entry) => entry.deliveryId).sort(),
+    );
     const remainingEvents = await database.query<{ id: string }>(
       "SELECT id FROM email_inbound_events WHERE id = ANY($1::uuid[])",
-      [[oldDropped.eventId, oldAttached.eventId, oldInFlightEvent.eventId, recent.eventId]],
+      [all.map((entry) => entry.eventId)],
     );
-    expect(remainingEvents.map((row) => row.id).sort()).toEqual([oldAttached.eventId, oldInFlightEvent.eventId, recent.eventId].sort());
+    expect(remainingEvents.map((row) => row.id).sort()).toEqual(
+      [oldAttached, oldCrashedCheckpoint, oldPendingEvent, oldReopened, recent].map((entry) => entry.eventId).sort(),
+    );
   });
 
   it("serializes thread resolution per mailbox and participant inside a transaction", async () => {

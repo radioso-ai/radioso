@@ -3,6 +3,7 @@ import type {
   DomainReadiness,
   DomainRegistration,
   EmailDomainProvisioner,
+  ProviderDomain,
   ReadinessStatus,
 } from "../emailDomainProvisioner.js";
 import { normalizeDomainName } from "./dnsDomainName.js";
@@ -33,11 +34,19 @@ interface ResendDnsRecord {
   status: string;
 }
 
+/** One entry of `GET /domains`, which carries no records. */
+interface ResendDomainListing {
+  id: string;
+  name: string;
+  region: string | null;
+}
+
 interface ResendDomain {
   id: string;
   name: string;
   status: string;
   region: string | null;
+  createdAt: Date | null;
   sendingEnabled: boolean;
   receivingEnabled: boolean;
   records: readonly ResendDnsRecord[];
@@ -46,6 +55,8 @@ interface ResendDomain {
 const RECOMMENDED_DMARC_VALUE = "v=DMARC1; p=none;";
 const DMARC_TAG = "v=dmarc1";
 const DKIM_LABEL = "._domainkey";
+/** Resend's largest page of `GET /domains`. */
+const DOMAIN_PAGE_SIZE = 100;
 
 export class ResendEmailDomainProvisioner implements EmailDomainProvisioner {
   readonly provider = "resend";
@@ -75,13 +86,36 @@ export class ResendEmailDomainProvisioner implements EmailDomainProvisioner {
       }
       throw error;
     }
-    const created = parseDomain(payload);
-    return {
-      ok: true,
-      providerDomainId: created.id,
-      region: created.region,
-      readiness: await this.readinessOf(created),
-    };
+    return { ok: true, ...(await this.providerDomainOf(parseDomain(payload))) };
+  }
+
+  /**
+   * Resend lists every domain on the account, across regions. A name registered in another region
+   * belongs to the deployment that region serves, so it is not handed over.
+   */
+  async findByName(domain: string): Promise<ProviderDomain | null> {
+    const name = normalizeDomainName(domain);
+    if (!name) {
+      return null;
+    }
+    let after: string | null = null;
+    for (;;) {
+      const query: string = after === null
+        ? `limit=${DOMAIN_PAGE_SIZE}`
+        : `limit=${DOMAIN_PAGE_SIZE}&after=${encodeURIComponent(after)}`;
+      const page = parseDomainList(await this.options.api.request("GET", `/domains?${query}`));
+      const match = page.domains.find((listing) => listing.name === name);
+      if (match) {
+        return match.region === null || match.region === this.options.region
+          ? this.providerDomainOf(await this.readDomain(match.id))
+          : null;
+      }
+      const last = page.domains.at(-1)?.id ?? null;
+      if (!page.hasMore || last === null || last === after) {
+        return null;
+      }
+      after = last;
+    }
   }
 
   async enableReceiving(providerDomainId: string): Promise<DomainReadiness> {
@@ -108,6 +142,15 @@ export class ResendEmailDomainProvisioner implements EmailDomainProvisioner {
       }
       throw error;
     }
+  }
+
+  private async providerDomainOf(domain: ResendDomain): Promise<ProviderDomain> {
+    return {
+      providerDomainId: domain.id,
+      region: domain.region,
+      readiness: await this.readinessOf(domain),
+      createdAt: domain.createdAt,
+    };
   }
 
   private async readDomain(providerDomainId: string): Promise<ResendDomain> {
@@ -152,15 +195,16 @@ const domainPath = (providerDomainId: string): string => `/domains/${encodeURICo
 
 /**
  * Resend answers a create for a name already registered on the account with `403
- * validation_error`; one account serves every workspace in a region, so that is a claim held
- * elsewhere (AS1.4). A 422 is Resend refusing the name itself.
+ * validation_error`. One account serves every workspace in a region, so the registration may be
+ * another workspace's or this one's own earlier attempt; the caller decides. A 422 is Resend
+ * refusing the name itself.
  */
-const registrationRefusal = (error: unknown): "claimed_elsewhere" | "invalid_domain" | null => {
+const registrationRefusal = (error: unknown): "already_registered" | "invalid_domain" | null => {
   if (!(error instanceof ResendApiError)) {
     return null;
   }
   if (error.statusCode === 403 && error.providerErrorName === "validation_error") {
-    return "claimed_elsewhere";
+    return "already_registered";
   }
   return error.statusCode === 422 ? "invalid_domain" : null;
 };
@@ -250,9 +294,29 @@ const parseDomain = (payload: unknown): ResendDomain => {
     name: payload.name,
     status: typeof payload.status === "string" ? payload.status : "",
     region: typeof payload.region === "string" ? payload.region : null,
+    createdAt: timestampOf(payload.created_at),
     sendingEnabled: capabilities.sending === "enabled",
     receivingEnabled: capabilities.receiving === "enabled",
     records: Array.isArray(payload.records) ? payload.records.flatMap(parseRecord) : [],
+  };
+};
+
+/** Resend writes `2026-10-03 13:29:18.978423+00` on create and ISO 8601 elsewhere. */
+const timestampOf = (value: unknown): Date | null => {
+  const time = typeof value === "string" ? Date.parse(value) : Number.NaN;
+  return Number.isNaN(time) ? null : new Date(time);
+};
+
+const parseDomainList = (payload: unknown): { domains: ResendDomainListing[]; hasMore: boolean } => {
+  if (!isRecord(payload) || !Array.isArray(payload.data)) {
+    throw new ResendApiError("malformed_response", null, null);
+  }
+  return {
+    domains: payload.data.flatMap((entry: unknown): ResendDomainListing[] =>
+      isRecord(entry) && typeof entry.id === "string" && typeof entry.name === "string"
+        ? [{ id: entry.id, name: entry.name, region: typeof entry.region === "string" ? entry.region : null }]
+        : []),
+    hasMore: payload.has_more === true,
   };
 };
 

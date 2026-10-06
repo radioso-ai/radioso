@@ -21,7 +21,21 @@ import {
   type AnswerTurnExecutionMode,
 } from "../../../src/shared/domain/turnExecutionMode.js";
 import { resolveContextForTurn } from "../../../src/modules/context-variables/public.js";
-import { publishedDraftReply, reviewedTurnDraft } from "../../../src/modules/chat/services/reviewDraft.js";
+import { reviewedDraftWriter } from "../../../src/modules/chat/composition.js";
+import {
+  applyDeferredDirectiveTransition,
+  DeferredDirectiveStateStore,
+} from "../../../src/modules/chat/services/directives/deferredDirectiveStateStore.js";
+import {
+  deferredDirectiveTransitionOf,
+  publishedDraftReply,
+  reviewedTurnDraft,
+} from "../../../src/modules/chat/services/reviewDraft.js";
+import { reviewedTurnAuditEvent } from "../../../src/modules/chat/services/reviewTurnAudit.js";
+import { createRouteScopedDirectiveSteering } from "../../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import type { Directive, DirectiveFiringState, DirectiveStateStore } from "../../../src/modules/directives/public.js";
+import { AppError } from "../../../src/shared/domain/errors.js";
+import { createAuditService, InMemoryAuditEventRepository } from "../../support/fakes.js";
 import {
   humanOwnedRecord,
   REVIEW_WORKSPACE_ID,
@@ -364,6 +378,206 @@ describe("review completion in the turn lifecycle", () => {
     expect(unavailable).toMatchObject({ kind: "no_draft", facts: { skillOutcome: "unavailable" } });
   });
 
+  describe("the review audit (FR-045)", () => {
+    // Content a review meets: the customer's mail, what retrieval made of it, and the unapproved draft.
+    const CUSTOMER = "SENTINEL-customer-mail-c41";
+    const QUERY = "SENTINEL-rewritten-query-q52";
+    const DRAFT = "SENTINEL-draft-text-d63";
+    const SEGMENT = "SENTINEL-answer-segment-s74";
+    const SUGGESTION = "SENTINEL-suggestion-g85";
+    const CITED = "SENTINEL-cited-title-t96";
+    const PROVIDER = "SENTINEL-provider-error-e07";
+    const SENTINELS = [CUSTOMER, QUERY, DRAFT, SEGMENT, SUGGESTION, CITED, PROVIDER];
+
+    const expectContentFree = (value: unknown): void => {
+      const serialized = JSON.stringify(value);
+      for (const sentinel of SENTINELS) {
+        expect(serialized).not.toContain(sentinel);
+      }
+    };
+
+    const contentfulSession = (): PreparedSession => {
+      const base = session();
+      return {
+        ...base,
+        userMessage: { id: "request-message", content: CUSTOMER },
+        effectiveQuery: CUSTOMER,
+        retrieval: {
+          ...base.retrieval,
+          contexts: [{ chunkId: "chunk-1", documentId: "doc-1", title: CITED, content: CITED }],
+          diagnostics: {
+            rewrittenQuery: QUERY,
+            rewriteStatus: "rewritten",
+            parsedQuery: { semanticQuery: QUERY, lexicalQuery: QUERY, constraints: [] },
+          },
+          trace: {
+            traceId: "trace-review",
+            startedAt: "2026-10-01T09:00:00.000Z",
+            stages: [{ id: "rewrite", kind: "rewrite", status: "completed", inputs: { query: CUSTOMER }, outputs: { query: QUERY } }],
+            links: [],
+          },
+        },
+      } as unknown as PreparedSession;
+    };
+
+    const contentfulPresentation = {
+      ...presentation,
+      answer: DRAFT,
+      answerSegments: [{ text: SEGMENT, citationIndexes: [1] }],
+      suggestions: [{ text: SUGGESTION }],
+      citations: [{ chunkId: "chunk-1", documentId: "doc-1", title: CITED, snippet: CITED }],
+      grounding: "grounded" as const,
+      groundingDiagnostics: {
+        parseStatus: "parsed",
+        claimCount: 2,
+        sourcedClaimCount: 2,
+        unsourcedClaimCount: 0,
+        invalidSourceCount: 0,
+        assertionMismatch: false,
+      },
+    } as unknown as typeof presentation;
+
+    const recordedAudits = (harness: ReturnType<typeof reviewLifecycleHarness>) =>
+      (harness.audit.record.mock.calls as unknown as [{ eventStatus: string; metadata: Record<string, unknown> }][])
+        .map(([event]) => event);
+
+    it.each(["port", "fallback"] as const)(
+      "keeps a successful review's audit to identifiers, outcome codes and counts on the %s path",
+      async (path) => {
+        const harness = reviewLifecycleHarness();
+
+        const completed = await harness.lifecycle(path).completeAssistantTurn({
+          workspaceId: REVIEW_WORKSPACE_ID,
+          session: contentfulSession(),
+          presentation: contentfulPresentation,
+          answerStartedAt: Date.now(),
+          stream: false,
+          executionMode: "review",
+        });
+
+        if (completed.kind !== "draft") {
+          throw new Error("expected a draft completion");
+        }
+        // The draft itself keeps its text: it is the held reply's, not the audit's.
+        expect(completed.draft.text).toBe(DRAFT);
+        const [audit] = recordedAudits(harness);
+        expectContentFree(audit);
+        expect(audit.metadata).toEqual({
+          workflow: "chat.turn",
+          executionClass: expect.any(String),
+          executionMode: "review",
+          surface: "email",
+          conversationId: "conversation-review",
+          userMessageId: "request-message",
+          requestMessageId: "request-message",
+          turnId: completed.correlation.turnId,
+          stream: false,
+          skillTurn: { skillName: "retrieval.answer", outcome: "grounded", status: "completed" },
+          answerOutcome: "grounded_success",
+          route: expect.objectContaining({ generator: "assistant", routeType: expect.any(String), retrievalInvoked: expect.any(Boolean) }),
+          citationCount: 1,
+          groundingVerdict: "grounded",
+          groundingDiagnostics: {
+            parseStatus: "parsed",
+            claimCount: 2,
+            sourcedClaimCount: 2,
+            unsourcedClaimCount: 0,
+            invalidSourceCount: 0,
+            assertionMismatch: false,
+          },
+        });
+      },
+    );
+
+    it("keeps a failed review's audit to identifiers and an error code, never the error's message", async () => {
+      const harness = reviewLifecycleHarness();
+      const lifecycle = harness.lifecycle("port");
+
+      await lifecycle.recordFailure(
+        { workspaceId: REVIEW_WORKSPACE_ID, conversationId: "conversation-review", stream: false, executionMode: "review" },
+        contentfulSession(),
+        undefined,
+        new Error(`The provider rejected: ${PROVIDER} ${CUSTOMER}`),
+      );
+      await lifecycle.recordFailure(
+        { workspaceId: REVIEW_WORKSPACE_ID, conversationId: "conversation-review", stream: false, executionMode: "review" },
+        contentfulSession(),
+        undefined,
+        new AppError(503, "service_unavailable", `Model unavailable for ${CUSTOMER}`),
+      );
+
+      const [plain, coded] = recordedAudits(harness);
+      expectContentFree([plain, coded]);
+      expect(plain).toMatchObject({ eventStatus: "failure" });
+      expect(plain.metadata).toEqual({
+        stage: "chat.answer",
+        workflow: "chat.turn",
+        executionClass: expect.any(String),
+        executionMode: "review",
+        surface: "email",
+        conversationId: "conversation-review",
+        userMessageId: "request-message",
+        stream: false,
+        citationCount: 0,
+        errorCode: "Error",
+      });
+      expect(coded.metadata).toMatchObject({ errorCode: "service_unavailable" });
+      expect(coded.metadata).not.toHaveProperty("errorMessage");
+    });
+
+    it("keeps a live turn's failure audit as it was, message included", async () => {
+      const harness = reviewLifecycleHarness();
+
+      await harness.lifecycle("port").recordFailure(
+        { workspaceId: REVIEW_WORKSPACE_ID, conversationId: "conversation-review", stream: false },
+        session(),
+        undefined,
+        new Error("Live failure"),
+      );
+
+      const [audit] = recordedAudits(harness);
+      expect(audit.metadata).toMatchObject({ errorMessage: "Live failure" });
+    });
+
+    it("stores no content for a review whatever the audit it is handed carries", async () => {
+      const auditRepository = new InMemoryAuditEventRepository();
+
+      await createAuditService(auditRepository).record(reviewedTurnAuditEvent({
+        workspaceId: REVIEW_WORKSPACE_ID,
+        eventType: "chat.answer",
+        eventStatus: "success",
+        metadata: {
+          executionMode: "review",
+          conversationId: "conversation-review",
+          userMessageId: "request-message",
+          assistantMessageId: "turn-1",
+          citationCount: 1,
+          citations: [{ title: CITED }],
+          answerSegments: [{ text: SEGMENT }],
+          activityTrace: { outcome: { answer: DRAFT } },
+          turnTrace: { answer: { text: DRAFT } },
+          error: { message: QUERY },
+          rewriteContinuityState: { lastQuery: QUERY },
+          // An allowlisted name never carries what its kind does not allow.
+          answerOutcome: { text: DRAFT },
+          route: { routeType: "retrieval", routeReason: "evidence_required", extra: DRAFT },
+        },
+      }, { requestMessageId: "request-message", turnId: "turn-1" }));
+
+      expect(auditRepository.items).toHaveLength(1);
+      expectContentFree(auditRepository.items);
+      expect(auditRepository.items[0].metadata).toEqual({
+        executionMode: "review",
+        conversationId: "conversation-review",
+        userMessageId: "request-message",
+        requestMessageId: "request-message",
+        turnId: "turn-1",
+        citationCount: 1,
+        route: { routeType: "retrieval", routeReason: "evidence_required" },
+      });
+    });
+  });
+
   it("keeps a hand-off turn's text as a draft, with the hand-off reported", async () => {
     const result = draftOf(await reviewedTurnFixture({
       presentation: { answer: "Let me get a teammate.", skillOutcome: "no_context", answerOutcome: "no_context_refusal" },
@@ -391,7 +605,7 @@ describe("publishing a review draft", () => {
   };
 
   it("writes the reply row the turn would have written, from a draft that was stored in between", () => {
-    const stored = JSON.parse(JSON.stringify(reviewedTurnDraft(reply))) as ReturnType<typeof reviewedTurnDraft>;
+    const stored = JSON.parse(JSON.stringify(reviewedTurnDraft(reply, null))) as ReturnType<typeof reviewedTurnDraft>;
 
     const { id: _unwritten, ...expected } = reply;
     expect(publishedDraftReply({ workspaceId: REVIEW_WORKSPACE_ID, conversationId: "conversation-review", draft: stored }))
@@ -419,6 +633,231 @@ describe("publishing a review draft", () => {
       totalLatencyMs: undefined,
       grounding: undefined,
       metadata: undefined,
+    });
+  });
+});
+
+describe("a reviewed reply's directive lifecycle", () => {
+  const disclosure: Directive = {
+    name: "ai-disclosure",
+    condition: { kind: "always" },
+    action: "Mention once that this reply was drafted by an AI assistant.",
+    lifecycle: { kind: "once_per_conversation" },
+  };
+
+  /** One conversation's directive firing memory, as the durable store keeps it. */
+  const firingMemory = (initial: Record<string, DirectiveFiringState> = {}) => {
+    const states = new Map(Object.entries(initial));
+    const store = {
+      load: vi.fn(async ({ sessionId }: { sessionId: string }) => states.get(sessionId) ?? null),
+      save: vi.fn(async ({ sessionId, state }: { sessionId: string; state: DirectiveFiringState }) => {
+        states.set(sessionId, state);
+      }),
+    } satisfies DirectiveStateStore;
+    return { states, store };
+  };
+
+  const transitionOf = (result: ChatReviewResult) => deferredDirectiveTransitionOf(draftOf(result).draft);
+
+  const sessionWithStore = (store: DeferredDirectiveStateStore): PreparedSession =>
+    ({
+      agent: { id: "agent-review", name: "Support", chatModelOverride: null },
+      conversation: { id: "conversation-review", sourceChannel: "email" },
+      history: [],
+      userMessage: { id: "request-message", content: "Where is my order?" },
+      turnRoute: "retrieval",
+      directiveSteering: { rules: [], matches: [], omissions: [] },
+      directiveStateStore: store,
+      stagedContext: [],
+      resolvedContext: resolveContextForTurn(null),
+      retrieval: {
+        contexts: [],
+        diagnostics: {},
+        systemPrompt: undefined,
+        trace: { traceId: "trace-review", startedAt: "2026-10-01T09:00:00.000Z", stages: [], links: [] },
+      },
+    }) as unknown as PreparedSession;
+
+  const completeReview = async (store: DeferredDirectiveStateStore) => {
+    const completed = await reviewLifecycleHarness().lifecycle("port").completeAssistantTurn({
+      workspaceId: REVIEW_WORKSPACE_ID,
+      session: sessionWithStore(store),
+      presentation: {
+        answer: "Your order ships tomorrow.",
+        skillName: "retrieval.answer",
+        skillOutcome: "grounded",
+        skillStatus: "completed",
+        answerOutcome: "grounded_success",
+        citations: [],
+      },
+      answerStartedAt: Date.now(),
+      stream: false,
+      executionMode: "review",
+    });
+    if (completed.kind !== "draft") {
+      throw new Error("expected a draft completion");
+    }
+    return completed;
+  };
+
+  it("defers the firing memory advance with the draft instead of committing it", async () => {
+    const memory = firingMemory({ "conversation-review": { turnSeq: 4, firings: { greeting: { lastFiredTurn: 1, count: 1 } } } });
+    const store = new DeferredDirectiveStateStore(memory.store, "conversation-review");
+    await store.load();
+    store.capture(["ai-disclosure"]);
+
+    const completed = await completeReview(store);
+
+    expect(deferredDirectiveTransitionOf(completed.draft)).toEqual({ fromTurnSeq: 4, firedNames: ["ai-disclosure"] });
+    expect(memory.store.save).not.toHaveBeenCalled();
+  });
+
+  it("defers a turn that fired nothing on a conversation with memory, so cooldowns still age on publication", async () => {
+    const memory = firingMemory({ "conversation-review": { turnSeq: 2, firings: {} } });
+    const store = new DeferredDirectiveStateStore(memory.store, "conversation-review");
+    await store.load();
+
+    const completed = await completeReview(store);
+
+    expect(deferredDirectiveTransitionOf(completed.draft)).toEqual({ fromTurnSeq: 2, firedNames: [] });
+  });
+
+  it("defers nothing when the turn would have committed nothing", async () => {
+    const unread = new DeferredDirectiveStateStore(firingMemory().store, "conversation-review");
+    const readEmpty = new DeferredDirectiveStateStore(firingMemory().store, "conversation-review");
+    await readEmpty.load();
+
+    expect(deferredDirectiveTransitionOf((await completeReview(unread)).draft)).toBeNull();
+    expect(deferredDirectiveTransitionOf((await completeReview(readEmpty)).draft)).toBeNull();
+  });
+
+  it("applies a stored transition once, from the memory the turn read", async () => {
+    const memory = firingMemory({ c1: { turnSeq: 4, firings: {} } });
+    const transition = { fromTurnSeq: 4, firedNames: ["ai-disclosure"] };
+
+    expect(await applyDeferredDirectiveTransition(memory.store, "c1", transition)).toBe(true);
+    expect(await applyDeferredDirectiveTransition(memory.store, "c1", transition)).toBe(false);
+
+    expect(memory.store.save).toHaveBeenCalledOnce();
+    expect(memory.states.get("c1")).toEqual({ turnSeq: 5, firings: { "ai-disclosure": { lastFiredTurn: 4, count: 1 } } });
+  });
+
+  it("leaves memory a later turn advanced, and restarts expired memory from the turn the review read", async () => {
+    const memory = firingMemory({ moved: { turnSeq: 6, firings: {} } });
+
+    expect(await applyDeferredDirectiveTransition(memory.store, "moved", { fromTurnSeq: 4, firedNames: ["ai-disclosure"] })).toBe(false);
+    expect(await applyDeferredDirectiveTransition(memory.store, "expired", { fromTurnSeq: 4, firedNames: ["ai-disclosure"] })).toBe(true);
+    expect(await applyDeferredDirectiveTransition(memory.store, "expired", { fromTurnSeq: 4, firedNames: ["ai-disclosure"] })).toBe(false);
+
+    expect(memory.states.get("moved")).toEqual({ turnSeq: 6, firings: {} });
+    expect(memory.states.get("expired")).toEqual({ turnSeq: 5, firings: { "ai-disclosure": { lastFiredTurn: 4, count: 1 } } });
+  });
+
+  it("publishes a draft as the reply row and its deferred transition, read back from storage", async () => {
+    const memory = firingMemory();
+    const messages = { create: vi.fn(async (input: { content: string }) => ({ id: "published-message", ...input })) };
+    const stored = JSON.parse(JSON.stringify(reviewedTurnDraft(
+      { conversationId: "c1", workspaceId: REVIEW_WORKSPACE_ID, role: "assistant", content: "Your order ships tomorrow." },
+      { fromTurnSeq: 0, firedNames: ["ai-disclosure"] },
+    ))) as ReturnType<typeof reviewedTurnDraft>;
+
+    const message = await reviewedDraftWriter({ messages: messages as never, directiveStates: memory.store })
+      .writeAgentMessage({ workspaceId: REVIEW_WORKSPACE_ID, conversationId: "c1", draft: stored });
+
+    expect(message.id).toBe("published-message");
+    // The transition rides with the draft, never into the reply row.
+    expect(messages.create).toHaveBeenCalledWith(publishedDraftReply({ workspaceId: REVIEW_WORKSPACE_ID, conversationId: "c1", draft: stored }));
+    expect(JSON.stringify(messages.create.mock.calls)).not.toContain("ai-disclosure");
+    expect(memory.states.get("c1")).toEqual({ turnSeq: 1, firings: { "ai-disclosure": { lastFiredTurn: 0, count: 1 } } });
+  });
+
+  it("publishes a draft with no transition, or one that no longer reads as one, without touching the memory", async () => {
+    const memory = firingMemory();
+    const messages = { create: vi.fn(async () => ({ id: "published-message" })) };
+    const writer = reviewedDraftWriter({ messages: messages as never, directiveStates: memory.store });
+
+    await writer.writeAgentMessage({ workspaceId: REVIEW_WORKSPACE_ID, conversationId: "c1", draft: { text: "Hi", presentation: {} } });
+    await writer.writeAgentMessage({
+      workspaceId: REVIEW_WORKSPACE_ID,
+      conversationId: "c1",
+      draft: { text: "Hi", presentation: { directiveTransition: { fromTurnSeq: "4", firedNames: ["ai-disclosure"] } } },
+    });
+    await writer.writeAgentMessage({
+      workspaceId: REVIEW_WORKSPACE_ID,
+      conversationId: "c1",
+      draft: { text: "Hi", presentation: { directiveTransition: { fromTurnSeq: 4, firedNames: [7] } } },
+    });
+
+    expect(messages.create).toHaveBeenCalledTimes(3);
+    expect(memory.store.load).not.toHaveBeenCalled();
+    expect(memory.store.save).not.toHaveBeenCalled();
+  });
+
+  describe("across two reviews of one conversation", () => {
+    const twoReviewHarness = async () => {
+      const memory = firingMemory();
+      const harness = await reviewServiceHarness({
+        directiveSteering: createRouteScopedDirectiveSteering({
+          capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+          registrations: [{ directive: disclosure }],
+        }),
+        directiveStateStore: memory.store,
+      });
+      const nextMessage = () => harness.messageRepository.create({
+        conversationId: harness.conversation.id,
+        workspaceId: REVIEW_WORKSPACE_ID,
+        role: "user",
+        content: "And can I also change the delivery date?",
+      });
+      const publish = (result: ChatReviewResult) =>
+        reviewedDraftWriter({ messages: harness.messageRepository, directiveStates: memory.store }).writeAgentMessage({
+          workspaceId: REVIEW_WORKSPACE_ID,
+          conversationId: harness.conversation.id,
+          draft: draftOf(result).draft,
+        });
+      const steeredWithDisclosure = (call: number) =>
+        JSON.stringify(vi.mocked(harness.chatGateway.answer).mock.calls[call]).includes(disclosure.action);
+      return { harness, memory, nextMessage, publish, steeredWithDisclosure };
+    };
+
+    it("does not fire a once-per-conversation directive again after its review was published", async () => {
+      const { harness, memory, nextMessage, publish, steeredWithDisclosure } = await twoReviewHarness();
+
+      const first = await harness.review();
+      expect(transitionOf(first)).toEqual({ fromTurnSeq: 0, firedNames: ["ai-disclosure"] });
+      expect(steeredWithDisclosure(0)).toBe(true);
+      expect(memory.store.save).not.toHaveBeenCalled();
+
+      await publish(first);
+      const second = await harness.review({ existingUserMessageId: (await nextMessage()).id });
+
+      expect(transitionOf(second)).toEqual({ fromTurnSeq: 1, firedNames: [] });
+      expect(steeredWithDisclosure(1)).toBe(false);
+    });
+
+    it("fires it again when the earlier review was never published: discarded, superseded or sent as a teammate's edit", async () => {
+      const { harness, memory, nextMessage, steeredWithDisclosure } = await twoReviewHarness();
+
+      await harness.review();
+      const second = await harness.review({ existingUserMessageId: (await nextMessage()).id });
+
+      expect(transitionOf(second)).toEqual({ fromTurnSeq: 0, firedNames: ["ai-disclosure"] });
+      expect(steeredWithDisclosure(1)).toBe(true);
+      expect(memory.store.save).not.toHaveBeenCalled();
+    });
+
+    it("advances the memory once when the same draft is published twice", async () => {
+      const { harness, memory, publish } = await twoReviewHarness();
+
+      const first = await harness.review();
+      await publish(first);
+      await publish(first);
+
+      expect(memory.store.save).toHaveBeenCalledOnce();
+      expect(memory.states.get(harness.conversation.id)).toEqual({
+        turnSeq: 1,
+        firings: { "ai-disclosure": { lastFiredTurn: 0, count: 1 } },
+      });
     });
   });
 });

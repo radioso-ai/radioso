@@ -26,7 +26,7 @@ interface EmailChannelConnectorDependencies
   /** The host port: `ingest` records inbound mail (stage 1), `respond` runs its review (stage 2). */
   chat: Pick<ConnectorChatPort, "ingest" | "respond">;
   /** Stage 2's own ports, and the claims a review gets before it goes to a person. */
-  review: Pick<EmailReviewRunnerDependencies, "conversations" | "heldReplies" | "handoffs" | "checks" | "notes"> & { maxAttempts: number };
+  review: Pick<EmailReviewRunnerDependencies, "conversations" | "heldReplies" | "handoffs" | "checks"> & { maxAttempts: number };
   logger: {
     info(fields: Record<string, unknown>, message: string): void;
     warn(fields: Record<string, unknown>, message: string): void;
@@ -59,7 +59,8 @@ export const createEmailChannelConnector = (
       heldReplies: deps.review.heldReplies,
       handoffs: deps.review.handoffs,
       checks: deps.review.checks,
-      notes: deps.review.notes,
+      // The thread protocol's transaction binds a revision's set-aside note to its completion too.
+      revisions: deps.threadProtocol,
       drains: deps.drains,
       metrics: deps.metrics,
       logger: deps.logger,

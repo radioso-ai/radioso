@@ -19,8 +19,8 @@ import { pushActionDrainAfterCommit, type QueuedOutboxRow } from "./actionDrainA
  * check and the message insert; and the reply's channel delivery is queued on the action outbox in
  * the same transaction, so a reply commits with its delivery or not at all. A claim the reply makes
  * records its activity, and the held replies the reply replaces are superseded, in the same
- * transaction too. The drain push goes out only after commit, when a delivery was queued, and is
- * best-effort.
+ * transaction too, in the conversation lock protocol's order (`conversationLockOrder.ts`). The drain
+ * push goes out only after commit, when a delivery was queued, and is best-effort.
  */
 export const createPostgresOwnershipReplyUnitOfWork = (deps: {
   db: Kysely<DB>;

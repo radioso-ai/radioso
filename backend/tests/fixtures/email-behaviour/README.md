@@ -71,7 +71,10 @@ pnpm run evals:email -- --env-file <path> --case auto-covered-question --case op
 pnpm run evals:email -- --env-file <path> --no-judge --out <dir>
 ```
 
-The runner seeds the workspace, operator, agent and corpus on the first run and reuses them after,
+The runner seeds the workspace, operator and agent on the first run and reuses them after. On every
+run it makes the workspace's documents exactly `corpus/`, keyed by each file's content hash: an
+edited file is ingested again and its earlier version deleted, and a removed file's document is
+deleted, so a reused database never answers from stale fixtures. It
 processes the documents in-process (no document worker needed), runs one sample per case
 (`--samples N` for more), and prints the table on stderr. Application logs go to stdout. It writes
 `email-behaviour-results.json` (every step's typed outcome, checks, settle report and model calls)

@@ -154,7 +154,7 @@ describeIntegration("conversation delivery failures (Postgres)", () => {
       { failureId: rows.find((row) => row.message_id === messageId)!.id, messageId, failureKind: "uncertain" },
     ]));
 
-    await failures.clear({ conversationId, messageId, reason: "provider_evidence" });
+    await failures.clear({ conversationId, messageIds: [messageId], reason: "provider_evidence" });
     await failures.open(openInput(workspaceId, conversationId, messageId, "failed"));
 
     const reopened = await failureRows(conversationId);
@@ -183,17 +183,21 @@ describeIntegration("conversation delivery failures (Postgres)", () => {
     ]);
   });
 
-  it("clears the message's failure naming who resolved it, or every failure on the conversation", async () => {
+  it("clears exactly the failure a teammate resolved, naming them, or the failures of the messages a delivery vouches for", async () => {
     const { workspaceId, userId } = await seedWorkspace();
-    const { conversationId, messageIds: [first, second] } = await seedConversation(workspaceId, null, 2);
+    const { conversationId, messageIds: [first, second, third] } = await seedConversation(workspaceId, null, 3);
     const other = await seedConversation(workspaceId, null);
     await failures.open(openInput(workspaceId, conversationId, first, "uncertain"));
     await failures.open(openInput(workspaceId, conversationId, second, "halted"));
+    await failures.open(openInput(workspaceId, conversationId, third, "bounced"));
     await failures.open(openInput(workspaceId, other.conversationId, other.messageIds[0]));
+    const firstFailure = (await failureRows(conversationId)).find((row) => row.message_id === first)!;
 
-    expect(await failures.clear({ conversationId, messageId: first, reason: "operator_resolved", userId })).toBe(1);
-    expect(await failures.clear({ conversationId, messageId: null, reason: "later_delivery" })).toBe(1);
-    expect(await failures.clear({ conversationId, messageId: null, reason: "later_delivery" })).toBe(0);
+    expect(await failures.clear({ failureId: firstFailure.id, reason: "operator_resolved", userId })).toBe(1);
+    expect(await failures.clear({ failureId: firstFailure.id, reason: "operator_resolved", userId })).toBe(0);
+    expect(await failures.clear({ conversationId, messageIds: [first, second], reason: "later_delivery" })).toBe(1);
+    expect(await failures.clear({ conversationId, messageIds: [second], reason: "later_delivery" })).toBe(0);
+    expect(await failures.clear({ conversationId, messageIds: [], reason: "later_delivery" })).toBe(0);
 
     const rows = await failureRows(conversationId);
     const onFirst = rows.find((row) => row.message_id === first)!;
@@ -205,7 +209,40 @@ describeIntegration("conversation delivery failures (Postgres)", () => {
       { kind: "delivery_failure_cleared", actor_user_id: userId, detail: { failureId: onFirst.id, messageId: first, reason: "operator_resolved" } },
       { kind: "delivery_failure_cleared", actor_user_id: null, detail: { failureId: onSecond.id, messageId: second, reason: "later_delivery" } },
     ]);
+    // The third message's failure belongs to no message the delivery vouched for.
+    expect(rows.find((row) => row.message_id === third)).toMatchObject({ cleared_at: null });
     expect((await failureRows(other.conversationId)).map((row) => row.cleared_at)).toEqual([null]);
+  });
+
+  it("locks a workspace's failure for a decision only while it is open, holding off a concurrent clear until the decision commits", async () => {
+    const { workspaceId, userId } = await seedWorkspace();
+    const elsewhere = await seedWorkspace();
+    const { conversationId, messageIds: [messageId] } = await seedConversation(workspaceId, null);
+    await failures.open(openInput(workspaceId, conversationId, messageId, "halted"));
+    const [failure] = await failureRows(conversationId);
+    const decisionLock = (failureWorkspaceId: string) => writes.run((scope) =>
+      bindDeliveryFailureRecorder(scope).lockOpen({ workspaceId: failureWorkspaceId, failureId: failure.id }));
+
+    expect(await decisionLock(elsewhere.workspaceId)).toBeNull();
+
+    // A decision holds the failure; a second one names it too and waits until the first commits.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = writes.run(async (scope) => {
+      const recorder = bindDeliveryFailureRecorder(scope);
+      const locked = await recorder.lockOpen({ workspaceId, failureId: failure.id });
+      await held;
+      return { locked, cleared: await recorder.clear({ failureId: failure.id, reason: "operator_resolved", userId }) };
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const second = decisionLock(workspaceId);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release();
+
+    expect(await first).toMatchObject({ locked: { id: failure.id, kind: "halted" }, cleared: 1 });
+    expect(await second).toBeNull();
   });
 
   it("rolls the failure back when its activity cannot be recorded", async () => {
@@ -244,7 +281,7 @@ describeIntegration("conversation delivery failures (Postgres)", () => {
     await failures.open(openInput(workspaceId, later.conversationId, later.messageIds[0]));
     await failures.open(openInput(workspaceId, otherAgent.conversationId, otherAgent.messageIds[0]));
     await failures.open(openInput(workspaceId, cleared.conversationId, cleared.messageIds[0]));
-    await failures.clear({ conversationId: cleared.conversationId, messageId: null, reason: "later_delivery" });
+    await failures.clear({ conversationId: cleared.conversationId, messageIds: cleared.messageIds, reason: "later_delivery" });
     await failures.open(openInput(elsewhere.workspaceId, foreign.conversationId, foreign.messageIds[0]));
 
     const pages: DeliveryFailureRecord[][] = [];

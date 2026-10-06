@@ -1,4 +1,4 @@
-import type { Selectable } from "kysely";
+import { sql, type Selectable } from "kysely";
 import { z } from "zod";
 
 import { currentTimestamp, nowPlusSeconds, toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
@@ -379,6 +379,34 @@ export class EmailSendIntentRepository {
       .orderBy("id", "asc")
       .execute();
     return rows.map(mapIntent);
+  }
+
+  /**
+   * The messages a delivery of `intent` vouches for (research B4, FR-040): its own, and every other
+   * message on its conversation whose newest send was made no later than it. A message resent after
+   * it, or first sent after it, is a newer send whose failure a delivery of this one cannot speak to.
+   */
+  async listMessagesSentThrough(intent: Pick<EmailSendIntentRecord, "id" | "conversationId" | "messageId">): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom("email_send_intents as delivered")
+      .innerJoin(
+        (eb) => eb
+          .selectFrom("email_send_intents")
+          .distinctOn("message_id")
+          .select(["message_id", "created_at", "id"])
+          .where("conversation_id", "=", intent.conversationId)
+          .orderBy("message_id")
+          .orderBy("created_at", "desc")
+          .orderBy("id", "desc")
+          .as("newest"),
+        (join) => join.onTrue(),
+      )
+      .select("newest.message_id")
+      .where("delivered.id", "=", intent.id)
+      // Compared in the database, at its own precision: a JavaScript Date would truncate the microseconds.
+      .where(sql<boolean>`(newest.created_at, newest.id) <= (delivered.created_at, delivered.id)`)
+      .execute();
+    return [...new Set([intent.messageId, ...rows.map((row) => row.message_id)])];
   }
 
   /** The intent a provider event names by the provider's own id (research A6); null for a foreign id. */

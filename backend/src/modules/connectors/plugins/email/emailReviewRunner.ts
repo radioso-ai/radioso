@@ -1,5 +1,6 @@
 import type { ConnectorChatPort, ConnectorTurnResult } from "@radioso/connector-api";
 
+import type { ConversationActivityWriter } from "../../../conversationActivity/contracts/index.js";
 import {
   capToSupportedMode,
   effectiveEngagementMode,
@@ -8,11 +9,12 @@ import {
   sendingStateOf,
   type EmailChannelDrainDispatcherPort,
   type EmailDomainRepository,
+  type EmailInboundRepository,
   type EmailMailboxRepository,
   type EmailThreadRepository,
   type EngagementMode,
 } from "../../../emailChannel/public.js";
-import type { HeldReplyProducerPort, HeldReplySupersedeScope, QueueAutoInput } from "../../../handoff/public.js";
+import type { HeldReplyProducerPort, QueueAutoInput } from "../../../handoff/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../../../shared/observability/tracing/operations.js";
 import { decidePublication, type HoldReason, type PublicationDecision } from "./emailPublicationDecision.js";
@@ -43,6 +45,7 @@ const EMAIL_REVIEW_HISTORY_MESSAGES = 10;
 export const EMAIL_REVIEW_MAX_ATTEMPTS = 4;
 
 type ClaimedReview = Awaited<ReturnType<EmailThreadRepository["claimDueReviews"]>>[number];
+type ReviewClaim = Parameters<EmailThreadRepository["releaseReview"]>[0];
 type Mailbox = NonNullable<Awaited<ReturnType<EmailMailboxRepository["findActiveById"]>>>;
 
 type EmailReviewOutcome =
@@ -56,14 +59,20 @@ type EmailReviewOutcome =
   | "budget_exhausted"
   | "retrying"
   | "failed"
+  /** Another worker took the claim over after this one's lease ran out; this one did nothing more. */
+  | "reclaimed"
   | "errored";
 
 type EmailReviewDrainResult = { claimed: number } & Record<EmailReviewOutcome, number>;
 
-/** What a finished revision asks of its completion: nothing more, or a fresh review under the new policy. */
+/**
+ * What a finished revision asks of its completion: nothing more, or a fresh review under the new
+ * policy; `completed` when the revision was already completed with what it decided.
+ */
 interface RevisionResult {
-  outcome: Exclude<EmailReviewOutcome, "retrying" | "failed" | "errored">;
+  outcome: Exclude<EmailReviewOutcome, "retrying" | "failed" | "reclaimed" | "errored">;
   reviewAgainUnder: { policyVersion: number } | null;
+  completed?: boolean;
 }
 
 /** The conversation as the review reads it, outside the transcript. */
@@ -90,18 +99,36 @@ export interface EmailReviewChecks {
   replyCompleteness: EmailReplyCompletenessPort;
 }
 
-/** Why a review set the customer's mail aside without a turn, as the thread note's code. */
-type EmailReviewSetAsideCode = "no_reply_needed";
-
-/** Records on the thread what the review decided without a turn, so the customer's mail is not invisible. */
-interface EmailReviewNotePort {
-  /** An operator-visible note on the conversation that its newest customer message was set aside, and why. */
-  recordSetAside(input: { workspaceId: string; conversationId: string; messageId: string; code: EmailReviewSetAsideCode }): Promise<void>;
+/**
+ * The writes a revision decided without a turn that must commit together (research B17): its
+ * completion under the claim, and the note on the thread that says why the customer's newest email
+ * was set aside, named by the delivery it came in on.
+ */
+export interface EmailReviewRevisionScope {
+  threads: Pick<EmailThreadRepository, "completeReview">;
+  inbound: Pick<EmailInboundRepository, "findDeliveryIdForMessage">;
+  activity: ConversationActivityWriter;
 }
 
-/** The held-reply ports a review produces through: the producer, and the supersede of the last draft. */
-type EmailReviewHeldReplies = Pick<HeldReplyProducerPort, "hold" | "queueAuto" | "findByReviewRef">
-  & Pick<HeldReplySupersedeScope, "supersedePendingForConversation">;
+/** One revision's writes in one transaction, bound by composition. */
+export interface EmailReviewRevisionUnitOfWork {
+  run<T>(work: (scope: EmailReviewRevisionScope) => Promise<T>): Promise<T>;
+}
+
+/**
+ * The held-reply producer a review publishes through. It supersedes nothing: the host's ingest
+ * supersedes a draft a newer customer message made stale, and a held reply answering an older
+ * message is born superseded, so a review never touches another claim's result.
+ */
+type EmailReviewHeldReplies = Pick<HeldReplyProducerPort, "hold" | "queueAuto" | "findByReviewRef">;
+
+/** This worker's claim was taken over after its lease ran out: it stops, doing nothing more. */
+class ReviewClaimLost extends Error {
+  constructor() {
+    super("email_review_claim_lost");
+    this.name = "ReviewClaimLost";
+  }
+}
 
 type QueueAutoRefusal = Extract<Awaited<ReturnType<HeldReplyProducerPort["queueAuto"]>>, { ok: false }>["refused"];
 
@@ -119,7 +146,10 @@ const HOLD_REASON_FOR_REFUSAL: Record<QueueAutoRefusal, HoldReason> = {
 };
 
 export interface EmailReviewRunnerDependencies {
-  links: Pick<EmailThreadRepository, "claimDueReviews" | "scheduleReview" | "completeReview" | "releaseReview" | "retryReviewLater">;
+  links: Pick<
+    EmailThreadRepository,
+    "claimDueReviews" | "holdsReviewClaim" | "scheduleReview" | "completeReview" | "releaseReview" | "retryReviewLater"
+  >;
   mailboxes: Pick<EmailMailboxRepository, "findActiveById" | "findPolicyVersion" | "reserveGeneration">;
   domains: Pick<EmailDomainRepository, "findById">;
   conversations: EmailReviewConversationReader;
@@ -127,7 +157,8 @@ export interface EmailReviewRunnerDependencies {
   heldReplies: EmailReviewHeldReplies;
   handoffs: EmailReviewHandoffPort;
   checks: EmailReviewChecks;
-  notes: EmailReviewNotePort;
+  /** A set-aside revision's note and completion, together. */
+  revisions: EmailReviewRevisionUnitOfWork;
   drains: EmailChannelDrainDispatcherPort;
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
   /** A line per completed review, and failure and degradation lines; ids and codes only. */
@@ -157,6 +188,7 @@ const emptyResult = (): EmailReviewDrainResult => ({
   budget_exhausted: 0,
   retrying: 0,
   failed: 0,
+  reclaimed: 0,
   errored: 0,
 });
 
@@ -164,6 +196,12 @@ const errorName = (error: unknown): string => (error instanceof Error ? error.na
 
 /** The review's idempotency ref (research B17): one held reply per conversation and revision. */
 const reviewRefOf = (conversationId: string, revision: number): string => `email:${conversationId}:${revision}`;
+
+const reviewClaimOf = (claim: ClaimedReview): ReviewClaim => ({
+  conversationId: claim.conversationId,
+  attempt: claim.reviewAttempts,
+  leaseUntil: claim.reviewLeaseUntil,
+});
 
 const decisionReason = (decision: PublicationDecision): string => {
   if (decision.kind === "hold") return decision.reason;
@@ -177,11 +215,12 @@ const decisionReason = (decision: PublicationDecision): string => {
  * 1. finishes at once when R's review ref is already held, because an earlier claim got that far;
  * 2. hands the thread to a person, running nothing, when the mailbox no longer lets the agent
  *    answer — the lower-autonomy mode of the accepted and the current policy (research B16);
- * 3. charges revision R to the mailbox's generation budget, once across attempts, and hands the
+ * 3. leaves a conversation a person owns to them, running and charging nothing;
+ * 4. charges revision R to the mailbox's generation budget, once across attempts, and hands the
  *    thread to a person as `generation_budget`, running nothing, when the budget is spent (B8);
- * 4. asks the reply triage whether the customer's unanswered mail calls for a reply; a clear `no`
- *    runs no turn, holds nothing and asks no teammate, and leaves a note on the thread (FR-017a);
- * 5. supersedes the draft an earlier revision left pending, so the thread keeps one current draft;
+ * 5. asks the reply triage whether the customer's unanswered mail calls for a reply; a clear `no`
+ *    runs no turn, holds nothing and asks no teammate, and leaves a note on the thread (FR-017a),
+ *    committed with R's completion, so a retry finds R done rather than judging it again;
  * 6. runs `respond` as a review of the newest customer message, within the mailbox's history window;
  * 7. decides publication: a draft is queued for an automatic send or held, either bound to the
  *    policy and ownership the review ran under; a draftless turn hands off, and a person's
@@ -191,7 +230,10 @@ const decisionReason = (decision: PublicationDecision): string => {
  *    held-reply service refuses to queue is held instead;
  * 8. completes revision R only, so mail that made R+1 meanwhile keeps its due time and runs next.
  *
- * A failure retries at a backoff, and the last attempt hands the thread off as `review_unavailable`.
+ * Every write is the claim's: a worker whose lease ran out and was claimed over checks its claim
+ * before it charges, publishes or hands off, and its completion, release and retry are fenced on
+ * the claim, so it stops without touching what the claim that took over decided. A failure retries
+ * at a backoff, and the last attempt hands the thread off as `review_unavailable`.
  */
 export class EmailReviewRunner {
   constructor(private readonly deps: EmailReviewRunnerDependencies) {}
@@ -220,11 +262,22 @@ export class EmailReviewRunner {
   }
 
   private async review(claim: ClaimedReview): Promise<EmailReviewOutcome> {
+    try {
+      return await this.reviewClaimed(claim);
+    } catch (error) {
+      if (!(error instanceof ReviewClaimLost)) throw error;
+      this.deps.logger.warn({ ...this.ids(claim), revision: claim.reviewRevision, attempt: claim.reviewAttempts }, "email_review_claim_lost");
+      return "reclaimed";
+    }
+  }
+
+  private async reviewClaimed(claim: ClaimedReview): Promise<EmailReviewOutcome> {
     let revision: RevisionResult;
     try {
       revision = await this.runRevision(claim);
-      await this.finish(claim, revision.reviewAgainUnder);
+      if (!revision.completed) await this.finish(claim, revision.reviewAgainUnder);
     } catch (error) {
+      if (error instanceof ReviewClaimLost) throw error;
       return this.fail(claim, error);
     }
     this.deps.logger.info(
@@ -244,6 +297,7 @@ export class EmailReviewRunner {
   private async runRevision(claim: ClaimedReview): Promise<RevisionResult> {
     const { conversationId } = claim;
     const reviewRef = reviewRefOf(conversationId, claim.reviewRevision);
+    // An earlier claim got as far as R's result: R only needs completing, and nothing is redone.
     if (await this.deps.heldReplies.findByReviewRef(conversationId, reviewRef)) {
       return { outcome: "already_held", reviewAgainUnder: null };
     }
@@ -257,21 +311,30 @@ export class EmailReviewRunner {
       await this.handOff(claim, OPERATOR_ONLY_MAILBOX);
       return { outcome: "not_runnable", reviewAgainUnder: null };
     }
+    // A person's conversation needs no triage and no turn, so it spends none of the mailbox's
+    // generation budget; a takeover after this check is still caught by the host's turn.
+    if (await this.deps.conversations.humanOwned(conversationId)) {
+      return { outcome: "human_owned", reviewAgainUnder: null };
+    }
     const respondToMessageId = await this.deps.conversations.latestCustomerMessageId(conversationId);
     if (respondToMessageId === null) {
       throw new Error("email_review_without_customer_message");
     }
+    await this.ensureClaimed(claim);
     if (!(await this.reserveGeneration(claim))) {
       await this.handOff(claim, GENERATION_BUDGET);
       return { outcome: "budget_exhausted", reviewAgainUnder: null };
     }
     const subject = this.subjectOf(claim, mailbox.agentId);
-    if (await this.setAsideWithoutReply(subject, respondToMessageId)) {
-      return { outcome: "no_reply_needed", reviewAgainUnder: null };
+    const setAside = await this.setAsideWithoutReply(claim, subject, respondToMessageId);
+    if (setAside !== null) {
+      return { outcome: "no_reply_needed", reviewAgainUnder: null, completed: setAside.completed };
     }
 
-    await this.deps.heldReplies.supersedePendingForConversation(conversationId, "newer_inbound");
+    await this.ensureClaimed(claim);
     const turn = await this.respond(claim, mailbox.agentId, respondToMessageId);
+    // The turn takes the longest: a claim taken over meanwhile publishes and hands off nothing.
+    await this.ensureClaimed(claim);
     const { decision, completeness } = await this.decide(claim, mailbox, mode, turn, subject);
     if (turn.kind !== "draft") {
       if (decision.kind === "no_draft" && decision.handoffReason !== null) {
@@ -305,15 +368,32 @@ export class EmailReviewRunner {
   }
 
   /**
-   * Sets the customer's mail aside, with a note on the thread, when the reply triage finds it needs
-   * no reply. Only a clear `no` silences: `unsure` and a failed triage run the review. A person's
-   * conversation is not triaged: no model reads it, and the host runs no turn on it either.
+   * Sets the customer's mail aside when the reply triage finds it needs no reply; null when it does
+   * not. Only a clear `no` silences: `unsure` and a failed triage run the review. The verdict is
+   * committed as R's completion and the thread's note in one unit, under the claim, so a retry finds
+   * R done instead of judging it again, and nothing is noted unless R completes. A revision newer
+   * mail overtook is not completed and gets no note: the newer one judges all of the mail.
    */
-  private async setAsideWithoutReply(subject: EmailReviewSubject, messageId: string): Promise<boolean> {
-    if (await this.deps.conversations.humanOwned(subject.conversationId)) return false;
-    if ((await this.deps.checks.replyTriage.assess(subject)) !== "no") return false;
-    await this.deps.notes.recordSetAside({ workspaceId: subject.workspaceId, conversationId: subject.conversationId, messageId, code: NO_REPLY_NEEDED });
-    return true;
+  private async setAsideWithoutReply(
+    claim: ClaimedReview,
+    subject: EmailReviewSubject,
+    messageId: string,
+  ): Promise<{ completed: boolean } | null> {
+    if ((await this.deps.checks.replyTriage.assess(subject)) !== "no") return null;
+    const completed = await this.deps.revisions.run(async (scope) => {
+      if (!(await scope.threads.completeReview({ ...reviewClaimOf(claim), revision: claim.reviewRevision }))) return false;
+      const deliveryId = await scope.inbound.findDeliveryIdForMessage(subject.conversationId, messageId);
+      if (!deliveryId) throw new Error("email_review_note_without_delivery");
+      await scope.activity.record({
+        conversationId: subject.conversationId,
+        workspaceId: subject.workspaceId,
+        kind: "channel_exception",
+        actorUserId: null,
+        detail: { code: NO_REPLY_NEEDED, deliveryId },
+      });
+      return true;
+    });
+    return { completed };
   }
 
   /** Holds the review's result for a teammate, and asks for a fresh review when its policy moved under it. */
@@ -430,16 +510,17 @@ export class EmailReviewRunner {
   }
 
   /**
-   * Completes revision R. A newer revision is left due: its claim is let go at once, with a drain
-   * asked for, rather than waiting out the lease.
+   * Completes revision R under the claim. A newer revision is left due: its claim is let go at once,
+   * with a drain asked for, rather than waiting out the lease. A claim taken over does neither.
    */
   private async finish(claim: ClaimedReview, reviewAgainUnder: { policyVersion: number } | null): Promise<void> {
     const { conversationId } = claim;
     if (reviewAgainUnder) {
+      await this.ensureClaimed(claim);
       await this.deps.links.scheduleReview(conversationId, { dueAt: this.deps.clock(), policyVersion: reviewAgainUnder.policyVersion });
     }
-    if (await this.deps.links.completeReview(conversationId, claim.reviewRevision)) return;
-    await this.deps.links.releaseReview(conversationId, claim.reviewAttempts);
+    if (await this.deps.links.completeReview({ ...reviewClaimOf(claim), revision: claim.reviewRevision })) return;
+    if (!(await this.deps.links.releaseReview(reviewClaimOf(claim)))) throw new ReviewClaimLost();
     await requestDrainBestEffort(this.deps, { maxJobs: DRAIN_BATCH, stage: "review" });
   }
 
@@ -458,15 +539,21 @@ export class EmailReviewRunner {
     }
     const delaySeconds = RETRY_DELAYS_SECONDS[attempt - 1] ?? RETRY_DELAYS_SECONDS[RETRY_DELAYS_SECONDS.length - 1];
     const nextAttemptAt = new Date(this.deps.clock().getTime() + delaySeconds * 1000);
-    const returned = await this.deps.links.retryReviewLater(claim.conversationId, { attempt, nextAttemptAt, errorCode: REVIEW_FAILED });
-    if (returned) {
-      await requestDrainBestEffort(this.deps, { maxJobs: DRAIN_BATCH, stage: "review", scheduleAt: nextAttemptAt });
-    }
+    const returned = await this.deps.links.retryReviewLater(reviewClaimOf(claim), { nextAttemptAt, errorCode: REVIEW_FAILED });
+    if (!returned) throw new ReviewClaimLost();
+    await requestDrainBestEffort(this.deps, { maxJobs: DRAIN_BATCH, stage: "review", scheduleAt: nextAttemptAt });
     return "retrying";
   }
 
-  private handOff(claim: ClaimedReview, reason: string): Promise<void> {
-    return this.deps.handoffs.requestHumanOwnership({ workspaceId: claim.workspaceId, conversationId: claim.conversationId, reason });
+  /** Hands the thread to a person, only while this worker still holds its claim. */
+  private async handOff(claim: ClaimedReview, reason: string): Promise<void> {
+    await this.ensureClaimed(claim);
+    await this.deps.handoffs.requestHumanOwnership({ workspaceId: claim.workspaceId, conversationId: claim.conversationId, reason });
+  }
+
+  /** Stops this worker when another claimed its review after its lease ran out. */
+  private async ensureClaimed(claim: ClaimedReview): Promise<void> {
+    if (!(await this.deps.links.holdsReviewClaim(reviewClaimOf(claim)))) throw new ReviewClaimLost();
   }
 
   private observeReceiptToHeldReply(claim: ClaimedReview): void {

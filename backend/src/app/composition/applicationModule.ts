@@ -1,5 +1,6 @@
 import type { Router } from "express";
 import type { ConnectorPlugin } from "@radioso/connector-api";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { QueryResultRow } from "pg";
 
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
@@ -225,6 +226,8 @@ interface ApplicationActionHandlerRegistration {
         errorReporter: ErrorReporter;
         // Null when metrics are disabled.
         metrics: MetricsRegistry | null;
+        // Tells the dashboard of what a handler committed, e.g. a held reply it returned to a teammate.
+        publisher: WorkspaceInvalidationPublisher;
       }) => ActionHandler);
 }
 

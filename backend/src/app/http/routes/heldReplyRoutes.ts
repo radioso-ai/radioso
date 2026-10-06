@@ -2,6 +2,7 @@ import { Router, type Request, type RequestHandler, type Response } from "expres
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
+import type { ReviewTurnAuditRecord } from "../../../modules/chat/contracts/index.js";
 import type { HeldReplyView, OwnershipActor } from "../../../modules/handoff/public.js";
 import { AppError, badRequest, unauthorized } from "../../../shared/domain/errors.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
@@ -9,7 +10,7 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { validateBody, validateQuery } from "../middleware/validate.js";
 import { conversationParamsSchema } from "./conversationRouteSchemas.js";
 
-type HeldReplyRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "heldReplies">;
+type HeldReplyRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "heldReplies" | "reviewTurnAudits">;
 
 type ReleaseRefusal = Extract<Awaited<ReturnType<AppDependencies["heldReplies"]["release"]>>, { ok: false }>["refusal"];
 
@@ -48,11 +49,23 @@ const heldReplyOf = (req: Request): { conversationId: string; heldReplyId: strin
 };
 
 /**
- * The wire shape, selected field by field so the draft's presentation, its bound policy and its
- * review ref never reach a client. The held reply's operator view carries no review trace, so
- * `trace` is null.
+ * The review turn's reasoning (FR-027): how its audit record says it went, and what it reported to
+ * the held reply. Ids and codes only; null when no record of the review is readable.
  */
-const presentHeldReply = (heldReply: HeldReplyView) => ({
+const traceOf = (heldReply: HeldReplyView, review: ReviewTurnAuditRecord | null) => review === null ? null : {
+  turnId: review.turnId,
+  outcome: review.answerOutcome,
+  groundingVerdict: review.groundingVerdict,
+  coverage: heldReply.facts.coverage,
+  handoffReason: heldReply.facts.handoff.reason,
+  suppressedEffects: heldReply.suppressedEffects.map((effect) => ({ skillName: effect.skillName })),
+};
+
+/**
+ * The wire shape, selected field by field so the draft's presentation, its bound policy and its
+ * review ref never reach a client.
+ */
+const presentHeldReply = (heldReply: HeldReplyView, review: ReviewTurnAuditRecord | null) => ({
   id: heldReply.id,
   conversationId: heldReply.conversationId,
   agentId: heldReply.agentId,
@@ -73,8 +86,21 @@ const presentHeldReply = (heldReply: HeldReplyView) => ({
   releaserUserId: heldReply.releaserUserId,
   editorUserId: heldReply.editorUserId,
   attentionOpen: heldReply.attentionOpen,
-  trace: null,
+  trace: traceOf(heldReply, review),
 });
+
+type HeldReplyWire = ReturnType<typeof presentHeldReply>;
+
+/** Presents held replies with their review turns, read in one pass for a page. */
+const heldReplyPresenter = (reviews: AppDependencies["reviewTurnAudits"]) =>
+  async (workspaceId: string, heldReplies: readonly HeldReplyView[]): Promise<HeldReplyWire[]> => {
+    const found = await reviews.find(workspaceId, heldReplies.map((heldReply) => ({
+      conversationId: heldReply.conversationId,
+      requestMessageId: heldReply.answersMessageId,
+      recordedBy: heldReply.createdAt,
+    })));
+    return heldReplies.map((heldReply, index) => presentHeldReply(heldReply, found[index] ?? null));
+  };
 
 const REFUSALS: Record<ReleaseRefusal, { code: string; message: string }> = {
   not_pending: { code: "held_reply_not_pending", message: "The held reply is no longer pending" },
@@ -84,8 +110,8 @@ const REFUSALS: Record<ReleaseRefusal, { code: string; message: string }> = {
 };
 
 // Every refusal carries the held reply as it is now, so the caller can re-render without a re-read.
-const refused = (refusal: ReleaseRefusal, current: HeldReplyView | null): AppError =>
-  new AppError(409, REFUSALS[refusal].code, REFUSALS[refusal].message, { heldReply: current ? presentHeldReply(current) : null });
+const refused = (refusal: ReleaseRefusal, current: HeldReplyWire | null): AppError =>
+  new AppError(409, REFUSALS[refusal].code, REFUSALS[refusal].message, { heldReply: current });
 
 const handle = (work: (req: Request, res: Response) => Promise<void>): RequestHandler =>
   (req, res, next) => {
@@ -101,21 +127,28 @@ export const createHeldReplyRoutes = (dependencies: HeldReplyRouteDependencies):
   const workspaceSession = requireWorkspaceSession(dependencies);
   const takeoverPermission = requireWorkspacePermission(dependencies, "workspace.conversation.takeover");
   const heldReplies = dependencies.heldReplies;
+  const present = heldReplyPresenter(dependencies.reviewTurnAudits);
+  const presentOne = async (workspaceId: string, heldReply: HeldReplyView): Promise<HeldReplyWire> =>
+    (await present(workspaceId, [heldReply]))[0];
+  const presentMaybe = async (workspaceId: string, heldReply: HeldReplyView | null): Promise<HeldReplyWire | null> =>
+    (heldReply ? presentOne(workspaceId, heldReply) : null);
 
   router.get("/held-replies", workspaceSession, takeoverPermission, validateQuery(listHeldRepliesQuerySchema), handle(async (req, res) => {
     const query = req.query as z.infer<typeof listHeldRepliesQuerySchema>;
-    const page = await heldReplies.list(actorOf(res), {
+    const actor = actorOf(res);
+    const page = await heldReplies.list(actor, {
       attention: query.attention ?? "open",
       agentId: query.agentId,
       cursor: query.cursor,
       limit: query.limit ?? DEFAULT_PAGE_SIZE,
     });
-    res.status(200).json({ items: page.items.map(presentHeldReply), nextCursor: page.nextCursor });
+    res.status(200).json({ items: await present(actor.workspaceId, page.items), nextCursor: page.nextCursor });
   }));
 
   router.get("/conversations/:conversationId/held-reply", workspaceSession, takeoverPermission, handle(async (req, res) => {
-    const { heldReply } = await heldReplies.current(actorOf(res), conversationIdOf(req));
-    res.status(200).json({ heldReply: heldReply ? presentHeldReply(heldReply) : null });
+    const actor = actorOf(res);
+    const { heldReply } = await heldReplies.current(actor, conversationIdOf(req));
+    res.status(200).json({ heldReply: await presentMaybe(actor.workspaceId, heldReply) });
   }));
 
   router.post(
@@ -126,16 +159,18 @@ export const createHeldReplyRoutes = (dependencies: HeldReplyRouteDependencies):
     handle(async (req, res) => {
       const target = heldReplyOf(req);
       const body = req.body as z.infer<typeof releaseHeldReplyRequestSchema> | undefined;
-      const result = await heldReplies.release(actorOf(res), { ...target, editedText: body?.editedText ?? null });
-      if (!result.ok) throw refused(result.refusal, result.current);
-      res.status(201).json({ heldReply: presentHeldReply(result.heldReply), messageId: result.messageId, delivery: "queued" });
+      const actor = actorOf(res);
+      const result = await heldReplies.release(actor, { ...target, editedText: body?.editedText ?? null });
+      if (!result.ok) throw refused(result.refusal, await presentMaybe(actor.workspaceId, result.current));
+      res.status(201).json({ heldReply: await presentOne(actor.workspaceId, result.heldReply), messageId: result.messageId, delivery: "queued" });
     }),
   );
 
   router.post("/conversations/:conversationId/held-replies/:heldReplyId/discard", workspaceSession, takeoverPermission, handle(async (req, res) => {
-    const result = await heldReplies.discard(actorOf(res), heldReplyOf(req));
-    if (!result.ok) throw refused(result.refusal, result.current);
-    res.status(200).json(presentHeldReply(result.heldReply));
+    const actor = actorOf(res);
+    const result = await heldReplies.discard(actor, heldReplyOf(req));
+    if (!result.ok) throw refused(result.refusal, await presentMaybe(actor.workspaceId, result.current));
+    res.status(200).json(await presentOne(actor.workspaceId, result.heldReply));
   }));
 
   return router;

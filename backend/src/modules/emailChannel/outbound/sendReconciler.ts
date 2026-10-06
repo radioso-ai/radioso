@@ -14,6 +14,13 @@ import type { SendIntentWriter } from "./sendIntentWriter.js";
  */
 const DEFAULT_LEASE_SECONDS = 300;
 
+/**
+ * How long after the provider accepted a send its lookup may keep failing transiently before the
+ * send is given up on as `uncertain`: the first lookup runs a day after acceptance, so a second day
+ * of outage is retried a lease at a time.
+ */
+const LOOKUP_DEADLINE_AFTER_ACCEPT_MS = 48 * 60 * 60 * 1000;
+
 /** What one claimed intent came to. */
 type ReconcileResult = "reposted" | "settled" | "uncertain" | "deferred" | "skipped";
 
@@ -37,7 +44,9 @@ const emptyRun = (): SendReconcileRun => ({ claimed: 0, reposted: 0, settled: 0,
  *   authority its trigger needs still holds and the key is inside its 23-hour window, and
  *   otherwise becomes `uncertain`;
  * - an accepted send is looked up 24 hours on: provider evidence settles it, and a send the
- *   lookup cannot settle becomes `uncertain`.
+ *   lookup cannot settle becomes `uncertain`. A lookup the provider refuses for good makes it
+ *   `uncertain` at once; one it cannot answer for now is retried until 48 hours after acceptance,
+ *   and then the send becomes `uncertain` too. Later provider evidence still settles it.
  *
  * It never mints a new key: a second provider call under a new one is an audited operator resend.
  */
@@ -54,6 +63,7 @@ export class SendReconciler {
     metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
     logger: EmailChannelLogger;
     leaseSeconds?: number;
+    clock?: () => Date;
   }) {}
 
   async run(request: { maxJobs: number }): Promise<SendReconcileRun> {
@@ -115,8 +125,15 @@ export class SendReconciler {
     try {
       status = await this.deps.driver.lookup(intent.providerMessageId);
     } catch (error) {
-      if (error instanceof EmailLookupError) return "deferred";
-      throw error;
+      if (!(error instanceof EmailLookupError)) throw error;
+      if (error.retryable && !this.pastLookupDeadline(intent)) return "deferred";
+      // Nothing will settle it now, so its doubt goes to a teammate.
+      this.deps.logger.warn(
+        { sendIntentId: intent.id, conversationId: intent.conversationId, code: error.code, retryable: error.retryable },
+        "email_send_lookup_abandoned",
+      );
+      await this.deps.writer.apply(intent, { kind: "reconcile_unsettled" }, { writer: "reconciler" });
+      return "uncertain";
     }
     let result: ReconcileResult = "uncertain";
     if (status !== null) {
@@ -133,6 +150,12 @@ export class SendReconciler {
     }
     if (status?.deliveredMessageId) await this.deps.attempt.recordDeliveredMessageId(intent, status.deliveredMessageId);
     return result;
+  }
+
+  private pastLookupDeadline(intent: EmailSendIntentRecord): boolean {
+    const acceptedAt = intent.acceptedAt ?? intent.createdAt;
+    const now = (this.deps.clock ?? (() => new Date()))();
+    return now.getTime() >= acceptedAt.getTime() + LOOKUP_DEADLINE_AFTER_ACCEPT_MS;
   }
 
   private count(action: "repost" | "lookup", result: ReconcileResult | "error"): void {

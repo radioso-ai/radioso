@@ -354,10 +354,12 @@ export class ConversationOwnershipService {
     const outcome = await this.dependencies.replyWrites.run(async (scope): Promise<
       { ok: true; message: MessageRecord; record: ConversationOwnershipRecord; claim: SettledChange | null } | OwnershipRefused
     > => {
-      // Lock order: the conversation row, then its ownership row — the order a conversation or
-      // workspace delete takes them (it deletes the conversation, then the ownership row cascades),
-      // so the two never deadlock. Holding the conversation first also queues this message behind
-      // any writer already holding it, so the message dates after theirs and no cursor tail skips it.
+      // Lock order: the conversation row, then its ownership row, then the held replies it
+      // replaces — the conversation lock protocol every writer of the conversation follows, and the
+      // order a conversation or workspace delete takes the first two (it deletes the conversation,
+      // then the ownership row cascades), so none of them deadlock. Holding the conversation first
+      // also queues this message behind any writer already holding it, so the message dates after
+      // theirs and no cursor tail skips it.
       if (!(await scope.conversations.lockForUpdate(conversation.id, conversation.workspaceId))) {
         throw notFound("Conversation not found");
       }

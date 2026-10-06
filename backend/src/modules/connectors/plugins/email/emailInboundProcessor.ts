@@ -46,9 +46,12 @@ import { resolveThread, type ThreadCandidates, type ThreadResolution } from "./e
  * 4. index the thread and its Message-Ids (`done`).
  *
  * Every step resumes from the state the last attempt persisted, so a crash anywhere repeats no
- * write and splits no thread. The host's ingest supersedes the thread's pending draft, which a
- * newer message makes stale; step 3 schedules the thread's coalesced review for a
- * `run_review_turn` disposition (stage 2, `EmailReviewRunner`).
+ * write and splits no thread. A retry resumes each delivery from the mailbox it was bound to before
+ * it routes again, so a rotated relay token or a changed route never strands one. Each step's write
+ * is fenced by the event's claim: a worker whose lease was reclaimed loses its next write and stops,
+ * leaving the delivery to the claim that holds the event. The host's ingest supersedes the thread's
+ * pending draft, which a newer message makes stale; step 3 schedules the thread's coalesced review
+ * for a `run_review_turn` disposition (stage 2, `EmailReviewRunner`).
  */
 
 /** Waits before attempts 2 to 5 of an event (FR-008's bounded retry); a fifth failure is terminal. */
@@ -57,6 +60,8 @@ const RETRY_DELAYS_SECONDS: readonly number[] = [30, 120, 600, 1_800];
 const DRAIN_BATCH = 5;
 const SOURCE_CHANNEL = "email";
 const PROCESSING_FAILED = "processing_failed";
+/** A delivery whose mailbox was removed before it could finish: it fails visibly, with this code. */
+const MAILBOX_REMOVED = "mailbox_removed";
 const RECEIPT_TO_INBOX_BUCKETS = [1, 2, 5, 10, 30, 60, 120, 300, 900];
 
 /** Mail on one thread inside this many seconds gets one review (FR-024). */
@@ -67,6 +72,7 @@ export const EMAIL_RAW_MAX_BYTES = 2 * 1024 * 1024;
 type ConversationOwnership = "ai_owned" | "human_owned";
 type FetchedDeliveryContent = Parameters<EmailInboundRepository["recordFetched"]>[1];
 type CustomerText = ReturnType<typeof extractCustomerText>;
+type DeliveryClaim = Parameters<EmailInboundRepository["markIndexed"]>[0];
 
 /**
  * The human ownership each ingest-only reason asks for, read from the persisted reason so a
@@ -89,13 +95,23 @@ interface ThreadIdentity {
   participantAddress: string;
 }
 
-/** The keystone reads and writes of one protocol step, bound to one transaction by composition. */
+/**
+ * The keystone reads and writes of one protocol step, bound to one transaction by composition: a
+ * delivery's resolution or indexing here (research B15), and a review revision's set-aside in
+ * `EmailReviewRunner` (research B17).
+ */
 export interface EmailThreadProtocolScope {
   /** Serializes resolution for one participant of one mailbox until the transaction ends. */
   lockThread(input: { mailboxId: string; participantAddress: string }): Promise<void>;
   inbound: Pick<
     EmailInboundRepository,
-    "findForwardReservations" | "findReverseReferences" | "findReservedThreads" | "reserveThread" | "settleDropped" | "settleDelivery"
+    | "findForwardReservations"
+    | "findReverseReferences"
+    | "findReservedThreads"
+    | "reserveThread"
+    | "settleDropped"
+    | "markIndexed"
+    | "findDeliveryIdForMessage"
   >;
   threads: Pick<
     EmailThreadRepository,
@@ -106,6 +122,7 @@ export interface EmailThreadProtocolScope {
     | "recordLatestInbound"
     | "insertIndexEntries"
     | "scheduleReview"
+    | "completeReview"
   >;
   /** Null while the conversation is only reserved, not yet ingested. */
   conversations: { ownershipOf(input: { conversationId: string; workspaceId: string }): Promise<ConversationOwnership | null> };
@@ -120,13 +137,21 @@ export interface EmailInboundProcessorDependencies {
   receiver: Pick<InboundEmailReceiver, "provider" | "fetchMessage">;
   inbound: Pick<
     EmailInboundRepository,
-    "insertDelivery" | "listEventDeliveries" | "recordFetched" | "recordIngested" | "settleDelivery" | "settleEvent" | "retryEventLater"
+    | "insertDelivery"
+    | "listEventDeliveries"
+    | "recordFetched"
+    | "settleDropped"
+    | "recordIngested"
+    | "failDelivery"
+    | "settleEvent"
+    | "retryEventLater"
   >;
   mailboxes: Pick<
     EmailMailboxRepository,
     "resolveRelayToken" | "findActiveByAddress" | "findActiveById" | "listActive" | "policyEffectiveAt"
   >;
-  domains: Pick<EmailDomainRepository, "findReceivingVerified">;
+  /** Routing's receiving-domain lookup, and the readiness refresh a provider's domain event asks for (FR-003). */
+  domains: Pick<EmailDomainRepository, "findReceivingVerified" | "expediteRefresh">;
   threads: Pick<EmailThreadRepository, "findOutboundMessageIds">;
   receipts: Pick<MailboxService, "recordInboundReceipt">;
   /** Provider delivery events and inbound delivery status reports settle the sends they name. */
@@ -153,13 +178,16 @@ export interface EmailInboundProcessorDependencies {
 
 type Mailbox = NonNullable<Awaited<ReturnType<EmailMailboxRepository["findActiveById"]>>>;
 
-/** Everything a delivery's steps share: the event, its content and the mailbox's authority. */
-interface DeliveryContext {
+/** What every delivery of one event shares: the claimed event and the fetched content. */
+interface EventContent {
   event: InboundEventRecord;
   message: InboundEmailMessage;
   customerText: CustomerText;
   deliveredTo: readonly string[];
-  target: MailboxTarget;
+}
+
+/** Everything a delivery's steps share: the event, its content and the mailbox's authority. */
+interface DeliveryContext extends EventContent {
   mailbox: Mailbox;
   /** Accepted and current policy combined (research B16), capped to the supported modes. */
   authority: { mode: EngagementMode; enabled: boolean };
@@ -169,12 +197,35 @@ type FetchResult =
   | { ok: true; message: InboundEmailMessage }
   | { ok: false; retryable: boolean; code: string };
 
+/**
+ * A step's fenced write lost: the event's claim was reclaimed by another worker, or the delivery
+ * moved past the step. This worker stops; the claim that holds the event finishes the delivery.
+ */
+class DeliveryClaimLost extends Error {
+  constructor(readonly step: string) {
+    super("email_inbound_claim_lost");
+    this.name = "DeliveryClaimLost";
+  }
+}
+
+/** The claim `event`'s worker writes `delivery` under. */
+const claimOf = (event: InboundEventRecord, delivery: Pick<InboundDeliveryRecord, "id">): DeliveryClaim =>
+  ({ deliveryId: delivery.id, attempt: event.attempts });
+
+/** Stops the worker when a step's fenced write did not land. */
+const requireWon = (won: boolean, step: string): void => {
+  if (!won) throw new DeliveryClaimLost(step);
+};
+
 export class EmailInboundProcessor {
   constructor(private readonly deps: EmailInboundProcessorDependencies) {}
 
   async process(event: InboundEventRecord): Promise<InboundEventOutcome> {
     if (event.eventKind === "delivery_status" && event.providerObjectId !== null) {
       return this.applyDeliveryStatus(event, event.providerObjectId);
+    }
+    if (event.eventKind === "domain_status" && event.providerObjectId !== null) {
+      return this.applyDomainStatus(event, event.providerObjectId);
     }
     if (event.eventKind !== "message_received" || event.providerObjectId === null) {
       return this.settle(event, "ignored", null);
@@ -187,8 +238,9 @@ export class EmailInboundProcessor {
         : this.failTerminally(event, fetched.code, deliveredToSet(envelope, null));
     }
     try {
-      return await this.deliver(event, fetched.message, deliveredToSet(envelope, fetched.message));
+      return await this.deliver({ event, message: fetched.message, customerText: await this.extractText(fetched.message), deliveredTo: deliveredToSet(envelope, fetched.message) });
     } catch (error) {
+      if (error instanceof DeliveryClaimLost) return this.yieldClaim(event, error.step);
       this.deps.logger.warn(
         { eventId: event.id, attempt: event.attempts, errorName: errorName(error) },
         "email_inbound_processing_failed",
@@ -214,20 +266,68 @@ export class EmailInboundProcessor {
     }
   }
 
-  private async deliver(event: InboundEventRecord, message: InboundEmailMessage, deliveredTo: readonly string[]): Promise<InboundEventOutcome> {
-    const targets = await routeDeliveredTo(deliveredTo, this.routeLookups());
-    if (targets.mailboxes.length === 0) {
-      if (!targets.unrouted) return this.settle(event, "ignored", null);
-      await this.recordUnrouted(event, targets.unrouted.workspaceId);
-      return this.settle(event, "processed", null);
+  /**
+   * A provider event about one of its sending domains (FR-003): the domain it names is made due for
+   * its readiness refresh now, which records any transition and retries a failed provider read.
+   * A domain no workspace holds is ignored.
+   */
+  private async applyDomainStatus(event: InboundEventRecord, providerDomainId: string): Promise<InboundEventOutcome> {
+    try {
+      const expedited = await this.deps.domains.expediteRefresh({ provider: event.provider, providerDomainId });
+      return this.settle(event, expedited ? "processed" : "ignored", null);
+    } catch (error) {
+      this.deps.logger.warn({ eventId: event.id, attempt: event.attempts, errorName: errorName(error) }, "email_domain_status_failed");
+      return hasAttemptsLeft(event) ? this.retryLater(event, PROCESSING_FAILED) : this.settle(event, "failed", PROCESSING_FAILED);
     }
-    const customerText = await this.extractText(message);
-    for (const target of targets.mailboxes) {
-      const opened = await this.openDelivery(event, target);
-      if (!opened) continue;
-      await this.advance({ event, message, customerText, deliveredTo, target, ...opened.context }, opened.delivery);
+  }
+
+  /**
+   * Resumes each delivery an earlier attempt opened from the mailbox it was bound to, then routes
+   * for mailboxes the event reaches that have none yet. Only an event that reached no mailbox at
+   * all is logged as unrouted.
+   */
+  private async deliver(content: EventContent): Promise<InboundEventOutcome> {
+    const { event } = content;
+    const opened = await this.deps.inbound.listEventDeliveries(event.id);
+    for (const delivery of opened) {
+      if (isUnfinished(delivery)) await this.resume(content, delivery);
+    }
+    const bound = new Set(opened.map((delivery) => delivery.mailboxId));
+    const targets = await routeDeliveredTo(content.deliveredTo, this.routeLookups());
+    for (const target of targets.mailboxes.filter((candidate) => !bound.has(candidate.mailboxId))) {
+      const created = await this.openDelivery(event, target);
+      if (created) await this.advance({ ...content, ...created.context }, created.delivery);
+    }
+    if (opened.length === 0 && targets.mailboxes.length === 0) {
+      if (!targets.unrouted) return this.settle(event, "ignored", null);
+      await this.recordUnrouted(content, targets.unrouted.workspaceId);
     }
     return this.settle(event, "processed", null);
+  }
+
+  /**
+   * An earlier attempt's delivery, carried on from its stored binding rather than from routing as it
+   * is now. One whose mailbox was removed since cannot finish, and fails visibly instead.
+   */
+  private async resume(content: EventContent, delivery: InboundDeliveryRecord): Promise<void> {
+    if (delivery.mailboxId === null) {
+      await this.finishUnrouted(content, delivery);
+      return;
+    }
+    const mailbox = await this.deps.mailboxes.findActiveById(delivery.mailboxId);
+    if (!mailbox) {
+      requireWon(await this.deps.inbound.failDelivery(claimOf(content.event, delivery), MAILBOX_REMOVED), "fail_delivery");
+      this.deps.logger.warn({ eventId: content.event.id, deliveryId: delivery.id, code: MAILBOX_REMOVED }, "email_inbound_delivery_unresumable");
+      return;
+    }
+    await this.advance({ ...content, mailbox, authority: await this.authorityOf(content.event, mailbox) }, delivery);
+  }
+
+  /** Lets the event go to the claim that took it over: nothing is settled or retried on its behalf. */
+  private yieldClaim(event: InboundEventRecord, step: string): InboundEventOutcome {
+    this.deps.logger.warn({ eventId: event.id, attempt: event.attempts, step }, "email_inbound_claim_lost");
+    this.count("email_inbound_events_total", "Inbound provider events by kind and final state.", { kind: event.eventKind, state: "superseded" });
+    return "superseded";
   }
 
   private async fetch(event: InboundEventRecord, providerObjectId: string): Promise<FetchResult> {
@@ -272,9 +372,8 @@ export class EmailInboundProcessor {
     const targets = await routeDeliveredTo(deliveredTo, this.routeLookups());
     for (const target of targets.mailboxes) await this.openDelivery(event, target);
     for (const delivery of await this.deps.inbound.listEventDeliveries(event.id)) {
-      if (delivery.state !== "done" && delivery.state !== "failed") {
-        await this.deps.inbound.settleDelivery(delivery.id, { state: "failed", errorCode: code });
-      }
+      // A lost write means another claim holds the event; its settle below is refused too.
+      if (isUnfinished(delivery)) await this.deps.inbound.failDelivery(claimOf(event, delivery), code);
     }
     this.deps.logger.warn({ eventId: event.id, code, attempt: event.attempts }, "email_inbound_terminal_failure");
     return this.settle(event, "failed", code);
@@ -290,17 +389,42 @@ export class EmailInboundProcessor {
     return settled ? state : "superseded";
   }
 
-  /** Mail for the inbound or a receiving domain that named no mailbox: logged, never processed. */
-  private async recordUnrouted(event: InboundEventRecord, workspaceId: string | null): Promise<void> {
-    await this.deps.inbound.insertDelivery({
-      inboundEventId: event.id,
+  /**
+   * Mail for the inbound or a receiving domain that named no mailbox: logged with its sender,
+   * subject, authentication results and raw message, so the event log can show what was dropped
+   * (FR-015, FR-016), and never processed further.
+   */
+  private async recordUnrouted(content: EventContent, workspaceId: string | null): Promise<void> {
+    const { deliveryId } = await this.deps.inbound.insertDelivery({
+      inboundEventId: content.event.id,
       workspaceId,
       mailboxId: null,
       routeRule: null,
       acceptedPolicyVersion: null,
-      settled: { disposition: "drop", dispositionReason: "no_mailbox" },
     });
-    this.countDelivery("unclassified", "drop", "no_mailbox");
+    await this.finishUnrouted(content, await this.findDelivery(content.event, deliveryId));
+  }
+
+  /** The unrouted delivery's content, then its `no_mailbox` drop, each from where an earlier attempt left it. */
+  private async finishUnrouted(content: EventContent, delivery: InboundDeliveryRecord): Promise<void> {
+    const claim = claimOf(content.event, delivery);
+    let classification = delivery.classification;
+    if (delivery.state === "pending") {
+      ({ classification } = classifyInbound({
+        message: content.message,
+        ownAddresses: delivery.workspaceId ? await this.ownAddresses(delivery.workspaceId) : new Set(),
+        isRadiosoOutboundId: () => false,
+      }));
+      const fetched = fetchedContentOf(content.message, classification, content.customerText, this.deps.config.rawMaxBytes);
+      requireWon(await this.deps.inbound.recordFetched(claim, fetched), "record_fetched");
+    }
+    if (delivery.state === "pending" || delivery.state === "fetched") {
+      requireWon(
+        await this.deps.inbound.settleDropped(claim, { threadMatch: null, threadConflict: false, dispositionReason: "no_mailbox" }),
+        "settle_dropped",
+      );
+      this.countDelivery(classification ?? "unclassified", "drop", "no_mailbox");
+    }
   }
 
   // ── Delivery ───────────────────────────────────────────────────────
@@ -315,8 +439,7 @@ export class EmailInboundProcessor {
   ): Promise<{ delivery: InboundDeliveryRecord; context: Pick<DeliveryContext, "mailbox" | "authority"> } | null> {
     const mailbox = await this.deps.mailboxes.findActiveById(target.mailboxId);
     if (!mailbox) return null;
-    const accepted = (await this.deps.mailboxes.policyEffectiveAt(mailbox.id, event.receivedAt))
-      ?? { version: mailbox.policyVersion, engagementMode: mailbox.engagementMode, enabled: mailbox.enabled };
+    const accepted = await this.acceptedPolicyOf(event, mailbox);
     const { deliveryId } = await this.deps.inbound.insertDelivery({
       inboundEventId: event.id,
       workspaceId: mailbox.workspaceId,
@@ -324,14 +447,29 @@ export class EmailInboundProcessor {
       routeRule: target.rule,
       acceptedPolicyVersion: accepted.version,
     });
+    return { delivery: await this.findDelivery(event, deliveryId), context: { mailbox, authority: await this.authorityOf(event, mailbox) } };
+  }
+
+  private async findDelivery(event: InboundEventRecord, deliveryId: string): Promise<InboundDeliveryRecord> {
     const delivery = (await this.deps.inbound.listEventDeliveries(event.id)).find((candidate) => candidate.id === deliveryId);
     if (!delivery) throw new Error("The inbound delivery just written was not found");
+    return delivery;
+  }
+
+  /** The mailbox policy in force when the webhook accepted the event (research B16). */
+  private async acceptedPolicyOf(event: InboundEventRecord, mailbox: Mailbox) {
+    return (await this.deps.mailboxes.policyEffectiveAt(mailbox.id, event.receivedAt))
+      ?? { version: mailbox.policyVersion, engagementMode: mailbox.engagementMode, enabled: mailbox.enabled };
+  }
+
+  /** The accepted and the current policy combined, capped to the deployment's modes. */
+  private async authorityOf(event: InboundEventRecord, mailbox: Mailbox): Promise<DeliveryContext["authority"]> {
+    const accepted = await this.acceptedPolicyOf(event, mailbox);
     const effective = effectiveEngagementMode(
       { mode: accepted.engagementMode, enabled: accepted.enabled },
       { mode: mailbox.engagementMode, enabled: mailbox.enabled },
     );
-    const authority = { mode: capToSupportedMode(effective.mode, this.deps.config.supportedModes), enabled: effective.enabled };
-    return { delivery, context: { mailbox, authority } };
+    return { mode: capToSupportedMode(effective.mode, this.deps.config.supportedModes), enabled: effective.enabled };
   }
 
   /** Runs the delivery's remaining protocol steps from the state its last attempt left. */
@@ -359,7 +497,7 @@ export class EmailInboundProcessor {
       await this.deps.deliveryEvents.applyDsnBounce({ mailboxId: mailbox.id, rfcMessageIds: bouncedOutboundIds });
     }
     const content = fetchedContentOf(message, classification, context.customerText, this.deps.config.rawMaxBytes);
-    await this.deps.inbound.recordFetched(delivery.id, content);
+    requireWon(await this.deps.inbound.recordFetched(claimOf(context.event, delivery), content), "record_fetched");
     await this.deps.receipts.recordInboundReceipt({
       mailboxId: mailbox.id,
       receivedAt: context.event.receivedAt,
@@ -403,11 +541,11 @@ export class EmailInboundProcessor {
       const disposition = await this.decide(context, delivery, resolution, ownership);
 
       if (disposition.kind === "drop") {
-        await scope.inbound.settleDropped(delivery.id, {
+        requireWon(await scope.inbound.settleDropped(claimOf(context.event, delivery), {
           threadMatch: resolution.kind === "existing" ? resolution.matchedBy : null,
           threadConflict: resolution.kind === "existing" && resolution.conflict,
           dispositionReason: disposition.reason,
-        });
+        }), "settle_dropped");
         if (disposition.noteOnThread && resolution.kind !== "new" && ownership !== null) {
           await scope.activity.record(channelException(resolution.conversationId, mailbox.workspaceId, disposition.reason, delivery.id));
         }
@@ -429,7 +567,8 @@ export class EmailInboundProcessor {
         plannedThreadKey: identity.threadKey,
         plannedThreadToken: identity.threadToken,
       };
-      await scope.inbound.reserveThread(delivery.id, reservation);
+      // A lost reservation rolls back with the transaction: the ids allocated here are never used.
+      requireWon(await scope.inbound.reserveThread(claimOf(context.event, delivery), reservation), "reserve_thread");
       return { ...delivery, ...reservation, state: "resolved" };
     });
   }
@@ -457,7 +596,10 @@ export class EmailInboundProcessor {
       message: { id: identity.messageId, text: context.customerText.text, receivedAt: context.event.receivedAt },
       humanOwnership: humanOwnershipReason ? { reason: humanOwnershipReason } : null,
     });
-    await this.deps.inbound.recordIngested(delivery.id, { conversationId: result.conversationId, messageId: result.messageId });
+    requireWon(
+      await this.deps.inbound.recordIngested(claimOf(context.event, delivery), { conversationId: result.conversationId, messageId: result.messageId }),
+      "record_ingested",
+    );
     this.deps.metrics?.observeHistogram("email_receipt_to_inbox_seconds", {
       help: "Seconds from webhook acceptance to the message being in the inbox.",
       labels: { mode: context.authority.mode },
@@ -468,15 +610,18 @@ export class EmailInboundProcessor {
   }
 
   /**
-   * Step 3 (one transaction): the thread link, the header projection and the Message-Id index, and
-   * the thread's review scheduled when the delivery was accepted for one (research B7); a drain is
-   * asked for at its due time once that commits.
+   * Step 3 (one transaction): the step acquired by settling the delivery `done` under the claim,
+   * then the thread link, the header projection and the Message-Id index, and the thread's review
+   * scheduled when the delivery was accepted for one (research B7); a drain is asked for at its due
+   * time once that commits. A worker that does not acquire the step writes nothing, so the review's
+   * revision moves once per delivery.
    */
   private async index(context: DeliveryContext, delivery: InboundDeliveryRecord): Promise<void> {
     const identity = reservedIdentityOf(delivery);
     const conversationId = delivery.conversationId ?? identity.conversationId;
     const { mailbox, event } = context;
     const review = await this.deps.threadProtocol.run(async (scope) => {
+      requireWon(await scope.inbound.markIndexed(claimOf(event, delivery)), "mark_indexed");
       await scope.threads.upsertLink({
         conversationId,
         workspaceId: mailbox.workspaceId,
@@ -501,7 +646,6 @@ export class EmailInboundProcessor {
       if (delivery.threadConflict) {
         await scope.activity.record(channelException(conversationId, mailbox.workspaceId, "thread_conflict", delivery.id));
       }
-      await scope.inbound.settleDelivery(delivery.id, { state: "done", errorCode: null });
       return scheduled;
     });
     if (review) {
@@ -667,6 +811,8 @@ export class EmailInboundProcessor {
 }
 
 const hasAttemptsLeft = (event: InboundEventRecord): boolean => event.attempts <= RETRY_DELAYS_SECONDS.length;
+
+const isUnfinished = (delivery: InboundDeliveryRecord): boolean => delivery.state !== "done" && delivery.state !== "failed";
 
 /** Tokens the provider adapter already reduced the bounce detail to; re-checked when read back. */
 const PROVIDER_TOKEN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/u;

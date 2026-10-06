@@ -6,6 +6,37 @@ import {
 } from "../../../directives/public.js";
 
 /**
+ * The firing-memory advance a turn captured and did not commit, because its reply is published
+ * later, if at all: the turn the memory stood at when the turn read it, and the directives that
+ * fired. Channel-neutral and serializable, so it can wait with the unpublished reply.
+ */
+export interface DeferredDirectiveTransition {
+  readonly fromTurnSeq: number;
+  readonly firedNames: readonly string[];
+}
+
+/**
+ * Applies a deferred transition as the turn's own commit would have, once: only while the memory
+ * still stands at the turn the transition read. Memory that has moved on, because the transition
+ * was already applied or a later turn committed, is left as it is. Memory that expired meanwhile
+ * restarts from the turn the transition read, as an expired conversation's memory starts afresh.
+ * Returns whether it advanced the memory.
+ */
+export const applyDeferredDirectiveTransition = async (
+  store: DirectiveStateStore,
+  sessionId: string,
+  transition: DeferredDirectiveTransition,
+): Promise<boolean> => {
+  const current = await store.load({ sessionId });
+  const from = current ?? { turnSeq: transition.fromTurnSeq, firings: {} };
+  if (from.turnSeq !== transition.fromTurnSeq) {
+    return false;
+  }
+  await store.save({ sessionId, state: commitDirectiveFirings(from, transition.firedNames) });
+  return true;
+};
+
+/**
  * Turn-scoped capture-and-commit for the per-conversation directive firing
  * memory. Mirrors {@link DeferredRoutineStore}: the matcher closure reads the
  * conversation's firing state (to suppress once/cooldown re-fires) through
@@ -52,13 +83,22 @@ export class DeferredDirectiveStateStore {
    * conversations that never use a lifecycle directive never get a row.
    */
   async commit(): Promise<void> {
-    if (!this.loaded) {
+    const transition = this.deferredTransition();
+    if (!transition) {
       return;
     }
-    if (!this.baseline && this.captured.size === 0) {
-      return;
-    }
-    const next = commitDirectiveFirings(this.baseline ?? emptyDirectiveFiringState(), [...this.captured]);
+    const next = commitDirectiveFirings(this.baseline ?? emptyDirectiveFiringState(), transition.firedNames);
     await this.inner.save({ sessionId: this.sessionId, state: next });
+  }
+
+  /**
+   * The advance {@link commit} would write, held back for a turn whose reply is published later,
+   * if at all; null when commit would write nothing.
+   */
+  deferredTransition(): DeferredDirectiveTransition | null {
+    if (!this.loaded || (!this.baseline && this.captured.size === 0)) {
+      return null;
+    }
+    return { fromTurnSeq: (this.baseline ?? emptyDirectiveFiringState()).turnSeq, firedNames: [...this.captured] };
   }
 }

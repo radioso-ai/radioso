@@ -39,7 +39,11 @@ export interface EmailTranscriptMessage {
 }
 
 export interface EmailReviewTranscriptReader {
-  /** The conversation's newest messages, oldest first, at most `limit`. A held draft is never one. */
+  /**
+   * The conversation's newest messages, oldest first, at most `limit`, and fewer only when the
+   * conversation has no more: the checks read a short result as the conversation's start. A held
+   * draft is never one.
+   */
   recentMessages(input: { workspaceId: string; conversationId: string; limit: number }): Promise<readonly EmailTranscriptMessage[]>;
 }
 
@@ -60,8 +64,13 @@ export interface EmailReviewCheckDependencies {
 const DEFAULT_TIMEOUT_MS = 30_000;
 /** The messages a check reads: the revision's own, and enough before them to see what was answered. */
 const TRANSCRIPT_WINDOW = 12;
-/** Bounds one message, draft or passage in a prompt; email bodies and chunks can be long. */
+/** Bounds one earlier message, draft or passage in a prompt; email bodies and chunks can be long. */
 const MAX_TEXT_CHARS = 4_000;
+/**
+ * The customer's unanswered mail a check reads whole. Mail past it cannot be judged completely in
+ * one bounded call, so the check has no verdict rather than one about part of what was asked.
+ */
+const INCOMING_CHARS_BUDGET = 12_000;
 /** Low hidden reasoning and a small JSON verdict. */
 const MAX_OUTPUT_TOKENS = 1_024;
 
@@ -75,12 +84,42 @@ const splitRevision = (messages: readonly EmailTranscriptMessage[]): { earlier: 
   return { earlier: messages.slice(0, start), incoming: messages.slice(start).map((message) => message.text) };
 };
 
-/** The revision's messages, read through the transcript port with the checks' window. */
+/** Why the revision's unanswered mail could not be read whole: it began before the window, or ran past the budget. */
+type OmittedInput = "transcript_window" | "input_budget";
+
+/**
+ * The revision's messages, read through the transcript port with the checks' window. `omitted`
+ * says why the unanswered mail is not all there, and is logged; a check then gives no verdict.
+ * One message more than the window is read, so a block that starts right at the window's edge is
+ * told from one that runs past it.
+ */
 export const readRevision = async (
-  transcript: EmailReviewTranscriptReader,
+  deps: Pick<EmailReviewCheckDependencies, "transcript" | "logger">,
   subject: EmailReviewSubject,
-): Promise<{ earlier: EmailTranscriptMessage[]; incoming: string[] }> =>
-  splitRevision(await transcript.recentMessages({ workspaceId: subject.workspaceId, conversationId: subject.conversationId, limit: TRANSCRIPT_WINDOW }));
+): Promise<{ earlier: EmailTranscriptMessage[]; incoming: string[]; omitted: OmittedInput | null }> => {
+  const read = await deps.transcript.recentMessages({
+    workspaceId: subject.workspaceId,
+    conversationId: subject.conversationId,
+    limit: TRANSCRIPT_WINDOW + 1,
+  });
+  const window = read.slice(-TRANSCRIPT_WINDOW);
+  const beforeWindow = read.length > TRANSCRIPT_WINDOW ? read[read.length - TRANSCRIPT_WINDOW - 1] : undefined;
+  const { earlier, incoming } = splitRevision(window);
+  const omitted = omittedInput(earlier, incoming, beforeWindow);
+  if (omitted) deps.logger.warn({ ...subjectIds(subject), omitted }, "email_review_input_incomplete");
+  return { earlier, incoming, omitted };
+};
+
+const omittedInput = (
+  earlier: readonly EmailTranscriptMessage[],
+  incoming: readonly string[],
+  beforeWindow: EmailTranscriptMessage | undefined,
+): OmittedInput | null => {
+  // The block's start is in view when the business's last message is, or when nothing the customer wrote precedes the window.
+  if (earlier.length === 0 && beforeWindow?.author === "customer") return "transcript_window";
+  if (incoming.reduce((total, text) => total + text.length, 0) > INCOMING_CHARS_BUDGET) return "input_budget";
+  return null;
+};
 
 export const boundText = (text: string): string => (text.length > MAX_TEXT_CHARS ? text.slice(0, MAX_TEXT_CHARS) : text);
 

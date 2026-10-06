@@ -64,8 +64,9 @@ export class InboundEventActions {
    * headers, and the access is audited before anything is returned (FR-046).
    */
   async openRawMessage(actor: EmailChannelActor, workspaceId: string, deliveryId: string): Promise<RawMessageView> {
+    // Every delivery attributed to the workspace is in its event log, mail no mailbox matched included.
     const stored = await this.deps.deliveries.readRawMessage(workspaceId, deliveryId);
-    if (!stored || stored.mailboxId === null) throw eventNotFound();
+    if (!stored) throw eventNotFound();
     if (!stored.raw) throw new AppError(410, "raw_purged", "The raw message is no longer stored.");
 
     const mailboxes = await this.deps.mailboxes.listActive(workspaceId);
@@ -77,7 +78,7 @@ export class InboundEventActions {
     return view;
   }
 
-  /** A delivery of one of the workspace's active mailboxes; only those are in an event log. */
+  /** A delivery of one of the workspace's active mailboxes; only those resume the inbound protocol. */
   private async findMailboxDelivery(workspaceId: string, deliveryId: string): Promise<InboundDeliveryRecord> {
     const delivery = await this.deps.deliveries.findDelivery(workspaceId, deliveryId);
     if (!delivery?.mailboxId || !(await this.deps.mailboxes.findActive(workspaceId, delivery.mailboxId))) throw eventNotFound();

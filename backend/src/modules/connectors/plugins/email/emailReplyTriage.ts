@@ -78,16 +78,17 @@ export class ModelEmailReplyTriage implements EmailReplyTriagePort {
   }
 
   private async ask(subject: EmailReviewSubject): Promise<ReplyTriageVerdict> {
-    const { earlier, incoming } = await readRevision(this.deps.transcript, subject);
-    // Nothing unanswered from the customer: there is nothing to judge, so the review decides.
-    if (incoming.length === 0) return "unavailable";
+    const { earlier, incoming, omitted } = await readRevision(this.deps, subject);
+    // Nothing unanswered from the customer, or not all of it readable: nothing a `no` could rest on,
+    // so the review decides.
+    if (incoming.length === 0 || omitted !== null) return "unavailable";
     return askStructured({
       deps: this.deps,
       subject,
       operation: "email_reply_triage",
       prompt: promptWithInput(PROMPT, INPUT_TAG, {
         earlier: earlier.slice(-EARLIER_MESSAGES).map((message) => ({ author: message.author, text: boundText(message.text) })),
-        incoming: incoming.map(boundText),
+        incoming,
       }),
       responseFormat: RESPONSE_FORMAT,
       parse: (value) => verdictSchema.parse(value).reply_needed,

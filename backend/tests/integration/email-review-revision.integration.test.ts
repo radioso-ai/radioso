@@ -1,8 +1,11 @@
 import type { ConnectorRespondInput, ConnectorTurnResult } from "@radioso/connector-api";
+
+import type { EmailReviewChecks } from "../../src/modules/connectors/plugins/email/emailReviewRunner.js";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 
 import type { Database } from "../../src/shared/infra/database.js";
 import {
+  activityOf,
   conversationsOfMailbox,
   createEmailChannelDatabase,
   createSpool,
@@ -16,9 +19,10 @@ import {
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Research B17 against Postgres: a review completes only its own revision, so a worker overtaken by
-// newer mail leaves the newer review due and holds its own draft superseded; and a worker that dies
+// newer mail leaves the newer review due and holds its own draft superseded; a worker that dies
 // after holding a draft and before completing leaves the review ref behind, so the next claim
-// completes without running the model again.
+// completes without running the model again; a worker stalled past its lease does nothing once
+// another claim took R over; and mail set aside is noted and completed in one transaction.
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -73,11 +77,25 @@ describeIntegration("email review revisions (Postgres, research B17)", () => {
     await suite?.close();
   }, 30_000);
 
-  const workerNode = (respond?: Respond): WorkerNode => {
-    const node = createWorkerNode(suite.url, { spoolDir: spool.dir, supportedModes: DRAFTING, respond });
+  const workerNode = (respond?: Respond, checks?: EmailReviewChecks): WorkerNode => {
+    const node = createWorkerNode(suite.url, { spoolDir: spool.dir, supportedModes: DRAFTING, respond, checks });
     nodes.push(node);
     return node;
   };
+
+  /** Lets a stalled or dead worker's review lease run out, as time passing would. */
+  const expireReviewLease = async (conversationId: string) => {
+    await database.execute("UPDATE email_thread_links SET review_lease_until = now() - interval '1 second' WHERE conversation_id = $1", [conversationId]);
+  };
+
+  /** The review's model checks with the triage finding that the mail needs no reply. */
+  const noReplyNeeded: EmailReviewChecks = {
+    replyTriage: { assess: async () => "no" },
+    replyCompleteness: { assess: async () => ({ completeness: "complete", unansweredAsks: 0 }) },
+  };
+
+  const setAsideNotesOf = async (conversationId: string) =>
+    (await activityOf(database, conversationId)).filter((entry) => entry.kind === "channel_exception" && entry.detail.code === "no_reply_needed");
 
   const draftMailbox = async () => {
     const seeded = await seedSupportMailbox(database, { engagementMode: "draft", withAgent: true });
@@ -183,5 +201,65 @@ describeIntegration("email review revisions (Postgres, research B17)", () => {
       expect.objectContaining({ state: "pending", review_ref: `email:${conversationId}:1`, draft_text: "Held before the crash." }),
     ]);
     expect(await reviewLink(conversationId)).toMatchObject({ review_revision: 1, review_completed_revision: 1, review_due_at: null, review_lease_until: null });
+  }, 60_000);
+
+  it("leaves R's draft alone when a claim stalled past its lease after the review-ref lookup resumes (research B17)", async () => {
+    const target = await draftMailbox();
+    const intake = workerNode();
+    await receiveAndIngest(intake, FIRST, target);
+    const [conversationId] = await conversationsOfMailbox(database, target.mailbox);
+    await makeReviewsDue(conversationId);
+
+    const staleRespond = vi.fn<Respond>(async (input) => draft(input, "From the stalled claim."));
+    const stalled = workerNode(staleRespond);
+    const paused = stalled.seams.pauseAt("heldReplies.findByReviewRef", "after");
+    const staleRun = stalled.worker.drain({ maxJobs: 5, stage: "review" });
+    await paused.reached;
+
+    // The stalled claim's lease runs out; another worker claims R, holds its draft and completes R.
+    await expireReviewLease(conversationId);
+    const takeover = workerNode(async (input) => draft(input, "From the claim that took over."));
+    expect(await takeover.worker.drain({ maxJobs: 5, stage: "review" })).toMatchObject({ reviewed: 1 });
+
+    paused.release();
+    expect(await staleRun).toMatchObject({ reviewed: 1 });
+
+    expect(staleRespond).not.toHaveBeenCalled();
+    expect(await heldRepliesOf(conversationId)).toEqual([
+      expect.objectContaining({ state: "pending", review_ref: `email:${conversationId}:1`, draft_text: "From the claim that took over." }),
+    ]);
+    expect(await reviewLink(conversationId)).toMatchObject({ review_revision: 1, review_completed_revision: 1, review_due_at: null });
+    expect(stalled.logger.messages()).toContain("email_review_claim_lost");
+  }, 60_000);
+
+  it("notes and completes a set-aside revision together: a crash between them leaves neither, and the retry leaves one note", async () => {
+    const target = await draftMailbox();
+    const intake = workerNode();
+    await receiveAndIngest(intake, FIRST, target);
+    const [conversationId] = await conversationsOfMailbox(database, target.mailbox);
+    await makeReviewsDue(conversationId);
+
+    const dying = workerNode(undefined, noReplyNeeded);
+    // The note is written; the worker dies before the set-aside's transaction commits.
+    dying.seams.crashAt({ seam: "activity.record", when: "after" });
+    expect(await dying.worker.drain({ maxJobs: 5, stage: "review" })).toMatchObject({ reviewed: 1 });
+    expect(dying.seams.hasCrashed).toBe(true);
+    expect(await setAsideNotesOf(conversationId)).toEqual([]);
+    expect(await reviewLink(conversationId)).toMatchObject({ review_revision: 1, review_completed_revision: 0 });
+
+    await expireReviewLease(conversationId);
+    const recoveringRespond = vi.fn<Respond>(async (input) => draft(input, "No reply was needed."));
+    const recovering = workerNode(recoveringRespond, noReplyNeeded);
+    expect(await recovering.worker.drain({ maxJobs: 5, stage: "review" })).toMatchObject({ reviewed: 1 });
+
+    const [delivery] = await database.query<{ id: string }>("SELECT id FROM email_inbound_deliveries WHERE conversation_id = $1", [conversationId]);
+    expect(await setAsideNotesOf(conversationId)).toEqual([
+      expect.objectContaining({ detail: { code: "no_reply_needed", deliveryId: delivery.id } }),
+    ]);
+    expect(await reviewLink(conversationId)).toMatchObject({ review_revision: 1, review_completed_revision: 1, review_due_at: null });
+    // R is done: no claim reviews it again, so no reply is ever held for it.
+    expect(await recovering.worker.drain({ maxJobs: 5, stage: "review" })).toMatchObject({ reviewed: 0 });
+    expect(recoveringRespond).not.toHaveBeenCalled();
+    expect(await heldRepliesOf(conversationId)).toEqual([]);
   }, 60_000);
 });

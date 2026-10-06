@@ -63,10 +63,13 @@ const RESPONSE_FORMAT: JsonSchemaResponseFormat = {
   },
 };
 
+/** A verdict that contradicts its own count is no verdict: `complete` with an ask unanswered, or incomplete with none. */
 const verdictSchema = z.object({
   completeness: z.enum(COMPLETENESS),
   unanswered_asks: z.number().int().min(0).max(MAX_UNANSWERED_ASKS),
-}).strict();
+}).strict().refine((verdict) => (verdict.completeness === "complete") === (verdict.unanswered_asks === 0), {
+  message: "email_completeness_verdict_inconsistent",
+});
 
 const UNAVAILABLE: ReplyCompletenessResult = { completeness: "unavailable", unansweredAsks: null };
 
@@ -115,18 +118,18 @@ export class ModelEmailReplyCompleteness implements EmailReplyCompletenessPort {
   }
 
   private async ask(subject: EmailReviewSubject, draft: ConnectorReplyDraft): Promise<ReplyCompletenessResult> {
-    const [{ incoming }, passages] = await Promise.all([
-      readRevision(this.deps.transcript, subject),
+    const [{ incoming, omitted }, passages] = await Promise.all([
+      readRevision(this.deps, subject),
       this.deps.grounding.passagesFor({ workspaceId: subject.workspaceId, draft }),
     ]);
-    // No customer mail to measure the reply against: no verdict, so the reply waits.
-    if (incoming.length === 0) return UNAVAILABLE;
+    // No customer mail to measure the reply against, or not all of it readable: no verdict, so the reply waits.
+    if (incoming.length === 0 || omitted !== null) return UNAVAILABLE;
     return askStructured({
       deps: this.deps,
       subject,
       operation: "email_reply_completeness",
       prompt: promptWithInput(PROMPT, INPUT_TAG, {
-        customer_messages: incoming.map(boundText),
+        customer_messages: incoming,
         reply: boundText(draft.text),
         context: passages.slice(0, MAX_PASSAGES).map((passage) => ({ title: passage.title, text: boundText(passage.text) })),
       }),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { emailSendKey } from "../../../src/modules/emailChannel/public.js";
 import { bounceDetailCode } from "../../../src/modules/emailChannel/outbound/providerDeliveryEvents.js";
 import type { DeliveryStatusFacts } from "../../../src/modules/mail/public.js";
 import { createSendPathHarness, SEND_IDS } from "../../support/inMemoryEmailSend.js";
@@ -88,6 +89,37 @@ describe("ProviderDeliveryEvents", () => {
         eventType: "email_channel.send",
         metadata: expect.objectContaining({ action: "complained", sendIntentId: h.onlyIntent().id }),
       }));
+    });
+  });
+
+  describe("a later delivery on the conversation (later_delivery)", () => {
+    const MINUTE = 60 * 1000;
+    /** Sends another reply on the conversation, accepted under its own provider id. */
+    const sendReply = async (h: ReturnType<typeof createSendPathHarness>, messageId: string, providerMessageId: string) => {
+      h.advance(MINUTE);
+      h.messages.set(messageId, { id: messageId, conversationId: SEND_IDS.conversation, content: "Another reply.", source: "human_agent" });
+      h.driver.send.mockResolvedValueOnce({ dispatched: true, providerMessageId, deliveredMessageId: null });
+      await h.deliver({ payload: { messageId }, context: { idempotencyKey: emailSendKey.message(messageId) } });
+    };
+    const LATER = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const NEWER = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
+    it("clears the failures of earlier replies when a later one is delivered, and never a newer reply's", async () => {
+      const h = await accepted();
+      await sendReply(h, LATER, "re_provider_2");
+      await sendReply(h, NEWER, "re_provider_3");
+      await webhook(h, status("bounced"), PROVIDER_ID);
+      await webhook(h, status("bounced"), "re_provider_3");
+      expect(h.failures.openFor(SEND_IDS.message)?.kind).toBe("bounced");
+      expect(h.failures.openFor(NEWER)?.kind).toBe("bounced");
+
+      // The reply between them reaches the customer: the earlier bounce no longer needs anyone.
+      await webhook(h, status("delivered"), "re_provider_2");
+
+      expect(h.failures.openFor(SEND_IDS.message)).toBeUndefined();
+      expect(h.failures.rows.find((row) => row.messageId === SEND_IDS.message)).toMatchObject({ cleared: "later_delivery" });
+      // The newer reply went out after it, so its bounce still stands.
+      expect(h.failures.openFor(NEWER)).toMatchObject({ kind: "bounced", cleared: null });
     });
   });
 

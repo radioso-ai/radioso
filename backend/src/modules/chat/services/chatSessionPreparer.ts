@@ -660,20 +660,17 @@ export class ChatSessionPreparer {
     return message;
   }
 
-  /** The messages before the answered one, oldest first, at most the window's size. */
+  /**
+   * The messages before the answered one, oldest first, at most the window's size. Messages
+   * recorded after it, such as a newer inbound that arrived while the turn was scheduled, never
+   * take a place in the window.
+   */
   private async historyBefore(existing: ExistingUserMessage): Promise<MessageRecord[]> {
     const { message, historyWindow } = existing;
-    if (historyWindow.maxMessages <= 0) {
-      return [];
-    }
-    const recent = await this.messageRepository.listRecentByConversationId(
-      message.workspaceId,
-      message.conversationId,
-      historyWindow.maxMessages + 1,
-    );
-    return recent
-      .filter((entry) => entry.id !== message.id && entry.createdAt.getTime() <= message.createdAt.getTime())
-      .slice(-historyWindow.maxMessages);
+    return this.messageRepository.listBeforeByConversationId(message.workspaceId, message.conversationId, {
+      before: { createdAt: message.createdAt, id: message.id },
+      limit: historyWindow.maxMessages,
+    });
   }
 
   private async resolveRuntimeRevision(input: {

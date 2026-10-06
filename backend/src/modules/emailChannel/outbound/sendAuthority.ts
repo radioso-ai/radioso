@@ -44,7 +44,8 @@ export type AutoSendAuthorityRefusal =
   | "human_owned"
   | "ownership_changed"
   | "domain_removed"
-  | "sending_not_verified";
+  | "sending_not_verified"
+  | "send_budget";
 
 export type AutoSendVerdict = { authorized: true } | { authorized: false; code: AutoSendAuthorityRefusal };
 
@@ -92,6 +93,45 @@ export const autoSendAuthority = (facts: AutoSendAuthorityFacts): AutoSendVerdic
   if (sending === "domain_removed") return refuse("domain_removed");
   if (sending === "not_verified") return refuse("sending_not_verified");
   return { authorized: true };
+};
+
+interface AutoDispatchAuthorityFacts extends AutoSendAuthorityFacts {
+  mailbox: (AutoSendAuthorityFacts["mailbox"] & Pick<EmailMailboxRecord, "threadSendBudget">) | null;
+  /**
+   * The thread's automatic sends since its budget was last renewed, this send's own reservation
+   * among them; null when the thread has no budget to count against.
+   */
+  reservedAutoSends: number | null;
+}
+
+/**
+ * Whether an automatic send may still go out as it is dispatched (FR-022, FR-032, research B8,
+ * B9): its automatic authority still holds, and its reservation, counted with the thread's other
+ * automatic sends, still fits the mailbox's `thread_send_budget` as it is now. A budget lowered
+ * after the publish reserved the send refuses it as `send_budget`.
+ */
+export const autoDispatchAuthority = (facts: AutoDispatchAuthorityFacts): AutoSendVerdict => {
+  const verdict = autoSendAuthority(facts);
+  if (!verdict.authorized) return verdict;
+  const budget = facts.mailbox?.threadSendBudget ?? 0;
+  return facts.reservedAutoSends !== null && facts.reservedAutoSends <= budget ? verdict : refuse("send_budget");
+};
+
+/**
+ * What a send is checked against before its request freezes (research B6, B9): an
+ * operator-authorized send only against the mailbox's ability to send as its address; an automatic
+ * one against that, and then against its automatic authority and the thread's budget, which a
+ * recovered send must still hold however long ago it was materialized. `halt` stops a send the
+ * channel cannot make; `revoked` an automatic send whose authority narrowed before it went out.
+ */
+export const firstAttemptAuthority = (
+  intent: { trigger: string; authority: { policyVersion: number; ownershipVersion: number } },
+  facts: Omit<AutoDispatchAuthorityFacts, "bound">,
+): SendAuthorityVerdict | { verdict: "revoked"; code: AutoSendAuthorityRefusal } => {
+  const operator = operatorSendAuthority(facts);
+  if (operator.verdict === "halt" || intent.trigger !== "auto_reply") return operator;
+  const automatic = autoDispatchAuthority({ ...facts, bound: intent.authority });
+  return automatic.authorized ? operator : { verdict: "revoked", code: automatic.code };
 };
 
 /**

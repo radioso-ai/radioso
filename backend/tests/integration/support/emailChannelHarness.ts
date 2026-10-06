@@ -27,6 +27,7 @@ import { ConversationRepository } from "../../../src/db/repositories/conversatio
 import { HeldReplyRepository } from "../../../src/db/repositories/heldReplyRepository.js";
 import { MessageRepository } from "../../../src/db/repositories/messageRepository.js";
 import { ActionDispatcher, ActionHandlerRegistry, ConversationIngestService } from "../../../src/modules/chat/composition.js";
+import type { EmailReviewChecks } from "../../../src/modules/connectors/plugins/email/emailReviewRunner.js";
 import { createEmailChannelConnector } from "../../../src/modules/connectors/plugins/index.js";
 import {
   EMAIL_SEND_ACTION_TYPE,
@@ -211,11 +212,15 @@ export const seedSupportMailbox = async (
  * The settings path's policy change over Postgres, as the channel composition binds it: the hand-off
  * of a superseded draft's conversation goes through the host's ownership rules.
  */
-export const createPolicyChanges = (database: Database): MailboxPolicyChangeUnitOfWork =>
+export const createPolicyChanges = (
+  database: Database,
+  options: { logger?: { warn(fields: Record<string, unknown>, message: string): void } } = {},
+): MailboxPolicyChangeUnitOfWork =>
   createPostgresMailboxPolicyChangeUnitOfWork({
     db: database.kysely,
     activity: new ConversationActivityRepository(database.kysely),
     ownership: createHostOwnership(database),
+    logger: options.logger,
   });
 
 /** Appends a policy version the way the settings path does, effective now (research B16). */
@@ -338,6 +343,10 @@ export const postReceived = async (
     svixId: input.svixId,
   });
 
+/** Posts a signed `domain.updated` event, shaped like Resend's, naming the provider's id for one domain. */
+export const postDomainEvent = async (app: express.Express, input: { providerDomainId: string }): Promise<number> =>
+  postSignedEvent(app, { type: "domain.updated", data: { id: input.providerDomainId, created_at: new Date().toISOString() } });
+
 /**
  * Posts a signed delivery event about sent mail, such as `email.delivered` or `email.bounced`,
  * naming the send by the provider's id for it. `bounce` is the provider's bounce object, prose
@@ -423,7 +432,11 @@ type WorkerHeldReplies = ReturnType<typeof createWorkerHeldReplies>;
  * producer (the held-reply service and its unit of work), the conversation reads, and the hand-off
  * to a person in its own transaction.
  */
-const createReviewPorts = (database: Database, heldReplies: WorkerHeldReplies): EmailChannelConnectorDependencies["review"] => {
+const createReviewPorts = (
+  database: Database,
+  heldReplies: WorkerHeldReplies,
+  checks: EmailReviewChecks,
+): EmailChannelConnectorDependencies["review"] => {
   const db = database.kysely;
   const activity = new ConversationActivityRepository(db);
   const { service, records } = heldReplies;
@@ -438,7 +451,6 @@ const createReviewPorts = (database: Database, heldReplies: WorkerHeldReplies): 
       hold: (input) => service.hold(input),
       queueAuto: (input) => service.queueAuto(input),
       findByReviewRef: (conversationId, reviewRef) => service.findByReviewRef(conversationId, reviewRef),
-      supersedePendingForConversation: (conversationId, reason) => records.supersedePendingForConversation(conversationId, reason),
     },
     handoffs: {
       requestHumanOwnership: async (input) => {
@@ -448,13 +460,7 @@ const createReviewPorts = (database: Database, heldReplies: WorkerHeldReplies): 
         }, input));
       },
     },
-    // No model here: every mail needs a reply and every reply is complete, so no review sets mail aside.
-    checks: passingReviewChecks(),
-    notes: {
-      recordSetAside: async () => {
-        throw new Error("No review in this suite sets mail aside");
-      },
-    },
+    checks,
     maxAttempts: 4,
   };
 };
@@ -502,7 +508,10 @@ const createConnectorDependencies = (
     supportedModes?: readonly EngagementMode[];
     /** The host's review turn; suites that run none leave it out. */
     respond?: ConnectorChatPort["respond"];
+    /** The review's model checks; by default every mail needs a reply and every reply is complete. */
+    checks?: EmailReviewChecks;
     logger: RecordingLogger;
+    guard: Guard;
     metrics: MetricsRegistry;
     drains: EmailChannelDrainDispatcherPort;
     sends: Pick<SendPath, "deliveryEvents" | "reconciler">;
@@ -537,9 +546,10 @@ const createConnectorDependencies = (
       logger,
     }),
     deliveryEvents: options.sends.deliveryEvents,
-    threadProtocol: createPostgresThreadProtocolUnitOfWork({ db, activity: new ConversationActivityRepository(db) }),
+    // The activity it records goes through the worker's seams, so a test can stop a step's transaction mid-way.
+    threadProtocol: createPostgresThreadProtocolUnitOfWork({ db, activity: options.guard("activity", new ConversationActivityRepository(db)) }),
     chat: { ingest: (input) => hostIngest.ingest(input), respond: options.respond ?? noReviewTurn },
-    review: createReviewPorts(database, options.heldReplies),
+    review: createReviewPorts(database, options.heldReplies, options.checks ?? passingReviewChecks()),
     drains: options.drains,
     metrics,
     logger,
@@ -680,12 +690,14 @@ const SEAMS = [
   "threads.completeReview",
   "inbound.settleEvent",
   "outbox.claimPending",
+  "heldReplies.findByReviewRef",
   "heldReplies.queueAuto",
   "heldReplies.materializeAuto",
   "heldReplyChannel.recordMaterialized",
   "driver.send",
   "driver.lookup",
   "writer.apply",
+  "activity.record",
 ] as const;
 export type Seam = (typeof SEAMS)[number];
 type SeamHook = (nth: number) => Promise<void> | void;
@@ -832,6 +844,7 @@ export const createWorkerNode = (
     supportedModes?: readonly EngagementMode[];
     rewritesMessageId?: boolean;
     respond?: ConnectorChatPort["respond"];
+    checks?: EmailReviewChecks;
   },
 ) => {
   const database = new Database(databaseUrl);
@@ -846,7 +859,7 @@ export const createWorkerNode = (
   const heldReplies = createWorkerHeldReplies(database, guard);
   const sends = createSendPath(database, { driver: provider, guard, drains, heldReplies, metrics, logger });
   const connector = createEmailChannelConnector(
-    seams.wrap(createConnectorDependencies(database, { ...options, logger, metrics, drains, sends, heldReplies })),
+    seams.wrap(createConnectorDependencies(database, { ...options, logger, metrics, drains, sends, heldReplies, guard })),
   );
   // A plugin mounts its router once, at initialization.
   let webhook: Promise<express.Express> | null = null;

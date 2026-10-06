@@ -284,10 +284,11 @@ describe("MailboxService", () => {
       const { service } = harness(ALL_MODES);
       const created = await createSupport(service, { engagementMode: "auto", autoOptIn: true });
 
+      // The budget change writes a version of its own (FR-022); staying in auto asks for no opt-in.
       expect(await service.update(actor, workspaceId, created.id, { engagementMode: "auto", threadSendBudget: 2 }))
-        .toMatchObject({ engagementMode: "auto", threadSendBudget: 2, policyVersion: 1 });
+        .toMatchObject({ engagementMode: "auto", threadSendBudget: 2, policyVersion: 2 });
       expect(await service.update(actor, workspaceId, created.id, { engagementMode: "draft" }))
-        .toMatchObject({ engagementMode: "draft", policyVersion: 2 });
+        .toMatchObject({ engagementMode: "draft", policyVersion: 3 });
     });
 
     it("creates an auto mailbox only with the opt-in", async () => {
@@ -449,19 +450,62 @@ describe("MailboxService", () => {
       expect(updates).toEqual([expect.objectContaining({ mailboxId: created.id, changedFields: ["agentId"], policyVersion: 3 })]);
     });
 
-    it("writes settings without a new policy version", async () => {
+    it("writes settings that are not policy without a new policy version", async () => {
       const { service, mailboxes, audits } = harness();
       const created = await createSupport(service);
       mailboxes.calls.length = 0;
-      const renamed = await service.update(actor, workspaceId, created.id, { displayName: "Help desk", threadSendBudget: 5 });
-      expect(renamed).toMatchObject({ displayName: "Help desk", threadSendBudget: 5, policyVersion: 1 });
+      const renamed = await service.update(actor, workspaceId, created.id, { displayName: "Help desk", hourlyGenerationBudget: 40 });
+      expect(renamed).toMatchObject({ displayName: "Help desk", hourlyGenerationBudget: 40, policyVersion: 1 });
       expect(mailboxes.calls).toEqual(["lockForPolicyChange", "updateSettings"]);
       expect(mailboxes.history).toHaveLength(1);
-      expect(audits().at(-1)?.metadata).toEqual(expect.objectContaining({ action: "updated", changedFields: ["displayName", "threadSendBudget"] }));
+      expect(audits().at(-1)?.metadata).toEqual(expect.objectContaining({ action: "updated", changedFields: ["displayName", "hourlyGenerationBudget"] }));
 
       const unchanged = await service.update(actor, workspaceId, created.id, { enabled: true, displayName: "Help desk" });
       expect(unchanged.policyVersion).toBe(1);
       expect(mailboxes.calls.filter((call) => call === "updateSettings")).toHaveLength(1);
+    });
+
+    it("writes a new policy version when the thread send budget changes, holding the live drafts for review under it (FR-022)", async () => {
+      const { service, mailboxes, policyChanges, audits } = harness(["operator_only", "draft", "auto"]);
+      const created = await createSupport(service, { engagementMode: "auto", autoOptIn: true });
+      mailboxes.calls.length = 0;
+      vi.spyOn(policyChanges.heldReplies, "holdLiveForPolicy").mockImplementation(async (policyRef, policyVersion) => {
+        policyChanges.heldReplies.held.push({ policyRef, policyVersion });
+        return { returned: 1, rebound: 0 };
+      });
+
+      const lowered = await service.update(actor, workspaceId, created.id, { threadSendBudget: 1, expectedPolicyVersion: 1 });
+
+      expect(lowered).toMatchObject({ threadSendBudget: 1, engagementMode: "auto", enabled: true, policyVersion: 2 });
+      expect(mailboxes.calls).toEqual(["lockForPolicyChange", "appendPolicyVersion", "updateSettings"]);
+      // The budget is part of what an automatic send was authorized under; the policy itself is unchanged.
+      expect(mailboxes.history.at(-1)).toMatchObject({ version: 2, engagementMode: "auto", enabled: true, agentId: null });
+      expect(policyChanges.heldReplies.held).toEqual([{ policyRef: emailMailboxPolicyRef(created.id), policyVersion: 2 }]);
+      expect(policyChanges.heldReplies.superseded).toEqual([]);
+      expect(policyChanges.handoffs.requested).toEqual([]);
+      expect(audits().filter((event) => event.metadata.action === "mode_changed")).toEqual([]);
+      expect(audits().at(-1)?.metadata).toEqual(expect.objectContaining({
+        action: "updated",
+        changedFields: ["threadSendBudget"],
+        policyVersion: 2,
+        returnedHeldReplies: 1,
+        reboundHeldReplies: 0,
+      }));
+
+      // Writing the same budget again changes nothing.
+      expect((await service.update(actor, workspaceId, created.id, { threadSendBudget: 1 })).policyVersion).toBe(2);
+    });
+
+    it("locks the conversations of the mailbox's live drafts before the mailbox itself, inside the change", async () => {
+      const { service, mailboxes, policyChanges } = harness(["operator_only", "draft"]);
+      const created = await createSupport(service);
+      mailboxes.calls.length = 0;
+
+      await service.update(actor, workspaceId, created.id, { engagementMode: "operator_only" });
+
+      expect(policyChanges.conversations.locked).toEqual([
+        { workspaceId, policyRef: emailMailboxPolicyRef(created.id), mailboxCallsBefore: [], inUnit: true },
+      ]);
     });
 
     it("refuses a stale expectedPolicyVersion with 409 and writes nothing", async () => {
@@ -577,6 +621,43 @@ describe("MailboxService", () => {
       await expectAppError(service.remove(actor, workspaceId, created.id), 404, "not_found");
       expect(audits().at(-1)?.metadata).toEqual(expect.objectContaining({ action: "removed", mailboxId: created.id }));
       expect(await service.list(workspaceId)).toEqual([]);
+    });
+
+    it("supersedes the mailbox's live drafts and hands each waiting conversation to a person, in the removal's unit (S6)", async () => {
+      const { service, mailboxes, policyChanges, audits } = harness(["operator_only", "draft", "auto"]);
+      const created = await createSupport(service);
+      const policyRef = emailMailboxPolicyRef(created.id);
+      policyChanges.heldReplies.live.set(policyRef, ["conversation-1", "conversation-2"]);
+      policyChanges.handoffs.humanOwned.add("conversation-2");
+      mailboxes.calls.length = 0;
+
+      await service.remove(actor, workspaceId, created.id);
+
+      expect(policyChanges.runs).toBe(1);
+      expect(policyChanges.conversations.locked).toEqual([{ workspaceId, policyRef, mailboxCallsBefore: [], inUnit: true }]);
+      expect(mailboxes.calls).toEqual(["lockForPolicyChange"]);
+      expect(mailboxes.records.get(created.id)?.removedAt).not.toBeNull();
+      expect(policyChanges.heldReplies.superseded).toEqual([policyRef]);
+      expect(policyChanges.handoffs.requested).toEqual([
+        { workspaceId, conversationId: "conversation-1", reason: "operator_only_mailbox", inUnit: true },
+        { workspaceId, conversationId: "conversation-2", reason: "operator_only_mailbox", inUnit: true },
+      ]);
+      expect(audits().at(-1)?.metadata).toEqual(expect.objectContaining({
+        action: "removed",
+        mailboxId: created.id,
+        supersededHeldReplies: 2,
+        handedOffConversations: 1,
+      }));
+    });
+
+    it("supersedes nothing for a mailbox the workspace does not have", async () => {
+      const { service, policyChanges } = harness();
+      const created = await createSupport(service);
+
+      await expectAppError(service.remove(actor, otherWorkspaceId, created.id), 404, "not_found");
+
+      expect(policyChanges.heldReplies.superseded).toEqual([]);
+      expect(policyChanges.handoffs.requested).toEqual([]);
     });
   });
 });

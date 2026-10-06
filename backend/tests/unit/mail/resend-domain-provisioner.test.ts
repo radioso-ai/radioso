@@ -129,6 +129,7 @@ describe("Resend domain provisioner: registration", () => {
       ok: true,
       providerDomainId: DOMAIN_ID,
       region: "eu-west-1",
+      createdAt: new Date("2026-10-03T13:29:18.978Z"),
       readiness: {
         sending: "pending",
         receiving: "pending",
@@ -172,14 +173,14 @@ describe("Resend domain provisioner: registration", () => {
     ]);
   });
 
-  it("refuses a domain already registered at the provider as claimed elsewhere", async () => {
+  it("reports a domain the account already holds as already registered, leaving whose it is to the caller", async () => {
     const duplicate = fixtureJson("api/create-domain.duplicate-same-account.json");
 
     const registration = await provisionerFor(fakeResend(() => json(duplicate, 403)).fetch).registerSendingDomain(
       "radioso.ai",
     );
 
-    expect(registration).toEqual({ ok: false, refused: "claimed_elsewhere" });
+    expect(registration).toEqual({ ok: false, refused: "already_registered" });
   });
 
   it.each(["not a domain", "-leading.example", "localhost", "a..b.example", "../etc", `${"a".repeat(64)}.example`])(
@@ -218,6 +219,84 @@ describe("Resend domain provisioner: registration", () => {
     expect(rendered).not.toContain(API_KEY);
     expect(rendered).not.toContain("boom");
     expect(failure).toMatchObject({ retryable: true });
+  });
+});
+
+describe("Resend domain provisioner: finding a registration by name", () => {
+  type DomainList = { object: string; has_more: boolean; data: Record<string, unknown>[] };
+  const recordedList = (): DomainList => fixtureJson<DomainList>("api/list-domains.json");
+  const listEntry = (overrides: Record<string, unknown>) => ({ ...recordedList().data[0], ...overrides });
+
+  it("lists the account's domains, then reads the match for its records", async () => {
+    const provider = fakeResend((call) =>
+      call.url.startsWith("https://api.resend.com/domains?") ? json(recordedList()) : json(sendingDomain()),
+    );
+
+    const found = await provisionerFor(provider.fetch).findByName(" S0-Email-Channel.Radioso.AI ");
+
+    expect(provider.calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "GET https://api.resend.com/domains?limit=100",
+      `GET https://api.resend.com/domains/${DOMAIN_ID}`,
+    ]);
+    expect(found).toMatchObject({
+      providerDomainId: DOMAIN_ID,
+      region: "eu-west-1",
+      readiness: { sending: "pending", receiving: "pending" },
+      createdAt: new Date("2026-10-03T13:29:18.978Z"),
+    });
+    expect(found?.readiness.records.map((record) => record.purpose)).toEqual([
+      "dkim",
+      "return_path",
+      "spf",
+      "receiving_mx",
+      "dmarc",
+    ]);
+  });
+
+  it("pages through the account's domains until it finds the name", async () => {
+    const firstPage = {
+      ...recordedList(),
+      has_more: true,
+      data: [listEntry({ id: "d-1", name: "one.example" }), listEntry({ id: "d-2", name: "two.example" })],
+    };
+    const provider = fakeResend((call) => {
+      if (call.url === "https://api.resend.com/domains?limit=100") return json(firstPage);
+      if (call.url === "https://api.resend.com/domains?limit=100&after=d-2") return json(recordedList());
+      return json(sendingDomain());
+    });
+
+    expect(await provisionerFor(provider.fetch).findByName(DOMAIN)).toMatchObject({ providerDomainId: DOMAIN_ID });
+    expect(provider.calls).toHaveLength(3);
+  });
+
+  it("finds nothing when the account does not hold the name", async () => {
+    const provider = fakeResend(() => json({ ...recordedList(), data: [listEntry({ name: "other.example" })] }));
+
+    expect(await provisionerFor(provider.fetch).findByName(DOMAIN)).toBeNull();
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it("does not hand over a registration this deployment's region does not serve", async () => {
+    const provider = fakeResend(() => json({ ...recordedList(), data: [listEntry({ region: "us-east-1" })] }));
+
+    expect(await provisionerFor(provider.fetch).findByName(DOMAIN)).toBeNull();
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it("looks nothing up for a name that is not a domain", async () => {
+    const provider = fakeResend(() => json(recordedList()));
+
+    expect(await provisionerFor(provider.fetch).findByName("../etc")).toBeNull();
+    expect(provider.calls).toHaveLength(0);
+  });
+
+  it("throws a retryable error on a list it cannot read", async () => {
+    const provider = fakeResend(() => json({ object: "list" }));
+
+    await expect(provisionerFor(provider.fetch).findByName(DOMAIN)).rejects.toMatchObject({
+      kind: "malformed_response",
+      retryable: true,
+    });
   });
 });
 

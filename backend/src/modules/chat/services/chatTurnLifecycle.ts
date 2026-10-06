@@ -76,11 +76,11 @@ import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSki
 import type { ReviewedTurnDraft, ReviewTurnFactsSource } from "../types/chatReview.js";
 import { CONTACT_SEND_ACTION_TYPE } from "./routines/contactRoutine.js";
 import {
-  reviewedTurnAuditEvent,
   reviewedTurnDraft,
   reviewTurnFacts,
   type ReviewTurnCorrelation,
 } from "./reviewDraft.js";
+import { reviewedTurnAuditEvent, reviewTurnFailureAuditEvent } from "./reviewTurnAudit.js";
 import type {
   PageReadCandidateSource,
   PageReadDecision,
@@ -184,6 +184,13 @@ interface DraftAssistantTurn {
 
 /** How a turn ended once completed; its execution mode's `completion` capability picks the arm. */
 export type CompletedAssistantTurn = PersistedAssistantTurn | DraftAssistantTurn;
+
+/**
+ * A turn that returns its reply as a draft answers a customer's message with a reply nobody has
+ * approved, so its audit records neither: only the review audit's fields (FR-045).
+ */
+const auditsWithoutContent = (executionMode: TurnExecutionMode | undefined): boolean =>
+  turnExecutionCapabilities(executionMode).completion === "return_draft";
 
 /** Labels a non-live turn's audit records with its execution mode and the surface that ran it. */
 const executionModeAuditMetadata = (
@@ -941,7 +948,8 @@ export class ChatTurnLifecycle {
    * request it answered; the coverage assessment the turn made is already saved against
    * that request, and there is no reply row to link it to. No conversation state the
    * published reply would depend on (routine, decision, clarification, directive firing
-   * memory) advances, because nobody has published the reply.
+   * memory) advances, because nobody has published the reply. The directive firing memory
+   * advance rides with the draft instead, for its unchanged publication to apply.
    */
   private async returnDraft(input: {
     workspaceId: string;
@@ -961,7 +969,10 @@ export class ChatTurnLifecycle {
     this.recordPageReadGateOutcome(input.session);
     return {
       kind: "draft",
-      draft: reviewedTurnDraft(input.turn.assistantMessage),
+      draft: reviewedTurnDraft(
+        input.turn.assistantMessage,
+        input.session.directiveStateStore?.deferredTransition() ?? null,
+      ),
       facts: reviewTurnFacts({
         answerOutcome: input.answerOutcome ?? legacyAnswerOutcomeForSkillTurnOutcome(input.turn.skillTurnOutcome),
         answerCoverage: input.session.answerCoverageDebug,
@@ -1014,7 +1025,7 @@ export class ChatTurnLifecycle {
       await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
     }
 
-    await this.auditService.record({
+    const failureEvent: AuditEventInput = {
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       eventType: "chat.answer",
@@ -1051,7 +1062,10 @@ export class ChatTurnLifecycle {
         errorMessage: error instanceof Error ? error.message : "Unknown error",
         ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
       },
-    });
+    };
+    await this.auditService.record(auditsWithoutContent(input.executionMode)
+      ? reviewTurnFailureAuditEvent(failureEvent, error)
+      : failureEvent);
     if (turnExecutionCapabilities(input.executionMode).turnBookkeeping === "skip") {
       return;
     }

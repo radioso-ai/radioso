@@ -1,7 +1,11 @@
 import { vi } from "vitest";
 
 import type { ActionHandlerContext } from "../../src/modules/chat/contracts/index.js";
-import type { DeliveryFailureRecorderPort } from "../../src/modules/customerReplyDelivery/public.js";
+import type {
+  DeliveryFailureLockPort,
+  DeliveryFailureRecord,
+  DeliveryFailureRecorderPort,
+} from "../../src/modules/customerReplyDelivery/public.js";
 import {
   EmailHeldReplyChannelScope,
   EmailSendActionHandler,
@@ -69,6 +73,7 @@ export class InMemoryEmailSendIntents implements Pick<
   | "recordComplaint"
   | "listDeliveryStates"
   | "listByMessageId"
+  | "listMessagesSentThrough"
 > {
   readonly rows = new Map<string, EmailSendIntentRecord>();
   readonly log: string[] = [];
@@ -140,6 +145,24 @@ export class InMemoryEmailSendIntents implements Pick<
       .filter((row) => row.messageId === messageId)
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
       .map(copy);
+  }
+
+  async listMessagesSentThrough(intent: Pick<EmailSendIntentRecord, "id" | "conversationId" | "messageId">) {
+    const delivered = this.rows.get(intent.id);
+    const order = (row: EmailSendIntentRecord) => [row.createdAt.getTime(), row.id] as const;
+    const notAfter = (row: EmailSendIntentRecord) => {
+      if (!delivered) return false;
+      const [time, id] = order(row);
+      const [deliveredTime, deliveredId] = order(delivered);
+      return time < deliveredTime || (time === deliveredTime && id <= deliveredId);
+    };
+    const newest = new Map<string, EmailSendIntentRecord>();
+    for (const row of [...this.rows.values()].filter((candidate) => candidate.conversationId === intent.conversationId)) {
+      const current = newest.get(row.messageId);
+      if (!current || order(row) > order(current)) newest.set(row.messageId, row);
+    }
+    const vouched = [...newest.values()].filter(notAfter).map((row) => row.messageId);
+    return [...new Set([intent.messageId, ...vouched])];
   }
 
   async findByProviderMessageId(provider: string, providerMessageId: string) {
@@ -248,6 +271,7 @@ export class InMemoryEmailSendIntents implements Pick<
 }
 
 interface FailureRow {
+  id: string;
   workspaceId: string;
   conversationId: string;
   messageId: string | null;
@@ -258,12 +282,12 @@ interface FailureRow {
 }
 
 /** In-memory delivery failures with the recorder's rules: one open failure per message. */
-export class InMemoryDeliveryFailures implements DeliveryFailureRecorderPort {
+export class InMemoryDeliveryFailures implements DeliveryFailureRecorderPort, DeliveryFailureLockPort {
   readonly rows: FailureRow[] = [];
 
   open: DeliveryFailureRecorderPort["open"] = async (input) => {
     if (this.openFor(input.messageId)) return;
-    this.rows.push({ ...input, cleared: null });
+    this.rows.push({ id: `failure-${this.rows.length + 1}`, ...input, cleared: null });
   };
 
   retarget: DeliveryFailureRecorderPort["retarget"] = async (input) => {
@@ -272,12 +296,34 @@ export class InMemoryDeliveryFailures implements DeliveryFailureRecorderPort {
   };
 
   clear: DeliveryFailureRecorderPort["clear"] = async (input) => {
-    const open = this.rows.filter((row) => row.cleared === null
-      && row.conversationId === input.conversationId
-      && (input.messageId === null || row.messageId === input.messageId));
+    const open = this.rows.filter((row) => row.cleared === null && (input.reason === "operator_resolved"
+      ? row.id === input.failureId
+      : row.conversationId === input.conversationId && row.messageId !== null && input.messageIds.includes(row.messageId)));
     for (const row of open) row.cleared = input.reason;
     return open.length;
   };
+
+  lockOpen: DeliveryFailureLockPort["lockOpen"] = async (input) => {
+    const row = this.rows.find((candidate) => candidate.cleared === null && candidate.id === input.failureId && candidate.workspaceId === input.workspaceId);
+    return row ? this.recordOf(row) : null;
+  };
+
+  /** The failure as the operator surfaces read it, for a teammate's decision on it. */
+  recordOf(row: FailureRow): DeliveryFailureRecord {
+    return {
+      id: row.id,
+      workspaceId: row.workspaceId,
+      conversationId: row.conversationId,
+      messageId: row.messageId,
+      provider: row.provider,
+      kind: row.kind as DeliveryFailureRecord["kind"],
+      detailCode: row.detailCode,
+      openedAt: new Date(0),
+      clearedAt: row.cleared === null ? null : new Date(0),
+      clearedByUserId: null,
+      clearReason: row.cleared as DeliveryFailureRecord["clearReason"],
+    };
+  }
 
   openFor(messageId: string | null): FailureRow | undefined {
     return this.rows.find((row) => row.cleared === null && row.messageId === messageId);
@@ -456,7 +502,7 @@ export const createSendPathHarness = (options: { now?: Date; sendingStatus?: "pe
     logger,
     createId,
   });
-  const reconciler = new SendReconciler({ intents, mailboxes, domains, ownership, driver, attempt, writer, metrics, logger });
+  const reconciler = new SendReconciler({ intents, mailboxes, domains, ownership, driver, attempt, writer, metrics, logger, clock });
   const deliveryEvents = new ProviderDeliveryEvents({ intents, writer, audit, metrics, logger });
 
   const payload = (overrides: Partial<EmailSendActionPayload> = {}): EmailSendActionPayload => ({

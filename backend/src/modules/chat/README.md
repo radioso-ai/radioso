@@ -96,9 +96,18 @@ rows. Start at `test-execution/README.md` and
   `historyWindow.maxMessages` earlier messages. The turn starts and resumes no
   routine, suppresses every skill effect, drops actions, and reports a hand-off
   without applying it; the lifecycle's `draft` completion commits only a
-  `chat.answer` audit event keyed on `requestMessageId` and `turnId`. Usage is
-  reserved as a reply on the conversation's channel. `ConnectorChatPort.respond`
-  maps the result through `connectors/services/connectorTurnFacts.ts`.
+  `chat.answer` audit event keyed on `requestMessageId` and `turnId`. Review
+  audits, successful or failed, keep to the allowlist in
+  `services/reviewTurnAudit.ts` (ids, outcome codes, counts, an error code) and
+  never carry the draft, the customer's words, queries, or traces (FR-045). The
+  directive firing memory advance the turn would have committed rides with the
+  draft (`deferredDirectiveTransitionOf`); `reviewedDraftWriter` writes an
+  unchanged publication's reply row and applies that advance once, so edited,
+  discarded, and superseded drafts never consume it. The preparer applies the
+  answered message's `(created_at, id)` boundary in the history query, before the
+  window's limit. Usage is reserved as a reply on the conversation's channel.
+  `ConnectorChatPort.respond` maps the result through
+  `connectors/services/connectorTurnFacts.ts`.
 - `llmAdapters.ts`: LLM-provider registration for chat.
 - `retrievalSupport.ts`: narrow helpers used by retrieval answer assembly.
 

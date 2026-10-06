@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { EngagementMode } from "../../src/modules/emailChannel/public.js";
 import { LocalEmailDomainProvisioner } from "../../src/modules/mail/adapters/localDomainProvisioner.js";
 import { forbidden } from "../../src/shared/domain/errors.js";
-import { createInMemoryEmailChannel } from "../support/inMemoryEmailChannel.js";
+import { createInMemoryEmailChannel, type InMemoryDelivery } from "../support/inMemoryEmailChannel.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 const INBOUND_DOMAIN = "in.relay.test";
@@ -61,8 +61,11 @@ const createMailbox = (h: Harness, body: Record<string, unknown> = {}) =>
     .set(h.owner.headers)
     .send({ address: "support@customer.test", displayName: "Support", ...body });
 
-/** A delivery to `mailboxId` as the inbound processor leaves it, with its raw message stored. */
-const seedDelivery = (h: Harness, mailboxId: string, state: "failed" | "done" | "fetched", overrides: { rawMime?: Buffer | null } = {}) => {
+/**
+ * A delivery to `mailboxId` as the inbound processor leaves it, with its raw message stored. A null
+ * mailbox is mail the workspace's receiving domain accepted for an address no mailbox has.
+ */
+const seedDelivery = (h: Harness, mailboxId: string | null, state: "failed" | "done" | "fetched", overrides: Partial<InMemoryDelivery> = {}) => {
   const event = h.channel.inbound.seedEvent({ state: state === "failed" ? "failed" : "processed" });
   const id = randomUUID();
   h.channel.inbound.deliveries.set(id, {
@@ -95,11 +98,12 @@ const seedDelivery = (h: Harness, mailboxId: string, state: "failed" | "done" | 
     createdAt: new Date(),
     processedAt: new Date(),
     bodyText: "Where is my order?",
-    rawMime: overrides.rawMime === undefined ? RAW_MESSAGE : overrides.rawMime,
+    rawMime: RAW_MESSAGE,
     rawSizeBytes: RAW_MESSAGE.length,
     rawTruncated: false,
     authResults: { spf: "pass", dkim: "pass", dmarc: "pass" },
     spamVerdict: "not_spam",
+    ...overrides,
   });
   return { deliveryId: id, eventId: event.id };
 };
@@ -170,6 +174,7 @@ describe("email channel settings contract", () => {
       await request(h.app).get(h.owner.settings).set(h.owner.headers).expect(200);
       await request(h.app).get(`${h.owner.settings}/mailboxes/${created.body.id}`).set(h.owner.headers).expect(200);
       await request(h.app).get(`${h.owner.settings}/mailboxes/${created.body.id}/events`).set(h.owner.headers).expect(200);
+      await request(h.app).get(`${h.owner.settings}/events`).set(h.owner.headers).expect(200);
       await createMailbox(h, { address: "sales@customer.test" }).expect(403);
       await request(h.app).patch(`${h.owner.settings}/mailboxes/${created.body.id}`).set(h.owner.headers).send({ enabled: false }).expect(403);
       await request(h.app).post(`${h.owner.settings}/mailboxes/${created.body.id}/relay-token/rotate`).set(h.owner.headers).expect(403);
@@ -181,6 +186,7 @@ describe("email channel settings contract", () => {
       allowOnly(h, "workspace.conversation.takeover");
 
       await request(h.app).get(h.owner.settings).set(h.owner.headers).expect(403);
+      await request(h.app).get(`${h.owner.settings}/events`).set(h.owner.headers).expect(403);
     });
 
     it("needs workspace.conversation.takeover as well to read a raw message, and audits nothing it refused", async () => {
@@ -370,6 +376,42 @@ describe("email channel settings contract", () => {
       const badCursor = await request(h.app).get(events).query({ cursor: "not-a-cursor" }).set(h.owner.headers).expect(400);
       expect(badCursor.body.error.code).toBe("invalid_cursor");
       await request(h.app).get(`${h.owner.settings}/mailboxes/${randomUUID()}/events`).set(h.owner.headers).expect(404);
+    });
+
+    it("lists the workspace's log, with mail no mailbox matched and a removed mailbox's retained events, narrowed by mailbox on request", async () => {
+      const h = await harness();
+      const created = await createMailbox(h).expect(201);
+      const { deliveryId: kept } = seedDelivery(h, created.body.id, "done", { createdAt: new Date("2026-10-06T09:00:00.000Z") });
+      const { deliveryId: unmatched } = seedDelivery(h, null, "done", {
+        routeRule: "direct",
+        disposition: "drop",
+        dispositionReason: "no_mailbox",
+        receivedFor: ["billing@customer.test"],
+        createdAt: new Date("2026-10-06T10:00:00.000Z"),
+      });
+      seedDelivery(h, null, "done", { workspaceId: randomUUID(), dispositionReason: "no_mailbox" });
+      await request(h.app).delete(`${h.owner.settings}/mailboxes/${created.body.id}`).set(h.owner.headers).expect(204);
+      const events = `${h.owner.settings}/events`;
+
+      const listed = await request(h.app).get(events).set(h.owner.headers).expect(200);
+      expect(listed.body).toEqual({
+        items: [
+          expect.objectContaining({ id: unmatched, mailboxId: null, disposition: "drop", reason: "no_mailbox", hasRaw: true }),
+          expect.objectContaining({ id: kept, mailboxId: created.body.id, state: "done" }),
+        ],
+        nextCursor: null,
+      });
+      const narrowed = await request(h.app).get(events).query({ mailboxId: created.body.id }).set(h.owner.headers).expect(200);
+      expect(narrowed.body.items.map((item: { id: string }) => item.id)).toEqual([kept]);
+      const paged = await request(h.app).get(events).query({ limit: 1 }).set(h.owner.headers).expect(200);
+      expect(paged.body).toEqual({ items: [expect.objectContaining({ id: unmatched })], nextCursor: unmatched });
+      const raw = await request(h.app).get(`${h.owner.settings}/events/${unmatched}/raw`).set(h.owner.headers).expect(200);
+      expect(raw.body).toMatchObject({ text: expect.stringContaining("Where is my order?") });
+
+      await request(h.app).get(`${h.owner.settings}/mailboxes/${created.body.id}/events`).set(h.owner.headers).expect(404);
+      await request(h.app).get(events).query({ mailboxId: "not-a-uuid" }).set(h.owner.headers).expect(400);
+      const badCursor = await request(h.app).get(events).query({ cursor: "not-a-cursor" }).set(h.owner.headers).expect(400);
+      expect(badCursor.body.error.code).toBe("invalid_cursor");
     });
 
     it("retries a failed event from where it stopped, audits it and pushes a drain", async () => {

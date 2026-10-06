@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 
@@ -240,6 +240,46 @@ export const readCorpusDirectory = async (dir: string): Promise<CorpusDocument[]
     const heading = content.split("\n").find((line) => line.startsWith("# "));
     return { title: heading ? heading.slice(2).trim() : basename(name, ".md"), content };
   }));
+};
+
+/** The workspace's documents as corpus reconciliation reads and writes them. */
+export interface CorpusStore {
+  list(): Promise<readonly { documentId: string; externalDocumentId: string | null }[]>;
+  /** Ingests the document under its key and returns its id. */
+  ingest(document: CorpusDocument & { externalDocumentId: string }): Promise<string>;
+  remove(documentId: string): Promise<void>;
+}
+
+const CORPUS_KEY_PREFIX = "email-behaviour-corpus:";
+
+/** A corpus document's key is its content's hash: an edited file is a different document. */
+const corpusKey = (document: CorpusDocument): string =>
+  `${CORPUS_KEY_PREFIX}${createHash("sha256").update(document.title).update("\n").update(document.content).digest("hex")}`;
+
+/**
+ * Makes the workspace's documents exactly the corpus, keyed by content hash. A document whose hash
+ * is stored is reused; a new or edited one is ingested; every other document is deleted: an earlier
+ * version of an edited file, a file since removed, or one an earlier harness stored by title. A
+ * reused database therefore never retrieves stale corpus content. Returns the ids in corpus order.
+ */
+export const reconcileCorpus = async (store: CorpusStore, documents: readonly CorpusDocument[]): Promise<string[]> => {
+  const stored = await store.list();
+  const byKey = new Map<string, string>();
+  for (const row of stored) {
+    if (row.externalDocumentId) byKey.set(row.externalDocumentId, row.documentId);
+  }
+  const ids: string[] = [];
+  for (const document of documents) {
+    const key = corpusKey(document);
+    const documentId = byKey.get(key) ?? await store.ingest({ ...document, externalDocumentId: key });
+    byKey.set(key, documentId);
+    ids.push(documentId);
+  }
+  const current = new Set(ids);
+  for (const row of stored) {
+    if (!current.has(row.documentId)) await store.remove(row.documentId);
+  }
+  return ids;
 };
 
 // ── Harness ──────────────────────────────────────────────────────────
@@ -797,22 +837,25 @@ const ensurePublishedAgent = async (deps: Deps, workspaceId: string, agent: Emai
   return agentId;
 };
 
-/** Ingests the documents the workspace lacks by title, then processes them in-process until each is ready. */
+/** Reconciles the workspace's documents with the corpus by content hash, then processes them in-process until each is ready. */
 const seedCorpus = async (deps: Deps, operator: Operator, documents: readonly CorpusDocument[], timeoutMs: number): Promise<void> => {
   const db = deps.connectorDb.kysely;
-  const existing = await db.selectFrom("documents").select(["id", "title"]).where("workspace_id", "=", operator.workspaceId).execute();
-  const ids = new Map(existing.map((row) => [row.title, row.id]));
-  for (const document of documents) {
-    if (ids.has(document.title)) continue;
-    const { documentId } = await deps.documentIngestionService.ingest({
+  const ids = await reconcileCorpus({
+    list: () => db
+      .selectFrom("documents")
+      .select(["id as documentId", "external_document_id as externalDocumentId"])
+      .where("workspace_id", "=", operator.workspaceId)
+      .execute(),
+    ingest: async (document) => (await deps.documentIngestionService.ingest({
       workspaceId: operator.workspaceId,
       accountId: operator.accountId,
       title: document.title,
       content: document.content,
-    });
-    ids.set(document.title, documentId);
-  }
-  const pending = new Set(documents.map((document) => ids.get(document.title)!));
+      externalDocumentId: document.externalDocumentId,
+    })).documentId,
+    remove: (documentId) => deps.documentDeletionService.delete({ workspaceId: operator.workspaceId, documentId }),
+  }, documents);
+  const pending = new Set(ids);
   const deadline = Date.now() + timeoutMs;
   while (pending.size > 0) {
     const processed = await deps.documentProcessingWorker.runOnce();

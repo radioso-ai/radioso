@@ -59,6 +59,10 @@ export const listEmailMailboxEventsQuerySchema = z.object({
   state: z.enum(["pending", "fetched", "ingested", "done", "failed"]).optional(),
 }).strict();
 
+export const listEmailChannelEventsQuerySchema = listEmailMailboxEventsQuerySchema.extend({
+  mailboxId: z.string().uuid().optional(),
+}).strict();
+
 const uuidSchema = z.string().uuid();
 
 const uuidParam = (req: Request, name: string): string => {
@@ -153,6 +157,12 @@ export const createEmailChannelRoutes = (dependencies: EmailChannelRouteDependen
   router.get(`${mailbox}/events`, workspaceSession, settingsRead, validateQuery(listEmailMailboxEventsQuerySchema), handle(async (req, res) => {
     const query = req.query as z.infer<typeof listEmailMailboxEventsQuerySchema>;
     res.status(200).json(await channelOf(dependencies).eventLog.list(workspaceIdOf(req), uuidParam(req, "mailboxId"), query));
+  }));
+
+  // The workspace's log keeps what no active mailbox shows: mail no mailbox matched, and a removed mailbox's events.
+  router.get(`${settings}/events`, workspaceSession, settingsRead, validateQuery(listEmailChannelEventsQuerySchema), handle(async (req, res) => {
+    const query = req.query as z.infer<typeof listEmailChannelEventsQuerySchema>;
+    res.status(200).json(await channelOf(dependencies).eventLog.listWorkspace(workspaceIdOf(req), query));
   }));
 
   router.post(`${event}/retry`, workspaceSession, settingsManage, handle(async (req, res) => {

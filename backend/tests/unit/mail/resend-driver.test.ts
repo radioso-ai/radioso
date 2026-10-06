@@ -225,6 +225,53 @@ describe("ResendEmailDriver.send", () => {
     });
   });
 
+  describe("a 409 it cannot classify", () => {
+    const unreadableBody = (): ReadableStream<Uint8Array> =>
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"statusCode":409,"na'));
+          controller.error(new Error("socket hang up"));
+        },
+      });
+
+    it.each([
+      ["a truncated JSON body", () => new Response('{"statusCode":409,"name":"concurrent_idem', { status: 409 })],
+      ["a body stream that fails", () => new Response(unreadableBody(), { status: 409 })],
+      ["an unrecognized error name", () => json(409, { statusCode: 409, name: "idempotency_key_locked", message: "?" })],
+      ["no error name", () => json(409, { statusCode: 409, message: "Conflict" })],
+    ])("treats %s as an unknown outcome, not a rejection", async (_case, answer) => {
+      const { driver } = driverAnswering(answer);
+
+      const error = await sendFailure(driver);
+
+      expect(error).toBeInstanceOf(EmailSendError);
+      expect(error).toMatchObject({ outcome: "unknown", code: "unrecognized_conflict", statusCode: 409 });
+    });
+
+    it("keeps an earlier unknown send reconcilable under the same key", async () => {
+      const timeout = Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+      const answers: (() => Response)[] = [
+        () => {
+          throw timeout;
+        },
+        () => new Response('{"statusCode":409,"name":"concurrent_idem', { status: 409 }),
+        () => json(200, sendResponse),
+      ];
+      const { driver, calls } = driverAnswering(() => answers[calls.length - 1]());
+
+      expect(await sendFailure(driver)).toMatchObject({ outcome: "unknown", code: "timeout" });
+      expect(await sendFailure(driver)).toMatchObject({ outcome: "unknown", code: "unrecognized_conflict" });
+      expect(await driver.send(channelReply())).toEqual({
+        dispatched: true,
+        providerMessageId: PROVIDER_MESSAGE_ID,
+        deliveredMessageId: null,
+      });
+      expect(new Set(calls.map((call) => call.headers["Idempotency-Key"]))).toEqual(
+        new Set([channelReply().idempotencyKey]),
+      );
+    });
+  });
+
   it("classifies a rate limit as retryable", async () => {
     const { driver } = driverAnswering(() =>
       json(429, { statusCode: 429, name: "rate_limit_exceeded", message: "Too many requests." }),

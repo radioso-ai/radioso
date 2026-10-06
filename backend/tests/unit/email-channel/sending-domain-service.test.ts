@@ -22,18 +22,31 @@ const harness = () => {
   let now = new Date("2026-10-03T12:00:00.000Z");
   const clock = () => now;
   const domains = new InMemoryEmailDomains(clock);
+  // The provider account: one registration per name, as Resend keeps them, with when it was created.
+  const providerDomains = new Map<string, Date>();
+  const providerDomainOf = (domain: string, createdAt: Date) => ({
+    providerDomainId: `provider-${domain}`,
+    region: "eu-west-1",
+    readiness: readiness("pending"),
+    createdAt,
+  });
   const provisioner = {
     provider: "local",
-    registerSendingDomain: vi.fn<EmailDomainProvisioner["registerSendingDomain"]>(async (domain) => ({
-      ok: true,
-      providerDomainId: `provider-${domain}`,
-      region: "eu-west-1",
-      readiness: readiness("pending"),
-    })),
+    registerSendingDomain: vi.fn<EmailDomainProvisioner["registerSendingDomain"]>(async (domain) => {
+      if (providerDomains.has(domain)) return { ok: false, refused: "already_registered" };
+      providerDomains.set(domain, now);
+      return { ok: true, ...providerDomainOf(domain, now) };
+    }),
+    findByName: vi.fn<EmailDomainProvisioner["findByName"]>(async (domain) => {
+      const createdAt = providerDomains.get(domain);
+      return createdAt ? providerDomainOf(domain, createdAt) : null;
+    }),
     enableReceiving: vi.fn<EmailDomainProvisioner["enableReceiving"]>(async () => readiness("verified", "pending")),
     requestVerification: vi.fn<EmailDomainProvisioner["requestVerification"]>(async () => undefined),
     readiness: vi.fn<EmailDomainProvisioner["readiness"]>(async () => readiness("pending")),
-    remove: vi.fn<EmailDomainProvisioner["remove"]>(async () => undefined),
+    remove: vi.fn<EmailDomainProvisioner["remove"]>(async (providerDomainId) => {
+      providerDomains.delete(providerDomainId.replace(/^provider-/u, ""));
+    }),
   };
   const mailboxes = { countActiveOnDomain: vi.fn(async (_domainId: string) => 0) };
   const audit = { record: vi.fn(async (_event: AuditEventInput) => undefined) };
@@ -55,6 +68,7 @@ const harness = () => {
     service,
     domains,
     provisioner,
+    providerDomains,
     mailboxes,
     audit,
     auditMetadata,
@@ -147,33 +161,180 @@ describe("SendingDomainService", () => {
       expect(JSON.stringify({ message: error.message, details: error.details })).not.toContain(otherWorkspaceId);
     });
 
-    it("gives the same refusal when the provider reports the domain registered elsewhere", async () => {
+    it("gives the same refusal when the provider holds the name outside this deployment, keeping no claim", async () => {
       const { service, provisioner, domains } = harness();
-      provisioner.registerSendingDomain.mockResolvedValueOnce({ ok: false, refused: "claimed_elsewhere" });
+      provisioner.registerSendingDomain.mockResolvedValueOnce({ ok: false, refused: "already_registered" });
+      expect(await service.ensureRegistered(actor, workspaceId, "customer.test")).toEqual({ ok: false, refused: "claimed_elsewhere" });
+      expect(provisioner.findByName).toHaveBeenCalledWith("customer.test");
+      expect(domains.records.size).toBe(0);
+    });
+
+    it("releases the claim when the provider refuses the name itself", async () => {
+      const { service, provisioner, domains } = harness();
+      provisioner.registerSendingDomain.mockResolvedValueOnce({ ok: false, refused: "invalid_domain" });
+      expect(await service.ensureRegistered(actor, workspaceId, "customer.test")).toEqual({ ok: false, refused: "invalid_domain" });
+      expect(domains.records.size).toBe(0);
+    });
+
+    it("gives the same refusal, without calling the provider, when another workspace wins the claim race", async () => {
+      const { service, domains, provisioner } = harness();
+      const claim = domains.claim.bind(domains);
+      vi.spyOn(domains, "claim").mockImplementationOnce(async (input) => {
+        domains.seed({ workspaceId: otherWorkspaceId, domain: input.domain });
+        return claim(input);
+      });
+      expect(await service.ensureRegistered(actor, workspaceId, "customer.test")).toEqual({ ok: false, refused: "claimed_elsewhere" });
+      expect(provisioner.registerSendingDomain).not.toHaveBeenCalled();
+    });
+
+    it("settles on one registration when the workspace's two mailboxes race to register the domain", async () => {
+      const { service, domains, auditMetadata } = harness();
+      const [first, second] = await Promise.all([
+        service.ensureRegistered(actor, workspaceId, "customer.test"),
+        service.ensureRegistered(actor, workspaceId, "customer.test"),
+      ]);
+      expect(first.ok && second.ok).toBe(true);
+      if (!first.ok || !second.ok) return;
+      expect(second.domain.id).toBe(first.domain.id);
+      expect(first.domain.providerDomainId).toBe("provider-customer.test");
+      expect(domains.records.size).toBe(1);
+      expect(auditMetadata("registered")).toHaveLength(1);
+    });
+  });
+
+  describe("recovering an interrupted registration", () => {
+    const loseTheAnswer = (h: ReturnType<typeof harness>) => {
+      h.provisioner.registerSendingDomain.mockImplementationOnce(async (domain) => {
+        h.providerDomains.set(domain, h.now());
+        throw new Error("socket hang up");
+      });
+    };
+
+    it("adopts the provider's registration on retry when the create was accepted but its answer was lost", async () => {
+      const h = harness();
+      const { service, domains, provisioner, auditMetadata, logger } = h;
+      loseTheAnswer(h);
+
+      await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
+      const [claim] = [...domains.records.values()];
+      expect(claim).toMatchObject({ workspaceId, domain: "customer.test", providerDomainId: null, nextCheckAt: null });
+
+      const retried = await service.ensureRegistered(actor, workspaceId, "customer.test");
+
+      expect(retried).toEqual({
+        ok: true,
+        domain: expect.objectContaining({
+          id: claim?.id,
+          providerDomainId: "provider-customer.test",
+          providerRegion: "eu-west-1",
+          sendingStatus: "pending",
+        }),
+      });
+      expect(provisioner.findByName).toHaveBeenCalledWith("customer.test");
+      expect(domains.records.size).toBe(1);
+      expect(auditMetadata("registered").map((event) => event.metadata)).toEqual([
+        expect.objectContaining({ domainId: claim?.id, recovered: true }),
+      ]);
+      expect(logger.warn).toHaveBeenCalledWith({ domainId: claim?.id }, "email_domain_registration_recovered");
+    });
+
+    it("adopts the provider's registration when the earlier attempt stopped before recording it", async () => {
+      const { service, domains, provisioner, providerDomains } = harness();
+      vi.spyOn(domains, "recordRegistration").mockRejectedValueOnce(new Error("connection terminated"));
+
+      await expect(service.ensureRegistered(actor, workspaceId, "customer.test")).rejects.toThrow("connection terminated");
+      expect(providerDomains.has("customer.test")).toBe(true);
+
+      const retried = await service.ensureRegistered(actor, workspaceId, "customer.test");
+
+      expect(retried).toMatchObject({ ok: true, domain: { workspaceId, providerDomainId: "provider-customer.test" } });
+      expect(provisioner.registerSendingDomain).toHaveBeenCalledTimes(2);
+      expect(domains.records.size).toBe(1);
+    });
+
+    it("still refuses a second workspace while the first holds the claim, finished or not", async () => {
+      const h = harness();
+      const { service, provisioner } = h;
+      loseTheAnswer(h);
+      await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
+      provisioner.registerSendingDomain.mockClear();
+
+      expect(await service.ensureRegistered(actor, otherWorkspaceId, "customer.test")).toEqual({ ok: false, refused: "claimed_elsewhere" });
+      expect(provisioner.registerSendingDomain).not.toHaveBeenCalled();
+      expect(provisioner.findByName).not.toHaveBeenCalled();
+
+      expect((await service.ensureRegistered(actor, workspaceId, "customer.test")).ok).toBe(true);
+      expect(await service.ensureRegistered(actor, otherWorkspaceId, "customer.test")).toEqual({ ok: false, refused: "claimed_elsewhere" });
+    });
+
+    it("finishes an unfinished registration when the operator checks the domain", async () => {
+      const h = harness();
+      const { service, provisioner } = h;
+      loseTheAnswer(h);
+      await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
+      const [pending] = await service.list(workspaceId);
+      expect(pending).toMatchObject({ domain: "customer.test", sending: { status: "pending" }, records: [] });
+
+      const view = await service.verify(actor, workspaceId, pending.id);
+
+      expect(view).toMatchObject({ id: pending.id, records: [expect.objectContaining({ purpose: "dkim" })] });
+      expect(provisioner.requestVerification).toHaveBeenCalledWith("provider-customer.test");
+    });
+
+    it("records a fresh registration even when the provider does not say when it created it", async () => {
+      const { service, provisioner } = harness();
+      provisioner.registerSendingDomain.mockResolvedValueOnce({
+        ok: true,
+        providerDomainId: "provider-customer.test",
+        region: null,
+        readiness: readiness("pending"),
+        createdAt: null,
+      });
+
+      expect(await service.ensureRegistered(actor, workspaceId, "customer.test")).toMatchObject({
+        ok: true,
+        domain: { providerDomainId: "provider-customer.test" },
+      });
+    });
+
+    it("never adopts a registration the provider account held before the claim", async () => {
+      const { service, domains, providerDomains, advance, now } = harness();
+      // Registered on the account by operations, or by another deployment sharing it.
+      providerDomains.set("customer.test", now());
+      advance(10 * MINUTE_MS);
+
       expect(await service.ensureRegistered(actor, workspaceId, "customer.test")).toEqual({ ok: false, refused: "claimed_elsewhere" });
       expect(domains.records.size).toBe(0);
     });
 
-    it("gives the same refusal when another workspace wins the insert race after the provider accepted", async () => {
-      const { service, domains } = harness();
-      const insertActive = domains.insertActive.bind(domains);
-      vi.spyOn(domains, "insertActive").mockImplementationOnce(async (input) => {
-        domains.seed({ workspaceId: otherWorkspaceId, domain: input.domain });
-        return insertActive(input);
-      });
-      expect(await service.ensureRegistered(actor, workspaceId, "customer.test")).toEqual({ ok: false, refused: "claimed_elsewhere" });
+    it("records an unfinished claim's provider registration before removing it, so the cleanup removes that too", async () => {
+      const h = harness();
+      const { service, domains, provisioner, providerDomains } = h;
+      loseTheAnswer(h);
+      await expectAppError(service.add(actor, workspaceId, "customer.test"), 502, "provider_unavailable");
+      const [pending] = await service.list(workspaceId);
+
+      await service.remove(actor, workspaceId, pending.id);
+
+      expect(await domains.findById(pending.id)).toMatchObject({ providerDomainId: "provider-customer.test", providerCleanupStatus: "pending" });
+      expect(await service.cleanupRemoved(10)).toBe(1);
+      expect(provisioner.remove).toHaveBeenCalledWith("provider-customer.test");
+      expect(providerDomains.size).toBe(0);
+      expect((await service.ensureRegistered(actor, otherWorkspaceId, "customer.test")).ok).toBe(true);
     });
 
-    it("returns the workspace's own row when its two mailboxes race to register the domain", async () => {
-      const { service, domains } = harness();
-      const insertActive = domains.insertActive.bind(domains);
-      let winner = "";
-      vi.spyOn(domains, "insertActive").mockImplementationOnce(async (input) => {
-        winner = domains.seed({ workspaceId, domain: input.domain }).id;
-        return insertActive(input);
-      });
-      const result = await service.ensureRegistered(actor, workspaceId, "customer.test");
-      expect(result.ok && result.domain.id).toBe(winner);
+    it("keeps a removed domain's provider registration once a new registration adopted it", async () => {
+      const { service, domains, provisioner } = harness();
+      const first = await service.ensureRegistered(actor, workspaceId, "customer.test");
+      if (!first.ok) throw new Error("not registered");
+      await service.remove(actor, workspaceId, first.domain.id);
+
+      const readded = await service.ensureRegistered(actor, otherWorkspaceId, "customer.test");
+      expect(readded).toMatchObject({ ok: true, domain: { workspaceId: otherWorkspaceId, providerDomainId: "provider-customer.test" } });
+
+      expect(await service.cleanupRemoved(10)).toBe(1);
+      expect(provisioner.remove).not.toHaveBeenCalled();
+      expect((await domains.findById(first.domain.id))?.providerCleanupStatus).toBe("done");
     });
   });
 

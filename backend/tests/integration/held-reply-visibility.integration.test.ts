@@ -15,7 +15,7 @@ import { AgentService } from "../../src/modules/agents/services/agentService.js"
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
-import { reviewedTurnAuditEvent } from "../../src/modules/chat/services/reviewDraft.js";
+import { reviewedTurnAuditEvent } from "../../src/modules/chat/services/reviewTurnAudit.js";
 import { ConversationSummaryService } from "../../src/modules/chat/services/summary/conversationSummaryService.js";
 import { createChatCopilotTools } from "../../src/modules/operatorCopilot/tools/chat.js";
 import type { Database } from "../../src/shared/infra/database.js";
@@ -42,9 +42,10 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 // dropped from `auto` to `draft` — never reaches a surface a
 // customer, a model turn or a conversation reader sees: the message rows and their readers, the
 // conversation history and its API, the public conversation events, the next review's model
-// context, conversation summaries, and Ray's transcript. Each review here also records the audit
-// row a real review turn records, which does carry the draft, so the suite proves the readers
-// exclude it rather than never meeting it.
+// context, conversation summaries, and Ray's transcript. Each review here also records its audit
+// row through the review audit builder a real review turn uses, handed the draft and the customer's
+// words the way the turn's full answer audit carries them, and the suite proves that row stores
+// neither (FR-045).
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -123,8 +124,9 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
   /**
    * The host's review turn for this suite: it drafts each state's text in turn, grounded and
    * complete so an `auto` mailbox publishes it, and, as `ChatService.review` does, records the
-   * turn's `chat.answer` audit row — the draft's text in its trace — correlated on the request it
-   * answered and naming no assistant message.
+   * turn's `chat.answer` audit row through `reviewedTurnAuditEvent`, correlated on the request it
+   * answered and naming no assistant message. It hands the builder the draft's text in its traces
+   * and segments, as the turn's answer audit carries them, for the builder to keep out.
    */
   const reviews: HeldState[] = [...HELD_STATES];
   const respond = async (input: ConnectorRespondInput): Promise<ConnectorTurnResult> => {
@@ -144,8 +146,10 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
         userMessageId: input.respondToMessageId,
         assistantMessageId: turnId,
         citationCount: 0,
+        answerSegments: [{ text }],
         activityTrace: { outcome: { answer: text } },
         turnTrace: { answer: { text } },
+        rewriteContinuityState: { previousQuery: CUSTOMER_PHRASE },
       },
     }, { requestMessageId: input.respondToMessageId, turnId }));
     const ownership = await database.queryOptional<{ version: number }>(
@@ -260,15 +264,18 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
     })));
     expect(states.find((row) => row.id === heldReplyIds.returned)?.hold_reason).toBe("authority_changed");
     expect(states.find((row) => row.id === heldReplyIds.downgraded)?.hold_reason).toBe("policy_changed");
-    // The leak source the readers must exclude: each review's audit row carries its draft.
-    const reviewAudits = await database.query<{ metadata_json: unknown }>(
+    // Each review left its audit row, correlated on the request it answered, and none stores its
+    // draft or the customer's words (FR-045).
+    const reviewAudits = await database.query<{ metadata_json: Record<string, unknown> }>(
       "SELECT metadata_json FROM audit_events WHERE workspace_id = $1 AND event_type = 'chat.answer' ORDER BY created_at",
       [workspaceId()],
     );
     expect(reviewAudits).toHaveLength(HELD_STATES.length);
-    for (const state of HELD_STATES) {
-      expect(JSON.stringify(reviewAudits)).toContain(heldText[state]);
+    for (const { metadata_json: metadata } of reviewAudits) {
+      expect(metadata).toMatchObject({ executionMode: "review", requestMessageId: expect.any(String), turnId: expect.any(String) });
     }
+    expectNoHeldText("review audit rows", reviewAudits);
+    expect(JSON.stringify(reviewAudits), "review audit rows show the customer's words").not.toContain(CUSTOMER_PHRASE);
   }, 120_000);
 
   afterAll(async () => {
@@ -349,7 +356,8 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
     const held = new Set(threads.map((thread) => thread.conversationId));
     expect(api.events.filter((event) => held.has(event.conversationId))).toEqual([]);
     expectNoHeldText("dashboard invalidations", api.invalidations);
-    expect(api.invalidations.map((invalidation) => invalidation.kinds)).toEqual([["hitl.decision_resolved"]]);
+    // Ids-only kinds: a discard resolved one decision, and the downgrade to draft returned a queued reply as a new one.
+    expect(api.invalidations.map((invalidation) => invalidation.kinds)).toEqual([["hitl.decision_resolved"], ["hitl.decision_created"]]);
 
     // The bus is live: a teammate's reply elsewhere is announced, by its message id alone.
     const elsewhere = await openEmailConversation(database, { node: worker, spool });

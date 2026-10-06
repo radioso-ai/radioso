@@ -121,7 +121,7 @@ describe("email.send action contract", () => {
         mailboxes: h.mailboxes,
         domains: h.domains,
         ownership: { versionOf: async () => 0 },
-        unitOfWork: { run: (work) => work({ intents: h.intents, failures: store.failures, outbox }) },
+        unitOfWork: { run: (work) => work({ intents: h.intents, failures: store.recorder, outbox }) },
       }),
       audit: { record: vi.fn(async () => undefined) },
       logger: { warn: vi.fn() },

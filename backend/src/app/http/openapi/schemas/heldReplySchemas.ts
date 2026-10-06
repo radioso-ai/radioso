@@ -2,11 +2,19 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import { HELD_REPLY_STATES } from "../../../../modules/handoff/public.js";
+import { GROUNDING_VERDICTS } from "../../../../shared/domain/groundingDiagnostic.js";
 import { listHeldRepliesQuerySchema, releaseHeldReplyRequestSchema } from "../../routes/heldReplyRoutes.js";
-import type { OpenApiSchemas } from "../openApiRegistry.js";
 
 /** Replies an agent wrote in review that wait for a teammate (specs/1403-email-channel/contracts/openapi-additions.md §2). */
-export const registerHeldReplySchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemas) => {
+export const registerHeldReplySchemas = (registry: OpenAPIRegistry) => {
+  const HeldReplyTraceSchema = registry.register("HeldReplyTrace", z.object({
+    turnId: z.string().uuid().openapi({ description: "The review turn that wrote the draft." }),
+    outcome: z.string().nullable().openapi({ description: "How the turn answered, as its answer-outcome code (for example `grounded_success`, `coverage_partial`, `no_context_refusal`); null when its record names none." }),
+    groundingVerdict: z.enum(GROUNDING_VERDICTS).nullable().openapi({ description: "Whether the draft's claims are supported by the sources it cites; null when the turn did not check." }),
+    coverage: z.string().openapi({ description: "How completely the turn covered the customer's question, as the producing channel's code." }),
+    handoffReason: z.string().nullable().openapi({ description: "Why the turn asked for a person; null when it did not." }),
+    suppressedEffects: z.array(z.object({ skillName: z.string() })).openapi({ description: "The skills whose effects the turn was not allowed to run." }),
+  }).openapi({ description: "The review turn's reasoning, as identifiers and codes; never prompt, completion or customer text." }));
   const HeldReplySchema = registry.register("HeldReply", z.object({
     id: z.string().uuid(),
     conversationId: z.string().uuid(),
@@ -30,7 +38,7 @@ export const registerHeldReplySchemas = (registry: OpenAPIRegistry, schemas: Ope
     releaserUserId: z.string().nullable(),
     editorUserId: z.string().nullable(),
     attentionOpen: z.boolean().openapi({ description: "Whether the conversation still waits for a teammate because of this reply. A discarded draft keeps it open until a teammate replies or takes over." }),
-    trace: z.union([schemas.TurnTraceEnvelopeSchema, z.null()]),
+    trace: z.union([HeldReplyTraceSchema, z.null()]).openapi({ description: "The review turn's reasoning; null when its record is not readable." }),
   }));
   const HeldReplyPageSchema = registry.register("HeldReplyPage", z.object({
     items: z.array(HeldReplySchema),

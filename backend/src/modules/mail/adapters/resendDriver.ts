@@ -18,7 +18,8 @@ import { ResendApiError, isRecord, type ResendApiClient, type ResendFailureKind 
 /**
  * How a failed Resend call bears on whether the message went out (research A5). A body that
  * differs from the first request under the same idempotency key is a defect on our side, so it
- * is rejected rather than retried.
+ * is rejected rather than retried. A 409 that names neither idempotency conflict, or cannot be read,
+ * may be the in-flight case and leaves the outcome unknown.
  */
 const FAILURE_CLASSIFICATION: Readonly<
   Record<ResendFailureKind, { outcome: EmailSendOutcome; code: EmailProviderFailureCode }>
@@ -28,6 +29,7 @@ const FAILURE_CLASSIFICATION: Readonly<
   rejected: { outcome: "rejected", code: "rejected" },
   idempotency_mismatch: { outcome: "rejected", code: "idempotency_body_mismatch" },
   idempotency_in_flight: { outcome: "retryable", code: "idempotency_in_flight" },
+  unrecognized_conflict: { outcome: "unknown", code: "unrecognized_conflict" },
   rate_limited: { outcome: "retryable", code: "rate_limited" },
   unavailable: { outcome: "unknown", code: "unavailable" },
   timeout: { outcome: "unknown", code: "timeout" },

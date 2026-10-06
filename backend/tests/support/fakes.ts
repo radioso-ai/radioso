@@ -4623,6 +4623,21 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       .slice(-limit);
   }
 
+  async listBeforeByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    input: { before: { createdAt: Date; id: string }; limit: number },
+  ): Promise<MessageRecord[]> {
+    if (input.limit <= 0) return [];
+    const boundary = input.before.createdAt.getTime();
+    return [...(this.items.get(conversationId) ?? [])]
+      .filter((message) => message.workspaceId === workspaceId)
+      .filter((message) => message.createdAt.getTime() < boundary
+        || (message.createdAt.getTime() === boundary && message.id < input.before.id))
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id))
+      .slice(-input.limit);
+  }
+
   async countByConversationId(workspaceId: string, conversationId: string): Promise<number> {
     return (this.items.get(conversationId) ?? []).filter((message) => message.workspaceId === workspaceId).length;
   }

@@ -22,13 +22,32 @@ export interface DomainReadiness {
   records: readonly DnsRecordView[];
 }
 
+/** A domain as the provider holds it: its id, its region and its readiness now. */
+export interface ProviderDomain {
+  providerDomainId: string;
+  region: string | null;
+  readiness: DomainReadiness;
+  /** When the provider created the registration, by its clock; null when it does not say. */
+  createdAt: Date | null;
+}
+
+/**
+ * `already_registered`: the provider holds the name already. The provider cannot say for which
+ * workspace; the caller's own registration claim decides, and `findByName` recovers it.
+ */
 export type DomainRegistration =
-  | { ok: true; providerDomainId: string; region: string | null; readiness: DomainReadiness }
-  | { ok: false; refused: "claimed_elsewhere" | "invalid_domain" };
+  | ({ ok: true } & ProviderDomain)
+  | { ok: false; refused: "already_registered" | "invalid_domain" };
 
 export interface EmailDomainProvisioner {
   readonly provider: string;
   registerSendingDomain(domain: string): Promise<DomainRegistration>;
+  /**
+   * The registration of `domain` this deployment's provider account and region hold, or null.
+   * Recovers a registration whose create was accepted but whose answer never arrived. The account
+   * can hold registrations no workspace made, so `createdAt` is what ties one to an attempt.
+   */
+  findByName(domain: string): Promise<ProviderDomain | null>;
   enableReceiving(providerDomainId: string): Promise<DomainReadiness>;
   requestVerification(providerDomainId: string): Promise<void>;
   readiness(input: { providerDomainId: string; domain: string }): Promise<DomainReadiness>;

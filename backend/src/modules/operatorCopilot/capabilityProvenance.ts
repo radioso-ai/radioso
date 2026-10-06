@@ -48,7 +48,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   list_documents: { applicationPrimitiveIds: ["documents.inventory.read"] },
   document_chunks: { applicationPrimitiveIds: ["documents.chunks.read"] },
   email_channel_configuration: { backingOperationIds: ["getEmailChannel", "getEmailMailbox"] },
-  email_channel_events: { backingOperationIds: ["listEmailMailboxEvents"] },
+  email_channel_events: { backingOperationIds: ["listEmailMailboxEvents", "listEmailChannelEvents"] },
   email_conversation_facts: { backingOperationIds: ["getConversationEmailFacts"] },
   held_replies: { backingOperationIds: ["listHeldReplies", "getCurrentHeldReply"] },
   eval_results: { backingOperationIds: ["listEvalCases"] },

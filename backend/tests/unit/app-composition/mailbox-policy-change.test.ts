@@ -58,12 +58,16 @@ const ownershipRow = (conversationId: string, state: "ai_owned" | "human_owned",
 
 /** Classifies a statement by the table it writes or locks; null for any other. */
 const kindOf = (sql: string): string | null => {
+  if (/^select distinct "conversation_id" from "held_replies"/u.test(sql)) return "read_live_drafts";
+  if (/^select "id" from "conversations" .*for no key update$/u.test(sql)) return "lock_conversation";
   if (/insert into conversation_ownership/iu.test(sql)) return "request_handoff";
   if (/from conversation_ownership o/iu.test(sql)) return "load_ownership";
   if (/insert into conversation_activity/iu.test(sql)) return "record_handoff_activity";
   if (/^select .* from "email_mailboxes" .*for update$/u.test(sql)) return "lock_mailbox";
   if (/^with "bumped" as \(update "email_mailboxes" .*insert into "email_mailbox_policies"/u.test(sql)) return "bump_policy_with_history";
   if (/^update "email_mailboxes" set "display_name"/u.test(sql)) return "update_settings";
+  if (/^update "email_mailboxes" set "thread_send_budget"/u.test(sql)) return "update_budget";
+  if (/^update "email_mailboxes" set "removed_at"/u.test(sql)) return "mark_removed";
   if (/^update "held_replies" set .*"superseded_reason"/u.test(sql)) return "supersede_held_replies";
   if (/^update "held_replies" set .*"hold_reason"/u.test(sql)) return "return_queued_held_replies";
   if (/^update "held_replies"/u.test(sql)) return "rebind_held_replies";
@@ -80,17 +84,34 @@ const harness = (options: {
   handoffFails?: boolean;
   returned?: number;
   rebound?: number;
+  /** The conversations with a live draft on the mailbox before it is locked; the superseded ones unless given. */
+  live?: string[];
+  /** How many times the supersede is aborted as a deadlock victim before it goes through. */
+  deadlocks?: number;
 } = {}) => {
+  let deadlocks = options.deadlocks ?? 0;
   const { db, statements, log } = createRecordingKysely(({ sql, parameters }): RecordedAnswer => {
     switch (kindOf(sql)) {
+      case "read_live_drafts":
+        return { rows: (options.live ?? options.superseded ?? []).map((conversationId) => ({ conversation_id: conversationId })) };
+      case "lock_conversation":
+        return { rows: [{ id: parameters[0] }] };
       case "lock_mailbox":
         return { rows: [mailboxRow({ engagement_mode: options.mode ?? "draft" })] };
+      case "update_budget":
+        return { rows: [mailboxRow({ engagement_mode: options.mode ?? "draft", policy_version: 5, thread_send_budget: parameters[0] })] };
+      case "mark_removed":
+        return { rows: [mailboxRow({ removed_at: createdAt })] };
       case "bump_policy_with_history":
         return { rows: [mailboxRow({ engagement_mode: parameters[0], enabled: parameters[1], policy_version: 5 })] };
       case "update_settings":
         return { rows: [mailboxRow({ display_name: parameters[0] })] };
       case "supersede_held_replies":
         if (options.supersedeFails) throw new Error("held replies unavailable");
+        if (deadlocks > 0) {
+          deadlocks -= 1;
+          throw Object.assign(new Error("deadlock detected"), { code: "40P01" });
+        }
         return { rows: (options.superseded ?? []).map((conversationId) => ({ conversation_id: conversationId })) };
       case "request_handoff": {
         if (options.handoffFails) throw new Error("ownership unavailable");
@@ -149,7 +170,7 @@ describe("createPostgresMailboxPolicyChangeUnitOfWork", () => {
     const view = await service.update(actor, workspaceId, mailboxId, { engagementMode: "operator_only" });
 
     expect(view).toMatchObject({ engagementMode: "operator_only", policyVersion: 5 });
-    expect(sent()).toEqual(["BEGIN", "lock_mailbox", "bump_policy_with_history", "supersede_held_replies", "COMMIT"]);
+    expect(sent()).toEqual(["BEGIN", "read_live_drafts", "lock_mailbox", "bump_policy_with_history", "supersede_held_replies", "COMMIT"]);
     expect(new Set(statements.map((statement) => statement.transaction))).toEqual(new Set([1]));
     // Every live draft bound to the mailbox's policy, whatever its conversation: pending or queued to send.
     expect(supersede()?.sql).toMatch(/where "policy_ref" = \$\d+ and "state" in \(\$\d+, \$\d+\) returning "conversation_id"$/u);
@@ -174,12 +195,18 @@ describe("createPostgresMailboxPolicyChangeUnitOfWork", () => {
   });
 
   it("hands each conversation whose draft it superseded to a person in the same transaction, and tells the dashboard once it commits", async () => {
-    const { service, statements, sent, statementsOf, audit, published } = harness({ superseded: ["conversation-1", "conversation-2"] });
+    const { service, statements, sent, statementsOf, audit, published } = harness({ superseded: ["conversation-2", "conversation-1"] });
 
     await service.update(actor, workspaceId, mailboxId, { engagementMode: "operator_only" });
 
     expect(sent()).toEqual([
       "BEGIN",
+      // The lock protocol: each conversation with a live draft and its ownership row, in id order, before the mailbox.
+      "read_live_drafts",
+      "lock_conversation",
+      "load_ownership",
+      "lock_conversation",
+      "load_ownership",
       "lock_mailbox",
       "bump_policy_with_history",
       "supersede_held_replies",
@@ -190,16 +217,21 @@ describe("createPostgresMailboxPolicyChangeUnitOfWork", () => {
       "COMMIT",
     ]);
     expect(new Set(statements.map((statement) => statement.transaction))).toEqual(new Set([1]));
+    expect(statementsOf("lock_conversation").map((statement) => statement.parameters)).toEqual([
+      ["conversation-1", workspaceId],
+      ["conversation-2", workspaceId],
+    ]);
+    expect(statementsOf("read_live_drafts")[0]?.parameters).toEqual(expect.arrayContaining([emailMailboxPolicyRef(mailboxId), "pending", "queued_auto"]));
     expect(statementsOf("request_handoff").map((statement) => statement.parameters)).toEqual([
-      ["conversation-1", workspaceId, "operator_only_mailbox"],
       ["conversation-2", workspaceId, "operator_only_mailbox"],
+      ["conversation-1", workspaceId, "operator_only_mailbox"],
     ]);
     expect(statementsOf("record_handoff_activity").map((statement) => statement.parameters.slice(0, 3))).toEqual([
-      ["conversation-1", workspaceId, "handoff_requested"],
       ["conversation-2", workspaceId, "handoff_requested"],
+      ["conversation-1", workspaceId, "handoff_requested"],
     ]);
-    // Told once, and only after the hand-offs committed.
-    expect(published).toEqual([{ workspaceId, kinds: ["conversation.ownership_changed"], sentBefore: sent() }]);
+    // Told once, and only after the supersede and the hand-offs committed.
+    expect(published).toEqual([{ workspaceId, kinds: ["hitl.decision_resolved", "conversation.ownership_changed"], sentBefore: sent() }]);
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       metadata: expect.objectContaining({ action: "mode_changed", supersededHeldReplies: 2, handedOffConversations: 2 }),
     }));
@@ -210,8 +242,20 @@ describe("createPostgresMailboxPolicyChangeUnitOfWork", () => {
 
     await service.update(actor, workspaceId, mailboxId, { engagementMode: "operator_only" });
 
-    expect(sent()).toEqual(["BEGIN", "lock_mailbox", "bump_policy_with_history", "supersede_held_replies", "request_handoff", "load_ownership", "COMMIT"]);
-    expect(published).toEqual([]);
+    expect(sent()).toEqual([
+      "BEGIN",
+      "read_live_drafts",
+      "lock_conversation",
+      "load_ownership",
+      "lock_mailbox",
+      "bump_policy_with_history",
+      "supersede_held_replies",
+      "request_handoff",
+      "load_ownership",
+      "COMMIT",
+    ]);
+    // The superseded draft leaves the approvals; the ownership did not change.
+    expect(published).toEqual([{ workspaceId, kinds: ["hitl.decision_resolved"], sentBefore: sent() }]);
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       metadata: expect.objectContaining({ supersededHeldReplies: 1, handedOffConversations: 0 }),
     }));
@@ -223,19 +267,31 @@ describe("createPostgresMailboxPolicyChangeUnitOfWork", () => {
     await expect(service.update(actor, workspaceId, mailboxId, { engagementMode: "operator_only" }))
       .rejects.toThrow("ownership unavailable");
 
-    expect(sent()).toEqual(["BEGIN", "lock_mailbox", "bump_policy_with_history", "supersede_held_replies", "request_handoff", "ROLLBACK"]);
+    expect(sent()).toEqual([
+      "BEGIN",
+      "read_live_drafts",
+      "lock_conversation",
+      "load_ownership",
+      "lock_mailbox",
+      "bump_policy_with_history",
+      "supersede_held_replies",
+      "request_handoff",
+      "ROLLBACK",
+    ]);
     expect(published).toEqual([]);
     expect(audit.record).not.toHaveBeenCalled();
   });
 
   it("holds the mailbox's live drafts for review under the new version when auto drops to draft, in the same transaction", async () => {
-    const { service, statements, sent, statementOf, audit } = harness({ mode: "auto", returned: 2, rebound: 1 });
+    const { service, statements, sent, statementOf, audit, published } = harness({ mode: "auto", returned: 2, rebound: 1 });
 
     const view = await service.update(actor, workspaceId, mailboxId, { engagementMode: "draft" });
 
     expect(view).toMatchObject({ engagementMode: "draft", policyVersion: 5 });
     // Pending drafts are re-bound first, so the queued sends returned after them are counted once.
-    expect(sent()).toEqual(["BEGIN", "lock_mailbox", "bump_policy_with_history", "rebind_held_replies", "return_queued_held_replies", "COMMIT"]);
+    expect(sent()).toEqual(["BEGIN", "read_live_drafts", "lock_mailbox", "bump_policy_with_history", "rebind_held_replies", "return_queued_held_replies", "COMMIT"]);
+    // The returned replies are approvals again: the dashboard hears once the change commits.
+    expect(published).toEqual([{ workspaceId, kinds: ["hitl.decision_created"], sentBefore: sent() }]);
     expect(new Set(statements.map((statement) => statement.transaction))).toEqual(new Set([1]));
     const rebind = statementOf("rebind_held_replies");
     expect(rebind?.sql).toMatch(/"policy_version" = \$\d+.* where "policy_ref" = \$\d+ and "state" in \(\$\d+\)$/u);
@@ -262,19 +318,30 @@ describe("createPostgresMailboxPolicyChangeUnitOfWork", () => {
 
     await service.update(actor, workspaceId, mailboxId, { engagementMode: "operator_only" });
 
-    expect(sent()).toEqual(["BEGIN", "lock_mailbox", "bump_policy_with_history", "supersede_held_replies", "request_handoff", "record_handoff_activity", "COMMIT"]);
+    expect(sent()).toEqual([
+      "BEGIN",
+      "read_live_drafts",
+      "lock_conversation",
+      "load_ownership",
+      "lock_mailbox",
+      "bump_policy_with_history",
+      "supersede_held_replies",
+      "request_handoff",
+      "record_handoff_activity",
+      "COMMIT",
+    ]);
     expect(supersede()?.parameters).toEqual(expect.arrayContaining(["superseded", "policy_changed", "pending", "queued_auto"]));
   });
 
   it("leaves drafts alone for a settings change that is not policy, and for a stale policy version", async () => {
     const settingsOnly = harness();
     await settingsOnly.service.update(actor, workspaceId, mailboxId, { displayName: "Help desk" });
-    expect(settingsOnly.sent()).toEqual(["BEGIN", "lock_mailbox", "update_settings", "COMMIT"]);
+    expect(settingsOnly.sent()).toEqual(["BEGIN", "read_live_drafts", "lock_mailbox", "update_settings", "COMMIT"]);
 
     const stale = harness();
     await expect(stale.service.update(actor, workspaceId, mailboxId, { engagementMode: "operator_only", expectedPolicyVersion: 3 }))
       .rejects.toMatchObject({ statusCode: 409, code: "stale_policy_version" });
-    expect(stale.sent()).toEqual(["BEGIN", "lock_mailbox", "COMMIT"]);
+    expect(stale.sent()).toEqual(["BEGIN", "read_live_drafts", "lock_mailbox", "COMMIT"]);
   });
 
   it("rolls the policy change back when its drafts cannot be superseded, auditing nothing", async () => {
@@ -283,7 +350,73 @@ describe("createPostgresMailboxPolicyChangeUnitOfWork", () => {
     await expect(service.update(actor, workspaceId, mailboxId, { engagementMode: "operator_only" }))
       .rejects.toThrow("held replies unavailable");
 
-    expect(sent()).toEqual(["BEGIN", "lock_mailbox", "bump_policy_with_history", "supersede_held_replies", "ROLLBACK"]);
+    expect(sent()).toEqual(["BEGIN", "read_live_drafts", "lock_mailbox", "bump_policy_with_history", "supersede_held_replies", "ROLLBACK"]);
     expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it("writes a version for a send budget change and holds the live drafts for review under it, in one transaction", async () => {
+    const { service, sent, statementOf, published } = harness({ mode: "auto", returned: 1 });
+
+    const view = await service.update(actor, workspaceId, mailboxId, { threadSendBudget: 1 });
+
+    expect(view).toMatchObject({ engagementMode: "auto", threadSendBudget: 1, policyVersion: 5 });
+    expect(sent()).toEqual([
+      "BEGIN",
+      "read_live_drafts",
+      "lock_mailbox",
+      "bump_policy_with_history",
+      "rebind_held_replies",
+      "return_queued_held_replies",
+      "update_budget",
+      "COMMIT",
+    ]);
+    // The history row keeps the policy as it was; only the version moves.
+    expect(statementOf("bump_policy_with_history")?.parameters.slice(0, 3)).toEqual(["auto", true, null]);
+    expect(published).toEqual([{ workspaceId, kinds: ["hitl.decision_created"], sentBefore: sent() }]);
+  });
+
+  it("removes the mailbox, supersedes its live drafts and hands their conversations to a person, in one transaction", async () => {
+    const { service, statements, sent, statementsOf, audit, published } = harness({ superseded: ["conversation-1"] });
+
+    await service.remove(actor, workspaceId, mailboxId);
+
+    expect(sent()).toEqual([
+      "BEGIN",
+      "read_live_drafts",
+      "lock_conversation",
+      "load_ownership",
+      "lock_mailbox",
+      "mark_removed",
+      "supersede_held_replies",
+      "request_handoff",
+      "record_handoff_activity",
+      "COMMIT",
+    ]);
+    expect(new Set(statements.map((statement) => statement.transaction))).toEqual(new Set([1]));
+    expect(statementsOf("request_handoff").map((statement) => statement.parameters)).toEqual([["conversation-1", workspaceId, "operator_only_mailbox"]]);
+    expect(published).toEqual([{ workspaceId, kinds: ["hitl.decision_resolved", "conversation.ownership_changed"], sentBefore: sent() }]);
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ action: "removed", mailboxId, supersededHeldReplies: 1, handedOffConversations: 1 }),
+    }));
+  });
+
+  it("runs the whole change again when Postgres aborted it as a deadlock victim, telling the dashboard once", async () => {
+    const { service, sent, published, audit } = harness({ superseded: ["conversation-1"], deadlocks: 1 });
+
+    await service.update(actor, workspaceId, mailboxId, { engagementMode: "operator_only" });
+
+    const attempt = ["read_live_drafts", "lock_conversation", "load_ownership", "lock_mailbox", "bump_policy_with_history", "supersede_held_replies"];
+    expect(sent()).toEqual([
+      "BEGIN",
+      ...attempt,
+      "ROLLBACK",
+      "BEGIN",
+      ...attempt,
+      "request_handoff",
+      "record_handoff_activity",
+      "COMMIT",
+    ]);
+    expect(published).toEqual([{ workspaceId, kinds: ["hitl.decision_resolved", "conversation.ownership_changed"], sentBefore: sent() }]);
+    expect(audit.record).toHaveBeenCalledTimes(1);
   });
 });

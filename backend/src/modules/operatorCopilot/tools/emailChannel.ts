@@ -52,6 +52,7 @@ const configurationOutputSchema = z.object({
     threadSendBudget: z.number().int().min(0),
     hourlyGenerationBudget: z.number().int().min(0),
   }).strict()),
+  truncation: truncationRecordSchema,
 }).strict();
 
 const eventsInputSchema = z.object({
@@ -68,6 +69,7 @@ const eventsOutputSchema = z.object({
     failed: z.number().int().min(0),
     lastReceivedAt: z.string().nullable(),
   }).strict()),
+  truncation: truncationRecordSchema,
 }).strict();
 
 const factsInputSchema = z.object({
@@ -89,6 +91,7 @@ const factsOutputSchema = z.object({
       hasRaw: z.boolean(),
     }).strict()),
   }).strict().nullable(),
+  truncation: truncationRecordSchema,
 }).strict();
 
 const DEFAULT_HELD_REPLY_PAGE = 20;
@@ -131,7 +134,7 @@ const heldRepliesOutputSchema = z.object({
   heldReply: heldReplySchema.nullable(),
   items: z.array(heldReplySchema),
   nextCursor: z.string().nullable(),
-  truncation: truncationRecordSchema.optional(),
+  truncation: truncationRecordSchema,
 }).strict();
 
 const CONFIGURATION_DESCRIPTION = "Read the workspace's email channel: the engagement modes this deployment runs, each sending domain with its DNS record readiness, and each mailbox with its agent, mode, receiving state (waiting, ok or silent), sending readiness and budgets. Relay addresses, setup-check addresses and record values are excluded.";

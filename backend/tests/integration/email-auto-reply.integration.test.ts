@@ -343,7 +343,8 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
       id: conversationId,
       ownership: expect.objectContaining({ state: "human_owned", reason: "operator_only_mailbox" }),
     }));
-    expect(api.invalidations).toContainEqual({ workspaceId, kinds: ["conversation.ownership_changed"] });
+    // Told once it committed: the approval it closed, and the hand-off.
+    expect(api.invalidations).toContainEqual({ workspaceId, kinds: ["hitl.decision_resolved", "conversation.ownership_changed"] });
     expect(await agentMessagesOf(conversationId)).toEqual([]);
   });
 
@@ -382,6 +383,47 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
     expect(await approvalsOf(queued)).toEqual([expect.objectContaining({ id: heldReplyId, state: "pending", holdReason: "authority_changed" })]);
     expect(counterValue(worker.metrics, "email_auto_dispatch_total", { result: "returned_to_pending" })).toBe(1);
     expect(worker.logger.messages()).toContain("email_auto_send_returned_to_pending");
+  });
+
+  it("never sends a reply recovered after its materialization committed and the worker stopped, once a takeover revoked its authority", async () => {
+    const queued = await queuedAutoReply();
+    const { conversationId, worker, heldReplyId, key, teammate } = queued;
+    // The first claim materialized the reply — its message and its send intent committed — and the
+    // worker stopped before it froze the request, leaving the action to be claimed again.
+    expect(await worker.heldReplies.materializeAuto(heldReplyId)).toMatchObject({ ok: true });
+    const [message] = await agentMessagesOf(conversationId);
+    expect(await sendIntentOf(database, message.id)).toMatchObject({ state: "queued", request: null });
+
+    expect((await api.takeOver(teammate, conversationId)).status).toBe(200);
+    const recovering = workerNode();
+    expect(await recovering.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+
+    expect(await providerAcceptsUnder(spool.dir, key)).toEqual([]);
+    expect(await sendIntentOf(database, message.id)).toMatchObject({ state: "failed", failureCode: "human_owned", request: null, firstAttemptAt: null });
+    // The unsent reply is flagged for the teammate who now owns the conversation.
+    expect(await database.query("SELECT message_id, failure_kind, detail_code, clear_reason FROM conversation_delivery_failures WHERE conversation_id = $1", [conversationId]))
+      .toEqual([{ message_id: message.id, failure_kind: "failed", detail_code: "human_owned", clear_reason: null }]);
+    expect(recovering.logger.messages()).toContain("email_auto_send_revoked_before_send");
+    expect(await emailSendsOf(conversationId)).toEqual([expect.objectContaining({ status: "dispatched" })]);
+  });
+
+  it("returns a queued reply to a teammate when the operator lowers the thread's send budget below it before dispatch (FR-022)", async () => {
+    const queued = await queuedAutoReply();
+    const { conversationId, worker, heldReplyId, key, teammate, workspaceId, mailbox } = queued;
+    // The thread spent an automatic send before this one: this reply's reservation is its second.
+    await database.execute("UPDATE email_thread_links SET auto_sends_since_renewal = 2 WHERE conversation_id = $1", [conversationId]);
+    const policyBefore = (await database.queryOne<{ policy_version: number }>("SELECT policy_version FROM email_mailboxes WHERE id = $1", [mailbox.id])).policy_version;
+
+    const lowered = await api.channel.mailboxes.update({ userId: teammate.userId, accountId: teammate.accountId }, workspaceId, mailbox.id, { threadSendBudget: 1 });
+    expect(lowered).toMatchObject({ threadSendBudget: 1, engagementMode: "auto", policyVersion: policyBefore + 1 });
+    expect(await heldRepliesOf(conversationId)).toEqual([
+      expect.objectContaining({ id: heldReplyId, state: "pending", hold_reason: "policy_changed" }),
+    ]);
+
+    expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+
+    await expectNothingSent(conversationId, key);
+    expect(await approvalsOf(queued)).toEqual([expect.objectContaining({ id: heldReplyId, state: "pending", holdReason: "policy_changed" })]);
   });
 
   it("stops a headerless responder at the thread send budget with one approval flag (SC-006, AS5.4)", async () => {

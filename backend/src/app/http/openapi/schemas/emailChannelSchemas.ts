@@ -5,6 +5,7 @@ import {
   addEmailSendingDomainRequestSchema,
   createEmailMailboxRequestSchema,
   enableEmailDirectReceivingRequestSchema,
+  listEmailChannelEventsQuerySchema,
   listEmailMailboxEventsQuerySchema,
   startEmailMailboxSetupCheckRequestSchema,
   updateEmailMailboxRequestSchema,
@@ -89,6 +90,9 @@ export const registerEmailChannelSchemas = (registry: OpenAPIRegistry) => {
     threadConflict: z.boolean(),
     hasRaw: z.boolean(),
     retryable: z.boolean(),
+    mailboxId: z.string().uuid().nullable().openapi({
+      description: "The mailbox that received it; null for mail a verified receiving domain accepted for an address no mailbox has.",
+    }),
   }));
   const EmailEventPageSchema = registry.register("EmailEventPage", z.object({
     items: z.array(EmailEventSchema),
@@ -138,5 +142,6 @@ export const registerEmailChannelSchemas = (registry: OpenAPIRegistry) => {
     AddEmailSendingDomainRequestSchema: registry.register("AddEmailSendingDomainRequest", addEmailSendingDomainRequestSchema),
     EnableEmailDirectReceivingRequestSchema: registry.register("EnableEmailDirectReceivingRequest", enableEmailDirectReceivingRequestSchema),
     ListEmailMailboxEventsQuerySchema: listEmailMailboxEventsQuerySchema,
+    ListEmailChannelEventsQuerySchema: listEmailChannelEventsQuerySchema,
   };
 };

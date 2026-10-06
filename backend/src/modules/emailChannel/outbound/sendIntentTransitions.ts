@@ -1,5 +1,5 @@
 import type { SentEmailStatus } from "../../mail/public.js";
-import type { SendHaltReason } from "./sendAuthority.js";
+import type { AutoSendAuthorityRefusal, SendHaltReason } from "./sendAuthority.js";
 
 export type SendIntentState = "queued" | "accepted" | "delivered" | "bounced" | "failed" | "uncertain" | "halted";
 export type UncertainResolution = "provider_evidence" | "marked_sent" | "resend_authorized";
@@ -29,6 +29,8 @@ export type SendIntentEvent =
   | { kind: "revalidation_failed"; haltReason: SendHaltReason }
   | { kind: "provider_accepted"; providerMessageId: string; deliveredMessageId: string | null }
   | { kind: "provider_rejected"; code: string }
+  /** An automatic send's authority narrowed before its request froze, so it never reached the provider. */
+  | { kind: "authority_revoked"; code: AutoSendAuthorityRefusal }
   | { kind: "outcome_unknown"; authorityValid: boolean; withinWindow: boolean }
   | {
       kind: "provider_status";
@@ -104,6 +106,12 @@ const fromQueued = (current: SendIntentSnapshot, event: SendIntentEvent): SendIn
       );
     case "provider_rejected":
       return to({ ...current, state: "failed", failureCode: event.code }, [openFailure("failed", event.code)]);
+    case "authority_revoked":
+      // Never sent, so it fails with the refusal's code. A send whose outcome is unknown may have
+      // gone out, and only the unknown-outcome path settles it.
+      return current.outcomeUnknown
+        ? NOT_APPLICABLE
+        : to({ ...current, state: "failed", failureCode: event.code }, [openFailure("failed", event.code)]);
     case "outcome_unknown": {
       const unknown: SendIntentSnapshot = { ...current, outcomeUnknown: true };
       // Re-POSTing is safe only with the same key inside the provider's window, and only while

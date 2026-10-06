@@ -4,6 +4,8 @@ import { emailMailboxPolicyRef } from "../../../src/modules/emailChannel/public.
 import { createEmailReviewHarness, REVIEW_PUBLISHABLE_FACTS } from "../../support/inMemoryEmailReview.js";
 
 const MINUTE_MS = 60_000;
+/** The runner's default review lease. */
+const LEASE_MS = 300_000;
 
 /** A draft mailbox, one thread on it, and the clock moved to its review's due time. */
 const dueThread = async (options: Parameters<typeof createEmailReviewHarness>[0] = {}) => {
@@ -62,6 +64,54 @@ describe("EmailReviewRunner", () => {
     });
   });
 
+  describe("a reclaimed claim (research B17)", () => {
+    it("leaves alone the draft another claim held for R after this one paused past its lease, and does nothing more", async () => {
+      const { h, conversationId } = await dueThread();
+      h.respond.mockImplementation(async () => h.draftTurn(conversationId, {}, "Held by the claim that took over."));
+      const lookup = h.heldReplies.findByReviewRef.bind(h.heldReplies);
+      let stalled = false;
+      let takeover: Awaited<ReturnType<typeof h.drain>> | undefined;
+      vi.spyOn(h.heldReplies, "findByReviewRef").mockImplementation(async (id, ref) => {
+        const found = await lookup(id, ref);
+        if (!stalled) {
+          stalled = true;
+          // This worker stalls past its lease right after the lookup; another claims R and finishes it.
+          h.advance(LEASE_MS + 1_000);
+          takeover = await h.drain();
+        }
+        return found;
+      });
+
+      expect(await h.drain()).toMatchObject({ claimed: 1, reclaimed: 1, held: 0 });
+
+      expect(takeover).toMatchObject({ claimed: 1, held: 1 });
+      expect(h.respond).toHaveBeenCalledOnce();
+      expect(h.heldRows.of(conversationId)).toEqual([
+        expect.objectContaining({ state: "pending", reviewRef: `email:${conversationId}:1`, draft: expect.objectContaining({ text: "Held by the claim that took over." }) }),
+      ]);
+      expect(h.threads.links.get(conversationId)).toMatchObject({ reviewDueAt: null, reviewCompletedRevision: 1 });
+      expect(h.logger.warn).toHaveBeenCalledWith(expect.objectContaining({ conversationId, revision: 1 }), "email_review_claim_lost");
+    });
+
+    it("hands nothing off once its claim was taken over during the turn", async () => {
+      const { h, conversationId } = await dueThread();
+      let takenOver = false;
+      h.respond.mockImplementation(async () => {
+        if (!takenOver) {
+          takenOver = true;
+          h.advance(LEASE_MS + 1_000);
+          await h.drain();
+        }
+        return { kind: "no_draft", conversationId, ownershipVersion: 0, facts: { ...REVIEW_PUBLISHABLE_FACTS, outcome: "handoff", handoff: { requested: true } }, handoffReason: "customer_requested" } as never;
+      });
+
+      expect(await h.drain()).toMatchObject({ reclaimed: 1 });
+
+      // Only the claim that took over hands the thread off; the stale one adds nothing.
+      expect(h.handoffs).toHaveLength(1);
+    });
+  });
+
   describe("the turn", () => {
     it("asks respond for a review of the newest customer message with the thread's ten newest messages", async () => {
       const { h, mailbox, conversationId } = await dueThread();
@@ -80,7 +130,7 @@ describe("EmailReviewRunner", () => {
       });
     });
 
-    it("supersedes the previous pending draft before it holds the new one", async () => {
+    it("keeps one current draft: newer mail supersedes the earlier one, and the review holds the new one", async () => {
       const { h, conversationId } = await dueThread();
       h.respond.mockResolvedValue(h.draftTurn(conversationId, {}, "First draft."));
       await h.drain();
@@ -360,7 +410,7 @@ describe("EmailReviewRunner", () => {
         expect(h.handoffs).toEqual([]);
         expect(await h.ownership.load(conversationId)).toBeNull();
         expect(h.outbox).toEqual([]);
-        expect(h.notes).toEqual([{ conversationId, messageId, code: "no_reply_needed" }]);
+        expect(h.notes).toEqual([{ conversationId, deliveryId: h.deliveryIdOf(messageId), code: "no_reply_needed" }]);
         // The revision is done, and the thread's automatic sends are untouched.
         expect(h.threads.links.get(conversationId)).toMatchObject({ reviewDueAt: null, reviewCompletedRevision: 1, autoSendsSinceRenewal: 0 });
         expect(h.logger.info).toHaveBeenCalledWith(expect.objectContaining({ conversationId, outcome: "no_reply_needed" }), "email_review_completed");
@@ -388,6 +438,46 @@ describe("EmailReviewRunner", () => {
 
       expect(h.replyTriage).not.toHaveBeenCalled();
       expect(h.notes).toEqual([]);
+    });
+
+    it("sets the mail aside in one unit with the revision's completion, and a failed unit leaves neither", async () => {
+      const { h, conversationId, messageId } = await dueThread();
+      h.replyTriage.mockResolvedValue("no");
+      const complete = h.threads.completeReview.bind(h.threads);
+      // The unit fails after its completion was written: as a crash before commit, nothing of it stays.
+      vi.spyOn(h.threads, "completeReview").mockImplementationOnce(async (claim) => {
+        await complete(claim);
+        throw new Error("connection reset");
+      });
+
+      expect(await h.drain()).toMatchObject({ claimed: 1, retrying: 1 });
+      expect(h.notes).toEqual([]);
+      expect(h.threads.links.get(conversationId)).toMatchObject({ reviewCompletedRevision: 0 });
+      expect(h.revisionUnits).toEqual({ committed: 0, rolledBack: 1 });
+
+      h.advance(30_000);
+      expect(await h.drain()).toMatchObject({ claimed: 1, no_reply_needed: 1 });
+      expect(h.notes).toEqual([{ conversationId, deliveryId: h.deliveryIdOf(messageId), code: "no_reply_needed" }]);
+      expect(h.threads.links.get(conversationId)).toMatchObject({ reviewDueAt: null, reviewCompletedRevision: 1 });
+    });
+
+    it("recognises a revision already set aside: a stale claim writes no second note and no later reply for it", async () => {
+      const { h, conversationId } = await dueThread();
+      h.replyTriage.mockImplementationOnce(async () => {
+        // This worker stalls past its lease; another claims R, finds it needs no reply, and sets it aside.
+        h.advance(LEASE_MS + 1_000);
+        h.replyTriage.mockResolvedValueOnce("no");
+        await h.drain();
+        return "yes";
+      });
+      h.respond.mockResolvedValue(h.draftTurn(conversationId));
+
+      expect(await h.drain()).toMatchObject({ reclaimed: 1 });
+
+      expect(h.notes).toHaveLength(1);
+      expect(h.respond).not.toHaveBeenCalled();
+      expect(h.heldRows.of(conversationId)).toEqual([]);
+      expect(await h.drain()).toMatchObject({ claimed: 0 });
     });
 
     it("does not triage mail on a mailbox that no longer lets the agent answer", async () => {
@@ -543,6 +633,17 @@ describe("EmailReviewRunner", () => {
   });
 
   describe("the generation budget (FR-023, research B8)", () => {
+    it("exits for a conversation a person already owns before charging the budget", async () => {
+      const { h, mailbox, conversationId } = await dueThread();
+      await h.ownership.requestHandoff({ conversationId, workspaceId: mailbox.workspaceId, reason: "operator_takeover" });
+
+      expect(await h.drain()).toMatchObject({ claimed: 1, human_owned: 1 });
+
+      expect(h.mailboxes.records.get(mailbox.id)).toMatchObject({ generationWindowCount: mailbox.generationWindowCount });
+      expect(h.respond).not.toHaveBeenCalled();
+      expect(h.threads.links.get(conversationId)).toMatchObject({ reviewDueAt: null, reviewCompletedRevision: 1 });
+    });
+
     it("hands the thread off as generation_budget, running no turn, once the mailbox's generation budget is spent", async () => {
       const h = createEmailReviewHarness();
       const mailbox = h.seedMailbox({ hourlyGenerationBudget: 1 });

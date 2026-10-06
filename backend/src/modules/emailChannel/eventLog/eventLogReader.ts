@@ -46,6 +46,8 @@ export interface EmailEventView {
   threadConflict: boolean;
   hasRaw: boolean;
   retryable: boolean;
+  /** The mailbox that received it; null for mail accepted for an address no mailbox has. */
+  mailboxId: string | null;
 }
 
 interface EmailEventPage {
@@ -89,6 +91,7 @@ const toEventView = (entry: EventLogEntry): EmailEventView => ({
   threadConflict: entry.threadConflict,
   hasRaw: entry.hasRaw,
   retryable: entry.state === "failed",
+  mailboxId: entry.mailboxId,
 });
 
 export const eventNotFound = (): AppError => notFound("Email event was not found");
@@ -98,32 +101,48 @@ const pageSize = (requested: number | undefined): number =>
     ? DEFAULT_PAGE_SIZE
     : Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(requested)));
 
-/** A mailbox's event log (FR-016): every accepted delivery, newest first, and its summary. */
+const pageQuery = (query: EventLogQuery) => {
+  const cursor = query.cursor ?? null;
+  if (cursor !== null && !UUID.test(cursor)) throw new AppError(400, "invalid_cursor", "The event log cursor is not valid.");
+  return {
+    cursor,
+    limit: pageSize(query.limit),
+    disposition: query.disposition ?? null,
+    states: query.state ? FILTER_STATES[query.state] : null,
+  };
+};
+
+/**
+ * The event log (FR-016): every accepted delivery, newest first, per active mailbox with its
+ * summary, and per workspace — where mail accepted for an address no mailbox has, and a removed
+ * mailbox's retained events, stay readable.
+ */
 export class EventLogReader {
   constructor(private readonly deps: {
     mailboxes: Pick<EmailMailboxRepository, "findActive">;
-    deliveries: Pick<EmailInboundRepository, "listMailboxLog" | "countMailboxEvents" | "findLogEntry">;
+    deliveries: Pick<EmailInboundRepository, "listMailboxLog" | "listWorkspaceLog" | "countMailboxEvents" | "findLogEntry">;
     clock: () => Date;
   }) {}
 
+  /** An active mailbox's log. */
   async list(workspaceId: string, mailboxId: string, query: EventLogQuery): Promise<EmailEventPage> {
-    const cursor = query.cursor ?? null;
-    if (cursor !== null && !UUID.test(cursor)) throw new AppError(400, "invalid_cursor", "The event log cursor is not valid.");
+    const page = pageQuery(query);
     await this.requireMailbox(workspaceId, mailboxId);
-    const page = await this.deps.deliveries.listMailboxLog(mailboxId, {
-      cursor,
-      limit: pageSize(query.limit),
-      disposition: query.disposition ?? null,
-      states: query.state ? FILTER_STATES[query.state] : null,
-    });
-    return { items: page.entries.map(toEventView), nextCursor: page.nextCursor };
+    const { entries, nextCursor } = await this.deps.deliveries.listMailboxLog(mailboxId, page);
+    return { items: entries.map(toEventView), nextCursor };
   }
 
-  /** One delivery of an active mailbox of the workspace, as its event log shows it. */
+  /** The workspace's log, or one of its mailboxes' — removed ones included — when `mailboxId` is set. */
+  async listWorkspace(workspaceId: string, query: EventLogQuery & { mailboxId?: string | null }): Promise<EmailEventPage> {
+    const page = pageQuery(query);
+    const { entries, nextCursor } = await this.deps.deliveries.listWorkspaceLog(workspaceId, { ...page, mailboxId: query.mailboxId ?? null });
+    return { items: entries.map(toEventView), nextCursor };
+  }
+
+  /** One delivery of the workspace, as its event log shows it. */
   async get(workspaceId: string, deliveryId: string): Promise<EmailEventView> {
     const entry = await this.deps.deliveries.findLogEntry(workspaceId, deliveryId);
     if (!entry) throw eventNotFound();
-    await this.requireMailbox(workspaceId, entry.mailboxId);
     return toEventView(entry);
   }
 

@@ -1,18 +1,24 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { link, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { parseRfcMessageId } from "../emailHeaderValues.js";
 import { EmailSendError } from "../emailSendErrors.js";
 import type { EmailDriver, EmailMessage, EmailSendResult, SentEmailLastEvent, SentEmailStatus } from "../emailService.js";
+import { hasFileErrorCode } from "./localSpool.js";
 import { isRecord } from "./resendApi.js";
 
 /**
  * Local development and test stand-in for the channel's sending provider. Each accepted message
  * is kept as a JSON file under `${spoolDir}/outbound/`, which the API and worker processes share.
  * It honours idempotency keys the way the provider does: the same key returns the same id, and a
- * different body under a used key is refused. Nothing delivers a local message on its own: the dev
- * tool (`email:dev delivery`) records a delivery event with `recordEvent` and posts its webhook.
+ * different body under a used key is refused, across every process sharing the spool. Nothing
+ * delivers a local message on its own: the dev tool (`email:dev delivery`) records a delivery event
+ * with `recordEvent` and posts its webhook.
+ *
+ * A spool file is only ever published whole: it is written aside, then linked into place for the
+ * first acceptance (which fails if another process got there first) or renamed over the old one for
+ * an update, so no reader sees a partial file and no acceptance overwrites another.
  */
 
 interface LocalEmailDriverOptions {
@@ -46,18 +52,17 @@ export class LocalEmailDriver implements EmailDriver {
     const key = message.idempotencyKey ?? randomUUID();
     const providerMessageId = `${ID_PREFIX}${sha256(key).slice(0, 32)}`;
     const bodyHash = bodyHashOf(message);
-    const existing = await this.read(providerMessageId);
-    if (existing && existing.bodyHash !== bodyHash) {
-      throw new EmailSendError("rejected", "idempotency_body_mismatch");
-    }
-    const sent: LocalSentEmail = existing ?? {
+    const candidate: LocalSentEmail = {
       providerMessageId,
       rfcMessageId: message.threading?.messageId ?? null,
       bodyHash,
       lastEvent: "sent",
       message,
     };
-    if (!existing) await this.write(sent);
+    const sent = (await this.publishIfAbsent(candidate)) ? candidate : await this.readAccepted(providerMessageId);
+    if (sent.bodyHash !== bodyHash) {
+      throw new EmailSendError("rejected", "idempotency_body_mismatch");
+    }
     return { dispatched: true, providerMessageId, deliveredMessageId: parseOrNull(sent.rfcMessageId) };
   }
 
@@ -70,7 +75,7 @@ export class LocalEmailDriver implements EmailDriver {
   async recordEvent(providerMessageId: string, lastEvent: SentEmailLastEvent): Promise<boolean> {
     const sent = await this.read(providerMessageId);
     if (!sent) return false;
-    await this.write({ ...sent, lastEvent });
+    await this.replace({ ...sent, lastEvent });
     return true;
   }
 
@@ -79,8 +84,9 @@ export class LocalEmailDriver implements EmailDriver {
     let names: string[];
     try {
       names = await readdir(this.directory());
-    } catch {
-      return null;
+    } catch (error) {
+      if (hasFileErrorCode(error, "ENOENT")) return null;
+      throw error;
     }
     for (const name of names.filter((candidate) => candidate.endsWith(".json"))) {
       const sent = await this.read(name.slice(0, -".json".length));
@@ -93,21 +99,60 @@ export class LocalEmailDriver implements EmailDriver {
     return join(this.options.spoolDir, "outbound");
   }
 
+  private pathOf(providerMessageId: string): string {
+    return join(this.directory(), `${providerMessageId}.json`);
+  }
+
   private async read(providerMessageId: string): Promise<LocalSentEmail | null> {
     if (!SPOOL_ID.test(providerMessageId)) return null;
     let text: string;
     try {
-      text = await readFile(join(this.directory(), `${providerMessageId}.json`), "utf8");
-    } catch {
-      return null;
+      text = await readFile(this.pathOf(providerMessageId), "utf8");
+    } catch (error) {
+      if (hasFileErrorCode(error, "ENOENT")) return null;
+      throw error;
     }
     const parsed: unknown = JSON.parse(text);
     return isLocalSentEmail(parsed) ? parsed : null;
   }
 
-  private async write(sent: LocalSentEmail): Promise<void> {
+  /** The message another send published first under the same key. */
+  private async readAccepted(providerMessageId: string): Promise<LocalSentEmail> {
+    const accepted = await this.read(providerMessageId);
+    if (!accepted) throw new Error(`Local spool entry ${providerMessageId} is not a sent message`);
+    return accepted;
+  }
+
+  /** Publishes `sent` unless a message already holds its id. True when this call published it. */
+  private async publishIfAbsent(sent: LocalSentEmail): Promise<boolean> {
+    const staged = await this.stage(sent);
+    try {
+      await link(staged, this.pathOf(sent.providerMessageId));
+      return true;
+    } catch (error) {
+      if (hasFileErrorCode(error, "EEXIST")) return false;
+      throw error;
+    } finally {
+      await rm(staged, { force: true });
+    }
+  }
+
+  private async replace(sent: LocalSentEmail): Promise<void> {
+    const staged = await this.stage(sent);
+    try {
+      await rename(staged, this.pathOf(sent.providerMessageId));
+    } catch (error) {
+      await rm(staged, { force: true });
+      throw error;
+    }
+  }
+
+  /** Writes `sent` to a fresh staging file beside its spool file; never read as a message. */
+  private async stage(sent: LocalSentEmail): Promise<string> {
     await mkdir(this.directory(), { recursive: true });
-    await writeFile(join(this.directory(), `${sent.providerMessageId}.json`), JSON.stringify(sent));
+    const staged = join(this.directory(), `${sent.providerMessageId}.${randomUUID()}.tmp`);
+    await writeFile(staged, JSON.stringify(sent), { flag: "wx" });
+    return staged;
   }
 }
 

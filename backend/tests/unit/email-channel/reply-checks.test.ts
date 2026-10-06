@@ -53,6 +53,16 @@ const observability = () => ({
 
 const transcriptOf = (messages: readonly EmailTranscriptMessage[]) => ({ recentMessages: vi.fn(async () => messages) });
 
+/** An email whose ask comes only after a long preamble: past any per-message cutoff the checks once applied. */
+const LONG_PREAMBLE = `${"We are planning our team's visit and wanted to share some background first. ".repeat(250)}`;
+const ASK_AFTER_PREAMBLE: EmailTranscriptMessage = { author: "customer", text: `${LONG_PREAMBLE}Can we bring a dog to the tasting?` };
+
+/** More unanswered customer mail than the checks' transcript window holds: the first ask is beyond it. */
+const BEYOND_WINDOW: EmailTranscriptMessage[] = [
+  { author: "customer", text: "Do you offer gift cards?" },
+  ...Array.from({ length: 12 }, (_, index) => ({ author: "customer" as const, text: `Following up (${index + 1}).` })),
+];
+
 /** A model call that never answers until its signal aborts it. */
 const hangsUntilAborted = (request: ModelInferenceRequest): Promise<string> =>
   new Promise((_, reject) => request.signal?.addEventListener("abort", () => reject(new Error("aborted"))));
@@ -135,6 +145,30 @@ describe("ModelEmailReplyTriage", () => {
     expect(await check.assess(subject)).toBe("unavailable");
     expect(model.complete).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["an ask comes after the input budget", [...ANSWERED_THREAD.slice(0, 2), ASK_AFTER_PREAMBLE], "input_budget"],
+    ["the unanswered mail reaches past the transcript window", BEYOND_WINDOW, "transcript_window"],
+  ] as const)("is unavailable, so the review runs, without a model call, when %s", async (_label, messages, omitted) => {
+    const model = stubModel(JSON.stringify({ reply_needed: "no" }));
+    const { check, logger } = triage(model, messages);
+
+    expect(await check.assess(subject)).toBe("unavailable");
+    expect(model.complete).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ conversationId: subject.conversationId, omitted }), "email_review_input_incomplete");
+  });
+
+  it("judges an unanswered block that starts inside the window, after the business's last message", async () => {
+    const model = stubModel(JSON.stringify({ reply_needed: "no" }));
+    const messages: EmailTranscriptMessage[] = [
+      { author: "customer", text: "Do you offer gift cards?" },
+      { author: "business", text: "Yes, from 25 EUR." },
+      ...Array.from({ length: 11 }, (_, index) => ({ author: "customer" as const, text: `Thanks again (${index + 1}).` })),
+    ];
+    const { check } = triage(model, messages);
+
+    expect(await check.assess(subject)).toBe("no");
+  });
 });
 
 describe("ModelEmailReplyCompleteness", () => {
@@ -208,6 +242,29 @@ describe("ModelEmailReplyCompleteness", () => {
     expect(await check.assess({ ...subject, draft })).toEqual({ completeness: "unavailable", unansweredAsks: null });
 
     expect(metrics.incrementCounter).toHaveBeenCalledWith("email_completeness_checks_total", expect.objectContaining({ labels: { verdict: "unavailable" } }));
+  });
+
+  it.each([
+    ["an ask comes after the input budget", [ASK_AFTER_PREAMBLE], "input_budget"],
+    ["the unanswered mail reaches past the transcript window", BEYOND_WINDOW, "transcript_window"],
+  ] as const)("is unavailable, which holds the reply, without a model call, when %s", async (_label, messages, omitted) => {
+    const model = stubModel(JSON.stringify({ completeness: "complete", unanswered_asks: 0 }));
+    const { check, logger } = completeness(model, { messages });
+
+    expect(await check.assess({ ...subject, draft })).toEqual({ completeness: "unavailable", unansweredAsks: null });
+    expect(model.complete).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ conversationId: subject.conversationId, omitted }), "email_review_input_incomplete");
+  });
+
+  it.each([
+    ["complete", 1],
+    ["partial", 0],
+    ["not_answered", 0],
+  ] as const)("is unavailable, which holds the reply, when the model says %s with %i unanswered asks", async (verdict, count) => {
+    const { check, logger } = completeness(stubModel(JSON.stringify({ completeness: verdict, unanswered_asks: count })));
+
+    expect(await check.assess({ ...subject, draft })).toEqual({ completeness: "unavailable", unansweredAsks: null });
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ conversationId: subject.conversationId }), "email_completeness_check_failed");
   });
 
   it("is unavailable when the model does not answer in time", async () => {

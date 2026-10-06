@@ -26,7 +26,7 @@ const harness = (options: { enabled?: boolean } = {}) => {
   const sweep = new EmailChannelSweep({ inbound, domains, sends, clock, logger, config: { eventRetentionDays: 30 }, abandonedAutoSends });
   const reviews = {
     runDue: vi.fn(async (_request: { maxJobs: number }) => ({
-      claimed: 0, held: 0, queued_auto: 0, already_held: 0, no_reply_needed: 0, no_draft: 0, human_owned: 0, not_runnable: 0, budget_exhausted: 0, retrying: 0, failed: 0, errored: 0,
+      claimed: 0, held: 0, queued_auto: 0, already_held: 0, no_reply_needed: 0, no_draft: 0, human_owned: 0, not_runnable: 0, budget_exhausted: 0, retrying: 0, failed: 0, reclaimed: 0, errored: 0,
     })),
   };
   const worker = new EmailChannelWorker({
@@ -134,7 +134,7 @@ describe("EmailChannelWorker", () => {
     });
     h.reviews.runDue.mockImplementation(async () => {
       order.push("review");
-      return { claimed: 2, held: 2, queued_auto: 0, already_held: 0, no_reply_needed: 0, no_draft: 0, human_owned: 0, not_runnable: 0, budget_exhausted: 0, retrying: 0, failed: 0, errored: 0 };
+      return { claimed: 2, held: 2, queued_auto: 0, already_held: 0, no_reply_needed: 0, no_draft: 0, human_owned: 0, not_runnable: 0, budget_exhausted: 0, retrying: 0, failed: 0, reclaimed: 0, errored: 0 };
     });
 
     expect(await h.worker.drain({ maxJobs: 3, stage: "review" })).toMatchObject({ reviewed: 2, claimed: 0 });

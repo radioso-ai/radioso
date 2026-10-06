@@ -16,7 +16,7 @@ import { ConversationActivityRepository } from "../../db/repositories/conversati
 import { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
-import { MessageRepository, type MessageRecord } from "../../db/repositories/messageRepository.js";
+import { MessageRepository, type MessageRecord, type MessageRole } from "../../db/repositories/messageRepository.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { NoopActionDrainDispatcher, type ActionDrainDispatcherPort } from "../../modules/chat/composition.js";
 import {
@@ -46,6 +46,7 @@ import {
   EMAIL_EVENT_RETENTION_DAYS,
   EMAIL_MAILBOX_POLICY_REF_PREFIX,
   EMAIL_SEND_ACTION_TYPE,
+  EmailBacklogRepository,
   EmailChannelCopilotView,
   EmailChannelSweep,
   EmailCustomerReplyDeliverer,
@@ -238,7 +239,13 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
   const mailboxRecords = new EmailMailboxRepository(db);
   const inbound = new EmailInboundRepository(db);
   const threads = new EmailThreadRepository(db);
-  const policyChanges = createPostgresMailboxPolicyChangeUnitOfWork({ db, activity: input.activity, ownership: input.ownership, publisher: input.publisher });
+  const policyChanges = createPostgresMailboxPolicyChangeUnitOfWork({
+    db,
+    activity: input.activity,
+    ownership: input.ownership,
+    publisher: input.publisher,
+    logger,
+  });
   const heldReplyRecords = new HeldReplyRepository(db);
   const ownership = new ConversationOwnershipRepository(db);
   const ownershipVersions = { versionOf: async (conversationId: string) => (await ownership.load(conversationId))?.version ?? 0 };
@@ -272,7 +279,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
     inference: input.reviewInference,
     transcript: {
       recentMessages: async ({ workspaceId, conversationId, limit }) =>
-        transcriptOf(await messages.listRecentByConversationId(workspaceId, conversationId, limit)),
+        transcriptOf(await messages.listRecentByConversationId(workspaceId, conversationId, limit, { roles: TRANSCRIPT_ROLES })),
     },
     grounding: {
       passagesFor: async ({ workspaceId, draft }) =>
@@ -302,11 +309,9 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
         hold: (hold) => input.heldReplies.hold(hold),
         queueAuto: (queued) => input.heldReplies.queueAuto(queued),
         findByReviewRef: (conversationId, reviewRef) => input.heldReplies.findByReviewRef(conversationId, reviewRef),
-        supersedePendingForConversation: (conversationId, reason) => heldReplyRecords.supersedePendingForConversation(conversationId, reason),
       },
       handoffs: createPostgresReviewHandoffs({ db, activity: input.activity, ownership: input.ownership, publisher: input.publisher }),
       checks: reviewChecks,
-      notes: createPostgresReviewNotes({ db, inbound, activity: input.activity }),
       maxAttempts: options.reviewMaxAttempts ?? EMAIL_REVIEW_MAX_ATTEMPTS,
     },
     drains: input.drains,
@@ -337,6 +342,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       queuedAutoRollback: SUPPORTED_MODES.includes("auto")
         ? undefined
         : { queued: heldReplyRecords, dispatch: { materializeAuto: (heldReplyId) => input.heldReplies.materializeAuto(heldReplyId) } },
+      backlog: metrics ? { reader: new EmailBacklogRepository(db), metrics } : undefined,
     }),
   });
 
@@ -422,7 +428,7 @@ export const createEmailChannelApplicationModule = (input: {
       // Host code queues every send in its own transaction: the operator reply deliverer, a
       // held-reply release, or an auto reply. Neither routine authoring nor a chat turn admits it.
       queuedFrom: "outside_turn",
-      handler: ({ database, env, logger, auditService, metrics, errorReporter }) => {
+      handler: ({ database, env, logger, auditService, metrics, errorReporter, publisher }) => {
         const db = database.kysely;
         const activity = new ConversationActivityRepository(db);
         return createEmailSendServices({
@@ -430,7 +436,7 @@ export const createEmailChannelApplicationModule = (input: {
           db,
           activity,
           drains: input.drainDispatcherFor(env, config),
-          heldReplyDispatch: createHeldReplyDispatch({ config, db, activity, audit: auditService, metrics: metrics ?? null, logger, errorReporter }),
+          heldReplyDispatch: createHeldReplyDispatch({ config, db, activity, audit: auditService, metrics: metrics ?? null, logger, errorReporter, publisher }),
           audit: auditService,
           metrics: metrics ?? null,
           logger,
@@ -478,6 +484,8 @@ const createHeldReplyDispatch = (deps: {
   metrics: MetricsRegistry | null;
   logger: AppLogger;
   errorReporter?: Pick<ErrorReporter, "report">;
+  /** Tells the dashboard of a reply the dispatch returned to a teammate, or sent. */
+  publisher: WorkspaceInvalidationPublisher;
 }): Pick<HeldReplyDispatchPort, "materializeAuto"> => {
   const notOnTheDispatchPath = (): never => {
     throw new Error("held_reply_dispatch_releases_nothing");
@@ -497,6 +505,7 @@ const createHeldReplyDispatch = (deps: {
     customerReplyDelivery: { route: notOnTheDispatchPath },
     replies: { write: notOnTheDispatchPath, announce: notOnTheDispatchPath },
     audit: deps.audit,
+    publisher: deps.publisher,
     metrics: deps.metrics,
     logger: deps.logger,
     errorReporter: deps.errorReporter,
@@ -666,36 +675,20 @@ export const createPostgresThreadProtocolUnitOfWork = (deps: {
 });
 
 /**
+ * The rows the review's model checks read: the customer's messages and the business's, never a
+ * system row. The repository filters before it limits, so the checks' window check sees truncation.
+ */
+const TRANSCRIPT_ROLES = ["user", "assistant"] as const satisfies readonly MessageRole[];
+
+/** The conversation as the review's model checks read it. */
+const transcriptOf = (records: readonly MessageRecord[]): EmailTranscriptMessage[] =>
+  records.map((record) => ({ author: record.role === "user" ? "customer" as const : "business" as const, text: record.content }));
+
+/**
  * A review's hand-off to a person (research B3, B7) in its own Postgres transaction: the ownership
  * change with the activity it records, through the ownership rules, and the dashboard told once it
  * commits. Only binds; whether to hand off is the review runner's decision.
  */
-/** The conversation as the review's model checks read it: the customer's messages and the business's, never a system row. */
-const transcriptOf = (records: readonly MessageRecord[]): EmailTranscriptMessage[] =>
-  records.flatMap((record) => {
-    if (record.role === "system") return [];
-    return [{ author: record.role === "user" ? "customer" as const : "business" as const, text: record.content }];
-  });
-
-/** A review's note on the thread: a `channel_exception` naming why the customer's newest email was set aside. */
-const createPostgresReviewNotes = (deps: {
-  db: Kysely<DB>;
-  inbound: Pick<EmailInboundRepository, "findDeliveryIdForMessage">;
-  activity: ConversationActivityRecorder;
-}) => ({
-  async recordSetAside(input: { workspaceId: string; conversationId: string; messageId: string; code: string }): Promise<void> {
-    const deliveryId = await deps.inbound.findDeliveryIdForMessage(input.conversationId, input.messageId);
-    if (!deliveryId) throw new Error("email_review_note_without_delivery");
-    await deps.activity.record(deps.db, {
-      conversationId: input.conversationId,
-      workspaceId: input.workspaceId,
-      kind: "channel_exception",
-      actorUserId: null,
-      detail: { code: input.code, deliveryId },
-    });
-  },
-});
-
 const createPostgresReviewHandoffs = (deps: {
   db: Kysely<DB>;
   activity: ConversationActivityRecorder;

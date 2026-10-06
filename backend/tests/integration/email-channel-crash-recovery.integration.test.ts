@@ -161,6 +161,30 @@ describeIntegration("email channel crash recovery (Postgres, SC-007)", () => {
     expect(await indexedMessageIdsOf(database, conversationId)).toEqual(["<msg-0001@example.test>", "<msg-0002@example.test>"]);
   });
 
+  it("keeps a dead worker's reservation through retention, so the retry after long downtime ingests once", async () => {
+    const { mailbox, domain } = await seedSupportMailbox(database);
+    const [doomed, survivor] = [workerNode(), workerNode()];
+    // The host's ingest commits; the worker dies before the delivery records it.
+    doomed.seams.crashAt({ seam: "chat.ingest", when: "after" });
+    const emailId = await receive(doomed, FIRST, { mailbox, domain: domain.domain });
+    expect(await drainOne(doomed)).toMatchObject({ errored: 1 });
+    const reserved = await deliveryOfEmail(database, emailId);
+    expect(reserved).toMatchObject({ state: "resolved", conversation_id: null });
+
+    // The outage outlasts the 30-day retention window before anything recovers the claim.
+    const event = await eventOfEmail(database, emailId);
+    await database.execute("UPDATE email_inbound_deliveries SET created_at = now() - interval '40 days' WHERE id = $1", [reserved.id]);
+    await database.execute("UPDATE email_inbound_events SET received_at = now() - interval '40 days' WHERE id = $1", [event.id]);
+    await expireLease(database, event.id);
+    expect(await survivor.worker.sweep({ maxJobs: 5 })).toMatchObject({ recoveredLeases: 1, purgedDeliveries: 0, drained: 1 });
+
+    const [conversationId, ...others] = await conversationsOfMailbox(database, mailbox);
+    expect(others).toEqual([]);
+    expect(conversationId).toBe(reserved.planned_conversation_id);
+    expect(await deliveryOfEmail(database, emailId)).toMatchObject({ id: reserved.id, state: "done", message_id: reserved.planned_message_id });
+    expect(await customerMessagesOf(database, conversationId)).toHaveLength(1);
+  });
+
   it("resumes a two-mailbox event killed between its deliveries without repeating the finished one", async () => {
     const { workspaceId, mailbox: support, domain } = await seedSupportMailbox(database);
     const sales = await seedMailbox(database, { workspaceId, domain, local: "sales" });

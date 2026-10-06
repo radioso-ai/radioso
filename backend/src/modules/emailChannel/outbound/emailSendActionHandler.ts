@@ -17,7 +17,13 @@ import type { EmailThreadRepository } from "../persistence/emailThreadRepository
 import { readEmailSendAction, type EmailSendActionPayload } from "./emailSendAction.js";
 import { buildOutboundHeaders, outboundMessageId, replySubject, replyToAddress } from "./outboundHeaders.js";
 import type { ProviderSendAttempt } from "./providerSendAttempt.js";
-import { operatorSendAuthority, ownershipFactsOf, repostAuthorized, type EmailSendOwnershipReader } from "./sendAuthority.js";
+import {
+  firstAttemptAuthority,
+  ownershipFactsOf,
+  repostAuthorized,
+  type EmailSendOwnershipReader,
+  type SendOwnershipFacts,
+} from "./sendAuthority.js";
 import {
   countEmailSendIntentState,
   EMAIL_DELIVERY_PROVIDER,
@@ -47,7 +53,9 @@ const isRfcMessageId = (value: RfcMessageId | null): value is RfcMessageId => va
  * call, it:
  *
  * 1. materializes the send intent under the outbox key, or loads it, and stops if it is done;
- * 2. on the first attempt only, rechecks that the mailbox may still send, and halts if not;
+ * 2. on the first attempt only, rechecks the authority its trigger needs: that the mailbox may
+ *    still send, and halts if not; for an automatic reply, also its automatic authority and the
+ *    thread's budget, and fails it unsent if they narrowed;
  * 3. freezes the provider request, so every re-POST under the key is identical;
  * 4. sends it through the provider with the key;
  * 5. applies the outcome through the fenced transition (research B18);
@@ -62,7 +70,10 @@ const isRfcMessageId = (value: RfcMessageId | null): value is RfcMessageId => va
  * instead (research B9): step 1 asks the held-reply dispatch port to materialize it, which
  * re-authorizes the send (FR-032) and writes the agent's message with its intent in one
  * transaction, or returns the draft to a teammate with nothing written. Once materialized it is
- * never a draft again: after an unknown outcome a revoked authority makes it `uncertain`.
+ * never a draft again. Step 2 checks its automatic authority again, so one recovered after the
+ * worker stopped between materializing and freezing it never goes out on authority since revoked:
+ * it fails unsent and flags its message. After an unknown outcome a revoked authority makes it
+ * `uncertain`.
  */
 export class EmailSendActionHandler implements ActionHandler {
   constructor(private readonly deps: {
@@ -72,7 +83,7 @@ export class EmailSendActionHandler implements ActionHandler {
     mailboxes: Pick<EmailMailboxRepository, "findById">;
     domains: Pick<EmailDomainRepository, "findById">;
     threads: Pick<EmailThreadRepository, "findLink" | "findLatestInboundThreading">;
-    /** Read for an automatic send's authority before a re-POST. */
+    /** Read for an automatic send's authority before its first attempt and before a re-POST. */
     ownership: EmailSendOwnershipReader;
     /** Turns a queued automatic reply into the message it sends (research B9). */
     heldReplies: Pick<HeldReplyDispatchPort, "materializeAuto">;
@@ -236,11 +247,21 @@ export class EmailSendActionHandler implements ActionHandler {
     const verdict = await traceOperation({
       name: "email.send.revalidate",
       attributes: { trigger: intent.trigger, "radioso.workspace_id": intent.workspaceId, "radioso.email.send_intent_id": intent.id },
-      run: () => operatorSendAuthority(facts),
-      resultAttributes: (checked) => ({ result: checked.verdict === "allow" ? "allow" : checked.haltReason }),
+      run: async () => firstAttemptAuthority(intent, { ...facts, ...(await this.automaticFacts(intent)) }),
+      resultAttributes: (checked) => ({
+        result: checked.verdict === "allow" ? "allow" : checked.verdict === "halt" ? checked.haltReason : checked.code,
+      }),
     });
     if (verdict.verdict === "halt") {
       await this.deps.writer.apply(intent, { kind: "revalidation_failed", haltReason: verdict.haltReason }, { writer: "handler" });
+      return;
+    }
+    if (verdict.verdict === "revoked") {
+      this.deps.logger.warn(
+        { sendIntentId: intent.id, workspaceId: intent.workspaceId, conversationId: intent.conversationId, code: verdict.code },
+        "email_auto_send_revoked_before_send",
+      );
+      await this.deps.writer.apply(intent, { kind: "authority_revoked", code: verdict.code }, { writer: "handler" });
       return;
     }
     const frozen = await this.deps.intents.freezeRequest(intent.id, intent.version, await this.buildRequest(intent, facts));
@@ -285,6 +306,20 @@ export class EmailSendActionHandler implements ActionHandler {
       },
       "email_send_accepted",
     );
+  }
+
+  /**
+   * What only an automatic send's authority reads: the conversation's ownership and the thread's
+   * automatic sends since its budget was renewed, this one's reservation among them. An
+   * operator-authorized send reads neither.
+   */
+  private async automaticFacts(intent: EmailSendIntentRecord): Promise<{ ownership: SendOwnershipFacts; reservedAutoSends: number | null }> {
+    if (intent.trigger !== "auto_reply") return { ownership: ownershipFactsOf(null), reservedAutoSends: null };
+    const [ownership, link] = await Promise.all([
+      this.deps.ownership.load(intent.conversationId),
+      this.deps.threads.findLink(intent.conversationId),
+    ]);
+    return { ownership: ownershipFactsOf(ownership), reservedAutoSends: link?.autoSendsSinceRenewal ?? null };
   }
 
   private async sendFacts(intent: EmailSendIntentRecord): Promise<SendFacts> {

@@ -8,6 +8,7 @@ export {
 export {
   bindDeliveryFailureRecorder,
   DeliveryFailures,
+  type DeliveryFailureLockPort,
   type DeliveryFailureReadStore,
   type DeliveryFailureRecorderPort,
   type DeliveryFailureRecord,

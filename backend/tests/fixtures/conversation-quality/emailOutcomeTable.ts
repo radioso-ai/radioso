@@ -181,8 +181,10 @@ const handOffRows = (mode: "draft" | "auto"): EmailOutcomeRow[] => [
     mode,
     ownership: "human_owned",
     sendBudget: "room",
+    // The review leaves a person's conversation alone before it asks for a turn or spends budget;
+    // the host would answer `human_owned` only to a takeover that raced the review.
     turn: { kind: "human_owned" },
-    expected: { reviewAsked: true, decision: null, queuedAuto: false, heldReply: null, attention: { kind: "unchanged" } },
+    expected: { reviewAsked: false, decision: null, queuedAuto: false, heldReply: null, attention: { kind: "unchanged" } },
   },
 ];
 

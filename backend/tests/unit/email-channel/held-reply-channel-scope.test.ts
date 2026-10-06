@@ -157,8 +157,35 @@ describe("EmailHeldReplyChannelScope, automatic sends (research B8, B9)", () => 
       h.owners.set(CONVERSATION_ID, { state: "ai_owned", version: 2 });
 
       expect(await h.scope.authorizeAutoDispatch(h.heldReply({ ownershipVersion: 2 }))).toEqual({ authorized: true });
-      expect(await h.scope.authorizeAutoDispatch(h.heldReply({ conversationId: "12121212-1212-4212-8212-121212121212" })))
-        .toEqual({ authorized: true });
+      // A conversation with no ownership row is the AI's, at version 0.
+      const unowned = "12121212-1212-4212-8212-121212121212";
+      await h.threads.upsertLink({
+        conversationId: unowned,
+        workspaceId: WORKSPACE_ID,
+        mailboxId: h.mailbox.id,
+        threadKey: "13131313-1313-4313-8313-131313131313",
+        threadToken: "THREADTOKENZYXWVUTSRQPON2",
+        participantAddress: "sam@example.org",
+      });
+      expect(await h.scope.authorizeAutoDispatch(h.heldReply({ conversationId: unowned }))).toEqual({ authorized: true });
+    });
+
+    it("authorizes a send whose reservation still fits the thread's budget, and refuses one the operator lowered the budget below (FR-022)", async () => {
+      const h = await harness();
+      expect(await h.scope.reserveAutoSend(CONVERSATION_ID)).toBe(true);
+      expect(await h.scope.reserveAutoSend(CONVERSATION_ID)).toBe(true);
+      expect(await h.scope.authorizeAutoDispatch(h.heldReply())).toEqual({ authorized: true });
+
+      h.mailboxes.records.set(h.mailbox.id, { ...h.mailbox, threadSendBudget: 1 });
+
+      expect(await h.scope.authorizeAutoDispatch(h.heldReply())).toEqual({ authorized: false, code: "send_budget" });
+    });
+
+    it("refuses a send on a conversation with no thread to count its budget against", async () => {
+      const h = await harness();
+
+      expect(await h.scope.authorizeAutoDispatch(h.heldReply({ conversationId: "14141414-1414-4414-8414-141414141414" })))
+        .toEqual({ authorized: false, code: "send_budget" });
     });
 
     it.each([

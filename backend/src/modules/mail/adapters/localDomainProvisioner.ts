@@ -6,9 +6,11 @@ import type {
   DomainReadiness,
   DomainRegistration,
   EmailDomainProvisioner,
+  ProviderDomain,
   ReadinessStatus,
 } from "../emailDomainProvisioner.js";
 import { normalizeDomainName } from "./dnsDomainName.js";
+import { hasFileErrorCode } from "./localSpool.js";
 import { isRecord } from "./resendApi.js";
 
 /**
@@ -42,12 +44,16 @@ export class LocalEmailDomainProvisioner implements EmailDomainProvisioner {
     }
     const state = await this.readState(name);
     await this.writeState(name, state);
-    return {
-      ok: true,
-      providerDomainId: `${PROVIDER_ID_PREFIX}${name}`,
-      region: null,
-      readiness: readinessOf(name, state),
-    };
+    return { ok: true, ...providerDomainOf(name, state) };
+  }
+
+  async findByName(domain: string): Promise<ProviderDomain | null> {
+    const name = normalizeDomainName(domain);
+    const state = name ? await this.readStoredState(name) : null;
+    if (!name || !state) {
+      return null;
+    }
+    return providerDomainOf(name, state);
   }
 
   async enableReceiving(providerDomainId: string): Promise<DomainReadiness> {
@@ -85,12 +91,17 @@ export class LocalEmailDomainProvisioner implements EmailDomainProvisioner {
   }
 
   private async readState(domain: string): Promise<LocalDomainState> {
+    return (await this.readStoredState(domain)) ?? UNREGISTERED;
+  }
+
+  /** Null when the domain was never registered, or was removed. */
+  private async readStoredState(domain: string): Promise<LocalDomainState | null> {
     let text: string;
     try {
       text = await readFile(this.statePath(domain), "utf8");
     } catch (error) {
-      if (isMissingFile(error)) {
-        return UNREGISTERED;
+      if (hasFileErrorCode(error, "ENOENT")) {
+        return null;
       }
       throw error;
     }
@@ -117,6 +128,14 @@ const domainOf = (providerDomainId: string): string => {
   return name;
 };
 
+/** Local registration is idempotent and never refused as already registered, so its age never matters. */
+const providerDomainOf = (domain: string, state: LocalDomainState): ProviderDomain => ({
+  providerDomainId: `${PROVIDER_ID_PREFIX}${domain}`,
+  region: null,
+  readiness: readinessOf(domain, state),
+  createdAt: null,
+});
+
 const readinessOf = (domain: string, state: LocalDomainState): DomainReadiness => {
   const status: ReadinessStatus = state.verified ? "verified" : "pending";
   const receiving: DnsRecordView[] = state.receivingRequested
@@ -134,6 +153,3 @@ const readinessOf = (domain: string, state: LocalDomainState): DomainReadiness =
     ],
   };
 };
-
-const isMissingFile = (error: unknown): boolean =>
-  error instanceof Error && "code" in error && error.code === "ENOENT";

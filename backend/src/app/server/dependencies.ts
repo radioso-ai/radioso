@@ -93,6 +93,7 @@ import { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
+import { ReviewTurnAuditReader } from "../../modules/chat/contracts/index.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
@@ -1221,6 +1222,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversationActivityReads: conversationActivity.reads,
     deliveryFailures,
     heldReplies,
+    reviewTurnAudits: new ReviewTurnAuditReader(infrastructure.auditEventRepository),
     workbenchReplayRunner: chat.workbenchReplayRunner,
     testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,

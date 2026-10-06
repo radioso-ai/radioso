@@ -75,6 +75,7 @@ const RECORD_FAILURE_CODES: Readonly<Record<ResendFailureKind, string>> = {
   rate_limited: "provider_rate_limited",
   idempotency_mismatch: "provider_rejected",
   idempotency_in_flight: "provider_rate_limited",
+  unrecognized_conflict: "provider_unavailable",
   rejected: "provider_rejected",
   unavailable: "provider_unavailable",
   timeout: "provider_timeout",

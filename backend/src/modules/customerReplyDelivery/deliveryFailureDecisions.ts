@@ -27,9 +27,11 @@ interface DeliveryFailureResolution {
 /**
  * The delivering channel's half of a teammate's resolution. In one unit of work it settles the
  * channel's own record of the send, for `resend` queues a new send of the same reply, and clears the
- * failure as `operator_resolved`, fenced on the failure still being open. It refuses before any
- * write when the channel cannot send (`409 email_sending_not_verified`), and with `409
- * not_resolvable` when the failure cleared meanwhile. Returns the send the decision settled or queued.
+ * failure as `operator_resolved`, fenced on that very failure: locked by its id while it is still
+ * open and as the teammate read it, so a stale request never acts on a newer failure of the same
+ * reply. It refuses before any write when the channel cannot send (`409
+ * email_sending_not_verified`), and with `409 not_resolvable` when the failure cleared or changed
+ * meanwhile. Returns the send the decision settled or queued.
  */
 export interface DeliveryFailureResolverPort {
   resolve(resolution: DeliveryFailureResolution): Promise<{ sendIntentId: string }>;

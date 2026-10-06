@@ -1,7 +1,7 @@
 ---
 title: "Email Channel"
 description: "Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies or let grounded ones send themselves, bound what runs without a person, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
-last_updated: 2026-10-05
+last_updated: 2026-10-07
 ---
 
 # Email Channel
@@ -101,6 +101,20 @@ this and the forward fails with an NDR, not a confirmation. Once the policy
 allows external forwarding, create the forwarding rule pointed at the relay
 address.
 
+**Replacing the relay address.** If a relay address leaks or you want a
+fresh one, **Replace relay address** on the mailbox card issues a new one
+(`POST
+/api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}/relay-token/rotate`).
+The old address keeps forwarding for seven days, so update your forwarding
+rule to the new address inside that window.
+
+**Disabling a mailbox.** **Disable mailbox** on the card pauses a mailbox
+without removing it (through the API, `PATCH` the mailbox with
+`"enabled": false`). Mail sent to a disabled mailbox is recorded in the
+event log and nothing answers it; its pending drafts are superseded, so
+nothing of them is sent, and their conversations go to a person. **Enable
+mailbox** turns it back on for mail that arrives from then on.
+
 ## Verify sending
 
 Adding a mailbox registers its domain as a sending domain if it isn't one
@@ -149,7 +163,7 @@ all.
 | `accepted` | The provider has taken the message; it hasn't confirmed the mailbox received it yet. |
 | `delivered` | The provider confirms the message reached the customer's mail server. |
 | `bounced` | The provider or the customer's own mail service rejected it — a bad address, a full mailbox, a policy block. The sanitized reason is on the message. |
-| `failed` | The provider rejected the send outright. |
+| `failed` | The provider rejected the send outright, or an automatic reply lost its authority after its message was written and before it reached the provider. The reason is on the message. |
 | `uncertain` | The outcome never resolved. See below — it needs an operator decision, never an automatic resend. |
 | `halted` | The domain or mailbox lost sending authority after the reply was queued, so nothing was ever sent to the provider. |
 
@@ -171,6 +185,12 @@ recorded against the deciding operator. A domain or mailbox that lost
 sending authority while a send was still unresolved skips straight to
 `uncertain` with no further retry, since there would be nothing valid left
 to retry with.
+
+**Reconciliation lookups.** A send the provider accepted but never reported
+on is looked up 24 hours later. A lookup the provider refuses outright makes
+the send `uncertain` at once; one it can't answer for now, during an outage,
+is retried until two days after the provider accepted the send, and then the
+send goes `uncertain` too.
 
 **Late provider evidence.** A provider event or a reconciliation lookup can
 report a delivery outcome after a send has already gone `uncertain`.
@@ -300,7 +320,8 @@ the budget's last slot, it's held with `send_budget`.
 **Re-authorization at dispatch.** When the send worker picks up the job, it
 checks authority again under the conversation's lock: the mailbox is
 enabled and still `auto` at the policy version the review ran under, the
-conversation is still AI-owned at the same ownership version, and the
+conversation is still AI-owned at the same ownership version, the thread's
+send budget still has room for the reply at its current limit, and the
 sending domain is verified. When every check passes, one transaction writes
 the agent's message, moves the held reply to `released` with the agent as
 the releaser, and records the send intent. From there it's an ordinary outbound
@@ -320,15 +341,27 @@ is flagged `approval`, and no message or send intent is written.
   pending stay pending under their own hold reason. Both are bound to the
   mailbox's new policy version, so a release goes through. The `email.send`
   queued for a halted reply finds nothing to send.
+- **The thread send budget changes.** Changing a mailbox's
+  `threadSendBudget` writes a new policy version and treats its replies the
+  way a drop to `draft` does: each one still queued returns to `pending`
+  with hold reason `policy_changed`, so none goes out under a limit it was
+  never checked against.
 - **Something replaces it while it's queued.** A newer customer message, a
-  free-form operator reply, a takeover, or any other change to the mailbox's
-  mode, agent, or enabled flag supersedes a `queued_auto` reply the same way
+  free-form operator reply, a takeover, removing the mailbox, or any other
+  change to the mailbox's mode, agent, or enabled flag supersedes a
+  `queued_auto` reply the same way
   it supersedes a pending draft. Nothing is sent for it, and a newer customer
   message gets a fresh review; a policy change hands the conversation to a
   person instead. A takeover always wins over a queued reply —
   see [Human Takeover](human-takeover.md#what-replaces-a-draft).
 - **Authority fails at dispatch.** The reply returns to `pending` with
   `authority_changed`, as described above.
+- **Authority fails after the message is written.** When the worker stops
+  between writing the agent's message and calling the provider, the send is
+  checked again when it's picked up. If the conversation was taken over, the
+  mailbox's policy changed, or the thread's budget no longer covers it, it
+  never goes out: the send ends `failed` with that reason and flags
+  `delivery_failed` for whoever handles the conversation now.
 - **Authority changes after the provider call.** A send whose provider
   outcome is still unknown stays an ordinary send. If the mailbox or domain
   loses sending authority in that window, Radioso neither halts nor
@@ -524,6 +557,13 @@ the conversation's activity; it never joins the message history. Nothing in
 any of these runs a turn, and spam never opens a conversation. A failed event — one whose content fetch didn't succeed after
 retrying — carries a retry action.
 
+Settings shows each mailbox's own log. The workspace's log (`GET
+/api/v1/workspaces/{workspaceId}/email-channel/events`) holds every delivery
+attributed to the workspace, newest first: each mailbox's events, a removed
+mailbox's retained events, and mail a verified receiving domain accepted for
+an address no mailbox has, which carries `mailboxId: null` and the reason
+`no_mailbox`. Pass `mailboxId` to narrow it to one mailbox, removed or not.
+
 Events that never opened a conversation are purged after 30 days. The raw
 MIME behind an event is capped at 2 MB and kept under the conversation's
 own retention otherwise, with narrower
@@ -565,7 +605,10 @@ picks up work whose scheduled push was lost, reclaims leases that expired
 without being renewed, refreshes domain readiness that's due, and purges
 events past retention. On a deployment that doesn't run `auto`, it also
 returns stale `queued_auto` replies to an operator (see
-[Rollout and rollback](#rollout-and-rollback)).
+[Rollout and rollback](#rollout-and-rollback)). Each run ends by sampling
+the `radioso_email_backlog` gauge, the work still waiting past its deadline
+(see [Monitoring And Alerts](monitoring-alerts.md)). The bundled Terraform
+creates the job once `email_channel_provider` is set.
 
 ## Operations
 
@@ -580,7 +623,11 @@ resend it.
 `EMAIL_CHANNEL_WEBHOOK_SECRET`, put the current value in
 `EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS`, and leave both in place for 24
 hours so in-flight retries from the provider still verify. Remove the
-previous value once that window passes.
+previous value once that window passes. On the Google Cloud Terraform
+deployment the same two steps are two applies: set
+`email_channel_webhook_secret` to the new value and
+`email_channel_webhook_secret_previous` to the old one, then unset
+`email_channel_webhook_secret_previous` a day later.
 
 **Stuck event replay.** An event stuck past its processing deadline can be
 retried directly from settings (`POST

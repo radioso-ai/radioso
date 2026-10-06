@@ -130,13 +130,18 @@ export interface DnsRecordView {
   status: ReadinessStatus | "advisory";
 }
 export interface DomainReadiness { sending: ReadinessStatus; receiving: ReadinessStatus | "not_requested"; records: readonly DnsRecordView[] }
+export interface ProviderDomain {
+  providerDomainId: string; region: string | null; readiness: DomainReadiness;
+  createdAt: Date | null;   // the provider's clock; null when it does not say
+}
 export type DomainRegistration =
-  | { ok: true; providerDomainId: string; region: string | null; readiness: DomainReadiness }
-  | { ok: false; refused: "claimed_elsewhere" | "invalid_domain" };
+  | ({ ok: true } & ProviderDomain)
+  | { ok: false; refused: "already_registered" | "invalid_domain" };
 
 export interface EmailDomainProvisioner {
   readonly provider: string;
   registerSendingDomain(domain: string): Promise<DomainRegistration>;
+  findByName(domain: string): Promise<ProviderDomain | null>;
   enableReceiving(providerDomainId: string): Promise<DomainReadiness>;
   requestVerification(providerDomainId: string): Promise<void>;
   readiness(input: { providerDomainId: string; domain: string }): Promise<DomainReadiness>;
@@ -145,6 +150,10 @@ export interface EmailDomainProvisioner {
 ```
 
 Consumer: `emailChannel/domains/sendingDomainService.ts` only.
+
+- `already_registered` reports only that the provider account holds the name (Resend: `403 validation_error`, "registered already"). The provider cannot say for which workspace; the caller's own registration claim decides (`data-model.md`, `email_domains`).
+- `findByName` returns the registration of the name in this deployment's account and region, or null. Resend lists domains per account across regions (`GET /domains`, paged with `limit` and `after`), then reads the match for its records; a match in another region belongs to the deployment that region serves and is not returned. The local adapter returns its stored domain.
+- The service adopts a found registration only when it was created no earlier than the claim, less one minute of clock skew: no other workspace could have registered the name while the claim held it. An older one (an operations domain, another deployment sharing the account, or a removed domain whose cleanup has not run) is `claimed_elsewhere`. Every provider call runs outside a database transaction.
 
 ## 2. Host port (`packages/connector-api/connectorPlugin.d.ts`)
 

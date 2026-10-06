@@ -18,8 +18,9 @@ Base: `/api/v1/workspaces/{workspaceId}/email-channel`. Reads require `workspace
 | POST | `/mailboxes/{mailboxId}/relay-token/rotate` | `rotateEmailMailboxRelayToken` | none | `EmailMailbox` (new relay address; previous one valid for the grace period) | 404 |
 | POST | `/mailboxes/{mailboxId}/setup-check` | `startEmailMailboxSetupCheck` | `{ step: "base" \| "plus_address" }` | `EmailMailboxSetupCheck` | 404 |
 | GET | `/mailboxes/{mailboxId}/events` | `listEmailMailboxEvents` | query `cursor?`, `limit≤100`, `disposition?`, `state?` | `EmailEventPage` | 404 |
+| GET | `/events` | `listEmailChannelEvents` | query `mailboxId?`, `cursor?`, `limit≤100`, `disposition?`, `state?` | `EmailEventPage`: every delivery attributed to the workspace, including a removed mailbox's retained events and mail a verified receiving domain accepted for an address no mailbox has (`mailboxId: null`, reason `no_mailbox`); `mailboxId` narrows to one mailbox, removed or not | 400 `invalid_cursor` |
 | POST | `/events/{deliveryId}/retry` | `retryEmailInboundEvent` | none | 202 `EmailEvent` | 404, 409 `event_not_failed` |
-| GET | `/events/{deliveryId}/raw` | `getEmailInboundRawMessage` | none | `EmailRawMessageView` | 403 (needs `workspace.conversation.takeover` as well), 404, 410 `raw_purged` |
+| GET | `/events/{deliveryId}/raw` | `getEmailInboundRawMessage` | none | `EmailRawMessageView` (any delivery in the workspace's event log, `mailboxId: null` included) | 403 (needs `workspace.conversation.takeover` as well), 404, 410 `raw_purged` |
 | POST | `/domains` | `addEmailSendingDomain` | `{ domain: string }` | 201 `EmailDomain` | 400 `invalid_domain`, 409 `domain_claimed_elsewhere` |
 | POST | `/domains/{domainId}/verify` | `verifyEmailDomain` | none | `EmailDomain` (refreshed) | 404, 502 `provider_unavailable` |
 | POST | `/domains/{domainId}/receiving` | `enableEmailDirectReceiving` | `{ confirmation: string }`, which must equal the domain | `EmailDomain` | 400 `confirmation_mismatch`, 404 |
@@ -63,7 +64,8 @@ EmailEvent = { id: string; createdAt: string; state: "pending" | "fetched" | "in
   classification: string | null; disposition: "ingest_only" | "run_review_turn" | "drop" | null; reason: string | null;
   sender: { address: string | null; displayName: string | null }; subject: string | null;
   auth: { spf: string; dkim: string; dmarc: string }; spamVerdict: "spam" | "not_spam" | "unknown";
-  conversationId: string | null; threadConflict: boolean; hasRaw: boolean; retryable: boolean }
+  conversationId: string | null; threadConflict: boolean; hasRaw: boolean; retryable: boolean;
+  mailboxId: string | null }              // null: accepted for an address no mailbox has
 EmailEventPage = { items: EmailEvent[]; nextCursor: string | null }
 EmailRawMessageView = { headers: { name: string; value: string }[];      // display-safe subset; never relay or thread tokens
   text: string | null; sanitizedHtml: string | null; truncated: boolean;
@@ -108,7 +110,14 @@ HeldReply = { id: string; conversationId: string; agentId: string | null;
   dependsOnSuppressedAction: boolean; suppressedEffects: { skillName: string }[];
   draftText: string; editedText: string | null;
   createdAt: string; decidedAt: string | null; releaserUserId: string | null; editorUserId: string | null;
-  attentionOpen: boolean; trace: TurnTraceEnvelope | null }   // existing TurnTraceEnvelope schema; queued_auto rows are listed only with attention=all
+  attentionOpen: boolean; trace: HeldReplyTrace | null }   // null when the review turn's audit record is not readable; queued_auto rows are listed only with attention=all
+HeldReplyTrace = {                      // the review turn's reasoning (FR-027): identifiers and codes, never prompt, completion or customer text
+  turnId: string;                       // the review turn, from its `chat.answer` audit record (keyed on requestMessageId = answersMessageId)
+  outcome: string | null;               // the record's answer-outcome code: grounded_success, coverage_partial, no_context_refusal, ...
+  groundingVerdict: "grounded" | "degraded" | "no_support" | null;   // the record's grounding verdict
+  coverage: string;                     // what the turn reported, as on `facts`
+  handoffReason: string | null;
+  suppressedEffects: { skillName: string }[] }
 HeldReplyReleaseResult = { heldReply: HeldReply; messageId: string; delivery: "queued" }
 DeliveryFailure = { id: string; conversationId: string; messageId: string | null; provider: string;
   kind: "bounced" | "failed" | "uncertain" | "halted"; detailCode: string | null;
@@ -152,7 +161,7 @@ These are added in `backend/src/app/worker/emailChannelWorkerTaskRoutes.ts` behi
 | Registry | Entries | Slice |
 |---|---|---|
 | `backend/src/app/http/apiPrincipalRoutePolicy.ts` | permission tuples for every `/email-channel` settings route (`workspace.settings.read` / `manage`, like `email-connections` `:343-349`); `sessionOnly(…, "workspace.conversation.takeover")` for `/conversations/:id/email`, `/held-replies`, `/conversations/:id/held-reply`, `/conversations/:id/held-replies/:id/{release,discard}`, `/delivery-failures`, `/delivery-failures/:id/{acknowledge,resolve}` (like takeover and reply, `:304-314`) | S1, S2, S3 |
-| `backend/src/app/http/openapi/operationPermissionRequirements.ts` | `getEmailChannel`, `getEmailMailbox`, `listEmailMailboxEvents` → `workspace.settings.read`; `getConversationEmailFacts`, `listDeliveryFailures`, `listHeldReplies`, `getCurrentHeldReply` → `workspace.conversation.takeover` (one-to-one Ray parity) | S1, S2, S3 |
+| `backend/src/app/http/openapi/operationPermissionRequirements.ts` | `getEmailChannel`, `getEmailMailbox`, `listEmailMailboxEvents`, `listEmailChannelEvents` → `workspace.settings.read`; `getConversationEmailFacts`, `listDeliveryFailures`, `listHeldReplies`, `getCurrentHeldReply` → `workspace.conversation.takeover` (one-to-one Ray parity) | S1, S2, S3 |
 | `copilotCapabilityProvenance` (`backend/src/modules/operatorCopilot/capabilityProvenance.ts`) | `email_channel_configuration`, `email_channel_events`, `email_conversation_facts` (S1); `held_replies` (S3) | S1, S3 |
 | `operatorMcpDispositions` (`backend/src/modules/operatorCopilot/operatorMcpDisposition.ts`) | same four tools, `eligibleRead`-style read dispositions with object-rooted schemas | S1, S3 |
 | `CopilotTriageSourceId` + `copilotTriageSourcePermissions` (`triageDigest.ts:43`, `escalationSources.ts:48-55`) | `delivery_failures: "workspace.conversation.takeover"`; held replies read under the existing `approvals` source | S2 (delivery_failures), S3 (held replies) |
@@ -168,7 +177,7 @@ These are added in `backend/src/app/worker/emailChannelWorkerTaskRoutes.ts` behi
 | operationId | Coverage | Slice |
 |---|---|---|
 | `getEmailChannel`, `getEmailMailbox` | tool `email_channel_configuration` (token-free projection, ports §8) | S1 |
-| `listEmailMailboxEvents` | tool `email_channel_events` | S1 |
+| `listEmailMailboxEvents`, `listEmailChannelEvents` | tool `email_channel_events` | S1 |
 | `getConversationEmailFacts` | tool `email_conversation_facts` | S1 |
 | `getEmailInboundRawMessage` | exclusion, `permanent`: raw customer mail and headers are never model input | S1 |
 | `rotateEmailMailboxRelayToken` | `neverListExclusion("secret_rotation")` (`catalogCoverage.ts:302-308`) | S1 |

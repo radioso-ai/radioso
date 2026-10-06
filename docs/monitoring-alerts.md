@@ -1,7 +1,7 @@
 ---
 title: "Monitoring And Alerts"
 description: "Alert on a Radioso deployment: which signals exist, how to reach them through Prometheus metrics and the ops event feed, and example alert rules that work on any host."
-last_updated: 2026-10-04
+last_updated: 2026-10-06
 ---
 
 # Monitoring And Alerts
@@ -20,7 +20,7 @@ Radioso emits signals through standard interfaces — a Prometheus-compatible me
 | Is anything throwing | `radioso_errors_total`, or JSON logs at `severity>=ERROR` | `/metrics`, stdout |
 | Are documents being indexed | `radioso_document_worker_queue_jobs` | `/metrics` |
 | Are conversation actions being delivered | `radioso_action_dispatch_oldest_pending_age_ms` | `/metrics` |
-| Is inbound email piling up unprocessed | `radioso_email_backlog{table="inbound_events",state="pending"}` | `/metrics` |
+| Is inbound email stuck past its processing deadline | `radioso_email_backlog{table="inbound_events",state="pending"}` | `/metrics` |
 | Is the email webhook being forged or misconfigured | `radioso_email_webhook_requests_total{result=~"bad_signature\|stale_timestamp"}` | `/metrics` |
 | Did an email sending domain stop verifying | `radioso_email_domain_readiness_transitions_total{capability="sending",to!="verified"}` | `/metrics` |
 | Are email sends piling up with no resolved outcome | `radioso_email_send_intents_total{state="uncertain"}` | `/metrics` |
@@ -147,6 +147,16 @@ groups:
 ```
 
 The outbox and email-backlog alerts earn their place the same way. While the action outbox is stalled, customer-facing work — a contact request, a notification — sits undelivered and nothing else reports it. There is no error and no failed request; the queue just stops.
+
+`radioso_email_backlog` counts only work that has waited past its deadline, so a busy queue that keeps draining reads zero. The email channel's sweep samples it on every run: on the scheduler job's cadence (every five minutes by default) in the Google Cloud deployment, and on the worker's own sweep interval elsewhere. It carries one series per stage:
+
+| `table` | `state` | Counts |
+|---|---|---|
+| `inbound_events` | `pending`, `processing` | Inbound events received more than 10 minutes ago and not yet processed |
+| `reviews_due` | `due` | Threads whose review fell due more than 5 minutes ago and has not run |
+| `send_intents` | `queued` | Sends created more than 10 minutes ago that the provider has not accepted |
+
+The gauge lives on the process that runs the sweep, and only while metrics are enabled. A deployment with the email channel turned off has no sweep, so the series is absent and the alert stays quiet.
 
 ## Rate limits
 

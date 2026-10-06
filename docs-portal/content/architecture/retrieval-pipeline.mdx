@@ -42,7 +42,7 @@ When upcoming-event boost is enabled, dated event evidence can receive a tempora
 
 ### Context selection
 
-The system reranks candidates when reranking is enabled, then selects the final prompt contexts. `vectorTopK`, `similarityThreshold`, `rerankEnabled`, and `rerankTopK` all influence this stage.
+The system reranks candidates when reranking is enabled, then selects the final prompt contexts. `vectorTopK`, `similarityThreshold`, `rerankEnabled`, and `rerankTopK` all influence this stage, but only the top candidates `rerankTopK` keeps (at least 12, never more than 50) reach that selection — the final answer uses up to 12 passages, at most 2 per document.
 
 When deterministic temporal sort is enabled, selected dated event contexts can be ordered by extracted dates before prompt assembly. This makes "next events" and "sort by actuality" evidence order stable.
 
@@ -58,9 +58,9 @@ Each retrieval branch is timed around its own work, so the trace shows the seman
 Retrieval behavior is configured per agent through the `retrieval.answer` skill. Retrieval-only API calls use system defaults and still accept per-call controls such as `metadataFilter`.
 
 - `retrievalStrategy` controls the execution style. `fixed` runs one search pass, `reasoning` lets the model plan and run multiple searches, and `auto` lets Radioso choose per query.
-- `vectorTopK` controls how many chunks are fetched from the vector index before filtering and reranking.
+- `vectorTopK` controls how many chunks are fetched from the vector index before filtering and reranking. After filters, boosts, and merging, only the top `rerankTopK` candidates (at least 12) go on to the answer, so a deeper fetch matters when filters or boosts lift lower-ranked chunks into that group.
 - `rerankEnabled` controls whether fetched chunks are re-scored with the reranker model. It is off by default.
-- `rerankTopK` controls how many chunks survive reranking and are passed to the answer.
+- `rerankTopK` controls how many top candidates go on to the answer, reordered by the reranker when it's enabled. Values below 12 act as 12; the max is 50. The answer itself still uses up to 12 passages, at most 2 per document.
 - `citationHoldEnabled` controls whether the answer is held until it earns its first citation before it streams. It is on by default; when off, an answer that ends with zero sourced claims still reaches the visitor and is flagged degraded in Quality.
 - `queryRewriteEnabled` controls whether the user message is rewritten into search queries before retrieval.
 - `semanticRewriteInstructions` replaces the default instructions for rewriting the semantic vector search query. Empty means the default applies.

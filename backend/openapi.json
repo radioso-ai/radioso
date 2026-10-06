@@ -43021,6 +43021,29 @@
                                 "max": {
                                   "type": "number"
                                 },
+                                "usageCap": {
+                                  "type": "object",
+                                  "properties": {
+                                    "raisedByKey": {
+                                      "type": "string"
+                                    },
+                                    "floor": {
+                                      "type": "number"
+                                    },
+                                    "ceiling": {
+                                      "type": "number"
+                                    },
+                                    "notice": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "raisedByKey",
+                                    "floor",
+                                    "ceiling",
+                                    "notice"
+                                  ]
+                                },
                                 "group": {
                                   "type": "string"
                                 },

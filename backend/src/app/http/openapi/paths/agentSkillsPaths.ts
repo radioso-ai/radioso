@@ -51,6 +51,13 @@ const CapabilityTargetSchema = z.object({
   status: z.string().optional(),
 });
 
+const CapabilitySettingsFieldUsageCapSchema = z.object({
+  raisedByKey: z.string(),
+  floor: z.number(),
+  ceiling: z.number(),
+  notice: z.string(),
+});
+
 const CapabilitySettingsFieldSchema = z.object({
   key: z.string(),
   label: z.string(),
@@ -63,6 +70,7 @@ const CapabilitySettingsFieldSchema = z.object({
   })).optional(),
   min: z.number().optional(),
   max: z.number().optional(),
+  usageCap: CapabilitySettingsFieldUsageCapSchema.optional(),
   group: z.string().optional(),
   advanced: z.boolean().optional(),
   defaultValue: z.union([z.string(), z.number(), z.boolean()]).optional(),

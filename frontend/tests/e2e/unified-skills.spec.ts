@@ -254,3 +254,26 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   );
 
 });
+
+test("Vector top K names the answer candidate pool once it is set past it", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { agentSkills: [], skillCapabilities: baseSkillCapabilities() });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+  await page.getByRole("button", { name: "Add new skill" }).click();
+  await page.getByRole("button", { name: /Knowledge Retrieval/i }).click();
+  await page.getByRole("button", { name: "Advanced" }).click();
+
+  const unusedCandidatesNotice = page.getByText(/The answer draws on the top \d+ candidates/);
+  await expect(unusedCandidatesNotice).toHaveCount(0);
+
+  await page.getByLabel("Vector top K").fill("30");
+  await expect(unusedCandidatesNotice).toHaveText(/top 12 candidates/);
+
+  await page.getByRole("switch", { name: "Rerank results" }).click();
+  await page.getByLabel("Rerank top K").fill("20");
+  await expect(unusedCandidatesNotice).toHaveText(/top 20 candidates/);
+
+  await page.getByLabel("Rerank top K").fill("30");
+  await expect(unusedCandidatesNotice).toHaveCount(0);
+});

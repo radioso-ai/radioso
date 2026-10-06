@@ -1,7 +1,7 @@
 ---
 title: "Vector Top K"
 description: "Retrieval setting controlling the number of semantic candidates retained from vector search before reranking."
-last_updated: 2026-04-02
+last_updated: 2026-10-06
 ---
 
 # Vector Top K
@@ -36,6 +36,8 @@ A smaller number means:
 ### Role In The Pipeline
 
 This stage decides what later stages are allowed to see. Ranking quality is reranking's job; `Vector Top K` governs whether the good material is in the pool for reranking to find in the first place.
+
+Vector results are then filtered, boosted by metadata rules and upcoming dates, and merged with keyword matches. Only the top `Rerank Top K` of that result (at least 12) go on to the answer. A deeper fetch pays off when filters or boosts lift lower-ranked chunks into that top group; without them, raise `Rerank Top K` along with `Vector Top K`.
 
 ### Tuning Signals
 

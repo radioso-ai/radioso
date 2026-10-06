@@ -47,6 +47,7 @@ import {
   formatCapabilityLabel,
   formatInputMode,
   formatInvocationMode,
+  resolveUsageCapNotice,
   validateSkillName,
   type SkillFormDraft,
   type SkillInputMode,
@@ -154,12 +155,16 @@ const shouldShowGroupHeading = (
 function SkillSettingControl({
   field,
   value,
+  allFields,
+  settingDrafts,
   sourceList,
   metadataFieldSuggestions,
   onChange,
 }: {
   field: SkillCapabilitySettingsField
   value: SkillSettingDraftValue
+  allFields: readonly SkillCapabilitySettingsField[]
+  settingDrafts: Record<string, SkillSettingDraftValue>
   sourceList: DocumentSourceListItem[]
   metadataFieldSuggestions: MetadataFieldSuggestion[]
   onChange: (value: SkillSettingDraftValue) => void
@@ -370,6 +375,10 @@ function SkillSettingControl({
         }}
       />
       {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
+      {field.type === 'number' && field.usageCap ? (() => {
+        const notice = resolveUsageCapNotice(field, allFields, settingDrafts)
+        return notice ? <p className="text-xs text-amber-700">{notice}</p> : null
+      })() : null}
     </div>
   )
 }
@@ -685,6 +694,8 @@ export function SkillForm({
                   <SkillSettingControl
                     field={field}
                     value={draft.settingDrafts[field.key]}
+                    allFields={settingsFields}
+                    settingDrafts={draft.settingDrafts}
                     sourceList={sourceTargetsToList(capability)}
                     metadataFieldSuggestions={metadataFieldSuggestions}
                     onChange={(value) => updateSetting(field.key, value)}

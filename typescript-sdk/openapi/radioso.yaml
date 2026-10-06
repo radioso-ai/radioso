@@ -7938,14 +7938,9 @@ components:
           type: string
         lexicalQuery:
           type: string
-        constraintSummary:
-          type: array
-          items:
-            type: string
       required:
         - semanticQuery
         - lexicalQuery
-        - constraintSummary
     CandidateCounts:
       type: object
       properties:

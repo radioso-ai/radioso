@@ -6740,7 +6740,6 @@ export interface components {
             originalQuery?: string;
             semanticQuery: string;
             lexicalQuery: string;
-            constraintSummary: string[];
         };
         CandidateCounts: {
             semantic: number;

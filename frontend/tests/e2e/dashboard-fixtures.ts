@@ -1173,6 +1173,11 @@ export const installDashboardApiMocks = async (
   const skillCapabilities = options.skillCapabilities ?? baseSkillCapabilities();
   let agentSkills = options.agentSkills ?? [];
   let nextAgentSkillIndex = agentSkills.length + 1;
+  const platformAnswerSkills = [
+    { owner: "platform", name: "clarification.answer", displayName: "Clarification answer", description: "Ask for the detail needed to answer." },
+    { owner: "platform", name: "retrieval.answer", displayName: "Retrieval answer", description: "Answer from workspace documents." },
+    { owner: "platform", name: "direct.answer", displayName: "Direct answer", description: "Answer without retrieval." },
+  ];
   const routineSkillCatalog = options.routineSkillCatalog ?? [];
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
@@ -2200,7 +2205,10 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}/skills`) {
       if (request.method() === "GET") {
-        await json(route, { skills: agentSkills });
+        await json(route, {
+          skills: agentSkills,
+          platformSkills: platformAnswerSkills,
+        });
         return;
       }
 

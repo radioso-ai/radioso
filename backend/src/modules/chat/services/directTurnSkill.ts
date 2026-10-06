@@ -1,13 +1,13 @@
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
-import { directAnswerSkillDefinition } from "../../skills/public.js";
+import { builtInAnswerSkills } from "./builtInAnswerSkills.js";
 import type { AssistantReplyComposer, AssistantReplyConfig } from "./assistantReplyComposer.js";
 import type { TurnOutcome, TurnRenderContext, TurnSkill } from "./turnOutcome.js";
 
 /** The outcome kind (chat-side renderer tag) and the canonical skill identity. */
-export const DIRECT_OUTCOME_KIND = "direct";
-export const DIRECT_TURN_SKILL = directAnswerSkillDefinition.name;
+const DIRECT_OUTCOME_KIND = "direct";
+const DIRECT_TURN_SKILL = builtInAnswerSkills.direct;
 
 /** Direct is an assistant-voice reply without retrieval. */
 export const DIRECT_REPLY_CONFIG: AssistantReplyConfig = {
@@ -15,7 +15,7 @@ export const DIRECT_REPLY_CONFIG: AssistantReplyConfig = {
   outcomeKind: DIRECT_OUTCOME_KIND,
 };
 
-export const buildDirectTurnOutcome = (session: PreparedSession): TurnOutcome =>
+const buildDirectTurnOutcome = (session: PreparedSession): TurnOutcome =>
   buildPreparedTurnOutcome(session, { kind: DIRECT_OUTCOME_KIND, skillName: DIRECT_TURN_SKILL });
 
 /** Registers the direct answer as a terminal `TurnSkill`, selected for direct turns. */

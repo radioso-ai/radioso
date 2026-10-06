@@ -13,6 +13,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   test.setTimeout(60_000);
 
   const agentSkillRequests: Array<{ method: string; path: string; body?: unknown }> = [];
+  const agentUpdates: unknown[] = [];
   const agentSkills: AgentSkillFixture[] = [];
   const mcpConnectionRequests: string[] = [];
   const mcpConnectionId = "77777777-7777-4777-8777-777777777777";
@@ -31,6 +32,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await installDashboardApiMocks(page, {
     agentSkills,
     agentSkillRequests,
+    agentUpdates,
     skillCapabilities,
     mcpConnections: [{
       id: mcpConnectionId,
@@ -83,6 +85,12 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByRole("heading", { name: "Contact requests" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Webhook exports" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Retrieval answers" })).toHaveCount(0);
+  await expect(page.getByText("Clarification answer", { exact: true })).toBeVisible();
+  await expect(page.getByText("Retrieval answer", { exact: true })).toBeVisible();
+  await expect(page.getByText("Direct answer", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit retrieval.answer" })).toHaveCount(0);
+  await page.getByRole("switch", { name: "Enable retrieval answers" }).click();
+  await expect.poll(() => agentUpdates).toContainEqual(expect.objectContaining({ retrievalEnabled: false }));
 
   await page.getByRole("button", { name: "Add new skill" }).click();
   await expect(page.getByRole("dialog", { name: "Add new skill" })).toBeVisible();

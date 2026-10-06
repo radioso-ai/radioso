@@ -26,7 +26,7 @@ import type { ComposedDecline, FallbackReplyComposer } from "./fallbackReplyComp
 import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
-import { retrievalAnswerSkillDefinition } from "../../skills/public.js";
+import { builtInAnswerSkills } from "./builtInAnswerSkills.js";
 import type { TurnOutcome, TurnRenderContext, TurnSkill, TurnStreamResult } from "./turnOutcome.js";
 import {
   computeGroundingSummary,
@@ -73,7 +73,7 @@ const combineAbortSignals = (turnSignal: AbortSignal | undefined, gateSignal: Ab
 export const RETRIEVAL_OUTCOME_KIND = "retrieval";
 
 /** The skill this turn dispatches — identity sourced from the canonical skill catalog. */
-export const RETRIEVAL_TURN_SKILL = retrievalAnswerSkillDefinition.name;
+export const RETRIEVAL_TURN_SKILL = builtInAnswerSkills.retrieval;
 
 export const buildRetrievalTurnOutcome = (session: PreparedSession): TurnOutcome =>
   buildPreparedTurnOutcome(session, { kind: RETRIEVAL_OUTCOME_KIND, skillName: RETRIEVAL_TURN_SKILL });

@@ -68,6 +68,11 @@ describe("skills catalog contract", () => {
         ]),
       }),
     ]));
+    // Answer-skill presentation is scoped to the agent Skills endpoint; it does
+    // not expand the existing global catalog or its add-skill pickers.
+    expect(response.body.skills).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "clarification.answer" }),
+    ]));
     expect(response.body.skills).not.toEqual(expect.arrayContaining([
       expect.objectContaining({
         contractReferences: expect.arrayContaining([

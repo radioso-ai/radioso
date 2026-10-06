@@ -20672,6 +20672,13 @@ export interface operations {
                             createdAt: string;
                             updatedAt: string;
                         }[];
+                        platformSkills: {
+                            /** @enum {string} */
+                            owner: "platform";
+                            name: string;
+                            displayName: string;
+                            description: string;
+                        }[];
                     };
                 };
             };

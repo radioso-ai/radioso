@@ -2150,3 +2150,108 @@ describe("WorkbenchReplayRunner streaming entry", () => {
     );
   });
 });
+
+describe("WorkbenchReplayRunner coverage routine takeover", () => {
+  const drive = async (runner: WorkbenchReplayRunner, mode: "run" | "stream", input: Parameters<WorkbenchReplayRunner["run"]>[0]) => {
+    if (mode === "run") return runner.run(input);
+    const turn = runner.stream(input);
+    let step = await turn.next();
+    while (!step.done) step = await turn.next();
+    return step.value;
+  };
+
+  /**
+   * A grounded turn a coverage routine takes over (#1260 `yield_turn`): the engine starts the
+   * routine through the coverage-wrapped routine store and answers with its first step. On a
+   * later turn, `attemptRoutine` resumes whatever routine the replay's store holds.
+   */
+  const coverageTakeoverEngine = (takeover: Partial<ProcessTurnResult> = {}): ConversationEngine => {
+    const takeOver = async (input: ProcessTurnInput): Promise<ProcessTurnResult> => {
+      await input.routineStore!.save({ sessionId: input.sessionId, routineId: "follow_up", path: ["ask_email"], variables: {}, status: "active" });
+      return {
+        response: { answer: "What's the best email to reach you?" },
+        trace: emptyTrace(),
+        decision: { reason: "coverage_routine_activated:follow_up" },
+        actions: [],
+        routineExecution: { routineId: "follow_up" },
+        ...takeover,
+      } as unknown as ProcessTurnResult;
+    };
+    return {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        const active = await input.routineStore!.loadActive({ sessionId: input.sessionId });
+        return active
+          ? { response: { answer: `resumed:${active.routineId}:${active.path.at(-1)}` }, trace: emptyTrace(), decision: { reason: "resumed" }, actions: [] } as unknown as ProcessTurnResult
+          : null;
+      },
+      processTurn: takeOver,
+      async *processTurnStream(input: ProcessTurnInput) {
+        yield { type: "final", result: await takeOver(input) };
+      },
+    } as unknown as ConversationEngine;
+  };
+
+  const coverageRoutineProvider = (reporter?: ChatRoutineTurnReporter): ChatRoutineProvider => ({
+    async forTurn() {
+      return {
+        activator: { activate: async () => null },
+        runner: {} as never,
+        coverageActivator: { evaluateCandidates: () => [], activate: async () => null },
+        ...(reporter ? { reporter } : {}),
+      };
+    },
+  });
+
+  const replayRunner = (engine: ConversationEngine, reporter?: ChatRoutineTurnReporter) => new WorkbenchReplayRunner({
+    retrievalTurn: retrievalTurn([]),
+    auditService: createAuditService(),
+    turnSkills: [answerSkill()],
+    conversationEngine: engine,
+    turnRouter: stubTurnRouter("retrieval"),
+    routineProvider: coverageRoutineProvider(reporter),
+    chatGateway: chatGatewayStub(),
+    chatAnswerPresenter: presenterStub(),
+    coverageHeadRecorder: new AnswerCoverageHeadRecorder(),
+  });
+
+  const turnInput = (query: string) => ({
+    workspaceId: "ws-1",
+    executionMode: "safe_test" as const,
+    sourceAgentId: "agent-1",
+    conversationId: "private-side-1",
+    baselineAgentConfig: projectInternalAgentConfig(agent()),
+    query,
+    history: [],
+  });
+
+  it.each(["run", "stream"] as const)("exports the routine a coverage takeover started, so the next Test Chat turn continues it (%s)", async (mode) => {
+    const runner = replayRunner(coverageTakeoverEngine());
+
+    const first = await drive(runner, mode, turnInput("How long do refunds take?"));
+    const second = await drive(runner, mode, { ...turnInput("guest@example.com"), routineStartState: first.continuation?.routineState ?? null });
+
+    expect(first.answer).toBe("What's the best email to reach you?");
+    expect(first.continuation?.routineState).toMatchObject({ routineId: "follow_up", path: ["ask_email"], status: "active" });
+    expect(second.answer).toBe("resumed:follow_up:ask_email");
+  });
+
+  it.each(["run", "stream"] as const)("previews the hand-off a coverage routine ends on, without dispatching it (%s)", async (mode) => {
+    const ending = { routineId: "follow_up", stepId: "handoff", terminalKind: "handoff" as const, collected: { email: "guest@example.com" } };
+    const describeRoutineName = vi.fn(() => "Follow up");
+    const reporter: ChatRoutineTurnReporter = {
+      describe: () => null,
+      describeDeclined: () => null,
+      describeInvocation: () => null,
+      describeRoutineName,
+    };
+    const runner = replayRunner(coverageTakeoverEngine({ handoff: ending, operatorNotice: ending }), reporter);
+
+    const result = await drive(runner, mode, turnInput("How long do refunds take?"));
+
+    expect(result.handoff).toEqual(ending);
+    expect(result.actions ?? []).not.toEqual(expect.arrayContaining([expect.objectContaining({ type: "handoff.notify" })]));
+    expect(describeRoutineName).toHaveBeenCalledWith("follow_up");
+    expect(result.turnTrace?.handoffPreview).toMatchObject({ kind: "handoff", subject: "Follow up: needs a human" });
+    expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("guest@example.com");
+  });
+});

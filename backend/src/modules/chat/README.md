@@ -26,7 +26,10 @@ adapter drives `WorkbenchReplayRunner.stream`, which is `run` with the answer's
 text yielded as `ChatTurnAssembly.streamPreparedByEngine` produces it. Both share
 the turn's preparation (`prepareTurn`) and settlement (`routineTurn`,
 `settleRenderedTurn`), so the result, continuation, and state commits match; a
-routine-claimed reply is yielded whole once its turn settles. The first chunk's
+routine-claimed reply is yielded whole once its turn settles. When a coverage
+routine takes over a grounded turn (#1260), `settleRenderedTurn` commits the
+state it saved, so the exported continuation carries the routine into the next
+Test Chat turn, and the result carries its hand-off and operator-notice preview. The first chunk's
 latency lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
 `delivery_mode`), a series apart from live chat's.
 

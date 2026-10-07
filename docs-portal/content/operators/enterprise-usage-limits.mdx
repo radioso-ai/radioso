@@ -1,7 +1,7 @@
 ---
 title: "Enterprise usage limits"
 description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers or conversations per account, and enforces the caps before work begins."
-last_updated: 2026-10-05
+last_updated: 2026-10-07
 ---
 
 # Enterprise usage limits
@@ -118,6 +118,9 @@ The account usage response breaks this down under `monthlyConversations`:
     "used": 42.5,
     "limit": 500,
     "credits": 12,
+    "capacity": 512,
+    "grace": { "limit": 50, "borrowed": 0 },
+    "level": "ok",
     "periodStart": "2026-05-01",
     "resetAt": "2026-06-01T00:00:00.000Z",
     "byKind": { "conversation": 40, "copilot": 2, "test_run": 0.5, "pulse_report": 0 }
@@ -125,7 +128,27 @@ The account usage response breaks this down under `monthlyConversations`:
 }
 ```
 
-`used` and the `byKind` breakdown can land on a half, since a test run and a Ray turn each count as 0.5. `credits` is the account's prepaid balance on top of `monthlyConversationLimit` — see [Prepaid credits](#prepaid-credits). `monthlyConversations` is absent (`null`) on an account whose profile meters answers instead.
+`used` and the `byKind` breakdown can land on a half, since a test run and a Ray turn each count as 0.5. `credits` is the account's prepaid balance on top of `monthlyConversationLimit` — see [Prepaid credits](#prepaid-credits). `capacity`, `grace`, and `level` describe the account's [grace allowance](#grace-allowance). `monthlyConversations` is absent (`null`) on an account whose profile meters answers instead.
+
+## Grace allowance
+
+A customer conversation keeps getting answered for a while after the plan allowance and prepaid credits both run out. The account's credit balance goes negative, as debt, down to a floor of `floor(monthlyConversationLimit × conversationGraceShare)` conversations — `conversationGraceShare` is `0.1` in the catalog, so a 500-conversation plan borrows up to 50 conversations before a customer conversation is refused with `429`.
+
+Ray, Test Chat, Workbench replays, eval runs, and Audience Pulse reports never borrow. Once the allowance and any positive credits are spent, the next one of these is refused immediately — the grace allowance exists for visitor-facing conversations only, and carried debt never pushes that refusal earlier than the plan allowance itself.
+
+Debt carries across billing periods. The credit balance is one account-wide number with no period column, so an account that borrowed last month still owes it this month even though the plan allowance resets in full on the first of the month. A credit grant — a top-up purchase or a call to [Prepaid credits](#prepaid-credits) — repays the debt first, before any of it shows up as a positive `credits` balance.
+
+`monthlyConversations` reports three fields for this:
+
+- `capacity` — what the account can spend before borrowing: the plan allowance (or current usage, if higher) plus any positive credits. It is the right denominator for a usage bar; `limit + credits` reads wrong once credits are partly spent, because credits shrink as overshoot consumes them.
+- `grace.limit` and `grace.borrowed` — the account's full borrowing room in conversations, and how much of it is currently drawn down as debt.
+- `level` — one of:
+  - `ok` — comfortably under the allowance.
+  - `nearing_limit` — at or above 80% of `capacity`.
+  - `limit_reached` — `capacity` is spent, but grace room remains: a customer conversation still gets answered, borrowed from the grace allowance.
+  - `grace_exhausted` — less than one conversation's worth of grace remains unborrowed. The next customer conversation is refused with `429`.
+
+`monthlyConversations` — and the grace allowance with it — is absent on a profile that meters answers instead of conversations, or carries no limit at all. There is no allowance to borrow against without one.
 
 ## Prepaid credits
 
@@ -138,7 +161,7 @@ curl -X POST https://radioso.example.com/api/v1/ee/usage-limits/accounts/0000000
   -d '{"conversations": 100, "reference": "evt_1Pxxxxxxxxxxxxxxxx"}'
 ```
 
-`reference` identifies the grant — a Stripe event ID or any string unique to the top-up — and makes the call safe to retry. The first call with a given `reference` credits the account and returns `"applied": true`. A later call with the same `reference` grants nothing and returns `"applied": false` with the same `credits` balance as the first call. The response also carries the account's current usage:
+`reference` identifies the grant — a Stripe event ID or any string unique to the top-up — and makes the call safe to retry. The first call with a given `reference` credits the account and returns `"applied": true`. A later call with the same `reference` grants nothing and returns `"applied": false` with the same `credits` balance as the first call. On an account that borrowed against its [grace allowance](#grace-allowance), the grant repays that debt first; `credits` only turns positive once the debt is fully repaid. The response also carries the account's current usage:
 
 ```json
 {
@@ -152,9 +175,15 @@ An `accountId` that does not exist returns `404`.
 
 ## Plan card
 
-On a conversation-metered account, the dashboard's Usage page shows a plan card above the meters. It reads `GET /api/v1/ee/billing/me` and `GET /api/v1/plans` alongside the account usage response above, and renders the plan name and price, a bar for `used / (limit + credits)`, and the `byKind` breakdown split into customer conversations, Ray, test runs, and Pulse.
+On a conversation-metered account, the dashboard's Usage page shows a plan card above the meters. It reads `GET /api/v1/ee/billing/me` and `GET /api/v1/plans` alongside the account usage response above, and renders the plan name and price, a bar for `used / capacity`, and the `byKind` breakdown split into customer conversations, Ray, test runs, and Pulse.
 
-At 80% of capacity the card adds a banner naming whichever kind is driving that month's usage. At 100% the banner also carries the **Upgrade** and **Buy** buttons described below.
+The banner follows `level`:
+
+- `nearing_limit` names whichever kind is driving that month's usage.
+- `limit_reached` says the plan allowance is used, how many extra conversations visitors can still get from the grace allowance, and that Ray, Test Chat, and Pulse pause until the reset date.
+- `grace_exhausted` says agents stopped answering visitors and the date they resume.
+
+Both `limit_reached` and `grace_exhausted` carry the **Upgrade** and **Buy** buttons described below; `nearing_limit` does not.
 
 - **Upgrade** starts a subscription checkout for the next self-serve plan above the account's current one. It is absent once the account already holds the catalog's `selfServeCeilingPlanId`.
 - **Buy 300 more** starts a one-time checkout for the catalog's top-up pack. It only appears on a paid plan (Satellite or Planet): Comet, the free plan, doesn't sell top-ups, since a free account plus a few packs would undercut Satellite. `GET /api/v1/ee/billing/me`'s `topUpAvailable` field carries this, and `POST /api/v1/ee/billing/checkout` rejects a pack request from an ineligible account with `409 top_up_unavailable` before it reaches Stripe.
@@ -170,7 +199,7 @@ Limits are enforced before expensive work begins, so customers cannot race past 
 - Assistant and retrieval answers reserve a monthly answer slot before the model is called, or a conversation-meter reservation on a conversation-metered account.
 - The reservation is released if the work fails before commit.
 
-Requests that exceed a cap receive a `429` response with `code: "usage_limit_exceeded"` and a `details.resource` of `stored_indexed_bytes`, `monthly_indexed_bytes`, `stored_documents`, `monthly_answers`, or `monthly_conversations`.
+Requests that exceed a cap receive a `429` response with `code: "usage_limit_exceeded"` and a `details.resource` of `stored_indexed_bytes`, `monthly_indexed_bytes`, `stored_documents`, `monthly_answers`, or `monthly_conversations`. On a conversation-metered account, a `monthly_conversations` refusal only happens once the [grace allowance](#grace-allowance) is also exhausted — Ray, Test Chat, Workbench replays, eval runs, and Pulse reports reach this `429` as soon as the allowance and any positive credits run out, since they never borrow.
 
 ## Organization creation cap
 

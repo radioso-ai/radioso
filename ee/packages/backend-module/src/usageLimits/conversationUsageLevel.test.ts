@@ -1,0 +1,176 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  conversationUsageLevel,
+  graceLimitTenths,
+  TENTHS_PER_CONVERSATION,
+} from "./conversationUsageLevel.js";
+
+const tenths = (conversations: number) => conversations * TENTHS_PER_CONVERSATION;
+
+describe("graceLimitTenths", () => {
+  it("floors a 0.1 share of a 50-conversation limit to 5 conversations", () => {
+    expect(graceLimitTenths(tenths(50), 0.1)).toBe(tenths(5));
+  });
+
+  it("floors to whole conversations rather than fractional tenths", () => {
+    // 47 * 0.1 = 4.7, which floors to 4 whole conversations, not 4.7.
+    expect(graceLimitTenths(tenths(47), 0.1)).toBe(tenths(4));
+  });
+
+  it("is zero when the share floors below one conversation", () => {
+    expect(graceLimitTenths(tenths(5), 0.1)).toBe(0);
+  });
+});
+
+describe("conversationUsageLevel", () => {
+  const conversationWeightTenths = TENTHS_PER_CONVERSATION;
+
+  it("is ok with no grace when the profile is unmetered (limit null)", () => {
+    const result = conversationUsageLevel({
+      usedTenths: tenths(400),
+      limitTenths: null,
+      balanceTenths: 0,
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result).toEqual({
+      capacity: 400,
+      grace: { limit: 0, borrowed: 0 },
+      level: "ok",
+    });
+  });
+
+  it("is ok under 80% of capacity", () => {
+    const result = conversationUsageLevel({
+      usedTenths: tenths(400),
+      limitTenths: tenths(1000),
+      balanceTenths: 0,
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result).toEqual({
+      capacity: 1000,
+      grace: { limit: 100, borrowed: 0 },
+      level: "ok",
+    });
+  });
+
+  it("counts positive credits toward capacity before flagging nearing_limit", () => {
+    const result = conversationUsageLevel({
+      usedTenths: tenths(900),
+      limitTenths: tenths(1000),
+      balanceTenths: tenths(200),
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    // capacity = max(900,1000) + 200 = 1200; 900/1200 = 0.75, still under 0.8.
+    expect(result.capacity).toBe(1200);
+    expect(result.level).toBe("ok");
+  });
+
+  it("is nearing_limit from 80% of capacity up to the limit", () => {
+    const result = conversationUsageLevel({
+      usedTenths: tenths(850),
+      limitTenths: tenths(1000),
+      balanceTenths: 0,
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result.level).toBe("nearing_limit");
+  });
+
+  it("is limit_reached once paid capacity is spent but grace room remains", () => {
+    const result = conversationUsageLevel({
+      usedTenths: tenths(1000),
+      limitTenths: tenths(1000),
+      balanceTenths: 0,
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result).toEqual({
+      capacity: 1000,
+      grace: { limit: 100, borrowed: 0 },
+      level: "limit_reached",
+    });
+  });
+
+  it("is grace_exhausted once borrowed reaches within one conversation of the grace limit", () => {
+    // Plan limit 1000, grace 100; borrowed 100 means the account is already at the floor.
+    const result = conversationUsageLevel({
+      usedTenths: tenths(1100),
+      limitTenths: tenths(1000),
+      balanceTenths: -tenths(100),
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result).toEqual({
+      capacity: 1100,
+      grace: { limit: 100, borrowed: 100 },
+      level: "grace_exhausted",
+    });
+  });
+
+  it("stays limit_reached while at least one conversation of grace remains unborrowed", () => {
+    const result = conversationUsageLevel({
+      // Grace limit is 100 conversations (1000 tenths); 910 tenths (91 conversations)
+      // borrowed leaves 90 tenths of grace, room for another whole conversation.
+      usedTenths: tenths(1000) + 910,
+      limitTenths: tenths(1000),
+      balanceTenths: -910,
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result.level).toBe("limit_reached");
+  });
+
+  it("flips to grace_exhausted once less than one conversation of grace remains unborrowed", () => {
+    const result = conversationUsageLevel({
+      // Same 100-conversation grace limit; 991 tenths borrowed leaves only 9, less
+      // than one conversation's weight (10), so the next conversation cannot be afforded.
+      usedTenths: tenths(1000) + 991,
+      limitTenths: tenths(1000),
+      balanceTenths: -991,
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result.level).toBe("grace_exhausted");
+  });
+
+  it("reports grace_exhausted immediately when the plan is too small to grant a whole conversation of grace", () => {
+    // limit 5, share 0.1 -> floor(0.5) = 0 grace conversations.
+    const result = conversationUsageLevel({
+      usedTenths: tenths(5),
+      limitTenths: tenths(5),
+      balanceTenths: 0,
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result).toEqual({
+      capacity: 5,
+      grace: { limit: 0, borrowed: 0 },
+      level: "grace_exhausted",
+    });
+  });
+
+  it("never reports borrowed above zero when the balance is positive", () => {
+    const result = conversationUsageLevel({
+      usedTenths: tenths(100),
+      limitTenths: tenths(1000),
+      balanceTenths: tenths(50),
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result.grace.borrowed).toBe(0);
+  });
+});

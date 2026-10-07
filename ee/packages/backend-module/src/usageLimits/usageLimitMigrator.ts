@@ -143,13 +143,20 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
       )
     `);
 
-    // Prepaid top-ups. Not period-scoped: they never expire.
+    // Prepaid top-ups. Not period-scoped: they never expire. The balance may go negative
+    // once a customer conversation borrows against its grace allowance (reserveTenths in
+    // usageLimitService.ts), so a fresh install must not recreate the old nonnegative CHECK.
     await database.query(`
       CREATE TABLE IF NOT EXISTS ee_usage_limit_credits (
         account_id UUID PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
-        balance_tenths INTEGER NOT NULL DEFAULT 0 CHECK (balance_tenths >= 0),
+        balance_tenths INTEGER NOT NULL DEFAULT 0,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `);
+
+    await database.query(`
+      ALTER TABLE ee_usage_limit_credits
+      DROP CONSTRAINT IF EXISTS ee_usage_limit_credits_balance_tenths_check
     `);
 
     // Prepaid top-up grants, one row per idempotency reference (a Stripe event

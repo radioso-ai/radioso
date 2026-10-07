@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Conversational Routines
@@ -628,6 +628,20 @@ authoring side — the data model, the compiler that turns a definition into the
 runtime graph, the validator, and the repository — lives in
 `backend/src/modules/routines/`. The engine runs the compiled graph; it never
 reads the authoring data.
+
+A routine turn runs in two parts. Claiming walks the graph — the selector calls,
+any tool and action steps, the landed step's steering — and decides everything
+the turn does: where it rests, which slots it keeps, the actions it emits, and
+how it ends. Rendering then writes the reply for the step it landed on, and
+nothing the claim decided depends on that text. `DefaultRoutineRunner.claim`
+returns the decision with the reply still to generate, and `resume` claims and
+renders in one call. For a whole turn, the engine's `claimRoutine` gives the host
+the same split: the host generates the reply, through `render()` or `stream()`,
+then settles the claim with it, which saves the routine state and records the
+turn. `attemptRoutine` is that sequence with the reply rendered whole, and both
+make the same model calls in the same order, so per-call usage keys match. A
+hand-off message — at an authored hand-off end, or for a visitor stuck past the
+re-ask limit — is only ever generated whole.
 
 ## Tool steps and skills
 

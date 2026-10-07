@@ -178,7 +178,7 @@ await client.settings.updateGeneral({
 
 ## Skills
 
-The SDK exposes the read-only product skills catalog. Agent-authored skills are configured through the agent skills REST endpoints directly — the SDK doesn't wrap them with typed methods, so call them with `fetch` or another HTTP client using the same bearer token, as shown below. Those agent skills are named capability instances such as `retrieve`, `email`, `slack_post`, `webhook_call`, `mcp_tool`, and `notify`.
+The SDK exposes the read-only product skills catalog. Every agent always has built-in clarification, retrieval, and direct answer skills; the agent Skills endpoint adds them as read-only `platformSkills` rows while preserving its existing flat `skills` array. Agent-authored action skills are configured through the agent skills REST endpoints directly — the SDK doesn't wrap them with typed methods, so call them with `fetch` or another HTTP client using the same bearer token, as shown below. Those action skills are named capability instances such as `retrieve`, `email`, `slack_post`, `webhook_call`, `mcp_tool`, and `notify`.
 
 List skills:
 

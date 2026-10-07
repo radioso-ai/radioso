@@ -34,13 +34,11 @@ export const activityTraceInputFixture = (): ActivityTraceAssemblerInput => ({
       originalQuery: "who is narayani and arudra?",
       semanticQuery: "who is narayani and arudra?",
       lexicalQuery: "who is narayani and arudra?",
-      constraints: [],
     },
     originalPreparedQuery: {
       originalQuery: "who is narayani and arudra?",
       semanticQuery: "who is narayani and arudra?",
       lexicalQuery: "who is narayani and arudra?",
-      constraints: [],
     },
     rewrittenQuery: {
       originalQuery: "who is narayani and arudra?",
@@ -63,7 +61,6 @@ export const activityTraceInputFixture = (): ActivityTraceAssemblerInput => ({
       originalQuery: "who is narayani and arudra?",
       semanticQuery: "who is narayani and arudra?",
       lexicalQuery: "who is narayani and arudra?",
-      constraints: [],
     },
     activeSemanticQuery: "who is narayani and arudra?",
     activeRetrievalSubqueries: [
@@ -229,7 +226,6 @@ export const activityTraceInputFixture = (): ActivityTraceAssemblerInput => ({
       originalQuery: "who is narayani and arudra?",
       semanticQuery: "who is narayani and arudra?",
       lexicalQuery: "who is narayani and arudra?",
-      constraints: [],
     },
     appliedConstraints: [
       {

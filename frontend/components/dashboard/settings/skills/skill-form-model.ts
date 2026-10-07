@@ -142,6 +142,43 @@ const createSettingDrafts = (
 ): Record<string, SkillSettingDraftValue> =>
   Object.fromEntries(settingsFields.map((field) => [field.key, readSettingDraftValue(field, existingConfig)]))
 
+const clamp = (value: number, floor: number, ceiling: number): number =>
+  Math.min(Math.max(value, floor), ceiling)
+
+// The same fallback the number-field renderer uses for an unset value: the draft's own override
+// when present, otherwise the field's inherited default.
+const effectiveNumberValue = (
+  field: SkillCapabilitySettingsField | undefined,
+  settingDrafts: Record<string, SkillSettingDraftValue>,
+): number | undefined => {
+  if (!field) return undefined
+  const draftValue = settingDrafts[field.key]
+  if (typeof draftValue === 'number') return draftValue
+  return typeof field.defaultValue === 'number' ? field.defaultValue : undefined
+}
+
+// Computes the notice a usage-capped number field shows under its help text, or null when the
+// field has no usageCap, inherits its default, or its value does not exceed the cap. The cap is the
+// sibling field named by usageCap.raisedByKey, clamped between floor and ceiling. An inherited
+// default never warns: the notice answers an operator who raised the value themselves.
+export const resolveUsageCapNotice = (
+  field: SkillCapabilitySettingsField,
+  allFields: readonly SkillCapabilitySettingsField[],
+  settingDrafts: Record<string, SkillSettingDraftValue>,
+): string | null => {
+  const usageCap = field.usageCap
+  if (!usageCap) return null
+
+  const raisedByField = allFields.find((candidate) => candidate.key === usageCap.raisedByKey)
+  const raisedByValue = effectiveNumberValue(raisedByField, settingDrafts) ?? usageCap.floor
+  const cap = clamp(raisedByValue, usageCap.floor, usageCap.ceiling)
+
+  const fieldValue = settingDrafts[field.key]
+  if (typeof fieldValue !== 'number' || fieldValue <= cap) return null
+
+  return usageCap.notice.replaceAll('{cap}', String(cap))
+}
+
 export const validateSkillName = (
   name: string,
   existingSkills: readonly AgentSkill[],

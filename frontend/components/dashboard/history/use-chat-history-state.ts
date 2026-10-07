@@ -38,6 +38,16 @@ type HistoryRouteTarget = {
 
 type PushHistoryRoute = (next: HistoryRouteTarget) => void
 
+const selectedHistoryItemFromRoute = (
+  kind: DashboardRouteState['historyItemKind'],
+  id: string | undefined,
+): SelectedHistoryItem => {
+  if (!id || (kind !== 'chat' && kind !== 'search' && kind !== 'contact')) {
+    return null
+  }
+  return { kind, id }
+}
+
 export function useHistoryListState({
   accountId,
   routeState,
@@ -46,7 +56,7 @@ export function useHistoryListState({
   accountId: string
   routeState: DashboardRouteState
   /**
-   * The All lens's toolbar search/outcome/agent/site filters (issue #1126), already
+   * The All lens's toolbar search/outcome/agent/site/caller filters (issue #1126), already
    * debounced by the caller. Only applied to the `filter === 'all'` query — the other
    * variants keep filtering client-side (see `all-conversations-list-pane.tsx`).
    */
@@ -68,9 +78,7 @@ export function useHistoryListState({
   )
   const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(
     editionController.normalizeHistorySelection(
-      routeState.historyItemKind && routeState.historyItemId
-        ? { kind: routeState.historyItemKind, id: routeState.historyItemId }
-        : null,
+      selectedHistoryItemFromRoute(routeState.historyItemKind, routeState.historyItemId),
     ),
   )
   const activePage = filter === 'all' ? allPage : filter === 'chat' ? conversationPage : filter === 'search' ? searchPage : contactPage
@@ -122,8 +130,9 @@ export function useHistoryListState({
       setContactPage(nextPage)
     }
 
-    if (routeState.historyItemKind && routeState.historyItemId) {
-      setSelectedItem(editionController.normalizeHistorySelection({ kind: routeState.historyItemKind, id: routeState.historyItemId }))
+    const nextSelection = selectedHistoryItemFromRoute(routeState.historyItemKind, routeState.historyItemId)
+    if (nextSelection) {
+      setSelectedItem(editionController.normalizeHistorySelection(nextSelection))
       return
     }
 

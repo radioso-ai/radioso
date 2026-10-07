@@ -225,6 +225,7 @@ export interface TrustedTestExecutionRunnerPort {
     executionMode: "safe_test";
     skillEffects: SkillEffectPolicy;
     accountId: string | null;
+    signal?: AbortSignal;
   }): Promise<TestExecutionRunnerResult>;
 }
 
@@ -628,7 +629,7 @@ export class TestExecutionService {
         surface: "test_execution",
         usage: "test_run",
       });
-      const result = await this.options.runner.run({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId });
+      const result = await this.options.runner.run({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, signal: identity.signal });
       const stored = await this.options.repository.complete({ workspaceId: identity.workspaceId, agentId: identity.agentId, executionId: identity.executionId, sideId: side.id, turnId: identity.turnId, attemptId: identity.attemptId, fence: claim.attempt.fence, result, now: this.now() });
       await reservation.commit();
       return stored === "stale" ? { failed: true, events: [this.failedEvent(identity, side.id, "stale_attempt", false)] } : { failed: false, events: this.completedEvents(identity, side.id, result) };
@@ -680,6 +681,6 @@ export class TestExecutionService {
   }
 }
 
-interface TestExecutionMessageInput { workspaceId: string; agentId: string; accountId: string | null; executionId: string; message: string; generation: number; turnId: string; attemptId: string; }
+interface TestExecutionMessageInput { workspaceId: string; agentId: string; accountId: string | null; executionId: string; message: string; generation: number; turnId: string; attemptId: string; signal?: AbortSignal; }
 interface TestExecutionRetryInput extends Omit<TestExecutionMessageInput, "message"> { sideId: string; }
 interface SideRunOutcome { failed: boolean; events: TestExecutionEvent[]; }

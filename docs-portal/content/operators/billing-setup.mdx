@@ -1,12 +1,14 @@
 ---
 title: "Billing setup"
 description: "Connect Stripe to Radioso Enterprise: sync the plan catalog into Stripe products, prices, customer portal, tax defaults, and webhook, then set the environment variables that turn billing on."
-last_updated: 2026-10-03
+last_updated: 2026-10-05
 ---
 
 # Billing setup
 
 Radioso Enterprise's plan card lets an account subscribe to a paid plan, buy a conversation top-up, and open the Stripe customer portal without an operator touching the console. All of it runs through Stripe Checkout and the Stripe customer portal; Radioso never stores a card number.
+
+The top-up pack is sold on Satellite and Planet, never on Comet: a free account plus a few packs would undercut Satellite. `POST /api/v1/ee/billing/checkout` checks this against the plan catalog before it creates a Stripe session, so a Comet account (or an account on a plan the catalog doesn't list) gets `409 top_up_unavailable` rather than a checkout URL.
 
 Getting there takes three steps: run `stripe:sync` so your Stripe account matches the plan catalog, give Stripe Tax a head office address, and set the environment variables below. The same steps work for a Stripe sandbox and for live mode, so both accounts end up configured identically.
 

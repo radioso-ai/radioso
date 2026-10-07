@@ -44,9 +44,30 @@ const frontendCitationClickAnalyticsSchema = z.object({
   source: z.enum(["frontend", "embed"]).default("frontend"),
 }).strict();
 
+const frontendOnboardingAnalyticsEnvelope = {
+  timestamp: z.string().datetime().optional(),
+  source: z.literal("frontend").default("frontend"),
+};
+
+const frontendOnboardingAnalyticsSchema = z.discriminatedUnion("eventName", [
+  z.object({
+    ...frontendOnboardingAnalyticsEnvelope,
+    eventName: z.enum(["onboarding.shown", "onboarding.skipped", "onboarding.sample_imported", "onboarding.chat_opened", "onboarding.first_question"]),
+    properties: z.object({}).strict(),
+  }).strict(),
+  z.object({
+    ...frontendOnboardingAnalyticsEnvelope,
+    eventName: z.literal("onboarding.step_completed"),
+    properties: z.object({
+      step: z.enum(["documents_added", "documents_processed", "first_question"]),
+    }).strict(),
+  }).strict(),
+]);
+
 const frontendProductAnalyticsSchema = z.discriminatedUnion("eventName", [
   frontendPageViewAnalyticsSchema,
   frontendCitationClickAnalyticsSchema,
+  ...frontendOnboardingAnalyticsSchema.options,
 ]);
 
 const frontendErrorSchema = z.object({
@@ -207,13 +228,21 @@ export const createObservabilityRoutes = (
           return;
         }
 
-        const event = await dependencies.productAnalyticsService.track({
-          eventName: req.body.eventName,
-          properties: {
-            path: sanitizeFrontendPageViewPath(req.body.properties.path),
-          },
-          source: req.body.source,
-        });
+        const event = await dependencies.productAnalyticsService.track(
+          req.body.eventName === "frontend.page_view"
+            ? {
+                eventName: req.body.eventName,
+                properties: {
+                  path: sanitizeFrontendPageViewPath(req.body.properties.path),
+                },
+                source: req.body.source,
+              }
+            : {
+                eventName: req.body.eventName,
+                properties: req.body.properties,
+                source: req.body.source,
+              },
+        );
         res.status(202).json({ accepted: Boolean(event) });
       } catch (error) {
         next(error);

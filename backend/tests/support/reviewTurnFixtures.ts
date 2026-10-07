@@ -297,6 +297,7 @@ export const reviewedTurnFixture = async (input: ReviewedTurnFixtureInput = {}):
   const session = lifecycleSession(input.answerCoverage);
   const completed = await lifecycle("fallback").completeAssistantTurn({
     workspaceId: REVIEW_WORKSPACE_ID,
+    requestReceivedAt: Date.now(),
     session,
     presentation: {
       answer: "Your order ships tomorrow.",

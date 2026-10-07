@@ -89,7 +89,6 @@ import { RecursiveTextChunkingStrategy } from "../../src/modules/retrieval/domai
 import { StructuredSemanticChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
 import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
 import type { LexicalSearchPort } from "../../src/modules/retrieval/infra/lexicalSearch.js";
-import { AttributeMatchScoringService } from "../../src/modules/retrieval/services/attributeMatchScoringService.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
@@ -1329,12 +1328,10 @@ export const createTestDependencies = (overrides: {
     new ConversationContextService(),
     new QueryRewriteService(queryRewriteGateway, triggerAnalysisGateway),
     new CandidatePreparationService(),
-    new AttributeMatchScoringService(),
     new RerankService(rerankGateway),
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(telemetryService),
-    undefined,
     createRetrievalSkillSettingsResolver(),
     chunkHydrator,
   );

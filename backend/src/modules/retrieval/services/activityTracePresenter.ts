@@ -5,11 +5,13 @@ import type {
   ActivitySummary,
 } from "../domain/retrievalPipelineTypes.js";
 
-export interface AnswerOutcomeInput {
+interface AnswerOutcomeInput {
   answer: string;
   stream: boolean;
   hadContexts: boolean;
   retrievalSkipped?: boolean;
+  /** Generation-only duration. When absent, the answer duration also describes generation. */
+  generationDurationMs?: number;
   durationMs: number;
   answerOutcome?: string;
   skillName?: string;
@@ -81,7 +83,7 @@ export class ActivityTracePresenter {
       kind: "generation",
       label: "Generation",
       status: "applied",
-      durationMs: input.outcome.durationMs,
+      durationMs: input.outcome.generationDurationMs ?? input.outcome.durationMs,
       outputs: {
         stream: input.outcome.stream,
         answerPreview: summarizeValue(input.outcome.answer),

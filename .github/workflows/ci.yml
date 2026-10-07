@@ -33,6 +33,7 @@ jobs:
       census: ${{ steps.filter.outputs.census }}
       ee: ${{ steps.filter.outputs.ee }}
       terraform: ${{ steps.filter.outputs.terraform }}
+      wordpress_companion: ${{ steps.filter.outputs.wordpress_companion }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -59,6 +60,7 @@ jobs:
           census=false
           ee=false
           terraform=false
+          wordpress_companion=false
 
           mark_all() {
             backend=true
@@ -70,6 +72,7 @@ jobs:
             census=true
             ee=true
             terraform=true
+            wordpress_companion=true
           }
 
           # Fail safe: if the diff cannot be computed (e.g. no merge base), run
@@ -131,6 +134,9 @@ jobs:
               packages/document-parser/*|packages/connector-api/*)
                 backend=true
                 ;;
+              packages/wordpress-companion/*)
+                wordpress_companion=true
+                ;;
               ee/*)
                 ee=true
                 ;;
@@ -152,6 +158,7 @@ jobs:
             echo "census=${census}"
             echo "ee=${ee}"
             echo "terraform=${terraform}"
+            echo "wordpress_companion=${wordpress_companion}"
           } >> "$GITHUB_OUTPUT"
 
   lint:
@@ -657,6 +664,26 @@ jobs:
         working-directory: packages/census
         run: pnpm test
 
+  wordpress-companion:
+    name: WordPress Companion Plugin
+    needs: changes
+    if: needs.changes.outputs.wordpress_companion == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: php:8.3-cli
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Run plugin test scripts
+        working-directory: packages/wordpress-companion
+        run: |
+          set -eu
+          for test_file in tests/*-test.php; do
+            echo "::group::${test_file}"
+            php "$test_file"
+            echo "::endgroup::"
+          done
+
   ee:
     name: Enterprise Edition
     needs: changes
@@ -760,6 +787,7 @@ jobs:
       - mcp-server
       - crawler
       - census
+      - wordpress-companion
       - ee
       - terraform
     if: always()
@@ -782,6 +810,8 @@ jobs:
       CRAWLER_RESULT: ${{ needs.crawler.result }}
       CENSUS_SELECTED: ${{ needs.changes.outputs.census }}
       CENSUS_RESULT: ${{ needs.census.result }}
+      WORDPRESS_COMPANION_SELECTED: ${{ needs.changes.outputs.wordpress_companion }}
+      WORDPRESS_COMPANION_RESULT: ${{ needs['wordpress-companion'].result }}
       EE_SELECTED: ${{ needs.changes.outputs.ee }}
       EE_RESULT: ${{ needs.ee.result }}
       TERRAFORM_SELECTED: ${{ needs.changes.outputs.terraform }}
@@ -826,5 +856,6 @@ jobs:
           check_selected_job "MCP Server" "$MCP_SERVER_SELECTED" "$MCP_SERVER_RESULT"
           check_selected_job "Crawler Package" "$CRAWLER_SELECTED" "$CRAWLER_RESULT"
           check_selected_job "Census Package" "$CENSUS_SELECTED" "$CENSUS_RESULT"
+          check_selected_job "WordPress Companion Plugin" "$WORDPRESS_COMPANION_SELECTED" "$WORDPRESS_COMPANION_RESULT"
           check_selected_job "Enterprise Edition" "$EE_SELECTED" "$EE_RESULT"
           check_selected_job "Terraform" "$TERRAFORM_SELECTED" "$TERRAFORM_RESULT"

@@ -26,9 +26,22 @@ export type SkillCapabilityInputSchema =
   | { source: "static"; schema: Record<string, unknown> }
   | { source: "discovered" };
 
-export interface SkillCapabilitySettingsFieldOption {
+interface SkillCapabilitySettingsFieldOption {
   value: string;
   label: string;
+}
+
+// Declares that this number field's effective ceiling is not its own static `max`, but a value
+// raised by a sibling number field (clamped between `floor` and `ceiling`). The editor renders
+// `notice` under the field's help text whenever the field's own value exceeds that computed cap,
+// with "{cap}" replaced by the cap's number. This keeps the generic settings-field renderer free
+// of any retrieval-specific knowledge: the capability descriptor owns the rule and the copy, the
+// same way it owns `help`.
+interface SkillCapabilitySettingsFieldUsageCap {
+  raisedByKey: string;
+  floor: number;
+  ceiling: number;
+  notice: string;
 }
 
 export interface SkillCapabilitySettingsField {
@@ -40,6 +53,9 @@ export interface SkillCapabilitySettingsField {
   options?: SkillCapabilitySettingsFieldOption[];
   min?: number;
   max?: number;
+  // Present only on a number field whose true effective ceiling is set by a sibling field's
+  // value rather than by `max`. See `SkillCapabilitySettingsFieldUsageCap`.
+  usageCap?: SkillCapabilitySettingsFieldUsageCap;
   group?: string;
   advanced?: boolean;
   // Effective value when the agent leaves the field unset (the system-layer
@@ -97,6 +113,27 @@ export const createSkillCapabilityDescriptor = <
   },
 });
 
+const assertUsageCapsAreWellFormed = (descriptor: SkillCapabilityDescriptor): void => {
+  const byKey = new Map(descriptor.settingsFields.map((field) => [field.key, field]));
+  for (const field of descriptor.settingsFields) {
+    if (!field.usageCap) {
+      continue;
+    }
+    if (field.type !== "number") {
+      throw new Error(`${descriptor.id}.${field.key}.usageCap is only valid on a number settings field`);
+    }
+    if (field.usageCap.floor > field.usageCap.ceiling) {
+      throw new Error(`${descriptor.id}.${field.key}.usageCap.floor must not exceed its ceiling`);
+    }
+    const raisedBy = byKey.get(field.usageCap.raisedByKey);
+    if (!raisedBy || raisedBy.type !== "number") {
+      throw new Error(
+        `${descriptor.id}.${field.key}.usageCap.raisedByKey ("${field.usageCap.raisedByKey}") must name a sibling number settings field`,
+      );
+    }
+  }
+};
+
 export class SkillCapabilityRegistry {
   private readonly byId = new Map<SkillCapabilityId, SkillCapabilityDescriptor>();
   private readonly byStoredKind = new Map<AgentSkillKind, SkillCapabilityDescriptor>();
@@ -109,6 +146,7 @@ export class SkillCapabilityRegistry {
       if (this.byStoredKind.has(descriptor.storedKind)) {
         throw new Error(`Duplicate skill capability stored kind: ${descriptor.storedKind}`);
       }
+      assertUsageCapsAreWellFormed(descriptor);
       this.byId.set(descriptor.id, descriptor);
       this.byStoredKind.set(descriptor.storedKind, descriptor);
     }

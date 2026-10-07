@@ -8,6 +8,7 @@ import type {
 import { createConversationEngine } from "@radioso/conversation-engine";
 import {
   BlankChatAnswerError,
+  ChatTurnDisconnectAbortError,
   ChatTurnSupersededError,
   ChatService,
   ModelChatGateway,
@@ -49,6 +50,7 @@ import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelI
 import { LlmResponseLanguageDetector } from "../../src/shared/services/responseLanguageDetector.js";
 import { ChatActionSuggestionRegistry } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionRegistry.js";
 import { ChatActionSuggestionService } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionService.js";
+import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { sendChatSse } from "../../src/app/http/presenters/chatPresenter.js";
 import { streamWithUsage } from "../../src/shared/infra/llm/providerStreaming.js";
 import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
@@ -561,7 +563,6 @@ describe("chat service streaming", () => {
             originalQuery: input.query,
             semanticQuery: input.query,
             lexicalQuery: input.query,
-            constraints: [],
           },
           triggerAnalysis: {
             status: "skipped_non_retrieval",
@@ -614,7 +615,7 @@ describe("chat service streaming", () => {
           finalContextCount: 0,
           candidateFallbackApplied: false,
           fallbackApplied: false,
-          parsedQuery: { semanticQuery: "missing topic", lexicalQuery: "missing topic", constraints: [] },
+          parsedQuery: { semanticQuery: "missing topic", lexicalQuery: "missing topic" },
         },
         responseSettings: { citationDisplayEnabled: true },
       };
@@ -645,7 +646,7 @@ describe("chat service streaming", () => {
           finalContextCount: 1,
           candidateFallbackApplied: false,
           fallbackApplied: false,
-          parsedQuery: { semanticQuery: "known topic", lexicalQuery: "known topic", constraints: [] },
+          parsedQuery: { semanticQuery: "known topic", lexicalQuery: "known topic" },
         },
         responseSettings: { citationDisplayEnabled: true },
       };
@@ -904,6 +905,132 @@ describe("chat service streaming", () => {
     expect(response.setHeader).not.toHaveBeenCalled();
     expect(response.flushHeaders).not.toHaveBeenCalled();
     expect(writes).toEqual([]);
+  });
+
+  it("aborts a streaming turn stuck in the gateway call when the caller's external signal fires (#885), releasing but not committing usage", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const conversation = await conversationRepository.create({
+      workspaceId: "workspace-1",
+      sourceChannel: "authenticated_chat",
+    });
+    const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
+
+    let resolveGatewayEntered!: () => void;
+    const gatewayEntered = new Promise<void>((resolve) => {
+      resolveGatewayEntered = resolve;
+    });
+    const chatGateway: ChatGateway = {
+      async answer() { return "unused"; },
+      async *streamAnswer(gatewayInput) {
+        resolveGatewayEntered();
+        // Simulates a stage that never settles on its own: the only way out is
+        // the caller's AbortSignal, mirroring a real provider adapter's fetch
+        // rejecting once its signal aborts (#859).
+        await new Promise((_resolve, reject) => {
+          gatewayInput.signal?.addEventListener(
+            "abort",
+            () => reject(gatewayInput.signal!.reason as Error),
+            { once: true },
+          );
+        });
+        yield "unreached";
+      },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(
+        createIntentRoutedNoContextPipeline({ query: "What changed?" }),
+      ) as never),
+      chatGateway,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+      undefined, // agentService
+      undefined, // _retiredPublicChatActionAdvertiser
+      undefined, // chatActionSuggestionService
+      undefined, // skillOutcomeCapabilities
+      undefined, // directiveSteering
+      undefined, // selectionStrategy
+      undefined, // conversationEngine
+      undefined, // routine
+      {
+        async classify() {
+          return { route: "direct" as const, framing: { isIdentityQuestion: false } };
+        },
+      },
+    );
+
+    const externalAbort = new AbortController();
+    const collected: ChatStreamEvent[] = [];
+    const consumed = (async () => {
+      for await (const event of service.streamAnswer({
+        workspaceId: "workspace-1",
+        conversationId: conversation.id,
+        sourceChannel: "authenticated_chat",
+        query: "What changed?",
+        stream: true,
+        signal: externalAbort.signal,
+      })) {
+        collected.push(event);
+      }
+    })();
+
+    await gatewayEntered;
+    externalAbort.abort();
+
+    await expect(consumed).rejects.toBeInstanceOf(ChatTurnDisconnectAbortError);
+    expect(reservation.commit).not.toHaveBeenCalled();
+    expect(reservation.release).toHaveBeenCalled();
+    expect(collected.some((event) => event.type === "done")).toBe(false);
+  });
+
+  it("honours a disconnect signal that aborted before a new conversation registered its lease", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
+    const chatGateway: ChatGateway = {
+      async answer() { return "unreached"; },
+      async *streamAnswer() { yield "unreached"; },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(
+        createIntentRoutedNoContextPipeline({ query: "What changed?" }),
+      ) as never),
+      chatGateway,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+    );
+    const externalAbort = new AbortController();
+    externalAbort.abort();
+
+    const consume = async () => {
+      for await (const _event of service.streamAnswer({
+        workspaceId: "workspace-1",
+        query: "What changed?",
+        stream: true,
+        signal: externalAbort.signal,
+      })) {
+        // drain
+      }
+    };
+
+    await expect(consume()).rejects.toBeInstanceOf(ChatTurnDisconnectAbortError);
+    expect(reservation.commit).not.toHaveBeenCalled();
+    expect(reservation.release).toHaveBeenCalledOnce();
+    const conversations = await conversationRepository.listByWorkspaceId("workspace-1");
+    const createdConversation = conversations[0];
+    if (!createdConversation) throw new Error("Expected the aborted turn to create its conversation.");
+    const messages = await messageRepository.listByConversationId("workspace-1", createdConversation.id);
+    expect(messages.some((message) => message.role === "assistant")).toBe(false);
   });
 
   it("records both the aborted gate-bound candidate and focused decline in usage and the turn rollup", async () => {
@@ -3933,8 +4060,11 @@ describe("chat service streaming", () => {
   });
 
   it("can render a non-streaming answer through an injected conversation engine", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
+    const createMessage = vi.spyOn(messageRepository, "create");
     const auditService = createAuditService();
     const chatGateway: ChatGateway = {
       async answer() {
@@ -4013,16 +4143,31 @@ describe("chat service streaming", () => {
       conversationEngine,
     );
 
-    const response = await service.answer({
-      workspaceId: "workspace-1",
-      query: "I need help",
-      stream: false,
+    const originalPrepare = ChatSessionPreparer.prototype.prepare;
+    const prepare = vi.spyOn(ChatSessionPreparer.prototype, "prepare");
+    prepare.mockImplementation(async function (this: ChatSessionPreparer, ...args) {
+      vi.advanceTimersByTime(8000);
+      return originalPrepare.apply(this, args);
     });
+    try {
+      const response = await service.answer({
+        workspaceId: "workspace-1",
+        query: "I need help",
+        stream: false,
+      });
 
-    expect(processedSessionId).toBe(response.conversationId);
-    expect(response.answer).toBe("Normal answer.");
-    const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
-    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+      expect(processedSessionId).toBe(response.conversationId);
+      expect(response.answer).toBe("Normal answer.");
+      const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+      expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+      const persistedAssistant = createMessage.mock.calls
+        .map(([input]) => input)
+        .find((input) => input.role === "assistant") as { totalLatencyMs?: number } | undefined;
+      expect(persistedAssistant?.totalLatencyMs).toBe(8000);
+    } finally {
+      prepare.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it("records the conversation engine trace in chat.answer audit metadata when the engine selects and dispatches", async () => {
@@ -4299,7 +4444,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -4386,7 +4530,6 @@ describe("chat service streaming", () => {
           originalQuery: "page do",
           semanticQuery: "page do",
           lexicalQuery: "page do",
-          constraintSummary: [],
         }),
         candidateCounts: {
           semantic: 1,
@@ -4471,7 +4614,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "start meditating",
               lexicalQuery: "start meditating",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -4569,7 +4711,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "grounded topic",
               lexicalQuery: "grounded topic",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -4664,7 +4805,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "start meditating",
               lexicalQuery: "start meditating",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -4768,7 +4908,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "start meditating",
               lexicalQuery: "start meditating",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -4907,7 +5046,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -4987,7 +5125,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -5099,7 +5236,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -5421,7 +5557,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "what can you do with these documents",
               lexicalQuery: "what can you do with these documents",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -5487,7 +5622,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "I like potato chips",
               lexicalQuery: "I like potato chips",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -5582,7 +5716,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "kaibemaks",
               lexicalQuery: "kaibemaks",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -5670,7 +5803,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "does narayani work with arudra",
               lexicalQuery: "does narayani work with arudra",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -5742,7 +5874,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
         };
@@ -5850,7 +5981,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
         };
@@ -5974,7 +6104,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "",
               lexicalQuery: "",
-              constraints: [],
             },
           },
         };
@@ -6084,7 +6213,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6165,7 +6293,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6242,7 +6369,7 @@ describe("chat service streaming", () => {
             finalContextCount: 1,
             candidateFallbackApplied: false,
             fallbackApplied: false,
-            parsedQuery: { semanticQuery: "page do", lexicalQuery: "page do", constraints: [] },
+            parsedQuery: { semanticQuery: "page do", lexicalQuery: "page do" },
           },
           responseSettings: { citationDisplayEnabled: true },
         };
@@ -6312,7 +6439,7 @@ describe("chat service streaming", () => {
             finalContextCount: 1,
             candidateFallbackApplied: false,
             fallbackApplied: false,
-            parsedQuery: { semanticQuery: "page do", lexicalQuery: "page do", constraints: [] },
+            parsedQuery: { semanticQuery: "page do", lexicalQuery: "page do" },
           },
           responseSettings: { citationDisplayEnabled: true },
         };
@@ -6392,7 +6519,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "guide cover",
               lexicalQuery: "guide cover",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6487,7 +6613,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "guide cover",
               lexicalQuery: "guide cover",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6567,7 +6692,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6647,7 +6771,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6765,7 +6888,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "who is narayani",
               lexicalQuery: "who is narayani",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6859,7 +6981,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "page do",
               lexicalQuery: "page do",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -6953,7 +7074,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "who is mahiya",
               lexicalQuery: "mahiya",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7063,7 +7183,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "who is mahiya",
               lexicalQuery: "mahiya",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7262,7 +7381,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "who is mahiya",
               lexicalQuery: "mahiya",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7358,7 +7476,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "quali libri ha scritto narayani",
               lexicalQuery: "narayani libri",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7454,7 +7571,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "assisi videos next page",
               lexicalQuery: "assisi videos page 3",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7552,7 +7668,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: query.toLowerCase(),
               lexicalQuery: query.toLowerCase(),
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7684,7 +7799,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: query.toLowerCase(),
               lexicalQuery: query.toLowerCase(),
-              constraints: [],
             },
             rewriteProposal: pivotTurn
               ? {
@@ -7817,7 +7931,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "guide cover",
               lexicalQuery: "guide cover",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -7921,7 +8034,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "archive cover",
               lexicalQuery: "archive cover",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -8030,7 +8142,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "retreat planning",
               lexicalQuery: "retreat planning",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -8139,7 +8250,6 @@ describe("chat service streaming", () => {
             parsedQuery: {
               semanticQuery: "read more",
               lexicalQuery: "read more",
-              constraints: [],
             },
           },
           responseSettings: {
@@ -8294,7 +8404,6 @@ describe("chat service streaming", () => {
               originalQuery: "Thanks for the help",
               semanticQuery: "Thanks for the help",
               lexicalQuery: "Thanks for the help",
-              constraints: [],
             },
             triggerAnalysis: {
               status: "skipped_non_retrieval",
@@ -8490,7 +8599,6 @@ describe("chat service streaming", () => {
               originalQuery: "Remind me what you do around here",
               semanticQuery: "Remind me what you do around here",
               lexicalQuery: "Remind me what you do around here",
-              constraints: [],
             },
             triggerAnalysis: {
               status: "skipped_non_retrieval",

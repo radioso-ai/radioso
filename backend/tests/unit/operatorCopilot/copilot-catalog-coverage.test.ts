@@ -77,6 +77,12 @@ describe("operator copilot catalog coverage", () => {
       reason: expect.stringContaining("internal request rendering"),
     });
   });
+  it("keeps the Activity caller filter outside Ray's operation catalog", () => {
+    expect(internalRuntimeCoverageExclusions.activityCallerKindFilter).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("read-only Activity view control"),
+    });
+  });
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
     // legitimate work or forces a permanent -> covered flip. Both have happened. Pin the grounds

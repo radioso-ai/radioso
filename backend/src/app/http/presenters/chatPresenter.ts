@@ -16,6 +16,7 @@ import {
 import type { ActivitySummary, ActivityTrace } from "../../../modules/retrieval/public.js";
 import type { TurnTraceEnvelope } from "../../../modules/chat/contracts/index.js";
 import { markHttpResponseFailed } from "../middleware/httpResponseCompletion.js";
+import { consumeSseWithDisconnectCeiling } from "../shared/sseDisconnectCeiling.js";
 
 interface ChatDiagnosticPayload {
   route: ChatRoute;
@@ -63,6 +64,16 @@ interface ChatPresentationOptions {
    * human-facing routes never set it.
    */
   agentEnvelope?: boolean;
+  /**
+   * Called once, after the client has disconnected, if the turn has not
+   * settled within the disconnect ceiling (#885). The caller should abort
+   * whatever `AbortSignal` it threaded into the service call that produced
+   * `events`, so provider generation stops; the presenter itself stops
+   * waiting on the iterator either way; and releases the request.
+   */
+  onDisconnectCeilingExceeded?: () => void | Promise<void>;
+  /** Overrides `CHAT_BEHAVIOR.streaming.disconnectAbortCeilingMs`; tests only. */
+  disconnectAbortCeilingMs?: number;
 }
 
 export const presentChatPayload = (payload: ChatPayload, options: { includeDebug?: boolean } = {}): PresentedChatPayload => {
@@ -100,13 +111,8 @@ export const sendChatSse = (
   events: AsyncIterable<ChatStreamEvent>,
   options: ChatPresentationOptions = {},
 ): Promise<void> => {
-  let closed = false;
-  res.on("close", () => {
-    closed = true;
-  });
-
   const writeEvent = (event: ChatStreamEvent) => {
-    if (closed || res.writableEnded) {
+    if (res.destroyed || res.writableEnded) {
       return;
     }
 
@@ -199,24 +205,22 @@ export const sendChatSse = (
   };
 
   return (async () => {
-    const iterator = events[Symbol.asyncIterator]();
-
     try {
-      let next = await iterator.next();
-
-      while (!next.done) {
-        writeEvent(next.value);
-        next = await iterator.next();
+      const result = await consumeSseWithDisconnectCeiling({
+        response: res,
+        events,
+        onEvent: writeEvent,
+        onDisconnectCeilingExceeded: options.onDisconnectCeilingExceeded,
+        disconnectAbortCeilingMs: options.disconnectAbortCeilingMs,
+      });
+      if (result.ceilingExceeded) {
+        markHttpResponseFailed(res);
       }
     } catch (error) {
       markHttpResponseFailed(res);
       throw error;
     } finally {
-      if (closed && typeof iterator.return === "function") {
-        await iterator.return();
-      }
-
-      if (res.headersSent && !res.writableEnded) {
+      if (res.headersSent && !res.destroyed && !res.writableEnded) {
         res.end();
       }
     }

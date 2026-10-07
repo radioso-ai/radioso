@@ -172,7 +172,7 @@ export { buildRoutinePendingDecisionTransition } from "./chatTurnAssembly.js";
 export { BlankChatAnswerError } from "./chatAnswerErrors.js";
 export { ModelChatGateway } from "./chatGateways.js";
 export type { SuspendedRoutineReader } from "./approvalResumeTurn.js";
-export { ChatTurnSupersededError } from "./conversationTurnRegistry.js";
+export { ChatTurnSupersededError, ChatTurnDisconnectAbortError } from "./conversationTurnRegistry.js";
 
 /** Operator-driven workbench/test-chat traffic metering as a cheaper `test_run`; every
  *  other channel is a real customer conversation reply. */
@@ -277,6 +277,7 @@ export interface ChatServiceOptions {
 
 interface TurnCoordinationState {
   lease?: ConversationTurnLease;
+  disconnectSignal?: AbortSignal;
 }
 
 interface ChatAnswerInput {
@@ -645,6 +646,9 @@ export class ChatService {
   ): Promise<void> {
     if (!coordination.lease) {
       coordination.lease = this.conversationTurnRegistry.start(conversationId);
+      if (coordination.disconnectSignal?.aborted) {
+        coordination.lease.cancelAfterDisconnect();
+      }
       await coordination.lease.waitForPredecessor();
     }
     this.checkTurnCancellation(coordination, "preparing");
@@ -956,6 +960,7 @@ export class ChatService {
   }
 
   private async runTurn(input: ChatTurnInput, entry: ChatTurnEntry): Promise<ChatTurnOutcome> {
+    const requestReceivedAt = Date.now();
     const coordination: TurnCoordinationState = {
       lease: input.conversationId
         ? this.conversationTurnRegistry.start(input.conversationId)
@@ -969,7 +974,7 @@ export class ChatService {
         attributes: chatTurnTraceAttributes(input),
         run: () => runWithModelCallTrace(
           modelCallTrace,
-          () => this.runTurnWithinTrace(input, entry, coordination, modelCallTrace),
+          () => this.runTurnWithinTrace(input, entry, coordination, modelCallTrace, requestReceivedAt),
         ),
       });
     } finally {
@@ -982,6 +987,7 @@ export class ChatService {
     entry: ChatTurnEntry,
     coordination: TurnCoordinationState,
     modelCallTrace: ModelCallTraceCollector,
+    requestReceivedAt: number,
   ): Promise<ChatTurnOutcome> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
@@ -1065,6 +1071,7 @@ export class ChatService {
           accountId: input.accountId,
           session,
           presentation: routineTurn.presentation,
+          requestReceivedAt,
           answerStartedAt: routineStartedAt,
           stream: input.stream,
           executionMode: input.executionMode,
@@ -1178,6 +1185,7 @@ export class ChatService {
           accountId: input.accountId,
           session,
           presentation,
+          requestReceivedAt,
           answerStartedAt,
           stream: input.stream,
           executionMode: input.executionMode,
@@ -1248,6 +1256,7 @@ export class ChatService {
         accountId: input.accountId,
         session,
         presentation,
+        requestReceivedAt,
         answerStartedAt,
         stream: input.stream,
         executionMode: input.executionMode,
@@ -1343,13 +1352,29 @@ export class ChatService {
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
     routineInvocation?: RoutineInvocation;
+    /**
+     * Caller-owned abort signal (#885), independent of the registry's own
+     * supersession signal. The HTTP presenter fires this once the client has
+     * disconnected and the turn has not settled within its post-disconnect
+     * ceiling, so provider generation stops instead of running to natural
+     * completion against a gone client. A new conversation rechecks an
+     * already-aborted signal as soon as its lease is registered.
+     */
+    signal?: AbortSignal;
   }): AsyncIterable<ChatStreamEvent> {
-    const streamStartedAt = Date.now();
+    const requestReceivedAt = Date.now();
     const coordination: TurnCoordinationState = {
       lease: input.conversationId
         ? this.conversationTurnRegistry.start(input.conversationId)
         : undefined,
+      disconnectSignal: input.signal,
     };
+    const abortLeaseForDisconnect = () => coordination.lease?.cancelAfterDisconnect();
+    if (input.signal?.aborted) {
+      abortLeaseForDisconnect();
+    } else {
+      input.signal?.addEventListener("abort", abortLeaseForDisconnect, { once: true });
+    }
     try {
       await coordination.lease?.waitForPredecessor();
       const modelCallTrace = createModelCallTraceCollector();
@@ -1361,10 +1386,11 @@ export class ChatService {
             input,
             coordination,
             modelCallTrace,
-            streamStartedAt,
+            requestReceivedAt,
           ),
         }));
     } finally {
+      input.signal?.removeEventListener("abort", abortLeaseForDisconnect);
       coordination.lease?.complete();
     }
   }
@@ -1398,7 +1424,8 @@ export class ChatService {
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
     routineInvocation?: RoutineInvocation;
-  }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, streamStartedAt: number): AsyncIterable<ChatStreamEvent> {
+    signal?: AbortSignal;
+  }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, requestReceivedAt: number): AsyncIterable<ChatStreamEvent> {
     let firstAnswerChunkObserved = false;
     const observeFirstAnswerChunk = (
       route: "direct" | "retrieval" | "routine" | "other",
@@ -1408,7 +1435,7 @@ export class ChatService {
         return;
       }
       firstAnswerChunkObserved = true;
-      observeFirstAnswerChunkLatency(this.streamMetrics, Date.now() - streamStartedAt, {
+      observeFirstAnswerChunkLatency(this.streamMetrics, Date.now() - requestReceivedAt, {
         route,
         delivery_mode: deliveryMode,
       });
@@ -1442,7 +1469,6 @@ export class ChatService {
         conversationId: session?.conversation.id ?? input.conversationId,
       });
     };
-
     try {
       this.setTurnStage(coordination, "preparing");
       session = await this.chatSessionPreparer.prepare({
@@ -1553,6 +1579,7 @@ export class ChatService {
           accountId: input.accountId,
           session,
           presentation: routineTurn.presentation,
+          requestReceivedAt,
           answerStartedAt: routineStartedAt,
           stream: input.stream,
           engineTrace: routineTurn.engineTrace,
@@ -1666,6 +1693,7 @@ export class ChatService {
             accountId: input.accountId,
             session,
             presentation: clarificationTurn.presentation,
+            requestReceivedAt,
             answerStartedAt,
             stream: input.stream,
             engineTrace: clarificationTurn.engineTrace,
@@ -1805,6 +1833,7 @@ export class ChatService {
         accountId: input.accountId,
         session: preparedSession,
         presentation,
+        requestReceivedAt,
         answerStartedAt,
         stream: input.stream,
         engineTrace,

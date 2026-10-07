@@ -313,6 +313,7 @@ interface BuildTurnTraceForPresentationInput {
   accountId?: string;
   session: PreparedSession;
   presentation: ChatPresentedAnswer;
+  requestReceivedAt: number;
   answerStartedAt: number;
   stream: boolean;
   engineTrace?: ConversationTrace;
@@ -369,10 +370,11 @@ export const buildTurnTraceForPresentation = (
     path: route.type === "direct" ? "assistant_direct" as const : "assistant_retrieval" as const,
     retrievalInvoked: route.type === "retrieval",
   };
-  // One measurement of turn wall time, used for both the persisted
-  // `messages.total_latency_ms` column and the trace's answer/generation stages, so the
-  // quality dashboard and the debug trace can never report different numbers for a turn.
-  const totalLatencyMs = Date.now() - input.answerStartedAt;
+  // One visitor-perceived duration, used for both the persisted
+  // `messages.total_latency_ms` column and the trace's answer stage, so the quality
+  // dashboard and debug trace cannot report different durations for a turn.
+  const totalLatencyMs = Date.now() - input.requestReceivedAt;
+  const generationLatencyMs = Date.now() - input.answerStartedAt;
   const activitySummary = {
     ...activitySummaryPresenter.present(retrieval.diagnostics, {
       execution,
@@ -394,6 +396,7 @@ export const buildTurnTraceForPresentation = (
           hadContexts: retrieval.contexts.length > 0,
           retrievalSkipped: retrieval.diagnostics.retrievalSkipped,
           durationMs: totalLatencyMs,
+          generationDurationMs: generationLatencyMs,
           answerOutcome: input.presentation.answerOutcome,
           skillName: skillTurnOutcome.skillName,
           skillOutcome: skillTurnOutcome.outcome,
@@ -559,6 +562,9 @@ interface CompleteAssistantTurnInput {
   accountId?: string;
   session: PreparedSession;
   presentation: ChatPresentedAnswer;
+  /** Time the turn entered ChatService, before any queueing or preparation work. */
+  requestReceivedAt: number;
+  /** Time answer generation began, after session preparation. */
   answerStartedAt: number;
   stream: boolean;
   /** Suppresses customer-facing effects while retaining the synthetic messages and trace. */
@@ -744,6 +750,7 @@ export class ChatTurnLifecycle {
       accountId: input.accountId,
       session: input.session,
       presentation: input.presentation,
+      requestReceivedAt: input.requestReceivedAt,
       answerStartedAt: input.answerStartedAt,
       stream: input.stream,
       engineTrace: input.engineTrace,

@@ -98,8 +98,9 @@ import type { AnswerCoverageRecord } from "../../answerCoverage/public.js";
 import type { RetrievalCoverageVerdictSink } from "../contracts/answerCoverage.js";
 import { pageReadRoutineCandidates } from "./pageRead/pageReadRoutineCandidates.js";
 import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
+import { builtInAnswerSkills } from "./builtInAnswerSkills.js";
 
-const CLARIFICATION_TURN_SKILL = "clarification.answer";
+const CLARIFICATION_TURN_SKILL = builtInAnswerSkills.clarification;
 
 /**
  * An admitted current-page excerpt makes a retrieval-sense question unnecessary.

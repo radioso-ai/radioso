@@ -1,0 +1,26 @@
+{
+  "name": "clarification.answer",
+  "displayName": "Clarification answer",
+  "description": "Ask for the detail needed to answer the visitor's request.",
+  "owner": "assistant",
+  "executionClass": "interactive",
+  "supportedCallers": ["assistant"],
+  "requiredCapabilities": [],
+  "contractReferences": [],
+  "diagnostics": {
+    "defined": true,
+    "shapeAware": false,
+    "strategyAware": false,
+    "supportedFields": ["skillName", "outcome"]
+  },
+  "steps": [],
+  "outcomes": [
+    {
+      "name": "clarification",
+      "displayName": "Clarification requested",
+      "description": "The agent asked the visitor for the detail needed to continue.",
+      "status": "completed",
+      "tone": "info"
+    }
+  ]
+}

@@ -261,3 +261,15 @@ id resolving, so paste the new one here after a rotation.
   with a missing or mismatched signature.
 - Requests are sent non-blocking and time out after 5 seconds so a slow
   Radioso instance never blocks a WordPress save.
+
+## Tests
+
+The plugin includes standalone PHP scripts that exercise its sync status and
+agent-card behavior without a WordPress installation. Run every script with
+the PHP 8.3 CLI container:
+
+```bash
+for test_file in tests/*-test.php; do
+  docker run --rm -v "$PWD:/app" -w /app php:8.3-cli php "$test_file"
+done
+```

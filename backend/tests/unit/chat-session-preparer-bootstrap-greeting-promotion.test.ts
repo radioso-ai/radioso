@@ -42,7 +42,6 @@ const fixedRetrievalResult = (request: RetrievalPipelineRequest): RetrievalPipel
       parsedQuery: {
         semanticQuery: request.query,
         lexicalQuery: request.query,
-        constraints: [],
       },
     },
     trace: {

@@ -536,6 +536,99 @@ test("conversations toolbar search narrows the visible rows", async ({ page }) =
   await expect(list.getByRole("button").filter({ hasText: "Disponibilità" })).toHaveCount(0);
 });
 
+test("Activity filters to conversations started by AI agents and marks the selected conversation", async ({ page }) => {
+  const humanConversation = {
+    id: "conversation-human-caller",
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    agentInternalName: null,
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    entryPageUrl: null,
+    channelContext: null,
+    anonymousSessionId: "visitor-human",
+    callerKind: "human",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    preview: "Question from a person",
+  };
+  const agentConversation = {
+    id: "conversation-agent-caller",
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    agentInternalName: null,
+    sourceChannel: "mcp",
+    sourceOrigin: null,
+    entryPageUrl: null,
+    channelContext: null,
+    anonymousSessionId: null,
+    callerKind: "agent",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    preview: "Question from another AI agent",
+  };
+  const agentConversationDetail = {
+    conversationId: agentConversation.id,
+    workspaceId,
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    sourceChannel: "mcp",
+    sourceOrigin: null,
+    callerKind: "agent",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    messagesTotal: 2,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      { id: "agent-caller-user", role: "user" as const, source: "customer" as const, content: agentConversation.preview, createdAt: nowIso },
+      { id: "agent-caller-assistant", role: "assistant" as const, source: "ai_agent" as const, content: "I can help.", createdAt: nowIso },
+    ],
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: {
+      conversations: [humanConversation, agentConversation],
+      total: 2,
+      nextCursor: null,
+      hasMore: false,
+    },
+    conversationDetail: agentConversationDetail,
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+  const list = page.getByRole("complementary", { name: "Conversations" });
+  await expect(list.getByRole("button", { name: /Question from a person/ })).toBeVisible();
+  await expect(list.getByRole("button", { name: /Question from another AI agent/ })).toBeVisible();
+
+  const filteredRequest = page.waitForRequest((request) =>
+    request.url().includes("/history?") && new URL(request.url()).searchParams.get("callerKind") === "agent",
+  );
+  await list.getByLabel("Filter by caller").click();
+  await page.getByRole("option", { name: "AI agent", exact: true }).click();
+  await filteredRequest;
+
+  const agentRow = list.getByRole("button", { name: /Question from another AI agent/ });
+  await expect(agentRow).toBeVisible();
+  await expect(agentRow).toContainText("AI agent");
+  await expect(list.getByRole("button", { name: /Question from a person/ })).toHaveCount(0);
+
+  await agentRow.click();
+  await expect(page.getByText("AI agent", { exact: true })).toHaveCount(2);
+});
+
 test("an All-lens row shows the generated topic title over the raw preview, and search matches it", async ({ page }) => {
   const titledConversation = {
     id: "conversation-titled",

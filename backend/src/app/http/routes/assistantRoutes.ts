@@ -32,6 +32,7 @@ export const createAssistantRoutes = (dependencies: AssistantRouteDependencies):
           throw badRequest("startConversation does not support streaming");
         }
         if (req.body.stream) {
+          const disconnectAbort = new AbortController();
           await sendChatSse(
             res,
             dependencies.assistantChatService.streamAnswer({
@@ -50,8 +51,12 @@ export const createAssistantRoutes = (dependencies: AssistantRouteDependencies):
               previewRoutineIds: req.body.previewRoutineIds,
               sourceChannel: req.body.sourceContext?.surface ?? null,
               sourceOrigin: req.body.sourceContext?.sourceOrigin ?? null,
+              signal: disconnectAbort.signal,
             }),
-            { includeDebug: req.body.includeDebug },
+            {
+              includeDebug: req.body.includeDebug,
+              onDisconnectCeilingExceeded: () => disconnectAbort.abort(),
+            },
           );
           return;
         }

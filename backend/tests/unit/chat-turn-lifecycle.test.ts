@@ -313,6 +313,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
           explicitlyAssertedCount: 1,
         },
       },
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -395,6 +396,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         workspaceId: "workspace_1",
         session: pageReadSession({ decision, gate, source }),
         presentation: presentation(),
+        requestReceivedAt: Date.now(),
         answerStartedAt: Date.now(),
         stream: false,
         engineTrace: engineTrace(),
@@ -420,6 +422,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: session(),
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -465,6 +468,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         workspaceId: "workspace_1",
         session: pageReadSession({ decision, gate }),
         presentation: presentation(),
+        requestReceivedAt: Date.now(),
         answerStartedAt: Date.now(),
         stream: false,
         engineTrace: engineTrace(),
@@ -487,13 +491,14 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     const { lifecycle, records } = harness();
     const prepared = session();
     const presented = presentation();
-    const answerStartedAt = Date.now() - 1000;
+    const requestReceivedAt = Date.now() - 1000;
 
     await lifecycle.completeAssistantTurn({
       workspaceId: "workspace_1",
       session: prepared,
       presentation: presented,
-      answerStartedAt,
+      requestReceivedAt,
+      answerStartedAt: requestReceivedAt,
       stream: false,
       engineTrace: engineTrace(),
     });
@@ -501,7 +506,8 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: prepared,
       presentation: presented,
-      answerStartedAt,
+      requestReceivedAt,
+      answerStartedAt: requestReceivedAt,
       stream: false,
       engineTrace: engineTrace(),
     });
@@ -521,6 +527,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: prepared,
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -541,6 +548,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: session(),
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -561,6 +569,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: prepared,
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -576,6 +585,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: session(),
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -584,16 +594,17 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(assistantMessage.metadata).toHaveProperty("conversationSummary", null);
   });
 
-  it("persists turn wall time on the assistant message and the answer stage from one measurement", () => {
+  it("persists visitor-perceived latency on the assistant message and answer stage from one measurement", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:02.500Z"));
-    const answerStartedAt = Date.now() - 1500;
+    const requestReceivedAt = Date.now() - 1500;
 
     const { assistantMessage, activityTrace } = buildTurnTraceForPresentation({
       workspaceId: "workspace_1",
       session: session(),
       presentation: presentation(),
-      answerStartedAt,
+      requestReceivedAt,
+      answerStartedAt: requestReceivedAt,
       stream: false,
       engineTrace: engineTrace(),
     });
@@ -602,6 +613,26 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     // Same measurement, so the persisted column and the trace can never disagree.
     const answerStage = activityTrace.stages.find((stage) => stage.stageId === "answer");
     expect(answerStage?.durationMs).toBe(assistantMessage.totalLatencyMs);
+    vi.useRealTimers();
+  });
+
+  it("persists visitor-perceived latency from request receipt through the final answer", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:08.500Z"));
+
+    const { assistantMessage, activityTrace } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: presentation(),
+      requestReceivedAt: Date.now() - 8500,
+      answerStartedAt: Date.now() - 500,
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    expect(assistantMessage.totalLatencyMs).toBe(8500);
+    expect(activityTrace.stages.find((stage) => stage.stageId === "answer")?.durationMs).toBe(8500);
+    expect(activityTrace.stages.find((stage) => stage.stageId === "generation")?.durationMs).toBe(500);
     vi.useRealTimers();
   });
 
@@ -622,6 +653,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: prepared,
       presentation: presented,
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: routineRetrievalTrace(),
@@ -665,6 +697,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: prepared,
       presentation: presented,
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: routineRetrievalTrace(),
@@ -769,6 +802,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: prepared,
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: routineStageWithoutSlotValues(),
@@ -786,6 +820,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: prepared,
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       executionMode: "safe_test",
@@ -868,6 +903,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
           explicitlyAssertedCount: 1,
         },
       },
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -964,6 +1000,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       accountId: "account_1",
       session: session(),
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
     };
@@ -1042,6 +1079,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       accountId: "account_1",
       session: prepared,
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       executionMode: "safe_test",
@@ -1189,6 +1227,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
           explicitlyAssertedCount: 1,
         },
       },
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -1262,6 +1301,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       accountId: "account_1",
       session: session(),
       presentation: { ...presentation(), answer: "A person will help you from here." },
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -1377,6 +1417,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
           explicitlyAssertedCount: 1,
         },
       },
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -1420,6 +1461,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: session(),
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -1493,6 +1535,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       accountId: "account_1",
       session: session(),
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       actions: [
@@ -1568,6 +1611,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       accountId: "account_1",
       session: session(),
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       actions: [{ type: "contact.send", payload: { email: "alex@example.com" } }],
@@ -1645,6 +1689,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       accountId: "account_1",
       session: session(),
       presentation: { ...presentation(), answer: "A person will help you from here." },
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -1723,6 +1768,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       accountId: "account_1",
       session: session(),
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       actions: [{ type: "contact.send", payload: { email: "alex@example.com" } }],
@@ -1750,6 +1796,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: session(),
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),
@@ -1786,6 +1833,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       workspaceId: "workspace_1",
       session: session(),
       presentation: presentation(),
+      requestReceivedAt: Date.now(),
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: engineTrace(),

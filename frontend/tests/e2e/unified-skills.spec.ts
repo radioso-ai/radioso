@@ -13,6 +13,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   test.setTimeout(60_000);
 
   const agentSkillRequests: Array<{ method: string; path: string; body?: unknown }> = [];
+  const agentUpdates: unknown[] = [];
   const agentSkills: AgentSkillFixture[] = [];
   const mcpConnectionRequests: string[] = [];
   const mcpConnectionId = "77777777-7777-4777-8777-777777777777";
@@ -31,6 +32,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await installDashboardApiMocks(page, {
     agentSkills,
     agentSkillRequests,
+    agentUpdates,
     skillCapabilities,
     mcpConnections: [{
       id: mcpConnectionId,
@@ -83,6 +85,12 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByRole("heading", { name: "Contact requests" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Webhook exports" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Retrieval answers" })).toHaveCount(0);
+  await expect(page.getByText("Clarification answer", { exact: true })).toBeVisible();
+  await expect(page.getByText("Retrieval answer", { exact: true })).toBeVisible();
+  await expect(page.getByText("Direct answer", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit retrieval.answer" })).toHaveCount(0);
+  await page.getByRole("switch", { name: "Enable retrieval answers" }).click();
+  await expect.poll(() => agentUpdates).toContainEqual(expect.objectContaining({ retrievalEnabled: false }));
 
   await page.getByRole("button", { name: "Add new skill" }).click();
   await expect(page.getByRole("dialog", { name: "Add new skill" })).toBeVisible();
@@ -245,4 +253,27 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
     `POST /agents/${defaultAgentId}/mcp-connections/${alternateMcpConnectionId}/discover`,
   );
 
+});
+
+test("Vector top K names the answer candidate pool once it is set past it", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { agentSkills: [], skillCapabilities: baseSkillCapabilities() });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+  await page.getByRole("button", { name: "Add new skill" }).click();
+  await page.getByRole("button", { name: /Knowledge Retrieval/i }).click();
+  await page.getByRole("button", { name: "Advanced" }).click();
+
+  const unusedCandidatesNotice = page.getByText(/The answer draws on the top \d+ candidates/);
+  await expect(unusedCandidatesNotice).toHaveCount(0);
+
+  await page.getByLabel("Vector top K").fill("30");
+  await expect(unusedCandidatesNotice).toHaveText(/top 12 candidates/);
+
+  await page.getByRole("switch", { name: "Rerank results" }).click();
+  await page.getByLabel("Rerank top K").fill("20");
+  await expect(unusedCandidatesNotice).toHaveText(/top 20 candidates/);
+
+  await page.getByLabel("Rerank top K").fill("30");
+  await expect(unusedCandidatesNotice).toHaveCount(0);
 });

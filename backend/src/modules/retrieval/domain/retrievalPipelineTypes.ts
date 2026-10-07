@@ -223,7 +223,6 @@ export interface ActivitySummary {
     originalQuery: string;
     semanticQuery: string;
     lexicalQuery: string;
-    constraintSummary: string[];
   };
   retrievalSubqueries?: Array<{
     id: string;

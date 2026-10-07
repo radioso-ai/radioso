@@ -4,7 +4,6 @@ import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/
 import { normalizeMarkdown } from "../../src/modules/retrieval/domain/chunkingService.js";
 import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
 import { QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
-import { AttributeMatchScoringService } from "../../src/modules/retrieval/services/attributeMatchScoringService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
@@ -152,12 +151,10 @@ describe("edge cases", () => {
       new ConversationContextService(),
       new QueryRewriteService(),
       new CandidatePreparationService(),
-      new AttributeMatchScoringService(),
       new RerankService(),
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
-      undefined,
       undefined,
       semantic.chunkHydrator,
     );
@@ -314,12 +311,10 @@ describe("edge cases", () => {
       new ConversationContextService(),
       new QueryRewriteService(),
       new CandidatePreparationService(),
-      new AttributeMatchScoringService(),
       new RerankService(),
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
-      undefined,
       undefined,
       semantic.chunkHydrator,
     );
@@ -400,12 +395,10 @@ describe("edge cases", () => {
         },
       }),
       new CandidatePreparationService(),
-      new AttributeMatchScoringService(),
       new RerankService(),
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
-      undefined,
       undefined,
       semantic.chunkHydrator,
     );
@@ -491,12 +484,10 @@ describe("edge cases", () => {
         },
       }),
       new CandidatePreparationService(),
-      new AttributeMatchScoringService(),
       new RerankService(),
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
-      undefined,
       undefined,
       semantic.chunkHydrator,
     );
@@ -572,12 +563,10 @@ describe("edge cases", () => {
         },
       }),
       new CandidatePreparationService(),
-      new AttributeMatchScoringService(),
       new RerankService(),
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
-      undefined,
       undefined,
       semantic.chunkHydrator,
     );
@@ -709,12 +698,10 @@ describe("edge cases", () => {
         },
       }),
       new CandidatePreparationService(),
-      new AttributeMatchScoringService(),
       new RerankService(),
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
-      undefined,
       undefined,
       semantic.chunkHydrator,
     );

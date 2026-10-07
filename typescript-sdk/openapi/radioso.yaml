@@ -7938,14 +7938,9 @@ components:
           type: string
         lexicalQuery:
           type: string
-        constraintSummary:
-          type: array
-          items:
-            type: string
       required:
         - semanticQuery
         - lexicalQuery
-        - constraintSummary
     CandidateCounts:
       type: object
       properties:
@@ -12279,6 +12274,7 @@ components:
           type:
             - integer
             - "null"
+          description: Visitor-perceived time from chat request receipt through the final assistant answer, in milliseconds.
         grounding:
           anyOf:
             - $ref: "#/components/schemas/GroundingDiagnostic"
@@ -30179,6 +30175,22 @@ paths:
                                 type: number
                               max:
                                 type: number
+                              usageCap:
+                                type: object
+                                properties:
+                                  raisedByKey:
+                                    type: string
+                                  floor:
+                                    type: number
+                                  ceiling:
+                                    type: number
+                                  notice:
+                                    type: string
+                                required:
+                                  - raisedByKey
+                                  - floor
+                                  - ceiling
+                                  - notice
                               group:
                                 type: string
                               advanced:
@@ -30345,8 +30357,29 @@ paths:
                         - enabled
                         - createdAt
                         - updatedAt
+                  platformSkills:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        owner:
+                          type: string
+                          enum:
+                            - platform
+                        name:
+                          type: string
+                        displayName:
+                          type: string
+                        description:
+                          type: string
+                      required:
+                        - owner
+                        - name
+                        - displayName
+                        - description
                 required:
                   - skills
+                  - platformSkills
         "401":
           description: Authentication required
           content:
@@ -33702,7 +33735,9 @@ paths:
               - integer
               - "null"
             minimum: 0
+            description: Minimum visitor-perceived request-to-answer time in milliseconds.
           required: false
+          description: Minimum visitor-perceived request-to-answer time in milliseconds.
           name: minTotalLatencyMs
           in: query
         - schema:
@@ -33710,7 +33745,9 @@ paths:
               - integer
               - "null"
             minimum: 0
+            description: Maximum visitor-perceived request-to-answer time in milliseconds.
           required: false
+          description: Maximum visitor-perceived request-to-answer time in milliseconds.
           name: maxTotalLatencyMs
           in: query
         - schema:

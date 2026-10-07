@@ -18,7 +18,7 @@ export type ActivityTab = 'needs-attention' | 'all'
 export type SettingsTab = 'workspace' | 'api-access' | 'providers'
 export type AccountTab = 'profile' | 'members' | 'usage'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
-export type HistoryItemKind = 'chat' | 'search' | 'contact'
+export type HistoryItemKind = 'chat' | 'search' | 'contact' | 'inbox'
 export type QualityStatusFilter =
   | 'active'
   | 'paused'
@@ -213,7 +213,7 @@ const parseActivityTab = (value: string | null): ActivityTab | undefined => {
 }
 
 const parseHistoryItemKind = (value: string | null): HistoryItemKind | undefined => {
-  if (value === 'chat' || value === 'search' || value === 'contact') {
+  if (value === 'chat' || value === 'search' || value === 'contact' || value === 'inbox') {
     return value
   }
 

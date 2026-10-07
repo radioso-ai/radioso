@@ -243,6 +243,7 @@ describe("review completion in the turn lifecycle", () => {
 
       const completed = await harness.lifecycle(path).completeAssistantTurn({
         workspaceId: REVIEW_WORKSPACE_ID,
+        requestReceivedAt: Date.now(),
         session: session(),
         presentation,
         answerStartedAt: Date.now(),
@@ -273,6 +274,7 @@ describe("review completion in the turn lifecycle", () => {
 
     const completed = await harness.lifecycle("port").completeAssistantTurn({
       workspaceId: REVIEW_WORKSPACE_ID,
+      requestReceivedAt: Date.now(),
       session: session(),
       presentation,
       answerStartedAt: Date.now(),
@@ -309,6 +311,7 @@ describe("review completion in the turn lifecycle", () => {
 
     const completed = await harness.lifecycle("fallback").completeAssistantTurn({
       workspaceId: REVIEW_WORKSPACE_ID,
+      requestReceivedAt: Date.now(),
       session: session(),
       presentation: { ...presentation, skillOutcome: "no_context", answerOutcome: "no_context_refusal" },
       answerStartedAt: Date.now(),
@@ -334,6 +337,7 @@ describe("review completion in the turn lifecycle", () => {
 
     await harness.lifecycle("port").completeAssistantTurn({
       workspaceId: REVIEW_WORKSPACE_ID,
+      requestReceivedAt: Date.now(),
       session: session(),
       presentation,
       answerStartedAt: Date.now(),
@@ -448,6 +452,7 @@ describe("review completion in the turn lifecycle", () => {
 
         const completed = await harness.lifecycle(path).completeAssistantTurn({
           workspaceId: REVIEW_WORKSPACE_ID,
+          requestReceivedAt: Date.now(),
           session: contentfulSession(),
           presentation: contentfulPresentation,
           answerStartedAt: Date.now(),
@@ -681,6 +686,7 @@ describe("a reviewed reply's directive lifecycle", () => {
   const completeReview = async (store: DeferredDirectiveStateStore) => {
     const completed = await reviewLifecycleHarness().lifecycle("port").completeAssistantTurn({
       workspaceId: REVIEW_WORKSPACE_ID,
+      requestReceivedAt: Date.now(),
       session: sessionWithStore(store),
       presentation: {
         answer: "Your order ships tomorrow.",

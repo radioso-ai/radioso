@@ -4,12 +4,9 @@ import type { components } from '../../typescript-sdk/src/generated/types'
 type ApiSchemas = components['schemas']
 
 export type SkillCatalogEntry = ApiSchemas['SkillCatalogEntry']
-export type SkillCatalogResponse = ApiSchemas['SkillCatalogResponse']
-export type SkillDisplayMetadata = NonNullable<SkillCatalogEntry['display']>
+type SkillCatalogResponse = ApiSchemas['SkillCatalogResponse']
 export type SkillOwner = SkillCatalogEntry['owner']
 export type SkillOutcomeDefinition = NonNullable<SkillCatalogEntry['outcomes']>[number]
-export type SkillOutcomeStatus = SkillOutcomeDefinition['status']
-export type SkillOutcomeTone = NonNullable<SkillOutcomeDefinition['tone']>
 
 export const skillsApi = {
   async list(): Promise<SkillCatalogResponse> {
@@ -46,6 +43,13 @@ export type AgentSkill = {
   updatedAt: string
 }
 
+export type PlatformAnswerSkill = {
+  owner: 'platform'
+  name: string
+  displayName: string
+  description: string
+}
+
 export type SkillCapabilityInputSchema =
   | { source: 'discovered' }
   | { source: 'static'; schema: Record<string, unknown> }
@@ -54,6 +58,15 @@ export type SkillCapabilityTarget = {
   id: string
   label: string
   status?: string
+}
+
+// Present only on a number field whose true effective ceiling is set by a sibling field's
+// current value rather than by `max`. See SkillForm's usage-cap notice rendering.
+export type SkillCapabilitySettingsFieldUsageCap = {
+  raisedByKey: string
+  floor: number
+  ceiling: number
+  notice: string
 }
 
 export type SkillCapabilitySettingsField = {
@@ -66,6 +79,7 @@ export type SkillCapabilitySettingsField = {
   options?: Array<{ value: string; label: string }>
   min?: number
   max?: number
+  usageCap?: SkillCapabilitySettingsFieldUsageCap
   group?: string
   advanced?: boolean
 }
@@ -95,7 +109,7 @@ export type AgentSkillCreateInput = {
   enabled: boolean
 }
 
-export type AgentSkillUpdateInput = {
+type AgentSkillUpdateInput = {
   target?: AgentSkillTarget
   config?: Record<string, unknown>
   replaceConfig?: Record<string, unknown>
@@ -112,8 +126,8 @@ export const agentSkillsApi = {
     )
   },
 
-  async listSkills(agentId: string): Promise<{ skills: AgentSkill[] }> {
-    return request<{ skills: AgentSkill[] }>(
+  async listSkills(agentId: string): Promise<{ skills: AgentSkill[]; platformSkills: PlatformAnswerSkill[] }> {
+    return request<{ skills: AgentSkill[]; platformSkills: PlatformAnswerSkill[] }>(
       `/agents/${agentId}/skills`,
       { method: 'GET' },
       { withSession: true },

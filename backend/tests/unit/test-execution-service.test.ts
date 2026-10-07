@@ -588,6 +588,43 @@ describe("TestExecutionService", () => {
       await vi.waitFor(() => expect(repository.completeCalls).toBe(1));
       expect(repository.execution?.sides[0]?.state).toBe("completed");
     });
+
+    // The production disconnect path: the route aborts the turn's signal once the post-disconnect
+    // ceiling passes, then abandons its pending pull with `iterator.return()`.
+    it("fails and still charges a side whose turn is aborted after it streamed part of its answer", async () => {
+      const commit = vi.fn(async () => undefined);
+      const reserveAnswer = vi.fn(async () => ({ commit, release: vi.fn(async () => undefined) }));
+      const rejectOnAbort = (signal: AbortSignal) => new Promise<never>((_, reject) => {
+        // The route aborts without a reason, so this is the platform's AbortError, as the real runner throws.
+        signal.addEventListener("abort", () => reject(signal.reason instanceof Error ? signal.reason : new Error("aborted")), { once: true });
+      });
+      const stream = async function* (input: RunnerInput) {
+        yield "Refunds take ";
+        yield "five days";
+        return await rejectOnAbort(input.signal!);
+      };
+      const { service, repository } = setup(undefined, { reserveAnswer }, { stream });
+      const fail = vi.spyOn(repository, "fail");
+      const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+      const disconnectAbort = new AbortController();
+      const events = send(service, execution.id, disconnectAbort.signal);
+      expect((await events.next()).value).toMatchObject({ type: "side_started" });
+      expect((await events.next()).value).toMatchObject({ type: "message_delta", delta: "Refunds take " });
+      expect((await events.next()).value).toMatchObject({ type: "message_delta", delta: "five days" });
+
+      const pendingPull = events.next();
+      disconnectAbort.abort();
+      const abandoned = events.return(undefined);
+
+      expect((await pendingPull).value).toMatchObject({ type: "side_failed", code: "runner_failed", retryable: true });
+      await expect(abandoned).resolves.toEqual({ done: true, value: undefined });
+      expect(fail).toHaveBeenCalledOnce();
+      expect(fail).toHaveBeenCalledWith(expect.objectContaining({ sideId: execution.sides[0].id, turnId: ids[6], attemptId: ids[7], fence: 1, code: "runner_failed" }));
+      expect(repository.completeCalls).toBe(0);
+      expect(repository.execution?.sides[0]).toMatchObject({ state: "failed", retryable: true });
+      expect(reserveAnswer).toHaveBeenCalledOnce();
+      expect(commit).toHaveBeenCalledOnce();
+    });
   });
 
   it("turns a side persistence rejection into a bounded failed transport event", async () => {

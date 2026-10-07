@@ -50,12 +50,6 @@ export interface PlanTopUp {
   readonly stripeLookupKey: string;
 }
 
-export interface PlanManagedService {
-  readonly priceCents: number;
-  readonly interval: "month";
-  readonly stripeLookupKey: string;
-}
-
 /** The provider names the backend's capability resolver accepts. */
 export type ManagedModelProvider = "openai" | "openai-compatible" | "gemini" | "claude";
 
@@ -94,7 +88,6 @@ export interface PlanCatalog {
   readonly repliesPerConversation: number;
   readonly countsAs: PlanUsageWeights;
   readonly topUp: PlanTopUp;
-  readonly managedService: PlanManagedService;
   readonly managedModels: PlanManagedModels;
 }
 

@@ -397,6 +397,11 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
         const event = step.value;
         if (event.type === "delta") {
           const deliveryMode = event.metadata?.deliveryMode;
+          // A coverage-routine takeover (#1260) substitutes the routine's own reply for
+          // the yielded skill's (empty) answer once `streamState.result` settles below —
+          // that substituted text never belongs to the skill's route, whatever the
+          // session was routed to before the routine claimed the turn.
+          const takeover = streamState.result?.yielded === true;
           const turnRoute = readSession().turnRoute;
           enqueue({
             type: "chunk",
@@ -404,7 +409,7 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
             deliveryMode: deliveryMode === "live" || deliveryMode === "bounded_decline"
               ? deliveryMode
               : "committed",
-            route: turnRoute === "direct" || turnRoute === "retrieval" ? turnRoute : "other",
+            route: !takeover && (turnRoute === "direct" || turnRoute === "retrieval") ? turnRoute : "other",
           });
           continue;
         }

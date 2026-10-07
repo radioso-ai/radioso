@@ -1606,6 +1606,25 @@ export class ChatService {
       let actions: RoutineActionRequest[] | undefined;
       let coverageRoutineEffects: Partial<ChatTurnAssemblyRoutineResult> = {};
       let emissionStarted = false;
+      // Committed/bounded-decline chunks are replays of already-whole text (a coverage-
+      // routine takeover's reply (#1260), or a composed decline) rather than live token
+      // generation, so holding them here costs nothing. They are released below, once the
+      // turn's durable effects (if any) are known — before `completeAssistantTurn` when
+      // there are none (today's ordering, unchanged), or after it commits when there are,
+      // so the visitor can never read a confirmation the commit still might fail or deny.
+      // A live chunk still streams immediately: today, nothing that reaches this loop live
+      // (grounded or direct) also carries one of those effects.
+      const heldChunks: Array<{
+        text: string;
+        route: "direct" | "retrieval" | "other";
+        deliveryMode: "committed" | "bounded_decline";
+      }> = [];
+      function* releaseHeldChunks(): Generator<Extract<ChatStreamEvent, { type: "chunk" }>> {
+        for (const held of heldChunks) {
+          observeFirstAnswerChunk(held.route, held.deliveryMode);
+          yield { type: "chunk", text: held.text };
+        }
+      }
       if (useSenseCompatiblePath) {
         this.checkTurnCancellation(coordination, "rendering");
       }
@@ -1643,11 +1662,15 @@ export class ChatService {
             this.beginTurnEmission(coordination);
             emissionStarted = true;
           }
-          observeFirstAnswerChunk(event.route, event.deliveryMode);
-          yield {
-            type: "chunk",
-            text: event.text,
-          };
+          if (event.deliveryMode === "live") {
+            observeFirstAnswerChunk(event.route, event.deliveryMode);
+            yield {
+              type: "chunk",
+              text: event.text,
+            };
+          } else {
+            heldChunks.push({ text: event.text, route: event.route, deliveryMode: event.deliveryMode });
+          }
           continue;
         }
         finalPresentation = event.finalPresentation;
@@ -1707,6 +1730,22 @@ export class ChatService {
         workspaceId: input.workspaceId,
         actions: routineEnding.actions,
       });
+      const finalActions = retrievalMissHandoff.actions;
+      const finalOwnershipHandoff = routineEnding.ownershipHandoff ?? retrievalMissHandoff.ownershipHandoff;
+      // What the direct routine branch above also treats as a durable effect worth
+      // protecting: an outbox action (including a routine-ending notice, folded into
+      // `finalActions` by `routineEndingEffectsForTurn`), a human ownership handoff, or
+      // a routine suspended at an approval gate. A routine-state/clarification advance
+      // with none of those is not held — it is unobservable to the visitor if lost.
+      const hasDurableEffect = Boolean(
+        finalActions?.length
+        || finalOwnershipHandoff
+        || coverageRoutineEffects.suspended
+        || coverageRoutineEffects.pendingDecisionTransition,
+      );
+      if (!hasDurableEffect) {
+        yield* releaseHeldChunks();
+      }
 
       if (!emissionStarted) {
         this.beginTurnEmission(coordination);
@@ -1721,8 +1760,8 @@ export class ChatService {
         stream: input.stream,
         engineTrace,
         modelCallTrace,
-        actions: retrievalMissHandoff.actions,
-        ownershipHandoff: routineEnding.ownershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
+        actions: finalActions,
+        ownershipHandoff: finalOwnershipHandoff,
         routineStateTransition: coverageRoutineEffects.routineStateTransition,
         routineReporter: coverageRoutineEffects.routineReporter,
         pendingDecisionTransition: coverageRoutineEffects.pendingDecisionTransition,
@@ -1748,6 +1787,14 @@ export class ChatService {
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
       usageReservationCommitted = true;
+
+      // A durable-effect turn's held text is released only once the commit above has
+      // actually succeeded: if it had thrown, control never reaches here, and the
+      // visitor is never shown the held confirmation for an action that was denied or
+      // failed to enqueue.
+      if (hasDurableEffect) {
+        yield* releaseHeldChunks();
+      }
 
       coordination.lease?.complete();
       yield {

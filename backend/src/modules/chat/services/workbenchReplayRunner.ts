@@ -288,13 +288,11 @@ interface PreparedReplayTurn {
   answerStartedAt: number;
 }
 
-/** A non-routine turn's answer as either engine path settles it. */
-interface RenderedReplayAnswer {
-  session: PreparedSession;
-  presentation: ChatPresentedAnswer;
-  engineTrace?: Parameters<typeof buildTurnTraceForPresentation>[0]["engineTrace"];
-  actions?: RoutineActionRequest[];
-}
+/**
+ * A non-routine turn's answer as either engine path settles it, with the effects of any coverage
+ * routine that took the turn over after its evidence (#1260).
+ */
+type RenderedReplayAnswer = Awaited<ReturnType<ChatTurnAssembly["renderPreparedByEngine"]>>;
 
 export class WorkbenchReplayRunner {
   constructor(private readonly options: WorkbenchReplayRunnerOptions) {}
@@ -333,12 +331,8 @@ export class WorkbenchReplayRunner {
         observeFirstChunk(event.route, event.deliveryMode);
         yield event.text;
       } else if (event.type === "final") {
-        rendered = {
-          session: event.session ?? turn.session,
-          presentation: event.finalPresentation,
-          engineTrace: event.engineTrace,
-          actions: event.actions,
-        };
+        const { type: _final, suggestions: _suggestions, finalPresentation, session, ...effects } = event;
+        rendered = { ...effects, session: session ?? turn.session, presentation: finalPresentation };
       }
     }
     if (!rendered) {
@@ -555,13 +549,20 @@ export class WorkbenchReplayRunner {
     });
   }
 
-  /** Commits a rendered answer's clarification and directive state and presents its result. */
+  /**
+   * Commits a rendered answer's routine, clarification, and directive state, then presents its
+   * result. A coverage routine that took the turn over saved its state through a deferred store;
+   * committing it here, as live chat commits it with the turn, is what lets the exported
+   * continuation carry that routine into the next turn. Coverage reactions are not committed:
+   * replay's coverage recorder has no repository, so it records none.
+   */
   private async settleRenderedTurn(
     turn: PreparedReplayTurn,
     rendered: RenderedReplayAnswer,
     delivery: { stream: boolean },
   ): Promise<WorkbenchReplayResult> {
     turn.coordination?.checkpoint();
+    await rendered.commitRoutineState?.();
     await turn.clarificationStore.commit();
     await rendered.session.directiveStateStore?.commit();
     return this.presentResult({
@@ -574,6 +575,10 @@ export class WorkbenchReplayRunner {
       answerStartedAt: turn.answerStartedAt,
       stream: delivery.stream,
       actions: rendered.actions,
+      pendingDecisionTransition: rendered.pendingDecisionTransition,
+      handoff: rendered.handoff,
+      operatorNotice: rendered.operatorNotice,
+      routineReporter: rendered.routineReporter,
       continuation: this.continuation(turn.effects, turn.session.conversation.id, turn.routineStore),
     });
   }

@@ -763,7 +763,10 @@ jobs:
       # The Terraform workflow validates one environment, and only when someone runs it before a
       # deploy. This checks every root on the pull request instead, with no backend and no cloud
       # credentials. The lock files are readonly, so a provider change that skipped the lock file
-      # update fails here instead of being quietly re-resolved on the runner.
+      # update fails here instead of being quietly re-resolved on the runner. After bumping a
+      # provider, record every platform's hashes in each root, or this runner cannot verify the
+      # package it downloads:
+      #   terraform providers lock -platform=linux_amd64 -platform=darwin_arm64 -platform=darwin_amd64
       - name: Terraform validate
         run: |
           set -euo pipefail

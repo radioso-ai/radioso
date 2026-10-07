@@ -237,7 +237,7 @@ describe("email channel settings contract", () => {
         displayName: "Support",
         agentId,
         domainId: expect.any(String),
-        relayAddress: expect.stringMatching(new RegExp(`^[a-z0-9]+@${INBOUND_DOMAIN.replace(/\./g, "\\.")}$`)),
+        relayAddress: expect.stringMatching(/^[a-z0-9]+@/),
         engagementMode: "operator_only",
         enabled: true,
         policyVersion: 1,
@@ -249,6 +249,7 @@ describe("email channel settings contract", () => {
         plusAddressVerified: false,
         setupCheck: null,
       });
+      expect(created.body.relayAddress.endsWith(`@${INBOUND_DOMAIN}`)).toBe(true);
       expect(auditActions(h, "email_channel.mailbox").map((event) => event.metadata.action)).toEqual(["created"]);
     });
 

@@ -21,7 +21,14 @@ Revision-pinned private Test Chat is hosted by `modules/test-execution`. Chat
 provides the safe runtime ports and historical conversation behavior it needs;
 it must not resolve a mutable draft or silently fall back to current authoring
 rows. Start at `test-execution/README.md` and
-`services/trustedTestExecutionRunnerAdapter.ts` when changing that flow.
+`services/trustedTestExecutionRunnerAdapter.ts` when changing that flow. The
+adapter drives `WorkbenchReplayRunner.stream`, which is `run` with the answer's
+text yielded as `ChatTurnAssembly.streamPreparedByEngine` produces it. Both share
+the turn's preparation (`prepareTurn`) and settlement (`routineTurn`,
+`settleRenderedTurn`), so the result, continuation, and state commits match; a
+routine-claimed reply is yielded whole once its turn settles. The first chunk's
+latency lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
+`delivery_mode`), a series apart from live chat's.
 
 ## Public Surfaces
 

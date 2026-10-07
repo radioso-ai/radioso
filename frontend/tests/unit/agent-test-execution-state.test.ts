@@ -107,6 +107,59 @@ describe('agent test execution state', () => {
     })
   })
 
+  it('streams deltas into the reply and settles it on the stored answer the completion carries', () => {
+    const active = beginTestExecutionTurn(state(), 'Refunds?', 'turn-1', 'attempt-1')
+    const streamed = ['  Refunds take [[1]]', ' five days.\n'].reduce((current, delta) => reduceTestExecutionEvent(current, {
+      type: 'message_delta', executionId: 'execution-1', generation: 2, sideId: 'left', delta, turnId: 'turn-1', attemptId: 'attempt-1',
+    }), active)
+    expect(streamed.sides.left.messages.at(-1)).toMatchObject({ content: '  Refunds take [[1]] five days.\n', state: 'streaming' })
+
+    const completed = reduceTestExecutionEvent(streamed, {
+      type: 'side_completed', executionId: 'execution-1', generation: 2, sideId: 'left', messageId: 'message-left', answer: 'Refunds take five days.', turnId: 'turn-1', attemptId: 'attempt-1',
+    })
+
+    expect(completed.sides.left.messages.at(-1)).toMatchObject({ content: 'Refunds take five days.', state: 'completed' })
+  })
+
+  it('keeps the streamed reply when a completion carries no stored answer', () => {
+    const active = beginTestExecutionTurn(state(), 'Refunds?', 'turn-1', 'attempt-1')
+    const streamed = reduceTestExecutionEvent(active, {
+      type: 'message_delta', executionId: 'execution-1', generation: 2, sideId: 'left', delta: 'Refunds take five days.', turnId: 'turn-1', attemptId: 'attempt-1',
+    })
+
+    const completed = reduceTestExecutionEvent(streamed, {
+      type: 'side_completed', executionId: 'execution-1', generation: 2, sideId: 'left', messageId: 'message-left', turnId: 'turn-1', attemptId: 'attempt-1',
+    })
+
+    expect(completed.sides.left.messages.at(-1)).toMatchObject({ content: 'Refunds take five days.', state: 'completed' })
+  })
+
+  it('replaces a half-streamed reply with the failure when the side fails, as the reopened session shows it', () => {
+    const active = beginTestExecutionTurn(state(), 'Refunds?', 'turn-1', 'attempt-1')
+    const streamed = reduceTestExecutionEvent(active, {
+      type: 'message_delta', executionId: 'execution-1', generation: 2, sideId: 'left', delta: 'Refunds take', turnId: 'turn-1', attemptId: 'attempt-1',
+    })
+
+    const failed = reduceTestExecutionEvent(streamed, {
+      type: 'side_failed', executionId: 'execution-1', generation: 2, sideId: 'left', code: 'runner_failed', retryable: true, turnId: 'turn-1', attemptId: 'attempt-1',
+    })
+
+    expect(failed.sides.left.messages.at(-1)).toMatchObject({ content: 'Test failed: runner_failed', state: 'failed' })
+    expect(failed.sides.left).toMatchObject({ state: 'failed', errorCode: 'runner_failed', retryable: true })
+  })
+
+  it('replaces a half-streamed reply with the stream-ended notice when the transport closes mid-answer', () => {
+    const active = beginTestExecutionTurn(state(), 'Refunds?', 'turn-1', 'attempt-1')
+    const streamed = reduceTestExecutionEvent(active, {
+      type: 'message_delta', executionId: 'execution-1', generation: 2, sideId: 'left', delta: 'Refunds take', turnId: 'turn-1', attemptId: 'attempt-1',
+    })
+
+    const finalized = finalizeTestExecutionStream(streamed, 'stream_ended_before_terminal_event')
+
+    expect(finalized.sides.left.messages.at(-1)).toMatchObject({ content: 'The response stream ended before an answer was complete.', state: 'failed' })
+    expect(finalized.sides.left).toMatchObject({ state: 'failed', errorCode: 'stream_ended_before_terminal_event' })
+  })
+
   it('replaces the failed assistant attempt when retrying while preserving the user and successful side', () => {
     const withTurn = beginTestExecutionTurn(state(), 'Hello', 'turn-1', 'attempt-1')
     const failed = failTestExecutionSide(withTurn, 'right', 'stream_transport_failed')

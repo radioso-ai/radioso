@@ -529,8 +529,8 @@ Related specs and issues:
 ## Private Test Execution
 
 Owns operator-private single and comparison conversations pinned to immutable
-agent revisions, including sample-value validation, stream identity, side
-fences, and failed-side retry. It does not publish revisions or expose private
+agent revisions, including sample-value validation, live answer streaming,
+stream identity, side fences, and failed-side retry. It does not publish revisions or expose private
 history through public channels.
 
 Public surfaces and key files:
@@ -540,7 +540,8 @@ Public surfaces and key files:
 - `backend/src/modules/test-execution/testExecutionTurns.ts` (turn read model: turns per side with state and failure code)
 - `backend/src/app/http/routes/testExecutionRoutes.ts`
 - `backend/src/app/http/openapi/paths/testExecutionPaths.ts`
-- `backend/src/modules/chat/services/trustedTestExecutionRunnerAdapter.ts`
+- `backend/src/modules/chat/services/trustedTestExecutionRunnerAdapter.ts` (drives `WorkbenchReplayRunner.stream`)
+- `frontend/lib/agent-test-execution-state.ts` (stream event reducer; `frontend/tests/unit/agent-test-execution-state.test.ts`)
 - `backend/tests/unit/test-execution-service.test.ts`
 - `backend/tests/integration/test-execution-repository.integration.test.ts`
 - `backend/tests/integration/test-execution-routes.integration.test.ts`

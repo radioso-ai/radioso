@@ -11,8 +11,10 @@ import type { ResolvedVariableInput } from "../../context-variables/public.js";
 import {
   importTestExecutionReplayContinuation,
 } from "./testExecutionContinuation.js";
-import type { WorkbenchReplayRunner } from "./workbenchReplayRunner.js";
+import type { WorkbenchReplayInput, WorkbenchReplayRunner } from "./workbenchReplayRunner.js";
 import type { ChatBootstrapService } from "./chatBootstrapService.js";
+
+type TestExecutionRunInput = Parameters<TrustedTestExecutionRunnerPort["stream"]>[0];
 
 /** Live, non-versioned agent settings that remain subject to runtime authorization. */
 interface TestExecutionLiveAgentConfigReaderPort {
@@ -25,7 +27,7 @@ interface TestExecutionCandidateRevisionReaderPort {
 }
 
 interface TrustedTestExecutionRunnerAdapterOptions {
-  replay: Pick<WorkbenchReplayRunner, "run">;
+  replay: Pick<WorkbenchReplayRunner, "stream">;
   liveAgentConfig: TestExecutionLiveAgentConfigReaderPort;
   revisions: TestExecutionCandidateRevisionReaderPort;
   bootstrap?: Pick<ChatBootstrapService, "startConversation">;
@@ -95,7 +97,23 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
     return greeting ? { answer: greeting.answer, messageId: greeting.bootstrapGreetingId ?? `bootstrap:${revision.id}` } : null;
   }
 
-  async run(input: Parameters<TrustedTestExecutionRunnerPort["run"]>[0]) {
+  async *stream(input: TestExecutionRunInput): ReturnType<TrustedTestExecutionRunnerPort["stream"]> {
+    const replayed = yield* this.options.replay.stream(await this.replayInput(input));
+    if (!replayed.continuation) {
+      throw new Error("test_execution_continuation_missing");
+    }
+    if (!replayed.messageId) {
+      throw new Error("test_execution_message_id_missing");
+    }
+    return {
+      answer: replayed.answer,
+      messageId: replayed.messageId,
+      turnTrace: replayed.turnTrace,
+      continuation: replayed.continuation,
+    };
+  }
+
+  private async replayInput(input: TestExecutionRunInput): Promise<WorkbenchReplayInput> {
     if (input.executionMode !== "safe_test") {
       throw new Error("test_execution_requires_safe_test");
     }
@@ -111,7 +129,7 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
     if (!revision) throw notFound("Agent revision is unavailable for test execution");
 
     const continuation = importTestExecutionReplayContinuation(input.continuation, input.conversationId);
-    const replayed = await this.options.replay.run({
+    return {
       workspaceId: input.workspaceId,
       accountId: input.accountId,
       sourceAgentId: input.agentId,
@@ -144,18 +162,6 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       // Chat" run seeded from a customer conversation, whose seeded messages are already
       // in that transcript.
       includeSlotValues: true,
-    });
-    if (!replayed.continuation) {
-      throw new Error("test_execution_continuation_missing");
-    }
-    if (!replayed.messageId) {
-      throw new Error("test_execution_message_id_missing");
-    }
-    return {
-      answer: replayed.answer,
-      messageId: replayed.messageId,
-      turnTrace: replayed.turnTrace,
-      continuation: replayed.continuation,
     };
   }
 }

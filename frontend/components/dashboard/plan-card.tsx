@@ -18,8 +18,9 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import {
   formatPlanPriceCents,
   largestPlanUsageKind,
+  planUsageLevelHasActions,
+  planUsageLevelMessage,
   planUsagePercent,
-  planUsageThreshold,
   PLAN_USAGE_KIND_LABELS,
   type PlanUsageKind,
 } from '@/lib/plan-card-usage'
@@ -124,13 +125,8 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
   }
 
   const plan = plans.plans.find((entry) => entry.id === billing.planId)
-  const usage = {
-    used: monthlyConversations.used,
-    limit: monthlyConversations.limit,
-    credits: monthlyConversations.credits,
-  }
-  const percent = planUsagePercent(usage)
-  const threshold = planUsageThreshold(usage)
+  const percent = planUsagePercent(monthlyConversations)
+  const level = monthlyConversations.level
   const largestKind = largestPlanUsageKind(monthlyConversations.byKind)
   // The backend derives the next self-serve plan from the catalog; the card never names plans.
   const upgradePlanId = billing.upgradePlanId
@@ -144,9 +140,19 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
       )}/${billing.interval === 'year' ? 'yr' : 'mo'}`
     : billing.planName
 
-  const bannerText = largestKind
-    ? `${PLAN_USAGE_KIND_LABELS[largestKind]} are driving most of this month's usage.`
-    : "This month's usage is close to the plan limit."
+  // `nearing_limit` names whichever kind is using up the month's budget; `limit_reached` and
+  // `grace_exhausted` have a fixed sentence instead, since what matters there is the grace
+  // allowance and the reset date, not which kind happened to be running when the cap hit.
+  const bannerText = level === 'nearing_limit'
+    ? (largestKind
+      ? `${PLAN_USAGE_KIND_LABELS[largestKind]} are driving most of this month's usage.`
+      : "This month's usage is close to the plan limit.")
+    : planUsageLevelMessage({
+      level,
+      graceRemaining: monthlyConversations.grace.limit - monthlyConversations.grace.borrowed,
+      resetAt: monthlyConversations.resetAt,
+    })
+  const showBannerWithActions = planUsageLevelHasActions(level)
 
   const actions = (
     <div className="flex flex-wrap items-center gap-2">
@@ -198,7 +204,7 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
             <div className="h-full rounded-full bg-foreground transition-all" style={{ width: `${percent}%` }} />
           </div>
           <div className="text-xs text-muted-foreground">
-            {monthlyConversations.used} / {monthlyConversations.limit + monthlyConversations.credits} conversations this month
+            {monthlyConversations.used} / {monthlyConversations.capacity} conversations this month
           </div>
         </div>
         <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
@@ -209,14 +215,14 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
             </div>
           ))}
         </div>
-        {threshold === 'exceeded' ? (
+        {showBannerWithActions ? (
           <div role="status" className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
             <p>{bannerText}</p>
             {actions}
           </div>
         ) : (
           <>
-            {threshold === 'warning' ? (
+            {level === 'nearing_limit' ? (
               <p role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
                 {bannerText}
               </p>

@@ -730,4 +730,132 @@ describeIfDatabase("EE usage limit service integration", () => {
     const usage = await service.getAccountUsage(accountId);
     expect(usage.monthlyConversations).toMatchObject({ used: 1, credits: 1 });
   });
+
+  // ── Grace allowance ──────────────────────────────────────────────────────
+
+  it("dropped the legacy nonnegative CHECK on balance_tenths, so a fresh install matches", async () => {
+    const rows = await database.query<{ conname: string }>(
+      `SELECT conname FROM pg_constraint WHERE conrelid = 'ee_usage_limit_credits'::regclass`,
+    );
+    expect(rows.map((row) => row.conname)).not.toContain("ee_usage_limit_credits_balance_tenths_check");
+  });
+
+  it("lets a customer conversation borrow down to the grace floor, then refuses and stays at the floor", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    // limit 10 conversations -> grace floor(10 * 0.1) = 1 conversation (10 tenths).
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const service = new EnterpriseUsageLimitService(database);
+    const reserveConversation = () => service.reserveAnswer({
+      accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID(),
+    });
+
+    for (let i = 0; i < 10; i += 1) {
+      await reserveConversation();
+    }
+    // The 11th conversation borrows the one conversation of grace the plan allows.
+    await expect(reserveConversation()).resolves.toBeDefined();
+
+    const borrowed = await service.getAccountUsage(accountId);
+    expect(borrowed.monthlyConversations).toMatchObject({ used: 11, credits: 0 });
+
+    // The 12th would borrow past the floor and is refused; the balance stays at the floor.
+    await expect(reserveConversation()).rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    const stillAtFloor = await service.getAccountUsage(accountId);
+    expect(stillAtFloor.monthlyConversations).toMatchObject({
+      used: 11,
+      capacity: 11,
+      grace: { limit: 1, borrowed: 1 },
+      level: "grace_exhausted",
+    });
+  });
+
+  it("stops an internal kind at the allowance plus positive credits, never borrowing and never blocked earlier by carried debt", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    // limit 20 conversations -> grace floor(20 * 0.1) = 2 conversations (20 tenths).
+    await assignProfile(accountId, { monthlyConversationLimit: 20 });
+    const service = new EnterpriseUsageLimitService(database);
+    const reserveConversation = () => service.reserveAnswer({
+      accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID(),
+    });
+    const reserveRayTurn = () => service.reserveAnswer({ accountId, workspaceId, surface: "operator_copilot", usage: "copilot_turn" });
+
+    // An internal kind reserves fine while usage sits under the allowance, even
+    // though nothing has been charged against this account yet.
+    const earlyRayTurn = await reserveRayTurn();
+    await earlyRayTurn.release();
+
+    // Fill the plan allowance, then borrow the full grace (2 conversations) into debt.
+    for (let i = 0; i < 22; i += 1) {
+      await reserveConversation();
+    }
+    const indebted = await service.getAccountUsage(accountId);
+    expect(indebted.monthlyConversations).toMatchObject({ used: 22, credits: 0, grace: { limit: 2, borrowed: 2 } });
+
+    // An internal kind never borrows: once usage is past the allowance, it is
+    // refused immediately, not pushed further by the carried debt.
+    await expect(reserveRayTurn()).rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    // A grant that only partly repays the debt still leaves the internal kind refused:
+    // debt, not positive credit, is what remains.
+    const partial = await service.addCredits({ accountId, conversations: 1, reference: "partial-repay" });
+    expect(partial.credits).toBe(0);
+    await expect(reserveRayTurn()).rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    // Once the grant pays the debt down into a positive balance, the internal kind can
+    // spend that positive balance exactly like ordinary prepaid credit.
+    const topUp = await service.addCredits({ accountId, conversations: 2, reference: "full-repay" });
+    expect(topUp.credits).toBe(1);
+    await expect(reserveRayTurn()).resolves.toBeDefined();
+  });
+
+  it("carries debt across periods: the next period's allowance is full, but the grace stays reduced until a grant repays it", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    // limit 10 conversations -> grace floor(10 * 0.1) = 1 conversation (10 tenths).
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const service = new EnterpriseUsageLimitService(database);
+    const reserveConversation = () => service.reserveAnswer({
+      accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID(),
+    });
+
+    for (let i = 0; i < 11; i += 1) {
+      await reserveConversation();
+    }
+    const currentPeriod = await service.getAccountUsage(accountId);
+    expect(currentPeriod.monthlyConversations).toMatchObject({ used: 11, grace: { limit: 1, borrowed: 1 } });
+
+    // `ee_usage_limit_credits.balance_tenths` carries no period column: a different
+    // period reads a fresh (empty) unit counter, so the allowance is back to full,
+    // while the account-wide balance -- and therefore the grace debt -- is unchanged.
+    const nextPeriod = await service.getAccountUsage(accountId, "2031-01-01");
+    expect(nextPeriod.monthlyConversations).toMatchObject({
+      used: 0,
+      limit: 10,
+      credits: 0,
+      capacity: 10,
+      grace: { limit: 1, borrowed: 1 },
+      level: "ok",
+    });
+  });
+
+  it("releases a borrowed conversation back to the exact pre-reservation balance", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const service = new EnterpriseUsageLimitService(database);
+    const reserveConversation = () => service.reserveAnswer({
+      accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID(),
+    });
+
+    for (let i = 0; i < 10; i += 1) {
+      await reserveConversation();
+    }
+    const borrowing = await reserveConversation();
+    const borrowed = await service.getAccountUsage(accountId);
+    expect(borrowed.monthlyConversations).toMatchObject({ used: 11, credits: 0, grace: { borrowed: 1 } });
+
+    await borrowing.release();
+
+    const released = await service.getAccountUsage(accountId);
+    expect(released.monthlyConversations).toMatchObject({ used: 10, credits: 0, grace: { borrowed: 0 } });
+  });
 });

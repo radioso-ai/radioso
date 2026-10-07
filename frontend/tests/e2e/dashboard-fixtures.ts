@@ -942,6 +942,9 @@ export const baseAccountUsageSummary = () => ({
     used: 400,
     limit: 1000,
     credits: 0,
+    capacity: 1000,
+    grace: { limit: 100, borrowed: 0 },
+    level: "ok" as const,
     byKind: { conversation: 380, copilot: 15, test_run: 5, pulse_report: 0 },
   },
 });

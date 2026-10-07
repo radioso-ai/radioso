@@ -4,6 +4,8 @@ import type {
   AnswerCoverageAssessment,
   ConversationCoverageReactionRecorder,
   ConversationEngine,
+  Routine,
+  RoutineState,
 } from "@radioso/conversation-contract";
 import { DefaultConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import { RoutineNextStepSelector, RoutineStepRenderer } from "@radioso/conversation-defaults";
@@ -234,6 +236,81 @@ describe("claimRoutineTurnWithConversationEngine", () => {
     expect(claim).toBeNull();
   });
 
+  describe("an engine that cannot claim reports the effects a claiming engine reports", () => {
+    const endingRoutine: Routine = {
+      id: "contact",
+      rootStepId: "ask_email",
+      steps: [
+        { id: "ask_email", kind: "chat", action: "Ask for the visitor's email." },
+        { id: "ask_message", kind: "chat", action: "Ask what they want to tell us." },
+        { id: "notify", kind: "action", actionType: "contact.notify" },
+        { id: "done", kind: "terminal", action: "Confirm.", metadata: { terminalKind: "complete", operatorNotice: { subject: "New contact" } } },
+        { id: "to_person", kind: "terminal", action: "Say a person continues.", metadata: { terminalKind: "handoff" } },
+        {
+          id: "approve",
+          kind: "await",
+          action: "Say it waits for approval.",
+          decision: { captureKey: "approval", options: [{ id: "yes", label: "Approve" }] },
+        },
+      ],
+      transitions: [
+        { from: "ask_email", to: "ask_message", condition: "an email was given" },
+        { from: "ask_email", to: "to_person", condition: "they want a person" },
+        { from: "ask_message", to: "notify", condition: "a message was given" },
+        { from: "ask_message", to: "approve", condition: "it needs approval" },
+        { from: "notify", to: "done", condition: "always" },
+      ],
+      completionExport: { enabled: true, destinationRef: "dest_1", triggerKinds: ["complete"] },
+    };
+    const onStep = (stepId: string, extra: Partial<RoutineState> = {}): RoutineState => ({
+      sessionId: "conv_1",
+      routineId: "contact",
+      executionId: "exec_1",
+      path: stepId === "ask_email" ? [] : ["ask_email", "ask_message"],
+      variables: stepId === "ask_email" ? {} : { email: "alex@example.com" },
+      status: "active",
+      ...extra,
+    });
+    const endings: Array<{ name: string; active: RoutineState; nextStepId: string; terminalKind?: string }> = [
+      { name: "terminal with action", active: onStep("ask_message"), nextStepId: "notify", terminalKind: "complete" },
+      { name: "handoff", active: onStep("ask_email"), nextStepId: "to_person", terminalKind: "handoff" },
+      { name: "stuck", active: onStep("ask_email", { reaskCount: 4 }), nextStepId: "ask_email", terminalKind: "stuck" },
+      { name: "approval", active: onStep("ask_message"), nextStepId: "approve" },
+    ];
+    const claimWith = async (engine: ConversationEngine, ending: (typeof endings)[number]) => {
+      const claim = await claimRoutineTurnWithConversationEngine({
+        engine,
+        session: session(),
+        ...routinePorts,
+        routineStore: { loadActive: async () => ending.active, save: async () => {}, clear: async () => {} },
+        routineRunner: new DefaultRoutineRunner(
+          [endingRoutine],
+          { select: async () => ({ nextStepId: ending.nextStepId }) },
+          { render: async ({ step }) => ({ answer: `reply:${step.id}` }) },
+        ),
+      });
+      return claim!;
+    };
+    const withoutClaim = (engine: DefaultConversationEngine): ConversationEngine => ({
+      attemptRoutine: (input) => engine.attemptRoutine(input),
+      processTurn: (input) => engine.processTurn(input),
+      processTurnStream: (input) => engine.processTurnStream(input),
+      resumeAwaitingDecision: (input) => engine.resumeAwaitingDecision(input),
+    });
+
+    for (const ending of endings) {
+      it(`for: ${ending.name}`, async () => {
+        const native = await claimWith(new DefaultConversationEngine(), ending);
+        const fallback = await claimWith(withoutClaim(new DefaultConversationEngine()), ending);
+
+        expect(fallback.effects).toStrictEqual(native.effects);
+        expect(native.effects.terminalKind).toBe(ending.terminalKind);
+        expect(fallback.reply.stream).toBeUndefined();
+        expect((await fallback.reply.render()).result.response).toEqual((await native.reply.render()).result.response);
+      });
+    }
+  });
+
   describe("through an engine that claims before the reply exists", () => {
     const activeStore = () => {
       const saved: string[] = [];
@@ -346,25 +423,28 @@ describe("ChatTurnAssembly.claimRoutineTurn", () => {
 
   // One assembly per turn, over the real engine, runner, selector, and step renderer: only the
   // host model gateway is scripted, and it records which call ran, how, and under which usage key.
-  const assemblyForTurn = () => {
+  const assemblyForTurn = ({ hostStreams = true }: { hostStreams?: boolean } = {}) => {
     const modelCalls: string[] = [];
     const pageReadCommits: number[] = [];
     const isSelector = (input: ChatGatewayInput): boolean =>
       (input.systemPrompt ?? "").includes("You are guiding a user through a structured, multi-step routine");
+    const answer = async (input: ChatGatewayInput) => {
+      modelCalls.push(`${isSelector(input) ? "selector" : "reply"} answer ${input.usageContext.attemptKey}`);
+      return isSelector(input)
+        ? JSON.stringify({ claimsAuthority: false, condition: 1, offTopic: false, variables: {} })
+        : "What would you like to tell them?";
+    };
     const assembly = new ChatTurnAssembly({
-      chatGateway: {
-        answer: async (input: ChatGatewayInput) => {
-          modelCalls.push(`${isSelector(input) ? "selector" : "reply"} answer ${input.usageContext.attemptKey}`);
-          return isSelector(input)
-            ? JSON.stringify({ claimsAuthority: false, condition: 1, offTopic: false, variables: {} })
-            : "What would you like to tell them?";
-        },
-        streamAnswer: async function* (input: ChatGatewayInput) {
-          modelCalls.push(`${isSelector(input) ? "selector" : "reply"} stream ${input.usageContext.attemptKey}`);
-          yield "  What would you like";
-          yield " to tell them?  ";
-        },
-      },
+      chatGateway: hostStreams
+        ? {
+            answer,
+            streamAnswer: async function* (input: ChatGatewayInput) {
+              modelCalls.push(`${isSelector(input) ? "selector" : "reply"} stream ${input.usageContext.attemptKey}`);
+              yield "  What would you like";
+              yield " to tell them?  ";
+            },
+          }
+        : { answer },
       chatAnswerPresenter: {
         presentRoutineAnswer: (answer: string) => ({ answer, skillName: "routine", skillOutcome: "routine", skillStatus: "completed" }),
       },
@@ -422,6 +502,16 @@ describe("ChatTurnAssembly.claimRoutineTurn", () => {
     expect(next.value.routineStateTransition).toMatchObject({ kind: "save", state: { path: ["ask_message"] } });
     expect(next.value.engineTrace?.stages.map((stage) => stage.kind))
       .toEqual(whole?.engineTrace?.stages.map((stage) => stage.kind));
+  });
+
+  it("offers no reply stream when the host gateway can only complete, and still renders the reply", async () => {
+    const answerOnly = assemblyForTurn({ hostStreams: false });
+    const claim = await answerOnly.assembly.claimRoutineTurn(session(), turnInput);
+
+    expect(claim?.reply.stream).toBeUndefined();
+    const result = await claim!.reply.render();
+    expect(result.presentation.answer).toBe("What would you like to tell them?");
+    expect(answerOnly.modelCalls).toEqual(["selector answer routine_turn", "reply answer routine_turn:2"]);
   });
 });
 

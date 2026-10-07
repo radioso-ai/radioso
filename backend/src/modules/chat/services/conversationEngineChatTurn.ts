@@ -21,6 +21,7 @@ import type {
   ConversationTurnInterpreter,
   ProcessTurnResult,
   RenderableTurn,
+  RoutineTerminalKind,
   RoutineTurnEffects,
 } from "@radioso/conversation-contract";
 
@@ -496,6 +497,33 @@ export interface RoutineTurnWithConversationEngineClaim {
   };
 }
 
+const ROUTINE_TERMINAL_KINDS: ReadonlySet<string> = new Set<RoutineTerminalKind>(["complete", "handoff", "action", "stuck"]);
+
+const isRoutineTerminalKind = (value: unknown): value is RoutineTerminalKind =>
+  typeof value === "string" && ROUTINE_TERMINAL_KINDS.has(value);
+
+/** How the turn's routine ended, as its routine trace stage records it; absent when it did not end. */
+const routineTerminalKind = (result: ProcessTurnResult): RoutineTerminalKind | undefined => {
+  const routineId = result.routineExecution?.routineId;
+  const terminalKind = routineId
+    ? result.trace.stages.find((stage) => stage.id === `routine:${routineId}`)?.outputs?.terminalKind
+    : undefined;
+  return isRoutineTerminalKind(terminalKind) ? terminalKind : undefined;
+};
+
+/** The effects a settled routine turn reports, in the shape a claim reports them before its reply exists. */
+const routineTurnEffectsOf = (result: ProcessTurnResult): RoutineTurnEffects => {
+  const terminalKind = routineTerminalKind(result);
+  return {
+    ...(result.routineExecution ? { routineExecution: result.routineExecution } : {}),
+    ...(terminalKind ? { terminalKind } : {}),
+    ...(result.actions ? { actions: result.actions } : {}),
+    ...(result.awaitingDecision ? { awaitingDecision: result.awaitingDecision } : {}),
+    ...(result.handoff ? { handoff: result.handoff } : {}),
+    ...(result.operatorNotice ? { operatorNotice: result.operatorNotice } : {}),
+  };
+};
+
 /**
  * An engine that cannot claim a routine turn attempts it whole; its claim carries the
  * finished turn, has no stream, and reports the effects that turn's result reports.
@@ -508,9 +536,8 @@ const renderedRoutineClaim = async (
   if (!result) {
     return null;
   }
-  const { routineExecution, actions, awaitingDecision, handoff, operatorNotice } = result;
   return {
-    effects: { routineExecution, actions, awaitingDecision, handoff, operatorNotice },
+    effects: routineTurnEffectsOf(result),
     reply: { render: async () => result.response },
     settle: async () => result,
   };

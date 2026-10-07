@@ -9,6 +9,15 @@ import { isBlankChatAnswerError } from "../chatAnswerErrors.js";
 import { CHAT_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 import type { LlmCapabilityResolveInput } from "../../../../shared/infra/llm/workspaceContext.js";
 
+/**
+ * The host gateway a routine generates through. It always completes; it streams only when
+ * it has `streamAnswer`.
+ */
+export type RoutineChatGateway = Pick<ChatGateway, "answer"> & Partial<Pick<ChatGateway, "streamAnswer">>;
+
+const canStream = (gateway: RoutineChatGateway): gateway is Pick<ChatGateway, "answer" | "streamAnswer"> =>
+  typeof gateway.streamAnswer === "function";
+
 /** The per-turn billing + model-resolution context a routine LLM call needs. */
 interface RoutineModelTurnContext {
   workspaceContext: LlmCapabilityResolveInput;
@@ -67,9 +76,20 @@ export class RoutineChatModelGateway implements ConversationModelGateway {
   private callCount = 0;
 
   constructor(
-    private readonly chatGateway: Pick<ChatGateway, "answer" | "streamAnswer">,
+    private readonly chatGateway: RoutineChatGateway,
     private readonly turn: RoutineModelTurnContext,
   ) {}
+
+  /**
+   * The same request as a completion, streamed; undefined when the host gateway cannot
+   * stream. A stream signals no blank answer — it just ends with nothing — so retrying a
+   * blank one is the caller's to do; a retry is a call of its own and takes the next usage
+   * attempt.
+   */
+  get stream(): ((input: ConversationModelRequest) => AsyncIterable<string>) | undefined {
+    const host = this.chatGateway;
+    return canStream(host) ? (input) => host.streamAnswer(this.nextRequest(input)) : undefined;
+  }
 
   async complete(input: ConversationModelRequest): Promise<{ text: string }> {
     const request = this.nextRequest(input);
@@ -85,15 +105,6 @@ export class RoutineChatModelGateway implements ConversationModelGateway {
       const retryUsage = { ...request.usageContext, attemptKey: `${request.usageContext.attemptKey}:blank_retry` };
       return { text: await this.chatGateway.answer({ ...request, usageContext: retryUsage }) };
     }
-  }
-
-  /**
-   * The same request as a completion, streamed. A stream signals no blank answer — it just
-   * ends with nothing — so retrying a blank one is the caller's to do; a retry is a call of
-   * its own and takes the next usage attempt.
-   */
-  stream(input: ConversationModelRequest): AsyncIterable<string> {
-    return this.chatGateway.streamAnswer(this.nextRequest(input));
   }
 
   /** The host request for the turn's next model call, metered under that call's own usage attempt. */

@@ -59,11 +59,7 @@ const routineProviderStub = (): ChatRoutineProvider => ({
     return { activator: {} as never, runner: {} as never };
   },
 });
-// Replay renders routine replies whole, so no test here expects the gateway to stream.
-const noStream = (): AsyncIterable<string> => {
-  throw new Error("routine replies are not streamed in replay");
-};
-const chatGatewayStub = () => ({ answer: async () => "", streamAnswer: noStream });
+const chatGatewayStub = () => ({ answer: async () => "" });
 const presenterStub = (): ChatAnswerPresenter => {
   const present = (answer: string) => ({
     answer,
@@ -116,7 +112,6 @@ const recordingChatGateway = (answer: string) => {
         calls.push(input);
         return answer;
       }),
-      streamAnswer: noStream,
     },
   };
 };
@@ -1575,7 +1570,7 @@ describe("WorkbenchReplayRunner", () => {
         return { activator: { activate: async () => null }, runner: {} as never, coverageActivator };
       },
     };
-    const gateway = { answer: vi.fn(async () => "unused"), streamAnswer: noStream };
+    const gateway = { answer: vi.fn(async () => "unused") };
 
     const runner = new WorkbenchReplayRunner({
       retrievalTurn: retrievalTurn([]),
@@ -1994,7 +1989,6 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
       if (systemPrompt.includes("message they would like to send")) return "What would you like to tell them?";
       return "unexpected model call";
     }),
-    streamAnswer: noStream,
   });
 
   it("starts the contact routine on the first message and completes the second turn that resumes it", async () => {
@@ -2073,7 +2067,6 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
             return "unexpected model call";
         }
       }),
-      streamAnswer: noStream,
     };
     const runner = new WorkbenchReplayRunner({
       retrievalTurn: retrievalTurn([]),

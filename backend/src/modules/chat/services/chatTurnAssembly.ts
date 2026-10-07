@@ -26,7 +26,6 @@ import type {
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { buildPendingDecisionTransition } from "../../approvals/public.js";
-import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
 import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
@@ -56,7 +55,7 @@ import type {
   ChatConversationTurnInterpreter,
   ConversationTurnInterpretationResult,
 } from "./conversationTurnInterpreter.js";
-import { RoutineChatModelGateway } from "./routines/routineChatModelGateway.js";
+import { RoutineChatModelGateway, type RoutineChatGateway } from "./routines/routineChatModelGateway.js";
 import { pageReadAwareRoutineRunner } from "./routines/pageReadAwareRoutineRunner.js";
 import {
   createRoutineGroundedAnswerRenderer,
@@ -361,7 +360,8 @@ type PreparedChatStreamTurnEvent =
     } & CoverageRoutineEffects;
 
 export interface ChatTurnAssemblyOptions {
-  chatGateway: Pick<ChatGateway, "answer" | "streamAnswer">;
+  /** Routine replies stream only when this gateway has `streamAnswer`. */
+  chatGateway: RoutineChatGateway;
   chatAnswerPresenter: ChatAnswerPresenter;
   chatSessionPreparer: ChatSessionPreparer;
   conversationEngine: ConversationEngine;

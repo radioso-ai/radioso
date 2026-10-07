@@ -305,7 +305,7 @@ describe("unsupported-answer delivery guard", () => {
     expect(counts().fallbackCalls).toBe(0);
   });
 
-  it("keeps captured page-read output on the committed streaming path", async () => {
+  it("streams captured page-read output live instead of holding it for one committed block", async () => {
     const pageAnswer = "The migration access code is QZ-7419.";
     const { composer, counts } = buildComposer(unsupportedAnswerEnvelope(pageAnswer));
 
@@ -318,14 +318,15 @@ describe("unsupported-answer delivery guard", () => {
       ),
     );
 
-    expect(chunks).toEqual([]);
-    expect(result.hasStreamedAnswer).toBe(false);
+    expect(chunks.join("")).toBe(pageAnswer);
+    expect(result.hasStreamedAnswer).toBe(true);
+    expect(result.deliveryMode).toBe("live");
     expect(result.finalPresentation.answer).toBe(pageAnswer);
     expect(result.finalPresentation.skillOutcome).toBe("grounded_degraded");
     expect(counts().fallbackCalls).toBe(0);
   });
 
-  it("does not apply the citation gate bound to long captured page-read output", async () => {
+  it("does not apply the citation gate bound to long captured page-read output, and still streams it live", async () => {
     const pageAnswer = "Page summary sentence. ".repeat(250);
     const { composer, counts, gateAbortObserved } = buildComposer(
       unsupportedAnswerEnvelope(pageAnswer),
@@ -340,12 +341,71 @@ describe("unsupported-answer delivery guard", () => {
       ),
     );
 
-    expect(chunks).toEqual([]);
-    expect(result.deliveryMode).toBe("committed");
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(result.deliveryMode).toBe("live");
     expect(result.finalPresentation.answer).toBe(pageAnswer.trim());
     expect(result.finalPresentation.skillOutcome).toBe("grounded_degraded");
     expect(counts().fallbackCalls).toBe(0);
     expect(gateAbortObserved()).toBe(false);
+  });
+
+  it("releases captured page-read text to the consumer before the model stream finishes", async () => {
+    const pageAnswer = "The migration access code is QZ-7419.";
+    const raw = JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the migration access code",
+      outcome: "answer",
+      answer: pageAnswer,
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    // Split right after the head (coverage/requestFocus/outcome, which precede
+    // `answer` in schema order) plus a few characters of the answer itself, so
+    // the first upstream chunk both completes the head and opens the answer
+    // field, and the second chunk is held back until the test releases it.
+    const splitAt = raw.indexOf('"answer":"') + '"answer":"'.length + 8;
+    const firstChunk = raw.slice(0, splitAt);
+    const restChunk = raw.slice(splitAt);
+    let releaseRest!: () => void;
+    const restReleased = new Promise<void>((resolve) => { releaseRest = resolve; });
+    const gateway: ChatGateway = {
+      async answer() { return "unused"; },
+      async *streamAnswer() {
+        yield firstChunk;
+        await restReleased;
+        yield restChunk;
+      },
+    };
+    const composer = new RetrievalAnswerComposer(new ChatAnswerSupport(), gateway, presenter(), {
+      async composeNoContext() { return { text: "must not run", declineReason: "content_gap" as const }; },
+    });
+
+    const generator = composer.streamAnswer(
+      capturedPageReadSession(),
+      "What is the migration access code?",
+      undefined,
+      undefined,
+    );
+    const first = await generator.next();
+    if (first.done) {
+      throw new Error("expected the first step to yield text, not settle");
+    }
+
+    expect(first.value).toBe(pageAnswer.slice(0, 8));
+
+    releaseRest();
+    const chunks: string[] = [first.value];
+    let step = await generator.next();
+    while (!step.done) {
+      chunks.push(step.value);
+      step = await generator.next();
+    }
+
+    expect(chunks.join("")).toBe(pageAnswer);
+    expect(step.value.finalPresentation.answer).toBe(pageAnswer);
+    expect(step.value.hasStreamedAnswer).toBe(true);
   });
 });
 
@@ -736,5 +796,86 @@ describe("retrieval answer envelope v2", () => {
     expect(presented.answer).toBe(DEGRADED_V2_VISIBLE);
     expect(presented.skillOutcome).toBe("grounded_degraded");
     expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
+  });
+
+  it("streams a page-context fallback answer live when workspace retrieval is empty", async () => {
+    const session = baseSession();
+    (session.retrieval as { contexts: unknown[] }).contexts = [];
+    session.resolvedContext.renderFragments = [{
+      kind: "page_context",
+      pageUrl: "https://example.test/workshop",
+      content: "The workshop begins in June.",
+    }];
+    const { composer, counts } = buildComposer(degradedV2Envelope());
+
+    const { chunks, result } = await drain(
+      composer.streamAnswer(session, "When does the workshop begin?", undefined, undefined),
+    );
+
+    expect(chunks.join("")).toBe(DEGRADED_V2_VISIBLE);
+    expect(result.hasStreamedAnswer).toBe(true);
+    expect(result.deliveryMode).toBe("live");
+    expect(result.finalPresentation.answer).toBe(DEGRADED_V2_VISIBLE);
+    expect(result.finalPresentation.skillOutcome).toBe("grounded_degraded");
+    // The page-context fallback now streams through `chatGateway.streamAnswer`,
+    // never the non-streaming `answer` call the compose path still uses.
+    expect(counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 0 });
+  });
+
+  it("releases a page-context fallback answer to the consumer before the model stream finishes", async () => {
+    const session = baseSession();
+    (session.retrieval as { contexts: unknown[] }).contexts = [];
+    session.resolvedContext.renderFragments = [{
+      kind: "page_context",
+      pageUrl: "https://example.test/workshop",
+      content: "The workshop begins in June.",
+    }];
+    const answer = "The workshop begins in June.";
+    const raw = JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "when the workshop begins",
+      outcome: "answer",
+      answer,
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    const splitAt = raw.indexOf('"answer":"') + '"answer":"'.length + 8;
+    const firstChunk = raw.slice(0, splitAt);
+    const restChunk = raw.slice(splitAt);
+    let releaseRest!: () => void;
+    const restReleased = new Promise<void>((resolve) => { releaseRest = resolve; });
+    const gateway: ChatGateway = {
+      async answer() { return "unused"; },
+      async *streamAnswer() {
+        yield firstChunk;
+        await restReleased;
+        yield restChunk;
+      },
+    };
+    const composer = new RetrievalAnswerComposer(new ChatAnswerSupport(), gateway, presenter(), {
+      async composeNoContext() { return { text: "must not run", declineReason: "content_gap" as const }; },
+    });
+
+    const generator = composer.streamAnswer(session, "When does the workshop begin?", undefined, undefined);
+    const first = await generator.next();
+    if (first.done) {
+      throw new Error("expected the first step to yield text, not settle");
+    }
+
+    expect(first.value).toBe(answer.slice(0, 8));
+
+    releaseRest();
+    const chunks: string[] = [first.value];
+    let step = await generator.next();
+    while (!step.done) {
+      chunks.push(step.value);
+      step = await generator.next();
+    }
+
+    expect(chunks.join("")).toBe(answer);
+    expect(step.value.finalPresentation.answer).toBe(answer);
+    expect(step.value.hasStreamedAnswer).toBe(true);
   });
 });

@@ -18,14 +18,6 @@ const turnContext = {
   },
 };
 
-/** A host gateway for the tests that only complete: streaming is never expected of it. */
-const withoutStream = (gateway: Pick<ChatGateway, "answer">): Pick<ChatGateway, "answer" | "streamAnswer"> => ({
-  answer: (input) => gateway.answer(input),
-  streamAnswer: () => {
-    throw new Error("stream not expected");
-  },
-});
-
 describe("RoutineChatModelGateway", () => {
   it("serializes the transcript into the prompt and forwards the turn's usage + workspace context", async () => {
     const calls: ChatGatewayInput[] = [];
@@ -35,7 +27,7 @@ describe("RoutineChatModelGateway", () => {
         return "  Sure — what is your email?  ";
       },
     };
-    const gateway = new RoutineChatModelGateway(withoutStream(chatGateway), turnContext);
+    const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
 
     const result = await gateway.complete({
       messages: [
@@ -67,7 +59,7 @@ describe("RoutineChatModelGateway", () => {
       },
     };
 
-    const result = await new RoutineChatModelGateway(withoutStream(chatGateway), turnContext).complete({
+    const result = await new RoutineChatModelGateway(chatGateway, turnContext).complete({
       messages: [{ role: "user", content: "si" }],
       systemPrompt: "SELECT",
     });
@@ -86,7 +78,7 @@ describe("RoutineChatModelGateway", () => {
         return "ok";
       },
     };
-    const gateway = new RoutineChatModelGateway(withoutStream(chatGateway), turnContext);
+    const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
 
     await gateway.complete({ messages: [{ role: "user", content: "first" }] });
     await gateway.complete({ messages: [{ role: "user", content: "second" }] });
@@ -112,7 +104,7 @@ describe("RoutineChatModelGateway", () => {
         return "recovered";
       },
     };
-    const gateway = new RoutineChatModelGateway(withoutStream(chatGateway), turnContext);
+    const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
 
     await gateway.complete({ messages: [{ role: "user", content: "first" }] });
     const result = await gateway.complete({ messages: [{ role: "user", content: "second" }] });
@@ -130,7 +122,7 @@ describe("RoutineChatModelGateway", () => {
       },
     };
     await expect(
-      new RoutineChatModelGateway(withoutStream(blankTwice), turnContext).complete({ messages: [{ role: "user", content: "si" }] }),
+      new RoutineChatModelGateway(blankTwice, turnContext).complete({ messages: [{ role: "user", content: "si" }] }),
     ).rejects.toBeInstanceOf(BlankChatAnswerError);
 
     let attempts = 0;
@@ -141,7 +133,7 @@ describe("RoutineChatModelGateway", () => {
       },
     };
     await expect(
-      new RoutineChatModelGateway(withoutStream(failing), turnContext).complete({ messages: [{ role: "user", content: "si" }] }),
+      new RoutineChatModelGateway(failing, turnContext).complete({ messages: [{ role: "user", content: "si" }] }),
     ).rejects.toThrow("provider_timeout");
     expect(attempts).toBe(1);
   });
@@ -154,7 +146,7 @@ describe("RoutineChatModelGateway", () => {
         return '{"matches":[]}';
       },
     };
-    const gateway = new RoutineChatModelGateway(withoutStream(chatGateway), turnContext);
+    const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
 
     await gateway.complete({
       messages: [{ role: "user", content: "Can I book a demo?" }],
@@ -180,12 +172,12 @@ describe("RoutineChatModelGateway", () => {
   it("forwards the turn cancellation signal to routine model calls", async () => {
     const calls: ChatGatewayInput[] = [];
     const controller = new AbortController();
-    const gateway = new RoutineChatModelGateway(withoutStream({
+    const gateway = new RoutineChatModelGateway({
       async answer(input) {
         calls.push(input);
         return "Done";
       },
-    }), { ...turnContext, signal: controller.signal });
+    }, { ...turnContext, signal: controller.signal });
 
     await gateway.complete({ messages: [{ role: "user", content: "Continue" }] });
 
@@ -193,6 +185,19 @@ describe("RoutineChatModelGateway", () => {
   });
 
   describe("streaming", () => {
+    it("offers a stream only when the host gateway can stream", () => {
+      const answerOnly: Pick<ChatGateway, "answer"> = { answer: async () => "ok" };
+      const streamingHost: Pick<ChatGateway, "answer" | "streamAnswer"> = {
+        answer: async () => "ok",
+        async *streamAnswer() {
+          yield "ok";
+        },
+      };
+
+      expect(new RoutineChatModelGateway(answerOnly, turnContext).stream).toBeUndefined();
+      expect(new RoutineChatModelGateway(streamingHost, turnContext).stream).toBeTypeOf("function");
+    });
+
     const streaming = (deltas: string[]) => {
       const calls: Array<{ via: "answer" | "streamAnswer"; input: ChatGatewayInput }> = [];
       const chatGateway: Pick<ChatGateway, "answer" | "streamAnswer"> = {
@@ -225,7 +230,7 @@ describe("RoutineChatModelGateway", () => {
         systemPrompt: "ROUTINE STEP INSTRUCTIONS",
       };
 
-      const deltas = await collect(new RoutineChatModelGateway(chatGateway, turnContext).stream(request));
+      const deltas = await collect(new RoutineChatModelGateway(chatGateway, turnContext).stream!(request));
       await new RoutineChatModelGateway(chatGateway, turnContext).complete(request);
 
       expect(deltas).toEqual(["Sure", " — what is your email?"]);
@@ -239,8 +244,8 @@ describe("RoutineChatModelGateway", () => {
       const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
 
       await gateway.complete({ messages: [{ role: "user", content: "select" }] });
-      const reply = gateway.stream({ messages: [{ role: "user", content: "reply" }] });
-      const retry = gateway.stream({ messages: [{ role: "user", content: "reply" }] });
+      const reply = gateway.stream!({ messages: [{ role: "user", content: "reply" }] });
+      const retry = gateway.stream!({ messages: [{ role: "user", content: "reply" }] });
       await collect(retry);
       await collect(reply);
 
@@ -256,7 +261,7 @@ describe("RoutineChatModelGateway", () => {
       const controller = new AbortController();
 
       await collect(new RoutineChatModelGateway(chatGateway, { ...turnContext, signal: controller.signal })
-        .stream({ messages: [{ role: "user", content: "Continue" }] }));
+        .stream!({ messages: [{ role: "user", content: "Continue" }] }));
 
       expect(calls[0]?.input.signal).toBe(controller.signal);
     });
@@ -264,7 +269,7 @@ describe("RoutineChatModelGateway", () => {
     it("streams activation ranking under the routine_activation usage label and generation budget", async () => {
       const { calls, chatGateway } = streaming(["{}"]);
 
-      await collect(new RoutineChatModelGateway(chatGateway, turnContext).stream({
+      await collect(new RoutineChatModelGateway(chatGateway, turnContext).stream!({
         messages: [{ role: "user", content: "Can I book a demo?" }],
         metadata: { routineActivation: true },
       }));

@@ -286,8 +286,10 @@ imports from `services/`.
   `attemptRoutineTurn` is that claim rendered whole, the path the stream and
   non-stream turns, eval replay, and Test Chat take. `services/routines/routineChatModelGateway.ts`
   gives the routine selector and step renderer the turn's model, whole (`complete`, with
-  one blank retry) or streamed (`stream`), each call under its own usage attempt in call
-  order. `services/routines/routineGroundedAnswerRenderer.ts` decides from the staged
+  one blank retry) or streamed (`stream`, present only when the host gateway has
+  `streamAnswer`, so a claim's `reply.stream` exists only when it can stream), each call
+  under its own usage attempt in call order. A claim from an engine without
+  `claimRoutine` comes from a whole `attemptRoutine` and reports the same effects. `services/routines/routineGroundedAnswerRenderer.ts` decides from the staged
   retrieval alone whether a step is groundable (`prepare`) and writes the grounded
   answer only when it is rendered. `services/routines/pageReadAwareRoutineRunner.ts`
   binds the routine to the page excerpt the turn may read, and commits that capture to

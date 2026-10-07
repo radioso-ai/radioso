@@ -30,9 +30,10 @@ const COPY_FIELDS = [
   ['publicChatAiLabel', 'AI chip', 'AI'],
   ['publicChatOpenFullScreenLabel', 'Full-screen button', 'Open full screen'],
   ['publicChatOpenNewTabLabel', 'New-tab menu item', 'Open in new tab'],
+  ['publicChatAgentUnavailableMessage', 'Agent-unavailable message', "This assistant isn't available right now. Please try again later."],
 ] as const
 
-export interface ChatWordingCardProps {
+interface ChatWordingCardProps {
   copyPacks: NonNullable<WebsiteEmbedCopyPacks>
   /** Owned by the parent because the live preview renders the same pack. */
   activeLocale: string

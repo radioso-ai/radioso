@@ -103,6 +103,10 @@ export interface ChatMessage {
   activityTrace?: ActivityTrace
   persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
+  /** Narrows why an `error` status happened, so the view can show cause-specific
+   *  copy instead of the generic failure message. Absent for every other failure
+   *  (provider outage, timeout, etc.), which keeps the generic copy. */
+  failure?: 'unavailable'
   skill?: SkillStreamPayload
   /** Message provenance, so the visitor can tell a human operator reply from the AI. */
   source?: ChatConversationDetail['messages'][number]['source']
@@ -166,6 +170,13 @@ const isRateLimitError = (error: unknown): { message: string; retryAfterSeconds:
     retryAfterSeconds: Number(structuredError.retryAfterSeconds ?? 60),
   }
 }
+
+// The account's conversation quota is exhausted. This is the only error code the
+// public route still answers with on this path when the agent cannot reply, so it
+// gets its own visitor-facing copy instead of the generic failure message. Quota
+// can be restored at any time, so the composer stays enabled either way.
+const isUsageLimitExceededError = (error: unknown): boolean =>
+  getErrorResponse(error)?.code === 'usage_limit_exceeded'
 
 const resolveOwnFeedback = (
   entries: AnswerFeedbackEntry[] | undefined,
@@ -484,10 +495,25 @@ export function AnonymousChatProvider({
         // No greeting produced — drop the placeholder and fall back to the empty state.
         setMessages((prev) => prev.filter((message) => message.id !== greetingMessageId))
         return null
-      } catch {
-        if (!isStale()) {
-          setMessages((prev) => prev.filter((message) => message.id !== greetingMessageId))
+      } catch (error) {
+        if (isStale()) {
+          return null
         }
+        if (isUsageLimitExceededError(error)) {
+          // The account's quota is exhausted before the greeting can even run. Leave
+          // the placeholder in place and turn it into a visible failure instead of
+          // silently removing it — an anonymous visitor who sees nothing has no way
+          // to tell "no greeting configured" from "the agent is down".
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === greetingMessageId
+                ? { ...message, status: 'error' as const, failure: 'unavailable' as const }
+                : message,
+            ),
+          )
+          return null
+        }
+        setMessages((prev) => prev.filter((message) => message.id !== greetingMessageId))
         return null
       }
     },
@@ -1136,6 +1162,7 @@ export function AnonymousChatProvider({
                 return {
                   ...message,
                   status: 'error' as const,
+                  failure: isUsageLimitExceededError(error) ? 'unavailable' as const : undefined,
                   answerSegments: undefined,
                   suggestions: undefined,
                 }

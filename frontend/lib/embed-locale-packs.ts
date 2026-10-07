@@ -8,7 +8,7 @@ import type { WebsiteEmbedCopy, WebsiteEmbedCopyOverrides } from '@/lib/embed-wi
 // it. English is the baseline (`DEFAULT_WEBSITE_EMBED_COPY`) and intentionally
 // absent here. `proactiveGreetingTeaser` is launcher-only (the widget teaser
 // bubble) and is not part of the in-frame copy contract.
-export type EmbedLocalePack = WebsiteEmbedCopyOverrides & { proactiveGreetingTeaser?: string }
+type EmbedLocalePack = WebsiteEmbedCopyOverrides & { proactiveGreetingTeaser?: string }
 
 // Keys every locale pack must translate. Mirrors the in-frame copy contract
 // except `publicChatSubtitle`, which is operator branding (blank by default)
@@ -37,6 +37,7 @@ export const TRANSLATABLE_COPY_KEYS = [
   'publicChatAiLabel',
   'publicChatRateLimitRetryTemplate',
   'publicChatMessageFailedMessage',
+  'publicChatAgentUnavailableMessage',
   'skillReceiptSubmittedLabel',
   'skillReceiptFailedLabel',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
@@ -68,6 +69,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatAiLabel: 'IA',
     publicChatRateLimitRetryTemplate: 'Inténtalo de nuevo en {seconds}s.',
     publicChatMessageFailedMessage: 'Lo sentimos, algo ha salido mal. Inténtalo de nuevo.',
+    publicChatAgentUnavailableMessage: 'Este asistente no está disponible en este momento. Inténtalo de nuevo más tarde.',
     skillReceiptSubmittedLabel: 'Enviado',
     skillReceiptFailedLabel: 'No se pudo enviar',
   },
@@ -97,6 +99,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatAiLabel: 'IA',
     publicChatRateLimitRetryTemplate: 'Réessayez dans {seconds} s.',
     publicChatMessageFailedMessage: 'Désolé, une erreur est survenue. Veuillez réessayer.',
+    publicChatAgentUnavailableMessage: "Cet assistant n'est pas disponible pour le moment. Veuillez réessayer plus tard.",
     skillReceiptSubmittedLabel: 'Envoyé',
     skillReceiptFailedLabel: "Échec de l'envoi",
   },
@@ -126,6 +129,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatAiLabel: 'KI',
     publicChatRateLimitRetryTemplate: 'Erneut versuchen in {seconds} s.',
     publicChatMessageFailedMessage: 'Entschuldigung, etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.',
+    publicChatAgentUnavailableMessage: 'Dieser Assistent ist derzeit nicht verfügbar. Bitte versuchen Sie es später erneut.',
     skillReceiptSubmittedLabel: 'Gesendet',
     skillReceiptFailedLabel: 'Senden fehlgeschlagen',
   },
@@ -155,6 +159,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatAiLabel: 'IA',
     publicChatRateLimitRetryTemplate: 'Riprova tra {seconds} s.',
     publicChatMessageFailedMessage: 'Spiacenti, qualcosa è andato storto. Riprova.',
+    publicChatAgentUnavailableMessage: 'Questo assistente non è disponibile al momento. Riprova più tardi.',
     skillReceiptSubmittedLabel: 'Inviato',
     skillReceiptFailedLabel: 'Invio non riuscito',
   },
@@ -184,6 +189,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatAiLabel: 'IA',
     publicChatRateLimitRetryTemplate: 'Tente novamente em {seconds}s.',
     publicChatMessageFailedMessage: 'Desculpe, algo correu mal. Tente novamente.',
+    publicChatAgentUnavailableMessage: 'Este assistente não está disponível neste momento. Tente novamente mais tarde.',
     skillReceiptSubmittedLabel: 'Enviado',
     skillReceiptFailedLabel: 'Falha ao enviar',
   },
@@ -213,6 +219,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatAiLabel: 'AI',
     publicChatRateLimitRetryTemplate: 'Probeer het opnieuw over {seconds}s.',
     publicChatMessageFailedMessage: 'Sorry, er is iets misgegaan. Probeer het opnieuw.',
+    publicChatAgentUnavailableMessage: 'Deze assistent is momenteel niet beschikbaar. Probeer het later opnieuw.',
     skillReceiptSubmittedLabel: 'Verzonden',
     skillReceiptFailedLabel: 'Verzenden mislukt',
   },
@@ -242,6 +249,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatAiLabel: 'AI',
     publicChatRateLimitRetryTemplate: 'Spróbuj ponownie za {seconds}s.',
     publicChatMessageFailedMessage: 'Przepraszamy, coś poszło nie tak. Spróbuj ponownie.',
+    publicChatAgentUnavailableMessage: 'Ten asystent jest obecnie niedostępny. Spróbuj ponownie później.',
     skillReceiptSubmittedLabel: 'Wysłano',
     skillReceiptFailedLabel: 'Nie udało się wysłać',
   },
@@ -270,6 +278,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatAiLabel: 'AI',
     publicChatRateLimitRetryTemplate: '请在 {seconds} 秒后重试。',
     publicChatMessageFailedMessage: '抱歉，出了点问题。请重试。',
+    publicChatAgentUnavailableMessage: '该助手目前不可用。请稍后再试。',
     skillReceiptSubmittedLabel: '已提交',
     skillReceiptFailedLabel: '无法提交',
   },
@@ -299,6 +308,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatAiLabel: 'AI',
     publicChatRateLimitRetryTemplate: '{seconds} 秒後に再試行してください。',
     publicChatMessageFailedMessage: '申し訳ありません。問題が発生しました。もう一度お試しください。',
+    publicChatAgentUnavailableMessage: 'このアシスタントは現在利用できません。しばらくしてからもう一度お試しください。',
     skillReceiptSubmittedLabel: '送信しました',
     skillReceiptFailedLabel: '送信できませんでした',
   },
@@ -328,6 +338,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatAiLabel: 'ИИ',
     publicChatRateLimitRetryTemplate: 'Повторите через {seconds} с.',
     publicChatMessageFailedMessage: 'Извините, что-то пошло не так. Попробуйте ещё раз.',
+    publicChatAgentUnavailableMessage: 'Этот ассистент сейчас недоступен. Пожалуйста, попробуйте позже.',
     skillReceiptSubmittedLabel: 'Отправлено',
     skillReceiptFailedLabel: 'Не удалось отправить',
   },

@@ -203,6 +203,8 @@ Limits are enforced before expensive work begins, so customers cannot race past 
 
 Requests that exceed a cap receive a `429` response with `code: "usage_limit_exceeded"` and a `details.resource` of `stored_indexed_bytes`, `monthly_indexed_bytes`, `stored_documents`, `monthly_answers`, or `monthly_conversations`. On a conversation-metered account, a `monthly_conversations` refusal only happens once the [grace allowance](#grace-allowance) is also exhausted — Ray, Test Chat, Workbench replays, eval runs, and Pulse reports reach this `429` as soon as the allowance and any positive credits run out, since they never borrow.
 
+The public website chat and anonymous link, which talk to visitors who aren't the account holder, answer with the same `code` but no `details` — the resource, limit, used count, and billing period are account information the visitor has no reason to see. The widget shows a generic "assistant unavailable" message instead.
+
 ## Organization creation cap
 
 Enterprise deployments also include a per-user cap on creating additional organizations. This cap is an anti-abuse control, not a usage-limit profile dimension.

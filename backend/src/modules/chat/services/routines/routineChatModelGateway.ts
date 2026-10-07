@@ -1,6 +1,7 @@
 import type {
   ConversationMessage,
   ConversationModelGateway,
+  ConversationModelRequest,
 } from "@radioso/conversation-contract";
 
 import type { ChatGateway, ChatGatewayInput, ChatGatewayUsageContext } from "../../contracts/chatGateway.js";
@@ -57,7 +58,8 @@ const withCallOrdinal = (usageContext: ChatGatewayUsageContext, ordinal: number)
  * for routine progression. Built per turn (it carries that turn's usage + workspace
  * context, which are not on the engine's `TurnContext`), it lets the routine next-step
  * selector and step renderer generate through the same workspace/usage-accounted model
- * as normal chat answers. Generation stays LLM-owned; this only bridges the shapes.
+ * as normal chat answers, whole or streamed. Generation stays LLM-owned; this only bridges
+ * the shapes.
  */
 export class RoutineChatModelGateway implements ConversationModelGateway {
   // Assigned in call order, at call start, so the ordinal is deterministic regardless of
@@ -65,31 +67,12 @@ export class RoutineChatModelGateway implements ConversationModelGateway {
   private callCount = 0;
 
   constructor(
-    private readonly chatGateway: Pick<ChatGateway, "answer">,
+    private readonly chatGateway: Pick<ChatGateway, "answer" | "streamAnswer">,
     private readonly turn: RoutineModelTurnContext,
   ) {}
 
-  async complete(input: {
-    messages: ConversationMessage[];
-    systemPrompt?: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<{ text: string }> {
-    this.callCount += 1;
-    const ordinal = this.callCount;
-    const routineActivation = isRoutineActivationCall(input.metadata);
-    const baseUsageContext = routineActivation
-      ? routineActivationUsageContext(this.turn.usageContext)
-      : this.turn.usageContext;
-    const request: ChatGatewayInput = {
-      query: lastUserContent(input.messages),
-      history: [],
-      prompt: serializeTranscript(input.messages),
-      systemPrompt: input.systemPrompt,
-      workspaceContext: this.turn.workspaceContext,
-      usageContext: withCallOrdinal(baseUsageContext, ordinal),
-      ...(routineActivation ? { generation: CHAT_BEHAVIOR.intentRouting } : {}),
-      ...(this.turn.signal ? { signal: this.turn.signal } : {}),
-    };
+  async complete(input: ConversationModelRequest): Promise<{ text: string }> {
+    const request = this.nextRequest(input);
     try {
       return { text: await this.chatGateway.answer(request) };
     } catch (error) {
@@ -102,5 +85,33 @@ export class RoutineChatModelGateway implements ConversationModelGateway {
       const retryUsage = { ...request.usageContext, attemptKey: `${request.usageContext.attemptKey}:blank_retry` };
       return { text: await this.chatGateway.answer({ ...request, usageContext: retryUsage }) };
     }
+  }
+
+  /**
+   * The same request as a completion, streamed. A stream signals no blank answer — it just
+   * ends with nothing — so retrying a blank one is the caller's to do; a retry is a call of
+   * its own and takes the next usage attempt.
+   */
+  stream(input: ConversationModelRequest): AsyncIterable<string> {
+    return this.chatGateway.streamAnswer(this.nextRequest(input));
+  }
+
+  /** The host request for the turn's next model call, metered under that call's own usage attempt. */
+  private nextRequest(input: ConversationModelRequest): ChatGatewayInput {
+    this.callCount += 1;
+    const routineActivation = isRoutineActivationCall(input.metadata);
+    const baseUsageContext = routineActivation
+      ? routineActivationUsageContext(this.turn.usageContext)
+      : this.turn.usageContext;
+    return {
+      query: lastUserContent(input.messages),
+      history: [],
+      prompt: serializeTranscript(input.messages),
+      systemPrompt: input.systemPrompt,
+      workspaceContext: this.turn.workspaceContext,
+      usageContext: withCallOrdinal(baseUsageContext, this.callCount),
+      ...(routineActivation ? { generation: CHAT_BEHAVIOR.intentRouting } : {}),
+      ...(this.turn.signal ? { signal: this.turn.signal } : {}),
+    };
   }
 }

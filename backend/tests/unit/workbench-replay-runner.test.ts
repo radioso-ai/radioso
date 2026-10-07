@@ -11,6 +11,7 @@ import type {
   Routine,
 } from "@radioso/conversation-contract";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
+import { BlankChatAnswerError } from "../../src/modules/chat/services/chatAnswerErrors.js";
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
 import { WorkbenchReplayRunner } from "../../src/modules/chat/services/workbenchReplayRunner.js";
@@ -58,7 +59,11 @@ const routineProviderStub = (): ChatRoutineProvider => ({
     return { activator: {} as never, runner: {} as never };
   },
 });
-const chatGatewayStub = () => ({ answer: async () => "" });
+// Replay renders routine replies whole, so no test here expects the gateway to stream.
+const noStream = (): AsyncIterable<string> => {
+  throw new Error("routine replies are not streamed in replay");
+};
+const chatGatewayStub = () => ({ answer: async () => "", streamAnswer: noStream });
 const presenterStub = (): ChatAnswerPresenter => {
   const present = (answer: string) => ({
     answer,
@@ -111,6 +116,7 @@ const recordingChatGateway = (answer: string) => {
         calls.push(input);
         return answer;
       }),
+      streamAnswer: noStream,
     },
   };
 };
@@ -1569,7 +1575,7 @@ describe("WorkbenchReplayRunner", () => {
         return { activator: { activate: async () => null }, runner: {} as never, coverageActivator };
       },
     };
-    const gateway = { answer: vi.fn(async () => "unused") };
+    const gateway = { answer: vi.fn(async () => "unused"), streamAnswer: noStream };
 
     const runner = new WorkbenchReplayRunner({
       retrievalTurn: retrievalTurn([]),
@@ -1988,6 +1994,7 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
       if (systemPrompt.includes("message they would like to send")) return "What would you like to tell them?";
       return "unexpected model call";
     }),
+    streamAnswer: noStream,
   });
 
   it("starts the contact routine on the first message and completes the second turn that resumes it", async () => {
@@ -2019,5 +2026,376 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
       variables: { email: "guest@example.com" },
       status: "active",
     });
+  });
+
+  // Golden record of a whole contact run, recorded before routine turns were split into
+  // claiming and rendering: which model calls each turn makes, in what order, under which
+  // usage key, and what the turn replies, does, and traces. Per-call usage keys follow call
+  // order, so any reordering shows up here.
+  it("keeps every routine turn's model calls, usage keys, replies, effects and trace (golden)", async () => {
+    const gatewayCalls: string[] = [];
+    let blankAsks = 0;
+    const promptKind = (systemPrompt: string): string => {
+      if (systemPrompt.includes("Rank whether the latest user message wants to start any registered routine")) return "activation";
+      if (systemPrompt.includes("You are guiding a user through a structured, multi-step routine")) return "selector";
+      if (systemPrompt.includes("email address where they can be reached")) return "reply:ask_email";
+      if (systemPrompt.includes("message they would like to send")) return "reply:ask_message";
+      if (systemPrompt.includes("Confirm their request was sent")) return "reply:done";
+      return "other";
+    };
+    const chatGateway = {
+      answer: vi.fn(async (input: ChatGatewayInput) => {
+        const kind = promptKind(input.systemPrompt ?? "");
+        gatewayCalls.push(`${kind} ${input.usageContext.operation} ${input.usageContext.attemptKey}`);
+        switch (kind) {
+          case "activation":
+            return JSON.stringify({ matches: [{ routineId: contactRoutineDefinition.id, confidence: 0.95, variables: {} }] });
+          case "selector":
+            if (input.query.includes("@")) {
+              return JSON.stringify({ claimsAuthority: false, condition: 2, offTopic: false, variables: { email: input.query } });
+            }
+            if (input.query.startsWith("Tell them")) {
+              return JSON.stringify({ claimsAuthority: false, condition: 2, offTopic: false, variables: { message: input.query } });
+            }
+            return JSON.stringify({ claimsAuthority: false, condition: null, offTopic: false, variables: {} });
+          case "reply:ask_email":
+            // The re-ask's first completion comes back blank once; the gateway retries it.
+            if (gatewayCalls.length > 3 && blankAsks === 0) {
+              blankAsks += 1;
+              throw new BlankChatAnswerError();
+            }
+            return "Which email can someone reach you at?";
+          case "reply:ask_message":
+            return "What would you like to tell them?";
+          case "reply:done":
+            return "Sent. Anything else?";
+          default:
+            return "unexpected model call";
+        }
+      }),
+      streamAnswer: noStream,
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: realRoutineProvider(),
+      chatGateway,
+      chatAnswerPresenter: presenterStub(),
+    });
+    const base = {
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      conversationId: "private-side-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      candidateRevision,
+      history: [],
+    };
+    const routineStage = (result: Awaited<ReturnType<WorkbenchReplayRunner["run"]>>) => {
+      const stage = result.turnTrace?.spine.stages.find((entry) => entry.kind === "routine_activate" || entry.kind === "routine_resume");
+      return stage ? { kind: stage.kind, status: stage.status, outputs: stage.outputs, subTrace: stage.subTrace } : null;
+    };
+    const turns = [];
+    let routineStartState: NonNullable<Parameters<WorkbenchReplayRunner["run"]>[0]["routineStartState"]> | undefined;
+    for (const query of ["How do I contact a human?", "hmm", "guest@example.com", "Tell them I need a callback"]) {
+      const callsBefore = gatewayCalls.length;
+      const result = await runner.run({ ...base, query, ...(routineStartState ? { routineStartState } : {}) });
+      routineStartState = result.continuation?.routineState ?? undefined;
+      turns.push({
+        query,
+        gatewayCalls: gatewayCalls.slice(callsBefore),
+        answer: result.answer,
+        actions: result.actions,
+        handoff: result.handoff,
+        routineState: result.continuation?.routineState
+          ? { ...result.continuation.routineState, executionId: "<execution>" }
+          : result.continuation?.routineState,
+        routineStage: routineStage(result),
+      });
+    }
+
+    expect(turns).toMatchInlineSnapshot(`
+      [
+        {
+          "actions": undefined,
+          "answer": "Which email can someone reach you at?",
+          "gatewayCalls": [
+            "activation routine_activation routine_turn:routine_activation",
+            "selector answer routine_turn:2",
+            "reply:ask_email answer routine_turn:3",
+          ],
+          "handoff": undefined,
+          "query": "How do I contact a human?",
+          "routineStage": {
+            "kind": "routine_activate",
+            "outputs": {
+              "answerLength": 37,
+              "completed": false,
+              "handoff": false,
+              "notifiesOperators": false,
+              "routineId": "builtin_contact_request_v1",
+              "terminalKind": undefined,
+            },
+            "status": "applied",
+            "subTrace": {
+              "namespace": "routine",
+              "payload": {
+                "capturedSlotKeys": [],
+                "filledSlotKeys": [],
+                "landedStepId": "ask_email",
+                "routineId": "builtin_contact_request_v1",
+                "startStepId": "ask_email",
+                "steps": [
+                  {
+                    "event": "reasked",
+                    "kind": "chat",
+                    "selection": {
+                      "outcome": "stay",
+                      "returnedSlotKeys": [],
+                    },
+                    "stepId": "ask_email",
+                    "viaSelector": true,
+                  },
+                ],
+              },
+              "version": 1,
+            },
+          },
+          "routineState": {
+            "attempts": {
+              "ask_email": 1,
+            },
+            "executionId": "<execution>",
+            "path": [],
+            "routineId": "builtin_contact_request_v1",
+            "status": "active",
+            "variables": {},
+          },
+        },
+        {
+          "actions": undefined,
+          "answer": "Which email can someone reach you at?",
+          "gatewayCalls": [
+            "selector answer routine_turn",
+            "reply:ask_email answer routine_turn:2",
+            "reply:ask_email answer routine_turn:2:blank_retry",
+          ],
+          "handoff": undefined,
+          "query": "hmm",
+          "routineStage": {
+            "kind": "routine_resume",
+            "outputs": {
+              "answerLength": 37,
+              "completed": false,
+              "handoff": false,
+              "notifiesOperators": false,
+              "routineId": "builtin_contact_request_v1",
+              "terminalKind": undefined,
+            },
+            "status": "applied",
+            "subTrace": {
+              "namespace": "routine",
+              "payload": {
+                "capturedSlotKeys": [],
+                "filledSlotKeys": [],
+                "landedStepId": "ask_email",
+                "routineId": "builtin_contact_request_v1",
+                "startStepId": "ask_email",
+                "steps": [
+                  {
+                    "event": "reasked",
+                    "kind": "chat",
+                    "selection": {
+                      "outcome": "stay",
+                      "returnedSlotKeys": [],
+                    },
+                    "stepId": "ask_email",
+                    "viaSelector": true,
+                  },
+                ],
+              },
+              "version": 1,
+            },
+          },
+          "routineState": {
+            "attempts": {
+              "ask_email": 2,
+            },
+            "executionId": "<execution>",
+            "path": [],
+            "reaskCount": 1,
+            "routineId": "builtin_contact_request_v1",
+            "status": "active",
+            "variables": {},
+          },
+        },
+        {
+          "actions": undefined,
+          "answer": "What would you like to tell them?",
+          "gatewayCalls": [
+            "selector answer routine_turn",
+            "reply:ask_message answer routine_turn:2",
+          ],
+          "handoff": undefined,
+          "query": "guest@example.com",
+          "routineStage": {
+            "kind": "routine_resume",
+            "outputs": {
+              "answerLength": 33,
+              "completed": false,
+              "handoff": false,
+              "notifiesOperators": false,
+              "routineId": "builtin_contact_request_v1",
+              "terminalKind": undefined,
+            },
+            "status": "applied",
+            "subTrace": {
+              "namespace": "routine",
+              "payload": {
+                "capturedSlotKeys": [
+                  "email",
+                ],
+                "filledSlotKeys": [],
+                "landedStepId": "ask_message",
+                "routineId": "builtin_contact_request_v1",
+                "startStepId": "ask_email",
+                "steps": [
+                  {
+                    "capturedSlotKeys": [
+                      "email",
+                    ],
+                    "event": "advanced",
+                    "kind": "chat",
+                    "selection": {
+                      "outcome": "transition",
+                      "returnedSlotKeys": [
+                        "email",
+                      ],
+                    },
+                    "stepId": "ask_email",
+                    "viaSelector": true,
+                  },
+                  {
+                    "event": "rendered",
+                    "kind": "chat",
+                    "stepId": "ask_message",
+                  },
+                ],
+              },
+              "version": 1,
+            },
+          },
+          "routineState": {
+            "attempts": {
+              "ask_email": 3,
+              "ask_message": 1,
+            },
+            "executionId": "<execution>",
+            "path": [
+              "ask_message",
+            ],
+            "routineId": "builtin_contact_request_v1",
+            "status": "active",
+            "variables": {
+              "email": "guest@example.com",
+            },
+          },
+        },
+        {
+          "actions": [
+            {
+              "payload": {
+                "email": "guest@example.com",
+                "message": "Tell them I need a callback",
+              },
+              "type": "contact.send",
+            },
+          ],
+          "answer": "Sent. Anything else?",
+          "gatewayCalls": [
+            "selector answer routine_turn",
+            "reply:done answer routine_turn:2",
+          ],
+          "handoff": undefined,
+          "query": "Tell them I need a callback",
+          "routineStage": {
+            "kind": "routine_resume",
+            "outputs": {
+              "answerLength": 20,
+              "completed": true,
+              "handoff": false,
+              "notifiesOperators": false,
+              "routineId": "builtin_contact_request_v1",
+              "terminalKind": "complete",
+            },
+            "status": "applied",
+            "subTrace": {
+              "namespace": "routine",
+              "payload": {
+                "capturedSlotKeys": [
+                  "message",
+                ],
+                "filledSlotKeys": [],
+                "landedStepId": "done",
+                "routineId": "builtin_contact_request_v1",
+                "startStepId": "ask_message",
+                "steps": [
+                  {
+                    "capturedSlotKeys": [
+                      "message",
+                    ],
+                    "event": "advanced",
+                    "kind": "chat",
+                    "selection": {
+                      "outcome": "transition",
+                      "returnedSlotKeys": [
+                        "message",
+                      ],
+                    },
+                    "stepId": "ask_message",
+                    "viaSelector": true,
+                  },
+                  {
+                    "event": "action_emitted",
+                    "kind": "action",
+                    "stepId": "send",
+                  },
+                  {
+                    "event": "rendered",
+                    "kind": "terminal",
+                    "stepId": "done",
+                  },
+                ],
+                "terminalKind": "complete",
+              },
+              "version": 1,
+            },
+          },
+          "routineState": {
+            "attempts": {
+              "ask_email": 3,
+              "ask_message": 1,
+            },
+            "executionId": "<execution>",
+            "metadata": {
+              "terminalKind": "complete",
+              "terminalStepId": "done",
+            },
+            "path": [
+              "ask_message",
+              "done",
+            ],
+            "routineId": "builtin_contact_request_v1",
+            "status": "completed",
+            "variables": {
+              "email": "guest@example.com",
+            },
+          },
+        },
+      ]
+    `);
   });
 });

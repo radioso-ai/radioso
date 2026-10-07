@@ -102,8 +102,11 @@ const DEFAULT_RETRIEVAL_SENSE_CLARIFICATION_POLICY: ClarificationPolicy = {
   maxOptions: 4,
 };
 
-const unavailableRoutineGateway: Pick<ChatGateway, "answer"> = {
+const unavailableRoutineGateway: Pick<ChatGateway, "answer" | "streamAnswer"> = {
   async answer() {
+    throw new Error("workbench_replay_routine_gateway_not_configured");
+  },
+  streamAnswer() {
     throw new Error("workbench_replay_routine_gateway_not_configured");
   },
 };
@@ -176,7 +179,7 @@ interface WorkbenchReplayRunnerOptions {
   turnRouter: TurnRouter;
   turnInterpreter?: ChatConversationTurnInterpreter;
   routineProvider?: ChatRoutineProvider;
-  chatGateway?: Pick<ChatGateway, "answer">;
+  chatGateway?: Pick<ChatGateway, "answer" | "streamAnswer">;
   chatAnswerPresenter?: ChatAnswerPresenter;
   clarifier?: ConversationClarifier;
   clarifierFactory?: (input: {

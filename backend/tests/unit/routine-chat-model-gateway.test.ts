@@ -18,6 +18,14 @@ const turnContext = {
   },
 };
 
+/** A host gateway for the tests that only complete: streaming is never expected of it. */
+const withoutStream = (gateway: Pick<ChatGateway, "answer">): Pick<ChatGateway, "answer" | "streamAnswer"> => ({
+  answer: (input) => gateway.answer(input),
+  streamAnswer: () => {
+    throw new Error("stream not expected");
+  },
+});
+
 describe("RoutineChatModelGateway", () => {
   it("serializes the transcript into the prompt and forwards the turn's usage + workspace context", async () => {
     const calls: ChatGatewayInput[] = [];
@@ -27,7 +35,7 @@ describe("RoutineChatModelGateway", () => {
         return "  Sure — what is your email?  ";
       },
     };
-    const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
+    const gateway = new RoutineChatModelGateway(withoutStream(chatGateway), turnContext);
 
     const result = await gateway.complete({
       messages: [
@@ -59,7 +67,7 @@ describe("RoutineChatModelGateway", () => {
       },
     };
 
-    const result = await new RoutineChatModelGateway(chatGateway, turnContext).complete({
+    const result = await new RoutineChatModelGateway(withoutStream(chatGateway), turnContext).complete({
       messages: [{ role: "user", content: "si" }],
       systemPrompt: "SELECT",
     });
@@ -78,7 +86,7 @@ describe("RoutineChatModelGateway", () => {
         return "ok";
       },
     };
-    const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
+    const gateway = new RoutineChatModelGateway(withoutStream(chatGateway), turnContext);
 
     await gateway.complete({ messages: [{ role: "user", content: "first" }] });
     await gateway.complete({ messages: [{ role: "user", content: "second" }] });
@@ -104,7 +112,7 @@ describe("RoutineChatModelGateway", () => {
         return "recovered";
       },
     };
-    const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
+    const gateway = new RoutineChatModelGateway(withoutStream(chatGateway), turnContext);
 
     await gateway.complete({ messages: [{ role: "user", content: "first" }] });
     const result = await gateway.complete({ messages: [{ role: "user", content: "second" }] });
@@ -122,7 +130,7 @@ describe("RoutineChatModelGateway", () => {
       },
     };
     await expect(
-      new RoutineChatModelGateway(blankTwice, turnContext).complete({ messages: [{ role: "user", content: "si" }] }),
+      new RoutineChatModelGateway(withoutStream(blankTwice), turnContext).complete({ messages: [{ role: "user", content: "si" }] }),
     ).rejects.toBeInstanceOf(BlankChatAnswerError);
 
     let attempts = 0;
@@ -133,7 +141,7 @@ describe("RoutineChatModelGateway", () => {
       },
     };
     await expect(
-      new RoutineChatModelGateway(failing, turnContext).complete({ messages: [{ role: "user", content: "si" }] }),
+      new RoutineChatModelGateway(withoutStream(failing), turnContext).complete({ messages: [{ role: "user", content: "si" }] }),
     ).rejects.toThrow("provider_timeout");
     expect(attempts).toBe(1);
   });
@@ -146,7 +154,7 @@ describe("RoutineChatModelGateway", () => {
         return '{"matches":[]}';
       },
     };
-    const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
+    const gateway = new RoutineChatModelGateway(withoutStream(chatGateway), turnContext);
 
     await gateway.complete({
       messages: [{ role: "user", content: "Can I book a demo?" }],
@@ -172,15 +180,99 @@ describe("RoutineChatModelGateway", () => {
   it("forwards the turn cancellation signal to routine model calls", async () => {
     const calls: ChatGatewayInput[] = [];
     const controller = new AbortController();
-    const gateway = new RoutineChatModelGateway({
+    const gateway = new RoutineChatModelGateway(withoutStream({
       async answer(input) {
         calls.push(input);
         return "Done";
       },
-    }, { ...turnContext, signal: controller.signal });
+    }), { ...turnContext, signal: controller.signal });
 
     await gateway.complete({ messages: [{ role: "user", content: "Continue" }] });
 
     expect(calls[0]?.signal).toBe(controller.signal);
+  });
+
+  describe("streaming", () => {
+    const streaming = (deltas: string[]) => {
+      const calls: Array<{ via: "answer" | "streamAnswer"; input: ChatGatewayInput }> = [];
+      const chatGateway: Pick<ChatGateway, "answer" | "streamAnswer"> = {
+        async answer(input) {
+          calls.push({ via: "answer", input });
+          return "ok";
+        },
+        async *streamAnswer(input) {
+          calls.push({ via: "streamAnswer", input });
+          yield* deltas;
+        },
+      };
+      return { calls, chatGateway };
+    };
+    const collect = async (stream: AsyncIterable<string>): Promise<string[]> => {
+      const deltas: string[] = [];
+      for await (const delta of stream) {
+        deltas.push(delta);
+      }
+      return deltas;
+    };
+
+    it("streams through the host gateway with the same request a completion sends", async () => {
+      const { calls, chatGateway } = streaming(["Sure", " — what is your email?"]);
+      const request = {
+        messages: [
+          { role: "assistant" as const, content: "How can I help?" },
+          { role: "user" as const, content: "I want a human to call me" },
+        ],
+        systemPrompt: "ROUTINE STEP INSTRUCTIONS",
+      };
+
+      const deltas = await collect(new RoutineChatModelGateway(chatGateway, turnContext).stream(request));
+      await new RoutineChatModelGateway(chatGateway, turnContext).complete(request);
+
+      expect(deltas).toEqual(["Sure", " — what is your email?"]);
+      expect(calls.map((call) => call.via)).toEqual(["streamAnswer", "answer"]);
+      expect(calls[0].input).toEqual(calls[1].input);
+      expect(calls[0].input.usageContext).toBe(turnContext.usageContext);
+    });
+
+    it("meters a stream under the usage attempt its place in the turn's call order gives it", async () => {
+      const { calls, chatGateway } = streaming(["Which email?"]);
+      const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
+
+      await gateway.complete({ messages: [{ role: "user", content: "select" }] });
+      const reply = gateway.stream({ messages: [{ role: "user", content: "reply" }] });
+      const retry = gateway.stream({ messages: [{ role: "user", content: "reply" }] });
+      await collect(retry);
+      await collect(reply);
+
+      expect(calls.map((call) => call.input.usageContext.attemptKey)).toEqual([
+        "routine_turn",
+        "routine_turn:3",
+        "routine_turn:2",
+      ]);
+    });
+
+    it("forwards the turn cancellation signal to a streamed routine reply", async () => {
+      const { calls, chatGateway } = streaming(["Done"]);
+      const controller = new AbortController();
+
+      await collect(new RoutineChatModelGateway(chatGateway, { ...turnContext, signal: controller.signal })
+        .stream({ messages: [{ role: "user", content: "Continue" }] }));
+
+      expect(calls[0]?.input.signal).toBe(controller.signal);
+    });
+
+    it("streams activation ranking under the routine_activation usage label and generation budget", async () => {
+      const { calls, chatGateway } = streaming(["{}"]);
+
+      await collect(new RoutineChatModelGateway(chatGateway, turnContext).stream({
+        messages: [{ role: "user", content: "Can I book a demo?" }],
+        metadata: { routineActivation: true },
+      }));
+
+      expect(calls[0]?.input).toMatchObject({
+        usageContext: { operation: "routine_activation", attemptKey: "routine_turn:routine_activation" },
+        generation: CHAT_BEHAVIOR.intentRouting,
+      });
+    });
   });
 });

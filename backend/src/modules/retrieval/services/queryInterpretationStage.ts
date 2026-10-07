@@ -46,22 +46,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       originalQuery: input.request.query,
       semanticQuery: input.request.query,
       lexicalQuery: input.request.query,
-      constraints: [],
     };
-    const prepareQueries = (
-      parsedQuery: ParsedQueryInterpretation,
-      semanticQuery: string,
-      lexicalQuery: string,
-    ): ParsedQueryInterpretation => ({
-      ...parsedQuery,
-      semanticQuery,
-      lexicalQuery,
-    });
-    const originalPreparedQuery = prepareQueries(
-      originalParsedQuery,
-      originalParsedQuery.semanticQuery,
-      originalParsedQuery.lexicalQuery,
-    );
     const workspaceContext = { workspaceId: input.request.workspaceId };
     const usageContext = input.request.usageContext ?? fallbackUsageContext(input.request.workspaceId);
     const rewrittenQuery = input.request.precomputedRewriteProposal
@@ -81,20 +66,10 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
           workspaceContext,
           usageContext: { ...usageContext, operation: "query_interpretation", attemptKey: "rewrite" },
         });
-    const parsedQueryBase = originalParsedQuery;
-    const preparedParsedQuery = prepareQueries(
-      parsedQueryBase,
-      rewrittenQuery.retrievalEligible ? rewrittenQuery.semanticQuery : originalPreparedQuery.semanticQuery,
-      rewrittenQuery.retrievalEligible ? rewrittenQuery.lexicalQuery : originalPreparedQuery.lexicalQuery,
-    );
-    const parsedQuery = {
-      ...preparedParsedQuery,
-      originalQuery: input.request.query,
-    };
     const activeQuery = rewrittenQuery.retrievalEligible ? rewrittenQuery.effectiveQuery : input.request.query;
-    const activeParsedQuery = rewrittenQuery.retrievalEligible
-      ? parsedQuery
-      : { ...originalPreparedQuery, originalQuery: input.request.query };
+    const activeParsedQuery: ParsedQueryInterpretation = rewrittenQuery.retrievalEligible
+      ? { ...originalParsedQuery, semanticQuery: rewrittenQuery.semanticQuery, lexicalQuery: rewrittenQuery.lexicalQuery }
+      : { ...originalParsedQuery };
 
     const continuityDecision =
       rewrittenQuery.structuredResult?.unresolved
@@ -127,7 +102,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       ...input,
       interpretationSource: input.request.precomputedRewriteProposal ? "turn_interpretation" : "query_interpretation",
       originalParsedQuery,
-      originalPreparedQuery,
+      originalPreparedQuery: { ...originalParsedQuery },
       rewrittenQuery,
       activeQuery,
       activeParsedQuery,

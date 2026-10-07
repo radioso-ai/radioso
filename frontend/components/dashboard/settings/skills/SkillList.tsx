@@ -12,7 +12,16 @@ import { Switch } from '@/components/ui/switch'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { directivesApi } from '@/lib/api-directives'
 import { routinesApi } from '@/lib/api-routines'
-import { agentSkillsApi, type AgentSkill, type AgentSkillCapabilityId, type AgentSkillCreateInput, type SkillCapabilityDescriptor } from '@/lib/api-skills'
+import type { AssistantBehaviorSettings } from '@/lib/api-types'
+import {
+  agentSkillsApi,
+  type AgentSkill,
+  type AgentSkillCapabilityId,
+  type AgentSkillCreateInput,
+  type PlatformAnswerSkill,
+  type SkillCapabilityDescriptor,
+} from '@/lib/api-skills'
+import { resolveAssistantRetrievalSettingsViewState } from '@/lib/assistant-retrieval-settings-view-state'
 import { cn } from '@/lib/utils'
 import { CapabilityPicker } from './CapabilityPicker'
 import { McpServersPanel } from './McpServersPanel'
@@ -32,8 +41,19 @@ const targetLabel = (skill: AgentSkill, capabilities: readonly SkillCapabilityDe
 const enabledTone = (enabled: boolean) =>
   enabled ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
 
-export function SkillList({ agentId }: { agentId: string }) {
+export function SkillList({
+  agentId,
+  assistantBehaviorSettings,
+  isAssistantBehaviorLoading,
+  onAssistantBehaviorDraft,
+}: {
+  agentId: string
+  assistantBehaviorSettings: AssistantBehaviorSettings | null
+  isAssistantBehaviorLoading: boolean
+  onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
+}) {
   const [skills, setSkills] = useState<AgentSkill[]>([])
+  const [platformSkills, setPlatformSkills] = useState<PlatformAnswerSkill[]>([])
   const [capabilities, setCapabilities] = useState<SkillCapabilityDescriptor[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [busyAction, setBusyAction] = useState<string | null>(null)
@@ -47,6 +67,10 @@ export function SkillList({ agentId }: { agentId: string }) {
   // used skill as an orphan, which is worse than saying nothing.
   const [usage, setUsage] = useState<Map<string, SkillUsage> | null>(null)
   const loadVersion = useRef(0)
+  const retrievalSettingsViewState = resolveAssistantRetrievalSettingsViewState({
+    isAssistantBehaviorLoading,
+    assistantBehaviorSettings,
+  })
 
   const loadUsage = useCallback(async (version: number) => {
     const [directiveResult, routineResult] = await Promise.allSettled([
@@ -74,6 +98,7 @@ export function SkillList({ agentId }: { agentId: string }) {
       if (version !== loadVersion.current) return
       setCapabilities(capabilityResponse.capabilities)
       setSkills(skillResponse.skills)
+      setPlatformSkills(skillResponse.platformSkills)
     } catch (loadError) {
       if (version !== loadVersion.current) return
       setError(getApiErrorMessage(loadError, 'Failed to load skills.'))
@@ -182,9 +207,42 @@ export function SkillList({ agentId }: { agentId: string }) {
         </div>
       ) : null}
 
+      {!isLoading ? (
+        <ul className="space-y-3">
+          {platformSkills.map((skill) => {
+            const isRetrievalAnswer = skill.name === 'retrieval.answer'
+            const retrievalEnabled = retrievalSettingsViewState === 'controls'
+            return (
+              <li key={skill.name}>
+                <article className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 shadow-sm">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-medium text-foreground">{skill.displayName}</span>
+                      <Badge variant="secondary">Built in</Badge>
+                      <Badge className={cn(enabledTone(isRetrievalAnswer ? retrievalEnabled : true))} variant="secondary">
+                        {isRetrievalAnswer ? (retrievalEnabled ? 'Enabled' : 'Disabled') : 'Always on'}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{skill.description}</p>
+                  </div>
+                  {isRetrievalAnswer ? (
+                    <Switch
+                      checked={retrievalEnabled}
+                      onCheckedChange={(retrievalEnabled) => onAssistantBehaviorDraft((current) => ({ ...current, retrievalEnabled }))}
+                      disabled={retrievalSettingsViewState === 'loading' || retrievalSettingsViewState === 'unavailable'}
+                      aria-label="Enable retrieval answers"
+                    />
+                  ) : null}
+                </article>
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
+
       {!isLoading && skills.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-          No skills yet. Add a named skill by choosing a capability type.
+          This agent always answers directly, from documents, or with a clarification. Add a named skill to extend it.
         </div>
       ) : null}
 

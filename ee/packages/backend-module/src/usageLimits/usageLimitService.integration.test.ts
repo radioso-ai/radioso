@@ -471,7 +471,7 @@ describeIfDatabase("EE usage limit service integration", () => {
       .resolves.toBeDefined();
   });
 
-  it("weights operator work by usage kind: two test runs are one, Ray is one, a Pulse report is ten", async () => {
+  it("weights operator work by usage kind: two test runs are one, two Ray turns are one (CFO-approved 2026-09-15), a Pulse report is ten", async () => {
     const { accountId, workspaceId } = await seedAccountWorkspace();
     await assignProfile(accountId, { monthlyConversationLimit: 12 });
     const service = new EnterpriseUsageLimitService(database);
@@ -479,7 +479,10 @@ describeIfDatabase("EE usage limit service integration", () => {
     for (let i = 0; i < 2; i += 1) {
       await service.reserveAnswer({ accountId, workspaceId, surface: "eval_replay", usage: "test_run" });
     }
-    await service.reserveAnswer({ accountId, workspaceId, surface: "operator_copilot", usage: "copilot_turn" });
+    // A Ray turn counts as half a conversation, the same as a test run, so two turns make one.
+    for (let i = 0; i < 2; i += 1) {
+      await service.reserveAnswer({ accountId, workspaceId, surface: "operator_copilot", usage: "copilot_turn" });
+    }
     await service.reserveAnswer({ accountId, workspaceId, surface: "audience_pulse", usage: "pulse_report" });
 
     const usage = await service.getAccountUsage(accountId);

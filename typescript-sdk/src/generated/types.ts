@@ -7184,7 +7184,6 @@ export interface components {
             originalQuery?: string;
             semanticQuery: string;
             lexicalQuery: string;
-            constraintSummary: string[];
         };
         CandidateCounts: {
             semantic: number;
@@ -8837,6 +8836,7 @@ export interface components {
             skillName: string | null;
             skillOutcome: string | null;
             skillStatus: components["schemas"]["QualitySkillStatus"] | null;
+            /** @description Visitor-perceived time from chat request receipt through the final assistant answer, in milliseconds. */
             totalLatencyMs: number | null;
             grounding: components["schemas"]["GroundingDiagnostic"] | null;
             /** Format: date-time */
@@ -22585,6 +22585,12 @@ export interface operations {
                                 }[];
                                 min?: number;
                                 max?: number;
+                                usageCap?: {
+                                    raisedByKey: string;
+                                    floor: number;
+                                    ceiling: number;
+                                    notice: string;
+                                };
                                 group?: string;
                                 advanced?: boolean;
                                 defaultValue?: string | number | boolean;
@@ -22677,6 +22683,13 @@ export interface operations {
                             enabled: boolean;
                             createdAt: string;
                             updatedAt: string;
+                        }[];
+                        platformSkills: {
+                            /** @enum {string} */
+                            owner: "platform";
+                            name: string;
+                            displayName: string;
+                            description: string;
                         }[];
                     };
                 };
@@ -26033,7 +26046,9 @@ export interface operations {
                 resolutionFrom?: string;
                 /** @description Terminal triage closure time, exclusive. Distinct from assistant-turn `to`. */
                 resolutionTo?: string;
+                /** @description Minimum visitor-perceived request-to-answer time in milliseconds. */
                 minTotalLatencyMs?: number | null;
+                /** @description Maximum visitor-perceived request-to-answer time in milliseconds. */
                 maxTotalLatencyMs?: number | null;
                 offset?: number | null;
                 limit?: number;

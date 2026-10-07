@@ -185,6 +185,7 @@ export type SkillCapabilityFixture = {
     options?: Array<{ value: string; label: string }>;
     min?: number;
     max?: number;
+    usageCap?: { raisedByKey: string; floor: number; ceiling: number; notice: string };
     group?: string;
     advanced?: boolean;
   }>;
@@ -704,9 +705,9 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
         group: "Retrieval tuning",
         advanced: true,
       },
-      { key: "vectorTopK", label: "Vector top K", type: "number", help: "How many chunks are fetched from the vector index before filtering and reranking.", defaultValue: 15, min: 1, max: 300, group: "Retrieval tuning", advanced: true },
+      { key: "vectorTopK", label: "Vector top K", type: "number", help: "How many chunks each vector search fetches, before filters, boosts and merging. The top Rerank top K of the result (at least 12) go on to the answer.", defaultValue: 15, min: 1, max: 300, usageCap: { raisedByKey: "rerankTopK", floor: 12, ceiling: 50, notice: "The answer draws on the top {cap} candidates after filters and boosts. To use more, raise Rerank top K with Rerank results on." }, group: "Retrieval tuning", advanced: true },
       { key: "rerankEnabled", label: "Rerank results", type: "boolean", help: "Re-score the fetched chunks with a reranker model to improve ordering.", defaultValue: false, group: "Retrieval tuning", advanced: true },
-      { key: "rerankTopK", label: "Rerank top K", type: "number", help: "How many chunks survive reranking and are passed to the answer.", defaultValue: 5, dependsOnKey: "rerankEnabled", min: 1, max: 100, group: "Retrieval tuning", advanced: true },
+      { key: "rerankTopK", label: "Rerank top K", type: "number", help: "How many top candidates go on to the answer, reordered by the reranker when it's on. Values below 12 act as 12; max 50. The answer uses up to 12 of them, at most 2 per document, each cut to 900 characters.", defaultValue: 5, dependsOnKey: "rerankEnabled", min: 1, max: 50, group: "Retrieval tuning", advanced: true },
       { key: "metadataRules", label: "Metadata rules", type: "metadata_rules", group: "Retrieval tuning", advanced: true },
       { key: "citationHoldEnabled", label: "Hold the answer until it cites a source", type: "boolean", help: "Answers stream immediately when off; an answer with no citations is still shown and flagged in Quality.", defaultValue: true, group: "Grounded evidence", advanced: true },
       { key: "temporalStructuredLookupEnabled", label: "Temporal structured lookup", type: "boolean", help: "When someone asks for upcoming events without naming one, also fetch documents by their extracted event dates instead of relying on text similarity alone. Needs metadata extraction enabled on the knowledge base.", defaultValue: true, group: "Temporal retrieval", advanced: true },
@@ -954,6 +955,7 @@ export const baseBillingSummary = () => ({
   interval: "month" as const,
   currentPeriodEnd: "2026-05-01T00:00:00.000Z",
   upgradePlanId: "planet",
+  topUpAvailable: true,
 });
 
 export const basePlanCatalog = () => ({
@@ -1172,6 +1174,11 @@ export const installDashboardApiMocks = async (
   const skillCapabilities = options.skillCapabilities ?? baseSkillCapabilities();
   let agentSkills = options.agentSkills ?? [];
   let nextAgentSkillIndex = agentSkills.length + 1;
+  const platformAnswerSkills = [
+    { owner: "platform", name: "clarification.answer", displayName: "Clarification answer", description: "Ask for the detail needed to answer." },
+    { owner: "platform", name: "retrieval.answer", displayName: "Retrieval answer", description: "Answer from workspace documents." },
+    { owner: "platform", name: "direct.answer", displayName: "Direct answer", description: "Answer without retrieval." },
+  ];
   const routineSkillCatalog = options.routineSkillCatalog ?? [];
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
@@ -1568,14 +1575,15 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/history") {
-      // The All lens's search/outcome/agent/site filters are server-side (issue #1126):
+      // The All lens's search/outcome/agent/site/caller filters are server-side (issue #1126):
       // simulate just enough of that filtering here so an e2e test that types into the
       // toolbar search box exercises a real request round trip, not client-side narrowing.
       const url = new URL(request.url());
       const q = url.searchParams.get("q");
       const agentId = url.searchParams.get("agentId");
       const sourceOrigin = url.searchParams.get("sourceOrigin");
-      const hasFilter = Boolean(q || agentId || sourceOrigin || url.searchParams.get("outcome"));
+      const callerKind = url.searchParams.get("callerKind");
+      const hasFilter = Boolean(q || agentId || sourceOrigin || callerKind || url.searchParams.get("outcome"));
       const allItems = (historyItems as { items?: Array<Record<string, unknown>> }).items ?? [];
       const filteredItems = !hasFilter ? allItems : allItems.filter((item) => {
         if (item.kind !== "chat") {
@@ -1586,6 +1594,9 @@ export const installDashboardApiMocks = async (
           return false;
         }
         if (sourceOrigin && conversation.sourceOrigin !== sourceOrigin) {
+          return false;
+        }
+        if (callerKind && conversation.callerKind !== callerKind) {
           return false;
         }
         if (q) {
@@ -2210,7 +2221,10 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}/skills`) {
       if (request.method() === "GET") {
-        await json(route, { skills: agentSkills });
+        await json(route, {
+          skills: agentSkills,
+          platformSkills: platformAnswerSkills,
+        });
         return;
       }
 

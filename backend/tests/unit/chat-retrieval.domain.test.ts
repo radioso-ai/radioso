@@ -1910,7 +1910,6 @@ describe("chat retrieval domain", () => {
               parsedQuery: {
                 semanticQuery: "page explain",
                 lexicalQuery: "page explain",
-                constraints: [],
               },
             },
             trace: {
@@ -1984,7 +1983,6 @@ describe("chat retrieval domain", () => {
               parsedQuery: {
                 semanticQuery: "pricing",
                 lexicalQuery: "pricing",
-                constraints: [],
               },
             },
             trace: {
@@ -2143,7 +2141,6 @@ describe("chat retrieval domain", () => {
               parsedQuery: {
                 semanticQuery: "pricing",
                 lexicalQuery: "pricing",
-                constraints: [],
               },
             },
             trace: {

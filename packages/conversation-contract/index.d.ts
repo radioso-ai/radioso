@@ -1093,6 +1093,8 @@ export interface RoutineTransition {
   condition: string;
   /** Optional deterministic guard. Absent/llm preserves legacy selector behavior. */
   guard?: RoutineGuard;
+  /** Set only on an LLM transition synthesized from a plain collection step's default edge. */
+  origin?: "compiler_slot_gate";
 }
 
 /**

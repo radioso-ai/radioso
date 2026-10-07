@@ -88,13 +88,18 @@ describe("unified agent skills contract", () => {
 
     const listed = await request(app).get(`/api/v1/agents/${agentId}/skills`).set(headers);
     expect(listed.status).toBe(200);
-    // Every agent carries its own default-answer retrieve skill ("answer") alongside
-    // whatever else it has been given.
+    // `skills` remains the original flat persisted-skill array so existing REST,
+    // SDK, Ray, and MCP consumers keep their contract.
     expect(listed.body.skills).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: created.body.skill.id, name: "send_lead_webhook" }),
       expect.objectContaining({ name: "answer", capability: "retrieve", invocationMode: "default_answer" }),
     ]));
     expect(listed.body.skills).toHaveLength(2);
+    expect(listed.body.platformSkills).toEqual([
+      { owner: "platform", name: "clarification.answer", displayName: "Clarification answer", description: "Ask for the detail needed to answer the visitor's request." },
+      { owner: "platform", name: "retrieval.answer", displayName: "Retrieval answer", description: "Generate a grounded answer from workspace evidence without assistant persona." },
+      { owner: "platform", name: "direct.answer", displayName: "Direct answer", description: "Answer conversationally in the assistant's own voice without retrieval." },
+    ]);
 
     const duplicate = await request(app)
       .post(`/api/v1/agents/${agentId}/skills`)
@@ -189,7 +194,7 @@ describe("unified agent skills contract", () => {
     });
   });
 
-  it("lists a freshly created agent's default-answer retrieve skill without any explicit skill setup", async () => {
+  it("adds code-wired answer skills without changing a fresh agent's persisted skill rows", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "agent-default-retrieve-skill@example.com");
     const headers = adminSessionHeaders(session);
@@ -213,6 +218,11 @@ describe("unified agent skills contract", () => {
         enabled: true,
       }),
     ]);
+    expect(listed.body.platformSkills).toEqual([
+      { owner: "platform", name: "clarification.answer", displayName: "Clarification answer", description: "Ask for the detail needed to answer the visitor's request." },
+      { owner: "platform", name: "retrieval.answer", displayName: "Retrieval answer", description: "Generate a grounded answer from workspace evidence without assistant persona." },
+      { owner: "platform", name: "direct.answer", displayName: "Direct answer", description: "Answer conversationally in the assistant's own voice without retrieval." },
+    ]);
 
     const disabled = await request(app)
       .post("/api/v1/agents")
@@ -225,5 +235,6 @@ describe("unified agent skills contract", () => {
     expect(disabledListed.body.skills).toEqual([
       expect.objectContaining({ name: "answer", enabled: false }),
     ]);
+    expect(disabledListed.body.platformSkills).toEqual(listed.body.platformSkills);
   });
 });

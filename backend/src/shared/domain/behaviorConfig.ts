@@ -206,6 +206,17 @@ export const CHAT_BEHAVIOR = {
     // (labeled by route) for SLO/alerting, but is never failed or truncated.
     firstTokenTargetMs: 2_500,
   },
+  // SSE presenter behavior once a client disconnects mid-turn (#885). The
+  // presenter keeps pumping the turn to completion and persisting it (so a
+  // visitor who closes the tab still finds the answer in history) but stops
+  // writing to the closed response.
+  streaming: {
+    // If the turn has not settled this many ms after disconnect, the presenter
+    // aborts the turn's AbortSignal (stopping provider generation) and releases
+    // the HTTP request rather than waiting indefinitely on a stage that may
+    // never settle. Composition-owned; never tuned per phrase.
+    disconnectAbortCeilingMs: 120_000,
+  },
 } as const;
 
 export const RETRIEVAL_BEHAVIOR = {
@@ -213,6 +224,9 @@ export const RETRIEVAL_BEHAVIOR = {
   promptContextTokenBudget: 4800,
   finalContextTopK: 12,
   promptContextMaxCharsPerContext: 900,
+  // Caps how many of the final prompt contexts may come from the same document, so one
+  // long document cannot crowd out every other source in the answer.
+  promptContextMaxPerDocument: 2,
   promptContextMinUsefulChars: 24,
   rewriteConversationContextMaxMessages: 10,
   promptHistoryMaxMessages: 4,

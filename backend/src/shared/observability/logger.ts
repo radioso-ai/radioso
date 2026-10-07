@@ -45,7 +45,6 @@ interface RetrievalLogFields {
   finalContextCount: number;
   parsedSemanticQuery?: string;
   parsedLexicalQuery?: string;
-  parsedConstraintCount: number;
   appliedConstraintCount: number;
   candidateFallbackApplied: boolean;
   fallbackApplied: boolean;
@@ -146,13 +145,6 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
     typeof fields.parsedQuery.lexicalQuery === "string"
       ? fields.parsedQuery.lexicalQuery
       : undefined;
-  const parsedConstraintCount =
-    fields.parsedQuery &&
-    typeof fields.parsedQuery === "object" &&
-    "constraints" in fields.parsedQuery &&
-    Array.isArray(fields.parsedQuery.constraints)
-      ? fields.parsedQuery.constraints.length
-      : 0;
   const appliedConstraintCount = Array.isArray(fields.appliedConstraints) ? fields.appliedConstraints.length : 0;
 
   return {
@@ -165,7 +157,6 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
     finalContextCount: fields.finalContextCount,
     parsedSemanticQuery,
     parsedLexicalQuery,
-    parsedConstraintCount,
     appliedConstraintCount,
     candidateFallbackApplied: fields.candidateFallbackApplied,
     fallbackApplied: fields.fallbackApplied,
@@ -175,11 +166,23 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
 const httpCredentialHeaderNames = ["cookie", "authorization", "x-radioso-public-session", "set-cookie"].filter(shouldRedactKey);
 const httpRequestCredentialHeaderNames = httpCredentialHeaderNames.filter((headerName) => headerName !== "set-cookie");
 const httpResponseCredentialHeaderNames = httpCredentialHeaderNames.filter((headerName) => headerName === "set-cookie");
+const httpRequestClientAddressHeaderNames = [
+  "x-forwarded-for",
+  "forwarded",
+  "x-real-ip",
+  "cf-connecting-ip",
+  "true-client-ip",
+  "x-client-ip",
+  "x-cluster-client-ip",
+  "fastly-client-ip",
+  "x-envoy-external-address",
+];
 const httpHeaderRedactPath = (target: "req" | "res", headerName: string): string =>
   `${target}.headers["${headerName}"]`;
 
 const httpLoggerRedactPaths = [
   ...httpRequestCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
+  ...httpRequestClientAddressHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
   httpHeaderRedactPath("req", WORKER_TASK_AUTH_HEADER_LOWERCASE),
   httpHeaderRedactPath("req", "x-workspace-id"),
   // The frontend's signed edge facts carry the visitor's forwarded-for chain,

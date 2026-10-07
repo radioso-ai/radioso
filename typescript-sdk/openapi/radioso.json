@@ -11799,18 +11799,11 @@
           },
           "lexicalQuery": {
             "type": "string"
-          },
-          "constraintSummary": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           }
         },
         "required": [
           "semanticQuery",
-          "lexicalQuery",
-          "constraintSummary"
+          "lexicalQuery"
         ]
       },
       "CandidateCounts": {
@@ -18100,7 +18093,8 @@
             "type": [
               "integer",
               "null"
-            ]
+            ],
+            "description": "Visitor-perceived time from chat request receipt through the final assistant answer, in milliseconds."
           },
           "grounding": {
             "anyOf": [
@@ -46247,6 +46241,29 @@
                                 "max": {
                                   "type": "number"
                                 },
+                                "usageCap": {
+                                  "type": "object",
+                                  "properties": {
+                                    "raisedByKey": {
+                                      "type": "string"
+                                    },
+                                    "floor": {
+                                      "type": "number"
+                                    },
+                                    "ceiling": {
+                                      "type": "number"
+                                    },
+                                    "notice": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "raisedByKey",
+                                    "floor",
+                                    "ceiling",
+                                    "notice"
+                                  ]
+                                },
                                 "group": {
                                   "type": "string"
                                 },
@@ -46514,10 +46531,40 @@
                           "updatedAt"
                         ]
                       }
+                    },
+                    "platformSkills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "owner": {
+                            "type": "string",
+                            "enum": [
+                              "platform"
+                            ]
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "owner",
+                          "name",
+                          "displayName",
+                          "description"
+                        ]
+                      }
                     }
                   },
                   "required": [
-                    "skills"
+                    "skills",
+                    "platformSkills"
                   ]
                 }
               }
@@ -52014,9 +52061,11 @@
                 "integer",
                 "null"
               ],
-              "minimum": 0
+              "minimum": 0,
+              "description": "Minimum visitor-perceived request-to-answer time in milliseconds."
             },
             "required": false,
+            "description": "Minimum visitor-perceived request-to-answer time in milliseconds.",
             "name": "minTotalLatencyMs",
             "in": "query"
           },
@@ -52026,9 +52075,11 @@
                 "integer",
                 "null"
               ],
-              "minimum": 0
+              "minimum": 0,
+              "description": "Maximum visitor-perceived request-to-answer time in milliseconds."
             },
             "required": false,
+            "description": "Maximum visitor-perceived request-to-answer time in milliseconds.",
             "name": "maxTotalLatencyMs",
             "in": "query"
           },

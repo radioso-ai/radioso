@@ -1,6 +1,7 @@
 import { RerankService } from "./rerankService.js";
 import { PromptContextSelectorService } from "./promptContextSelectorService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { answerCandidatePoolSize } from "../domain/answerCandidatePool.js";
 import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import type { CandidatePreparationStageResult, ContextSelectionStage as ContextSelectionStageContract } from "./retrievalPipelineStages.js";
 import { getContextSelectionClauses } from "./retrievalShapeResolver.js";
@@ -20,10 +21,7 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
     const rerankEnabled = clauses.ranking.rerankMode === "disabled"
       ? false
       : input.settings.rerankEnabled;
-    const rerankCandidateCount = Math.min(
-      Math.max(input.settings.rerankTopK, finalContextTopK),
-      RETRIEVAL_BEHAVIOR.rerank.candidateLimit,
-    );
+    const rerankCandidateCount = answerCandidatePoolSize(input.settings.rerankTopK);
     const rerankCandidates = input.scoredCandidates.slice(0, rerankCandidateCount);
     const reranked = !rerankEnabled && clauses.ranking.lexicalBias === "preferred"
       ? {

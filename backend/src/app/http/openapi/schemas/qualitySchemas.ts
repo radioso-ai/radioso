@@ -140,7 +140,9 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
       skillName: z.string().nullable(),
       skillOutcome: z.string().nullable(),
       skillStatus: z.union([QualitySkillStatusSchema, z.null()]),
-      totalLatencyMs: z.number().int().nullable(),
+      totalLatencyMs: z.number().int().nullable().describe(
+        "Visitor-perceived time from chat request receipt through the final assistant answer, in milliseconds.",
+      ),
       grounding: z.union([GroundingDiagnosticSchema, z.null()]),
       createdAt: z.string().datetime(),
       feedback: QualityFeedbackSummarySchema,

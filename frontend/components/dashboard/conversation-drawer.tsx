@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { Bug, Search, Workflow, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { AgentCallerChip } from '@/components/dashboard/caller-kind-chip'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import {
   Drawer,
@@ -392,6 +393,7 @@ export function ConversationDrawer({
                       <span className="shrink-0">{conversationDetail.messageCount} messages</span>
                       <span className="shrink-0">Created {formatDrawerTimestamp(conversationDetail.createdAt)}</span>
                       <span className="shrink-0">Updated {formatDrawerTimestamp(conversationDetail.updatedAt)}</span>
+                      {conversationDetail.callerKind === 'agent' ? <AgentCallerChip /> : null}
                       {sourceBadge ? (
                         <span className={`${sourceBadge.className} shrink-0 font-medium`}>{sourceBadge.label}</span>
                       ) : null}

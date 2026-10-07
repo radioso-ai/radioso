@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-10-03
+last_updated: 2026-10-06
 ---
 
 # Agents and skills
@@ -202,7 +202,9 @@ routine flow bypasses terminal turn selection.
 
 `GET /api/v1/agents/{agentId}/skill-capabilities` returns the capability registry projection for the agent. Each capability includes its targets, whether it requires a target, input schema, outcomes, supported invocation modes, and availability.
 
-`GET /api/v1/agents/{agentId}/skills` returns the agent's named skills in one envelope:
+Every agent has three built-in answer skills: **Clarification answer**, **Retrieval answer**, and **Direct answer**. They are always present in the Skills list and cannot be edited or removed. Direct and clarification answers stay on. Turn **Retrieval answer** off in the dashboard to set the agent's existing `retrievalEnabled` setting to `false`; the agent then uses the direct answer path instead of workspace retrieval.
+
+`GET /api/v1/agents/{agentId}/skills` keeps its existing flat `skills` array of persisted agent skills, including the default-answer retrieve skill. It also adds a read-only `platformSkills` array for the built-in answer skills. Each platform row has only `owner: "platform"`, `name`, `displayName`, and `description`; it cannot be updated or removed through the agent skill routes. Persisted rows in `skills` retain their existing behavior and fields:
 
 - `name`
 - `capability`
@@ -232,9 +234,9 @@ The `retrieve` capability descriptor includes field help, inherited defaults, an
 The main tuning fields are:
 
 - `retrievalStrategy`: `fixed` runs one search pass, `reasoning` lets the model plan and run multiple searches, and `auto` lets Radioso choose per query.
-- `vectorTopK`: how many chunks are fetched from the vector index before filtering and reranking.
+- `vectorTopK`: how many chunks are fetched from the vector index before filtering and reranking. After filters, boosts, and merging, only the top `rerankTopK` candidates (at least 12) go on to the answer, so a deeper fetch matters when filters or boosts lift lower-ranked chunks into that group.
 - `rerankEnabled`: whether the fetched chunks are re-scored with the reranker model. Off by default because it adds a model call to every retrieval.
-- `rerankTopK`: how many chunks survive reranking and are passed to the answer. It is relevant when reranking is enabled.
+- `rerankTopK`: how many top candidates go on to the answer, reordered by the reranker when it's enabled. Values below 12 act as 12; the max is 50. The answer itself still uses up to 12 passages, at most 2 per document.
 - `queryRewriteEnabled`: whether the user message is rewritten into search queries before retrieval.
 - `semanticRewriteInstructions`: the instructions used to rewrite the user message into the semantic vector search query. A non-empty value replaces the default. The dashboard shows the default read-only until you choose Override, which copies it into the editor so you can adjust it. It is relevant when query rewrite is enabled.
 - `lexicalRewriteInstructions`: the instructions used to rewrite the user message into the lexical keyword search query. It behaves the same way as the semantic instructions. It is relevant when query rewrite is enabled.

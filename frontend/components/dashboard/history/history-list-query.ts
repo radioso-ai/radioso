@@ -7,7 +7,7 @@ import { dashboardQueryKeys, type HistoryVariant } from '@/lib/dashboard-query-k
 import type { ConversationSearchParams } from '@/lib/conversation-filters'
 import { useDashboardQueryPolicy } from '@/components/providers/dashboard-query-provider'
 
-export type HistoryListResponse =
+type HistoryListResponse =
   | { variant: 'all'; response: HistoryItemsResponse }
   | { variant: 'chat'; response: ChatHistoryListResponse }
   | { variant: 'contact'; response: ContactHistoryListResponse }
@@ -21,7 +21,7 @@ export const shouldClampHistoryPage = (input: {
 }) => input.loadedVariant === input.activeVariant && input.activePage > input.totalPages
 
 /**
- * Whether the All lens's toolbar filter change (search/outcome/agent/site)
+ * Whether the All lens's toolbar filter change (search/outcome/agent/site/caller)
  * should reset pagination back to page 1. True only when the filter fingerprint
  * genuinely changed from what was last observed — not on a hook's first run,
  * where "last observed" is seeded with the current fingerprint (see the
@@ -47,7 +47,7 @@ export const keepHistoryListPlaceholderData = (
 )
 
 // Positional tail appended by dashboardQueryKeys.history.list only when `searchParams` was
-// given (see its own comment) — [q, outcome, agentId, sourceOrigin], each optional(...)'d to
+// given (see its own comment) — [q, outcome, agentId, sourceOrigin, callerKind], each optional(...)'d to
 // `null` when absent. Read back here rather than threaded as a separate queryFn argument, so
 // `fetchHistory` stays a plain `QueryFunctionContext` function (existing callers pass it
 // directly as `queryFn: fetchHistory`).
@@ -56,6 +56,7 @@ const searchParamsFromKey = (queryKey: readonly unknown[]): ConversationSearchPa
   ...(queryKey[8] ? { outcome: queryKey[8] as ConversationSearchParams['outcome'] } : {}),
   ...(queryKey[9] ? { agentId: queryKey[9] as string } : {}),
   ...(queryKey[10] ? { sourceOrigin: queryKey[10] as string } : {}),
+  ...(queryKey[11] ? { callerKind: queryKey[11] as ConversationSearchParams['callerKind'] } : {}),
 })
 
 export const fetchHistory = async ({

@@ -1,6 +1,7 @@
 'use client'
 
 import { FileText, Globe, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import Link from 'next/link'
 
 import { Button } from '@/components/ui/button'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
@@ -265,7 +266,7 @@ export function DocumentList({
         <p className="mb-4 max-w-sm text-sm text-muted-foreground">
           {onboarding.isImportingSampleDocs
             ? 'Radioso is seeding this empty workspace with starter documents.'
-            : 'Import your own files or add inline documents here. Starter docs are only used during the guided first-run flow.'}
+            : 'Import your own files or add inline documents here. Or resume the guided setup to try starter docs.'}
         </p>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={onOpenImport}>
@@ -275,6 +276,14 @@ export function DocumentList({
           <Button size="sm" onClick={onOpenCreate}>
             <Plus className="mr-2 h-4 w-4" />
             Add your first document
+          </Button>
+          <Button size="sm" variant="ghost" asChild>
+            <Link
+              href={buildDashboardHref(accountId, { ...routeState, section: 'agents', agentTab: 'chat' })}
+              onClick={onboarding.markActive}
+            >
+              Resume setup
+            </Link>
           </Button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 ---
 title: "Assistant Execution Model"
 description: "Design principle that live chat stays in the request path while background work like exports is deferred asynchronously."
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Assistant Execution Model
@@ -28,6 +28,10 @@ Answer chunks describe incremental delivery, not necessarily live model tokens.
 Direct and admissible retrieval answers can stream provider output. Replies that
 must pass a guard or complete a durable write are validated or committed first,
 then replayed in bounded Unicode-safe chunks without artificial delays.
+
+Operator Test Chat streams its answers the same way, with each compared version's
+text arriving as it is generated. A Test Chat reply settles on the answer the test
+saved, as a chat reply settles on the answer in `done`.
 
 ## New Messages Supersede Unstarted Replies
 

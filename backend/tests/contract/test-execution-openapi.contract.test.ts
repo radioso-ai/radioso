@@ -33,6 +33,16 @@ describe("test execution OpenAPI contract", () => {
     });
   });
 
+  it("settles a side on its stored answer, the authority over the text streamed before it", () => {
+    const { registry, security } = createOpenApiRegistry();
+    registerTestExecutionPaths(registry, security);
+    const document = new OpenApiGeneratorV31(registry.definitions).generateDocument({ openapi: "3.1.0", info: { title: "test", version: "1" } });
+    const events = (document.components?.schemas?.TestExecutionEvent as { oneOf: Array<{ properties: { type: { enum: string[] } } & Record<string, unknown>; required: string[] }> }).oneOf;
+    const completed = events.find((event) => event.properties.type.enum.includes("side_completed"));
+    expect(completed?.properties.answer).toMatchObject({ type: "string" });
+    expect(completed?.required).toContain("answer");
+  });
+
   it("carries the detail's seeded turn count for the copy notice", () => {
     const { registry, security } = createOpenApiRegistry();
     registerTestExecutionPaths(registry, security);

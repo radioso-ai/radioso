@@ -2021,3 +2021,132 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
     });
   });
 });
+
+describe("WorkbenchReplayRunner streaming entry", () => {
+  /** Drains a turn stream into the text it yielded and the result it returned. */
+  const collect = async <Result>(turn: AsyncGenerator<string, Result>): Promise<{ deltas: string[]; result: Result }> => {
+    const deltas: string[] = [];
+    let step = await turn.next();
+    while (!step.done) {
+      deltas.push(step.value);
+      step = await turn.next();
+    }
+    return { deltas, result: step.value };
+  };
+
+  /** `answerSkill`, plus a live renderer stream that holds the rest of its answer until `gate` opens. */
+  const streamingAnswerSkill = (gate: Promise<void>): TurnSkill => {
+    const skill = answerSkill();
+    return {
+      ...skill,
+      renderer: {
+        ...skill.renderer,
+        async *stream(outcome, ctx) {
+          const finalPresentation = await skill.renderer.render(outcome, ctx);
+          yield finalPresentation.answer.slice(0, 9);
+          await gate;
+          yield finalPresentation.answer.slice(9);
+          return {
+            finalPresentation,
+            suggestions: { mode: "presentation" },
+            hasStreamedAnswer: true,
+            streamedAnswer: finalPresentation.answer,
+            deliveryMode: "live",
+          };
+        },
+      },
+    };
+  };
+
+  const replayInput = () => ({
+    workspaceId: "ws-1",
+    executionMode: "safe_test" as const,
+    sourceAgentId: "agent-1",
+    conversationId: "private-side-1",
+    baselineAgentConfig: projectInternalAgentConfig(agent()),
+    query: "How long do refunds take?",
+    history: [],
+    directiveStateStartState: { turnSeq: 2, firings: {} },
+  });
+
+  it("streams a rendered answer's text before the turn settles, then settles to the result run() returns", async () => {
+    let openGate!: () => void;
+    const gate = new Promise<void>((resolve) => { openGate = resolve; });
+    const observeHistogram = vi.fn();
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [streamingAnswerSkill(gate)],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+      streamMetrics: { observeHistogram },
+    });
+
+    const ran = await runner.run(replayInput());
+    expect(observeHistogram).not.toHaveBeenCalled();
+
+    const turn = runner.stream(replayInput());
+    // The first chunk arrives while the renderer still holds the rest of the answer.
+    expect(await turn.next()).toEqual({ done: false, value: "Answered " });
+    expect(observeHistogram).toHaveBeenCalledOnce();
+    expect(observeHistogram).toHaveBeenCalledWith(
+      "chat_replay_stream_first_answer_chunk_latency_ms",
+      expect.objectContaining({ labels: { route: "retrieval", delivery_mode: "live" }, value: expect.any(Number) }),
+    );
+    openGate();
+    const { deltas, result: streamed } = await collect(turn);
+
+    expect(deltas).toEqual(["with Answer from the operator baseline."]);
+    expect(streamed.answer).toBe(ran.answer);
+    expect(streamed.citations).toEqual(ran.citations);
+    expect(streamed.groundingSummary).toEqual(ran.groundingSummary);
+    expect(streamed.actions).toEqual(ran.actions);
+    expect(streamed.continuation).toEqual(ran.continuation);
+    expect(streamed.continuation?.directiveState).toMatchObject({ turnSeq: 3 });
+    expect(streamed.resolvedConfig).toEqual(ran.resolvedConfig);
+    expect(streamed.turnTrace?.spine.stages.map((stage) => stage.kind))
+      .toEqual(ran.turnTrace?.spine.stages.map((stage) => stage.kind));
+    expect(observeHistogram).toHaveBeenCalledOnce();
+  });
+
+  it("delivers a routine-claimed turn's reply whole once the routine settles, with the result run() returns", async () => {
+    const processTurnStream = vi.fn(() => {
+      throw new Error("grounding must not run when a routine claims the turn");
+    });
+    const fakeEngine = {
+      async attemptRoutine(): Promise<ProcessTurnResult | null> {
+        return {
+          response: { answer: "It seems you'd like follow-up — what's your email?" },
+          trace: emptyTrace(),
+          decision: { reason: "routine_activated:ask_email_on_interest" },
+          actions: [],
+        } as unknown as ProcessTurnResult;
+      },
+      processTurnStream,
+    } as unknown as ConversationEngine;
+    const observeHistogram = vi.fn();
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: routineProviderStub(),
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+      streamMetrics: { observeHistogram },
+    });
+
+    const ran = await runner.run(replayInput());
+    const { deltas, result } = await collect(runner.stream(replayInput()));
+
+    expect(deltas).toEqual(["It seems you'd like follow-up — what's your email?"]);
+    expect(result.answer).toBe(ran.answer);
+    expect(result.continuation).toEqual(ran.continuation);
+    expect(processTurnStream).not.toHaveBeenCalled();
+    expect(observeHistogram).toHaveBeenCalledWith(
+      "chat_replay_stream_first_answer_chunk_latency_ms",
+      expect.objectContaining({ labels: { route: "routine", delivery_mode: "committed" } }),
+    );
+  });
+});

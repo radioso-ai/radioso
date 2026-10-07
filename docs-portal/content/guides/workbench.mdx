@@ -1,7 +1,7 @@
 ---
 title: "Test your agent in the workbench"
 description: "Chat with your agent as an operator, inspect a turn, and capture an answer as an eval case from the dashboard Chat workbench."
-last_updated: 2026-10-03
+last_updated: 2026-10-07
 ---
 
 # Test your agent in the workbench
@@ -15,6 +15,8 @@ Test Chat runs the selected immutable agent configuration through the private sa
 ## Chat with your agent
 
 Choose a version, type a question, and send it. For example, ask a support agent how long shipping to Germany takes, then check its answer against your shipping policy. Follow up in the same chat to check whether the agent carries context across turns.
+
+The answer streams in as the agent writes it, the way a visitor sees it in the chat widget. In a comparison, both versions write at the same time, so you can watch which one starts answering sooner. Once a reply finishes, it shows the answer exactly as the test saved it.
 
 If your agent uses context variables, open the three-dot menu beside the title (labelled **Test chat actions** to assistive technology) and choose **Test context**. Supply sample values, such as a customer’s plan or locale, to check how they affect the answer. These values belong to the private test and stay with its history. This menu item appears only when the selected versions use context variables.
 
@@ -102,6 +104,7 @@ Saved revision tests reopen in Test Chat with their recorded versions and messag
 - A weak answer after uploading a document can mean processing is still running. Check the document's status before comparing answers.
 - If a draft save fails, your message stays unsent. Resolve the save error and try again.
 - If one comparison side fails, retry that side to retain the successful answer from the other version.
+- If a version fails partway through an answer, its reply shows the failure in place of the half-written text, because no answer was saved for that turn. **Retry this side** runs the turn again.
 - After a failed turn, retry it or type your next message and carry on. Once a later message is sent, the failed turn stays in the transcript as a record and can't be retried. Only a turn that is still running makes you wait.
 - Look for private tests in **Conversation history**; customer conversations remain in Activity.
 

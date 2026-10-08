@@ -19,6 +19,7 @@ import { BlankChatAnswerError } from "../../src/modules/chat/services/chatAnswer
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
 import { WorkbenchReplayRunner } from "../../src/modules/chat/services/workbenchReplayRunner.js";
+import { InMemoryRoutineStore } from "../../src/modules/chat/services/routines/inMemoryRoutineStore.js";
 import { AnswerCoverageHeadRecorder } from "../../src/modules/chat/services/answerCoverageHeadRecorder.js";
 import type { ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
 import type { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
@@ -2629,6 +2630,7 @@ describe("WorkbenchReplayRunner streams routine replies by the live-chat deliver
       { effects: {}, reply: forRun },
       { effects: {}, reply: forStream },
     ]);
+    const observeHistogram = vi.fn();
     const runner = new WorkbenchReplayRunner({
       retrievalTurn: retrievalTurn([]),
       auditService: createAuditService(),
@@ -2638,14 +2640,21 @@ describe("WorkbenchReplayRunner streams routine replies by the live-chat deliver
       routineProvider,
       chatGateway: chatGatewayStub(),
       chatAnswerPresenter: presenterStub(),
+      streamMetrics: { observeHistogram },
     });
 
     const ran = await runner.run(replayInput());
+    expect(observeHistogram).not.toHaveBeenCalled();
 
     const turn = runner.stream(replayInput());
     // The first chunk arrives while the second is still held back.
     expect(await turn.next()).toEqual({ done: false, value: "Which email " });
     expect(forStream.render).not.toHaveBeenCalled();
+    expect(observeHistogram).toHaveBeenCalledOnce();
+    expect(observeHistogram).toHaveBeenCalledWith(
+      "chat_replay_stream_first_answer_chunk_latency_ms",
+      expect.objectContaining({ labels: { route: "routine", delivery_mode: "live" } }),
+    );
     openGate();
     const { deltas, result: streamed } = await collect(turn);
 
@@ -2661,6 +2670,45 @@ describe("WorkbenchReplayRunner streams routine replies by the live-chat deliver
     expect(streamed.turnTrace?.spine.stages.map((stage) => stage.kind))
       .toEqual(ran.turnTrace?.spine.stages.map((stage) => stage.kind));
     expect(claim).toHaveBeenCalledTimes(2);
+    // Only the one live chunk ever observed a first-chunk latency.
+    expect(observeHistogram).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a mid-stream cancellation without settling anything, even when the provider ignores the abort and finishes", async () => {
+    let openGate!: () => void;
+    const gate = new Promise<void>((resolve) => { openGate = resolve; });
+    const reply = streamingReply(["Which email ", "can someone reach you at?"], { hold: gate, holdAt: 1 });
+    const { routineProvider } = claimingRoutine([{ effects: {}, reply }]);
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider,
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+    const saveSpy = vi.spyOn(InMemoryRoutineStore.prototype, "save");
+
+    try {
+      const controller = new AbortController();
+      const turn = runner.stream({ ...replayInput(), signal: controller.signal });
+
+      expect(await turn.next()).toEqual({ done: false, value: "Which email " });
+      // The disconnect ceiling cancels the turn while the model is still mid-reply...
+      controller.abort();
+      // ...but the provider ignores it and finishes producing its text anyway.
+      openGate();
+      expect(await turn.next()).toEqual({ done: false, value: "can someone reach you at?" });
+
+      // Only once the full reply exists does the turn check cancellation — too late to show
+      // more, but also too late to have saved anything yet.
+      await expect(turn.next()).rejects.toThrow();
+      expect(saveSpy).not.toHaveBeenCalled();
+    } finally {
+      saveSpy.mockRestore();
+    }
   });
 
   it("delivers a routine ending's reply whole only after the turn settles, even though the claim can stream", async () => {
@@ -2695,6 +2743,57 @@ describe("WorkbenchReplayRunner streams routine replies by the live-chat deliver
     );
     const routineStage = result.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_activate");
     expect(routineStage?.outputs).toMatchObject({ replyDelivery: "whole" });
+  });
+
+  it("yields a whole routine ending's reply only once its routine-state commit resolves, and nothing at all if that commit fails", async () => {
+    const buildRunner = () => {
+      const reply = streamingReply(["Thanks, ", "all done."]);
+      const { routineProvider } = claimingRoutine([
+        { effects: { terminal: { kind: "complete", stepId: "done" } }, reply },
+      ]);
+      return new WorkbenchReplayRunner({
+        retrievalTurn: retrievalTurn([]),
+        auditService: createAuditService(),
+        turnSkills: [answerSkill()],
+        conversationEngine: new DefaultConversationEngine(),
+        turnRouter: stubTurnRouter("retrieval"),
+        routineProvider,
+        chatGateway: chatGatewayStub(),
+        chatAnswerPresenter: presenterStub(),
+      });
+    };
+
+    // Pending commit: no chunk reaches the caller while it is unresolved — raced against a
+    // short timer rather than awaited forever, so a bug that yields without ever calling the
+    // commit at all fails this assertion instead of hanging the test.
+    let resolveCommit!: () => void;
+    const commitGate = new Promise<void>((resolve) => { resolveCommit = resolve; });
+    const pendingSaveSpy = vi.spyOn(InMemoryRoutineStore.prototype, "save").mockImplementation(async () => {
+      await commitGate;
+    });
+    try {
+      const turn = buildRunner().stream(replayInput());
+      const nextPromise = turn.next();
+      const raceResult = await Promise.race([
+        nextPromise.then(() => "settled" as const, () => "settled" as const),
+        new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 50)),
+      ]);
+      expect(raceResult).toBe("timeout");
+      resolveCommit();
+      expect(await nextPromise).toEqual({ done: false, value: "Thanks, all done." });
+    } finally {
+      pendingSaveSpy.mockRestore();
+    }
+
+    // Failing commit: the caller sees no chunk at all, only the rejection.
+    const failingSaveSpy = vi.spyOn(InMemoryRoutineStore.prototype, "save")
+      .mockRejectedValue(new Error("routine_state_commit_failed"));
+    try {
+      const turn = buildRunner().stream(replayInput());
+      await expect(turn.next()).rejects.toThrow("routine_state_commit_failed");
+    } finally {
+      failingSaveSpy.mockRestore();
+    }
   });
 
   /** A routine whose first step runs `skillName`, then a chat step confirms it. */

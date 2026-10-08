@@ -3,47 +3,55 @@ import { describe, expect, it } from 'vitest'
 import {
   formatPlanPriceCents,
   largestPlanUsageKind,
+  planUsageLevelHasActions,
+  planUsageLevelMessage,
   planUsagePercent,
-  planUsageThreshold,
 } from '@/lib/plan-card-usage'
 
 describe('planUsagePercent', () => {
-  it('divides used by limit plus credits', () => {
-    expect(planUsagePercent({ used: 250, limit: 1000, credits: 0 })).toBe(25)
-    expect(planUsagePercent({ used: 250, limit: 500, credits: 500 })).toBe(25)
+  it('divides used by the server-computed capacity', () => {
+    expect(planUsagePercent({ used: 250, capacity: 1000 })).toBe(25)
+    expect(planUsagePercent({ used: 250, capacity: 1000 })).toBe(25)
   })
 
   it('clamps to 100 when usage exceeds capacity', () => {
-    expect(planUsagePercent({ used: 1200, limit: 1000, credits: 0 })).toBe(100)
+    expect(planUsagePercent({ used: 1200, capacity: 1000 })).toBe(100)
   })
 
   it('treats zero capacity as 0 rather than dividing by zero', () => {
-    expect(planUsagePercent({ used: 0, limit: 0, credits: 0 })).toBe(0)
+    expect(planUsagePercent({ used: 0, capacity: 0 })).toBe(0)
   })
 })
 
-describe('planUsageThreshold', () => {
-  it('is ok under 80%', () => {
-    expect(planUsageThreshold({ used: 799, limit: 1000, credits: 0 })).toBe('ok')
+describe('planUsageLevelHasActions', () => {
+  it('is false for ok and nearing_limit', () => {
+    expect(planUsageLevelHasActions('ok')).toBe(false)
+    expect(planUsageLevelHasActions('nearing_limit')).toBe(false)
   })
 
-  it('is warning from 80% up to just under 100%', () => {
-    expect(planUsageThreshold({ used: 800, limit: 1000, credits: 0 })).toBe('warning')
-    expect(planUsageThreshold({ used: 999, limit: 1000, credits: 0 })).toBe('warning')
+  it('is true for limit_reached and grace_exhausted, both fixable with a top-up or upgrade', () => {
+    expect(planUsageLevelHasActions('limit_reached')).toBe(true)
+    expect(planUsageLevelHasActions('grace_exhausted')).toBe(true)
+  })
+})
+
+describe('planUsageLevelMessage', () => {
+  it('has no fixed sentence for ok or nearing_limit', () => {
+    expect(planUsageLevelMessage({ level: 'ok', graceRemaining: 5, resetAt: '2026-05-01T00:00:00.000Z' })).toBeNull()
+    expect(planUsageLevelMessage({ level: 'nearing_limit', graceRemaining: 5, resetAt: '2026-05-01T00:00:00.000Z' })).toBeNull()
   })
 
-  it('is exceeded at and beyond 100%', () => {
-    expect(planUsageThreshold({ used: 1000, limit: 1000, credits: 0 })).toBe('exceeded')
-    expect(planUsageThreshold({ used: 1500, limit: 1000, credits: 0 })).toBe('exceeded')
+  it('names the remaining grace and reset date for limit_reached', () => {
+    const message = planUsageLevelMessage({ level: 'limit_reached', graceRemaining: 100, resetAt: '2026-05-01T00:00:00.000Z' })
+    expect(message).toContain('100 extra conversations')
+    expect(message).toContain('May 1, 2026')
+    expect(message).not.toContain('!')
   })
 
-  it('counts credits toward capacity', () => {
-    // 1000/1000 alone would be exceeded; 500 credits push capacity to 1500, landing in warning.
-    expect(planUsageThreshold({ used: 1200, limit: 1000, credits: 500 })).toBe('warning')
-  })
-
-  it('is ok when there is no capacity to measure against', () => {
-    expect(planUsageThreshold({ used: 0, limit: 0, credits: 0 })).toBe('ok')
+  it('names the reset date for grace_exhausted, without a grace figure', () => {
+    const message = planUsageLevelMessage({ level: 'grace_exhausted', graceRemaining: 0, resetAt: '2026-06-01T00:00:00.000Z' })
+    expect(message).toContain('Jun 1, 2026')
+    expect(message).not.toContain('!')
   })
 })
 

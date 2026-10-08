@@ -28,6 +28,9 @@ test('plan card under 80% usage shows the plan, actions, and no banner', async (
         used: 400,
         limit: 1000,
         credits: 0,
+        capacity: 1000,
+        grace: { limit: 100, borrowed: 0 },
+        level: 'ok',
         byKind: { conversation: 380, copilot: 15, test_run: 5, pulse_report: 0 },
       },
     },
@@ -59,6 +62,9 @@ test('plan card at 80-99% usage shows a banner naming the largest kind, no butto
         used: 850,
         limit: 1000,
         credits: 0,
+        capacity: 1000,
+        grace: { limit: 100, borrowed: 0 },
+        level: 'nearing_limit',
         byKind: { conversation: 300, copilot: 50, test_run: 500, pulse_report: 0 },
       },
     },
@@ -78,7 +84,7 @@ test('plan card at 80-99% usage shows a banner naming the largest kind, no butto
   await expect(planCard.getByRole('button', { name: /Buy 300 more/ })).toBeVisible()
 })
 
-test('plan card at 100% usage shows a banner carrying the Upgrade and Buy buttons', async ({ page }) => {
+test('plan card at 100% usage shows a banner naming the grace allowance, carrying the Upgrade and Buy buttons', async ({ page }) => {
   await seedDashboardStorage(page)
   await installDashboardApiMocks(page, {
     accountUsageSummary: {
@@ -89,6 +95,9 @@ test('plan card at 100% usage shows a banner carrying the Upgrade and Buy button
         used: 1000,
         limit: 1000,
         credits: 0,
+        capacity: 1000,
+        grace: { limit: 100, borrowed: 0 },
+        level: 'limit_reached',
         byKind: { conversation: 900, copilot: 50, test_run: 50, pulse_report: 0 },
       },
     },
@@ -101,7 +110,38 @@ test('plan card at 100% usage shows a banner carrying the Upgrade and Buy button
   const banner = planCard.getByRole('status')
 
   await expect(banner).toBeVisible()
-  await expect(banner).toContainText('Customer conversations')
+  await expect(banner).toContainText('up to 100 extra conversations')
+  await expect(banner.getByRole('button', { name: 'Upgrade' })).toBeVisible()
+  await expect(banner.getByRole('button', { name: /Buy 300 more/ })).toBeVisible()
+})
+
+test('plan card with grace exhausted shows a banner naming the reset date, carrying the Upgrade and Buy buttons', async ({ page }) => {
+  await seedDashboardStorage(page)
+  await installDashboardApiMocks(page, {
+    accountUsageSummary: {
+      ...baseAccountUsageSummary(),
+      monthlyConversations: {
+        periodStart: '2026-04-01',
+        resetAt: '2026-05-01T00:00:00.000Z',
+        used: 1100,
+        limit: 1000,
+        credits: 0,
+        capacity: 1100,
+        grace: { limit: 100, borrowed: 100 },
+        level: 'grace_exhausted',
+        byKind: { conversation: 1000, copilot: 50, test_run: 50, pulse_report: 0 },
+      },
+    },
+    billingSummary: baseBillingSummary(),
+    planCatalog: basePlanCatalog(),
+  })
+
+  await page.goto(`/w/${workspaceKey}/usage`)
+  const planCard = page.getByTestId('plan-card')
+  const banner = planCard.getByRole('status')
+
+  await expect(banner).toBeVisible()
+  await expect(banner).toContainText('stopped answering visitors')
   await expect(banner.getByRole('button', { name: 'Upgrade' })).toBeVisible()
   await expect(banner.getByRole('button', { name: /Buy 300 more/ })).toBeVisible()
 })

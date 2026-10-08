@@ -72,18 +72,47 @@ export interface StripeInvoiceEventData {
   hostedInvoiceUrl: string | null;
 }
 
-export interface StripeTopUpInvoiceParams {
+export interface StripeTopUpInvoiceDraftParams {
   customerId: string;
   subscriptionId: string;
-  priceId: string;
   metadata: Record<string, string>;
-  /** Derived from the auto-top-up row's id, so a retried sweep attempt against the same row
-   *  dedupes at Stripe rather than charging twice. */
+  /** Derived from the auto-top-up row's id (`<rowId>:create`), so a re-drive after an ambiguous
+   *  failure returns the SAME invoice Stripe already created rather than a second one. */
   idempotencyKey: string;
 }
 
-export interface StripeTopUpInvoiceResult {
+export interface StripeTopUpChargeParams {
   invoiceId: string;
+  customerId: string;
+  priceId: string;
+  /** The bare auto-top-up row id. Item/finalize/pay each derive their own sub-key from it
+   *  (`<id>:item`, `<id>:finalize`, `<id>:pay`), so a re-drive replays the exact same sequence
+   *  Stripe already has idempotency records for (kept 24h), rather than double-charging. */
+  idempotencyKey: string;
+}
+
+export interface StripeTopUpChargeResult {
+  /** `"open"` only in the rare case neither `finalizeInvoice` nor `pay` resolved it -- the row
+   *  stays `pending` and a later re-drive tries `pay` again. A decline or invalid request throws
+   *  {@link StripeDefinitiveChargeError} instead of returning `"open"`. */
+  status: "paid" | "open";
+}
+
+/**
+ * Thrown by {@link StripeGateway.chargeTopUpInvoice} for a definitive, non-retryable charge
+ * failure -- a card decline or an invalid request -- as opposed to an ambiguous failure (network,
+ * timeout, 5xx, rate limit) where the charge's outcome at Stripe is unknown. Callers must treat
+ * only this type as "the charge failed"; anything else must leave the row `pending` for re-drive,
+ * since Stripe may have charged the card before the response was lost.
+ */
+export class StripeDefinitiveChargeError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+  ) {
+    super(message);
+    this.name = "StripeDefinitiveChargeError";
+  }
 }
 
 /**
@@ -126,12 +155,25 @@ export interface StripeGateway {
    *  event needs a follow-up Stripe call (line items / subscription) to resolve the price. */
   constructWebhookEvent(rawBody: Buffer, signature: string): Promise<StripeWebhookEvent>;
   /**
-   * Charges an existing subscription customer for one top-up pack, out of band from the
-   * subscription's own billing cycle. Resolves the subscription's own default payment method and
-   * passes it explicitly -- a standalone invoice (no `subscription` link) does not inherit it
-   * automatically the way a subscription-cycle invoice would. Throws on any Stripe-side failure
-   * (declined charge, network error); the caller marks its own bookkeeping row failed with a code
-   * read off the thrown error.
+   * Creates the draft invoice for one top-up pack charge, out of band from the subscription's own
+   * billing cycle (`auto_advance: false` -- Stripe must never retry collection on its own
+   * schedule; only an explicit {@link chargeTopUpInvoice} call attempts payment). Resolves the
+   * subscription's own default payment method and passes it explicitly, since a standalone
+   * invoice (no `subscription` link) does not inherit it automatically the way a
+   * subscription-cycle invoice would. Returns as soon as the invoice exists -- before any item,
+   * finalize, or pay call -- so the caller can persist the invoice id first and never lose track
+   * of a charge that may already be in flight at Stripe.
    */
-  createTopUpInvoice(params: StripeTopUpInvoiceParams): Promise<StripeTopUpInvoiceResult>;
+  createTopUpInvoiceDraft(params: StripeTopUpInvoiceDraftParams): Promise<{ invoiceId: string }>;
+  /**
+   * Attaches the top-up price as a line item, finalizes, and pays the given draft invoice.
+   * Throws {@link StripeDefinitiveChargeError} on a card decline or invalid request; any other
+   * thrown error is ambiguous (network, timeout, 5xx, rate limit) and the caller must leave its
+   * bookkeeping row `pending` for a later re-drive with the same `idempotencyKey`, since the
+   * charge's outcome at Stripe is unknown.
+   */
+  chargeTopUpInvoice(params: StripeTopUpChargeParams): Promise<StripeTopUpChargeResult>;
+  /** Voids an invoice so a later attempt cannot succeed against it. Safe to call defensively --
+   *  Stripe rejects voiding an invoice that is already paid or already void; callers swallow that. */
+  voidInvoice(invoiceId: string): Promise<void>;
 }

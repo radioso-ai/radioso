@@ -49,9 +49,13 @@ export interface AutoTopUpRow {
 export interface AutoTopUpRepository {
   getSettings(accountId: string): Promise<AutoTopUpSettingsRow | null>;
   upsertSettings(patch: AutoTopUpSettingsPatch): Promise<AutoTopUpSettingsRow>;
-  /** Enabled accounts, oldest-updated first, bounded so one sweep tick never processes an
-   *  unbounded set. */
-  listEnabledAccountIds(limit: number): Promise<string[]>;
+  /**
+   * One page of enabled accounts, ordered by `account_id` for keyset paging: `after` is the last
+   * id from the previous page (`null` for the first page), each page bounded by `limit`. The
+   * caller keeps paging until a page comes back shorter than `limit`, which is how one sweep run
+   * covers every enabled account instead of only the same oldest batch every tick.
+   */
+  listEnabledAccountIds(input: { after: string | null; limit: number }): Promise<string[]>;
   /** `pending` + `paid` rows for this account/period -- the sweep's monthly-cap count, and the
    *  same figure `/me` reports back as `packsThisPeriod`. */
   countForPeriod(accountId: string, periodStart: string): Promise<number>;
@@ -71,7 +75,23 @@ export interface AutoTopUpRepository {
   findById(id: string): Promise<AutoTopUpRow | null>;
   markInvoiceCreated(input: { id: string; stripeInvoiceId: string }): Promise<void>;
   markFailed(input: { id: string; failureCode: string }): Promise<void>;
+  /** Idempotent from either `pending` or `failed` -- an `invoice.paid` webhook can arrive after
+   *  an earlier `invoice.payment_failed` already marked the row failed (a retried charge that
+   *  succeeded, or simple out-of-order delivery). A no-op once the row is already `paid`. */
   markPaid(id: string): Promise<void>;
+  /**
+   * Atomically claims up to `limit` `pending` rows whose `updated_at` is older than `leaseMs` --
+   * stuck because a prior attempt crashed, or failed ambiguously and must be re-driven rather than
+   * treated as failed. Bumps `updated_at` immediately (the lease), so a concurrent sweep cannot
+   * also claim the same row; `FOR UPDATE SKIP LOCKED` divides the stale set between concurrent
+   * sweeps instead of double-claiming. Returns each row's `stripeInvoiceId` so the caller resumes
+   * the charge sequence (skip `createTopUpInvoiceDraft` once an invoice id is already known)
+   * instead of restarting it.
+   */
+  claimStalePending(input: {
+    leaseMs: number;
+    limit: number;
+  }): Promise<Array<{ id: string; accountId: string; stripeInvoiceId: string | null }>>;
   /** Called only from the webhook, on a failed charge. Never called for an operator's own
    *  opt-out. */
   disable(input: { accountId: string; reason: "payment_failed" }): Promise<void>;
@@ -170,14 +190,17 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
     return row;
   }
 
-  async listEnabledAccountIds(limit: number): Promise<string[]> {
-    const rows = await this.db
+  async listEnabledAccountIds(input: { after: string | null; limit: number }): Promise<string[]> {
+    let query = this.db
       .selectFrom("ee_billing_auto_top_up_settings")
       .select("account_id")
       .where("enabled", "=", true)
-      .orderBy("updated_at", "asc")
-      .limit(limit)
-      .execute();
+      .orderBy("account_id", "asc")
+      .limit(input.limit);
+    if (input.after) {
+      query = query.where("account_id", ">", input.after);
+    }
+    const rows = await query.execute();
     return rows.map((row) => row.account_id);
   }
 
@@ -285,8 +308,35 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
       .updateTable("ee_billing_auto_top_ups")
       .set({ status: "paid", updated_at: sql<Date>`now()` })
       .where("id", "=", id)
-      .where("status", "=", "pending")
+      .where("status", "in", ["pending", "failed"])
       .execute();
+  }
+
+  async claimStalePending(input: {
+    leaseMs: number;
+    limit: number;
+  }): Promise<Array<{ id: string; accountId: string; stripeInvoiceId: string | null }>> {
+    const rows = await this.db
+      .updateTable("ee_billing_auto_top_ups")
+      .set({ updated_at: sql<Date>`now()` })
+      .where(
+        sql<boolean>`id in (
+          select id
+          from ee_billing_auto_top_ups
+          where status = 'pending'
+            and updated_at < now() - (${input.leaseMs} * interval '1 millisecond')
+          order by updated_at asc
+          limit ${input.limit}
+          for update skip locked
+        )`,
+      )
+      .returning(["id", "account_id", "stripe_invoice_id"])
+      .execute();
+    return rows.map((row) => ({
+      id: row.id,
+      accountId: row.account_id,
+      stripeInvoiceId: row.stripe_invoice_id,
+    }));
   }
 
   async disable(input: { accountId: string; reason: "payment_failed" }): Promise<void> {

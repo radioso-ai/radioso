@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createEeKysely } from "../db/eeSchema.js";
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
@@ -12,7 +12,8 @@ import { billingMigrator } from "./billingMigrator.js";
 import { PostgresBillingCustomerRepository } from "./billingCustomerRepository.js";
 import { PostgresAutoTopUpRepository } from "./autoTopUpRepository.js";
 import { AutoTopUpDispatcher } from "./autoTopUpDispatcher.js";
-import type { StripeGateway } from "./stripeGateway.js";
+import { handleBillingWebhookEvent, type BillingWebhookHandlerDeps } from "./billingWebhookHandler.js";
+import { StripeDefinitiveChargeError, type StripeGateway, type StripeWebhookEvent } from "./stripeGateway.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -121,6 +122,14 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
     }
   });
 
+  // `sweepEnabledAccounts` now pages through every enabled account in the schema, not just a
+  // bounded recent batch -- so a prior test's still-enabled, still-eligible account would
+  // otherwise get swept again by a later test's `dispatcher.run()` call and inflate its gateway
+  // call counts. Each test's own settings/rows are cleared before the next one starts.
+  afterEach(async () => {
+    await database.query(`TRUNCATE ee_billing_auto_top_up_settings, ee_billing_auto_top_ups`);
+  });
+
   const seedAccount = async (): Promise<string> => {
     const accountId = randomUUID();
     await database.query(`INSERT INTO accounts (id, name, email) VALUES ($1, $2, $3)`, [
@@ -131,16 +140,34 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
     return accountId;
   };
 
+  // Shared across every eligible account seeded in a test (instead of one profile per account),
+  // since the >200-account pagination test would otherwise spend most of its time creating profiles.
+  let satelliteProfileKey: string;
+
   const assignCatalogProfile = async (accountId: string, planId: "satellite" | "comet"): Promise<void> => {
     const service = new EnterpriseUsageLimitService(database);
-    await service.upsertProfile({
-      key: planId,
-      displayName: planId,
-      monthlyAnswerLimit: null,
-      storedDocumentLimit: null,
-      monthlyConversationLimit: planId === "satellite" ? 1000 : 50,
-    });
-    await service.assignProfile(accountId, planId);
+    if (planId === "comet") {
+      await service.upsertProfile({
+        key: "comet",
+        displayName: "comet",
+        monthlyAnswerLimit: null,
+        storedDocumentLimit: null,
+        monthlyConversationLimit: 50,
+      });
+      await service.assignProfile(accountId, "comet");
+      return;
+    }
+    if (!satelliteProfileKey) {
+      satelliteProfileKey = "satellite";
+      await service.upsertProfile({
+        key: satelliteProfileKey,
+        displayName: "satellite",
+        monthlyAnswerLimit: null,
+        storedDocumentLimit: null,
+        monthlyConversationLimit: 1000,
+      });
+    }
+    await service.assignProfile(accountId, satelliteProfileKey);
   };
 
   const setUsageState = async (accountId: string, usedTenths: number, balanceTenths: number): Promise<void> => {
@@ -175,6 +202,17 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
     await repository.upsertSettings({ accountId, enabled: true, maxPacksPerMonth });
   };
 
+  /** Seeds a fully eligible, at-limit, enabled account in one call, for tests that only care
+   *  about the sweep's own behavior once an account is eligible. */
+  const seedEligibleAccount = async (): Promise<string> => {
+    const accountId = await seedAccount();
+    await assignCatalogProfile(accountId, "satellite");
+    await setUsageState(accountId, 10000, 0);
+    await seedBillingCustomer(accountId);
+    await enableAutoTopUp(accountId);
+    return accountId;
+  };
+
   const createFakeGateway = (overrides: Partial<StripeGateway> = {}): StripeGateway =>
     ({
       findPriceByLookupKey: vi.fn(async (key: string) => ({ id: `price_${key}`, lookupKey: key, productId: "prod_topup" })),
@@ -185,7 +223,9 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
       constructWebhookEvent: vi.fn(async () => {
         throw new Error("not stubbed");
       }),
-      createTopUpInvoice: vi.fn(async () => ({ invoiceId: `in_${randomUUID()}` })),
+      createTopUpInvoiceDraft: vi.fn(async () => ({ invoiceId: `in_${randomUUID()}` })),
+      chargeTopUpInvoice: vi.fn(async () => ({ status: "paid" as const })),
+      voidInvoice: vi.fn(async () => undefined),
       ...overrides,
     });
 
@@ -201,25 +241,60 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
     return { dispatcher, auditRecord, logger };
   };
 
-  const readRows = async (accountId: string): Promise<Array<{ status: string; failure_code: string | null; stripe_invoice_id: string | null }>> => {
-    return database.query<{ status: string; failure_code: string | null; stripe_invoice_id: string | null }>(
-      `SELECT status, failure_code, stripe_invoice_id FROM ee_billing_auto_top_ups WHERE account_id = $1`,
+  const readRows = async (
+    accountId: string,
+  ): Promise<Array<{ id: string; status: string; failure_code: string | null; stripe_invoice_id: string | null }>> => {
+    return database.query<{ id: string; status: string; failure_code: string | null; stripe_invoice_id: string | null }>(
+      `SELECT id, status, failure_code, stripe_invoice_id FROM ee_billing_auto_top_ups WHERE account_id = $1`,
       [accountId],
     );
   };
 
+  const ageRow = async (id: string, age: string): Promise<void> => {
+    await database.query(`UPDATE ee_billing_auto_top_ups SET updated_at = now() - interval '${age}' WHERE id = $1`, [id]);
+  };
+
+  /** Fires the auto-top-up webhook path directly against the real repositories, for tests that
+   *  need to see both the dispatcher's and the webhook's side of one row's lifecycle. */
+  const fireAutoTopUpWebhookEvent = async (
+    event: StripeWebhookEvent,
+    gateway: StripeGateway,
+    overrides: Partial<BillingWebhookHandlerDeps> = {},
+  ): Promise<{ addCredits: ReturnType<typeof vi.fn>; disableSpy: ReturnType<typeof vi.fn>; noticeMailSend: ReturnType<typeof vi.fn> }> => {
+    const billingRepository = new PostgresBillingCustomerRepository(createEeKysely(pool));
+    const autoTopUpRepository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+    const addCredits = vi.fn(async () => ({ credits: 300, applied: true }));
+    const disableSpy = vi.fn(autoTopUpRepository.disable.bind(autoTopUpRepository));
+    const noticeMailSend = vi.fn(async () => ({ dispatched: true }));
+    await handleBillingWebhookEvent(event, {
+      repository: billingRepository,
+      usage: { assignProfile: vi.fn(async () => undefined), addCredits },
+      gateway,
+      autoTopUps: {
+        findById: autoTopUpRepository.findById.bind(autoTopUpRepository),
+        markPaid: autoTopUpRepository.markPaid.bind(autoTopUpRepository),
+        markFailed: autoTopUpRepository.markFailed.bind(autoTopUpRepository),
+        disable: disableSpy,
+      },
+      noticeMail: { send: noticeMailSend },
+      accountAdministrators: { list: vi.fn(async () => [{ email: "owner@example.com", displayName: "Owner" }]) },
+      audit: { record: vi.fn(async () => undefined) },
+      logger: { info: vi.fn(), warn: vi.fn() },
+      appBaseUrl: "https://app.example.com",
+      ...overrides,
+    });
+    return { addCredits, disableSpy, noticeMailSend };
+  };
+
   it("triggers exactly once when enabled and usage is limit_reached", async () => {
-    const accountId = await seedAccount();
-    await assignCatalogProfile(accountId, "satellite");
-    await setUsageState(accountId, 10000, 0);
-    await seedBillingCustomer(accountId);
-    await enableAutoTopUp(accountId);
+    const accountId = await seedEligibleAccount();
     const gateway = createFakeGateway();
     const { dispatcher } = createDispatcher(gateway);
 
     await dispatcher.run();
 
-    expect(gateway.createTopUpInvoice).toHaveBeenCalledTimes(1);
+    expect(gateway.createTopUpInvoiceDraft).toHaveBeenCalledTimes(1);
+    expect(gateway.chargeTopUpInvoice).toHaveBeenCalledTimes(1);
     const rows = await readRows(accountId);
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe("pending");
@@ -238,7 +313,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
 
     await dispatcher.run();
 
-    expect(gateway.createTopUpInvoice).toHaveBeenCalledTimes(1);
+    expect(gateway.createTopUpInvoiceDraft).toHaveBeenCalledTimes(1);
   });
 
   it("does nothing for an account under its limit", async () => {
@@ -252,7 +327,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
 
     await dispatcher.run();
 
-    expect(gateway.createTopUpInvoice).not.toHaveBeenCalled();
+    expect(gateway.createTopUpInvoiceDraft).not.toHaveBeenCalled();
     expect(await readRows(accountId)).toHaveLength(0);
   });
 
@@ -267,7 +342,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
 
     await dispatcher.run();
 
-    expect(gateway.createTopUpInvoice).not.toHaveBeenCalled();
+    expect(gateway.createTopUpInvoiceDraft).not.toHaveBeenCalled();
   });
 
   it("does nothing for a plan that does not sell top-ups (comet, CFO-approved 2026-09-15)", async () => {
@@ -281,7 +356,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
 
     await dispatcher.run();
 
-    expect(gateway.createTopUpInvoice).not.toHaveBeenCalled();
+    expect(gateway.createTopUpInvoiceDraft).not.toHaveBeenCalled();
   });
 
   it("does nothing for a past_due subscription", async () => {
@@ -295,7 +370,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
 
     await dispatcher.run();
 
-    expect(gateway.createTopUpInvoice).not.toHaveBeenCalled();
+    expect(gateway.createTopUpInvoiceDraft).not.toHaveBeenCalled();
   });
 
   it("does nothing for a canceled subscription", async () => {
@@ -309,7 +384,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
 
     await dispatcher.run();
 
-    expect(gateway.createTopUpInvoice).not.toHaveBeenCalled();
+    expect(gateway.createTopUpInvoiceDraft).not.toHaveBeenCalled();
   });
 
   it("respects the monthly cap", async () => {
@@ -331,22 +406,18 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
 
     await dispatcher.run();
 
-    expect(gateway.createTopUpInvoice).not.toHaveBeenCalled();
+    expect(gateway.createTopUpInvoiceDraft).not.toHaveBeenCalled();
   });
 
   it("respects the pending guard: two concurrent sweeps create only one invoice", async () => {
-    const accountId = await seedAccount();
-    await assignCatalogProfile(accountId, "satellite");
-    await setUsageState(accountId, 10000, 0);
-    await seedBillingCustomer(accountId);
-    await enableAutoTopUp(accountId);
+    const accountId = await seedEligibleAccount();
     const gateway = createFakeGateway();
     const first = createDispatcher(gateway);
     const second = createDispatcher(gateway);
 
     await Promise.all([first.dispatcher.run(), second.dispatcher.run()]);
 
-    expect(gateway.createTopUpInvoice).toHaveBeenCalledTimes(1);
+    expect(gateway.createTopUpInvoiceDraft).toHaveBeenCalledTimes(1);
     expect(await readRows(accountId)).toHaveLength(1);
   });
 
@@ -366,30 +437,168 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
 
     await dispatcher.run();
 
-    expect(gateway.createTopUpInvoice).not.toHaveBeenCalled();
+    expect(gateway.createTopUpInvoiceDraft).not.toHaveBeenCalled();
   });
 
-  it("marks the row failed with a code on a gateway error", async () => {
-    const accountId = await seedAccount();
-    await assignCatalogProfile(accountId, "satellite");
-    await setUsageState(accountId, 10000, 0);
-    await seedBillingCustomer(accountId);
-    await enableAutoTopUp(accountId);
-    const gateway = createFakeGateway({
-      createTopUpInvoice: vi.fn(async () => {
-        throw Object.assign(new Error("card declined"), { code: "card_declined" });
-      }),
+  describe("exactly-once charging", () => {
+    it("an ambiguous failure after the invoice was created leaves the row pending, and a later re-drive produces exactly one invoice and one grant", async () => {
+      const accountId = await seedEligibleAccount();
+      let chargeAttempts = 0;
+      const gateway = createFakeGateway({
+        chargeTopUpInvoice: vi.fn(async () => {
+          chargeAttempts += 1;
+          if (chargeAttempts === 1) {
+            // Simulates a timeout/connection drop AFTER Stripe may have already charged the card --
+            // an ambiguous outcome, never a definitive decline.
+            throw new Error("socket hang up");
+          }
+          return { status: "paid" as const };
+        }),
+      });
+      const { dispatcher, logger } = createDispatcher(gateway);
+
+      await dispatcher.run();
+
+      expect(gateway.createTopUpInvoiceDraft).toHaveBeenCalledTimes(1);
+      expect(gateway.chargeTopUpInvoice).toHaveBeenCalledTimes(1);
+      let rows = await readRows(accountId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].status).toBe("pending");
+      const invoiceId = rows[0].stripe_invoice_id!;
+      expect(invoiceId).not.toBeNull();
+      // Never marked failed on an ambiguous error.
+      expect(logger.warn).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("re-drive"));
+
+      // A fresh sweep tick does nothing new -- the row is still inside its lease.
+      await dispatcher.run();
+      expect(gateway.createTopUpInvoiceDraft).toHaveBeenCalledTimes(1);
+      expect(gateway.chargeTopUpInvoice).toHaveBeenCalledTimes(1);
+
+      // The lease expires; a later tick re-drives it with the SAME invoice id, never a second one.
+      await ageRow(rows[0].id, "10 minutes");
+      await dispatcher.run();
+
+      expect(gateway.createTopUpInvoiceDraft).toHaveBeenCalledTimes(1);
+      expect(gateway.chargeTopUpInvoice).toHaveBeenCalledTimes(2);
+      expect(gateway.chargeTopUpInvoice).toHaveBeenNthCalledWith(2, expect.objectContaining({ invoiceId }));
+      rows = await readRows(accountId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].stripe_invoice_id).toBe(invoiceId);
+
+      // Stripe's own `invoice.paid` webhook resolves the still-pending row -- exactly one grant.
+      const { addCredits } = await fireAutoTopUpWebhookEvent(
+        {
+          id: "evt_paid_1",
+          type: "invoice.paid",
+          invoice: {
+            id: invoiceId,
+            customerId: `cus_${accountId}`,
+            metadata: { radioso_kind: "auto_top_up", account_id: accountId, auto_top_up_id: rows[0].id },
+            hostedInvoiceUrl: null,
+          },
+        },
+        gateway,
+      );
+      expect(addCredits).toHaveBeenCalledTimes(1);
+      expect((await readRows(accountId))[0].status).toBe("paid");
     });
-    const { dispatcher, auditRecord } = createDispatcher(gateway);
 
-    await dispatcher.run();
+    it("re-drives a row that crashed right after the claim, before any Stripe call", async () => {
+      const accountId = await seedEligibleAccount();
+      const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      // Simulates the process crashing immediately after `claimPending`, before `chargeClaim`
+      // ever ran -- no invoice id was ever persisted.
+      const id = await repository.claimPending({
+        accountId,
+        periodStart: currentPeriodStart(),
+        maxPacksPerMonth: 3,
+        cooldownMs: 0,
+      });
+      expect(id).not.toBeNull();
+      await ageRow(id!, "10 minutes");
 
-    const rows = await readRows(accountId);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].status).toBe("failed");
-    expect(rows[0].failure_code).toBe("card_declined");
-    expect(auditRecord).toHaveBeenCalledWith(
-      expect.objectContaining({ accountId, eventType: "billing.auto_top_up_invoice_error", eventStatus: "failure" }),
-    );
+      const gateway = createFakeGateway();
+      const { dispatcher } = createDispatcher(gateway);
+
+      await dispatcher.run();
+
+      expect(gateway.createTopUpInvoiceDraft).toHaveBeenCalledTimes(1);
+      expect(gateway.chargeTopUpInvoice).toHaveBeenCalledTimes(1);
+      const rows = await readRows(accountId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(id);
+      expect(rows[0].stripe_invoice_id).not.toBeNull();
+    });
+
+    it("a decline voids the invoice and marks the row failed, and the webhook disables auto top-up", async () => {
+      const accountId = await seedEligibleAccount();
+      const gateway = createFakeGateway({
+        chargeTopUpInvoice: vi.fn(async () => {
+          throw new StripeDefinitiveChargeError("Your card was declined.", "card_declined");
+        }),
+      });
+      const { dispatcher, auditRecord } = createDispatcher(gateway);
+
+      await dispatcher.run();
+
+      const rows = await readRows(accountId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].status).toBe("failed");
+      expect(rows[0].failure_code).toBe("card_declined");
+      expect(gateway.voidInvoice).toHaveBeenCalledWith(rows[0].stripe_invoice_id);
+      expect(auditRecord).toHaveBeenCalledWith(
+        expect.objectContaining({ accountId, eventType: "billing.auto_top_up_invoice_error", eventStatus: "failure" }),
+      );
+
+      // Stripe's own `invoice.payment_failed` webhook still arrives; it disables auto top-up and
+      // emails, and its own void attempt (the invoice is already void) is swallowed.
+      const { disableSpy, noticeMailSend } = await fireAutoTopUpWebhookEvent(
+        {
+          id: "evt_failed_1",
+          type: "invoice.payment_failed",
+          invoice: {
+            id: rows[0].stripe_invoice_id!,
+            customerId: `cus_${accountId}`,
+            metadata: { radioso_kind: "auto_top_up", account_id: accountId, auto_top_up_id: rows[0].id },
+            hostedInvoiceUrl: null,
+          },
+        },
+        createFakeGateway({
+          voidInvoice: vi.fn(async () => {
+            throw new Error("Invoice is already void");
+          }),
+        }),
+      );
+      expect(disableSpy).toHaveBeenCalledWith({ accountId, reason: "payment_failed" });
+      expect(noticeMailSend).toHaveBeenCalled();
+      const settingsRepository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      expect((await settingsRepository.getSettings(accountId))?.enabled).toBe(false);
+    });
+  });
+
+  describe("pagination", () => {
+    it("sweeps every enabled account, not just the first page, when there are more than 200", async () => {
+      const total = 210;
+      const accountIds: string[] = [];
+      for (let i = 0; i < total; i += 1) {
+        accountIds.push(await seedEligibleAccount());
+      }
+
+      const chargedAccountIds: string[] = [];
+      const gateway = createFakeGateway({
+        createTopUpInvoiceDraft: vi.fn(async (params: { metadata: Record<string, string> }) => {
+          chargedAccountIds.push(params.metadata.account_id);
+          return { invoiceId: `in_${randomUUID()}` };
+        }),
+      });
+      const { dispatcher } = createDispatcher(gateway);
+
+      await dispatcher.run();
+
+      expect(chargedAccountIds).toHaveLength(total);
+      for (const accountId of accountIds) {
+        expect(chargedAccountIds).toContain(accountId);
+      }
+    }, 60_000);
   });
 });

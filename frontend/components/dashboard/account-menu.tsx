@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import type { ReactNode } from 'react'
-import { Check, Gauge, LogOut, Monitor, Moon, Sun, UserRound, Users } from 'lucide-react'
+import { useRef, useState, type ReactNode } from 'react'
+import { Check, CreditCard, Gauge, LogOut, Monitor, Moon, Sun, UserRound, Users } from 'lucide-react'
 
 import {
   DropdownMenu,
@@ -17,7 +17,22 @@ import { useTheme, type Theme } from '@/components/theme-provider'
 import { useAuth } from '@/lib/auth-context'
 import { useWorkspace } from '@/lib/workspace-context'
 import { buildDashboardHref, type AccountTab, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { editionController } from '@/lib/edition-controller'
+import { enterpriseUsageApi, type AccountUsageSummary } from '@/lib/api'
+import { formatPlanUsageCompact, isPlanUsageMetered, planUsageLevelTone, type PlanUsageTone } from '@/lib/plan-card-usage'
 import { cn } from '@/lib/utils'
+
+type ConversationUsage = AccountUsageSummary['monthlyConversations']
+
+// Once fetched, the menu's conversation usage stays put for this long; opening again inside the
+// window reuses it instead of re-fetching on every open.
+const USAGE_MENU_CACHE_MS = 60_000
+
+const USAGE_TONE_CLASS_NAME: Readonly<Record<PlanUsageTone, string>> = {
+  ok: 'text-muted-foreground',
+  warning: 'text-amber-700 dark:text-amber-300',
+  destructive: 'text-destructive',
+}
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -42,6 +57,9 @@ export function AccountMenu({
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const { theme, setTheme } = useTheme()
   const { logout } = useAuth()
+  const usageMeterEnabled = editionController.canUseEnterpriseUsageLimits()
+  const [conversationUsage, setConversationUsage] = useState<ConversationUsage>(null)
+  const lastFetchedAtRef = useRef<number | null>(null)
 
   const activeTab = routeState.section === 'account' ? (routeState.accountTab ?? 'members') : undefined
   const href = (accountTab: AccountTab) =>
@@ -52,8 +70,28 @@ export function AccountMenu({
       workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
     })
 
+  const handleOpenChange = (open: boolean) => {
+    if (!open || !usageMeterEnabled) {
+      return
+    }
+
+    const now = Date.now()
+    if (lastFetchedAtRef.current !== null && now - lastFetchedAtRef.current < USAGE_MENU_CACHE_MS) {
+      return
+    }
+    lastFetchedAtRef.current = now
+
+    void enterpriseUsageApi.getAccountUsage()
+      .then((response) => setConversationUsage(response.monthlyConversations))
+      .catch(() => setConversationUsage(null))
+  }
+
+  const usageLabel = usageMeterEnabled ? 'Plan & usage' : 'Usage'
+  const UsageIcon = usageMeterEnabled ? CreditCard : Gauge
+  const meteredUsage = usageMeterEnabled && isPlanUsageMetered(conversationUsage) ? conversationUsage : null
+
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-56">
         <DropdownMenuGroup>
@@ -71,8 +109,13 @@ export function AccountMenu({
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link href={href('usage')} aria-current={activeTab === 'usage' ? 'page' : undefined}>
-              <Gauge />
-              Usage
+              <UsageIcon />
+              {usageLabel}
+              {meteredUsage ? (
+                <span className={cn('ml-auto text-xs', USAGE_TONE_CLASS_NAME[planUsageLevelTone(meteredUsage.level)])}>
+                  {formatPlanUsageCompact(meteredUsage)}
+                </span>
+              ) : null}
             </Link>
           </DropdownMenuItem>
         </DropdownMenuGroup>

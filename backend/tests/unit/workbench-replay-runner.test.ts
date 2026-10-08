@@ -1463,6 +1463,7 @@ describe("WorkbenchReplayRunner", () => {
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Please book Ananda for me",
       history: [],
+      includeSlotValues: true,
     });
 
     expect(result.handoff).toEqual({
@@ -1486,7 +1487,7 @@ describe("WorkbenchReplayRunner", () => {
     expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("A stay at Ananda");
   });
 
-  it("previews a completion notice with its authored subject and intro, and hands nothing off", async () => {
+  const completionNoticeReplay = () => {
     const fakeEngine = {
       async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
         await input.routineStore!.save({
@@ -1534,15 +1535,19 @@ describe("WorkbenchReplayRunner", () => {
       chatGateway: chatGatewayStub(),
       chatAnswerPresenter: presenterStub(),
     });
-
-    const result = await runner.run({
+    return (options: { includeSlotValues?: boolean } = {}) => runner.run({
       workspaceId: "ws-1",
       executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Please book Ananda for me",
       history: [],
+      ...options,
     });
+  };
+
+  it("previews a completion notice with its authored subject and intro in Test Chat, and hands nothing off", async () => {
+    const result = await completionNoticeReplay()({ includeSlotValues: true });
 
     expect(result.handoff).toBeUndefined();
     expect(result.actions ?? []).not.toEqual(expect.arrayContaining([
@@ -1557,6 +1562,16 @@ describe("WorkbenchReplayRunner", () => {
         "  Name: Ada Lovelace",
       ]),
     });
+  });
+
+  // Eval replay never opts into slot values: it persists the trace to append-only eval evidence
+  // that a source conversation's erasure cannot reach.
+  it("keeps a routine's collected values out of an eval replay's trace", async () => {
+    const result = await completionNoticeReplay()();
+
+    expect(result.turnTrace).toBeDefined();
+    expect(result.turnTrace?.handoffPreview).toBeUndefined();
+    expect(JSON.stringify(result.turnTrace)).not.toContain("Ada Lovelace");
   });
 
   it("wires the coverage routine port into a replayed turn's reported coverage verdict", async () => {
@@ -2165,9 +2180,9 @@ describe("WorkbenchReplayRunner coverage routine takeover", () => {
    * routine through the coverage-wrapped routine store and answers with its first step. On a
    * later turn, `attemptRoutine` resumes whatever routine the replay's store holds.
    */
-  const coverageTakeoverEngine = (takeover: Partial<ProcessTurnResult> = {}): ConversationEngine => {
+  const coverageTakeoverEngine = (takeover: Partial<ProcessTurnResult> = {}, routineStatus: "active" | "suspended" = "active"): ConversationEngine => {
     const takeOver = async (input: ProcessTurnInput): Promise<ProcessTurnResult> => {
-      await input.routineStore!.save({ sessionId: input.sessionId, routineId: "follow_up", path: ["ask_email"], variables: {}, status: "active" });
+      await input.routineStore!.save({ sessionId: input.sessionId, routineId: "follow_up", path: ["ask_email"], variables: {}, status: routineStatus });
       return {
         response: { answer: "What's the best email to reach you?" },
         trace: emptyTrace(),
@@ -2235,23 +2250,55 @@ describe("WorkbenchReplayRunner coverage routine takeover", () => {
     expect(second.answer).toBe("resumed:follow_up:ask_email");
   });
 
-  it.each(["run", "stream"] as const)("previews the hand-off a coverage routine ends on, without dispatching it (%s)", async (mode) => {
-    const ending = { routineId: "follow_up", stepId: "handoff", terminalKind: "handoff" as const, collected: { email: "guest@example.com" } };
-    const describeRoutineName = vi.fn(() => "Follow up");
+  const handoffEnding = { routineId: "follow_up", stepId: "handoff", terminalKind: "handoff" as const, collected: { email: "guest@example.com" } };
+  const describedAs = (name: string) => {
+    const describeRoutineName = vi.fn(() => name);
     const reporter: ChatRoutineTurnReporter = {
       describe: () => null,
       describeDeclined: () => null,
       describeInvocation: () => null,
       describeRoutineName,
     };
-    const runner = replayRunner(coverageTakeoverEngine({ handoff: ending, operatorNotice: ending }), reporter);
+    return { reporter, describeRoutineName };
+  };
 
-    const result = await drive(runner, mode, turnInput("How long do refunds take?"));
+  it.each(["run", "stream"] as const)("previews the hand-off a coverage routine ends on in Test Chat, without dispatching it (%s)", async (mode) => {
+    const { reporter, describeRoutineName } = describedAs("Follow up");
+    const runner = replayRunner(coverageTakeoverEngine({ handoff: handoffEnding, operatorNotice: handoffEnding }), reporter);
 
-    expect(result.handoff).toEqual(ending);
+    const result = await drive(runner, mode, { ...turnInput("How long do refunds take?"), includeSlotValues: true });
+
+    expect(result.handoff).toEqual(handoffEnding);
     expect(result.actions ?? []).not.toEqual(expect.arrayContaining([expect.objectContaining({ type: "handoff.notify" })]));
     expect(describeRoutineName).toHaveBeenCalledWith("follow_up");
     expect(result.turnTrace?.handoffPreview).toMatchObject({ kind: "handoff", subject: "Follow up: needs a human" });
     expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("guest@example.com");
+  });
+
+  it.each(["run", "stream"] as const)("keeps a coverage routine's collected values out of an eval replay's trace (%s)", async (mode) => {
+    const { reporter } = describedAs("Follow up");
+    const runner = replayRunner(coverageTakeoverEngine({ handoff: handoffEnding, operatorNotice: handoffEnding }), reporter);
+
+    const result = await drive(runner, mode, turnInput("How long do refunds take?"));
+
+    expect(result.turnTrace).toBeDefined();
+    expect(result.turnTrace?.handoffPreview).toBeUndefined();
+    expect(JSON.stringify(result.turnTrace)).not.toContain("guest@example.com");
+  });
+
+  it.each(["run", "stream"] as const)("suspends a coverage routine that waits for approval and carries it into the next turn (%s)", async (mode) => {
+    const runner = replayRunner(coverageTakeoverEngine({
+      awaitingDecision: { stepId: "approval", captureKey: "approval_decision", options: [{ id: "approve", label: "Approve" }] },
+    }, "suspended"));
+
+    const result = await drive(runner, mode, turnInput("How long do refunds take?"));
+
+    expect(result.pendingDecisionTransition).toMatchObject({
+      routineId: "follow_up",
+      stepId: "approval",
+      options: [{ id: "approve", label: "Approve" }],
+    });
+    expect(result.actions).toEqual(expect.arrayContaining([expect.objectContaining({ type: "approval.request" })]));
+    expect(result.continuation?.routineState).toMatchObject({ routineId: "follow_up", status: "suspended" });
   });
 });

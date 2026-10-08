@@ -754,10 +754,13 @@ export class WorkbenchReplayRunner {
       stream: input.stream,
       engineTrace: input.engineTrace,
     });
-    // A Test Chat/eval replay never dispatches this turn's actions (the caller drops them,
-    // see TrustedTestExecutionRunnerAdapter.run), so an operator notice never actually sends.
-    // Carry its message content on the trace instead.
-    const handoffPreview = this.operatorNoticePreviewFor(input);
+    // A replay never dispatches this turn's actions, so an operator notice never actually sends;
+    // Test Chat carries its message content on the trace instead. That content lists the
+    // routine's collected slot values and substitutes them into the authored subject and intro,
+    // so it follows the same opt-in as slot values on the routine trace: only a caller that set
+    // `includeSlotValues` (Test Chat) gets a preview. Eval replay persists its trace to
+    // append-only evidence no conversation erasure reaches, so it gets none.
+    const handoffPreview = input.input.includeSlotValues === true ? this.operatorNoticePreviewFor(input) : undefined;
     return {
       answer: input.presentation.answer,
       messageId: input.session.userMessage.id,

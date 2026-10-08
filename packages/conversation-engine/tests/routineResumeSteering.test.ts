@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type {
   AttemptRoutineInput,
+  ConversationDirectiveMatcher,
   Directive,
   SteeringRule,
   TurnContext,
@@ -62,7 +63,7 @@ const baseInput = (
   },
   directives: [directive],
   directiveMatcher: {
-    match: vi.fn(async ({ directives }) => directives.map((matched) => ({
+    match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ directives }) => directives.map((matched) => ({
       directive: matched,
       selectionMode: "deterministic" as const,
       selectionReason: "always",

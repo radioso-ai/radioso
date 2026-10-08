@@ -5,10 +5,57 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { PLAN_CATALOG } from "@radioso/plan-catalog";
 
-import { EnterpriseUsageLimitService } from "./usageLimitService.js";
+import {
+  EnterpriseUsageLimitService,
+  TENTHS_PER_CONVERSATION,
+  type UsageKind,
+  type UsageLimitProfile,
+} from "./usageLimitService.js";
 import { UsageLimitAccountNotFoundError, UsageLimitExceededError } from "./errors.js";
 import { usageLimitMigrator } from "./usageLimitMigrator.js";
-import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import type { UsageLimitDatabasePort, UsageLimitReservation } from "../radiosoModuleTypes.js";
+
+const tenths = (conversations: number): number => conversations * TENTHS_PER_CONVERSATION;
+
+// `reserveTenths` is private: the public surface always resolves its own period from the
+// system clock, so the only way to exercise two period starts in the same test -- the
+// concurrency race across a UTC month rollover, and "next period" carried-debt scenarios --
+// is to call it directly with a literal period string, bypassing TypeScript's privacy (a
+// compile-time-only restriction) for this one white-box case.
+type ReserveTenthsAccess = {
+  reserveTenths(
+    accountId: string,
+    profile: UsageLimitProfile,
+    periodStart: string,
+    kind: UsageKind,
+    reservedTenths: number,
+    limitTenths: number,
+  ): Promise<UsageLimitReservation>;
+};
+
+const reserveTenthsDirect = (
+  service: EnterpriseUsageLimitService,
+  accountId: string,
+  profile: UsageLimitProfile,
+  periodStart: string,
+  kind: UsageKind,
+  reservedTenths: number,
+  limitTenths: number,
+): Promise<UsageLimitReservation> =>
+  (service as unknown as ReserveTenthsAccess).reserveTenths(accountId, profile, periodStart, kind, reservedTenths, limitTenths);
+
+const fakeConversationProfile = (limitTenths: number): UsageLimitProfile => ({
+  key: `fake_${randomUUID().replace(/-/g, "").slice(0, 16)}`,
+  displayName: "Fake Profile",
+  monthlyAnswerLimit: null,
+  storedDocumentLimit: null,
+  storedIndexedByteLimit: null,
+  monthlyIndexedByteLimit: null,
+  monthlyConversationLimit: limitTenths / TENTHS_PER_CONVERSATION,
+  repliesPerConversation: 10,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+});
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -729,5 +776,297 @@ describeIfDatabase("EE usage limit service integration", () => {
 
     const usage = await service.getAccountUsage(accountId);
     expect(usage.monthlyConversations).toMatchObject({ used: 1, credits: 1 });
+  });
+
+  // ── Grace allowance ──────────────────────────────────────────────────────
+
+  it("drops the legacy nonnegative CHECK on balance_tenths on an account upgrading from before grace existed", async () => {
+    // `beforeAll` already ran the migrator once against a schema that never had this CHECK
+    // (CREATE TABLE IF NOT EXISTS skips it), so asserting the constraint's absence there alone
+    // would pass even if the migrator's `DROP CONSTRAINT` were deleted. Recreate the table as a
+    // pre-grace install actually had it -- with the CHECK inline -- so this test only passes if
+    // the migrator really drops it.
+    await database.query(`DROP TABLE IF EXISTS ee_usage_limit_credits`);
+    await database.query(`
+      CREATE TABLE ee_usage_limit_credits (
+        account_id UUID PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        balance_tenths INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT ee_usage_limit_credits_balance_tenths_check CHECK (balance_tenths >= 0)
+      )
+    `);
+
+    const { accountId } = await seedAccountWorkspace();
+    await database.query(
+      `INSERT INTO ee_usage_limit_credits (account_id, balance_tenths) VALUES ($1, 0)`,
+      [accountId],
+    );
+
+    // Two boots in a row, as a real deploy runs the migrator on every start: the idempotent
+    // `DROP CONSTRAINT IF EXISTS` must survive a second run finding nothing left to drop.
+    await usageLimitMigrator.migrate(database);
+    await usageLimitMigrator.migrate(database);
+
+    const rows = await database.query<{ conname: string }>(
+      `SELECT conname FROM pg_constraint WHERE conrelid = 'ee_usage_limit_credits'::regclass`,
+    );
+    expect(rows.map((row) => row.conname)).not.toContain("ee_usage_limit_credits_balance_tenths_check");
+
+    // The CHECK this account started under would have rejected this write outright.
+    const written = await database.query<{ balance_tenths: number }>(
+      `UPDATE ee_usage_limit_credits SET balance_tenths = -10 WHERE account_id = $1 RETURNING balance_tenths`,
+      [accountId],
+    );
+    expect(written[0].balance_tenths).toBe(-10);
+  });
+
+  it("lets a customer conversation borrow down to the grace floor, then refuses and stays at the floor", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    // limit 10 conversations -> grace floor(10 * 0.1) = 1 conversation (10 tenths).
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const service = new EnterpriseUsageLimitService(database);
+    const reserveConversation = () => service.reserveAnswer({
+      accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID(),
+    });
+
+    for (let i = 0; i < 10; i += 1) {
+      await reserveConversation();
+    }
+    // The 11th conversation borrows the one conversation of grace the plan allows.
+    await expect(reserveConversation()).resolves.toBeDefined();
+
+    const borrowed = await service.getAccountUsage(accountId);
+    expect(borrowed.monthlyConversations).toMatchObject({ used: 11, credits: 0 });
+
+    // The 12th would borrow past the floor and is refused; the balance stays at the floor.
+    await expect(reserveConversation()).rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    const stillAtFloor = await service.getAccountUsage(accountId);
+    expect(stillAtFloor.monthlyConversations).toMatchObject({
+      used: 11,
+      capacity: 11,
+      grace: { limit: 1, borrowed: 1 },
+      level: "grace_exhausted",
+    });
+  });
+
+  it("stops an internal kind at the allowance plus positive credits, never borrowing and never blocked earlier by carried debt", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    // limit 20 conversations -> grace floor(20 * 0.1) = 2 conversations (20 tenths).
+    await assignProfile(accountId, { monthlyConversationLimit: 20 });
+    const service = new EnterpriseUsageLimitService(database);
+    const reserveConversation = () => service.reserveAnswer({
+      accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID(),
+    });
+    const reserveRayTurn = () => service.reserveAnswer({ accountId, workspaceId, surface: "operator_copilot", usage: "copilot_turn" });
+
+    // An internal kind reserves fine while usage sits under the allowance, even
+    // though nothing has been charged against this account yet.
+    const earlyRayTurn = await reserveRayTurn();
+    await earlyRayTurn.release();
+
+    // Fill the plan allowance, then borrow the full grace (2 conversations) into debt.
+    for (let i = 0; i < 22; i += 1) {
+      await reserveConversation();
+    }
+    const indebted = await service.getAccountUsage(accountId);
+    expect(indebted.monthlyConversations).toMatchObject({ used: 22, credits: 0, grace: { limit: 2, borrowed: 2 } });
+
+    // An internal kind never borrows: once usage is past the allowance, it is
+    // refused immediately, not pushed further by the carried debt.
+    await expect(reserveRayTurn()).rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    // A grant that only partly repays the debt still leaves the internal kind refused:
+    // debt, not positive credit, is what remains.
+    const partial = await service.addCredits({ accountId, conversations: 1, reference: "partial-repay" });
+    expect(partial.credits).toBe(0);
+    await expect(reserveRayTurn()).rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    // Once the grant pays the debt down into a positive balance, the internal kind can
+    // spend that positive balance exactly like ordinary prepaid credit.
+    const topUp = await service.addCredits({ accountId, conversations: 2, reference: "full-repay" });
+    expect(topUp.credits).toBe(1);
+    await expect(reserveRayTurn()).resolves.toBeDefined();
+  });
+
+  it("carries debt across periods: the next period's allowance is full, but the grace stays reduced until a grant repays it", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    // limit 10 conversations -> grace floor(10 * 0.1) = 1 conversation (10 tenths).
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const service = new EnterpriseUsageLimitService(database);
+    const reserveConversation = () => service.reserveAnswer({
+      accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID(),
+    });
+
+    for (let i = 0; i < 11; i += 1) {
+      await reserveConversation();
+    }
+    const currentPeriod = await service.getAccountUsage(accountId);
+    expect(currentPeriod.monthlyConversations).toMatchObject({ used: 11, grace: { limit: 1, borrowed: 1 } });
+
+    // `ee_usage_limit_credits.balance_tenths` carries no period column: a different
+    // period reads a fresh (empty) unit counter, so the allowance is back to full,
+    // while the account-wide balance -- and therefore the grace debt -- is unchanged.
+    const nextPeriod = await service.getAccountUsage(accountId, "2031-01-01");
+    expect(nextPeriod.monthlyConversations).toMatchObject({
+      used: 0,
+      limit: 10,
+      credits: 0,
+      capacity: 10,
+      grace: { limit: 1, borrowed: 1 },
+      level: "ok",
+    });
+  });
+
+  it("releases a borrowed conversation back to the exact pre-reservation balance", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const service = new EnterpriseUsageLimitService(database);
+    const reserveConversation = () => service.reserveAnswer({
+      accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID(),
+    });
+
+    for (let i = 0; i < 10; i += 1) {
+      await reserveConversation();
+    }
+    const borrowing = await reserveConversation();
+    const borrowed = await service.getAccountUsage(accountId);
+    expect(borrowed.monthlyConversations).toMatchObject({ used: 11, credits: 0, grace: { borrowed: 1 } });
+
+    await borrowing.release();
+
+    const released = await service.getAccountUsage(accountId);
+    expect(released.monthlyConversations).toMatchObject({ used: 10, credits: 0, grace: { borrowed: 0 } });
+  });
+
+  it("gives a next-period reservation the full allowance plus only the carried debt's reduced grace, when debt is within grace", async () => {
+    const { accountId } = await seedAccountWorkspace();
+    // limit 20 conversations -> grace floor(20 * 0.1) = 2 conversations (20 tenths).
+    const limitTenths = tenths(20);
+    const profile = fakeConversationProfile(limitTenths);
+    const service = new EnterpriseUsageLimitService(database);
+
+    // Carry 1 conversation (10 tenths) of debt into the next period -- within the 2-conversation grace.
+    await database.query(
+      `INSERT INTO ee_usage_limit_credits (account_id, balance_tenths) VALUES ($1, $2)
+       ON CONFLICT (account_id) DO UPDATE SET balance_tenths = $2`,
+      [accountId, -tenths(1)],
+    );
+
+    const nextPeriod = "2031-03-01";
+    // The fresh period's own allowance is untouched by the carried debt: seed usage at the limit.
+    await database.query(
+      `INSERT INTO ee_usage_limit_unit_counters (account_id, period_start, used_tenths) VALUES ($1, $2::date, $3)`,
+      [accountId, nextPeriod, limitTenths],
+    );
+
+    // The reduced grace (2 - 1 = 1 conversation) still admits one more conversation...
+    await reserveTenthsDirect(service, accountId, profile, nextPeriod, "conversation", tenths(1), limitTenths);
+
+    // ...but not a second: the carried debt already ate the rest of the grace.
+    await expect(reserveTenthsDirect(service, accountId, profile, nextPeriod, "conversation", tenths(1), limitTenths))
+      .rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    const credits = await database.query<{ balance_tenths: number }>(
+      `SELECT balance_tenths FROM ee_usage_limit_credits WHERE account_id = $1`,
+      [accountId],
+    );
+    // -1 (carried) - 1 (newly borrowed) = -2 conversations: the account's full, period-independent grace floor.
+    expect(credits[0].balance_tenths).toBe(-tenths(2));
+  });
+
+  it("gives a next-period reservation the full allowance but zero borrowing room once a downgrade leaves carried debt bigger than the new grace", async () => {
+    const { accountId } = await seedAccountWorkspace();
+    // Original plan: limit 1000 conversations -> grace floor(1000 * 0.1) = 100 conversations.
+    await assignProfile(accountId, { monthlyConversationLimit: 1000 });
+
+    // Carry 100 conversations (1000 tenths) of debt -- exactly at the original plan's grace floor.
+    await database.query(
+      `INSERT INTO ee_usage_limit_credits (account_id, balance_tenths) VALUES ($1, $2)
+       ON CONFLICT (account_id) DO UPDATE SET balance_tenths = $2`,
+      [accountId, -tenths(100)],
+    );
+
+    // Downgrade: the new plan's grace (floor(50 * 0.1) = 5 conversations) is far smaller than the carried debt.
+    await assignProfile(accountId, { monthlyConversationLimit: 50 });
+    const limitTenths = tenths(50);
+    const profile = fakeConversationProfile(limitTenths);
+    const service = new EnterpriseUsageLimitService(database);
+    const nextPeriod = "2031-04-01";
+
+    // Seed the fresh period one conversation short of the new, smaller limit.
+    await database.query(
+      `INSERT INTO ee_usage_limit_unit_counters (account_id, period_start, used_tenths) VALUES ($1, $2::date, $3)`,
+      [accountId, nextPeriod, limitTenths - tenths(1)],
+    );
+
+    // The last conversation of the full fresh allowance still succeeds: carried debt from the
+    // old, larger profile never ate into the new period's allowance.
+    await reserveTenthsDirect(service, accountId, profile, nextPeriod, "conversation", tenths(1), limitTenths);
+
+    // The next one would overshoot the allowance, and the carried debt (100 conversations)
+    // already exceeds the new grace (5 conversations): zero borrowing room, refused immediately.
+    await expect(reserveTenthsDirect(service, accountId, profile, nextPeriod, "conversation", tenths(1), limitTenths))
+      .rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    const credits = await database.query<{ balance_tenths: number }>(
+      `SELECT balance_tenths FROM ee_usage_limit_credits WHERE account_id = $1`,
+      [accountId],
+    );
+    expect(credits[0].balance_tenths).toBe(-tenths(100));
+  });
+
+  it("locks the credits row so two concurrent reservations in different periods never both borrow past the floor", async () => {
+    const { accountId } = await seedAccountWorkspace();
+    // limit 10 conversations -> grace floor(10 * 0.1) = 1 conversation (10 tenths).
+    const limitTenths = tenths(10);
+    const profile = fakeConversationProfile(limitTenths);
+    const service = new EnterpriseUsageLimitService(database);
+
+    // Two distinct periods (simulating a UTC month rollover splitting concurrent traffic across
+    // two counter rows), each already sitting at the plan limit, so each reservation below is a
+    // one-conversation overshoot that must draw on the single, account-wide grace.
+    const periodA = "2031-05-01";
+    const periodB = "2031-06-01";
+    await database.query(
+      `INSERT INTO ee_usage_limit_unit_counters (account_id, period_start, used_tenths) VALUES
+         ($1, $2::date, $3), ($1, $4::date, $3)`,
+      [accountId, periodA, limitTenths, periodB],
+    );
+    // Pre-create the credits row so both reservations' own `INSERT ... ON CONFLICT DO NOTHING`
+    // is a true no-op against an already-committed row. Racing that insert on a not-yet-existing
+    // row would itself serialize the two transactions on the unique index, which would mask
+    // exactly the bug this test exists to catch.
+    await database.query(
+      `INSERT INTO ee_usage_limit_credits (account_id, balance_tenths) VALUES ($1, 0)`,
+      [accountId],
+    );
+
+    // Pre-warm two idle pool connections. Otherwise the first reservation below reuses an
+    // already-established idle connection while the second pays real connect-handshake latency,
+    // which reliably lets the first finish its whole transaction before the second's connection
+    // is even open -- serializing them by accident and masking the very race this test targets.
+    await Promise.all([database.query("SELECT 1"), database.query("SELECT 1")]);
+
+    const [resultA, resultB] = await Promise.allSettled([
+      reserveTenthsDirect(service, accountId, profile, periodA, "conversation", tenths(1), limitTenths),
+      reserveTenthsDirect(service, accountId, profile, periodB, "conversation", tenths(1), limitTenths),
+    ]);
+    const outcomes = [resultA, resultB];
+
+    // The grace floor (1 conversation) can only ever admit one of the two: locking the credits
+    // row serializes them so the second sees the first's already-decremented balance, rather
+    // than both reading the same stale balance and both pushing it past the floor.
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    const rejected = outcomes.filter((outcome) => outcome.status === "rejected");
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toBeInstanceOf(UsageLimitExceededError);
+
+    const credits = await database.query<{ balance_tenths: number }>(
+      `SELECT balance_tenths FROM ee_usage_limit_credits WHERE account_id = $1`,
+      [accountId],
+    );
+    // Exactly the grace floor -- never twice that, which is what the unlocked read allowed.
+    expect(credits[0].balance_tenths).toBe(-tenths(1));
   });
 });

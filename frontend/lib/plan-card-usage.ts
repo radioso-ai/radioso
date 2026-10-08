@@ -1,15 +1,17 @@
-// Pure math for the dashboard plan card: usage percent, threshold banding, and which
-// `byKind` bucket is driving this month's usage. Kept separate from plan-card.tsx so the
+// Pure math for the dashboard plan card: usage percent, level-driven messaging and tone, and
+// which `byKind` bucket is driving this month's usage. Kept separate from plan-card.tsx so the
 // arithmetic is unit-testable without mounting a component.
+
+import type { PlanUsageLevel } from './api-types'
 
 export type PlanUsageKind = 'conversation' | 'copilot' | 'test_run' | 'pulse_report'
 
-type PlanUsageThreshold = 'ok' | 'warning' | 'exceeded'
+/** A tone for a compact meter display. */
+export type PlanUsageTone = 'ok' | 'warning' | 'destructive'
 
 interface PlanUsageBucket {
   used: number
-  limit: number
-  credits: number
+  capacity: number
 }
 
 /** Display labels for the four kinds the account usage response breaks conversations into. */
@@ -20,34 +22,69 @@ export const PLAN_USAGE_KIND_LABELS: Readonly<Record<PlanUsageKind, string>> = {
   pulse_report: 'Pulse',
 }
 
-const capacity = (bucket: PlanUsageBucket): number => bucket.limit + bucket.credits
-
-/** `used / (limit + credits)` as a percent, clamped to [0, 100]. Uncapped capacity reads 0. */
+/** `used / capacity` as a percent, clamped to [0, 100]. The server computes `capacity`
+ *  (plan allowance plus positive credits); a stale client-side `limit + credits` denominator
+ *  reads wrong once credits are partly spent, since credits shrink as overshoot consumes them. */
 export const planUsagePercent = (bucket: PlanUsageBucket): number => {
-  const total = capacity(bucket)
-  if (total <= 0) {
+  if (bucket.capacity <= 0) {
     return 0
   }
 
-  return Math.min(100, Math.max(0, Math.round((bucket.used / total) * 100)))
+  return Math.min(100, Math.max(0, Math.round((bucket.used / bucket.capacity) * 100)))
 }
 
-/** Under 80% is quiet, 80-99% warns, 100%+ (including over-capacity) is exceeded. */
-export const planUsageThreshold = (bucket: PlanUsageBucket): PlanUsageThreshold => {
-  const total = capacity(bucket)
-  if (total <= 0) {
-    return 'ok'
-  }
+/** Whether this level's banner carries the Upgrade/Buy actions — both unresolved states a
+ *  top-up or upgrade can fix, as opposed to `nearing_limit`'s plain heads-up. */
+export const planUsageLevelHasActions = (level: PlanUsageLevel): boolean =>
+  level === 'limit_reached' || level === 'grace_exhausted'
 
-  const ratio = bucket.used / total
-  if (ratio >= 1) {
-    return 'exceeded'
+export const formatResetDate = (value: string): string =>
+  new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value))
+
+const formatConversationCount = (value: number): string => new Intl.NumberFormat('en').format(value)
+
+/**
+ * One short, present-tense sentence for a level whose meaning holds regardless of which kind is
+ * driving usage. `nearing_limit` has no fixed sentence here — the plan card names whichever kind
+ * (`largestPlanUsageKind`) is using the month's budget instead — and `ok` shows no banner at all.
+ */
+export const planUsageLevelMessage = (input: {
+  level: PlanUsageLevel
+  graceRemaining: number
+  resetAt: string
+}): string | null => {
+  const resetDate = formatResetDate(input.resetAt)
+  switch (input.level) {
+    case 'limit_reached':
+      return `Plan allowance used. Visitors get up to ${formatConversationCount(input.graceRemaining)} extra conversations; Ray, Test Chat, and Pulse pause until ${resetDate}.`
+    case 'grace_exhausted':
+      return `Agents stopped answering visitors. They resume on ${resetDate}.`
+    case 'nearing_limit':
+    case 'ok':
+      return null
   }
-  if (ratio >= 0.8) {
-    return 'warning'
-  }
-  return 'ok'
 }
+
+/** Display tone for a compact meter, from the server-computed level — not a client threshold. */
+export const planUsageLevelTone = (level: PlanUsageLevel): PlanUsageTone => {
+  switch (level) {
+    case 'nearing_limit':
+      return 'warning'
+    case 'limit_reached':
+    case 'grace_exhausted':
+      return 'destructive'
+    case 'ok':
+      return 'ok'
+  }
+}
+
+/** `used / capacity`, e.g. "412 / 500". */
+export const formatPlanUsageCompact = (bucket: PlanUsageBucket): string =>
+  `${bucket.used} / ${bucket.capacity}`
+
+/** A bucket is worth showing a meter for only once it has real capacity to measure against. */
+export const isPlanUsageMetered = (bucket: PlanUsageBucket | null): bucket is PlanUsageBucket =>
+  bucket !== null && bucket.capacity > 0
 
 /** The kind with the largest share of this month's usage, or null when every kind is at 0. */
 export const largestPlanUsageKind = (

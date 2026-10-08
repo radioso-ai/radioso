@@ -132,7 +132,7 @@ export function UsageView({ accountId }: { accountId: string }) {
 
   return (
     <DashboardPage
-      title="Usage"
+      title={usageLimitsEnabled ? 'Plan & usage' : 'Usage'}
       description={usageLimitsEnabled ? 'Limits, current totals, trends, and detailed AI usage for this account.' : 'Current workspace usage, account trends, and detailed AI usage.'}
       contentClassName="p-6"
     >
@@ -161,8 +161,10 @@ export function UsageView({ accountId }: { accountId: string }) {
                   <UsageMeter
                     label="Monthly conversations"
                     used={usage.monthlyConversations.used}
-                    limit={usage.monthlyConversations.limit}
-                    caption={`Customer conversations this month, plus ${formatCount(usage.monthlyConversations.credits)} prepaid credits.`}
+                    limit={usage.monthlyConversations.capacity}
+                    caption={usage.monthlyConversations.credits > 0
+                      ? `Customer conversations this month, including ${formatCount(usage.monthlyConversations.credits)} prepaid credits.`
+                      : 'Customer conversations this month.'}
                   />
                 ) : (
                   <UsageMeter

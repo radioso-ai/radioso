@@ -591,6 +591,155 @@ test("a deleted Needs-you permalink keeps its notice after clearing the URL", as
   await expect(response.getByText("This conversation is no longer available.")).toBeVisible();
 });
 
+// A click sets the local selection and pushes its own URL synchronously,
+// but `routeState` (the prop the reconciliation effect in
+// needs-attention-view.tsx reads) only catches up once Next.js applies that
+// navigation - a gap of roughly 100-300ms observed in practice. Both tests
+// below hold a second click's own navigation open across that gap with a
+// deterministic route interception (never a fixed delay), so the race is
+// exercised the same way on every run instead of only on a slow one.
+test("going back before a second click's own route lands does not get stuck on it", async ({ page }) => {
+  const aId = "conversation-race-back-a";
+  const bId = "conversation-race-back-b";
+  const aOwnership = handoffOwnership(aId, null, 1);
+  const bOwnership = handoffOwnership(bId, null, 1);
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: {
+      conversations: [
+        handoffSummary(aId, "Race A", aOwnership),
+        handoffSummary(bId, "Race B", bOwnership),
+      ],
+      total: 2,
+      nextCursor: null,
+      hasMore: false,
+    },
+    conversationDetails: {
+      [aId]: handoffDetail(aId, aOwnership),
+      [bId]: handoffDetail(bId, bOwnership),
+    },
+    conversationOperators: teammates,
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  const queue = page.getByLabel("Inbox queue");
+  await queue.getByRole("button", { name: /Race A/ }).click();
+  await expect(page).toHaveURL(new RegExp(`itemId=inbox%3Ahandoff%3A${aId}%3Ahandoff`));
+
+  // Hold Race B's own navigation in flight so Back is guaranteed to land
+  // before `routeState` ever names it - the exact window a fixed destination
+  // key (rather than the from-key this fix tracks) would wait out forever,
+  // because the navigation it names is the one Back just abandoned.
+  let releaseB: () => void = () => {};
+  const bNavigationGate = new Promise<void>((resolve) => {
+    releaseB = resolve;
+  });
+  let sawBNavigation = false;
+  await page.route(`**/w/${workspaceKey}/activity**`, async (route) => {
+    if (route.request().url().includes(encodeURIComponent(bId))) {
+      sawBNavigation = true;
+      await bNavigationGate;
+    }
+    await route.continue();
+  });
+
+  await queue.getByRole("button", { name: /Race B/ }).click();
+  await expect.poll(() => sawBNavigation).toBe(true);
+
+  await page.goBack();
+  releaseB();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByText("Select an item from the queue to respond.")).toBeVisible();
+  await expect(page).not.toHaveURL(/itemId=/);
+});
+
+test("a recently closed row whose detail 404s before its own route lands keeps the not-found notice, not a silent reselect", async ({ page }) => {
+  const aId = "conversation-race-404-a";
+  const closedId = "conversation-race-404-closed";
+  const aOwnership = handoffOwnership(aId, null, 1);
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(aId, "Race A", aOwnership)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: {
+      [aId]: handoffDetail(aId, aOwnership),
+      // No entry for `closedId` - the mock's unmatched-route fallback 404s
+      // its detail fetch, the same shape a deleted/aged-out conversation
+      // returns for real.
+    },
+    conversationOperators: teammates,
+    recentlyClosed: [{
+      id: "00000000-0000-4000-8000-0000000004c4",
+      conversationId: closedId,
+      itemKind: "handoff",
+      outcome: "handed_back",
+      closedAt: nowIso,
+      closedBy: { userId: "user-dana", label: "Dana Scully" },
+      decision: null,
+      resolution: null,
+      assistantMessageId: null,
+      title: null,
+      preview: "Race closed row",
+    }],
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  const queue = page.getByLabel("Inbox queue");
+  await queue.getByRole("button", { name: /Race A/ }).click();
+  await expect(page).toHaveURL(new RegExp(`itemId=inbox%3Ahandoff%3A${aId}%3Ahandoff`));
+
+  // Hold the closed row's own navigation in flight so its detail 404 is
+  // guaranteed to land while `routeState` still names A - the gap where the
+  // not-found handler used to close over A's route instead of the closed
+  // row's own.
+  let releaseClosed: () => void = () => {};
+  const closedNavigationGate = new Promise<void>((resolve) => {
+    releaseClosed = resolve;
+  });
+  let sawClosedNavigation = false;
+  let sawPrematureClearNavigation = false;
+  await page.route(`**/w/${workspaceKey}/activity**`, async (route) => {
+    const url = route.request().url();
+    if (url.includes(encodeURIComponent(closedId))) {
+      sawClosedNavigation = true;
+      await closedNavigationGate;
+    } else if (sawClosedNavigation && !url.includes("itemId=")) {
+      // Any navigation to a bare, itemId-less url issued while the closed
+      // row's own navigation is still gated can only be clearing Race A's
+      // still-live selection - the exact misattribution this fix removes.
+      sawPrematureClearNavigation = true;
+    }
+    await route.continue();
+  });
+
+  const response = page.getByLabel("Response", { exact: true });
+  const detail404 = page.waitForResponse((res) =>
+    res.url().includes(encodeURIComponent(closedId)) && res.status() === 404);
+
+  await queue.getByRole("button", { name: /Race closed row/ }).click();
+  await expect.poll(() => sawClosedNavigation).toBe(true);
+  await detail404;
+  // The 404 is caught asynchronously; wait for its outcome to actually
+  // render before reading network history - a response-driven wait, not a
+  // fixed delay.
+  await expect(response.getByText(/This conversation is no longer available\.|Unhandled mock route/)).toBeVisible();
+  expect(sawPrematureClearNavigation).toBe(false);
+
+  releaseClosed();
+
+  // Once the closed row's own navigation lands, reconciliation must not
+  // silently reselect it (it's still "found" in the recently-closed list) -
+  // it must clear instead, keeping the notice live. Wait for the clear first:
+  // the notice was already visible before release, so asserting it first would
+  // pass before reconciliation ran.
+  await expect(page).not.toHaveURL(/itemId=/);
+  await expect(response.getByText("This conversation is no longer available.")).toBeVisible();
+});
+
 test("an empty Needs-you queue hides the filters, keeps the toggle in the left pane, and puts the confidence message in the reading pane", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);

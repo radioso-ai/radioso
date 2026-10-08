@@ -292,6 +292,24 @@ const reaskFor = (
 };
 
 /**
+ * One trace entry for a step recorded twice in a turn: once when the turn started on it, again
+ * when the walk that follows reached it. The walk's outcome is what happened to the step, so it
+ * replaces the start's label, except a render: the walk rendering the step the turn stayed on
+ * keeps the start's label, a re-ask or the routine's first ask (#1450).
+ */
+const foldStepEntry = (start: RoutineTraceStepEntry, walked: RoutineTraceStepEntry): RoutineTraceStepEntry => {
+  const capturedSlotKeys = [...new Set([...(start.capturedSlotKeys ?? []), ...(walked.capturedSlotKeys ?? [])])];
+  const rejectedSlots = [...(start.rejectedSlots ?? []), ...(walked.rejectedSlots ?? [])];
+  return {
+    ...start,
+    ...walked,
+    event: walked.event === "rendered" ? start.event : walked.event,
+    ...(capturedSlotKeys.length > 0 ? { capturedSlotKeys } : {}),
+    ...(rejectedSlots.length > 0 ? { rejectedSlots } : {}),
+  };
+};
+
+/**
  * Consecutive no-progress re-asks of one step before the reply is told to ask differently
  * (#1376).
  */
@@ -896,6 +914,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     let pendingRootRejected: RoutineTraceRejectedSlot[] = [];
     // Whether `selectNext` held the step the visitor answered (see the hold there).
     let held = false;
+    // The trace entry for the step the turn started on, when its edges were judged.
+    let startEntry: RoutineTraceStepEntry | undefined;
     if (currentStep.kind === "skill" || currentStep.kind === "action") {
       // Transit steps execute when the routine lands on them. This matters for a
       // routine whose root step is a tool (for example retrieval.context): selecting
@@ -935,18 +955,23 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       variables = { ...state.variables, ...(decision.variables ?? {}) };
       resumeStepRejected = [...selectorRejected, ...unreplacedStartRejections(variables)];
       // Trace the resume step's outcome: it either advanced off (the user satisfied it) or
-      // was re-asked. Captured keys, if any, belong to this step's edge evaluation.
+      // was re-asked. Captured keys, if any, belong to this step's edge evaluation. On the
+      // routine's first turn the step read the opening message and was never asked, so
+      // staying on it is its first ask, not a re-ask (#1450).
       {
         const captured = capturedKeysFrom(state.variables, decision);
-        traceSteps.push({
+        const stayed = step.id === currentStepId;
+        startEntry = {
           stepId: currentStep.id,
           kind: currentStep.kind,
-          event: step.id === currentStepId ? "reasked" : "advanced",
+          event: stayed ? (input.activationTurn ? "rendered" : "reasked") : "advanced",
           ...(captured.length > 0 ? { capturedSlotKeys: captured } : {}),
           ...(tracedRejected.length > 0 ? { rejectedSlots: tracedRejected } : {}),
           viaSelector: mainSelectorRan,
           ...(mainSelection ? { selection: mainSelection } : {}),
-        });
+          ...(input.activationTurn ? { readOpeningMessage: true } : {}),
+        };
+        traceSteps.push(startEntry);
       }
       // Append to the path only on a real advance; re-asking a step keeps it stable.
       path = step.id === currentStepId ? [...state.path] : [...state.path, step.id];
@@ -992,6 +1017,16 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         entry.rejectedSlots = lastRejectedSlots;
       }
       return entry;
+    };
+    // The walk starts on the step the turn stayed on, which can already hold its values: it
+    // moves that step on after all, or renders it after asking its selector again. Its entry
+    // then folds into the start's, so the step is listed once.
+    const recordWalkedStep = (entry: RoutineTraceStepEntry): void => {
+      if (startEntry && traceSteps.at(-1) === startEntry && entry.stepId === startEntry.stepId) {
+        traceSteps[traceSteps.length - 1] = foldStepEntry(startEntry, entry);
+        return;
+      }
+      traceSteps.push(entry);
     };
     // Walks on from `step` until a step holds the turn. Returns true when a selector found the
     // message off-topic and the turn yields. A held step is asked again even when the values
@@ -1090,7 +1125,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           if (nextStepId === step.id) {
             // The step stays — held, or nothing chosen — so it is the one this turn renders;
             // record it with what its selector returned.
-            traceSteps.push({ ...fastForwardEntry, event: "rendered" });
+            recordWalkedStep({ ...fastForwardEntry, event: "rendered" });
             break;
           }
         }
@@ -1102,7 +1137,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         if (fastForwarded.has(nextStepId)) {
           break;
         }
-        traceSteps.push(fastForwardEntry);
+        recordWalkedStep(fastForwardEntry);
         step = stepById(nextStepId);
         fastForwarded.add(step.id);
         enterStep(step, path);
@@ -1147,6 +1182,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         effects: {
           nextState: null,
           terminal: { kind: "stuck", stepId: currentStep.id, collected: declaredSlotVariables(routine, variables) },
+          endedVariables: variables,
           trace: {
             routineId: routine.id,
             startStepId: currentStepId,
@@ -1412,8 +1448,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     return {
       kind: "claimed",
       effects: {
-        // A terminal step ends the routine — clear its state.
-        nextState: step.kind === "terminal" ? null : nextState,
+        // A terminal step ends the routine — clear its state, and report the values it ended
+        // with for the host's record of the ended run.
+        ...(step.kind === "terminal" ? { nextState: null, endedVariables: variables } : { nextState }),
         ...(terminalKind
           ? { terminal: terminalResult(terminalKind, step, declaredSlotVariables(routine, variables)) }
           : {}),

@@ -15,8 +15,21 @@ import type {
   UsageLimitPolicy,
   UsageLimitReservation,
 } from "../radiosoModuleTypes.js";
+import {
+  conversationUsageLevel,
+  graceLimitTenths,
+  TENTHS_PER_CONVERSATION,
+  type ConversationGrace,
+  type ConversationUsageLevel,
+} from "./conversationUsageLevel.js";
 import { UsageLimitAccountNotFoundError, UsageLimitExceededError } from "./errors.js";
 import { currentPeriodStart, nextPeriodStart } from "./period.js";
+import { claimGraceExhaustedSafely, claimLevelsCrossed, clearAlertClaims } from "./alerts/alertClaims.js";
+
+// Re-exported for existing importers (e.g. staffConsole/organizationDirectoryService.ts):
+// conversationUsageLevel.ts is the one owner of this unit now that reserveTenths' grace
+// floor and /me both need it alongside the level math.
+export { TENTHS_PER_CONVERSATION };
 
 export interface UsageLimitProfile {
   key: string;
@@ -80,14 +93,18 @@ export interface AccountUsageSummary {
     resetAt: string;
     used: number;
     limit: number;
-    /** Remaining prepaid top-up conversations. Never expire. */
+    /** Remaining prepaid top-up conversations. Never expire. `max(balance, 0)`: a negative
+     *  balance (borrowed grace) reports 0 here rather than a negative credit figure. */
     credits: number;
+    /** Conversations spendable before borrowing: max(used, limit) + max(balance, 0). Replaces
+     *  `limit + credits` as the bar denominator, which drifts wrong once credits are partly spent. */
+    capacity: number;
+    /** How far a customer conversation may still push the account-wide balance negative. */
+    grace: ConversationGrace;
+    level: ConversationUsageLevel;
     byKind: Record<UsageKind, number>;
   } | null;
 }
-
-/** Everything is metered in tenths of a conversation so "ten test runs are one" is integer math. */
-export const TENTHS_PER_CONVERSATION = 10;
 
 type SurfaceWeight = {
   kind: UsageKind;
@@ -284,24 +301,32 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
   }
 
   async assignProfile(accountId: string, profileKey: string | null): Promise<AccountUsageSummary> {
-    if (profileKey === null) {
-      await this.db
-        .deleteFrom("ee_usage_limit_account_assignments")
-        .where("account_id", "=", accountId)
-        .execute();
-      return this.getAccountUsage(accountId);
-    }
-
-    await this.db
-      .insertInto("ee_usage_limit_account_assignments")
-      .values({ account_id: accountId, profile_key: profileKey })
-      .onConflict((oc) =>
-        oc.column("account_id").doUpdateSet({
-          profile_key: (eb) => eb.ref("excluded.profile_key"),
-          updated_at: sql<Date>`now()`,
-        }),
-      )
-      .execute();
+    // The assignment write and the re-arm clear share one transaction: `clearAlertClaims`
+    // only deletes claims with `created_at` before this transaction's (frozen) `now()`, so a
+    // reservation's claim that commits concurrently, between this transaction's start and its
+    // own commit, is never swept up just because the two happened to overlap.
+    await this.db.transaction().execute(async (trx) => {
+      if (profileKey === null) {
+        await trx
+          .deleteFrom("ee_usage_limit_account_assignments")
+          .where("account_id", "=", accountId)
+          .execute();
+      } else {
+        await trx
+          .insertInto("ee_usage_limit_account_assignments")
+          .values({ account_id: accountId, profile_key: profileKey })
+          .onConflict((oc) =>
+            oc.column("account_id").doUpdateSet({
+              profile_key: (eb) => eb.ref("excluded.profile_key"),
+              updated_at: sql<Date>`now()`,
+            }),
+          )
+          .execute();
+      }
+      // Re-arm: a plan/profile change clears this period's alert claims, so a level
+      // reached again under the new (or absent) profile alerts again.
+      await clearAlertClaims(trx, { accountId, periodStart: currentPeriodStart() });
+    });
 
     return this.getAccountUsage(accountId);
   }
@@ -527,76 +552,129 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     tenths: number,
     limitTenths: number,
   ): Promise<UsageLimitReservation> {
-    await this.db.transaction().execute(async (trx) => {
-      await trx
-        .insertInto("ee_usage_limit_unit_counters")
-        .values({ account_id: accountId, period_start: sql<string>`${periodStart}::date`, used_tenths: 0 })
-        .onConflict((oc) => oc.columns(["account_id", "period_start"]).doNothing())
-        .execute();
-      await trx
-        .insertInto("ee_usage_limit_credits")
-        .values({ account_id: accountId, balance_tenths: 0 })
-        .onConflict((oc) => oc.column("account_id").doNothing())
-        .execute();
-
-      const counter = await trx
-        .selectFrom("ee_usage_limit_unit_counters")
-        .select("used_tenths")
-        .where("account_id", "=", accountId)
-        .where("period_start", "=", sql<string>`${periodStart}::date`)
-        .forUpdate()
-        .executeTakeFirstOrThrow();
-      const credits = await trx
-        .selectFrom("ee_usage_limit_credits")
-        .select("balance_tenths")
-        .where("account_id", "=", accountId)
-        .executeTakeFirstOrThrow();
-
-      const usedBefore = counter.used_tenths;
-      const usedAfter = usedBefore + tenths;
-      // The part of this charge that runs past the plan limit — negative (and
-      // therefore never over budget) while usedBefore is already within the
-      // limit. Checking `overshoot > balance` here, not `usedAfter > limit +
-      // balance`, matters once a prior call has already dipped into credits:
-      // `max(limitTenths, usedBefore)` tracks the account's high-water mark,
-      // so a later call is only charged (and only needs to fit) against what
-      // IS still unpaid, not against the limit re-added on top of it.
-      const overshoot = usedAfter - Math.max(limitTenths, usedBefore);
-      if (overshoot > credits.balance_tenths) {
-        throw new UsageLimitExceededError({
-          profileKey: profile.key,
-          resource: "monthly_conversations",
-          limit: profile.monthlyConversationLimit ?? 0,
-          used: usedBefore / TENTHS_PER_CONVERSATION,
-          periodStart,
-          resetAt: nextPeriodStart(periodStart),
-        });
-      }
-
-      await trx
-        .updateTable("ee_usage_limit_unit_counters")
-        .set({ used_tenths: usedAfter, updated_at: sql<Date>`now()` })
-        .where("account_id", "=", accountId)
-        .where("period_start", "=", sql<string>`${periodStart}::date`)
-        .execute();
-      if (overshoot > 0) {
+    try {
+      await this.db.transaction().execute(async (trx) => {
         await trx
-          .updateTable("ee_usage_limit_credits")
-          .set({ balance_tenths: sql<number>`balance_tenths - ${overshoot}`, updated_at: sql<Date>`now()` })
-          .where("account_id", "=", accountId)
+          .insertInto("ee_usage_limit_unit_counters")
+          .values({ account_id: accountId, period_start: sql<string>`${periodStart}::date`, used_tenths: 0 })
+          .onConflict((oc) => oc.columns(["account_id", "period_start"]).doNothing())
           .execute();
+        await trx
+          .insertInto("ee_usage_limit_credits")
+          .values({ account_id: accountId, balance_tenths: 0 })
+          .onConflict((oc) => oc.column("account_id").doNothing())
+          .execute();
+
+        const counter = await trx
+          .selectFrom("ee_usage_limit_unit_counters")
+          .select("used_tenths")
+          .where("account_id", "=", accountId)
+          .where("period_start", "=", sql<string>`${periodStart}::date`)
+          .forUpdate()
+          .executeTakeFirstOrThrow();
+        // Locked in the same order as `release()` and every other credits touch
+        // in this method (counter, then credits): two reservations in different
+        // periods lock different counter rows and would otherwise read this
+        // balance unlocked, race past each other, and both decrement it below
+        // the floor. Locking it here, after the counter, serializes them.
+        const credits = await trx
+          .selectFrom("ee_usage_limit_credits")
+          .select("balance_tenths")
+          .where("account_id", "=", accountId)
+          .forUpdate()
+          .executeTakeFirstOrThrow();
+
+        const usedBefore = counter.used_tenths;
+        const usedAfter = usedBefore + tenths;
+        // The part of this charge that runs past the plan limit — negative (and
+        // therefore never over budget) while usedBefore is already within the
+        // limit. Checking `overshoot > ceiling` here, not `usedAfter > limit +
+        // ceiling`, matters once a prior call has already dipped into credits:
+        // `max(limitTenths, usedBefore)` tracks the account's high-water mark,
+        // so a later call is only charged (and only needs to fit) against what
+        // IS still unpaid, not against the limit re-added on top of it.
+        const overshoot = usedAfter - Math.max(limitTenths, usedBefore);
+        // A customer conversation may run the account-wide balance negative, down to the
+        // plan's grace floor, once the allowance and prepaid credits both run out — that debt
+        // carries into later periods until a credit grant repays it. The ceiling is
+        // max(balance, 0) + max(grace - borrowed, 0), not balance + grace: debt already
+        // larger than the current grace (carried across a downgrade to a smaller plan, say)
+        // must not eat into a fresh period's allowance — it only shrinks the borrowing room
+        // left, down to zero, never below. The two formulas agree whenever borrowed <= grace.
+        // Every other kind (copilot, test_run, pulse_report) never borrows: its ceiling is the
+        // positive part of the balance alone, so carried debt caps it at the allowance rather
+        // than refusing it any earlier than that.
+        const borrowedTenths = Math.max(-credits.balance_tenths, 0);
+        const graceTenths = graceLimitTenths(limitTenths, PLAN_CATALOG.conversationGraceShare);
+        const overshootCeiling = kind === "conversation"
+          ? Math.max(credits.balance_tenths, 0) + Math.max(graceTenths - borrowedTenths, 0)
+          : Math.max(credits.balance_tenths, 0);
+        if (overshoot > overshootCeiling) {
+          throw new UsageLimitExceededError({
+            profileKey: profile.key,
+            resource: "monthly_conversations",
+            limit: profile.monthlyConversationLimit ?? 0,
+            used: usedBefore / TENTHS_PER_CONVERSATION,
+            periodStart,
+            resetAt: nextPeriodStart(periodStart),
+          });
+        }
+
+        // Usage-alert detection: the level before and after this charge, from the same
+        // inputs `/me` and the Ray tool report back. Computed (and claimed) inside this
+        // transaction so a level crossing commits atomically with the usage it came from.
+        const graceShare = PLAN_CATALOG.conversationGraceShare;
+        const conversationWeightTenths = tenthsFor("conversation");
+        const levelBefore = conversationUsageLevel({
+          usedTenths: usedBefore,
+          limitTenths,
+          balanceTenths: credits.balance_tenths,
+          graceShare,
+          conversationWeightTenths,
+        }).level;
+        const balanceAfter = overshoot > 0 ? credits.balance_tenths - overshoot : credits.balance_tenths;
+        const levelAfter = conversationUsageLevel({
+          usedTenths: usedAfter,
+          limitTenths,
+          balanceTenths: balanceAfter,
+          graceShare,
+          conversationWeightTenths,
+        }).level;
+        await claimLevelsCrossed(trx, { accountId, periodStart, before: levelBefore, after: levelAfter });
+
+        await trx
+          .updateTable("ee_usage_limit_unit_counters")
+          .set({ used_tenths: usedAfter, updated_at: sql<Date>`now()` })
+          .where("account_id", "=", accountId)
+          .where("period_start", "=", sql<string>`${periodStart}::date`)
+          .execute();
+        if (overshoot > 0) {
+          await trx
+            .updateTable("ee_usage_limit_credits")
+            .set({ balance_tenths: sql<number>`balance_tenths - ${overshoot}`, updated_at: sql<Date>`now()` })
+            .where("account_id", "=", accountId)
+            .execute();
+        }
+        await trx
+          .insertInto("ee_usage_limit_unit_kind_counters")
+          .values({ account_id: accountId, period_start: sql<string>`${periodStart}::date`, kind, used_tenths: tenths })
+          .onConflict((oc) =>
+            oc.columns(["account_id", "period_start", "kind"]).doUpdateSet({
+              used_tenths: sql<number>`ee_usage_limit_unit_kind_counters.used_tenths + ${tenths}`,
+              updated_at: sql<Date>`now()`,
+            }),
+          )
+          .execute();
+      });
+    } catch (error) {
+      // The refusing transaction above rolled back without committing anything, so the
+      // grace_exhausted claim for a refused customer conversation is a separate statement
+      // against `this.db`, never inside that transaction.
+      if (kind === "conversation" && error instanceof UsageLimitExceededError) {
+        await claimGraceExhaustedSafely(this.db, { accountId, periodStart });
       }
-      await trx
-        .insertInto("ee_usage_limit_unit_kind_counters")
-        .values({ account_id: accountId, period_start: sql<string>`${periodStart}::date`, kind, used_tenths: tenths })
-        .onConflict((oc) =>
-          oc.columns(["account_id", "period_start", "kind"]).doUpdateSet({
-            used_tenths: sql<number>`ee_usage_limit_unit_kind_counters.used_tenths + ${tenths}`,
-            updated_at: sql<Date>`now()`,
-          }),
-        )
-        .execute();
-    });
+      throw error;
+    }
 
     const db = this.db;
     return {
@@ -609,7 +687,10 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
           // out of order (e.g. a plan-funded reservation released after a
           // later, credit-funded one), and only the current totals say whether
           // the tenths being freed were, in the end, funded by the plan or by
-          // credits.
+          // credits. This formula is `f(usedBefore) - f(usedAfter)` for
+          // `f(x) = max(0, x - limitTenths)`, so it refunds exactly the drop in
+          // occupancy past the limit regardless of the balance's sign — it needs
+          // no grace-aware branch even though the balance may now be negative.
           const counter = await trx
             .selectFrom("ee_usage_limit_unit_counters")
             .select("used_tenths")
@@ -695,6 +776,10 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
             }),
           )
           .execute();
+        // Re-arm: a grant that actually applies clears this period's alert claims, so a
+        // top-up burned again in the same month alerts again. A replayed (duplicate)
+        // grant reference is a no-op here too, since nothing new was applied.
+        await clearAlertClaims(trx, { accountId, periodStart: currentPeriodStart() });
       }
 
       const credits = await trx
@@ -703,7 +788,10 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
         .where("account_id", "=", accountId)
         .executeTakeFirst();
 
-      return { credits: (credits?.balance_tenths ?? 0) / TENTHS_PER_CONVERSATION, applied };
+      // Clamped the same way as every other reported credits figure (readConversationUsage):
+      // a grant that only partly repays carried debt leaves a negative balance, and a negative
+      // "credits" number would read as an error rather than as remaining debt.
+      return { credits: Math.max(0, credits?.balance_tenths ?? 0) / TENTHS_PER_CONVERSATION, applied };
     });
   }
 
@@ -715,37 +803,55 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     if (typeof profile.monthlyConversationLimit !== "number") {
       return null;
     }
-    const [counter, credits, kinds] = await Promise.all([
-      this.db
-        .selectFrom("ee_usage_limit_unit_counters")
-        .select("used_tenths")
-        .where("account_id", "=", accountId)
-        .where("period_start", "=", sql<string>`${periodStart}::date`)
-        .executeTakeFirst(),
-      this.db
-        .selectFrom("ee_usage_limit_credits")
-        .select("balance_tenths")
-        .where("account_id", "=", accountId)
-        .executeTakeFirst(),
-      this.db
-        .selectFrom("ee_usage_limit_unit_kind_counters")
-        .select(["kind", "used_tenths"])
-        .where("account_id", "=", accountId)
-        .where("period_start", "=", sql<string>`${periodStart}::date`)
-        .execute(),
-    ]);
+    // One REPEATABLE READ snapshot, not three independent reads: without it, a reservation
+    // committing between them (counter bumped, credits not yet, say) could pair numbers that
+    // never coexisted and report a level that never actually applied. No row locks -- this is
+    // a read, and REPEATABLE READ alone is enough to pin all three to the same snapshot.
+    const [counter, credits, kinds] = await this.db.transaction().setIsolationLevel("repeatable read").execute(
+      (trx) => Promise.all([
+        trx
+          .selectFrom("ee_usage_limit_unit_counters")
+          .select("used_tenths")
+          .where("account_id", "=", accountId)
+          .where("period_start", "=", sql<string>`${periodStart}::date`)
+          .executeTakeFirst(),
+        trx
+          .selectFrom("ee_usage_limit_credits")
+          .select("balance_tenths")
+          .where("account_id", "=", accountId)
+          .executeTakeFirst(),
+        trx
+          .selectFrom("ee_usage_limit_unit_kind_counters")
+          .select(["kind", "used_tenths"])
+          .where("account_id", "=", accountId)
+          .where("period_start", "=", sql<string>`${periodStart}::date`)
+          .execute(),
+      ]),
+    );
     const byKind = Object.fromEntries(USAGE_KINDS.map((kind) => [kind, 0])) as Record<UsageKind, number>;
     for (const row of kinds) {
       if ((USAGE_KINDS as readonly string[]).includes(row.kind)) {
         byKind[row.kind as UsageKind] = row.used_tenths / TENTHS_PER_CONVERSATION;
       }
     }
+    const usedTenths = counter?.used_tenths ?? 0;
+    const balanceTenths = credits?.balance_tenths ?? 0;
+    const { capacity, grace, level } = conversationUsageLevel({
+      usedTenths,
+      limitTenths: profile.monthlyConversationLimit * TENTHS_PER_CONVERSATION,
+      balanceTenths,
+      graceShare: PLAN_CATALOG.conversationGraceShare,
+      conversationWeightTenths: tenthsFor("conversation"),
+    });
     return {
       periodStart,
       resetAt: nextPeriodStart(periodStart),
-      used: (counter?.used_tenths ?? 0) / TENTHS_PER_CONVERSATION,
+      used: usedTenths / TENTHS_PER_CONVERSATION,
       limit: profile.monthlyConversationLimit,
-      credits: (credits?.balance_tenths ?? 0) / TENTHS_PER_CONVERSATION,
+      credits: Math.max(0, balanceTenths) / TENTHS_PER_CONVERSATION,
+      capacity,
+      grace,
+      level,
       byKind,
     };
   }

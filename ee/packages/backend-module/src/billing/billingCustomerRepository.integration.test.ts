@@ -97,6 +97,8 @@ describeIfDatabase("EE billing customer repository + migrator integration", () =
       [schema],
     );
     expect(tables.map((row) => row.table_name).sort()).toEqual([
+      "ee_billing_auto_top_up_settings",
+      "ee_billing_auto_top_ups",
       "ee_billing_customers",
       "ee_billing_processed_events",
     ]);

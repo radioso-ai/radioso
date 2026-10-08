@@ -143,13 +143,20 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
       )
     `);
 
-    // Prepaid top-ups. Not period-scoped: they never expire.
+    // Prepaid top-ups. Not period-scoped: they never expire. The balance may go negative
+    // once a customer conversation borrows against its grace allowance (reserveTenths in
+    // usageLimitService.ts), so a fresh install must not recreate the old nonnegative CHECK.
     await database.query(`
       CREATE TABLE IF NOT EXISTS ee_usage_limit_credits (
         account_id UUID PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
-        balance_tenths INTEGER NOT NULL DEFAULT 0 CHECK (balance_tenths >= 0),
+        balance_tenths INTEGER NOT NULL DEFAULT 0,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `);
+
+    await database.query(`
+      ALTER TABLE ee_usage_limit_credits
+      DROP CONSTRAINT IF EXISTS ee_usage_limit_credits_balance_tenths_check
     `);
 
     // Prepaid top-up grants, one row per idempotency reference (a Stripe event
@@ -190,6 +197,43 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (account_id, period_start)
       )
+    `);
+
+    // One claim per (account, period, level) crossed upward, delivered by the alert
+    // dispatcher's periodic sweep. `ON CONFLICT DO NOTHING` on insert makes claiming
+    // idempotent; re-arm (a credit grant or profile change) deletes the current period's
+    // rows outright rather than resetting them, so a level reached again claims fresh.
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_alerts (
+        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        period_start DATE NOT NULL,
+        level TEXT NOT NULL CHECK (level IN ('nearing_limit', 'limit_reached', 'grace_exhausted')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        sent_at TIMESTAMPTZ,
+        outcome TEXT CHECK (outcome IN ('sent', 'no_recipients', 'superseded', 'failed')),
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+        next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_error_code TEXT,
+        -- The email built on the first send attempt, so a retry resends byte-identical content.
+        -- The provider's idempotency key is a hash of this claim's identity, not its content;
+        -- resending different content under the same key is a permanent (non-retryable) error
+        -- at the provider, not just a wasted attempt.
+        PRIMARY KEY (account_id, period_start, level)
+      )
+    `);
+
+    // A deployment whose `ee_usage_limit_alerts` already exists from before this column was
+    // part of the CREATE above needs it added explicitly; the CREATE's own column list only
+    // applies to a fresh install.
+    await database.query(`
+      ALTER TABLE ee_usage_limit_alerts
+      ADD COLUMN IF NOT EXISTS email_snapshot JSONB
+    `);
+
+    await database.query(`
+      CREATE INDEX IF NOT EXISTS idx_ee_usage_limit_alerts_due
+        ON ee_usage_limit_alerts (next_attempt_at)
+        WHERE sent_at IS NULL
     `);
 
     await database.query(`

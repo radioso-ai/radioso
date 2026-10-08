@@ -140,6 +140,9 @@ import { buildConversationLinkResolver } from "../composition/conversationLinkRe
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 import { PostgresSlackInboundEventRetention } from "../../modules/slack/public.js";
+import { createAccountAdministratorDirectory } from "../composition/accountAdministratorDirectory.js";
+import { createNoticeMailAdapter } from "../composition/noticeMail.js";
+import { PeriodicTaskRunner, createPeriodicTasksLifecycle } from "../composition/periodicTaskRunner.js";
 
 interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -1136,6 +1139,28 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentRepository: repositories.agentRepository,
     agentRevisionReader: agentDiscoveryRevisionReader,
   });
+  // Composition-owned adapters for `registerPeriodicTask` contributions (e.g. EE's usage-alert
+  // sweep): a notice-mail sender and an account-administrator directory, neither of which a
+  // contributing module may build itself without reaching into OSS internals.
+  const noticeMail = createNoticeMailAdapter(infrastructure.mailService, { appBaseUrl: env.APP_BASE_URL });
+  const accountAdministrators = createAccountAdministratorDirectory(repositories.accountMembershipRepository);
+  const periodicTasks = composition.periodicTaskRegistrations.map((registration) => {
+    const handle = registration.create({
+      database: infrastructure.database,
+      logger,
+      audit: infrastructure.auditService,
+      noticeMail,
+      accountAdministrators,
+      appBaseUrl: env.APP_BASE_URL ?? null,
+    });
+    return new PeriodicTaskRunner({
+      id: registration.id,
+      intervalMs: registration.intervalMs,
+      run: () => handle.run(),
+      logger,
+    });
+  });
+  const periodicTasksLifecycle = createPeriodicTasksLifecycle(periodicTasks);
   return {
     env,
     logger,
@@ -1172,6 +1197,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     requestSource: requestSourceDigestPort,
     machineAccessSecurityObserver: access.machineAccessSecurityObserver,
     credentialExpiryWarningLifecycle: access.credentialExpiryWarningLifecycle,
+    periodicTasksLifecycle,
     personalCredentialService: access.personalCredentialService,
     serviceAccountService: access.serviceAccountService,
     workspaceSessionService: workspace.workspaceSessionService,
@@ -1192,6 +1218,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     llmCapabilityResolver,
     auditService: infrastructure.auditService,
     mailService: infrastructure.mailService,
+    noticeMail,
+    accountAdministrators,
     workspaceService: workspace.workspaceService,
     workspaceSummaryService: workspace.workspaceSummaryService,
     ingestionSettingsService: settings.ingestionSettingsService,

@@ -50,6 +50,17 @@ export interface PlanTopUp {
   readonly stripeLookupKey: string;
 }
 
+/**
+ * Opt-in auto top-up's per-account pack cap. `defaultMaxPacksPerMonth` is the cap a newly
+ * enabled account starts with; `maxPacksPerMonthLimit` is the upper bound an account may raise
+ * it to. The pack itself is the existing {@link PlanTopUp}; only a plan with `topUps: true` may
+ * enable auto top-up at all.
+ */
+export interface PlanAutoTopUp {
+  readonly defaultMaxPacksPerMonth: number;
+  readonly maxPacksPerMonthLimit: number;
+}
+
 /** The provider names the backend's capability resolver accepts. */
 export type ManagedModelProvider = "openai" | "openai-compatible" | "gemini" | "claude";
 
@@ -86,8 +97,16 @@ export interface PlanCatalog {
   readonly defaultPlanId: PlanId;
   readonly selfServeCeilingPlanId: PlanId;
   readonly repliesPerConversation: number;
+  /**
+   * The share of a profile's monthly conversation limit a customer conversation may still
+   * borrow once the plan allowance and prepaid credits both run out, as a negative credit
+   * balance (debt the next top-up repays; a period reset alone does not). Internal usage kinds (Ray, test runs,
+   * Pulse) never borrow. `0.1` on a 50-conversation plan borrows 5.
+   */
+  readonly conversationGraceShare: number;
   readonly countsAs: PlanUsageWeights;
   readonly topUp: PlanTopUp;
+  readonly autoTopUp: PlanAutoTopUp;
   readonly managedModels: PlanManagedModels;
 }
 

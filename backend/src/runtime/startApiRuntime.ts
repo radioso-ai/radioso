@@ -80,6 +80,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
   });
   await dependencies.applicationModules.initializeAll();
   await dependencies.credentialExpiryWarningLifecycle.start();
+  await dependencies.periodicTasksLifecycle.start();
 
   const app = (options.createApp ?? createApp)(dependencies);
   const server = (options.listen ?? defaultListen)(app, options.env.PORT, () => {
@@ -114,15 +115,19 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
           await dependencies.credentialExpiryWarningLifecycle.stop();
         } finally {
           try {
-            await dependencies.realtimePublisherLifecycle.shutdown();
+            await dependencies.periodicTasksLifecycle.stop();
           } finally {
             try {
-              await dependencies.applicationModules.shutdownAll();
+              await dependencies.realtimePublisherLifecycle.shutdown();
             } finally {
               try {
-                await dependencies.connectorRegistry.shutdownAll();
+                await dependencies.applicationModules.shutdownAll();
               } finally {
-                await stopRuntimeTracing();
+                try {
+                  await dependencies.connectorRegistry.shutdownAll();
+                } finally {
+                  await stopRuntimeTracing();
+                }
               }
             }
           }

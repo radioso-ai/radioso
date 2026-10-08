@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useMemo, useReducer, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, ArrowLeft, Bug, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Minimize2, Play, RefreshCw, Trash2, Workflow, XCircle } from 'lucide-react'
 
@@ -76,6 +76,8 @@ import type {
   WorkbenchReplayRunResponse,
 } from '@/lib/api-eval'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { getUsageLimitNotice } from '@/lib/usage-limit-error'
+import { UsageLimitNotice } from '@/components/dashboard/shared/usage-limit-notice'
 import {
   type DiagnosticPresentation,
   presentActivityOutcome,
@@ -466,11 +468,12 @@ function CopilotEvalCaseEntity({ evalCase }: { evalCase: EvalCaseListItem }) {
 
 function EvalList({ accountId, routeState }: EvalListProps) {
   const router = useRouter()
+  const usageHref = buildDashboardHref(accountId, { ...routeState, section: 'account', accountTab: 'usage' })
   const [cases, setCases] = useState<EvalCaseListItem[] | null>(null)
   const [summary, setSummary] = useState<EvalSuiteSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
-  const [runError, setRunError] = useState<string | null>(null)
+  const [runError, setRunError] = useState<ReactNode>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [deleteCandidate, setDeleteCandidate] = useState<EvalCase | null>(null)
   const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null)
@@ -521,11 +524,12 @@ function EvalList({ accountId, routeState }: EvalListProps) {
       setSummary(result.summary)
       setSelected(new Set())
     } catch (err) {
-      setRunError(getApiErrorMessage(err, 'Failed to run eval suite'))
+      const notice = getUsageLimitNotice(err)
+      setRunError(notice ? <UsageLimitNotice notice={notice} href={usageHref} /> : getApiErrorMessage(err, 'Failed to run eval suite'))
     } finally {
       setRunning(false)
     }
-  }, [loadCases])
+  }, [loadCases, usageHref])
 
   const requestSuiteRun = useCallback((caseIds?: string[]) => {
     const selectedCases = caseIds
@@ -939,6 +943,7 @@ interface EvalDetailProps {
 
 function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   const router = useRouter()
+  const usageHref = buildDashboardHref(accountId, { ...routeState, section: 'account', accountTab: 'usage' })
   const skillCatalog = useSkillCatalog(caseId)
   const [caseWithRuns, setCaseWithRuns] = useState<EvalCaseWithRuns | null>(null)
   const [snapshot, setSnapshot] = useState<EvalSnapshot | null>(null)
@@ -950,7 +955,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   }>({ agentId: null, routines: [] })
   const [agentSettingsStatus, setAgentSettingsStatus] = useState<'idle' | 'loading' | 'ready' | 'fallback'>('idle')
   const [docTitlesById, setDocTitlesById] = useState<Map<string, string>>(new Map())
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ReactNode>(null)
   const [running, setRunning] = useState(false)
   const [deleteCandidate, setDeleteCandidate] = useState<EvalCase | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -1140,11 +1145,12 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
       setCaseWithRuns(c)
       setSnapshot(snap)
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Eval request failed'))
+      const notice = getUsageLimitNotice(err)
+      setError(notice ? <UsageLimitNotice notice={notice} href={usageHref} /> : getApiErrorMessage(err, 'Eval request failed'))
     } finally {
       setRunning(false)
     }
-  }, [caseId, caseWithRuns, effectiveAgentConfigOverride, invalidReplayRoutineStartState, loadCase, replayRoutineStartState])
+  }, [caseId, caseWithRuns, effectiveAgentConfigOverride, invalidReplayRoutineStartState, loadCase, replayRoutineStartState, usageHref])
 
   const refreshLoadedCase = useCallback(async () => {
     const { c, snap } = await loadCase()

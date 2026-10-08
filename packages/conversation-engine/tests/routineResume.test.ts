@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type {
   AttemptRoutineInput,
+  ConversationRoutineResumeResult,
   ConversationRoutineRunner,
   RoutineState,
   TurnContext,
@@ -31,7 +32,13 @@ const stateOn = (stepId: string): RoutineState => ({
   status: "active",
 });
 
-const requestWith = (runner: ConversationRoutineRunner, save: ReturnType<typeof vi.fn>): AttemptRoutineInput => ({
+const runnerReturning = (result: ConversationRoutineResumeResult): ConversationRoutineRunner => ({
+  resume: vi.fn(async () => result),
+});
+
+const saveSpy = () => vi.fn(async (_state: RoutineState) => {});
+
+const requestWith = (runner: ConversationRoutineRunner, save: (state: RoutineState) => Promise<void>): AttemptRoutineInput => ({
   agent: { id: "agent_1", name: "Assistant" },
   sessionId: "session_1",
   inputEvent: turn.inputEvent,
@@ -51,23 +58,21 @@ const requestWith = (runner: ConversationRoutineRunner, save: ReturnType<typeof 
 
 describe("resumeRoutine completion persistence", () => {
   it("does not duplicate the current step when a stuck ending lands on it without moving (#1384)", async () => {
-    const save = vi.fn(async () => {});
-    const runner: ConversationRoutineRunner = {
-      resume: vi.fn(async () => ({
-        response: { answer: "A person will continue from here." },
-        nextState: null,
-        terminal: { kind: "stuck", stepId: "ask_contact", collected: { full_name: "Giulia" } },
-        trace: {
-          routineId: "contact",
-          startStepId: "ask_contact",
-          landedStepId: "ask_contact",
-          terminalKind: "stuck",
-          capturedSlotKeys: [],
-          filledSlotKeys: ["full_name"],
-          steps: [],
-        },
-      })),
-    };
+    const save = saveSpy();
+    const runner = runnerReturning({
+      response: { answer: "A person will continue from here." },
+      nextState: null,
+      terminal: { kind: "stuck", stepId: "ask_contact", collected: { full_name: "Giulia" } },
+      trace: {
+        routineId: "contact",
+        startStepId: "ask_contact",
+        landedStepId: "ask_contact",
+        terminalKind: "stuck",
+        capturedSlotKeys: [],
+        filledSlotKeys: ["full_name"],
+        steps: [],
+      },
+    });
     const state = stateOn("ask_contact");
 
     await resumeRoutine({
@@ -79,28 +84,25 @@ describe("resumeRoutine completion persistence", () => {
     });
 
     expect(save).toHaveBeenCalledTimes(1);
-    expect(save.mock.calls[0][0].path).toEqual(["ask_contact"]);
-    expect(save.mock.calls[0][0].status).toBe("completed");
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ path: ["ask_contact"], status: "completed" }));
   });
 
   it("still appends the terminal step a normal completion actually moved to", async () => {
-    const save = vi.fn(async () => {});
-    const runner: ConversationRoutineRunner = {
-      resume: vi.fn(async () => ({
-        response: { answer: "Thanks, all set." },
-        nextState: null,
-        terminal: { kind: "complete", stepId: "done", collected: { full_name: "Giulia" } },
-        trace: {
-          routineId: "contact",
-          startStepId: "ask_contact",
-          landedStepId: "done",
-          terminalKind: "complete",
-          capturedSlotKeys: [],
-          filledSlotKeys: ["full_name"],
-          steps: [],
-        },
-      })),
-    };
+    const save = saveSpy();
+    const runner = runnerReturning({
+      response: { answer: "Thanks, all set." },
+      nextState: null,
+      terminal: { kind: "complete", stepId: "done", collected: { full_name: "Giulia" } },
+      trace: {
+        routineId: "contact",
+        startStepId: "ask_contact",
+        landedStepId: "done",
+        terminalKind: "complete",
+        capturedSlotKeys: [],
+        filledSlotKeys: ["full_name"],
+        steps: [],
+      },
+    });
     const state = stateOn("ask_contact");
 
     await resumeRoutine({
@@ -112,6 +114,40 @@ describe("resumeRoutine completion persistence", () => {
     });
 
     expect(save).toHaveBeenCalledTimes(1);
-    expect(save.mock.calls[0][0].path).toEqual(["ask_contact", "done"]);
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ path: ["ask_contact", "done"] }));
+  });
+
+  it("keeps every value the run ended with, the ending turn's included, on the completed record (#1452)", async () => {
+    const save = saveSpy();
+    const runner = runnerReturning({
+      response: { answer: "Thanks, all set." },
+      nextState: null,
+      terminal: { kind: "complete", stepId: "done", collected: { full_name: "Giulia", email: "giulia@example.com" } },
+      endedVariables: { full_name: "Giulia", email: "giulia@example.com", request_ref: "REQ-7" },
+      trace: {
+        routineId: "contact",
+        startStepId: "ask_contact",
+        landedStepId: "done",
+        terminalKind: "complete",
+        capturedSlotKeys: ["email"],
+        filledSlotKeys: ["full_name", "email"],
+        steps: [],
+      },
+    });
+    const state = { ...stateOn("ask_contact"), variables: { full_name: "Giulia" } };
+
+    await resumeRoutine({
+      request: requestWith(runner, save),
+      baseTurn: turn,
+      state,
+      resuming: true,
+      history: [],
+    });
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      status: "completed",
+      variables: { full_name: "Giulia", email: "giulia@example.com", request_ref: "REQ-7" },
+    }));
   });
 });

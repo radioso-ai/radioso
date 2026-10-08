@@ -1,6 +1,8 @@
 import type {
   DirectiveAdherenceEntry,
+  PendingRenderableTurn,
   RenderableTurn,
+  RoutineGroundedAnswerInput,
   RoutineGroundedAnswerRenderer,
   StagedContext,
 } from "@radioso/conversation-contract";
@@ -50,7 +52,7 @@ const withRoutineGrounding = (input: {
   session: PreparedSession;
   retrieval: RetrievalPipelineResult;
   responseLanguage?: string;
-  steering: Parameters<RoutineGroundedAnswerRenderer["render"]>[0]["steering"];
+  steering: RoutineGroundedAnswerInput["steering"];
 }): PreparedSession => {
   const directiveSteering = input.session.directiveSteering ?? { rules: [], matches: [], omissions: [] };
   return {
@@ -161,36 +163,47 @@ export const presentRoutineRenderableAnswer = (
 
 export const createRoutineGroundedAnswerRenderer = (
   options: RoutineGroundedAnswerRendererOptions,
-): RoutineGroundedAnswerRenderer => ({
-  async render(input) {
+): RoutineGroundedAnswerRenderer => {
+  // Whether the step is groundable is read off the staged context alone; the answer is
+  // generated only when the reply is rendered.
+  const prepare = (input: RoutineGroundedAnswerInput): PendingRenderableTurn | null => {
     const retrieval = retrievalResultFromStagedContext(input.turn.stagedContext);
     if (!retrieval) {
       return null;
     }
+    return {
+      async render() {
+        const responseLanguage = await options.responseLanguage;
+        const groundedSession = withRoutineGrounding({
+          session: options.session,
+          retrieval,
+          responseLanguage,
+          steering: input.steering,
+        });
+        const outcome = buildRetrievalTurnOutcome(groundedSession);
+        const renderer = options.turnSkills
+          .map((skill) => skill.renderer)
+          .find((candidate) => candidate.supports(outcome));
+        if (!renderer) {
+          throw new Error("routine_grounded_renderer_missing_retrieval_turn_renderer");
+        }
 
-    const responseLanguage = await options.responseLanguage;
-    const groundedSession = withRoutineGrounding({
-      session: options.session,
-      retrieval,
-      responseLanguage,
-      steering: input.steering,
-    });
-    const outcome = buildRetrievalTurnOutcome(groundedSession);
-    const renderer = options.turnSkills
-      .map((skill) => skill.renderer)
-      .find((candidate) => candidate.supports(outcome));
-    if (!renderer) {
-      throw new Error("routine_grounded_renderer_missing_retrieval_turn_renderer");
-    }
-
-    const presentation = await renderer.render(outcome, {
-      session: groundedSession,
-      query: groundedSession.effectiveQuery ?? groundedSession.userMessage.content,
-      accountId: options.accountId,
-    });
-    return toRenderableTurn({
-      ...presentation,
-      effectiveRetrieval: groundedSession.retrieval,
-    });
-  },
-});
+        const presentation = await renderer.render(outcome, {
+          session: groundedSession,
+          query: groundedSession.effectiveQuery ?? groundedSession.userMessage.content,
+          accountId: options.accountId,
+        });
+        return toRenderableTurn({
+          ...presentation,
+          effectiveRetrieval: groundedSession.retrieval,
+        });
+      },
+    };
+  };
+  return {
+    prepare,
+    async render(input) {
+      return (await prepare(input)?.render()) ?? null;
+    },
+  };
+};

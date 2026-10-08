@@ -2139,7 +2139,7 @@ export const installDashboardApiMocks = async (
         contentType: "text/event-stream",
         body: [
           { type: "message_delta", executionId: testExecutionFixtureId(generation), generation, sideId: `side-${generation}-0`, delta: answer, turnId, attemptId },
-          { type: "side_completed", executionId: testExecutionFixtureId(generation), generation, sideId: `side-${generation}-0`, messageId: `message-${generation}`, turnId, attemptId },
+          { type: "side_completed", executionId: testExecutionFixtureId(generation), generation, sideId: `side-${generation}-0`, messageId: `message-${generation}`, answer, turnId, attemptId },
         ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
       });
       return;

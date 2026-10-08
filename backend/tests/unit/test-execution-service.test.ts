@@ -7,6 +7,7 @@ import {
   type TestExecution,
   type TestExecutionAttemptRecord,
   type TestExecutionDefaultRevisionPort,
+  type TestExecutionEvent,
   type TestExecutionHistoryItem,
   type TestExecutionRepositoryPort,
   type TestExecutionRunnerResult,
@@ -128,10 +129,28 @@ class MemoryRepository implements TestExecutionRepositoryPort {
   }
 }
 
+type RunnerInput = Parameters<TrustedTestExecutionRunnerPort["stream"]>[0];
+
+/** A runner that settles its whole turn before returning, streaming no text of its own. */
+const settledTurn = (run: (input: RunnerInput) => Promise<TestExecutionRunnerResult>): TrustedTestExecutionRunnerPort["stream"] =>
+  async function* (input) { return await run(input); };
+
+const deferred = <T = void>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => { resolve = settle; });
+  return { promise, resolve };
+};
+
+const drain = async (events: AsyncGenerator<TestExecutionEvent>): Promise<TestExecutionEvent[]> => {
+  const drained: TestExecutionEvent[] = [];
+  for await (const event of events) drained.push(event);
+  return drained;
+};
+
 const setup = (
-  runner = vi.fn(async (_input: Parameters<TrustedTestExecutionRunnerPort["run"]>[0]): Promise<TestExecutionRunnerResult> => ({ answer: "answer", messageId: ids[6], continuation: { routine: "next" } })),
+  runner = vi.fn(async (_input: RunnerInput): Promise<TestExecutionRunnerResult> => ({ answer: "answer", messageId: ids[6], continuation: { routine: "next" } })),
   usageLimitPolicy: Pick<UsageLimitPolicy, "reserveAnswer"> = new NoopUsageLimitPolicy(),
-  options: { defaultRevision?: TestExecutionDefaultRevisionPort; draftGeneration?: number; logger?: { warn(bindings: Record<string, unknown>, message: string): void } } = {},
+  options: { defaultRevision?: TestExecutionDefaultRevisionPort; draftGeneration?: number; logger?: { warn(bindings: Record<string, unknown>, message: string): void }; stream?: TrustedTestExecutionRunnerPort["stream"] } = {},
 ) => {
   const repository = new MemoryRepository();
   let next = 2;
@@ -141,7 +160,7 @@ const setup = (
     ...(options.defaultRevision ? { defaultRevision: options.defaultRevision } : {}),
     ...(options.logger ? { logger: options.logger } : {}),
     contextCatalog: { get: vi.fn(async () => ({ id: "40000000-0000-4000-8000-000000000001", workspaceId, name: "account_tier", description: null, valueType: "string" as const, trustTier: "signed" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const, createdAt: new Date(0), updatedAt: new Date(0) })) },
-    repository, runner: { run: runner }, usageLimitPolicy, createId: () => ids[next++], now: () => new Date(1000),
+    repository, runner: { stream: options.stream ?? settledTurn(runner) }, usageLimitPolicy, createId: () => ids[next++], now: () => new Date(1000),
   });
   return { service, repository, runner, revisions };
 };
@@ -166,7 +185,7 @@ describe("TestExecutionService", () => {
     const service = new TestExecutionService({
       revisions: { findRevision: vi.fn(async ({ revisionId }) => revision(revisionId, false)), readDraftGeneration: vi.fn(async () => 1) },
       contextCatalog: { get: vi.fn() }, repository,
-      runner: { bootstrap, run: vi.fn() }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: () => ids[2], now: () => new Date(1000),
+      runner: { bootstrap, stream: vi.fn() }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: () => ids[2], now: () => new Date(1000),
     });
 
     const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: "account-1", mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
@@ -242,7 +261,7 @@ describe("TestExecutionService", () => {
     const service = new TestExecutionService({
       revisions: { findRevision: vi.fn(async () => sourceRevision), readDraftGeneration: vi.fn(async () => 1) },
       contextCatalog: { get: vi.fn(async () => null) }, repository,
-      runner: { run: vi.fn() }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: () => ids[2], now: () => new Date(1000),
+      runner: { stream: vi.fn() }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: () => ids[2], now: () => new Date(1000),
     });
     await expect(service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] })).rejects.toMatchObject({ code: "bad_request" });
 
@@ -251,7 +270,7 @@ describe("TestExecutionService", () => {
     const jsonService = new TestExecutionService({
       revisions: { findRevision: vi.fn(async () => jsonRevision), readDraftGeneration: vi.fn(async () => 1) },
       contextCatalog: { get: vi.fn(async () => ({ id: jsonRevision.snapshot.contextVariableEnablements[0].variableId, workspaceId, name: "options", description: null, valueType: "json" as const, trustTier: "unverified" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const, createdAt: new Date(0), updatedAt: new Date(0) })) },
-      repository, runner: { run: vi.fn() }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: () => ids[3], now: () => new Date(1000),
+      repository, runner: { stream: vi.fn() }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: () => ids[3], now: () => new Date(1000),
     });
     await expect(jsonService.start({ idempotencyKey: "idem-json-invalid", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [{ contextVariableId: jsonRevision.snapshot.contextVariableEnablements[0].variableId, value: undefined }] })).rejects.toMatchObject({ code: "bad_request" });
     const execution = await jsonService.start({ idempotencyKey: "idem-json-valid", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [{ contextVariableId: jsonRevision.snapshot.contextVariableEnablements[0].variableId, value: supplied }] });
@@ -321,7 +340,9 @@ describe("TestExecutionService", () => {
     await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
     repository.replay = { answer: "cached", messageId: ids[6], continuation: null };
     const replay = await service.retry({ workspaceId, agentId, accountId: null, executionId: execution.id, sideId: execution.sides[0].id, generation: 1, turnId: ids[6], attemptId: "70000000-0000-4000-8000-000000000001" });
-    expect(replay.find((event) => event.type === "message_delta")).toMatchObject({ delta: "cached" });
+    // A reconnect re-delivers the stored answer whole, exactly once.
+    expect(replay.filter((event) => event.type === "message_delta")).toEqual([expect.objectContaining({ delta: "cached" })]);
+    expect(replay.find((event) => event.type === "side_completed")).toMatchObject({ answer: "cached" });
     expect(runner).toHaveBeenCalledTimes(1);
     expect(repository.completeCalls).toBe(1);
     expect(reserveAnswer).toHaveBeenCalledOnce();
@@ -418,6 +439,207 @@ describe("TestExecutionService", () => {
     resolveSlow({ answer: "slow", messageId: ids[7], continuation: null });
   });
 
+  describe("streaming the answer", () => {
+    const send = (service: TestExecutionService, executionId: string, signal?: AbortSignal) =>
+      service.streamMessage({ workspaceId, agentId, accountId: null, executionId, message: "How long do refunds take?", generation: 1, turnId: ids[6], attemptId: ids[7], ...(signal ? { signal } : {}) });
+
+    it("forwards each answer delta while the runner is still generating, then completes without resending the text", async () => {
+      const finish = deferred();
+      const stream = vi.fn(async function* (_input: RunnerInput) {
+        yield "Refunds take ";
+        yield "five days.";
+        await finish.promise;
+        return { answer: "Refunds take five days.", messageId: ids[8], continuation: { routine: "next" } };
+      });
+      const { service, repository } = setup(undefined, undefined, { stream });
+      const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+      const abort = new AbortController();
+      const events = send(service, execution.id, abort.signal);
+
+      expect((await events.next()).value).toMatchObject({ type: "side_started" });
+      expect((await events.next()).value).toMatchObject({ type: "message_delta", sideId: execution.sides[0].id, delta: "Refunds take " });
+      expect((await events.next()).value).toMatchObject({ type: "message_delta", delta: "five days." });
+      // The turn is still generating: nothing is stored yet.
+      expect(repository.completeCalls).toBe(0);
+      expect(stream.mock.calls[0]?.[0].signal).toBe(abort.signal);
+
+      finish.resolve();
+      const rest = await drain(events);
+      expect(rest.map((event) => event.type)).toEqual(["side_completed", "execution_completed"]);
+      expect(rest[0]).toMatchObject({ messageId: ids[8], answer: "Refunds take five days." });
+      expect(repository.execution?.sides[0]?.history.at(-1)).toMatchObject({ role: "assistant", content: "Refunds take five days." });
+    });
+
+    it("sends only what the stored answer adds past the streamed text, and nothing when it diverges", async () => {
+      const answers = ["Refunds take five days.", "Refunds take five days."];
+      const streamed = [["Refunds take five days"], ["  Refunds take [[1]] five days.\n"]];
+      let call = 0;
+      const stream = async function* (_input: RunnerInput) {
+        const index = call++;
+        for (const delta of streamed[index]) yield delta;
+        return { answer: answers[index], messageId: ids[8], continuation: null };
+      };
+      const { service, repository } = setup(undefined, undefined, { stream });
+      const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+
+      const extended = await drain(send(service, execution.id));
+      expect(extended.filter((event) => event.type === "message_delta").map((event) => event.type === "message_delta" && event.delta))
+        .toEqual(["Refunds take five days", "."]);
+
+      repository.execution!.state = "completed";
+      const diverged = await drain(service.streamMessage({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "And exchanges?", generation: 1, turnId: ids[9], attemptId: "70000000-0000-4000-8000-000000000001" }));
+      expect(diverged.filter((event) => event.type === "message_delta").map((event) => event.type === "message_delta" && event.delta))
+        .toEqual(["  Refunds take [[1]] five days.\n"]);
+      // The stored answer stays the authority the client settles on.
+      expect(diverged.find((event) => event.type === "side_completed")).toMatchObject({ answer: "Refunds take five days." });
+    });
+
+    it("interleaves both comparison sides' deltas as each arrives and settles each side on its own", async () => {
+      const gates = { left: [deferred(), deferred()], right: [deferred(), deferred()] };
+      const stream = async function* (input: RunnerInput) {
+        const label = input.candidateRevision.id === ids[0] ? "left" : "right";
+        const [first, second] = gates[label];
+        await first.promise;
+        yield `${label} 1 `;
+        await second.promise;
+        yield `${label} 2`;
+        return { answer: `${label} 1 ${label} 2`, messageId: input.candidateRevision.id === ids[0] ? ids[8] : ids[9], continuation: null };
+      };
+      const { service } = setup(undefined, undefined, { stream });
+      const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
+      const [left, right] = execution.sides;
+      const events = send(service, execution.id);
+      const next = async () => (await events.next()).value as TestExecutionEvent;
+
+      expect([await next(), await next()]).toEqual([
+        expect.objectContaining({ type: "side_started", sideId: left.id }),
+        expect.objectContaining({ type: "side_started", sideId: right.id }),
+      ]);
+      gates.right[0].resolve();
+      expect(await next()).toMatchObject({ type: "message_delta", sideId: right.id, delta: "right 1 " });
+      gates.left[0].resolve();
+      expect(await next()).toMatchObject({ type: "message_delta", sideId: left.id, delta: "left 1 " });
+      gates.right[1].resolve();
+      expect(await next()).toMatchObject({ type: "message_delta", sideId: right.id, delta: "right 2" });
+      // The faster side settles while the other is still generating.
+      expect(await next()).toMatchObject({ type: "side_completed", sideId: right.id, answer: "right 1 right 2" });
+      gates.left[1].resolve();
+      expect((await drain(events)).map((event) => [event.type, "sideId" in event ? event.sideId : null])).toEqual([
+        ["message_delta", left.id],
+        ["side_completed", left.id],
+        ["execution_completed", null],
+      ]);
+    });
+
+    it("fails a side that breaks after partial deltas, without completing it, and still charges the dispatched attempt", async () => {
+      const commit = vi.fn(async () => undefined);
+      const reserveAnswer = vi.fn(async () => ({ commit, release: vi.fn(async () => undefined) }));
+      const stream = async function* (_input: RunnerInput): AsyncGenerator<string, TestExecutionRunnerResult> {
+        yield "Refunds take";
+        throw new Error("provider dropped the stream");
+      };
+      const { service, repository } = setup(undefined, { reserveAnswer }, { stream });
+      const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+
+      const events = await drain(send(service, execution.id));
+
+      expect(events.map((event) => event.type)).toEqual(["side_started", "message_delta", "side_failed", "execution_partial"]);
+      expect(events[2]).toMatchObject({ code: "runner_failed", retryable: true });
+      expect(repository.completeCalls).toBe(0);
+      expect(repository.execution?.sides[0]?.state).toBe("failed");
+      expect(commit).toHaveBeenCalledOnce();
+    });
+
+    it("reports a streamed turn whose attempt went stale as a stale failure, not a completion", async () => {
+      const commit = vi.fn(async () => undefined);
+      const reserveAnswer = vi.fn(async () => ({ commit, release: vi.fn(async () => undefined) }));
+      const stream = async function* (_input: RunnerInput) {
+        yield "Refunds take five days.";
+        return { answer: "Refunds take five days.", messageId: ids[8], continuation: null };
+      };
+      const { service, repository } = setup(undefined, { reserveAnswer }, { stream });
+      repository.completeStale = true;
+      const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+
+      const events = await drain(send(service, execution.id));
+
+      expect(events.filter((event) => event.type === "side_completed")).toEqual([]);
+      expect(events.find((event) => event.type === "side_failed")).toMatchObject({ code: "stale_attempt", retryable: false });
+      expect(repository.completeCalls).toBe(1);
+      expect(commit).toHaveBeenCalledOnce();
+    });
+
+    it("stores a side's result even after the reader stops consuming the stream", async () => {
+      const finish = deferred();
+      const stream = async function* (_input: RunnerInput) {
+        yield "Refunds take five days.";
+        await finish.promise;
+        return { answer: "Refunds take five days.", messageId: ids[8], continuation: null };
+      };
+      const { service, repository } = setup(undefined, undefined, { stream });
+      const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+      const events = send(service, execution.id);
+      await events.next();
+      await events.next();
+
+      await events.return(undefined);
+      finish.resolve();
+
+      await vi.waitFor(() => expect(repository.completeCalls).toBe(1));
+      expect(repository.execution?.sides[0]?.state).toBe("completed");
+    });
+
+    // The production disconnect path: the route aborts the turn's signal once the post-disconnect
+    // ceiling passes, then abandons its pending pull with `iterator.return()`.
+    it("fails and still charges a side whose turn is aborted after it streamed part of its answer", async () => {
+      const commit = vi.fn(async () => undefined);
+      const reserveAnswer = vi.fn(async () => ({ commit, release: vi.fn(async () => undefined) }));
+      // Fails only when the signal it received aborts: without one it waits forever, so a broken
+      // propagation hangs this test rather than failing the side some other way.
+      const rejectOnAbort = (signal: AbortSignal | undefined) => new Promise<never>((_, reject) => {
+        // The route aborts without a reason, so this is the platform's AbortError, as the real runner throws.
+        signal?.addEventListener("abort", () => reject(signal.reason instanceof Error ? signal.reason : new Error("aborted")), { once: true });
+      });
+      let receivedSignal: AbortSignal | undefined;
+      const stream = async function* (input: RunnerInput) {
+        receivedSignal = input.signal;
+        yield "Refunds take ";
+        yield "five days";
+        return await rejectOnAbort(input.signal);
+      };
+      const { service, repository } = setup(undefined, { reserveAnswer }, { stream });
+      const fail = vi.spyOn(repository, "fail");
+      const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+      const disconnectAbort = new AbortController();
+      const events = send(service, execution.id, disconnectAbort.signal);
+      expect((await events.next()).value).toMatchObject({ type: "side_started" });
+      expect((await events.next()).value).toMatchObject({ type: "message_delta", delta: "Refunds take " });
+      expect((await events.next()).value).toMatchObject({ type: "message_delta", delta: "five days" });
+      expect(receivedSignal).toBe(disconnectAbort.signal);
+
+      let pullSettled = false;
+      const pendingPull = events.next();
+      void pendingPull.then(() => { pullSettled = true; });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Still generating until the route aborts: nothing failed, stored, or charged yet.
+      expect(pullSettled).toBe(false);
+      expect(fail).not.toHaveBeenCalled();
+      expect(commit).not.toHaveBeenCalled();
+
+      disconnectAbort.abort();
+      const abandoned = events.return(undefined);
+
+      expect((await pendingPull).value).toMatchObject({ type: "side_failed", code: "runner_failed", retryable: true });
+      await expect(abandoned).resolves.toEqual({ done: true, value: undefined });
+      expect(fail).toHaveBeenCalledOnce();
+      expect(fail).toHaveBeenCalledWith(expect.objectContaining({ sideId: execution.sides[0].id, turnId: ids[6], attemptId: ids[7], fence: 1, code: "runner_failed" }));
+      expect(repository.completeCalls).toBe(0);
+      expect(repository.execution?.sides[0]).toMatchObject({ state: "failed", retryable: true });
+      expect(reserveAnswer).toHaveBeenCalledOnce();
+      expect(commit).toHaveBeenCalledOnce();
+    });
+  });
+
   it("turns a side persistence rejection into a bounded failed transport event", async () => {
     const runner = vi.fn(async (): Promise<TestExecutionRunnerResult> => { throw new Error("provider unavailable"); });
     const { service, repository } = setup(runner);
@@ -468,7 +690,7 @@ describe("TestExecutionService", () => {
       const service = new TestExecutionService({
         revisions: { findRevision: vi.fn(async ({ revisionId }) => revision(revisionId, false)), readDraftGeneration: vi.fn(async () => 1) },
         contextCatalog: { get: vi.fn() }, repository,
-        runner: { run: vi.fn(), ...(bootstrap ? { bootstrap } : {}) }, seedSource: { loadSeed },
+        runner: { stream: vi.fn(), ...(bootstrap ? { bootstrap } : {}) }, seedSource: { loadSeed },
         audit: { record: audit }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: () => `80000000-0000-4000-8000-${String(next++).padStart(12, "0")}`, now: () => new Date(1000),
       });
       return { service, repository, audit };

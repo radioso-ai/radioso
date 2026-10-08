@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { AccountUsageBanner } from './account-usage-banner'
 import { AppSidebar } from './app-sidebar'
 import { AgentAreaSubNav, KnowledgeSubNav, QualitySubNav, SettingsSubNav } from './area-subnavs'
 import { AgentView } from './agent-view'
@@ -246,6 +247,7 @@ export function DashboardShell({
           <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
             <SidebarTrigger />
           </header>
+          <AccountUsageBanner accountId={accountId} routeState={routeState} />
           <div key={activeWorkspaceId} data-dashboard-surface className="flex min-h-0 flex-1 flex-col">
           {showFirstRun ? (
             <FirstRunExperience accountId={accountId} onboarding={onboarding} />

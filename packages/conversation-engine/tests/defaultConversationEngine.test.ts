@@ -8,6 +8,7 @@ import type {
   ConversationEvent,
   ConversationSkillInputResolver,
   ConversationTurnStreamComposer,
+  ProcessTurnResult,
   ProcessTurnStreamEvent,
   ProcessTurnStreamInput,
   ProcessTurnInput,
@@ -1202,6 +1203,41 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       "input_1",
       expect.any(String),
     ]);
+  });
+
+  it.each([false, true])("keeps the skills a coverage-activated routine ran outside the conversation on the %s turn result", async (stream) => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({
+        response: { answer: "I've emailed you a copy. Anything else?" },
+        nextState: { ...activeState, path: ["send_copy", "confirm_sent"] },
+        skillsWithExternalEffects: ["customer_email.send"],
+      })),
+    }, null);
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
+      activate: vi.fn(async () => ({ kind: "activate" as const, routineId: "support" })),
+    };
+
+    let result: ProcessTurnResult;
+    if (stream) {
+      const events: ProcessTurnStreamEvent[] = [];
+      for await (const event of new DefaultConversationEngine().processTurnStream(input as ProcessTurnStreamInput)) events.push(event);
+      const final = events.at(-1);
+      if (!final || final.type !== "final") throw new Error("expected streamed final result");
+      result = final.result;
+    } else {
+      result = await new DefaultConversationEngine().processTurn(input);
+    }
+
+    expect(result.response.answer).toBe("I've emailed you a copy. Anything else?");
+    expect(result.skillsWithExternalEffects).toEqual(["customer_email.send"]);
   });
 
   it.each([false, true])("does not resume or replace an active routine that yielded before the %s coverage pass", async (stream) => {

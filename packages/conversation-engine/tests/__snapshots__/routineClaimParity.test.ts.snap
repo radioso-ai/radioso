@@ -472,6 +472,9 @@ exports[`routine turn golden record (attemptRoutine) > records the same port cal
       "routineId": "contact",
     },
     "sessionId": "session_1",
+    "skillsWithExternalEffects": [
+      "retrieval.context",
+    ],
     "trace": {
       "completedAt": "<volatile>",
       "stages": [

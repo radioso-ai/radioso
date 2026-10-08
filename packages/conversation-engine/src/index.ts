@@ -114,6 +114,7 @@ const mergePostEvidenceRoutineResult = (
     routineExecution: routineResult.routineExecution,
     routineClarificationRoutineIds: routineResult.routineClarificationRoutineIds,
     awaitingDecision: routineResult.awaitingDecision,
+    skillsWithExternalEffects: routineResult.skillsWithExternalEffects,
     awaitingSkillInput: routineResult.awaitingSkillInput,
   });
 };

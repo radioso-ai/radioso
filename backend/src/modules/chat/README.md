@@ -293,15 +293,36 @@ imports from `services/`.
   reply — whether a routine claims the turn, and its `effects` (actions, decision
   gate, hand-off, operator notice, how the routine ended) — and its `reply` renders or
   streams the reply, then settles the turn into a `ChatTurnAssemblyRoutineResult`.
-  `attemptRoutineTurn` is that claim rendered whole, the path the stream and
-  non-stream turns, eval replay, and Test Chat take. `services/routines/routineChatModelGateway.ts`
-  gives the routine selector and step renderer the turn's model, whole (`complete`, with
-  one blank retry) or streamed (`stream`, present only when the host gateway has
-  `streamAnswer`, so a claim's `reply.stream` exists only when it can stream), each call
-  under its own usage attempt in call order. A claim from an engine without
-  `claimRoutine` comes from a whole `attemptRoutine` and reports the same effects. `services/routines/routineGroundedAnswerRenderer.ts` decides from the staged
-  retrieval alone whether a step is groundable (`prepare`) and writes the grounded
-  answer only when it is rendered. `services/routines/pageReadAwareRoutineRunner.ts`
+  `attemptRoutineTurn` is that claim rendered whole, the path the non-stream turn, eval
+  replay, and Test Chat take. A claim from an engine without `claimRoutine` comes from a
+  whole `attemptRoutine` and reports the same effects. The stream turn claims, then asks
+  `services/routines/routineReplyDelivery.ts` how the reply reaches the visitor. A turn
+  that only moves the routine to its next step (a slot question, a re-ask, a step
+  instruction, a retrieval-fed grounded step answer) streams its reply as the model writes
+  it — `beginTurnEmission` before the first chunk, `observeFirstAnswerChunk("routine", "live")`
+  — then checks the turn was not cancelled meanwhile, and `completeAssistantTurn` saves the
+  message and routine state in one transaction. A turn whose skill step acted outside the
+  conversation (`effects.skillsWithExternalEffects`, from the routine skill dispatcher's
+  `actsOutsideConversation`, which uses the retrieval module's
+  `skillActsOutsideConversation` — the same rule safe-test suppression uses), or that has an
+  action, a decision gate, a hand-off, or any routine ending, and a reply that has no
+  `stream`, is persisted first and replayed whole (`"committed"`).
+  When saving a streamed reply fails, `ChatService` logs the content-free
+  `routine_reply_persist_failed_after_stream` (`conversationId`, `routineId`, `stepId`)
+  and counts `chat_stream_persist_failures_total{route}`; the routine stays on its step.
+  The routine trace stage records `replyDelivery` (`stream` or `whole`) on stream turns.
+  `services/routines/routineChatModelGateway.ts` gives the routine selector and step
+  renderer the turn's model, whole (`complete`) or streamed (`stream`, present only when the
+  host gateway has `streamAnswer`, so a claim's `reply.stream` exists only when it can
+  stream), each call under its own usage attempt in call order; either way a blank answer
+  is retried once under that attempt's `:blank_retry` key, and a stream holds leading
+  whitespace so a blank attempt shows nothing. `services/routines/routineGroundedAnswerRenderer.ts`
+  decides from the staged retrieval alone whether a step is groundable (`prepare`) and
+  writes the grounded answer only when it is rendered or streamed; its stream is the
+  retrieval renderer's own, through `TurnOutcomeRendererRegistry.stream`, so the head
+  reader and citation gate decide what is shown, a bounded decline arrives as the
+  unstreamed remainder, and planned suggestions are expanded as on the whole path.
+  `services/routines/pageReadAwareRoutineRunner.ts`
   binds the routine to the page excerpt the turn may read, and commits that capture to
   the session once a turn the routine keeps has its reply.
 - Routine endings: `services/routineEndingEffects.ts` is the one place every chat

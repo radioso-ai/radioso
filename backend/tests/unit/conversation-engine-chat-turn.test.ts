@@ -244,6 +244,8 @@ describe("claimRoutineTurnWithConversationEngine", () => {
         { id: "ask_email", kind: "chat", action: "Ask for the visitor's email." },
         { id: "ask_message", kind: "chat", action: "Ask what they want to tell us." },
         { id: "notify", kind: "action", actionType: "contact.notify" },
+        { id: "send_copy", kind: "skill", skillName: "customer_email.send" },
+        { id: "confirm_sent", kind: "chat", action: "Say a copy is on its way and ask if anything else is needed." },
         { id: "done", kind: "terminal", action: "Confirm.", metadata: { terminalKind: "complete", operatorNotice: { subject: "New contact" } } },
         { id: "to_person", kind: "terminal", action: "Say a person continues.", metadata: { terminalKind: "handoff" } },
         {
@@ -258,6 +260,8 @@ describe("claimRoutineTurnWithConversationEngine", () => {
         { from: "ask_email", to: "to_person", condition: "they want a person" },
         { from: "ask_message", to: "notify", condition: "a message was given" },
         { from: "ask_message", to: "approve", condition: "it needs approval" },
+        { from: "ask_message", to: "send_copy", condition: "they want a copy" },
+        { from: "send_copy", to: "confirm_sent", condition: "always" },
         { from: "notify", to: "done", condition: "always" },
       ],
       completionExport: { enabled: true, destinationRef: "dest_1", triggerKinds: ["complete"] },
@@ -271,11 +275,18 @@ describe("claimRoutineTurnWithConversationEngine", () => {
       status: "active",
       ...extra,
     });
-    const endings: Array<{ name: string; active: RoutineState; nextStepId: string; terminalKind?: string }> = [
+    const endings: Array<{
+      name: string;
+      active: RoutineState;
+      nextStepId: string;
+      terminalKind?: string;
+      skillsWithExternalEffects?: string[];
+    }> = [
       { name: "terminal with action", active: onStep("ask_message"), nextStepId: "notify", terminalKind: "complete" },
       { name: "handoff", active: onStep("ask_email"), nextStepId: "to_person", terminalKind: "handoff" },
       { name: "stuck", active: onStep("ask_email", { reaskCount: 4 }), nextStepId: "ask_email", terminalKind: "stuck" },
       { name: "approval", active: onStep("ask_message"), nextStepId: "approve" },
+      { name: "a skill step, then a chat step", active: onStep("ask_message"), nextStepId: "send_copy", skillsWithExternalEffects: ["customer_email.send"] },
     ];
     const claimWith = async (engine: ConversationEngine, ending: (typeof endings)[number]) => {
       const claim = await claimRoutineTurnWithConversationEngine({
@@ -287,6 +298,7 @@ describe("claimRoutineTurnWithConversationEngine", () => {
           [endingRoutine],
           { select: async () => ({ nextStepId: ending.nextStepId }) },
           { render: async ({ step }) => ({ answer: `reply:${step.id}` }) },
+          { dispatch: async () => ({ status: "success" }) },
         ),
       });
       return claim!;
@@ -305,6 +317,7 @@ describe("claimRoutineTurnWithConversationEngine", () => {
 
         expect(fallback.effects).toStrictEqual(native.effects);
         expect(native.effects.terminalKind).toBe(ending.terminalKind);
+        expect(native.effects.skillsWithExternalEffects).toEqual(ending.skillsWithExternalEffects);
         expect(fallback.reply.stream).toBeUndefined();
         expect((await fallback.reply.render()).result.response).toEqual((await native.reply.render()).result.response);
       });

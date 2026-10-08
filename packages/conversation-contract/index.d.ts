@@ -1432,7 +1432,8 @@ export interface RoutineTraceStepEntry {
   /**
    * - `resumed`: the step the turn started on.
    * - `advanced`: moved onto this step from the previous one.
-   * - `reasked`: stayed on the step because it isn't satisfied yet (a re-ask).
+   * - `reasked`: stayed on the step because it isn't satisfied yet (a re-ask). On the routine's
+   *   first turn the step was never asked, so staying on it is `rendered` instead.
    * - `fast_forwarded`: a satisfied slot-collection step skipped without re-asking.
    * - `skill_dispatched`: a skill (tool) step ran.
    * - `action_emitted`: an action step emitted a fire-and-forget request.

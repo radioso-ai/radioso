@@ -471,9 +471,12 @@ Each routine turn records a step-by-step trace that hangs off the turn's
 trace off the dispatch stage. The conversation debug panel renders it as a
 timeline: which step the turn resumed on, whether it advanced, re-asked,
 fast-forwarded, dispatched a tool, or rendered, plus which slot *keys* were
-captured this turn and which are now filled. A step read for the opening message,
-described above, carries `readOpeningMessage: true`, whether it moved on or was
-rendered. A step whose returned value did not fit its slot, or whose returned
+captured this turn and which are now filled. On the routine's first turn, a chat
+step it starts on and any step read for the opening message, described above,
+carry `readOpeningMessage: true`, whether they moved on or were rendered. A first
+step the opening message leaves unsatisfied is `rendered`, its first ask; `reasked`
+is a step asked again on a later turn. Each step the turn passes through is listed
+once, with what finally happened to it. A step whose returned value did not fit its slot, or whose returned
 key names no slot the routine declares, lists it under `rejectedSlots` (key and
 reason: `type_mismatch`, `not_scalar`, or `undeclared`), and a step asked past
 the re-ask limit adds a `reask_limit_reached` entry with its `reaskCount`. A

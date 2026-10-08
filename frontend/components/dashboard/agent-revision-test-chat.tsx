@@ -3,6 +3,7 @@
 import {
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
   type SetStateAction,
   useCallback,
   useEffect,
@@ -29,7 +30,7 @@ import {
   TurnDiagnosticsPanel,
 } from "@/components/dashboard/turn-inspector/turn-diagnostics-panel";
 import { getPrimaryLeafTrace } from "@/lib/turn-trace";
-import { getUsageLimitNotice, type UsageLimitNotice as UsageLimitNoticeData } from "@/lib/usage-limit-error";
+import { getUsageLimitNotice, getUsageLimitNoticeForCode, type UsageLimitNotice as UsageLimitNoticeData } from "@/lib/usage-limit-error";
 import { UsageLimitNotice } from "@/components/dashboard/shared/usage-limit-notice";
 import { useCopyDashboardLink } from "@/hooks/use-copy-dashboard-link";
 import {
@@ -160,6 +161,14 @@ const failureLabel = (code: string) =>
     stream_ended_before_terminal_event: "The response ended before completion.",
     retry_transport_failed: "The retry response stream was interrupted.",
   })[code] ?? "This test side failed.";
+
+// A side's usage-limit rejection arrives mid-stream as this bare `code` (no `details`), so it
+// gets the same plan notice as every other usage-limit dead end; every other code keeps its
+// existing label.
+const sideFailureContent = (code: string, usageHref: string): ReactNode => {
+  const notice = getUsageLimitNoticeForCode(code);
+  return notice ? <UsageLimitNotice notice={notice} href={usageHref} /> : failureLabel(code);
+};
 
 export const parseEvents = async (
   response: Response,
@@ -1846,7 +1855,7 @@ export function AgentRevisionTestChat({
                           /> : null}
                           {side?.errorCode ? (
                             <p className="mt-3 text-sm text-destructive">
-                              {failureLabel(side.errorCode)}
+                              {sideFailureContent(side.errorCode, usageHref)}
                             </p>
                           ) : null}
                           {side?.retryable || side?.recoveryAvailable ? (

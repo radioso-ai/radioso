@@ -48,3 +48,15 @@ export function getUsageLimitNotice(error: unknown): UsageLimitNotice | null {
   }
   return { resource: null, message: GENERIC_MESSAGE }
 }
+
+/**
+ * Recognizes the usage-limit code on an event that carries no `details` at all. Test Chat's
+ * per-side `side_failed` SSE event (`backend/src/modules/test-execution/testExecution.ts`)
+ * reserves usage after the HTTP response has already started streaming, so exhaustion arrives as
+ * a bare `code`, never the 429 body `getUsageLimitNotice` reads. That reservation is always an
+ * answer/conversation spend, never storage, so this always returns the conversations sentence.
+ */
+export function getUsageLimitNoticeForCode(code: string): UsageLimitNotice | null {
+  if (code !== USAGE_LIMIT_EXCEEDED_CODE) return null
+  return { resource: 'monthly_conversations', message: MESSAGE_BY_RESOURCE.monthly_conversations }
+}

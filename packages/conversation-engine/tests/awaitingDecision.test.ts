@@ -120,6 +120,29 @@ describe("resumeAwaitingDecision", () => {
     expect(result.response.answer).toContain("declined");
   });
 
+  it("hands back the completed record a live ending keeps, the decision included (#1457)", async () => {
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([refundRoutine], throwingSelector(), { render: vi.fn(renderer.render) }, { dispatch });
+
+    const result = await resumeAwaitingDecision({
+      suspendedReader: readerFor(suspendedAtGate),
+      routineRunner: runner,
+      turn,
+      sessionId: "session_1",
+      decision: { handle: "decision_1", optionId: "approve" },
+    });
+
+    expect(result.nextState).toBeNull();
+    expect(result.completedState).toMatchObject({
+      sessionId: "session_1",
+      routineId: suspendedAtGate.routineId,
+      path: ["ask_reason", "gate", "confirmed"],
+      variables: { reason: "item arrived damaged", approval_decision: { id: "approve" } },
+      status: "completed",
+      metadata: { terminalKind: "complete", terminalStepId: "confirmed" },
+    });
+  });
+
   it("reports a hand-off ending's ownership and notice the same way a live turn does", async () => {
     const handoffRoutine: Routine = {
       ...refundRoutine,

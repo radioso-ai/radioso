@@ -33,6 +33,7 @@ export interface ApplicationModuleRegistrationContext {
   registerAgentSurfaceExtension?(extension: AgentSurfaceExtension): void;
   registerChatActionSuggestionProvider?(provider: ApplicationChatActionSuggestionProviderRegistration): void;
   registerCopilotTools?(registration: ApplicationCopilotToolRegistration): void;
+  registerPeriodicTask?(registration: PeriodicTaskRegistration): void;
 }
 
 /**
@@ -1025,3 +1026,92 @@ export type ApplicationAnswerFeedbackHistoryProviderRegistration =
         error(entry: unknown, message?: string): void;
       };
     }) => AnswerFeedbackHistoryProvider);
+
+/**
+ * Branded transactional email content, structurally mirroring OSS's `EmailContent`
+ * (`backend/src/modules/mail/templates/layout.ts`). An EE module assembles this once per
+ * notice; OSS renders it with the shared brand layout and sends it with the Resend `kind`
+ * tag, so a usage alert looks like every other Radioso email without EE importing OSS
+ * template code.
+ */
+export interface NoticeEmailContent {
+  preheader: string;
+  heading: string;
+  paragraphs: readonly string[];
+  cta?: { href: string; label: string };
+  metaRows?: readonly { label: string; value: string }[];
+  footnote?: string;
+}
+
+/**
+ * Sends one branded notice email. `kind` is a literal per notice family (today only usage
+ * alerts) rather than a free string, so a typo cannot silently create an untagged Resend
+ * delivery lane.
+ */
+export interface NoticeMailPort {
+  send(input: {
+    to: string;
+    subject: string;
+    kind: "usage_alert";
+    content: NoticeEmailContent;
+    /** Forwarded to the provider (Resend's `Idempotency-Key`) so a retry that resends to
+     *  every recipient — including ones a prior attempt already reached — dedupes at the
+     *  provider rather than delivering twice. */
+    idempotencyKey?: string;
+  }): Promise<{
+    /** True only when a mail provider accepted the message. A deployment without one
+     *  configured (the log or noop driver) reports false, so a caller never reads "sent"
+     *  as "actually delivered." */
+    dispatched: boolean;
+  }>;
+}
+
+export interface AccountAdministratorContact {
+  email: string;
+  displayName: string | null;
+}
+
+/** Active owner + admin members of an account, never disabled. Deliberately not the
+ *  single-recipient workspace-owner contact resolver other OSS notices use: a usage alert
+ *  is account-wide and every administrator should see it, not just the owner. */
+export interface AccountAdministratorDirectoryPort {
+  list(accountId: string): Promise<AccountAdministratorContact[]>;
+}
+
+export interface PeriodicTaskHandle {
+  run(): Promise<void>;
+}
+
+export interface PeriodicTaskContext {
+  database: UsageLimitDatabasePort;
+  logger: {
+    warn(entry: unknown, message?: string): void;
+    error(entry: unknown, message?: string): void;
+  };
+  audit: {
+    record(input: {
+      accountId?: string | null;
+      workspaceId?: string | null;
+      eventType: string;
+      eventStatus: "success" | "failure";
+      metadata?: Record<string, unknown>;
+    }): Promise<void>;
+  };
+  noticeMail: NoticeMailPort;
+  accountAdministrators: AccountAdministratorDirectoryPort;
+  /** Null when `APP_BASE_URL` is unset; a task must omit any link it would otherwise build. */
+  appBaseUrl: string | null;
+}
+
+/**
+ * A background task the API runtime alone schedules (never the worker or the migration
+ * runner — `applicationModules.initializeAll()` runs in every runtime, so a task that must
+ * run exactly once per deployment, not once per process, cannot be wired through `initialize()`).
+ * OSS owns the actual timer (no overlapping runs, unref'd, a throwing run logged and never
+ * fatal); this registration only names the work and how often it repeats.
+ */
+export interface PeriodicTaskRegistration {
+  id: string;
+  intervalMs: number;
+  create(context: PeriodicTaskContext): PeriodicTaskHandle;
+}

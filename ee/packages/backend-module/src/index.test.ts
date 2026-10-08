@@ -9,12 +9,14 @@ import type {
   ApplicationOrganizationCreationGuardRegistration,
   ApplicationRouteMount,
   ApplicationUsageLimitPolicyRegistration,
+  PeriodicTaskRegistration,
 } from "./radiosoModuleTypes.js";
 
 const createCaptureContext = () => {
   const databaseMigrators: ApplicationDatabaseMigrator[] = [];
   const routeMounts: ApplicationRouteMount[] = [];
   const accountCreatedHandlers: ApplicationAccountCreatedHandler[] = [];
+  const periodicTasks: PeriodicTaskRegistration[] = [];
   let usageLimitPolicy: ApplicationUsageLimitPolicyRegistration | undefined;
   let managedModelPolicy: ApplicationManagedModelPolicyRegistration | undefined;
   let organizationCreationGuard: ApplicationOrganizationCreationGuardRegistration | undefined;
@@ -42,12 +44,16 @@ const createCaptureContext = () => {
     registerAnswerFeedbackHistoryProvider() {
       throw new Error("answer feedback is registered by the OSS backend");
     },
+    registerPeriodicTask(registration) {
+      periodicTasks.push(registration);
+    },
   };
 
   return {
     accountCreatedHandlers,
     context,
     databaseMigrators,
+    periodicTasks,
     get usageLimitPolicy() {
       return usageLimitPolicy;
     },
@@ -85,5 +91,8 @@ describe("Enterprise backend module aggregation", () => {
     expect(capture.usageLimitPolicy).toBeTypeOf("function");
     expect(capture.managedModelPolicy).toBeTypeOf("function");
     expect(capture.organizationCreationGuard).toBeTypeOf("function");
+    expect(capture.periodicTasks).toHaveLength(1);
+    expect(capture.periodicTasks[0]).toMatchObject({ id: "ee-usage-limit-alerts", intervalMs: 60_000 });
+    expect(capture.periodicTasks[0].create).toBeTypeOf("function");
   });
 });

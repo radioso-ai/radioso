@@ -94,7 +94,7 @@ describe("routine slot filling (authoring → compile → runtime)", () => {
 
     // The model, scripted turn-by-turn exactly as it would answer.
     const scripted = [
-      '{"claimsAuthority": false, "condition": null, "offTopic": false, "variables": {}}', // activation: no email yet → re-ask
+      '{"claimsAuthority": false, "condition": null, "offTopic": false, "variables": {}}', // activation: no email yet → first ask
       '{"claimsAuthority": false, "condition": 1, "variables": {"email": "alex@example.com"}}', // user gives email
       '{"claimsAuthority": false, "condition": 1, "variables": {"message": "Please call me about pricing."}}', // user gives message
     ];
@@ -111,11 +111,11 @@ describe("routine slot filling (authoring → compile → runtime)", () => {
     let state: RoutineState = { sessionId: "s1", routineId: compiled.id, path: [], variables: {}, status: "active" };
 
     // Turn 1 — activation, no email in the message yet → the selector runs and we stay.
-    const t1 = await runner.resume({ turn: turnWith("I'd like to contact someone"), state });
+    const t1 = await runner.resume({ turn: turnWith("I'd like to contact someone"), state, activationTurn: true });
     expect(gateway.complete).toHaveBeenCalledTimes(1); // proves the edge is selector-gated
     expect(t1.response.answer).toContain("ask_email");
     expect(t1.nextState?.variables).toEqual({});
-    expect(t1.trace?.steps.map((s: RoutineTraceStepEntry) => `${s.stepId}:${s.event}`)).toEqual(["ask_email:reasked"]);
+    expect(t1.trace?.steps.map((s: RoutineTraceStepEntry) => `${s.stepId}:${s.event}`)).toEqual(["ask_email:rendered"]);
     state = t1.nextState!;
 
     // Turn 2 — user provides their email → captured and persisted, advance to ask_message.

@@ -503,6 +503,11 @@ export interface ApplicationRouteMount {
     assertPublicWebsiteUrl?: AgentWizardUrlPolicy;
     websiteCrawlerLimits?: AgentWizardCrawlerLimits;
     mailService: MailTransport;
+    /** Branded-notice sending and the owner+admin directory, the same ports
+     *  `registerPeriodicTask` contributions receive -- a route (the billing webhook) sends a
+     *  branded notice too, outside any periodic task. */
+    noticeMail: NoticeMailPort;
+    accountAdministrators: AccountAdministratorDirectoryPort;
   }): Router;
 }
 
@@ -1044,15 +1049,15 @@ export interface NoticeEmailContent {
 }
 
 /**
- * Sends one branded notice email. `kind` is a literal per notice family (today only usage
- * alerts) rather than a free string, so a typo cannot silently create an untagged Resend
+ * Sends one branded notice email. `kind` is a literal per notice family (usage alerts, billing
+ * notices) rather than a free string, so a typo cannot silently create an untagged Resend
  * delivery lane.
  */
 export interface NoticeMailPort {
   send(input: {
     to: string;
     subject: string;
-    kind: "usage_alert";
+    kind: "usage_alert" | "billing_notice";
     content: NoticeEmailContent;
     /** Forwarded to the provider (Resend's `Idempotency-Key`) so a retry that resends to
      *  every recipient — including ones a prior attempt already reached — dedupes at the

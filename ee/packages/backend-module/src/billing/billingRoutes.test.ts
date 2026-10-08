@@ -134,6 +134,12 @@ const createDependencies = (
   mailService: {
     send: vi.fn(async () => undefined),
   },
+  noticeMail: {
+    send: vi.fn(async () => ({ dispatched: true })),
+  },
+  accountAdministrators: {
+    list: vi.fn(async () => [{ email: "owner@example.com", displayName: "Owner" }]),
+  },
 } as unknown as RouteDependencies);
 
 const createApp = (

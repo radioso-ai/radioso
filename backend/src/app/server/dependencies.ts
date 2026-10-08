@@ -1121,6 +1121,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     llmCapabilityResolver,
     auditService: infrastructure.auditService,
     mailService: infrastructure.mailService,
+    noticeMail,
+    accountAdministrators,
     workspaceService: workspace.workspaceService,
     workspaceSummaryService: workspace.workspaceSummaryService,
     ingestionSettingsService: settings.ingestionSettingsService,

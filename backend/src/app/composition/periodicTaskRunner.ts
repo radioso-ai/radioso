@@ -1,18 +1,26 @@
 import type { AppLogger } from "../../shared/observability/logger.js";
 
+/** Upper bound on how long `stop()` waits for an in-flight run before returning anyway. A
+ *  hung run (a stalled mail call, say) must not block process shutdown forever. */
+const DEFAULT_STOP_GRACE_MS = 10_000;
+
 /**
  * Drives one `ApplicationPeriodicTaskRegistration` on a timer. Mirrors
  * `CredentialExpiryWarningService` (`backend/src/modules/machineAccess/services/
- * credentialExpiryWarningService.ts`): run immediately on start, then on the configured
- * interval; never overlap a run with the previous one still in flight; `unref()` the timer so
- * it never holds the process open; a throwing run is logged and never crashes the process;
- * `stop()` stops scheduling and waits for any in-flight run to finish.
+ * credentialExpiryWarningService.ts`) with one deliberate difference: `start()` schedules the
+ * first run and returns without waiting for it, so a backlog or a hung call on that first run
+ * never blocks `startApiRuntime`'s call to `listen()` (and therefore a platform readiness
+ * probe). Otherwise the same shape: run on the configured interval; never overlap a run with
+ * the previous one still in flight; `unref()` the timer so it never holds the process open; a
+ * throwing run is logged and never crashes the process; `stop()` stops scheduling and waits for
+ * any in-flight run to finish, bounded by `stopGraceMs`.
  */
 interface PeriodicTaskRunnerOptions {
   id: string;
   intervalMs: number;
   run(): Promise<void>;
   logger: Pick<AppLogger, "error">;
+  stopGraceMs?: number;
 }
 
 export class PeriodicTaskRunner {
@@ -25,7 +33,7 @@ export class PeriodicTaskRunner {
     if (this.timer) {
       return;
     }
-    await this.tick();
+    void this.tick();
     this.timer = setInterval(() => {
       void this.tick();
     }, this.options.intervalMs);
@@ -37,8 +45,20 @@ export class PeriodicTaskRunner {
       clearInterval(this.timer);
       this.timer = null;
     }
-    if (this.current) {
-      await this.current;
+    if (!this.current) {
+      return;
+    }
+    const graceMs = this.options.stopGraceMs ?? DEFAULT_STOP_GRACE_MS;
+    let graceTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.current,
+        new Promise<void>((resolve) => {
+          graceTimer = setTimeout(resolve, graceMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(graceTimer);
     }
   }
 

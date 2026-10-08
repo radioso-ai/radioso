@@ -165,7 +165,14 @@ describe('deriveAccountUsageBanner', () => {
 
 describe('nearingLimitDismissalKey', () => {
   it('scopes the dismissal key to the billing period', () => {
-    expect(nearingLimitDismissalKey('2026-04-01')).toContain('2026-04-01')
-    expect(nearingLimitDismissalKey('2026-04-01')).not.toBe(nearingLimitDismissalKey('2026-05-01'))
+    expect(nearingLimitDismissalKey('account-1', '2026-04-01')).toContain('2026-04-01')
+    expect(nearingLimitDismissalKey('account-1', '2026-04-01'))
+      .not.toBe(nearingLimitDismissalKey('account-1', '2026-05-01'))
+  })
+
+  it('scopes the dismissal key to the account, so one account cannot dismiss another\'s banner', () => {
+    expect(nearingLimitDismissalKey('account-1', '2026-04-01')).toContain('account-1')
+    expect(nearingLimitDismissalKey('account-1', '2026-04-01'))
+      .not.toBe(nearingLimitDismissalKey('account-2', '2026-04-01'))
   })
 })

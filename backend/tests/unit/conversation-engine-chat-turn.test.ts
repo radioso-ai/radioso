@@ -792,6 +792,31 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     });
   });
 
+  it("labels the routine's substituted answer as its own route, not the yielded skill's turn route", async () => {
+    const turnSkills = [coverageReportingSkill(unansweredAssessment)];
+    const retrievalSession: PreparedSession = { ...session(), turnRoute: "retrieval" };
+    const events: RunPreparedChatTurnStreamWithConversationEngineEvent[] = [];
+    for await (const event of runPreparedChatTurnStreamWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: retrievalSession,
+      chatAnswerPresenter: { presentRoutineAnswer: (answer: string) => ({ answer, skillName: "routine", skillOutcome: "completed", skillStatus: "completed" }) } as unknown as ChatAnswerPresenter,
+      turnSkillSelector: new ChatTurnSkillSelector(turnSkills, new DefaultTurnSelectionStrategy()),
+      turnSkills,
+      query: "Where is my order?",
+      ...coverageRoutinePorts,
+    })) {
+      events.push(event);
+    }
+
+    const chunks = events.filter((event) => event.type === "chunk");
+    // The session was routed to retrieval, but the text that actually streams is the
+    // post-evidence routine's substituted reply, not a retrieval answer — it must not
+    // carry the retrieval route label.
+    expect(chunks).toEqual([
+      { type: "chunk", text: "I can connect you with support.", deliveryMode: "committed", route: "other" },
+    ]);
+  });
+
   it("yields mapped, deduplicated progress while the engine remains blocked", async () => {
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => {

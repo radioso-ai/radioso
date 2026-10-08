@@ -594,14 +594,18 @@ describe("TestExecutionService", () => {
     it("fails and still charges a side whose turn is aborted after it streamed part of its answer", async () => {
       const commit = vi.fn(async () => undefined);
       const reserveAnswer = vi.fn(async () => ({ commit, release: vi.fn(async () => undefined) }));
-      const rejectOnAbort = (signal: AbortSignal) => new Promise<never>((_, reject) => {
+      // Fails only when the signal it received aborts: without one it waits forever, so a broken
+      // propagation hangs this test rather than failing the side some other way.
+      const rejectOnAbort = (signal: AbortSignal | undefined) => new Promise<never>((_, reject) => {
         // The route aborts without a reason, so this is the platform's AbortError, as the real runner throws.
-        signal.addEventListener("abort", () => reject(signal.reason instanceof Error ? signal.reason : new Error("aborted")), { once: true });
+        signal?.addEventListener("abort", () => reject(signal.reason instanceof Error ? signal.reason : new Error("aborted")), { once: true });
       });
+      let receivedSignal: AbortSignal | undefined;
       const stream = async function* (input: RunnerInput) {
+        receivedSignal = input.signal;
         yield "Refunds take ";
         yield "five days";
-        return await rejectOnAbort(input.signal!);
+        return await rejectOnAbort(input.signal);
       };
       const { service, repository } = setup(undefined, { reserveAnswer }, { stream });
       const fail = vi.spyOn(repository, "fail");
@@ -611,8 +615,17 @@ describe("TestExecutionService", () => {
       expect((await events.next()).value).toMatchObject({ type: "side_started" });
       expect((await events.next()).value).toMatchObject({ type: "message_delta", delta: "Refunds take " });
       expect((await events.next()).value).toMatchObject({ type: "message_delta", delta: "five days" });
+      expect(receivedSignal).toBe(disconnectAbort.signal);
 
+      let pullSettled = false;
       const pendingPull = events.next();
+      void pendingPull.then(() => { pullSettled = true; });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Still generating until the route aborts: nothing failed, stored, or charged yet.
+      expect(pullSettled).toBe(false);
+      expect(fail).not.toHaveBeenCalled();
+      expect(commit).not.toHaveBeenCalled();
+
       disconnectAbort.abort();
       const abandoned = events.return(undefined);
 

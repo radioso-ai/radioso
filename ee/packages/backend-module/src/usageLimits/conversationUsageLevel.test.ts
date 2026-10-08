@@ -162,6 +162,64 @@ describe("conversationUsageLevel", () => {
     });
   });
 
+  it("is not grace_exhausted when remaining capacity exactly covers one more conversation", () => {
+    // Grace (100 tenths) is fully borrowed, so only paidRemainingTenths (exactly the
+    // weight of one conversation) is left to admit the next one.
+    const result = conversationUsageLevel({
+      usedTenths: tenths(99),
+      limitTenths: tenths(100),
+      balanceTenths: -tenths(10),
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result.level).not.toBe("grace_exhausted");
+  });
+
+  it("flips to grace_exhausted one tenth below the one-conversation boundary", () => {
+    const result = conversationUsageLevel({
+      usedTenths: tenths(99) + 1,
+      limitTenths: tenths(100),
+      balanceTenths: -tenths(10),
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result.level).toBe("grace_exhausted");
+  });
+
+  it("is grace_exhausted on a zero-conversation limit with only a fractional credit", () => {
+    const result = conversationUsageLevel({
+      usedTenths: 0,
+      limitTenths: 0,
+      balanceTenths: 5,
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result).toEqual({
+      capacity: 0.5,
+      grace: { limit: 0, borrowed: 0 },
+      level: "grace_exhausted",
+    });
+  });
+
+  it("clamps remaining grace to zero rather than letting debt past the grace drag down a healthy account", () => {
+    // 100-conversation limit, half used, way more debt than the 10-conversation grace
+    // ever allowed. Unclamped, (grace - borrowed) would be deeply negative and could
+    // push a plan-funded account that still has plenty of paid capacity into
+    // grace_exhausted or limit_reached; clamped to zero, it must not.
+    const result = conversationUsageLevel({
+      usedTenths: tenths(50),
+      limitTenths: tenths(100),
+      balanceTenths: -tenths(200),
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result.level).toBe("ok");
+  });
+
   it("never reports borrowed above zero when the balance is positive", () => {
     const result = conversationUsageLevel({
       usedTenths: tenths(100),

@@ -562,10 +562,16 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
         .where("period_start", "=", sql<string>`${periodStart}::date`)
         .forUpdate()
         .executeTakeFirstOrThrow();
+      // Locked in the same order as `release()` and every other credits touch
+      // in this method (counter, then credits): two reservations in different
+      // periods lock different counter rows and would otherwise read this
+      // balance unlocked, race past each other, and both decrement it below
+      // the floor. Locking it here, after the counter, serializes them.
       const credits = await trx
         .selectFrom("ee_usage_limit_credits")
         .select("balance_tenths")
         .where("account_id", "=", accountId)
+        .forUpdate()
         .executeTakeFirstOrThrow();
 
       const usedBefore = counter.used_tenths;
@@ -580,12 +586,18 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
       const overshoot = usedAfter - Math.max(limitTenths, usedBefore);
       // A customer conversation may run the account-wide balance negative, down to the
       // plan's grace floor, once the allowance and prepaid credits both run out — that debt
-      // carries into later periods until a credit grant repays it. Every other kind
-      // (copilot, test_run, pulse_report) never borrows: its ceiling is the positive part
-      // of the balance alone, so carried debt caps it at the allowance rather than refusing
-      // it any earlier than that.
+      // carries into later periods until a credit grant repays it. The ceiling is
+      // max(balance, 0) + max(grace - borrowed, 0), not balance + grace: debt already
+      // larger than the current grace (carried across a downgrade to a smaller plan, say)
+      // must not eat into a fresh period's allowance — it only shrinks the borrowing room
+      // left, down to zero, never below. The two formulas agree whenever borrowed <= grace.
+      // Every other kind (copilot, test_run, pulse_report) never borrows: its ceiling is the
+      // positive part of the balance alone, so carried debt caps it at the allowance rather
+      // than refusing it any earlier than that.
+      const borrowedTenths = Math.max(-credits.balance_tenths, 0);
+      const graceTenths = graceLimitTenths(limitTenths, PLAN_CATALOG.conversationGraceShare);
       const overshootCeiling = kind === "conversation"
-        ? credits.balance_tenths + graceLimitTenths(limitTenths, PLAN_CATALOG.conversationGraceShare)
+        ? Math.max(credits.balance_tenths, 0) + Math.max(graceTenths - borrowedTenths, 0)
         : Math.max(credits.balance_tenths, 0);
       if (overshoot > overshootCeiling) {
         throw new UsageLimitExceededError({

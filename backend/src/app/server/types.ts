@@ -130,6 +130,7 @@ import type { AudiencePulsePort } from "../../modules/audiencePulse/composition.
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { RealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
+import type { PeriodicTasksLifecycle } from "../composition/periodicTaskRunner.js";
 import type {
   ApiPrincipalAuthenticator,
   CredentialExpiryWarningService,
@@ -186,6 +187,11 @@ export interface AppDependencies {
   requestSource: RequestSourceDigestPort;
   machineAccessSecurityObserver?: MachineAccessSecurityObserver;
   credentialExpiryWarningLifecycle: Pick<CredentialExpiryWarningService, "start" | "stop">;
+  /** Every `registerPeriodicTask` registration, aggregated behind one start/stop pair. Started
+   *  and stopped only from the API runtime (see `startApiRuntime.ts`) — the worker and migration
+   *  runners never call this, so a task meant to run once per deployment does not also run once
+   *  per process. */
+  periodicTasksLifecycle: PeriodicTasksLifecycle;
   personalCredentialService: PersonalCredentialService;
   serviceAccountService: ServiceAccountService;
   workspaceSessionService: WorkspaceSessionService;

@@ -199,6 +199,31 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
       )
     `);
 
+    // One claim per (account, period, level) crossed upward, delivered by the alert
+    // dispatcher's periodic sweep. `ON CONFLICT DO NOTHING` on insert makes claiming
+    // idempotent; re-arm (a credit grant or profile change) deletes the current period's
+    // rows outright rather than resetting them, so a level reached again claims fresh.
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_alerts (
+        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        period_start DATE NOT NULL,
+        level TEXT NOT NULL CHECK (level IN ('nearing_limit', 'limit_reached', 'grace_exhausted')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        sent_at TIMESTAMPTZ,
+        outcome TEXT CHECK (outcome IN ('sent', 'no_recipients', 'superseded', 'failed')),
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+        next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_error_code TEXT,
+        PRIMARY KEY (account_id, period_start, level)
+      )
+    `);
+
+    await database.query(`
+      CREATE INDEX IF NOT EXISTS idx_ee_usage_limit_alerts_due
+        ON ee_usage_limit_alerts (next_attempt_at)
+        WHERE sent_at IS NULL
+    `);
+
     await database.query(`
       CREATE TABLE IF NOT EXISTS ee_org_creation_counters (
         user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

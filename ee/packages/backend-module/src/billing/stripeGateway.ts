@@ -178,4 +178,10 @@ export interface StripeGateway {
   /** Voids an invoice so a later attempt cannot succeed against it. Safe to call defensively --
    *  Stripe rejects voiding an invoice that is already paid or already void; callers swallow that. */
   voidInvoice(invoiceId: string): Promise<void>;
+  /**
+   * Whether Stripe's own record of this invoice says it is paid -- the ground truth a re-drive or
+   * an expiring pending row must check before acting, since our own prior attempt may have lost
+   * the response to a charge Stripe went on to collect. Never void or fail a pack this says is paid.
+   */
+  isInvoicePaid(invoiceId: string): Promise<boolean>;
 }

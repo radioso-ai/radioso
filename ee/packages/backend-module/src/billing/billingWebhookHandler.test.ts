@@ -637,6 +637,46 @@ describe("handleBillingWebhookEvent", () => {
       );
     });
 
+    it("invoice.paid is a confirming no-op, not a second audited grant, when the dispatcher's own charge already settled it", async () => {
+      // `addCredits.applied: false` is exactly what the real, reference-deduped `addCredits`
+      // returns once the dispatcher's own `settlePaid` already granted under this reference --
+      // this is a brand-new event id, so `applyIdempotently`'s claim alone would not catch it.
+      const alreadySettledAddCredits = vi.fn(async () => ({ credits: 300, applied: false }));
+      const { deps, repository, markPaid, auditRecord } = createDeps({
+        usage: { assignProfile: vi.fn(async () => undefined), addCredits: alreadySettledAddCredits },
+      });
+      repository.rows.set(accountId, {
+        accountId,
+        stripeCustomerId: "cus_1",
+        stripeSubscriptionId: "sub_1",
+        priceId: null,
+        interval: null,
+        status: "active",
+        billingEmail: null,
+        currentPeriodEnd: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      const autoTopUpId = randomUUID();
+      const event: StripeWebhookEvent = {
+        id: "evt_atu_already_settled",
+        type: "invoice.paid",
+        invoice: {
+          id: "in_already_settled",
+          customerId: "cus_1",
+          metadata: { radioso_kind: "auto_top_up", account_id: accountId, auto_top_up_id: autoTopUpId },
+          hostedInvoiceUrl: null,
+        },
+      };
+
+      const result = await handleBillingWebhookEvent(event, deps);
+
+      expect(result.outcome).toBe("already_settled");
+      expect(alreadySettledAddCredits).toHaveBeenCalledTimes(1);
+      expect(markPaid).toHaveBeenCalledWith(autoTopUpId);
+      expect(auditRecord).not.toHaveBeenCalled();
+    });
+
     it("invoice.payment_failed disables auto top-up, marks the row failed, voids the invoice, emails owners/admins only, and does not set past_due", async () => {
       const { deps, repository, markFailed, disableAutoTopUp, voidInvoice, auditRecord, noticeMailSend } = createDeps();
       repository.rows.set(accountId, {

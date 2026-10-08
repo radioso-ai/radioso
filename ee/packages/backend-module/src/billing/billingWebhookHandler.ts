@@ -371,14 +371,17 @@ const handleInvoicePaid = async (
 
 /**
  * `invoice.paid` for a pack created by the auto-top-up sweep (`radioso_kind: auto_top_up` in the
- * invoice's own metadata, read before any customer lookup). Always grants the catalog's top-up
- * credits -- `addCredits` dedupes on `reference` and repays any grace debt first, same as a
- * one-off top-up purchase -- and resolves the row to `paid` from either `pending` or `failed`:
- * an out-of-order `invoice.payment_failed` for the same charge may have already marked it failed
- * before this event arrived (a retried attempt that ultimately succeeded, or plain out-of-order
- * delivery), and this still counts it toward the monthly cap once resolved. Leaves the
- * subscription's status row untouched: this invoice is out of band from the subscription's own
- * billing cycle.
+ * invoice's own metadata, read before any customer lookup). Always attempts to grant the
+ * catalog's top-up credits -- `addCredits` dedupes on `reference` and repays any grace debt
+ * first, same as a one-off top-up purchase -- and resolves the row to `paid` from either
+ * `pending` or `failed`: an out-of-order `invoice.payment_failed` for the same charge may have
+ * already marked it failed before this event arrived (a retried attempt that ultimately
+ * succeeded, or plain out-of-order delivery), and this still counts it toward the monthly cap
+ * once resolved. The dispatcher may already have settled this same pack synchronously from its
+ * own charge call -- `addCredits.applied` is `false` when that already happened, under the exact
+ * same reference this uses, and this webhook is then a pure backup: it still confirms the grant
+ * and the row, but audits nothing, since nothing new happened here. Leaves the subscription's
+ * status row untouched: this invoice is out of band from the subscription's own billing cycle.
  */
 const handleAutoTopUpInvoicePaid = async (
   event: Extract<StripeWebhookEvent, { type: "invoice.paid" }>,
@@ -391,20 +394,27 @@ const handleAutoTopUpInvoicePaid = async (
     return { outcome: "unmapped_price", accountId: accountId ?? null };
   }
 
+  let granted = false;
   const result = await applyIdempotently(
     deps.repository,
     { eventId: event.id, eventType: event.type, accountId, outcome: "auto_top_up_paid" },
     async () => {
-      await deps.usage.addCredits({
+      const creditResult = await deps.usage.addCredits({
         accountId,
         conversations: PLAN_CATALOG.topUp.conversations,
         reference: `auto_top_up:${invoice.id}`,
       });
+      granted = creditResult.applied;
       await deps.autoTopUps.markPaid(autoTopUpId);
     },
   );
   if (result === "duplicate") {
     return { outcome: "duplicate", accountId };
+  }
+  if (!granted) {
+    // Already settled -- most likely the dispatcher's own charge call saw "paid" and granted
+    // the credits synchronously, before this webhook ever arrived. Confirmed, not reported.
+    return { outcome: "already_settled", accountId };
   }
   await deps.audit.record({
     accountId,

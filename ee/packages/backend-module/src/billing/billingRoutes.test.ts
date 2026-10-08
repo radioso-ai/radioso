@@ -153,6 +153,7 @@ const createFakeGateway = (overrides: Partial<StripeGateway> = {}): StripeGatewa
   createTopUpInvoiceDraft: vi.fn(async () => ({ invoiceId: "in_new" })),
   chargeTopUpInvoice: vi.fn(async () => ({ status: "paid" as const })),
   voidInvoice: vi.fn(async () => undefined),
+  isInvoicePaid: vi.fn(async () => false),
   ...overrides,
 });
 

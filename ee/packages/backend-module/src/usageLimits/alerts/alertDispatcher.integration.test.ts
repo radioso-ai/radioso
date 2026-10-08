@@ -360,6 +360,37 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
     expect(JSON.stringify(sent[1].content)).not.toContain("9 of 10");
   });
 
+  it("aborts without sending when the claim is deleted (re-armed) between loading usage/recipients and saving the snapshot", async () => {
+    const accountId = await seedAccount();
+    await assignProfile(accountId, 10);
+    await setUsageState(accountId, 100, 0);
+    await insertClaim(accountId, "nearing_limit");
+    const sendMock = vi.fn(async () => ({ dispatched: true }));
+    const dispatcher = new UsageLimitAlertDispatcher({
+      database,
+      audit: { record: vi.fn().mockResolvedValue(undefined) },
+      noticeMail: { send: sendMock },
+      accountAdministrators: {
+        // Recipients resolve after usage, right before the email snapshot is persisted —
+        // the exact race window: simulate a concurrent re-arm landing here.
+        list: vi.fn(async () => {
+          await database.query(
+            `DELETE FROM ee_usage_limit_alerts WHERE account_id = $1 AND period_start = $2::date AND level = $3`,
+            [accountId, currentPeriodStart(), "nearing_limit"],
+          );
+          return [{ email: "owner@example.com", displayName: "Owner" }];
+        }),
+      },
+      appBaseUrl: "https://app.example.com",
+      logger: { warn: vi.fn() },
+    });
+
+    await dispatcher.run();
+
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(await readClaim(accountId, "nearing_limit")).toBeUndefined();
+  });
+
   it("marks a claim from an earlier billing period superseded without sending it", async () => {
     const accountId = await seedAccount();
     await assignProfile(accountId, 10);
@@ -668,5 +699,83 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
     const claim = await readClaim(accountId, "nearing_limit");
     expect(claim.outcome).toBe("sent");
     expect(claim.attempts).toBe(1);
+  });
+});
+
+describeIfDatabase("usageLimitMigrator upgrade path for ee_usage_limit_alerts", () => {
+  it("adds email_snapshot via ALTER TABLE on a pre-existing table, idempotently, and the dispatcher can then select it", async () => {
+    const schema = `ee_test_alerts_upgrade_${randomUUID().replace(/-/g, "")}`;
+    const admin = new pg.Pool({ connectionString: integrationDatabaseUrl! });
+    try {
+      await admin.query(`CREATE SCHEMA "${schema}"`);
+    } finally {
+      await admin.end();
+    }
+    const pool = new pg.Pool({ connectionString: integrationDatabaseUrl!, options: `-c search_path=${schema}` });
+    const database = new PgDatabase(pool);
+    try {
+      await createMinimalBaseSchema(database);
+      // The table's shape before this column existed: everything the current CREATE TABLE IF
+      // NOT EXISTS carries, minus email_snapshot. Pre-creating it lets the real migrator's
+      // CREATE be a no-op for this table and exercise only the new ALTER.
+      await database.query(`
+        CREATE TABLE ee_usage_limit_alerts (
+          account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+          period_start DATE NOT NULL,
+          level TEXT NOT NULL CHECK (level IN ('nearing_limit', 'limit_reached', 'grace_exhausted')),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          sent_at TIMESTAMPTZ,
+          outcome TEXT CHECK (outcome IN ('sent', 'no_recipients', 'superseded', 'failed')),
+          attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+          next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          last_error_code TEXT,
+          PRIMARY KEY (account_id, period_start, level)
+        )
+      `);
+
+      // Run it twice: once to prove the ALTER applies on an upgrade, once more to prove it
+      // stays a no-op (idempotent) rather than erroring on a column that now exists.
+      await usageLimitMigrator.migrate(database);
+      await usageLimitMigrator.migrate(database);
+
+      const accountId = randomUUID();
+      await database.query(
+        `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, 'Upgrade Account', $2, 'hash')`,
+        [accountId, `upgrade-${accountId}@example.com`],
+      );
+      await database.query(
+        `INSERT INTO ee_usage_limit_alerts (account_id, period_start, level) VALUES ($1, $2::date, 'nearing_limit')`,
+        [accountId, currentPeriodStart()],
+      );
+
+      const dispatcher = new UsageLimitAlertDispatcher({
+        database,
+        audit: { record: vi.fn().mockResolvedValue(undefined) },
+        noticeMail: { send: vi.fn(async () => ({ dispatched: true })) },
+        accountAdministrators: { list: vi.fn(async () => []) },
+        appBaseUrl: "https://app.example.com",
+        logger: { warn: vi.fn() },
+      });
+
+      // `claimDueAlerts` selects `email_snapshot`; against the un-migrated table this would
+      // reject with an undefined-column error, which is the real proof the ALTER landed —
+      // not just a catalog check.
+      await expect(dispatcher.run()).resolves.toBeUndefined();
+
+      const rows = await database.query<{ email_snapshot: unknown }>(
+        `SELECT email_snapshot FROM ee_usage_limit_alerts WHERE account_id = $1`,
+        [accountId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].email_snapshot).toBeNull();
+    } finally {
+      await pool.end();
+      const cleanupAdmin = new pg.Pool({ connectionString: integrationDatabaseUrl! });
+      try {
+        await cleanupAdmin.query(`DROP SCHEMA "${schema}" CASCADE`);
+      } finally {
+        await cleanupAdmin.end();
+      }
+    }
   });
 });

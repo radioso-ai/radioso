@@ -67,8 +67,10 @@ export interface StripeInvoiceEventData {
   /** Stripe's own invoice metadata. The webhook branches on `radioso_kind` here first, before
    *  falling into the subscription-invoice handling every other invoice event takes. */
   metadata: Record<string, string>;
-  /** Null until the invoice is finalized. Carried into the auto-top-up-failed email when
-   *  present, so the recipient can jump straight to the invoice. */
+  /** Null until the invoice is finalized. Never surfaced in a notice email -- the log mail
+   *  driver prints full message text, and Stripe's hosted invoice URL is not something to put
+   *  there; a notice links to the dashboard's usage tab instead, where Manage billing opens the
+   *  portal with every invoice. */
   hostedInvoiceUrl: string | null;
 }
 

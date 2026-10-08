@@ -67,11 +67,7 @@ export const buildPaymentFailedEmail = (input: { accountId: string; appBaseUrl: 
   };
 };
 
-export const buildAutoTopUpFailedEmail = (input: {
-  accountId: string;
-  appBaseUrl: string | null;
-  hostedInvoiceUrl: string | null;
-}): BillingEmail => {
+export const buildAutoTopUpFailedEmail = (input: { accountId: string; appBaseUrl: string | null }): BillingEmail => {
   const cta = usageCta(input.accountId, input.appBaseUrl);
   return {
     subject: "Auto top-up failed",
@@ -80,24 +76,14 @@ export const buildAutoTopUpFailedEmail = (input: {
       heading: "Auto top-up failed — update your payment method, then turn it back on",
       paragraphs: [
         "We couldn't charge your payment method for a conversation top-up pack, so auto top-up is now off.",
-        ...(input.hostedInvoiceUrl ? [`Invoice: ${input.hostedInvoiceUrl}`] : []),
       ],
       ...(cta ? { cta } : {}),
     },
   };
 };
 
-/** Active owners + admins, plus the customer's billing email when it is set and differs from
- *  every admin contact's -- deduped case-insensitively, since the same mailbox should never get
- *  the same notice twice. */
-export const resolveBillingNoticeRecipients = (
-  administrators: readonly AccountAdministratorContact[],
-  billingEmail: string | null,
-): string[] => {
-  const emails = administrators.map((admin) => admin.email);
-  if (!billingEmail) {
-    return emails;
-  }
-  const known = new Set(emails.map((email) => email.toLowerCase()));
-  return known.has(billingEmail.toLowerCase()) ? emails : [...emails, billingEmail];
-};
+/** Active owners and admins -- the only recipients of a billing notice. Not the Stripe
+ *  customer's billing email: that address can outlive its owner's membership, and a billing or
+ *  usage notice must never reach someone who no longer has access to the account. */
+export const resolveBillingNoticeRecipients = (administrators: readonly AccountAdministratorContact[]): string[] =>
+  administrators.map((admin) => admin.email);

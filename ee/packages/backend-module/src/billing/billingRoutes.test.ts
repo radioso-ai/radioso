@@ -111,13 +111,19 @@ class FakeAutoTopUpRepository implements AutoTopUpRepository {
     return [];
   }
 
+  async listExpiredPending(): Promise<Array<{ id: string; accountId: string; stripeInvoiceId: string | null }>> {
+    return [];
+  }
+
   async findById(): Promise<null> {
     return null;
   }
 
   async markInvoiceCreated(): Promise<void> {}
 
-  async markFailed(): Promise<void> {}
+  async markFailed(): Promise<boolean> {
+    return false;
+  }
 
   async markPaid(): Promise<void> {}
 

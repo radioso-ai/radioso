@@ -296,6 +296,8 @@ export interface ChatTurnAssemblyRoutineResult {
   actions?: RoutineActionRequest[];
   handoff?: RoutineHandoffEffect;
   operatorNotice?: RoutineOperatorNoticeEffect;
+  /** Skills the routine ran this turn that may have acted outside the conversation. */
+  skillsWithExternalEffects?: ProcessTurnResult["skillsWithExternalEffects"];
   routineStateTransition?: CapturedRoutineTransition | null;
   routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;

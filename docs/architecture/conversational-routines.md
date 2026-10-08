@@ -670,7 +670,10 @@ and the engine passes it through as the claim's `skillsWithExternalEffects`: eve
 whose result did not say it stayed inside, so a dispatcher that says nothing keeps the
 turn whole. A clarifying question between candidate routines and a confirmed
 slot correction also arrive whole, as does a routine reply that takes over a
-grounded answer mid-turn. If a streamed reply cannot be saved, the visitor has
+grounded answer mid-turn. A takeover reply is shown only once the turn is saved
+when its routine queued an action, handed the conversation to a person, parked at
+an approval gate, or ran a skill that acted outside the conversation; otherwise it
+is shown as soon as it exists. If a streamed reply cannot be saved, the visitor has
 already read it; the routine is still on the step it was on and asks again next
 turn, and chat logs `routine_reply_persist_failed_after_stream` and counts
 `chat_stream_persist_failures_total{route="routine"}`. A turn the disconnect ceiling

@@ -3,10 +3,10 @@ import { normalizeLocaleTag } from '@/lib/locale'
 import { resolveBuiltInEmbedCopy } from '@/lib/embed-locale-packs'
 
 export type WebsiteEmbedLauncherPosition = 'bottom-right' | 'bottom-left'
-export type WebsiteEmbedInitialState = 'open' | 'collapsed'
+type WebsiteEmbedInitialState = 'open' | 'collapsed'
 export type WebsiteEmbedDisplayMode = 'bubble' | 'panel'
 
-export interface WebsiteEmbedSnippetOverrides {
+interface WebsiteEmbedSnippetOverrides {
   locale?: string | null
   initialState?: string | null
   displayMode?: string | null
@@ -41,6 +41,11 @@ export interface WebsiteEmbedCopy {
   publicChatAiLabel: string
   publicChatRateLimitRetryTemplate: string
   publicChatMessageFailedMessage: string
+  /** Shown in place of the generic failure copy when a turn fails because the
+   *  account's conversation quota is exhausted. The composer stays enabled —
+   *  quota can be restored at any time, unlike the permanent `publicChatUnavailable*`
+   *  takeover for a deactivated chat link. */
+  publicChatAgentUnavailableMessage: string
   skillReceiptSubmittedLabel: string
   skillReceiptFailedLabel: string
 }
@@ -70,19 +75,15 @@ export interface WebsiteEmbedTheme {
 
 export type WebsiteEmbedCopyOverrides = Partial<WebsiteEmbedCopy>
 export type WebsiteEmbedThemeOverrides = Partial<WebsiteEmbedTheme>
-export type WebsiteEmbedPageContextMode = 'metadata' | 'content'
+type WebsiteEmbedPageContextMode = 'metadata' | 'content'
 
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL = 'Chat with us'
-export const DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION: WebsiteEmbedLauncherPosition = 'bottom-right'
-export const DEFAULT_WEBSITE_EMBED_SCRIPT_PATH = '/radioso-embed.js'
-export const DEFAULT_WEBSITE_EMBED_TEST_PATH = '/embed-test'
-export const DEFAULT_WEBSITE_EMBED_INITIAL_STATE: WebsiteEmbedInitialState = 'collapsed'
-export const DEFAULT_WEBSITE_EMBED_DISPLAY_MODE: WebsiteEmbedDisplayMode = 'bubble'
+const DEFAULT_WEBSITE_EMBED_SCRIPT_PATH = '/radioso-embed.js'
+const DEFAULT_WEBSITE_EMBED_TEST_PATH = '/embed-test'
+const DEFAULT_WEBSITE_EMBED_DISPLAY_MODE: WebsiteEmbedDisplayMode = 'bubble'
 export const LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL = 'http://127.0.0.1:4321'
-export const WEBSITE_EMBED_DESKTOP_PANEL_WIDTH_PX = 560
-export const WEBSITE_EMBED_PANEL_HANDLE_WIDTH_PX = 56
-export const WEBSITE_EMBED_NARROW_VIEWPORT_MAX_WIDTH_PX = 640
-export const WEBSITE_EMBED_KEYBOARD_SHRINK_THRESHOLD_PX = 120
+const WEBSITE_EMBED_NARROW_VIEWPORT_MAX_WIDTH_PX = 640
+const WEBSITE_EMBED_KEYBOARD_SHRINK_THRESHOLD_PX = 120
 export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   launcherDefaultLabel: 'Chat with us',
   embeddedChatTitle: 'Radioso embedded chat',
@@ -108,10 +109,11 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatAiLabel: 'AI',
   publicChatRateLimitRetryTemplate: 'Try again in {seconds}s.',
   publicChatMessageFailedMessage: 'Sorry, something went wrong. Please try again.',
+  publicChatAgentUnavailableMessage: "This assistant isn't available right now. Please try again later.",
   skillReceiptSubmittedLabel: 'Submitted',
   skillReceiptFailedLabel: "Couldn't submit",
 }
-export const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
+const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
   launcherBackground: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
   launcherForeground: '#f8fafc',
   launcherBorder: 'rgba(15, 23, 42, 0.16)',
@@ -159,6 +161,7 @@ export const COPY_OVERRIDE_KEYS = [
   'publicChatAiLabel',
   'publicChatRateLimitRetryTemplate',
   'publicChatMessageFailedMessage',
+  'publicChatAgentUnavailableMessage',
   'skillReceiptSubmittedLabel',
   'skillReceiptFailedLabel',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
@@ -279,7 +282,7 @@ export const normalizeWebsiteEmbedDisplayMode = (value: string | null | undefine
   return null
 }
 
-export const normalizeWebsiteEmbedPageContextMode = (value: string | null | undefined): WebsiteEmbedPageContextMode | null => {
+const normalizeWebsiteEmbedPageContextMode = (value: string | null | undefined): WebsiteEmbedPageContextMode | null => {
   if (!value) {
     return null
   }
@@ -292,7 +295,7 @@ export const normalizeWebsiteEmbedPageContextMode = (value: string | null | unde
   return null
 }
 
-export const sanitizeWebsiteEmbedCopyOverrides = (input: unknown): WebsiteEmbedCopyOverrides =>
+const sanitizeWebsiteEmbedCopyOverrides = (input: unknown): WebsiteEmbedCopyOverrides =>
   sanitizeStringOverrides<keyof WebsiteEmbedCopy>(input, COPY_OVERRIDE_KEYS, 280)
 
 /**
@@ -331,10 +334,10 @@ export const resolveWebsiteEmbedCopyPack = (
   return {}
 }
 
-export const sanitizeWebsiteEmbedThemeOverrides = (input: unknown): WebsiteEmbedThemeOverrides =>
+const sanitizeWebsiteEmbedThemeOverrides = (input: unknown): WebsiteEmbedThemeOverrides =>
   sanitizeStringOverrides<keyof WebsiteEmbedTheme>(input, THEME_OVERRIDE_KEYS, 160)
 
-export const parseWebsiteEmbedJsonOverrides = (value: string | null | undefined) => {
+const parseWebsiteEmbedJsonOverrides = (value: string | null | undefined) => {
   if (!value) {
     return null
   }
@@ -362,16 +365,12 @@ export const formatWebsiteEmbedRateLimitRetry = (
   seconds: number,
 ) => copy.publicChatRateLimitRetryTemplate.replaceAll('{seconds}', String(seconds))
 
-export const formatWebsiteEmbedStartingMessage = (
-  copy: Pick<WebsiteEmbedCopy, 'embeddedChatStartingMessage' | 'embeddedChatTitle'>,
-) => copy.embeddedChatStartingMessage.replaceAll('{name}', copy.embeddedChatTitle)
-
 export const formatWebsiteEmbedDisclaimer = (
   copy: Pick<WebsiteEmbedCopy, 'publicChatDisclaimerTemplate'>,
   name: string,
 ) => copy.publicChatDisclaimerTemplate.replaceAll('{name}', name)
 
-export interface WebsiteEmbedViewportSnapshot {
+interface WebsiteEmbedViewportSnapshot {
   viewportWidth: number
   layoutViewportHeight: number
   visualViewportHeight?: number | null
@@ -429,7 +428,7 @@ export const getWebsiteEmbedTheme = (overrides?: WebsiteEmbedThemeOverrides | nu
   ...sanitizeWebsiteEmbedThemeOverrides(overrides),
 })
 
-export const buildWebsiteEmbedCssVars = (theme: WebsiteEmbedTheme) =>
+const buildWebsiteEmbedCssVars = (theme: WebsiteEmbedTheme) =>
   ({
     '--radioso-launcher-background': theme.launcherBackground,
     '--radioso-launcher-foreground': theme.launcherForeground,
@@ -492,7 +491,7 @@ export const resolveWebsiteEmbedScriptUrl = (scriptUrl?: string | null, baseUrl?
   return DEFAULT_WEBSITE_EMBED_SCRIPT_PATH
 }
 
-export const resolveWebsiteEmbedAppOrigin = (scriptUrl?: string | null, baseUrl?: string) => {
+const resolveWebsiteEmbedAppOrigin = (scriptUrl?: string | null, baseUrl?: string) => {
   const resolvedScriptUrl = resolveWebsiteEmbedScriptUrl(scriptUrl, baseUrl)
 
   try {
@@ -524,7 +523,7 @@ const appendSearchParams = (baseUrl: string, params: URLSearchParams) => {
   }
 }
 
-export const resolveWebsiteEmbedTestHarnessUrl = (appBaseUrl?: string, harnessBaseUrl?: string) => {
+const resolveWebsiteEmbedTestHarnessUrl = (appBaseUrl?: string, harnessBaseUrl?: string) => {
   const normalizedHarnessBaseUrl = harnessBaseUrl?.trim()
   if (normalizedHarnessBaseUrl) {
     return normalizedHarnessBaseUrl

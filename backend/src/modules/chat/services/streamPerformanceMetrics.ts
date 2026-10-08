@@ -55,3 +55,18 @@ export const observeReplayFirstAnswerChunkLatency = (
     value: timeToFirstTokenMs,
   });
 };
+
+/**
+ * Counts a streamed chat turn whose reply reached the visitor but whose persistence then
+ * failed: the visitor read a reply the conversation does not record. `route` is the same
+ * small closed enum the first-chunk metric carries.
+ */
+export const countStreamPersistFailure = (
+  metrics: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
+  labels: Pick<FirstAnswerChunkLabels, "route">,
+): void => {
+  metrics?.incrementCounter("chat_stream_persist_failures_total", {
+    help: "Streamed chat turns whose reply was shown but whose persistence then failed",
+    labels,
+  });
+};

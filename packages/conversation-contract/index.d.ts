@@ -1220,6 +1220,13 @@ export interface RoutineSkillResult {
   answer?: string;
   /** Host-private dispatch metadata. Not rendered into routine prompts. */
   metadata?: Record<string, unknown>;
+  /**
+   * Whether running the skill may have acted outside the conversation — sent an email,
+   * called a webhook, posted a message — before the host saves the turn. `false` only when
+   * the host knows the skill stayed inside it (it read workspace evidence, or never ran).
+   * Absent counts as `true`.
+   */
+  actsOutsideConversation?: boolean;
 }
 
 /**
@@ -1550,6 +1557,13 @@ export interface ConversationRoutineResumeResult {
    * exits and yielded turns; when present, `nextState.status === "suspended"`.
    */
   awaitingDecision?: RoutineAwaitingDecision;
+  /**
+   * The skills this turn's skill steps ran, in order, that may have acted outside the
+   * conversation the moment they ran (an email sent, a webhook called) — every dispatched
+   * skill whose result did not report `actsOutsideConversation: false`. Absent when there
+   * were none. The host can no longer take such an effect back if saving the turn fails.
+   */
+  skillsWithExternalEffects?: string[];
   /** Step-by-step traversal record for the debug panel (omitted on a yield). */
   trace?: RoutineRunTrace;
   /**
@@ -1849,6 +1863,11 @@ export interface ProcessTurnResult {
    * create a pending decision row before the routine can be resumed.
    */
   awaitingDecision?: RoutineAwaitingDecision;
+  /**
+   * The skills a routine's skill steps ran this turn that may have acted outside the
+   * conversation; see {@link ConversationRoutineResumeResult.skillsWithExternalEffects}.
+   */
+  skillsWithExternalEffects?: string[];
   /** Required fields that prevented selected skills from dispatching this turn. */
   awaitingSkillInput?: AwaitingSkillInput[];
   /**
@@ -1948,6 +1967,8 @@ export interface RoutineTurnEffects {
   awaitingDecision?: RoutineAwaitingDecision;
   handoff?: ProcessTurnResult["handoff"];
   operatorNotice?: RoutineOperatorNoticeEffect;
+  /** The skills the routine already ran while claiming the turn that may have acted outside the conversation. */
+  skillsWithExternalEffects?: ProcessTurnResult["skillsWithExternalEffects"];
 }
 
 /**

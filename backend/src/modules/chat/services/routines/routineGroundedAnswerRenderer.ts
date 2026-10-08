@@ -19,14 +19,24 @@ import type { PreparedSession } from "../chatSessionPreparer.js";
 import {
   buildRetrievalTurnOutcome,
 } from "../retrievalTurnSkill.js";
-import type { TurnSkill } from "../turnOutcome.js";
+import {
+  getUnstreamedFinalAnswerRemainder,
+  TurnOutcomeRendererRegistry,
+  type TurnRenderContext,
+  type TurnSkill,
+  type TurnStreamResult,
+} from "../turnOutcome.js";
 import type { ChatSuggestion } from "../../types/chatResponses.js";
 
 interface RoutineGroundedAnswerRendererOptions {
   session: PreparedSession;
   turnSkills: readonly TurnSkill[];
+  /** Expands a streamed answer's planned suggestions the way a whole answer's are expanded. */
+  chatAnswerPresenter: Pick<ChatAnswerPresenter, "applyAssistantSuggestions" | "applyActionSuggestions">;
   accountId?: string;
   responseLanguage?: string | Promise<string | undefined>;
+  /** The turn's cancellation signal; the grounded answer generates under it. */
+  signal?: AbortSignal;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -164,8 +174,48 @@ export const presentRoutineRenderableAnswer = (
 export const createRoutineGroundedAnswerRenderer = (
   options: RoutineGroundedAnswerRendererOptions,
 ): RoutineGroundedAnswerRenderer => {
+  /** The retrieval answer for the step: the grounded session, its outcome, and the renderer that writes it. */
+  const grounded = async (input: RoutineGroundedAnswerInput, retrieval: RetrievalPipelineResult) => {
+    const responseLanguage = await options.responseLanguage;
+    const session = withRoutineGrounding({
+      session: options.session,
+      retrieval,
+      responseLanguage,
+      steering: input.steering,
+    });
+    const outcome = buildRetrievalTurnOutcome(session);
+    const renderer = options.turnSkills
+      .map((skill) => skill.renderer)
+      .find((candidate) => candidate.supports(outcome));
+    if (!renderer) {
+      throw new Error("routine_grounded_renderer_missing_retrieval_turn_renderer");
+    }
+    const context: TurnRenderContext = {
+      session,
+      query: session.effectiveQuery ?? session.userMessage.content,
+      accountId: options.accountId,
+      ...(options.signal ? { signal: options.signal } : {}),
+    };
+    return { session, outcome, renderer, context };
+  };
+  const finish = (session: PreparedSession, presentation: ChatPresentedAnswer): RenderableTurn =>
+    toRenderableTurn({ ...presentation, effectiveRetrieval: session.retrieval });
+
+  /**
+   * A streamed answer settles with its question suggestions still planned; they are expanded,
+   * and action suggestions added, exactly as a whole answer's are.
+   */
+  const withSuggestions = async (session: PreparedSession, result: TurnStreamResult): Promise<ChatPresentedAnswer> => {
+    if (result.suggestions.mode !== "assistant") {
+      return result.finalPresentation;
+    }
+    const presenter = options.chatAnswerPresenter;
+    const withQuestions = presenter.applyAssistantSuggestions(session, result.finalPresentation, result.suggestions.planned);
+    return presenter.applyActionSuggestions(session, withQuestions);
+  };
+
   // Whether the step is groundable is read off the staged context alone; the answer is
-  // generated only when the reply is rendered.
+  // generated only when the reply is rendered or streamed.
   const prepare = (input: RoutineGroundedAnswerInput): PendingRenderableTurn | null => {
     const retrieval = retrievalResultFromStagedContext(input.turn.stagedContext);
     if (!retrieval) {
@@ -173,30 +223,20 @@ export const createRoutineGroundedAnswerRenderer = (
     }
     return {
       async render() {
-        const responseLanguage = await options.responseLanguage;
-        const groundedSession = withRoutineGrounding({
-          session: options.session,
-          retrieval,
-          responseLanguage,
-          steering: input.steering,
-        });
-        const outcome = buildRetrievalTurnOutcome(groundedSession);
-        const renderer = options.turnSkills
-          .map((skill) => skill.renderer)
-          .find((candidate) => candidate.supports(outcome));
-        if (!renderer) {
-          throw new Error("routine_grounded_renderer_missing_retrieval_turn_renderer");
+        const { session, outcome, renderer, context } = await grounded(input, retrieval);
+        return finish(session, await renderer.render(outcome, context));
+      },
+      // The retrieval renderer's own stream, so its coverage head reader and citation gate
+      // decide what reaches the visitor; no coverage sink rides along, as on the whole path.
+      async *stream() {
+        const { session, outcome, renderer, context } = await grounded(input, retrieval);
+        const result = yield* new TurnOutcomeRendererRegistry([renderer]).stream(outcome, context);
+        // A bounded decline or a zero-evidence answer arrives only on the settled presentation.
+        const remainder = getUnstreamedFinalAnswerRemainder(result);
+        if (remainder) {
+          yield remainder;
         }
-
-        const presentation = await renderer.render(outcome, {
-          session: groundedSession,
-          query: groundedSession.effectiveQuery ?? groundedSession.userMessage.content,
-          accountId: options.accountId,
-        });
-        return toRenderableTurn({
-          ...presentation,
-          effectiveRetrieval: groundedSession.retrieval,
-        });
+        return finish(session, await withSuggestions(session, result));
       },
     };
   };

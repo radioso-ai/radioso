@@ -218,9 +218,16 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
         -- The provider's idempotency key is a hash of this claim's identity, not its content;
         -- resending different content under the same key is a permanent (non-retryable) error
         -- at the provider, not just a wasted attempt.
-        email_snapshot JSONB,
         PRIMARY KEY (account_id, period_start, level)
       )
+    `);
+
+    // A deployment whose `ee_usage_limit_alerts` already exists from before this column was
+    // part of the CREATE above needs it added explicitly; the CREATE's own column list only
+    // applies to a fresh install.
+    await database.query(`
+      ALTER TABLE ee_usage_limit_alerts
+      ADD COLUMN IF NOT EXISTS email_snapshot JSONB
     `);
 
     await database.query(`

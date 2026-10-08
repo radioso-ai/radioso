@@ -237,7 +237,14 @@ export class UsageLimitAlertDispatcher {
         resetAt: conversations.resetAt,
         appBaseUrl: this.input.appBaseUrl,
       });
-      await this.saveEmailSnapshot(claim, email);
+      const saved = await this.saveEmailSnapshot(claim, email);
+      if (!saved) {
+        // A re-arm deleted this exact generation between loading usage/recipients above and
+        // persisting the snapshot here — the fenced UPDATE matched zero rows. The claim this
+        // send would have been attributed to no longer exists; sending now would deliver a
+        // crossing that may no longer be true, with nothing left to finalize afterward.
+        return;
+      }
     }
 
     const results = await Promise.allSettled(
@@ -333,8 +340,11 @@ export class UsageLimitAlertDispatcher {
     );
   }
 
-  private async saveEmailSnapshot(claim: ClaimedAlert, email: AlertEmail): Promise<void> {
-    await this.db
+  /** Returns whether the fenced UPDATE actually matched a row. A re-arm racing this exact
+   *  generation (deleting it between the usage/recipients reads above and this persist) leaves
+   *  zero rows affected — the caller must treat that as "nothing left to send to." */
+  private async saveEmailSnapshot(claim: ClaimedAlert, email: AlertEmail): Promise<boolean> {
+    const result = await this.db
       .updateTable("ee_usage_limit_alerts")
       .set({ email_snapshot: email })
       .where("account_id", "=", claim.accountId)
@@ -342,6 +352,7 @@ export class UsageLimitAlertDispatcher {
       .where("level", "=", claim.level)
       .where(this.createdAtFence(claim))
       .execute();
+    return result.some((entry) => Number(entry.numUpdatedRows) > 0);
   }
 
   private async finalize(

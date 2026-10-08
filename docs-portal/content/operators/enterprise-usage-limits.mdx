@@ -1,7 +1,7 @@
 ---
 title: "Enterprise usage limits"
 description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers or conversations per account, and enforces the caps before work begins."
-last_updated: 2026-10-07
+last_updated: 2026-10-08
 ---
 
 # Enterprise usage limits
@@ -202,6 +202,8 @@ Limits are enforced before expensive work begins, so customers cannot race past 
 - The reservation is released if the work fails before commit.
 
 Requests that exceed a cap receive a `429` response with `code: "usage_limit_exceeded"` and a `details.resource` of `stored_indexed_bytes`, `monthly_indexed_bytes`, `stored_documents`, `monthly_answers`, or `monthly_conversations`. On a conversation-metered account, a `monthly_conversations` refusal only happens once the [grace allowance](#grace-allowance) is also exhausted — Ray, Test Chat, Workbench replays, eval runs, and Pulse reports reach this `429` as soon as the allowance and any positive credits run out, since they never borrow.
+
+In the dashboard, this response becomes a short notice naming the exhausted resource, with a **Review plan and usage** link to Plan & usage, where the operator can top up or upgrade.
 
 The public website chat and anonymous link, which talk to visitors who aren't the account holder, answer with the same `code` but no `details` — the resource, limit, used count, and billing period are account information the visitor has no reason to see. The widget shows a generic "assistant unavailable" message instead.
 

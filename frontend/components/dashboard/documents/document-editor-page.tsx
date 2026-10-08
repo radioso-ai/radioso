@@ -1,6 +1,6 @@
 'use client'
 
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Boxes, ExternalLink, FileText, PanelRight, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react'
 
@@ -95,7 +95,7 @@ export function DocumentEditorPage({
   document: DocumentSummary | null
   values: DocumentEditorValues
   metadataError: string | null
-  saveError?: string | null
+  saveError?: ReactNode
   isLoading: boolean
   isSaving: boolean
   isDeleting: boolean

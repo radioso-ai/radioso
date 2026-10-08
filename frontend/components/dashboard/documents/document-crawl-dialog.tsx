@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -30,7 +30,7 @@ export function DocumentCrawlDialog({
 }: {
   open: boolean
   url: string
-  crawlError: string | null
+  crawlError: ReactNode
   isCrawling: boolean
   maxLimit: number
   limit: string

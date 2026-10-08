@@ -526,6 +526,7 @@ const routineTurnEffectsOf = (result: ProcessTurnResult): RoutineTurnEffects => 
     ...(result.awaitingDecision ? { awaitingDecision: result.awaitingDecision } : {}),
     ...(result.handoff ? { handoff: result.handoff } : {}),
     ...(result.operatorNotice ? { operatorNotice: result.operatorNotice } : {}),
+    ...(result.skillsWithExternalEffects ? { skillsWithExternalEffects: result.skillsWithExternalEffects } : {}),
   };
 };
 

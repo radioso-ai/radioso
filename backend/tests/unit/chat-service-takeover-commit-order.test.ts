@@ -278,12 +278,12 @@ const drain = async (
 };
 
 /**
- * Replaces `chatTurnAssembly` entirely with a two-method fake (`attemptRoutineTurn`
+ * Replaces `chatTurnAssembly` entirely with a two-method fake (`claimRoutineTurn`
  * always declines, `streamPreparedByEngine` yields one held chunk, then an optional
  * controllable pause, then the final event) so a test can land a gate at the exact
  * point a committed chunk has been held but nothing past it has run yet — a point
  * the real engine's single-hop committed replay never exposes an awaitable seam at.
- * `attemptRoutineTurn`/`streamPreparedByEngine` are the only two `chatTurnAssembly`
+ * `claimRoutineTurn`/`streamPreparedByEngine` are the only two `chatTurnAssembly`
  * methods this chat-service code path calls when no routine is already suspended and
  * `useSenseCompatiblePath` is false (no `turnInterpreter`/`retrievalSenseDetector`
  * configured), so this narrow double is a faithful stand-in for this flow.
@@ -303,7 +303,8 @@ const buildFakeAssemblyTakeoverService = (input: {
   const messageRepository = new InMemoryMessageRepository();
   const auditService = createAuditService();
   const fakeChatTurnAssembly = {
-    async attemptRoutineTurn() {
+    // The stream path claims a routine turn before rendering it; no routine claims this one.
+    async claimRoutineTurn() {
       return null;
     },
     async *streamPreparedByEngine(session: unknown) {

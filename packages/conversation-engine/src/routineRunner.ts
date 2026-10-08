@@ -1172,6 +1172,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // loudly instead of looping (and re-firing a side effect) forever. Neither kind is
     // ever left as the resume position.
     const actions: RoutineActionRequest[] = [];
+    // Every skill a skill step runs on the way that may already have acted outside the
+    // conversation, so the host learns of it before the turn is saved. Only the dispatcher
+    // knows what a skill does; one that does not say it stayed inside counts.
+    const skillsWithExternalEffects: string[] = [];
     let hops = 0;
     while (step.kind === "skill" || step.kind === "action") {
       if (++hops > routine.steps.length) {
@@ -1216,6 +1220,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         turn: stagedContext === turn.stagedContext ? turn : { ...turn, stagedContext },
         ...(step.inputBindings ? { inputBindings: step.inputBindings } : {}),
       });
+      if (skillResult.actsOutsideConversation !== false) {
+        skillsWithExternalEffects.push(step.skillName);
+      }
       variables = { ...variables, ...assignOutputs(step.outputAssignments, skillResult.outputs) };
       const staged = stagedContextForSkillResult(step, skillResult);
       if (staged) {
@@ -1332,6 +1339,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
             ...(reason ? { reason } : {}),
           },
           ...(actions.length > 0 ? { actions } : {}),
+          ...(skillsWithExternalEffects.length > 0 ? { skillsWithExternalEffects } : {}),
           trace,
         },
         reply,
@@ -1410,6 +1418,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           ? { terminal: terminalResult(terminalKind, step, declaredSlotVariables(routine, variables)) }
           : {}),
         ...(actions.length > 0 ? { actions } : {}),
+        ...(skillsWithExternalEffects.length > 0 ? { skillsWithExternalEffects } : {}),
         trace,
       },
       reply,

@@ -131,6 +131,7 @@ export const claimRoutineResume = async (input: {
       ...(claim.effects.terminal ? { terminalKind: claim.effects.terminal.kind } : {}),
       ...(claim.effects.actions ? { actions: claim.effects.actions } : {}),
       ...(claim.effects.awaitingDecision ? { awaitingDecision: claim.effects.awaitingDecision } : {}),
+      ...(claim.effects.skillsWithExternalEffects ? { skillsWithExternalEffects: claim.effects.skillsWithExternalEffects } : {}),
       ...ending,
     },
     reply: claim.reply,
@@ -248,6 +249,7 @@ const settleRoutineTurn = async (claimed: ClaimedRoutineTurn, response: Renderab
     ...ending,
     routineExecution: claimed.routineExecution,
     awaitingDecision: result.awaitingDecision,
+    skillsWithExternalEffects: result.skillsWithExternalEffects,
     trace: createTrace(routineTraceStages),
   });
 };

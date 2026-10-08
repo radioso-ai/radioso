@@ -30,6 +30,7 @@ import {
   RETRIEVAL_ANSWER_ADAPTER,
   readRetrievalResult,
   buildSnippet,
+  skillActsOutsideConversation,
   type AgenticRetrievalToolFactory,
   type RegisteredChunk,
 } from "../../../modules/retrieval/public.js";
@@ -218,19 +219,14 @@ const executionForKind = (kind: AgentSkillKind): SkillExecution | undefined => {
   }
 };
 
-const safeTestMayInvoke = (
-  agentSkill: AgentSkillSpine,
-  execution: SkillExecution,
-): boolean =>
-  agentSkill.kind === "retrieve" &&
-  execution.kind === "internal" &&
-  execution.adapter === RETRIEVAL_ANSWER_ADAPTER;
-
+/** A safe-test turn runs only the skills that stay inside the conversation. */
 const shouldSuppressForSafeTest = (
   skillEffects: SkillEffectPolicy | undefined,
   agentSkill: AgentSkillSpine,
   execution: SkillExecution,
-): boolean => skillEffects === "suppressed" && !safeTestMayInvoke(agentSkill, execution);
+): boolean =>
+  skillEffects === "suppressed"
+  && skillActsOutsideConversation({ retrieval: agentSkill.kind === "retrieve", execution });
 
 /**
  * A declared, generic rule (not a notify special-case): a skill that declares

@@ -362,9 +362,29 @@ describe("DefaultConversationEngine.claimRoutine", () => {
         awaitingDecision: settled.awaitingDecision,
         handoff: settled.handoff,
         operatorNotice: settled.operatorNotice,
+        skillsWithExternalEffects: settled.skillsWithExternalEffects,
       }));
     });
   }
+
+  it("reports a skill a skill step ran while claiming, though the turn lands on a chat step", async () => {
+    const scenario = parityScenarios.find((candidate) => candidate.name === "grounded step")!;
+
+    const { callsAtClaim, claim, result } = await claimRenderSettle(scenario);
+
+    expect(callsAtClaim).toContain("dispatch:retrieval.context");
+    expect(claim?.effects).toMatchObject({ skillsWithExternalEffects: ["retrieval.context"] });
+    expect(claim?.effects.terminalKind).toBeUndefined();
+    expect((result as ProcessTurnResult).skillsWithExternalEffects).toEqual(["retrieval.context"]);
+  });
+
+  it("reports no skill for a turn whose walk dispatched none", async () => {
+    for (const scenario of parityScenarios.filter((candidate) => candidate.name !== "grounded step")) {
+      const { claim, result } = await claimRenderSettle(scenario);
+      expect(claim?.effects.skillsWithExternalEffects).toBeUndefined();
+      expect((result as ProcessTurnResult | null)?.skillsWithExternalEffects).toBeUndefined();
+    }
+  });
 
   it("never touches the step renderer when the routine yields the turn", async () => {
     const { calls, claim } = await claimRenderSettle(yieldScenario, ({ renderer }) => {
@@ -476,6 +496,33 @@ describe("DefaultRoutineRunner.claim", () => {
     const claim = await prepared.runner.claim(resumeInput(scenario));
     expect(prepared.calls).toEqual(["select:ask_message", "prepare:done"]);
     expect(claim.kind === "claimed" && claim.reply.stream).toBeUndefined();
+  });
+
+  it("reports a skill whose dispatcher does not say it stayed inside the conversation", async () => {
+    const scenario = parityScenarios.find((candidate) => candidate.name === "grounded step")!;
+    const prepared = harness(scenario);
+
+    const claim = await prepared.runner.claim(resumeInput(scenario));
+
+    expect(claim.kind === "claimed" && claim.effects.skillsWithExternalEffects).toEqual(["retrieval.context"]);
+    expect(claim.kind === "claimed" && claim.effects.nextState).toMatchObject({ status: "active", path: expect.arrayContaining(["answer_from_docs"]) });
+  });
+
+  it.each([
+    { actsOutsideConversation: true, reported: ["retrieval.context"] },
+    { actsOutsideConversation: false, reported: undefined },
+  ])("passes the dispatcher's word on whether a skill acted outside the conversation: $actsOutsideConversation", async ({ actsOutsideConversation, reported }) => {
+    const scenario = parityScenarios.find((candidate) => candidate.name === "grounded step")!;
+    const prepared = harness(scenario);
+    const runner = new DefaultRoutineRunner([routine], {
+      select: async () => ({ nextStepId: "lookup" }),
+    }, prepared.renderer, {
+      dispatch: async () => ({ status: "success", outputs: { contexts: [] }, actsOutsideConversation }),
+    });
+
+    const claim = await runner.claim(resumeInput(scenario));
+
+    expect(claim.kind === "claimed" && claim.effects.skillsWithExternalEffects).toEqual(reported);
   });
 
   it("yields without preparing a reply", async () => {

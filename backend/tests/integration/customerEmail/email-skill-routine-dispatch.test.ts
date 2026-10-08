@@ -65,6 +65,8 @@ describe("routine customer email skill dispatch", () => {
         providerMessageId: "provider-1",
       },
       answer: undefined,
+      // The email was sent before the turn is saved.
+      actsOutsideConversation: true,
     });
   });
 });

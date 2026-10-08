@@ -12,6 +12,8 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import type { SkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { AnswerCoverageHeadRecorder } from "../../src/modules/chat/services/answerCoverageHeadRecorder.js";
+import type { ChatTurnAssemblyFactory } from "../../src/modules/chat/services/chatTurnAssembly.js";
+import { InMemoryConversationTurnRegistry } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import { COMPLETION_NOTIFY_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import { StaticActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
 import { StrictCapabilityPolicy, capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
@@ -275,6 +277,85 @@ const drain = async (
   return events;
 };
 
+/**
+ * Replaces `chatTurnAssembly` entirely with a two-method fake (`attemptRoutineTurn`
+ * always declines, `streamPreparedByEngine` yields one held chunk, then an optional
+ * controllable pause, then the final event) so a test can land a gate at the exact
+ * point a committed chunk has been held but nothing past it has run yet — a point
+ * the real engine's single-hop committed replay never exposes an awaitable seam at.
+ * `attemptRoutineTurn`/`streamPreparedByEngine` are the only two `chatTurnAssembly`
+ * methods this chat-service code path calls when no routine is already suspended and
+ * `useSenseCompatiblePath` is false (no `turnInterpreter`/`retrievalSenseDetector`
+ * configured), so this narrow double is a faithful stand-in for this flow.
+ */
+const buildFakeAssemblyTakeoverService = (input: {
+  ending: {
+    answer: string;
+    actions?: Array<{ type: string; payload: Record<string, unknown> }>;
+    commitCoverageReactions?: () => Promise<void>;
+  };
+  afterChunkHeld?: () => void;
+  pauseGate?: Promise<void>;
+  conversationTurnRegistry?: ChatServiceOptions["conversationTurnRegistry"];
+  actionOutbox?: NonNullable<ChatServiceOptions["actionOutbox"]>;
+}) => {
+  const conversationRepository = new InMemoryConversationRepository();
+  const messageRepository = new InMemoryMessageRepository();
+  const auditService = createAuditService();
+  const fakeChatTurnAssembly = {
+    async attemptRoutineTurn() {
+      return null;
+    },
+    async *streamPreparedByEngine(session: unknown) {
+      yield { type: "chunk" as const, text: input.ending.answer, deliveryMode: "committed" as const, route: "other" as const };
+      // Only reached once the consumer (chat-service's `for await`) asks for the next
+      // value — which happens after it has already pushed the chunk above into its
+      // held buffer. Firing the marker here, not before the `yield`, is what makes it
+      // trustworthy as a "the chunk is held" signal.
+      input.afterChunkHeld?.();
+      if (input.pauseGate) {
+        await input.pauseGate;
+      }
+      yield {
+        type: "final" as const,
+        finalPresentation: {
+          answer: input.ending.answer,
+          skillName: "routine",
+          skillOutcome: "completed",
+          skillStatus: "completed",
+        },
+        suggestions: { mode: "presentation" as const },
+        session,
+        actions: input.ending.actions,
+        commitCoverageReactions: input.ending.commitCoverageReactions,
+      };
+    },
+  };
+  const service = new ChatService({
+    conversationRepository,
+    messageRepository,
+    retrievalTurn: new RetrievalTurnController(asChatActivityPipeline(zeroContextPipeline()) as never),
+    chatGateway: neverCalledChatGateway,
+    auditService,
+    turnRuntime: buildChatTurnRuntime({
+      chatGateway: neverCalledChatGateway,
+      fallbackReplyComposer: neverCalledFallbackReplyComposer,
+      skillOutcomeCapabilities: groundedSkillCapabilities,
+    }),
+    turnRouter: {
+      async classify() {
+        return { route: "retrieval" as const, framing: { isIdentityQuestion: false } };
+      },
+    },
+    conversationEngine: createConversationEngine(),
+    agentRevisionRuntimeResolver: publishedRevisionResolverFixture(),
+    turnAssemblyFactory: { create: () => fakeChatTurnAssembly } as unknown as ChatTurnAssemblyFactory,
+    conversationTurnRegistry: input.conversationTurnRegistry,
+    actionOutbox: input.actionOutbox,
+  });
+  return { service, conversationRepository, messageRepository };
+};
+
 describe("chat service: takeover reply released only after its effect commits", () => {
   it("holds a coverage takeover's confirmation until its action is durably enqueued", async () => {
     const chunkObserved = vi.fn();
@@ -411,5 +492,101 @@ describe("chat service: takeover reply released only after its effect commits", 
     expect(chunkObserved).toHaveBeenCalledTimes(2);
     expect(createMessage).toHaveBeenCalledTimes(2);
     expect(chunkObserved.mock.invocationCallOrder[0]).toBeLessThan(createMessage.mock.invocationCallOrder[1]);
+  });
+
+  it("keeps a held takeover turn supersedable until its text is released", async () => {
+    const registry = new InMemoryConversationTurnRegistry();
+    let markChunkHeld!: () => void;
+    const chunkHeld = new Promise<void>((resolve) => {
+      markChunkHeld = resolve;
+    });
+    let releasePause!: () => void;
+    const pauseGate = new Promise<void>((resolve) => {
+      releasePause = resolve;
+    });
+    const enqueue = vi.fn(async () => ({ id: "action-1", duplicate: false }));
+    const { service, conversationRepository, messageRepository } = buildFakeAssemblyTakeoverService({
+      ending: {
+        answer: "Thanks, I've sent this to our team.",
+        actions: [{ type: COMPLETION_NOTIFY_ACTION_TYPE, payload: {} }],
+      },
+      afterChunkHeld: markChunkHeld,
+      pauseGate,
+      conversationTurnRegistry: registry,
+      actionOutbox: { enqueue },
+    });
+    const createMessage = vi.spyOn(messageRepository, "create");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+
+    const draining = drain(
+      service.streamAnswer({
+        workspaceId: "workspace-1",
+        conversationId: conversation.id,
+        query: "missing topic",
+        stream: true,
+      }),
+      () => {},
+    );
+
+    // The chunk is held (chat-service's own buffer, never yielded out of the
+    // stream) by the time this resolves; nothing past it has run yet.
+    await chunkHeld;
+    // A new visitor message for the same conversation, arriving while the
+    // confirmation is still held and unreleased, must still be able to
+    // supersede this turn.
+    const supersedingLease = registry.start(conversation.id);
+    releasePause();
+
+    const events = await draining;
+    expect(events).toContainEqual(expect.objectContaining({ type: "cancelled", reason: "superseded" }));
+    expect(events.filter((event) => event.type === "chunk")).toHaveLength(0);
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(createMessage).not.toHaveBeenCalledWith(expect.objectContaining({ role: "assistant" }));
+    supersedingLease.complete();
+  });
+
+  it("releases a held, effectful takeover's confirmation before coverage-reaction bookkeeping completes", async () => {
+    let releaseReactionGate!: () => void;
+    const reactionGate = new Promise<void>((resolve) => {
+      releaseReactionGate = resolve;
+    });
+    let reactionCommitted = false;
+    const enqueue = vi.fn(async () => ({ id: "action-1", duplicate: false }));
+    const { service } = buildFakeAssemblyTakeoverService({
+      ending: {
+        answer: "Thanks, I've sent this to our team.",
+        actions: [{ type: COMPLETION_NOTIFY_ACTION_TYPE, payload: {} }],
+        commitCoverageReactions: async () => {
+          await reactionGate;
+          reactionCommitted = true;
+        },
+      },
+      actionOutbox: { enqueue },
+    });
+
+    const iterator = service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "missing topic",
+      stream: true,
+    })[Symbol.asyncIterator]();
+    let next = await iterator.next();
+    while (!next.done && next.value.type !== "chunk") {
+      next = await iterator.next();
+    }
+    expect(next.done).toBe(false);
+    // The confirmation already streamed even though the best-effort coverage-reaction
+    // bookkeeping (gated here) has not resolved yet.
+    expect(reactionCommitted).toBe(false);
+    expect(enqueue).toHaveBeenCalled();
+
+    releaseReactionGate();
+    const rest: ChatStreamEvent[] = [];
+    let step = await iterator.next();
+    while (!step.done) {
+      rest.push(step.value);
+      step = await iterator.next();
+    }
+    expect(rest.some((event) => event.type === "done")).toBe(true);
+    expect(reactionCommitted).toBe(true);
   });
 });

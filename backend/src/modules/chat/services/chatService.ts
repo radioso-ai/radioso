@@ -1619,12 +1619,23 @@ export class ChatService {
         route: "direct" | "retrieval" | "other";
         deliveryMode: "committed" | "bounded_decline";
       }> = [];
-      function* releaseHeldChunks(): Generator<Extract<ChatStreamEvent, { type: "chunk" }>> {
-        for (const held of heldChunks) {
-          observeFirstAnswerChunk(held.route, held.deliveryMode);
-          yield { type: "chunk", text: held.text };
+      // Arrow function (not a nested `function*`) so `this` still resolves to the
+      // service: a held chunk must not mark emission merely by arriving (that would
+      // close the supersession window before the visitor saw anything); emission
+      // begins only once this actually releases text.
+      const releaseHeldChunks = (): Array<Extract<ChatStreamEvent, { type: "chunk" }>> => {
+        if (heldChunks.length === 0) {
+          return [];
         }
-      }
+        if (!emissionStarted) {
+          this.beginTurnEmission(coordination);
+          emissionStarted = true;
+        }
+        return heldChunks.map((held) => {
+          observeFirstAnswerChunk(held.route, held.deliveryMode);
+          return { type: "chunk" as const, text: held.text };
+        });
+      };
       if (useSenseCompatiblePath) {
         this.checkTurnCancellation(coordination, "rendering");
       }
@@ -1658,11 +1669,11 @@ export class ChatService {
           continue;
         }
         if (event.type === "chunk") {
-          if (!emissionStarted) {
-            this.beginTurnEmission(coordination);
-            emissionStarted = true;
-          }
           if (event.deliveryMode === "live") {
+            if (!emissionStarted) {
+              this.beginTurnEmission(coordination);
+              emissionStarted = true;
+            }
             observeFirstAnswerChunk(event.route, event.deliveryMode);
             yield {
               type: "chunk",
@@ -1771,6 +1782,20 @@ export class ChatService {
         commitClarificationState: coverageRoutineEffects.commitClarificationState
           ?? (clarification.store ? () => clarification.store!.commit() : undefined),
       });
+      assistantMessageId = completedTurn.assistantMessageId;
+      await usageReservation.commit();
+      usageReservationCommitted = true;
+
+      // A durable-effect turn's held text is released as soon as the commit and usage
+      // reservation above have actually succeeded — before the best-effort coverage-
+      // reaction bookkeeping below, which is diagnostics, not something the visitor's
+      // confirmation should wait behind. If the commit had thrown, control never
+      // reaches here, and the visitor is never shown the held confirmation for an
+      // action that was denied or failed to enqueue.
+      if (hasDurableEffect) {
+        yield* releaseHeldChunks();
+      }
+
       try {
         await coverageRoutineEffects.commitCoverageReactions?.();
         if (preparedSession.answerCoverageInteractionTrace) {
@@ -1783,17 +1808,6 @@ export class ChatService {
           conversationId: preparedSession.conversation.id,
           reasonCode: "coverage_reaction_persistence_failed",
         }, "Answer coverage reaction recording failed after assistant turn commit");
-      }
-      assistantMessageId = completedTurn.assistantMessageId;
-      await usageReservation.commit();
-      usageReservationCommitted = true;
-
-      // A durable-effect turn's held text is released only once the commit above has
-      // actually succeeded: if it had thrown, control never reaches here, and the
-      // visitor is never shown the held confirmation for an action that was denied or
-      // failed to enqueue.
-      if (hasDurableEffect) {
-        yield* releaseHeldChunks();
       }
 
       coordination.lease?.complete();

@@ -65,7 +65,9 @@ export const resumeAwaitingDecision = async (input: {
   return {
     ...result,
     ...routineEndingEffects(state.routineId, result.terminal),
-    ...(result.nextState ? {} : { completedState: completedRoutineState(resumedState, result) }),
+    // Only an ending is kept as completed. A yielded resume also reports no next state, yet the
+    // routine never ended.
+    ...(result.terminal ? { completedState: completedRoutineState(resumedState, result) } : {}),
     resumed: true,
   };
 };

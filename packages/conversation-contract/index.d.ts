@@ -1630,8 +1630,9 @@ export interface ConversationRoutineDecisionResult extends ConversationRoutineRe
   handoff?: ProcessTurnResult["handoff"];
   operatorNotice?: RoutineOperatorNoticeEffect;
   /**
-   * Present when the resume ended the routine (`nextState` is `null`): the completed record to
-   * keep in its place, the same record a live turn that ends a routine keeps (#1457).
+   * Present when the resume ended the routine (`terminal` is set, `nextState` is `null`): the
+   * completed record to keep in its place, the same record a live turn that ends a routine keeps
+   * (#1457). A yielded resume reports no next state and no completed record.
    */
   completedState?: RoutineState;
 }

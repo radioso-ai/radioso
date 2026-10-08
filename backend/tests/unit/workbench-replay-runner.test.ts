@@ -6,14 +6,20 @@ import type {
   AnswerCoverageAssessment,
   AttemptRoutineInput,
   ConversationEngine,
+  ConversationRoutineRunEffects,
+  ConversationRoutineRunner,
+  PendingRenderableTurn,
   ProcessTurnInput,
   ProcessTurnResult,
+  RenderableTurn,
   Routine,
 } from "@radioso/conversation-contract";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
+import { BlankChatAnswerError } from "../../src/modules/chat/services/chatAnswerErrors.js";
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
 import { WorkbenchReplayRunner } from "../../src/modules/chat/services/workbenchReplayRunner.js";
+import { InMemoryRoutineStore } from "../../src/modules/chat/services/routines/inMemoryRoutineStore.js";
 import { AnswerCoverageHeadRecorder } from "../../src/modules/chat/services/answerCoverageHeadRecorder.js";
 import type { ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
 import type { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
@@ -45,10 +51,32 @@ import { createContactRoutineApplicationModule } from "../../src/app/composition
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { contactRoutineDefinition } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import { createRoutineTurnProvider } from "../../src/modules/routines/turnProvider.js";
+import {
+  RoutineSkillExecutorDispatcher,
+  StaticRoutineSkillResolver,
+} from "../../src/modules/routines/skillDispatcher.js";
+import {
+  SkillExecutorRegistry,
+  type SkillDefinition,
+  type SkillExecutorPort,
+  type SkillOutcome,
+} from "../../src/modules/skills/public.js";
+import { WEBHOOK_SKILLS_ADAPTER } from "../../src/modules/webhookSkills/public.js";
 
 const emptyTrace = () => {
   const now = new Date().toISOString();
   return { traceId: "t", startedAt: now, completedAt: now, totalDurationMs: 0, stages: [], links: [] };
+};
+
+/** Drains a turn stream into the text it yielded and the result it returned. */
+const collect = async <Result>(turn: AsyncGenerator<string, Result>): Promise<{ deltas: string[]; result: Result }> => {
+  const deltas: string[] = [];
+  let step = await turn.next();
+  while (!step.done) {
+    deltas.push(step.value);
+    step = await turn.next();
+  }
+  return { deltas, result: step.value };
 };
 
 // Stubs sufficient for the runner's routine wiring — the runner only forwards these to
@@ -1463,6 +1491,7 @@ describe("WorkbenchReplayRunner", () => {
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Please book Ananda for me",
       history: [],
+      includeSlotValues: true,
     });
 
     expect(result.handoff).toEqual({
@@ -1486,7 +1515,7 @@ describe("WorkbenchReplayRunner", () => {
     expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("A stay at Ananda");
   });
 
-  it("previews a completion notice with its authored subject and intro, and hands nothing off", async () => {
+  const completionNoticeReplay = () => {
     const fakeEngine = {
       async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
         await input.routineStore!.save({
@@ -1534,15 +1563,19 @@ describe("WorkbenchReplayRunner", () => {
       chatGateway: chatGatewayStub(),
       chatAnswerPresenter: presenterStub(),
     });
-
-    const result = await runner.run({
+    return (options: { includeSlotValues?: boolean } = {}) => runner.run({
       workspaceId: "ws-1",
       executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Please book Ananda for me",
       history: [],
+      ...options,
     });
+  };
+
+  it("previews a completion notice with its authored subject and intro in Test Chat, and hands nothing off", async () => {
+    const result = await completionNoticeReplay()({ includeSlotValues: true });
 
     expect(result.handoff).toBeUndefined();
     expect(result.actions ?? []).not.toEqual(expect.arrayContaining([
@@ -1557,6 +1590,16 @@ describe("WorkbenchReplayRunner", () => {
         "  Name: Ada Lovelace",
       ]),
     });
+  });
+
+  // Eval replay never opts into slot values: it persists the trace to append-only eval evidence
+  // that a source conversation's erasure cannot reach.
+  it("keeps a routine's collected values out of an eval replay's trace", async () => {
+    const result = await completionNoticeReplay()();
+
+    expect(result.turnTrace).toBeDefined();
+    expect(result.turnTrace?.handoffPreview).toBeUndefined();
+    expect(JSON.stringify(result.turnTrace)).not.toContain("Ada Lovelace");
   });
 
   it("wires the coverage routine port into a replayed turn's reported coverage verdict", async () => {
@@ -2019,5 +2062,963 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
       variables: { email: "guest@example.com" },
       status: "active",
     });
+  });
+
+  // Golden record of a whole contact run, recorded before routine turns were split into
+  // claiming and rendering: which model calls each turn makes, in what order, under which
+  // usage key, and what the turn replies, does, and traces. Per-call usage keys follow call
+  // order, so any reordering shows up here.
+  it("keeps every routine turn's model calls, usage keys, replies, effects and trace (golden)", async () => {
+    const gatewayCalls: string[] = [];
+    let blankAsks = 0;
+    const promptKind = (systemPrompt: string): string => {
+      if (systemPrompt.includes("Rank whether the latest user message wants to start any registered routine")) return "activation";
+      if (systemPrompt.includes("You are guiding a user through a structured, multi-step routine")) return "selector";
+      if (systemPrompt.includes("email address where they can be reached")) return "reply:ask_email";
+      if (systemPrompt.includes("message they would like to send")) return "reply:ask_message";
+      if (systemPrompt.includes("Confirm their request was sent")) return "reply:done";
+      return "other";
+    };
+    const chatGateway = {
+      answer: vi.fn(async (input: ChatGatewayInput) => {
+        const kind = promptKind(input.systemPrompt ?? "");
+        gatewayCalls.push(`${kind} ${input.usageContext.operation} ${input.usageContext.attemptKey}`);
+        switch (kind) {
+          case "activation":
+            return JSON.stringify({ matches: [{ routineId: contactRoutineDefinition.id, confidence: 0.95, variables: {} }] });
+          case "selector":
+            if (input.query.includes("@")) {
+              return JSON.stringify({ claimsAuthority: false, condition: 2, offTopic: false, variables: { email: input.query } });
+            }
+            if (input.query.startsWith("Tell them")) {
+              return JSON.stringify({ claimsAuthority: false, condition: 2, offTopic: false, variables: { message: input.query } });
+            }
+            return JSON.stringify({ claimsAuthority: false, condition: null, offTopic: false, variables: {} });
+          case "reply:ask_email":
+            // The re-ask's first completion comes back blank once; the gateway retries it.
+            if (gatewayCalls.length > 3 && blankAsks === 0) {
+              blankAsks += 1;
+              throw new BlankChatAnswerError();
+            }
+            return "Which email can someone reach you at?";
+          case "reply:ask_message":
+            return "What would you like to tell them?";
+          case "reply:done":
+            return "Sent. Anything else?";
+          default:
+            return "unexpected model call";
+        }
+      }),
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: realRoutineProvider(),
+      chatGateway,
+      chatAnswerPresenter: presenterStub(),
+    });
+    const base = {
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      conversationId: "private-side-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      candidateRevision,
+      history: [],
+    };
+    const routineStage = (result: Awaited<ReturnType<WorkbenchReplayRunner["run"]>>) => {
+      const stage = result.turnTrace?.spine.stages.find((entry) => entry.kind === "routine_activate" || entry.kind === "routine_resume");
+      return stage ? { kind: stage.kind, status: stage.status, outputs: stage.outputs, subTrace: stage.subTrace } : null;
+    };
+    const turns = [];
+    let routineStartState: NonNullable<Parameters<WorkbenchReplayRunner["run"]>[0]["routineStartState"]> | undefined;
+    for (const query of ["How do I contact a human?", "hmm", "guest@example.com", "Tell them I need a callback"]) {
+      const callsBefore = gatewayCalls.length;
+      const result = await runner.run({ ...base, query, ...(routineStartState ? { routineStartState } : {}) });
+      routineStartState = result.continuation?.routineState ?? undefined;
+      turns.push({
+        query,
+        gatewayCalls: gatewayCalls.slice(callsBefore),
+        answer: result.answer,
+        actions: result.actions,
+        handoff: result.handoff,
+        routineState: result.continuation?.routineState
+          ? { ...result.continuation.routineState, executionId: "<execution>" }
+          : result.continuation?.routineState,
+        routineStage: routineStage(result),
+      });
+    }
+
+    expect(turns).toMatchInlineSnapshot(`
+      [
+        {
+          "actions": undefined,
+          "answer": "Which email can someone reach you at?",
+          "gatewayCalls": [
+            "activation routine_activation routine_turn:routine_activation",
+            "selector answer routine_turn:2",
+            "reply:ask_email answer routine_turn:3",
+          ],
+          "handoff": undefined,
+          "query": "How do I contact a human?",
+          "routineStage": {
+            "kind": "routine_activate",
+            "outputs": {
+              "answerLength": 37,
+              "completed": false,
+              "handoff": false,
+              "notifiesOperators": false,
+              "routineId": "builtin_contact_request_v1",
+              "terminalKind": undefined,
+            },
+            "status": "applied",
+            "subTrace": {
+              "namespace": "routine",
+              "payload": {
+                "capturedSlotKeys": [],
+                "filledSlotKeys": [],
+                "landedStepId": "ask_email",
+                "routineId": "builtin_contact_request_v1",
+                "startStepId": "ask_email",
+                "steps": [
+                  {
+                    "event": "reasked",
+                    "kind": "chat",
+                    "selection": {
+                      "outcome": "stay",
+                      "returnedSlotKeys": [],
+                    },
+                    "stepId": "ask_email",
+                    "viaSelector": true,
+                  },
+                ],
+              },
+              "version": 1,
+            },
+          },
+          "routineState": {
+            "attempts": {
+              "ask_email": 1,
+            },
+            "executionId": "<execution>",
+            "path": [],
+            "routineId": "builtin_contact_request_v1",
+            "status": "active",
+            "variables": {},
+          },
+        },
+        {
+          "actions": undefined,
+          "answer": "Which email can someone reach you at?",
+          "gatewayCalls": [
+            "selector answer routine_turn",
+            "reply:ask_email answer routine_turn:2",
+            "reply:ask_email answer routine_turn:2:blank_retry",
+          ],
+          "handoff": undefined,
+          "query": "hmm",
+          "routineStage": {
+            "kind": "routine_resume",
+            "outputs": {
+              "answerLength": 37,
+              "completed": false,
+              "handoff": false,
+              "notifiesOperators": false,
+              "routineId": "builtin_contact_request_v1",
+              "terminalKind": undefined,
+            },
+            "status": "applied",
+            "subTrace": {
+              "namespace": "routine",
+              "payload": {
+                "capturedSlotKeys": [],
+                "filledSlotKeys": [],
+                "landedStepId": "ask_email",
+                "routineId": "builtin_contact_request_v1",
+                "startStepId": "ask_email",
+                "steps": [
+                  {
+                    "event": "reasked",
+                    "kind": "chat",
+                    "selection": {
+                      "outcome": "stay",
+                      "returnedSlotKeys": [],
+                    },
+                    "stepId": "ask_email",
+                    "viaSelector": true,
+                  },
+                ],
+              },
+              "version": 1,
+            },
+          },
+          "routineState": {
+            "attempts": {
+              "ask_email": 2,
+            },
+            "executionId": "<execution>",
+            "path": [],
+            "reaskCount": 1,
+            "routineId": "builtin_contact_request_v1",
+            "status": "active",
+            "variables": {},
+          },
+        },
+        {
+          "actions": undefined,
+          "answer": "What would you like to tell them?",
+          "gatewayCalls": [
+            "selector answer routine_turn",
+            "reply:ask_message answer routine_turn:2",
+          ],
+          "handoff": undefined,
+          "query": "guest@example.com",
+          "routineStage": {
+            "kind": "routine_resume",
+            "outputs": {
+              "answerLength": 33,
+              "completed": false,
+              "handoff": false,
+              "notifiesOperators": false,
+              "routineId": "builtin_contact_request_v1",
+              "terminalKind": undefined,
+            },
+            "status": "applied",
+            "subTrace": {
+              "namespace": "routine",
+              "payload": {
+                "capturedSlotKeys": [
+                  "email",
+                ],
+                "filledSlotKeys": [],
+                "landedStepId": "ask_message",
+                "routineId": "builtin_contact_request_v1",
+                "startStepId": "ask_email",
+                "steps": [
+                  {
+                    "capturedSlotKeys": [
+                      "email",
+                    ],
+                    "event": "advanced",
+                    "kind": "chat",
+                    "selection": {
+                      "outcome": "transition",
+                      "returnedSlotKeys": [
+                        "email",
+                      ],
+                    },
+                    "stepId": "ask_email",
+                    "viaSelector": true,
+                  },
+                  {
+                    "event": "rendered",
+                    "kind": "chat",
+                    "stepId": "ask_message",
+                  },
+                ],
+              },
+              "version": 1,
+            },
+          },
+          "routineState": {
+            "attempts": {
+              "ask_email": 3,
+              "ask_message": 1,
+            },
+            "executionId": "<execution>",
+            "path": [
+              "ask_message",
+            ],
+            "routineId": "builtin_contact_request_v1",
+            "status": "active",
+            "variables": {
+              "email": "guest@example.com",
+            },
+          },
+        },
+        {
+          "actions": [
+            {
+              "payload": {
+                "email": "guest@example.com",
+                "message": "Tell them I need a callback",
+              },
+              "type": "contact.send",
+            },
+          ],
+          "answer": "Sent. Anything else?",
+          "gatewayCalls": [
+            "selector answer routine_turn",
+            "reply:done answer routine_turn:2",
+          ],
+          "handoff": undefined,
+          "query": "Tell them I need a callback",
+          "routineStage": {
+            "kind": "routine_resume",
+            "outputs": {
+              "answerLength": 20,
+              "completed": true,
+              "handoff": false,
+              "notifiesOperators": false,
+              "routineId": "builtin_contact_request_v1",
+              "terminalKind": "complete",
+            },
+            "status": "applied",
+            "subTrace": {
+              "namespace": "routine",
+              "payload": {
+                "capturedSlotKeys": [
+                  "message",
+                ],
+                "filledSlotKeys": [],
+                "landedStepId": "done",
+                "routineId": "builtin_contact_request_v1",
+                "startStepId": "ask_message",
+                "steps": [
+                  {
+                    "capturedSlotKeys": [
+                      "message",
+                    ],
+                    "event": "advanced",
+                    "kind": "chat",
+                    "selection": {
+                      "outcome": "transition",
+                      "returnedSlotKeys": [
+                        "message",
+                      ],
+                    },
+                    "stepId": "ask_message",
+                    "viaSelector": true,
+                  },
+                  {
+                    "event": "action_emitted",
+                    "kind": "action",
+                    "stepId": "send",
+                  },
+                  {
+                    "event": "rendered",
+                    "kind": "terminal",
+                    "stepId": "done",
+                  },
+                ],
+                "terminalKind": "complete",
+              },
+              "version": 1,
+            },
+          },
+          "routineState": {
+            "attempts": {
+              "ask_email": 3,
+              "ask_message": 1,
+            },
+            "executionId": "<execution>",
+            "metadata": {
+              "terminalKind": "complete",
+              "terminalStepId": "done",
+            },
+            "path": [
+              "ask_message",
+              "done",
+            ],
+            "routineId": "builtin_contact_request_v1",
+            "status": "completed",
+            "variables": {
+              "email": "guest@example.com",
+            },
+          },
+        },
+      ]
+    `);
+  });
+});
+
+describe("WorkbenchReplayRunner streaming entry", () => {
+  /** `answerSkill`, plus a live renderer stream that holds the rest of its answer until `gate` opens. */
+  const streamingAnswerSkill = (gate: Promise<void>): TurnSkill => {
+    const skill = answerSkill();
+    return {
+      ...skill,
+      renderer: {
+        ...skill.renderer,
+        async *stream(outcome, ctx) {
+          const finalPresentation = await skill.renderer.render(outcome, ctx);
+          yield finalPresentation.answer.slice(0, 9);
+          await gate;
+          yield finalPresentation.answer.slice(9);
+          return {
+            finalPresentation,
+            suggestions: { mode: "presentation" },
+            hasStreamedAnswer: true,
+            streamedAnswer: finalPresentation.answer,
+            deliveryMode: "live",
+          };
+        },
+      },
+    };
+  };
+
+  const replayInput = () => ({
+    workspaceId: "ws-1",
+    executionMode: "safe_test" as const,
+    sourceAgentId: "agent-1",
+    conversationId: "private-side-1",
+    baselineAgentConfig: projectInternalAgentConfig(agent()),
+    query: "How long do refunds take?",
+    history: [],
+    directiveStateStartState: { turnSeq: 2, firings: {} },
+  });
+
+  it("streams a rendered answer's text before the turn settles, then settles to the result run() returns", async () => {
+    let openGate!: () => void;
+    const gate = new Promise<void>((resolve) => { openGate = resolve; });
+    const observeHistogram = vi.fn();
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [streamingAnswerSkill(gate)],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+      streamMetrics: { observeHistogram },
+    });
+
+    const ran = await runner.run(replayInput());
+    expect(observeHistogram).not.toHaveBeenCalled();
+
+    const turn = runner.stream(replayInput());
+    // The first chunk arrives while the renderer still holds the rest of the answer.
+    expect(await turn.next()).toEqual({ done: false, value: "Answered " });
+    expect(observeHistogram).toHaveBeenCalledOnce();
+    expect(observeHistogram).toHaveBeenCalledWith(
+      "chat_replay_stream_first_answer_chunk_latency_ms",
+      expect.objectContaining({ labels: { route: "retrieval", delivery_mode: "live" }, value: expect.any(Number) }),
+    );
+    openGate();
+    const { deltas, result: streamed } = await collect(turn);
+
+    expect(deltas).toEqual(["with Answer from the operator baseline."]);
+    expect(streamed.answer).toBe(ran.answer);
+    expect(streamed.citations).toEqual(ran.citations);
+    expect(streamed.groundingSummary).toEqual(ran.groundingSummary);
+    expect(streamed.actions).toEqual(ran.actions);
+    expect(streamed.continuation).toEqual(ran.continuation);
+    expect(streamed.continuation?.directiveState).toMatchObject({ turnSeq: 3 });
+    expect(streamed.resolvedConfig).toEqual(ran.resolvedConfig);
+    expect(streamed.turnTrace?.spine.stages.map((stage) => stage.kind))
+      .toEqual(ran.turnTrace?.spine.stages.map((stage) => stage.kind));
+    expect(observeHistogram).toHaveBeenCalledOnce();
+  });
+
+  it("delivers a routine-claimed turn's reply whole once the routine settles, with the result run() returns", async () => {
+    const processTurnStream = vi.fn(() => {
+      throw new Error("grounding must not run when a routine claims the turn");
+    });
+    const fakeEngine = {
+      async attemptRoutine(): Promise<ProcessTurnResult | null> {
+        return {
+          response: { answer: "It seems you'd like follow-up — what's your email?" },
+          trace: emptyTrace(),
+          decision: { reason: "routine_activated:ask_email_on_interest" },
+          actions: [],
+        } as unknown as ProcessTurnResult;
+      },
+      processTurnStream,
+    } as unknown as ConversationEngine;
+    const observeHistogram = vi.fn();
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: routineProviderStub(),
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+      streamMetrics: { observeHistogram },
+    });
+
+    const ran = await runner.run(replayInput());
+    const { deltas, result } = await collect(runner.stream(replayInput()));
+
+    expect(deltas).toEqual(["It seems you'd like follow-up — what's your email?"]);
+    expect(result.answer).toBe(ran.answer);
+    expect(result.continuation).toEqual(ran.continuation);
+    expect(processTurnStream).not.toHaveBeenCalled();
+    expect(observeHistogram).toHaveBeenCalledWith(
+      "chat_replay_stream_first_answer_chunk_latency_ms",
+      expect.objectContaining({ labels: { route: "routine", delivery_mode: "committed" } }),
+    );
+  });
+});
+
+describe("WorkbenchReplayRunner streams routine replies by the live-chat delivery rule", () => {
+  /**
+   * A `ConversationRoutineRunner.claim` double, as `chat-service-routine-reply-streaming.test.ts`
+   * uses it: each entry claims the turn through the real engine with the given effects and reply,
+   * consumed in order across successive turns.
+   */
+  const claimingRoutine = (claims: Array<{ effects?: Partial<ConversationRoutineRunEffects>; reply: PendingRenderableTurn }>) => {
+    const claim = vi.fn<NonNullable<ConversationRoutineRunner["claim"]>>();
+    for (const entry of claims) {
+      claim.mockImplementationOnce(async ({ state }) => ({
+        kind: "claimed" as const,
+        effects: {
+          nextState: { ...state, path: ["ask_email"], status: "active" as const },
+          trace: {
+            routineId: state.routineId,
+            startStepId: "ask_email",
+            landedStepId: "ask_email",
+            capturedSlotKeys: [],
+            filledSlotKeys: [],
+            steps: [],
+          },
+          ...entry.effects,
+        },
+        reply: entry.reply,
+      }));
+    }
+    const runner: ConversationRoutineRunner = {
+      resume: async () => {
+        throw new Error("the claim is the routine's whole walk");
+      },
+      claim,
+    };
+    const routineProvider: ChatRoutineProvider = {
+      forTurn: async () => ({
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
+        runner,
+      }),
+    };
+    return { routineProvider, claim };
+  };
+
+  /** A reply that streams `deltas` (awaiting `hold` before the delta at `holdAt`) and renders their join whole. */
+  const streamingReply = (deltas: string[], options: { hold?: Promise<void>; holdAt?: number } = {}) => {
+    const turn: RenderableTurn = { answer: deltas.join("") };
+    return {
+      render: vi.fn(async () => turn),
+      stream: vi.fn(async function* (): AsyncGenerator<string, RenderableTurn> {
+        for (const [index, delta] of deltas.entries()) {
+          if (options.hold && index === (options.holdAt ?? 0)) {
+            await options.hold;
+          }
+          yield delta;
+        }
+        return turn;
+      }),
+    };
+  };
+
+  const replayInput = () => ({
+    workspaceId: "ws-1",
+    executionMode: "safe_test" as const,
+    sourceAgentId: "agent-1",
+    conversationId: "private-side-1",
+    baselineAgentConfig: projectInternalAgentConfig(agent()),
+    query: "How do I contact a human?",
+    history: [],
+  });
+
+  it("streams a slot ask's reply before the turn settles, then settles to the result run() returns", async () => {
+    const forRun = streamingReply(["Which email ", "can someone reach you at?"]);
+    let openGate!: () => void;
+    const gate = new Promise<void>((resolve) => { openGate = resolve; });
+    const forStream = streamingReply(["Which email ", "can someone reach you at?"], { hold: gate, holdAt: 1 });
+    const { routineProvider, claim } = claimingRoutine([
+      { effects: {}, reply: forRun },
+      { effects: {}, reply: forStream },
+    ]);
+    const observeHistogram = vi.fn();
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider,
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+      streamMetrics: { observeHistogram },
+    });
+
+    const ran = await runner.run(replayInput());
+    expect(observeHistogram).not.toHaveBeenCalled();
+
+    const turn = runner.stream(replayInput());
+    // The first chunk arrives while the second is still held back.
+    expect(await turn.next()).toEqual({ done: false, value: "Which email " });
+    expect(forStream.render).not.toHaveBeenCalled();
+    expect(observeHistogram).toHaveBeenCalledOnce();
+    expect(observeHistogram).toHaveBeenCalledWith(
+      "chat_replay_stream_first_answer_chunk_latency_ms",
+      expect.objectContaining({ labels: { route: "routine", delivery_mode: "live" } }),
+    );
+    openGate();
+    const { deltas, result: streamed } = await collect(turn);
+
+    expect(deltas).toEqual(["can someone reach you at?"]);
+    expect(forStream.render).not.toHaveBeenCalled();
+    expect(streamed.answer).toBe(ran.answer);
+    // Each call activates the routine afresh, so its executionId is its own random id;
+    // everything else about the settled turn matches what `run()` produced.
+    expect(streamed.continuation).toEqual({
+      ...ran.continuation,
+      routineState: { ...ran.continuation?.routineState, executionId: streamed.continuation?.routineState?.executionId },
+    });
+    expect(streamed.turnTrace?.spine.stages.map((stage) => stage.kind))
+      .toEqual(ran.turnTrace?.spine.stages.map((stage) => stage.kind));
+    expect(claim).toHaveBeenCalledTimes(2);
+    // Only the one live chunk ever observed a first-chunk latency.
+    expect(observeHistogram).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a mid-stream cancellation without settling anything, even when the provider ignores the abort and finishes", async () => {
+    let openGate!: () => void;
+    const gate = new Promise<void>((resolve) => { openGate = resolve; });
+    const reply = streamingReply(["Which email ", "can someone reach you at?"], { hold: gate, holdAt: 1 });
+    const { routineProvider } = claimingRoutine([{ effects: {}, reply }]);
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider,
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+    const saveSpy = vi.spyOn(InMemoryRoutineStore.prototype, "save");
+
+    try {
+      const controller = new AbortController();
+      const turn = runner.stream({ ...replayInput(), signal: controller.signal });
+
+      expect(await turn.next()).toEqual({ done: false, value: "Which email " });
+      // The disconnect ceiling cancels the turn while the model is still mid-reply...
+      controller.abort();
+      // ...but the provider ignores it and finishes producing its text anyway.
+      openGate();
+      expect(await turn.next()).toEqual({ done: false, value: "can someone reach you at?" });
+
+      // Only once the full reply exists does the turn check cancellation — too late to show
+      // more, but also too late to have saved anything yet.
+      await expect(turn.next()).rejects.toThrow();
+      expect(saveSpy).not.toHaveBeenCalled();
+    } finally {
+      saveSpy.mockRestore();
+    }
+  });
+
+  it("delivers a routine ending's reply whole only after the turn settles, even though the claim can stream", async () => {
+    const reply = streamingReply(["Thanks, ", "all done."]);
+    const { routineProvider } = claimingRoutine([
+      { effects: { terminal: { kind: "complete", stepId: "done" } }, reply },
+    ]);
+    const observeHistogram = vi.fn();
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider,
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+      streamMetrics: { observeHistogram },
+    });
+
+    const { deltas, result } = await collect(runner.stream(replayInput()));
+
+    // A durable ending (here, the routine's own completion) is rendered and settled before
+    // any text reaches the caller, as one whole chunk — never the claim's own stream.
+    expect(deltas).toEqual(["Thanks, all done."]);
+    expect(reply.stream).not.toHaveBeenCalled();
+    expect(reply.render).toHaveBeenCalledOnce();
+    expect(result.answer).toBe("Thanks, all done.");
+    expect(observeHistogram).toHaveBeenCalledWith(
+      "chat_replay_stream_first_answer_chunk_latency_ms",
+      expect.objectContaining({ labels: { route: "routine", delivery_mode: "committed" } }),
+    );
+    const routineStage = result.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_activate");
+    expect(routineStage?.outputs).toMatchObject({ replyDelivery: "whole" });
+  });
+
+  it("yields a whole routine ending's reply only once its routine-state commit resolves, and nothing at all if that commit fails", async () => {
+    const buildRunner = () => {
+      const reply = streamingReply(["Thanks, ", "all done."]);
+      const { routineProvider } = claimingRoutine([
+        { effects: { terminal: { kind: "complete", stepId: "done" } }, reply },
+      ]);
+      return new WorkbenchReplayRunner({
+        retrievalTurn: retrievalTurn([]),
+        auditService: createAuditService(),
+        turnSkills: [answerSkill()],
+        conversationEngine: new DefaultConversationEngine(),
+        turnRouter: stubTurnRouter("retrieval"),
+        routineProvider,
+        chatGateway: chatGatewayStub(),
+        chatAnswerPresenter: presenterStub(),
+      });
+    };
+
+    // Pending commit: no chunk reaches the caller while it is unresolved — raced against a
+    // short timer rather than awaited forever, so a bug that yields without ever calling the
+    // commit at all fails this assertion instead of hanging the test.
+    let resolveCommit!: () => void;
+    const commitGate = new Promise<void>((resolve) => { resolveCommit = resolve; });
+    const pendingSaveSpy = vi.spyOn(InMemoryRoutineStore.prototype, "save").mockImplementation(async () => {
+      await commitGate;
+    });
+    try {
+      const turn = buildRunner().stream(replayInput());
+      const nextPromise = turn.next();
+      const raceResult = await Promise.race([
+        nextPromise.then(() => "settled" as const, () => "settled" as const),
+        new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 50)),
+      ]);
+      expect(raceResult).toBe("timeout");
+      resolveCommit();
+      expect(await nextPromise).toEqual({ done: false, value: "Thanks, all done." });
+    } finally {
+      pendingSaveSpy.mockRestore();
+    }
+
+    // Failing commit: the caller sees no chunk at all, only the rejection.
+    const failingSaveSpy = vi.spyOn(InMemoryRoutineStore.prototype, "save")
+      .mockRejectedValue(new Error("routine_state_commit_failed"));
+    try {
+      const turn = buildRunner().stream(replayInput());
+      await expect(turn.next()).rejects.toThrow("routine_state_commit_failed");
+    } finally {
+      failingSaveSpy.mockRestore();
+    }
+  });
+
+  /** A routine whose first step runs `skillName`, then a chat step confirms it. */
+  const skillThenAnswerRoutine = (skillName: string): Routine => ({
+    id: "skill_then_answer",
+    rootStepId: "lookup",
+    steps: [
+      { id: "lookup", kind: "skill", skillName },
+      { id: "answer", kind: "chat", action: "Confirm the request was handled, then ask if anything else is needed." },
+    ],
+    transitions: [{ from: "lookup", to: "answer", condition: "always" }],
+  });
+
+  /** A routine provider over the production runner/renderer/dispatcher, forwarding this turn's
+   * `skillEffects`/`conversationDurability` to the dispatcher the same way the production
+   * routine provider (`createRoutineTurnProvider`) does, so safe-test suppression is real. */
+  const skillStepRoutineProvider = (skill: SkillDefinition, executor: SkillExecutorPort): ChatRoutineProvider => {
+    const registry = new SkillExecutorRegistry();
+    registry.register({ ...(skill.execution as { kind: "internal"; adapter: string }), executor });
+    const routine = skillThenAnswerRoutine(skill.name);
+    return {
+      forTurn: async ({ modelGateway, groundedAnswerRenderer, skillEffects, conversationDurability }) => ({
+        routines: [routine],
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: routine.id }) },
+        runner: new DefaultRoutineRunner(
+          [routine],
+          { select: async () => ({ nextStepId: "answer" }) },
+          new RoutineStepRenderer(modelGateway, { groundedAnswerRenderer }),
+          new RoutineSkillExecutorDispatcher(new StaticRoutineSkillResolver([skill]), registry, {
+            skillEffects,
+            conversationDurability,
+          }),
+        ),
+      }),
+    };
+  };
+
+  it.each([
+    { skillEffects: "allowed" as const, expectDelivery: "whole" as const },
+    { skillEffects: "suppressed" as const, expectDelivery: "stream" as const },
+  ])("delivers a webhook skill step's reply $expectDelivery when skill effects are $skillEffects", async ({ skillEffects, expectDelivery }) => {
+    const callWebhook = vi.fn(async () => ({
+      disposition: "settled" as const,
+      outcome: { status: "completed", outputs: { delivered: true } } as unknown as SkillOutcome,
+    }));
+    const webhookSkill = {
+      name: "crm_webhook",
+      execution: { kind: "internal", adapter: WEBHOOK_SKILLS_ADAPTER, enqueue: false },
+      requiredCapabilities: [],
+      owner: "platform",
+    } as unknown as SkillDefinition;
+    const chatGateway = {
+      answer: vi.fn(async () => "Done — handled. Anything else?"),
+      streamAnswer: vi.fn(async function* () {
+        yield "Done —";
+        yield " handled. Anything else?";
+      }),
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: skillStepRoutineProvider(webhookSkill, { dispatch: callWebhook }),
+      chatGateway,
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const { deltas, result } = await collect(runner.stream({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      skillEffects,
+      sourceAgentId: "agent-1",
+      conversationId: "private-side-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please pass this to the CRM",
+      history: [],
+    }));
+
+    expect(callWebhook).toHaveBeenCalledTimes(skillEffects === "allowed" ? 1 : 0);
+    expect(deltas).toEqual(
+      expectDelivery === "whole"
+        ? ["Done — handled. Anything else?"]
+        : ["Done —", " handled. Anything else?"],
+    );
+    expect(result.answer).toBe("Done — handled. Anything else?");
+    const routineStage = result.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_activate");
+    expect(routineStage?.outputs).toMatchObject({ replyDelivery: expectDelivery });
+  });
+});
+
+describe("WorkbenchReplayRunner coverage routine takeover", () => {
+  const drive = async (runner: WorkbenchReplayRunner, mode: "run" | "stream", input: Parameters<WorkbenchReplayRunner["run"]>[0]) => {
+    if (mode === "run") return runner.run(input);
+    const turn = runner.stream(input);
+    let step = await turn.next();
+    while (!step.done) step = await turn.next();
+    return step.value;
+  };
+
+  /**
+   * A grounded turn a coverage routine takes over (#1260 `yield_turn`): the engine starts the
+   * routine through the coverage-wrapped routine store and answers with its first step. On a
+   * later turn, `attemptRoutine` resumes whatever routine the replay's store holds.
+   */
+  const coverageTakeoverEngine = (takeover: Partial<ProcessTurnResult> = {}, routineStatus: "active" | "suspended" = "active"): ConversationEngine => {
+    const takeOver = async (input: ProcessTurnInput): Promise<ProcessTurnResult> => {
+      await input.routineStore!.save({ sessionId: input.sessionId, routineId: "follow_up", path: ["ask_email"], variables: {}, status: routineStatus });
+      return {
+        response: { answer: "What's the best email to reach you?" },
+        trace: emptyTrace(),
+        decision: { reason: "coverage_routine_activated:follow_up" },
+        actions: [],
+        routineExecution: { routineId: "follow_up" },
+        ...takeover,
+      } as unknown as ProcessTurnResult;
+    };
+    return {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        const active = await input.routineStore!.loadActive({ sessionId: input.sessionId });
+        return active
+          ? { response: { answer: `resumed:${active.routineId}:${active.path.at(-1)}` }, trace: emptyTrace(), decision: { reason: "resumed" }, actions: [] } as unknown as ProcessTurnResult
+          : null;
+      },
+      processTurn: takeOver,
+      async *processTurnStream(input: ProcessTurnInput) {
+        yield { type: "final", result: await takeOver(input) };
+      },
+    } as unknown as ConversationEngine;
+  };
+
+  const coverageRoutineProvider = (reporter?: ChatRoutineTurnReporter): ChatRoutineProvider => ({
+    async forTurn() {
+      return {
+        activator: { activate: async () => null },
+        runner: {} as never,
+        coverageActivator: { evaluateCandidates: () => [], activate: async () => null },
+        ...(reporter ? { reporter } : {}),
+      };
+    },
+  });
+
+  const replayRunner = (engine: ConversationEngine, reporter?: ChatRoutineTurnReporter) => new WorkbenchReplayRunner({
+    retrievalTurn: retrievalTurn([]),
+    auditService: createAuditService(),
+    turnSkills: [answerSkill()],
+    conversationEngine: engine,
+    turnRouter: stubTurnRouter("retrieval"),
+    routineProvider: coverageRoutineProvider(reporter),
+    chatGateway: chatGatewayStub(),
+    chatAnswerPresenter: presenterStub(),
+    coverageHeadRecorder: new AnswerCoverageHeadRecorder(),
+  });
+
+  const turnInput = (query: string) => ({
+    workspaceId: "ws-1",
+    executionMode: "safe_test" as const,
+    sourceAgentId: "agent-1",
+    conversationId: "private-side-1",
+    baselineAgentConfig: projectInternalAgentConfig(agent()),
+    query,
+    history: [],
+  });
+
+  it.each(["run", "stream"] as const)("exports the routine a coverage takeover started, so the next Test Chat turn continues it (%s)", async (mode) => {
+    const runner = replayRunner(coverageTakeoverEngine());
+
+    const first = await drive(runner, mode, turnInput("How long do refunds take?"));
+    const second = await drive(runner, mode, { ...turnInput("guest@example.com"), routineStartState: first.continuation?.routineState ?? null });
+
+    expect(first.answer).toBe("What's the best email to reach you?");
+    expect(first.continuation?.routineState).toMatchObject({ routineId: "follow_up", path: ["ask_email"], status: "active" });
+    expect(second.answer).toBe("resumed:follow_up:ask_email");
+  });
+
+  const handoffEnding = { routineId: "follow_up", stepId: "handoff", terminalKind: "handoff" as const, collected: { email: "guest@example.com" } };
+  const describedAs = (name: string) => {
+    const describeRoutineName = vi.fn(() => name);
+    const reporter: ChatRoutineTurnReporter = {
+      describe: () => null,
+      describeDeclined: () => null,
+      describeInvocation: () => null,
+      describeRoutineName,
+    };
+    return { reporter, describeRoutineName };
+  };
+
+  it.each(["run", "stream"] as const)("previews the hand-off a coverage routine ends on in Test Chat, without dispatching it (%s)", async (mode) => {
+    const { reporter, describeRoutineName } = describedAs("Follow up");
+    const runner = replayRunner(coverageTakeoverEngine({ handoff: handoffEnding, operatorNotice: handoffEnding }), reporter);
+
+    const result = await drive(runner, mode, { ...turnInput("How long do refunds take?"), includeSlotValues: true });
+
+    expect(result.handoff).toEqual(handoffEnding);
+    expect(result.actions ?? []).not.toEqual(expect.arrayContaining([expect.objectContaining({ type: "handoff.notify" })]));
+    expect(describeRoutineName).toHaveBeenCalledWith("follow_up");
+    expect(result.turnTrace?.handoffPreview).toMatchObject({ kind: "handoff", subject: "Follow up: needs a human" });
+    expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("guest@example.com");
+  });
+
+  it.each(["run", "stream"] as const)("keeps a coverage routine's collected values out of an eval replay's trace (%s)", async (mode) => {
+    const { reporter } = describedAs("Follow up");
+    const runner = replayRunner(coverageTakeoverEngine({ handoff: handoffEnding, operatorNotice: handoffEnding }), reporter);
+
+    const result = await drive(runner, mode, turnInput("How long do refunds take?"));
+
+    expect(result.turnTrace).toBeDefined();
+    expect(result.turnTrace?.handoffPreview).toBeUndefined();
+    expect(JSON.stringify(result.turnTrace)).not.toContain("guest@example.com");
+  });
+
+  it.each(["run", "stream"] as const)("suspends a coverage routine that waits for approval and carries it into the next turn (%s)", async (mode) => {
+    const runner = replayRunner(coverageTakeoverEngine({
+      awaitingDecision: { stepId: "approval", captureKey: "approval_decision", options: [{ id: "approve", label: "Approve" }] },
+    }, "suspended"));
+
+    const result = await drive(runner, mode, turnInput("How long do refunds take?"));
+
+    expect(result.pendingDecisionTransition).toMatchObject({
+      routineId: "follow_up",
+      stepId: "approval",
+      options: [{ id: "approve", label: "Approve" }],
+    });
+    expect(result.actions).toEqual(expect.arrayContaining([expect.objectContaining({ type: "approval.request" })]));
+    expect(result.continuation?.routineState).toMatchObject({ routineId: "follow_up", status: "suspended" });
   });
 });

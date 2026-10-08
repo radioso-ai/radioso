@@ -10,6 +10,7 @@ import type {
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { AgentRevision } from "../../agents/public.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import {
@@ -54,6 +55,8 @@ import {
   type ChatTurnAssemblyOptions,
   type ChatTurnAssemblyRoutineResult,
 } from "./chatTurnAssembly.js";
+import { withRoutineReplyDelivery } from "./routines/routineReplyDelivery.js";
+import { routineReplyFor } from "./routines/routineReplyFor.js";
 import {
   createEphemeralChatTurnEffectProfile,
   type EphemeralChatTurnEffectProfile,
@@ -63,6 +66,7 @@ import {
   type TestExecutionReplayContinuationV1,
 } from "./testExecutionContinuation.js";
 import { buildTurnTraceForPresentation } from "./chatTurnLifecycle.js";
+import { observeReplayFirstAnswerChunkLatency } from "./streamPerformanceMetrics.js";
 import {
   resolveConversationTurnInterpretationContext,
   type ChatConversationTurnInterpreter,
@@ -197,6 +201,8 @@ interface WorkbenchReplayRunnerOptions {
    */
   coverageHeadRecorder?: ChatTurnAssemblyOptions["coverageHeadRecorder"];
   logger?: Pick<AppLogger, "warn">;
+  /** Records a streamed replay's time to its first answer chunk; latency only, never content. */
+  streamMetrics?: Pick<MetricsRegistry, "observeHistogram"> | null;
 }
 
 /**
@@ -260,10 +266,93 @@ export interface WorkbenchReplayInput {
   signal?: AbortSignal;
 }
 
+interface ReplayCoordination {
+  signal: AbortSignal;
+  checkpoint: () => void;
+}
+
+/** A replayed turn prepared up to the point it answers; `run` and `stream` share it. */
+interface PreparedReplayTurn {
+  input: WorkbenchReplayInput;
+  agent: ReturnType<typeof materializeAgentFromConfig>;
+  session: PreparedSession;
+  assembly: ChatTurnAssembly;
+  effects: EphemeralChatTurnEffectProfile;
+  routineStore: ReturnType<EphemeralChatTurnEffectProfile["routineStore"]>;
+  clarificationStore: DeferredClarificationStore;
+  clarification: ChatTurnAssemblyClarification;
+  coordination?: ReplayCoordination;
+  responseLanguagePromise: Promise<string | undefined>;
+  activeRoutine: RoutineState | null;
+  /** What the engine's rendered and streamed answer paths both receive. */
+  engineInput: Parameters<ChatTurnAssembly["renderPreparedByEngine"]>[1];
+  requestReceivedAt: number;
+  answerStartedAt: number;
+}
+
+/**
+ * A non-routine turn's answer as either engine path settles it, with the effects of any coverage
+ * routine that took the turn over after its evidence (#1260).
+ */
+type RenderedReplayAnswer = Awaited<ReturnType<ChatTurnAssembly["renderPreparedByEngine"]>>;
+
 export class WorkbenchReplayRunner {
   constructor(private readonly options: WorkbenchReplayRunnerOptions) {}
 
   async run(input: WorkbenchReplayInput): Promise<WorkbenchReplayResult> {
+    const turn = await this.prepareTurn(input);
+    const routineResult = await this.routineTurn(turn);
+    if (routineResult) {
+      return routineResult;
+    }
+    const rendered = await turn.assembly.renderPreparedByEngine(turn.session, turn.engineInput);
+    return this.settleRenderedTurn(turn, rendered, { stream: false });
+  }
+
+  /**
+   * {@link run}, yielding the answer's text as the engine generates it. It settles to the result
+   * `run` returns for the same turn, with its trace marked as streamed, except for question
+   * suggestions: a streamed answer leaves their expansion to its host, and this runner does not
+   * expand them.
+   */
+  async *stream(input: WorkbenchReplayInput): AsyncGenerator<string, WorkbenchReplayResult> {
+    const turn = await this.prepareTurn(input);
+    const observeFirstChunk = this.firstAnswerChunkObserver(turn.requestReceivedAt);
+    const routineResult = yield* this.routineTurnStream(turn, observeFirstChunk);
+    if (routineResult) {
+      return routineResult;
+    }
+    let rendered: RenderedReplayAnswer | undefined;
+    for await (const event of turn.assembly.streamPreparedByEngine(turn.session, turn.engineInput)) {
+      if (event.type === "chunk" && event.text) {
+        observeFirstChunk(event.route, event.deliveryMode);
+        yield event.text;
+      } else if (event.type === "final") {
+        const { type: _final, suggestions: _suggestions, finalPresentation, session, ...effects } = event;
+        rendered = { ...effects, session: session ?? turn.session, presentation: finalPresentation };
+      }
+    }
+    if (!rendered) {
+      throw new Error("workbench_replay_stream_missing_final_presentation");
+    }
+    return this.settleRenderedTurn(turn, rendered, { stream: true });
+  }
+
+  private firstAnswerChunkObserver(requestReceivedAt: number): (route: string, deliveryMode: string) => void {
+    let observed = false;
+    return (route, deliveryMode) => {
+      if (observed) {
+        return;
+      }
+      observed = true;
+      observeReplayFirstAnswerChunkLatency(this.options.streamMetrics, Date.now() - requestReceivedAt, {
+        route,
+        delivery_mode: deliveryMode,
+      });
+    };
+  }
+
+  private async prepareTurn(input: WorkbenchReplayInput): Promise<PreparedReplayTurn> {
     input.signal?.throwIfAborted();
     const requestReceivedAt = Date.now();
     if (input.candidateRevision && input.executionMode !== "safe_test") {
@@ -281,7 +370,7 @@ export class WorkbenchReplayRunner {
       conversationId: input.conversationId,
       directiveState: input.directiveStateStartState,
     });
-    const coordination = input.signal
+    const coordination: ReplayCoordination | undefined = input.signal
       ? {
           signal: input.signal,
           checkpoint: () => input.signal?.throwIfAborted(),
@@ -392,63 +481,177 @@ export class WorkbenchReplayRunner {
     const activeRoutine = await routineStore.loadActive({
       sessionId: session.conversation.id,
     });
-    const answerStartedAt = Date.now();
-    const routineResult = await assembly.attemptRoutineTurn(session, {
-      accountId: input.accountId ?? undefined,
-      responseLanguage: responseLanguagePromise,
-      activeRoutine,
-      clarification,
-      coordination,
-    });
-    if (routineResult) {
-      coordination?.checkpoint();
-      await routineResult.commitRoutineState();
-      await routineResult.commitClarificationState?.();
-      await session.directiveStateStore?.commit();
-      return this.presentResult({
-        input,
-        agent,
-        session,
-        presentation: routineResult.presentation,
-        engineTrace: routineResult.engineTrace,
-        requestReceivedAt,
-        answerStartedAt,
-        actions: routineResult.actions,
-        pendingDecisionTransition: routineResult.pendingDecisionTransition,
-        handoff: routineResult.handoff,
-        operatorNotice: routineResult.operatorNotice,
-        routineReporter: routineResult.routineReporter,
-        continuation: this.continuation(effects, session.conversation.id, routineStore),
-      });
-    }
-
-    const rendered = await assembly.renderPreparedByEngine(session, {
-      request: {
-        workspaceId: input.workspaceId,
-        accountId: input.accountId ?? undefined,
-        query: input.query,
-        userExpectedLocale: input.userExpectedLocale,
-      },
-      retrievalInput: prepareInput,
-      responseLanguagePromise,
-      resolvedRetrievalSense: false,
-      clarification,
-      activeRoutineAtTurnStart: Boolean(activeRoutine),
-      coordination,
-    });
-    coordination?.checkpoint();
-    await clarificationStore.commit();
-    await rendered.session.directiveStateStore?.commit();
-    return this.presentResult({
+    return {
       input,
       agent,
+      session,
+      assembly,
+      effects,
+      routineStore,
+      clarificationStore,
+      clarification,
+      coordination,
+      responseLanguagePromise,
+      activeRoutine,
+      engineInput: {
+        request: {
+          workspaceId: input.workspaceId,
+          accountId: input.accountId ?? undefined,
+          query: input.query,
+          userExpectedLocale: input.userExpectedLocale,
+        },
+        retrievalInput: prepareInput,
+        responseLanguagePromise,
+        resolvedRetrievalSense: false,
+        clarification,
+        activeRoutineAtTurnStart: Boolean(activeRoutine),
+        coordination,
+      },
+      requestReceivedAt,
+      answerStartedAt: Date.now(),
+    };
+  }
+
+  /** The turn's result when a routine claims it, its routine, clarification, and directive state committed. */
+  private async routineTurn(turn: PreparedReplayTurn): Promise<WorkbenchReplayResult | null> {
+    const routineResult = await turn.assembly.attemptRoutineTurn(turn.session, {
+      accountId: turn.input.accountId ?? undefined,
+      responseLanguage: turn.responseLanguagePromise,
+      activeRoutine: turn.activeRoutine,
+      clarification: turn.clarification,
+      coordination: turn.coordination,
+    });
+    return routineResult ? this.settleRoutineTurn(turn, routineResult, { stream: false }) : null;
+  }
+
+  /**
+   * {@link routineTurn}, but claims the turn without generating its reply, then asks the same
+   * delivery rule live chat applies ({@link routineReplyFor}) whether to stream it. A turn with
+   * no durable effect (a slot ask, a re-ask, a step instruction, a grounded step answer) yields
+   * its reply's text as the model writes it; a turn that does something durable — an action, a
+   * decision gate, a hand-off, any routine ending, or a skill step that already acted outside
+   * the conversation — is rendered and settled before any text reaches the caller, exactly as a
+   * live visitor would see it. Yields nothing when no routine claims the turn, so the caller
+   * falls through to grounded retrieval.
+   */
+  private async *routineTurnStream(
+    turn: PreparedReplayTurn,
+    observeFirstChunk: (route: string, deliveryMode: string) => void,
+  ): AsyncGenerator<string, WorkbenchReplayResult | null> {
+    const claim = await turn.assembly.claimRoutineTurn(turn.session, {
+      accountId: turn.input.accountId ?? undefined,
+      responseLanguage: turn.responseLanguagePromise,
+      activeRoutine: turn.activeRoutine,
+      clarification: turn.clarification,
+      coordination: turn.coordination,
+    });
+    if (!claim) {
+      return null;
+    }
+    const outcome = await routineReplyFor({
+      session: turn.session,
+      workspaceId: turn.input.workspaceId,
+      claim,
+    });
+    let routineResult: ChatTurnAssemblyRoutineResult;
+    if (outcome.delivery === "stream") {
+      const reply = outcome.stream();
+      let shown = false;
+      let step = await reply.next();
+      while (!step.done) {
+        if (!shown) {
+          observeFirstChunk("routine", "live");
+          shown = true;
+        }
+        yield step.value;
+        step = await reply.next();
+      }
+      // A provider that ignores the abort can finish its reply after the disconnect ceiling
+      // cancelled the turn; a cancelled turn commits nothing.
+      turn.coordination?.checkpoint();
+      routineResult = step.value;
+    } else {
+      routineResult = outcome.turn;
+    }
+    const result = await this.settleRoutineTurn(turn, routineResult, {
+      stream: true,
+      reply: outcome.delivery,
+    });
+    if (outcome.delivery === "whole" && result.answer) {
+      observeFirstChunk("routine", "committed");
+      yield result.answer;
+    }
+    return result;
+  }
+
+  /**
+   * Commits a claimed routine turn's routine, clarification, and directive state, then presents
+   * its result. `run`'s whole claim and `stream`'s claim (rendered whole or streamed) both reach
+   * this, so a Test Chat routine reply persists identically either way. `delivery.reply`, present
+   * only from the streaming entry, marks the trace with how the reply reached the caller
+   * ({@link withRoutineReplyDelivery}) — `run`'s non-stream turn never carries that mark, same as
+   * a live non-SSE turn.
+   */
+  private async settleRoutineTurn(
+    turn: PreparedReplayTurn,
+    routineResult: ChatTurnAssemblyRoutineResult,
+    delivery: { stream: boolean; reply?: "stream" | "whole" },
+  ): Promise<WorkbenchReplayResult> {
+    turn.coordination?.checkpoint();
+    await routineResult.commitRoutineState();
+    await routineResult.commitClarificationState?.();
+    await turn.session.directiveStateStore?.commit();
+    return this.presentResult({
+      input: turn.input,
+      agent: turn.agent,
+      session: turn.session,
+      presentation: routineResult.presentation,
+      engineTrace: delivery.reply
+        ? withRoutineReplyDelivery(routineResult.engineTrace, delivery.reply)
+        : routineResult.engineTrace,
+      requestReceivedAt: turn.requestReceivedAt,
+      answerStartedAt: turn.answerStartedAt,
+      stream: delivery.stream,
+      actions: routineResult.actions,
+      pendingDecisionTransition: routineResult.pendingDecisionTransition,
+      handoff: routineResult.handoff,
+      operatorNotice: routineResult.operatorNotice,
+      routineReporter: routineResult.routineReporter,
+      continuation: this.continuation(turn.effects, turn.session.conversation.id, turn.routineStore),
+    });
+  }
+
+  /**
+   * Commits a rendered answer's routine, clarification, and directive state, then presents its
+   * result. A coverage routine that took the turn over saved its state through a deferred store;
+   * committing it here, as live chat commits it with the turn, is what lets the exported
+   * continuation carry that routine into the next turn. Coverage reactions are not committed:
+   * replay's coverage recorder has no repository, so it records none.
+   */
+  private async settleRenderedTurn(
+    turn: PreparedReplayTurn,
+    rendered: RenderedReplayAnswer,
+    delivery: { stream: boolean },
+  ): Promise<WorkbenchReplayResult> {
+    turn.coordination?.checkpoint();
+    await rendered.commitRoutineState?.();
+    await turn.clarificationStore.commit();
+    await rendered.session.directiveStateStore?.commit();
+    return this.presentResult({
+      input: turn.input,
+      agent: turn.agent,
       session: rendered.session,
       presentation: rendered.presentation,
       engineTrace: rendered.engineTrace,
-      requestReceivedAt,
-      answerStartedAt,
+      requestReceivedAt: turn.requestReceivedAt,
+      answerStartedAt: turn.answerStartedAt,
+      stream: delivery.stream,
       actions: rendered.actions,
-      continuation: this.continuation(effects, session.conversation.id, routineStore),
+      pendingDecisionTransition: rendered.pendingDecisionTransition,
+      handoff: rendered.handoff,
+      operatorNotice: rendered.operatorNotice,
+      routineReporter: rendered.routineReporter,
+      continuation: this.continuation(turn.effects, turn.session.conversation.id, turn.routineStore),
     });
   }
 
@@ -604,6 +807,8 @@ export class WorkbenchReplayRunner {
     engineTrace?: Parameters<typeof buildTurnTraceForPresentation>[0]["engineTrace"];
     requestReceivedAt: number;
     answerStartedAt: number;
+    /** Whether the turn's text was delivered as a stream, as a live chat SSE turn's is. */
+    stream: boolean;
     actions?: RoutineActionRequest[];
     pendingDecisionTransition?: ChatTurnAssemblyRoutineResult["pendingDecisionTransition"];
     handoff?: ChatTurnAssemblyRoutineResult["handoff"];
@@ -618,13 +823,16 @@ export class WorkbenchReplayRunner {
       presentation: input.presentation,
       requestReceivedAt: input.requestReceivedAt,
       answerStartedAt: input.answerStartedAt,
-      stream: false,
+      stream: input.stream,
       engineTrace: input.engineTrace,
     });
-    // A Test Chat/eval replay never dispatches this turn's actions (the caller drops them,
-    // see TrustedTestExecutionRunnerAdapter.run), so an operator notice never actually sends.
-    // Carry its message content on the trace instead.
-    const handoffPreview = this.operatorNoticePreviewFor(input);
+    // A replay never dispatches this turn's actions, so an operator notice never actually sends;
+    // Test Chat carries its message content on the trace instead. That content lists the
+    // routine's collected slot values and substitutes them into the authored subject and intro,
+    // so it follows the same opt-in as slot values on the routine trace: only a caller that set
+    // `includeSlotValues` (Test Chat) gets a preview. Eval replay persists its trace to
+    // append-only evidence no conversation erasure reaches, so it gets none.
+    const handoffPreview = input.input.includeSlotValues === true ? this.operatorNoticePreviewFor(input) : undefined;
     return {
       answer: input.presentation.answer,
       messageId: input.session.userMessage.id,

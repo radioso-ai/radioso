@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Conversational Routines
@@ -628,6 +628,65 @@ authoring side — the data model, the compiler that turns a definition into the
 runtime graph, the validator, and the repository — lives in
 `backend/src/modules/routines/`. The engine runs the compiled graph; it never
 reads the authoring data.
+
+A routine turn runs in two parts. Claiming walks the graph — the selector calls,
+any tool and action steps, the landed step's steering — and decides everything
+the turn does: where it rests, which slots it keeps, the actions it emits, and
+how it ends. Rendering then writes the reply for the step it landed on, and
+nothing the claim decided depends on that text. `DefaultRoutineRunner.claim`
+returns the decision with the reply still to generate, and `resume` claims and
+renders in one call. For a whole turn, the engine's `claimRoutine` gives the host
+the same split: the host generates the reply, through `render()` or `stream()`,
+then settles the claim with it, which saves the routine state and records the
+turn. `attemptRoutine` is that sequence with the reply rendered whole, and both
+make the same model calls in the same order, so per-call usage keys match. A
+hand-off message — at an authored hand-off end, or for a visitor stuck past the
+re-ask limit — is only ever generated whole.
+
+In live streaming chat, what the claim decided also settles how the reply reaches
+the visitor (`backend/src/modules/chat/services/routines/routineReplyDelivery.ts`).
+A turn that only moves the routine to its next step streams its reply as the model
+writes it: a slot question, a re-ask, the reworded ask past the re-ask limit, a step
+instruction, or the grounded answer of a step fed by a retrieval skill step. A grounded
+answer streams through the retrieval renderer's own stream, so its citation gate still
+holds text until the model cites a source. The message and the new step are saved
+together once the reply is complete. A turn that does something durable is saved first
+and its finished reply shown after: a skill step on the way acted outside the
+conversation (sent an email, called a webhook, posted to Slack, notified operators,
+called an external tool), it queues an action (a completion export, an approval request,
+an operator notice), parks at an approval gate, hands the conversation to a person, or
+ends the routine any other way. That ordering means a visitor only reads "your request
+is in" or "I've emailed you" once the turn is recorded.
+
+Which skills act outside the conversation is the backend's call, made by one helper,
+`skillActsOutsideConversation` in the retrieval module: only a retrieval skill reading
+through the internal retrieval adapter stays inside. A safe-test turn (Test Chat with
+skill effects suppressed) runs exactly the agent skills and routine skill steps the
+same helper says stay inside, so a `retrieval.context` step still grounds the next
+reply there while a webhook or email step is refused. The
+routine skill dispatcher reports it on each skill step's result
+(`actsOutsideConversation`; `false` also for a skill refused before its executor ran),
+and the engine passes it through as the claim's `skillsWithExternalEffects`: every skill
+whose result did not say it stayed inside, so a dispatcher that says nothing keeps the
+turn whole. A clarifying question between candidate routines and a confirmed
+slot correction also arrive whole, as does a routine reply that takes over a
+grounded answer mid-turn. A takeover reply is shown only once the turn is saved
+when its routine queued an action, handed the conversation to a person, parked at
+an approval gate, or ran a skill that acted outside the conversation; otherwise it
+is shown as soon as it exists. If a streamed reply cannot be saved, the visitor has
+already read it; the routine is still on the step it was on and asks again next
+turn, and chat logs `routine_reply_persist_failed_after_stream` and counts
+`chat_stream_persist_failures_total{route="routine"}`. A turn the disconnect ceiling
+cancels while its reply is still streaming saves nothing, even when the provider
+finishes the reply anyway. The turn trace's routine stage records the delivery as
+`replyDelivery`. The non-streaming chat API, eval
+replay, and Test Chat render every routine reply whole.
+
+A streamed step reply is trimmed as the whole reply is: leading whitespace never
+reaches the visitor, and trailing whitespace waits for the text after it. A blank
+answer is retried once under the same usage key a blank whole answer's retry uses
+(`routine_turn:<n>:blank_retry`), so the visitor sees only the retry and a turn is
+metered alike either way.
 
 ## Tool steps and skills
 

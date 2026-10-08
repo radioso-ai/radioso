@@ -1,7 +1,7 @@
 ---
 title: "Assistant Execution Model"
 description: "Design principle that live chat stays in the request path while background work like exports is deferred asynchronously."
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Assistant Execution Model
@@ -25,9 +25,20 @@ assistant messages: Radioso does not save them in history, include them in
 prompts, or treat them as the start of answer delivery.
 
 Answer chunks describe incremental delivery, not necessarily live model tokens.
-Direct and admissible retrieval answers can stream provider output. Replies that
-must pass a guard or complete a durable write are validated or committed first,
-then replayed in bounded Unicode-safe chunks without artificial delays.
+Direct and admissible retrieval answers can stream provider output. So can a
+routine reply on a turn that only moves the routine to its next step, such as a
+slot question, a re-ask, or a step's grounded answer; the message and the new step
+are saved once the reply is complete. Replies that must pass a guard or complete a
+durable write are validated or committed first, then replayed in bounded
+Unicode-safe chunks without artificial delays. A routine reply is one of these when
+its turn runs a skill that acts outside the conversation (an email, a webhook),
+queues an action, waits on an approval, hands the conversation to a person, or ends
+the routine, so a visitor reads "your request is in" only once the request is saved. If saving a streamed routine reply fails, the visitor has already read it:
+the routine stays on the step it was on and asks again next turn.
+
+Operator Test Chat streams its answers the same way, with each compared version's
+text arriving as it is generated. A Test Chat reply settles on the answer the test
+saved, as a chat reply settles on the answer in `done`.
 
 ## New Messages Supersede Unstarted Replies
 

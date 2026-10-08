@@ -95,7 +95,7 @@ describeDb("test execution repository", () => {
       revisions: repository,
       contextCatalog: new ContextVariableRepository(database.kysely),
       repository,
-      runner: { run: async () => ({ answer: "answer", messageId: randomUUID(), continuation: null }) },
+      runner: { stream: async function* () { return { answer: "answer", messageId: randomUUID(), continuation: null }; } },
       usageLimitPolicy: new NoopUsageLimitPolicy(),
       createId: randomUUID,
     });
@@ -119,7 +119,7 @@ describeDb("test execution repository", () => {
       revisions: repository,
       contextCatalog: new ContextVariableRepository(database.kysely),
       repository,
-      runner: { run: async () => ({ answer: "answer", messageId: randomUUID(), continuation: null }) },
+      runner: { stream: async function* () { return { answer: "answer", messageId: randomUUID(), continuation: null }; } },
       usageLimitPolicy: new NoopUsageLimitPolicy(),
       createId: randomUUID,
     });
@@ -273,7 +273,7 @@ describeDb("test execution repository", () => {
   it("recovers an expired service lease, rejects reused retry identity, and delivery-replays the recovered response", async () => {
     let now = 1_000;
     let runnerCalls = 0;
-    const runner = { run: async () => { runnerCalls += 1; return { answer: "recovered", messageId: randomUUID(), continuation: null }; } };
+    const runner = { stream: async function* () { runnerCalls += 1; return { answer: "recovered", messageId: randomUUID(), continuation: null }; } };
     const service = new TestExecutionService({
       revisions: repository,
       contextCatalog: new ContextVariableRepository(database.kysely),
@@ -303,7 +303,7 @@ describeDb("test execution repository", () => {
       revisions: repository,
       contextCatalog: new ContextVariableRepository(database.kysely),
       repository,
-      runner: { run: async () => { runnerCalls += 1; return { answer: "cached answer", messageId: randomUUID(), continuation: null }; } },
+      runner: { stream: async function* () { runnerCalls += 1; return { answer: "cached answer", messageId: randomUUID(), continuation: null }; } },
       usageLimitPolicy: new NoopUsageLimitPolicy(),
       createId: randomUUID,
     });
@@ -330,7 +330,7 @@ describeDb("test execution repository", () => {
       contextCatalog: new ContextVariableRepository(database.kysely),
       repository,
       runner: {
-        run: async () => {
+        stream: async function* () {
           runnerCalls += 1;
           if (runnerCalls === 1) throw new Error("runner failed");
           return { answer: "second answer", messageId: randomUUID(), continuation: null };
@@ -388,7 +388,7 @@ describeDb("test execution repository", () => {
       expect.objectContaining({ sideId: retainedSideId, turnId: failedTurn, attemptId: failedAttempt, state: "failed", failureCode: "runner_failed" }),
       expect.objectContaining({ sideId: retainedSideId, turnId: nextTurn, attemptId: nextAttempt, state: "completed" }),
     ]);
-    const service = new TestExecutionService({ revisions: repository, contextCatalog: new ContextVariableRepository(database.kysely), repository, runner: { run: async () => ({ answer: "retained answer", messageId: randomUUID(), continuation: null }) }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: randomUUID });
+    const service = new TestExecutionService({ revisions: repository, contextCatalog: new ContextVariableRepository(database.kysely), repository, runner: { stream: async function* () { return { answer: "retained answer", messageId: randomUUID(), continuation: null }; } }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: randomUUID });
     const transcript = await service.transcript({ workspaceId, agentId, executionId: retained.id });
     expect(transcript.sides[0]?.turns).toEqual([
       expect.objectContaining({ turnId: failedTurn, state: "failed", failureCode: "runner_failed", answer: null }),

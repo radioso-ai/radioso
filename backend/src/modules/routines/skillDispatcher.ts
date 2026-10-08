@@ -12,6 +12,7 @@ import {
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../shared/observability/tracing/operations.js";
 import { resolveSkillArguments, resolveUntypedSkillArguments } from "./skillArgumentResolver.js";
+import { skillActsOutsideConversation } from "../retrieval/public.js";
 import type { ConversationDurability, SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
 
 type RoutineCapabilityGate = (capability: string) => Promise<{ allowed: boolean; reason?: string }>;
@@ -170,7 +171,14 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     if (!skill.execution) {
       return unavailable(skillName, "no_execution");
     }
-    if (this.skillEffects === "suppressed") {
+    // Whether running the skill can reach outside the conversation (an email, a webhook). A
+    // safe test runs only the skills that cannot, by the same rule that decides which agent
+    // skills a safe test may run and which routine replies live chat saves before showing.
+    const actsOutsideConversation = skillActsOutsideConversation({
+      retrieval: skill.owner === "retrieval",
+      execution: skill.execution,
+    });
+    if (this.skillEffects === "suppressed" && actsOutsideConversation) {
       return unavailable(skillName, "suppressed_for_safe_test");
     }
     if (this.conversationDurability === "ephemeral" && skill.requiresDurableConversation) {
@@ -185,6 +193,8 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
       return unavailable(skillName, "capability_denied");
     }
 
+    // From here the executor runs, so the skill may act before the turn is saved: the result
+    // reports whether that can reach outside the conversation, even when the executor fails.
     let result: SkillDispatchResult;
     // Typed steps resolve authored input bindings first. During the FR-019
     // compatibility window, untyped/legacy steps still pass captured variables
@@ -215,13 +225,13 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
         emit: noopSkillEmitPort,
       });
     } catch {
-      return unavailable(skillName, "executor_error");
+      return unavailable(skillName, "executor_error", actsOutsideConversation);
     }
 
     if (result.disposition !== "settled") {
       // No v1 executor defers; the async-weave (reconcile a deferred result in a
       // later turn) isn't wired for routines, so degrade rather than wedge.
-      return unavailable(skillName, "deferred");
+      return unavailable(skillName, "deferred", actsOutsideConversation);
     }
 
     const failureReason = result.outcome.status === "failed"
@@ -236,6 +246,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
       outputs: result.outcome.outputs,
       answer: result.outcome.answer,
       ...(metadata ? { metadata } : {}),
+      actsOutsideConversation,
     };
   }
 
@@ -265,9 +276,14 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
 // (skill name + reason) for an outcome guard or operator triage. The same reason
 // also rides in host-private `metadata.failureReason` (never rendered into routine
 // prompts) so the engine can surface WHY on the trace step without changing the
-// author-facing `outputs` shape.
-function unavailable(skillName: string, reason: string): RoutineSkillResult {
-  return { status: "failed", outputs: { skill: skillName, reason }, metadata: { failureReason: reason } };
+// author-facing `outputs` shape. A skill refused before its executor ran did nothing.
+function unavailable(skillName: string, reason: string, actsOutsideConversation = false): RoutineSkillResult {
+  return {
+    status: "failed",
+    outputs: { skill: skillName, reason },
+    metadata: { failureReason: reason },
+    actsOutsideConversation,
+  };
 }
 
 const routineDispatchTraceAttributes = (

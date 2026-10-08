@@ -30,6 +30,7 @@ import {
   RETRIEVAL_ANSWER_ADAPTER,
   readRetrievalResult,
   buildSnippet,
+  skillActsOutsideConversation,
   type AgenticRetrievalToolFactory,
   type RegisteredChunk,
 } from "../../../modules/retrieval/public.js";
@@ -228,19 +229,14 @@ const executionForKind = (kind: AgentSkillKind): SkillExecution | undefined => {
   }
 };
 
-const mayRunWhileSuppressed = (
-  agentSkill: AgentSkillSpine,
-  execution: SkillExecution,
-): boolean =>
-  agentSkill.kind === "retrieve" &&
-  execution.kind === "internal" &&
-  execution.adapter === RETRIEVAL_ANSWER_ADAPTER;
-
+/** A turn whose skill effects are suppressed runs only the skills that stay inside the conversation. */
 const shouldSuppressSkillEffect = (
   skillEffects: SkillEffectPolicy | undefined,
   agentSkill: AgentSkillSpine,
   execution: SkillExecution,
-): boolean => skillEffects === "suppressed" && !mayRunWhileSuppressed(agentSkill, execution);
+): boolean =>
+  skillEffects === "suppressed"
+  && skillActsOutsideConversation({ retrieval: agentSkill.kind === "retrieve", execution });
 
 /**
  * A declared, generic rule (not a notify special-case): a skill that declares

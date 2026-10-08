@@ -28,6 +28,17 @@ const revision: AgentRevision = {
   publishedVersion: null,
 };
 
+/** Drains a turn stream into the text it yielded and the result it returned. */
+const collect = async <Result>(turn: AsyncGenerator<string, Result>): Promise<{ deltas: string[]; result: Result }> => {
+  const deltas: string[] = [];
+  let step = await turn.next();
+  while (!step.done) {
+    deltas.push(step.value);
+    step = await turn.next();
+  }
+  return { deltas, result: step.value };
+};
+
 const continuation = exportTestExecutionReplayContinuation({
   routineState: null,
   pendingClarification: null,
@@ -38,7 +49,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
   it("uses the selected immutable revision for an enabled assistant-first greeting", async () => {
     const bootstrap = { startConversation: vi.fn(async () => ({ answer: "Ciao!", bootstrapGreetingId: "greeting-1" })) };
     const adapter = new TrustedTestExecutionRunnerAdapter({
-      replay: { run: vi.fn() },
+      replay: { stream: vi.fn() },
       liveAgentConfig: { find: async () => ({
         ...conversationQualityAgentConfig, name: "Marta", customInstruction: "live instruction",
         proactiveGreetingEnabled: true, assistantDefaultLocale: "it",
@@ -58,7 +69,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
   it("uses the internal operator title when an enabled test agent has no public name", async () => {
     const bootstrap = { startConversation: vi.fn(async () => ({ answer: "Ciao!", bootstrapGreetingId: "greeting-1" })) };
     const adapter = new TrustedTestExecutionRunnerAdapter({
-      replay: { run: vi.fn() },
+      replay: { stream: vi.fn() },
       liveAgentConfig: { find: async () => ({
         ...conversationQualityAgentConfig,
         name: "",
@@ -79,7 +90,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
   it("uses the neutral display fallback when an enabled test agent has no title", async () => {
     const bootstrap = { startConversation: vi.fn(async () => ({ answer: "Ciao!", bootstrapGreetingId: "greeting-1" })) };
     const adapter = new TrustedTestExecutionRunnerAdapter({
-      replay: { run: vi.fn() },
+      replay: { stream: vi.fn() },
       liveAgentConfig: { find: async () => ({
         ...conversationQualityAgentConfig,
         name: "",
@@ -99,7 +110,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
 
   it("does not request a greeting when the private runner has no bootstrap port", async () => {
     const adapter = new TrustedTestExecutionRunnerAdapter({
-      replay: { run: vi.fn() },
+      replay: { stream: vi.fn() },
       liveAgentConfig: { find: vi.fn() },
       revisions: { findRevision: vi.fn() },
     });
@@ -109,16 +120,20 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
 
   it("revalidates candidate ownership and maps private history, continuation, and frozen samples into safe replay", async () => {
     const replay = {
-      run: vi.fn(async () => ({ answer: "actual answer", messageId: "ephemeral-message", continuation })),
+      stream: vi.fn(async function* () {
+        yield "actual ";
+        yield "answer";
+        return { answer: "actual answer", messageId: "ephemeral-message", continuation };
+      }),
     };
     const adapter = new TrustedTestExecutionRunnerAdapter({
-      replay: replay as unknown as Pick<WorkbenchReplayRunner, "run">,
+      replay: replay as unknown as Pick<WorkbenchReplayRunner, "stream">,
       liveAgentConfig: { find: async () => ({}) as InternalAgentConfig },
       revisions: { findRevision: async () => revision },
     });
 
     const abort = new AbortController();
-    await expect(adapter.run({
+    await expect(collect(adapter.stream({
       workspaceId: "ws-1",
       agentId: "agent-1",
       accountId: "account-42",
@@ -138,9 +153,12 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       executionMode: "safe_test",
       skillEffects: "allowed",
       signal: abort.signal,
-    })).resolves.toEqual({ answer: "actual answer", messageId: "ephemeral-message", continuation });
+    }))).resolves.toEqual({
+      deltas: ["actual ", "answer"],
+      result: { answer: "actual answer", messageId: "ephemeral-message", continuation },
+    });
 
-    expect(replay.run).toHaveBeenCalledWith(expect.objectContaining({
+    expect(replay.stream).toHaveBeenCalledWith(expect.objectContaining({
       executionMode: "safe_test",
       skillEffects: "allowed",
       accountId: "account-42",
@@ -160,7 +178,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
   });
 
   it("rejects corrupt and version-mismatched continuations before replay", async () => {
-    const replay = { run: vi.fn() };
+    const replay = { stream: vi.fn() };
     const adapter = new TrustedTestExecutionRunnerAdapter({
       replay,
       liveAgentConfig: { find: async () => ({}) as InternalAgentConfig },
@@ -171,25 +189,25 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       conversationId: "private-side-1", message: "continue", history: [], testValues: [], executionMode: "safe_test" as const, skillEffects: "suppressed" as const,
     };
 
-    await expect(adapter.run({ ...input, continuation: { version: 2 } })).rejects.toThrow("test_execution_continuation_invalid");
-    await expect(adapter.run({ ...input, continuation: { version: 1, routineState: "bad", pendingClarification: null, directiveState: null } }))
+    await expect(collect(adapter.stream({ ...input, continuation: { version: 2 } }))).rejects.toThrow("test_execution_continuation_invalid");
+    await expect(collect(adapter.stream({ ...input, continuation: { version: 1, routineState: "bad", pendingClarification: null, directiveState: null } })))
       .rejects.toThrow("test_execution_continuation_invalid");
-    expect(replay.run).not.toHaveBeenCalled();
+    expect(replay.stream).not.toHaveBeenCalled();
   });
 
   it("rejects a candidate that cannot be found under the requested workspace and agent", async () => {
-    const replay = { run: vi.fn() };
+    const replay = { stream: vi.fn() };
     const adapter = new TrustedTestExecutionRunnerAdapter({
       replay,
       liveAgentConfig: { find: async () => ({}) as InternalAgentConfig },
       revisions: { findRevision: async () => null },
     });
 
-    await expect(adapter.run({
+    await expect(collect(adapter.stream({
       workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
       conversationId: "private-side-1", message: "continue", history: [], continuation: null, testValues: [], executionMode: "safe_test", skillEffects: "suppressed",
-    })).rejects.toThrow("Agent revision is unavailable for test execution");
-    expect(replay.run).not.toHaveBeenCalled();
+    }))).rejects.toThrow("Agent revision is unavailable for test execution");
+    expect(replay.stream).not.toHaveBeenCalled();
   });
 
   it("does not mutate a side's persisted continuation when a replay attempt fails", async () => {
@@ -201,7 +219,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       directiveState: null,
     });
     const replay = {
-      run: vi.fn(async (input: { routineStartState?: { variables: Record<string, unknown> } | null }) => {
+      stream: vi.fn(async function* (input: { routineStartState?: { variables: Record<string, unknown> } | null }) {
         input.routineStartState!.variables.cart = "mutated-by-failed-run";
         throw new Error("provider unavailable");
       }),
@@ -212,10 +230,10 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       revisions: { findRevision: async () => revision },
     });
 
-    await expect(adapter.run({
+    await expect(collect(adapter.stream({
       workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
       conversationId: "private-side-1", message: "continue", history: [], continuation: original, testValues: [], executionMode: "safe_test", skillEffects: "suppressed",
-    })).rejects.toThrow("provider unavailable");
+    }))).rejects.toThrow("provider unavailable");
     expect(original.routineState?.variables).toEqual({ cart: "gold" });
   });
 });

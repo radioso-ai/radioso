@@ -662,6 +662,17 @@ export interface RenderableTurn {
   yielded?: true;
 }
 
+/**
+ * A reply whose content is decided but not yet generated: nothing is generated until the
+ * holder asks. `render()` generates it whole. `stream()`, when present, generates it as
+ * text deltas, in order, and returns the finished turn `render()` would have produced. Ask
+ * once, by one of the two. A reply that can only be generated whole has no `stream`.
+ */
+export interface PendingRenderableTurn {
+  render(): Promise<RenderableTurn>;
+  stream?(): AsyncGenerator<string, RenderableTurn>;
+}
+
 /** A grounded answer's self-reported result for one active directive steering rule. */
 export interface DirectiveAdherenceEntry {
   directive: string;
@@ -763,12 +774,21 @@ export interface ConversationEvent {
   createdAt?: string;
 }
 
+/** One generation request to the host's model. */
+export interface ConversationModelRequest {
+  messages: ConversationMessage[];
+  systemPrompt?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface ConversationModelGateway {
-  complete(input: {
-    messages: ConversationMessage[];
-    systemPrompt?: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<{ text: string; metadata?: Record<string, unknown> }>;
+  complete(input: ConversationModelRequest): Promise<{ text: string; metadata?: Record<string, unknown> }>;
+  /**
+   * Generates the same request as text deltas, in order; joined, they are the text
+   * `complete` would return, untrimmed. A stream that ends with nothing but whitespace is a
+   * blank completion. Optional: a gateway without it is only ever asked to `complete`.
+   */
+  stream?(input: ConversationModelRequest): AsyncIterable<string>;
 }
 
 /**
@@ -1256,6 +1276,13 @@ export interface RoutineSkillResult {
   answer?: string;
   /** Host-private dispatch metadata. Not rendered into routine prompts. */
   metadata?: Record<string, unknown>;
+  /**
+   * Whether running the skill may have acted outside the conversation — sent an email,
+   * called a webhook, posted a message — before the host saves the turn. `false` only when
+   * the host knows the skill stayed inside it (it read workspace evidence, or never ran).
+   * Absent counts as `true`.
+   */
+  actsOutsideConversation?: boolean;
 }
 
 /**
@@ -1306,19 +1333,28 @@ export interface ConversationRoutineNextStepSelector {
  * never replaces the step's question or action.
  */
 export interface ConversationRoutineStepRenderer {
-  render(input: {
-    step: RoutineStep;
-    steering: SteeringRule[];
-    turn: TurnContext;
-    reask?: RoutineStepReask;
-    /**
-     * True when the runner ends the routine on `step` because the visitor stayed stuck on it
-     * past the re-ask limit, and a person takes the conversation over (#1384). The reply tells
-     * the visitor a person continues from here; it neither asks the step's question nor
-     * follows its instruction, so `steering` is empty and `reask` absent.
-     */
-    stuckHandoff?: boolean;
-  }): Promise<RenderableTurn>;
+  render(input: RoutineStepReplyInput): Promise<RenderableTurn>;
+  /**
+   * Decides the reply without generating it: no model call happens until the returned
+   * reply's `render()` or `stream()`, and `prepare(input).render()` produces what
+   * `render(input)` would. Optional; a runner without it renders with `render`.
+   */
+  prepare?(input: RoutineStepReplyInput): PendingRenderableTurn;
+}
+
+/** What a routine step's reply is written from. */
+export interface RoutineStepReplyInput {
+  step: RoutineStep;
+  steering: SteeringRule[];
+  turn: TurnContext;
+  reask?: RoutineStepReask;
+  /**
+   * True when the runner ends the routine on `step` because the visitor stayed stuck on it
+   * past the re-ask limit, and a person takes the conversation over (#1384). The reply tells
+   * the visitor a person continues from here; it neither asks the step's question nor
+   * follows its instruction, so `steering` is empty and `reask` absent.
+   */
+  stuckHandoff?: boolean;
 }
 
 /**
@@ -1577,6 +1613,13 @@ export interface ConversationRoutineResumeResult {
    * exits and yielded turns; when present, `nextState.status === "suspended"`.
    */
   awaitingDecision?: RoutineAwaitingDecision;
+  /**
+   * The skills this turn's skill steps ran, in order, that may have acted outside the
+   * conversation the moment they ran (an email sent, a webhook called) — every dispatched
+   * skill whose result did not report `actsOutsideConversation: false`. Absent when there
+   * were none. The host can no longer take such an effect back if saving the turn fails.
+   */
+  skillsWithExternalEffects?: string[];
   /** Step-by-step traversal record for the debug panel (omitted on a yield). */
   trace?: RoutineRunTrace;
   /**
@@ -1638,26 +1681,47 @@ export interface ConversationRoutineDecisionResult extends ConversationRoutineRe
 
 /**
  * Advances an active Routine one step for the current turn. The runner is the seam
- * the declarative model + LLM progression (later slices) fill; the engine only
- * resumes through it and persists the returned next state.
+ * the declarative model + LLM progression fill; the engine only claims or resumes
+ * through it and persists the returned next state.
  */
 export interface ConversationRoutineRunner {
-  resume(input: {
-    turn: TurnContext;
-    state: RoutineState;
-    steeringResolver?: ConversationRoutineSteeringResolver;
-    /**
-     * True when this routine's `state` was created by this very turn (a fresh
-     * activation or a completed-routine reentry — both start from `path: []`), i.e.
-     * the user's message is the trigger that started/reopened the routine, not a reply
-     * to a step the routine has already rendered. On such a turn a next-step selector
-     * that reads the message as an off-topic reply must not be allowed to yield and
-     * silently drop the activation; the runner lands on (renders) the current step
-     * instead. Absent/false on a normal resume, where the message is a reply.
-     */
-    activationTurn?: boolean;
-  }): Promise<ConversationRoutineResumeResult>;
+  resume(input: ConversationRoutineResumeInput): Promise<ConversationRoutineResumeResult>;
+  /**
+   * `resume` split at the reply: walks the routine and decides the turn, but generates no
+   * reply text. Resuming equals claiming and then rendering the claimed reply. Optional; the
+   * engine resumes a runner without it.
+   */
+  claim?(input: ConversationRoutineResumeInput): Promise<ConversationRoutineClaim>;
 }
+
+export interface ConversationRoutineResumeInput {
+  turn: TurnContext;
+  state: RoutineState;
+  steeringResolver?: ConversationRoutineSteeringResolver;
+  /**
+   * True when this routine's `state` was created by this very turn (a fresh
+   * activation or a completed-routine reentry — both start from `path: []`), i.e.
+   * the user's message is the trigger that started/reopened the routine, not a reply
+   * to a step the routine has already rendered. On such a turn a next-step selector
+   * that reads the message as an off-topic reply must not be allowed to yield and
+   * silently drop the activation; the runner lands on (renders) the current step
+   * instead. Absent/false on a normal resume, where the message is a reply.
+   */
+  activationTurn?: boolean;
+}
+
+/** Everything a resumed routine turn decided except its reply. */
+export type ConversationRoutineRunEffects = Omit<ConversationRoutineResumeResult, "response" | "yielded" | "pendingStep">;
+
+/**
+ * A routine turn walked but not yet replied to. `yielded`: the routine declined the turn
+ * (see {@link ConversationRoutineResumeResult.yielded}) and nothing is rendered. `claimed`:
+ * `effects` is what the turn decided — next state, ending, actions, decision gate, trace —
+ * and `reply` generates the reply that goes with it.
+ */
+export type ConversationRoutineClaim =
+  | { kind: "yielded"; pendingStep?: RoutinePendingStep }
+  | { kind: "claimed"; effects: ConversationRoutineRunEffects; reply: PendingRenderableTurn };
 
 /**
  * Decides whether a Routine should *start* this turn (a trigger fired) when no
@@ -1855,6 +1919,11 @@ export interface ProcessTurnResult {
    * create a pending decision row before the routine can be resumed.
    */
   awaitingDecision?: RoutineAwaitingDecision;
+  /**
+   * The skills a routine's skill steps ran this turn that may have acted outside the
+   * conversation; see {@link ConversationRoutineResumeResult.skillsWithExternalEffects}.
+   */
+  skillsWithExternalEffects?: string[];
   /** Required fields that prevented selected skills from dispatching this turn. */
   awaitingSkillInput?: AwaitingSkillInput[];
   /**
@@ -1920,7 +1989,42 @@ export interface ConversationEngine {
    * `processTurn` as `routineYield`.
    */
   attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null>;
+  /**
+   * `attemptRoutine` split at the reply: claims the turn exactly when `attemptRoutine`
+   * would, and returns null otherwise, but generates no reply text. The holder generates
+   * the reply and settles the claim with it; `attemptRoutine` is that sequence with
+   * `reply.render()`. Optional, so an engine a host supplies without it still conforms.
+   */
+  claimRoutine?(input: AttemptRoutineInput): Promise<ConversationRoutineTurnClaim | null>;
   resumeAwaitingDecision(input: ResumeAwaitingDecisionInput): Promise<ConversationRoutineDecisionResult>;
+}
+
+/**
+ * A turn the routine machinery claimed, before its reply exists. Generate the reply once,
+ * with `reply.render()` or `reply.stream()`, then pass the finished reply to `settle`, which
+ * records the turn — routine state, response event, trace — and returns its result.
+ */
+export interface ConversationRoutineTurnClaim {
+  effects: RoutineTurnEffects;
+  reply: PendingRenderableTurn;
+  settle(response: RenderableTurn): Promise<ProcessTurnResult>;
+}
+
+/**
+ * What a claimed routine turn does besides replying, known before the reply is generated:
+ * the same values the settled {@link ProcessTurnResult} reports. Empty for a turn that runs
+ * no routine step (an activation clarification, a completed-routine slot correction).
+ */
+export interface RoutineTurnEffects {
+  routineExecution?: ProcessTurnResult["routineExecution"];
+  /** How the routine ended this turn, when it did. */
+  terminalKind?: RoutineTerminalKind;
+  actions?: RoutineActionRequest[];
+  awaitingDecision?: RoutineAwaitingDecision;
+  handoff?: ProcessTurnResult["handoff"];
+  operatorNotice?: RoutineOperatorNoticeEffect;
+  /** The skills the routine already ran while claiming the turn that may have acted outside the conversation. */
+  skillsWithExternalEffects?: ProcessTurnResult["skillsWithExternalEffects"];
 }
 
 /**
@@ -2020,12 +2124,16 @@ export interface RoutineContextRenderer {
 
 /** Renders a grounded answer for a routine step, or null when the step is not groundable. */
 export interface RoutineGroundedAnswerRenderer {
-  render(input: {
-    step: RoutineStep;
-    steering: SteeringRule[];
-    turn: TurnContext;
-  }): Promise<RenderableTurn | null>;
+  render(input: RoutineGroundedAnswerInput): Promise<RenderableTurn | null>;
+  /**
+   * Decides from the turn's staged context alone whether the step is groundable: null when
+   * it is not, otherwise the grounded answer, generated only when asked.
+   * `prepare(input)?.render()` produces what `render(input)` would. Optional.
+   */
+  prepare?(input: RoutineGroundedAnswerInput): PendingRenderableTurn | null;
 }
+
+export type RoutineGroundedAnswerInput = Pick<RoutineStepReplyInput, "step" | "steering" | "turn">;
 
 /**
  * Tool-backed skills. A host that exposes tools (MCP, OpenAPI, local functions) implements

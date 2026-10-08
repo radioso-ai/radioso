@@ -1,10 +1,12 @@
 import type {
+  ConversationRoutineClaim,
   ConversationRoutineNextStepSelector,
+  ConversationRoutineResumeInput,
   ConversationRoutineResumeResult,
   ConversationRoutineRunner,
   ConversationRoutineSkillDispatcher,
-  ConversationRoutineSteeringResolver,
   ConversationRoutineStepRenderer,
+  PendingRenderableTurn,
   Routine,
   RoutineActionRequest,
   RoutineAuthoredTerminalKind,
@@ -19,6 +21,7 @@ import type {
   RoutineState,
   RoutineStep,
   RoutineStepReask,
+  RoutineStepReplyInput,
   RoutineTraceRejectedSlot,
   RoutineTraceSlotValue,
   RoutineTraceStepEntry,
@@ -589,12 +592,25 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     return routine.steps.find((candidate) => candidate.id === stepId) ?? null;
   }
 
-  async resume(input: {
-    turn: TurnContext;
-    state: RoutineState;
-    steeringResolver?: ConversationRoutineSteeringResolver;
-    activationTurn?: boolean;
-  }): Promise<ConversationRoutineResumeResult> {
+  async resume(input: ConversationRoutineResumeInput): Promise<ConversationRoutineResumeResult> {
+    const claim = await this.claim(input);
+    if (claim.kind === "yielded") {
+      return { yielded: true, response: { answer: "" }, nextState: null, pendingStep: claim.pendingStep };
+    }
+    return { response: await claim.reply.render(), ...claim.effects };
+  }
+
+  /** The reply for a step, generated only when the claim's holder asks for it. */
+  private prepareReply(input: RoutineStepReplyInput): PendingRenderableTurn {
+    return this.renderer.prepare?.(input) ?? { render: () => this.renderer.render(input) };
+  }
+
+  /**
+   * Walks the routine for this turn and decides everything it does — where it lands, what it
+   * captures, which actions it emits, how it ends — before any reply text exists. The reply
+   * is the last thing every branch produces and nothing here reads it.
+   */
+  async claim(input: ConversationRoutineResumeInput): Promise<ConversationRoutineClaim> {
     const { turn } = input;
     const now = this.clock();
     const routine = this.routines.find((candidate) => candidate.id === input.state.routineId);
@@ -632,10 +648,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     const currentStep = stepById(currentStepId);
     // A yield leaves the saved state untouched, so the routine waits on the step it resumed
     // on, whatever this message would have filled or walked past.
-    const yieldTurn = (): ConversationRoutineResumeResult => ({
-      yielded: true,
-      response: { answer: "" },
-      nextState: null,
+    const yieldTurn = (): ConversationRoutineClaim => ({
+      kind: "yielded",
       pendingStep: pendingStepFor(routine, currentStep, state.variables),
     });
 
@@ -908,7 +922,6 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       });
       // The user's message is off-topic for the routine → decline this turn and let
       // normal answering handle it; the routine stays at its current step to resume.
-      // response/nextState are inert placeholders the engine ignores on a yield.
       if (decision.yieldTurn) {
         return yieldTurn();
       }
@@ -1129,21 +1142,23 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // hand-off end's message and the completion export run only for a visitor who reaches it.
     if (reaskCount > reaskLimit + ASK_DIFFERENTLY_TURNS_BEFORE_HANDOFF && routesToHandoff(routine)) {
       traceSteps.push({ stepId: currentStep.id, kind: currentStep.kind, event: "reask_limit_handoff", reaskCount });
-      const response = await this.renderer.render({ step: currentStep, steering: [], turn, stuckHandoff: true });
       return {
-        response,
-        nextState: null,
-        terminal: { kind: "stuck", stepId: currentStep.id, collected: declaredSlotVariables(routine, variables) },
-        trace: {
-          routineId: routine.id,
-          startStepId: currentStepId,
-          landedStepId: currentStep.id,
-          terminalKind: "stuck",
-          capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
-          filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
-          ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
-          steps: traceSteps,
+        kind: "claimed",
+        effects: {
+          nextState: null,
+          terminal: { kind: "stuck", stepId: currentStep.id, collected: declaredSlotVariables(routine, variables) },
+          trace: {
+            routineId: routine.id,
+            startStepId: currentStepId,
+            landedStepId: currentStep.id,
+            terminalKind: "stuck",
+            capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
+            filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
+            ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
+            steps: traceSteps,
+          },
         },
+        reply: this.prepareReply({ step: currentStep, steering: [], turn, stuckHandoff: true }),
       };
     }
     const reaskExhausted = reaskCount > reaskLimit;
@@ -1157,6 +1172,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // loudly instead of looping (and re-firing a side effect) forever. Neither kind is
     // ever left as the resume position.
     const actions: RoutineActionRequest[] = [];
+    // Every skill a skill step runs on the way that may already have acted outside the
+    // conversation, so the host learns of it before the turn is saved. Only the dispatcher
+    // knows what a skill does; one that does not say it stayed inside counts.
+    const skillsWithExternalEffects: string[] = [];
     let hops = 0;
     while (step.kind === "skill" || step.kind === "action") {
       if (++hops > routine.steps.length) {
@@ -1201,6 +1220,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         turn: stagedContext === turn.stagedContext ? turn : { ...turn, stagedContext },
         ...(step.inputBindings ? { inputBindings: step.inputBindings } : {}),
       });
+      if (skillResult.actsOutsideConversation !== false) {
+        skillsWithExternalEffects.push(step.skillName);
+      }
       variables = { ...variables, ...assignOutputs(step.outputAssignments, skillResult.outputs) };
       const staged = stagedContextForSkillResult(step, skillResult);
       if (staged) {
@@ -1289,7 +1311,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       const steering = input.steeringResolver
         ? await input.steeringResolver.resolve({ step, baseSteering, turn })
         : baseSteering;
-      const response = await this.renderer.render({
+      const reply = this.prepareReply({
         step: renderedStep,
         steering,
         turn,
@@ -1307,16 +1329,20 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       const reason = typeof step.metadata?.reason === "string" ? step.metadata.reason : undefined;
 
       return {
-        response,
-        nextState,
-        awaitingDecision: {
-          stepId: step.id,
-          options: step.decision.options,
-          captureKey: step.decision.captureKey,
-          ...(reason ? { reason } : {}),
+        kind: "claimed",
+        effects: {
+          nextState,
+          awaitingDecision: {
+            stepId: step.id,
+            options: step.decision.options,
+            captureKey: step.decision.captureKey,
+            ...(reason ? { reason } : {}),
+          },
+          ...(actions.length > 0 ? { actions } : {}),
+          ...(skillsWithExternalEffects.length > 0 ? { skillsWithExternalEffects } : {}),
+          trace,
         },
-        ...(actions.length > 0 ? { actions } : {}),
-        trace,
+        reply,
       };
     }
 
@@ -1353,7 +1379,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     const reask: RoutineStepReask | null = reaskExhausted
       ? { ...(missing ?? { missingSlots: [] }), exhausted: true }
       : missing;
-    const response = await this.renderer.render({
+    const reply = this.prepareReply({
       step: renderedStep,
       steering,
       turn: turnWithStagedContext,
@@ -1384,14 +1410,18 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     };
 
     return {
-      response,
-      // A terminal step ends the routine — clear its state.
-      nextState: step.kind === "terminal" ? null : nextState,
-      ...(terminalKind
-        ? { terminal: terminalResult(terminalKind, step, declaredSlotVariables(routine, variables)) }
-        : {}),
-      ...(actions.length > 0 ? { actions } : {}),
-      trace,
+      kind: "claimed",
+      effects: {
+        // A terminal step ends the routine — clear its state.
+        nextState: step.kind === "terminal" ? null : nextState,
+        ...(terminalKind
+          ? { terminal: terminalResult(terminalKind, step, declaredSlotVariables(routine, variables)) }
+          : {}),
+        ...(actions.length > 0 ? { actions } : {}),
+        ...(skillsWithExternalEffects.length > 0 ? { skillsWithExternalEffects } : {}),
+        trace,
+      },
+      reply,
     };
   }
 }

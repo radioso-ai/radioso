@@ -2826,6 +2826,8 @@ describe("chat service streaming", () => {
     conversationRepository?: InMemoryConversationRepository;
     blockFirstAssessment?: { started: () => void; release: Promise<void> };
     assistantTurnPersistence?: ChatServiceOptions["assistantTurnPersistence"];
+    /** Skills the coverage routine's skill steps ran that acted outside the conversation. */
+    skillsWithExternalEffects?: string[];
   } = {}) => {
     const persistedReactions: Parameters<ConversationCoverageReactionRecorder["record"]>[0][] = [];
     const pendingClarifications: unknown[] = [];
@@ -2902,6 +2904,7 @@ describe("chat service streaming", () => {
         runner: {
           resume: async ({ state }) => ({
             response: { answer: "I can arrange a consultation." },
+            ...(input.skillsWithExternalEffects ? { skillsWithExternalEffects: input.skillsWithExternalEffects } : {}),
             nextState: input.handoffAndAwaitingDecision
               ? { ...state, path: ["operator_review"], status: "suspended" as const }
               : { ...state, path: ["consultation"], status: "active" as const },
@@ -3004,6 +3007,29 @@ describe("chat service streaming", () => {
       },
     });
     expect(streaming.persistedReactions).toHaveLength(1);
+  });
+
+  it("reports the skills a coverage takeover's routine ran outside the conversation on the final stream event", async () => {
+    const coverage = coverageRoutineService({ skillsWithExternalEffects: ["customer_email.send"] });
+    const assembly = (coverage.service as unknown as {
+      chatTurnAssembly: { streamPreparedByEngine: (...args: unknown[]) => AsyncIterable<{ type: string }> };
+    }).chatTurnAssembly;
+    const streamPreparedByEngine = assembly.streamPreparedByEngine.bind(assembly);
+    const finals: Array<{ type: string; skillsWithExternalEffects?: string[] }> = [];
+    assembly.streamPreparedByEngine = async function* (...args: unknown[]) {
+      for await (const event of streamPreparedByEngine(...args)) {
+        if (event.type === "final") finals.push(event);
+        yield event;
+      }
+    };
+
+    for await (const _event of coverage.service.streamAnswer({ workspaceId: "workspace-1", query: "Please arrange a consultation.", stream: true })) {
+      // Drain the turn.
+    }
+
+    expect(finals).toHaveLength(1);
+    expect(finals[0]?.skillsWithExternalEffects).toEqual(["customer_email.send"]);
+    expect(coverage.routineStore.save).toHaveBeenCalledOnce();
   });
 
   it.each([false, true])("activates coverage routines and commits their effects through the public sense-compatible %s path", async (stream) => {

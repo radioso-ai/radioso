@@ -9,6 +9,63 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.15.0] - 2026-10-08
+
+### Added
+
+- **test-chat:** stream routine replies by the live-chat delivery rule ([#1444](https://github.com/radioso-ai/radioso/pull/1444))
+- **chat:** stream routine replies that report no completed action ([#1443](https://github.com/radioso-ai/radioso/pull/1443))
+- **activity:** show and filter conversations started by AI agents ([#1426](https://github.com/radioso-ai/radioso/pull/1426))
+- **billing:** count Ray turns at half a conversation and sell top-ups on paid plans only ([#1422](https://github.com/radioso-ai/radioso/pull/1422))
+- **audience-pulse:** show each topic's answer shortfalls in plain words ([#1418](https://github.com/radioso-ai/radioso/pull/1418))
+- **routines:** hand a visitor stuck past the re-ask limit to a person ([#1414](https://github.com/radioso-ai/radioso/pull/1414))
+- **billing:** sync the plan catalog to Stripe and wire Stripe secrets through Terraform ([#1406](https://github.com/radioso-ai/radioso/pull/1406))
+- **test-chat:** keep the open test's id in the URL as route state ([#1405](https://github.com/radioso-ai/radioso/pull/1405))
+
+### Fixed
+
+- **chat:** show a takeover routine's confirmation only after its action is committed ([#1439](https://github.com/radioso-ai/radioso/pull/1439))
+- **test-chat:** stream the agent's answer while it is generated ([#1438](https://github.com/radioso-ai/radioso/pull/1438))
+- **chat:** stream grounded answers that use captured page content ([#1437](https://github.com/radioso-ai/radioso/pull/1437))
+- **billing:** stop creating a Stripe price for the managed service ([#1435](https://github.com/radioso-ai/radioso/pull/1435))
+- **retrieval:** show operators the answer candidate pool behind top K settings ([#1434](https://github.com/radioso-ai/radioso/pull/1434))
+- **chat:** release a streaming turn that never settles after the visitor disconnects ([#1433](https://github.com/radioso-ai/radioso/pull/1433))
+- **activity:** measure response time from when the visitor sends the message ([#1428](https://github.com/radioso-ai/radioso/pull/1428))
+- **inbox:** keep Needs-you selections in the URL ([#1427](https://github.com/radioso-ai/radioso/pull/1427))
+- **onboarding:** complete the first-run funnel ([#1430](https://github.com/radioso-ai/radioso/pull/1430))
+- show built-in answer skills ([#1429](https://github.com/radioso-ai/radioso/pull/1429))
+- **routines:** require confirmation before actions ([#1431](https://github.com/radioso-ai/radioso/pull/1431))
+- **privacy:** stop logging raw client addresses and relay rate-limit headers to the embed ([#1425](https://github.com/radioso-ai/radioso/pull/1425))
+- **test-chat:** list a test in history only once a message is sent ([#1417](https://github.com/radioso-ai/radioso/pull/1417))
+- **frontend:** close the last translation-crash gap left after #1298's Button loading migration ([#1294](https://github.com/radioso-ai/radioso/pull/1294))
+- **inbox:** clear a deleted conversation's permalink from the URL ([#1412](https://github.com/radioso-ai/radioso/pull/1412))
+- **test-chat:** stop a stale effect flush from reverting a freshly reopened test ([#1415](https://github.com/radioso-ai/radioso/pull/1415))
+- **routines:** drop undeclared variable names on activation, matching the selector ([#1411](https://github.com/radioso-ai/radioso/pull/1411))
+- **operator-mcp:** fence reviewed execution receipts to the attempt that holds them ([#1413](https://github.com/radioso-ai/radioso/pull/1413))
+- **routines:** check a step's only rule exit and skip satisfied steps after tool steps ([#1410](https://github.com/radioso-ai/radioso/pull/1410))
+- **skills:** escape visitor-supplied values in email skill HTML bodies ([#1409](https://github.com/radioso-ai/radioso/pull/1409))
+- **routines:** take the tool step's default exit on an off-topic yield ([#1407](https://github.com/radioso-ai/radioso/pull/1407))
+- **ee:** stop reporting the dormant answer cap as unlimited on catalog plans ([#1408](https://github.com/radioso-ai/radioso/pull/1408))
+- **notifications:** take operator-notice ids from the queued row and keep Slack notice content on take over ([#1404](https://github.com/radioso-ai/radioso/pull/1404))
+- **routines:** keep host-queued notices out of routine authoring ([#1402](https://github.com/radioso-ai/radioso/pull/1402))
+- **routines:** apply hand-off and notice endings reached after an approval ([#1401](https://github.com/radioso-ai/radioso/pull/1401))
+
+### Internal
+
+- **routines:** separate claiming a routine turn from rendering its reply ([#1440](https://github.com/radioso-ai/radioso/pull/1440))
+- **deps:** bump multer ([#1395](https://github.com/radioso-ai/radioso/pull/1395))
+- **retrieval:** remove dead query-constraint plumbing and the empty constraintSummary field ([#1432](https://github.com/radioso-ai/radioso/pull/1432))
+- run the WordPress companion plugin tests ([#1423](https://github.com/radioso-ai/radioso/pull/1423))
+- **prompts:** move the page-context fragment wording into backend/prompts ([#1424](https://github.com/radioso-ai/radioso/pull/1424))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `209_operator_mcp_invocation_attempt.sql`
+
+[1.15.0]: https://github.com/radioso-ai/radioso/compare/v1.14.0...v1.15.0
+
 ## [1.14.0] - 2026-10-02
 
 ### Added

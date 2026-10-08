@@ -10243,6 +10243,8 @@ export interface components {
             sideId: string;
             /** Format: uuid */
             messageId: string;
+            /** @description The stored answer. It is authoritative over the message_delta text streamed before it, which the runtime's final presentation may normalize. */
+            answer: string;
             turnTrace?: unknown;
         } | {
             /** @enum {string} */

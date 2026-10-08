@@ -166,6 +166,7 @@ export const createProcessTurnResult = (input: {
   routineExecution?: ProcessTurnResult["routineExecution"];
   routineClarificationRoutineIds?: ProcessTurnResult["routineClarificationRoutineIds"];
   awaitingDecision?: RoutineAwaitingDecision;
+  skillsWithExternalEffects?: string[];
   awaitingSkillInput?: AwaitingSkillInput[];
 }): ProcessTurnResult => ({
   sessionId: input.sessionId,
@@ -182,6 +183,7 @@ export const createProcessTurnResult = (input: {
     ? { routineClarificationRoutineIds: input.routineClarificationRoutineIds }
     : {}),
   ...(input.awaitingDecision ? { awaitingDecision: input.awaitingDecision } : {}),
+  ...(input.skillsWithExternalEffects && input.skillsWithExternalEffects.length > 0 ? { skillsWithExternalEffects: input.skillsWithExternalEffects } : {}),
   ...(input.awaitingSkillInput && input.awaitingSkillInput.length > 0
     ? { awaitingSkillInput: input.awaitingSkillInput }
     : {}),

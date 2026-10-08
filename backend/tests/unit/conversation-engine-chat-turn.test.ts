@@ -4,14 +4,17 @@ import type {
   AnswerCoverageAssessment,
   ConversationCoverageReactionRecorder,
   ConversationEngine,
+  Routine,
+  RoutineState,
 } from "@radioso/conversation-contract";
-import { DefaultConversationEngine } from "@radioso/conversation-engine";
+import { DefaultConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
+import { RoutineNextStepSelector, RoutineStepRenderer } from "@radioso/conversation-defaults";
 import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import type { AgentRecord } from "../../src/modules/agents/public.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import {
-  attemptRoutineTurnWithConversationEngine,
+  claimRoutineTurnWithConversationEngine,
   type RunPreparedChatTurnStreamWithConversationEngineEvent,
   runPreparedChatTurnStreamWithConversationEngine,
   runPreparedChatTurnWithConversationEngine,
@@ -57,6 +60,8 @@ import {
 } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { buildTurnTraceEnvelope } from "../../src/modules/chat/services/turnTraceEnvelope.js";
 import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { ChatTurnAssembly } from "../../src/modules/chat/services/chatTurnAssembly.js";
+import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 
 const conversation = (): ConversationRecord => ({
   id: "conv_1",
@@ -180,7 +185,7 @@ const session = (): PreparedSession => {
 // these cases exercise.
 const chatAnswerPresenter = {} as ChatAnswerPresenter;
 
-describe("attemptRoutineTurnWithConversationEngine", () => {
+describe("claimRoutineTurnWithConversationEngine", () => {
   const routinePorts = {
     routineStore: { loadActive: async () => null, save: async () => {}, clear: async () => {} },
     routineRunner: { resume: async () => ({ response: { answer: "" }, nextState: null }) },
@@ -200,7 +205,7 @@ describe("attemptRoutineTurnWithConversationEngine", () => {
       resumeAwaitingDecision: async () => ({ resumed: false, response: { answer: "" }, nextState: null }),
     });
 
-  it("presents the routine reply when the engine claims the turn", async () => {
+  it("presents the reply of a turn an engine that cannot claim attempted whole", async () => {
     const result = {
       sessionId: "conv_1",
       events: [],
@@ -210,22 +215,316 @@ describe("attemptRoutineTurnWithConversationEngine", () => {
       trace: { traceId: "t", startedAt: "x", stages: [] },
       actions: [{ type: "contact.send", payload: { email: "a@b.c" } }],
     } as unknown as ProcessTurnResult;
-    const outcome = await attemptRoutineTurnWithConversationEngine({
+    const claim = await claimRoutineTurnWithConversationEngine({
       engine: engineWith(result),
       session: session(),
       ...routinePorts,
     });
+    expect(claim?.effects.actions).toEqual([{ type: "contact.send", payload: { email: "a@b.c" } }]);
+    expect(claim?.reply.stream).toBeUndefined();
+    const outcome = await claim?.reply.render();
     expect(outcome?.presentation.answer).toBe("What is your email?");
     expect(outcome?.result.actions).toEqual([{ type: "contact.send", payload: { email: "a@b.c" } }]);
   });
 
   it("returns null when no routine claims the turn (so the host falls through to grounding)", async () => {
-    const outcome = await attemptRoutineTurnWithConversationEngine({
+    const claim = await claimRoutineTurnWithConversationEngine({
       engine: engineWith(null),
       session: session(),
       ...routinePorts,
     });
-    expect(outcome).toBeNull();
+    expect(claim).toBeNull();
+  });
+
+  describe("an engine that cannot claim reports the effects a claiming engine reports", () => {
+    const endingRoutine: Routine = {
+      id: "contact",
+      rootStepId: "ask_email",
+      steps: [
+        { id: "ask_email", kind: "chat", action: "Ask for the visitor's email." },
+        { id: "ask_message", kind: "chat", action: "Ask what they want to tell us." },
+        { id: "notify", kind: "action", actionType: "contact.notify" },
+        { id: "send_copy", kind: "skill", skillName: "customer_email.send" },
+        { id: "confirm_sent", kind: "chat", action: "Say a copy is on its way and ask if anything else is needed." },
+        { id: "done", kind: "terminal", action: "Confirm.", metadata: { terminalKind: "complete", operatorNotice: { subject: "New contact" } } },
+        { id: "to_person", kind: "terminal", action: "Say a person continues.", metadata: { terminalKind: "handoff" } },
+        {
+          id: "approve",
+          kind: "await",
+          action: "Say it waits for approval.",
+          decision: { captureKey: "approval", options: [{ id: "yes", label: "Approve" }] },
+        },
+      ],
+      transitions: [
+        { from: "ask_email", to: "ask_message", condition: "an email was given" },
+        { from: "ask_email", to: "to_person", condition: "they want a person" },
+        { from: "ask_message", to: "notify", condition: "a message was given" },
+        { from: "ask_message", to: "approve", condition: "it needs approval" },
+        { from: "ask_message", to: "send_copy", condition: "they want a copy" },
+        { from: "send_copy", to: "confirm_sent", condition: "always" },
+        { from: "notify", to: "done", condition: "always" },
+      ],
+      completionExport: { enabled: true, destinationRef: "dest_1", triggerKinds: ["complete"] },
+    };
+    const onStep = (stepId: string, extra: Partial<RoutineState> = {}): RoutineState => ({
+      sessionId: "conv_1",
+      routineId: "contact",
+      executionId: "exec_1",
+      path: stepId === "ask_email" ? [] : ["ask_email", "ask_message"],
+      variables: stepId === "ask_email" ? {} : { email: "alex@example.com" },
+      status: "active",
+      ...extra,
+    });
+    const endings: Array<{
+      name: string;
+      active: RoutineState;
+      nextStepId: string;
+      terminalKind?: string;
+      skillsWithExternalEffects?: string[];
+    }> = [
+      { name: "terminal with action", active: onStep("ask_message"), nextStepId: "notify", terminalKind: "complete" },
+      { name: "handoff", active: onStep("ask_email"), nextStepId: "to_person", terminalKind: "handoff" },
+      { name: "stuck", active: onStep("ask_email", { reaskCount: 4 }), nextStepId: "ask_email", terminalKind: "stuck" },
+      { name: "approval", active: onStep("ask_message"), nextStepId: "approve" },
+      { name: "a skill step, then a chat step", active: onStep("ask_message"), nextStepId: "send_copy", skillsWithExternalEffects: ["customer_email.send"] },
+    ];
+    const claimWith = async (engine: ConversationEngine, ending: (typeof endings)[number]) => {
+      const claim = await claimRoutineTurnWithConversationEngine({
+        engine,
+        session: session(),
+        ...routinePorts,
+        routineStore: { loadActive: async () => ending.active, save: async () => {}, clear: async () => {} },
+        routineRunner: new DefaultRoutineRunner(
+          [endingRoutine],
+          { select: async () => ({ nextStepId: ending.nextStepId }) },
+          { render: async ({ step }) => ({ answer: `reply:${step.id}` }) },
+          { dispatch: async () => ({ status: "success" }) },
+        ),
+      });
+      return claim!;
+    };
+    const withoutClaim = (engine: DefaultConversationEngine): ConversationEngine => ({
+      attemptRoutine: (input) => engine.attemptRoutine(input),
+      processTurn: (input) => engine.processTurn(input),
+      processTurnStream: (input) => engine.processTurnStream(input),
+      resumeAwaitingDecision: (input) => engine.resumeAwaitingDecision(input),
+    });
+
+    for (const ending of endings) {
+      it(`for: ${ending.name}`, async () => {
+        const native = await claimWith(new DefaultConversationEngine(), ending);
+        const fallback = await claimWith(withoutClaim(new DefaultConversationEngine()), ending);
+
+        expect(fallback.effects).toStrictEqual(native.effects);
+        expect(native.effects.terminalKind).toBe(ending.terminalKind);
+        expect(native.effects.skillsWithExternalEffects).toEqual(ending.skillsWithExternalEffects);
+        expect(fallback.reply.stream).toBeUndefined();
+        expect((await fallback.reply.render()).result.response).toEqual((await native.reply.render()).result.response);
+      });
+    }
+  });
+
+  describe("through an engine that claims before the reply exists", () => {
+    const activeStore = () => {
+      const saved: string[] = [];
+      return {
+        saved,
+        store: {
+          loadActive: async () => ({ sessionId: "conv_1", routineId: "contact", path: [], variables: {}, status: "active" as const }),
+          save: async (state: { path: string[] }) => {
+            saved.push(state.path.join(">"));
+          },
+          clear: async () => {},
+        },
+      };
+    };
+    const generated: string[] = [];
+    const claimingRunner = {
+      resume: async () => {
+        throw new Error("a claiming runner is never resumed whole");
+      },
+      claim: async () => ({
+        kind: "claimed" as const,
+        effects: {
+          nextState: { sessionId: "conv_1", routineId: "contact", path: ["ask_message"], variables: {}, status: "active" as const },
+        },
+        reply: {
+          render: async () => {
+            generated.push("render");
+            return { answer: "What would you like to tell them?" };
+          },
+          stream: async function* () {
+            generated.push("stream");
+            yield "What would you like";
+            yield " to tell them?";
+            return { answer: "What would you like to tell them?" };
+          },
+        },
+      }),
+    };
+
+    it("reports the turn's effects before generating its reply, then renders and settles it", async () => {
+      generated.length = 0;
+      const { saved, store } = activeStore();
+      const claim = await claimRoutineTurnWithConversationEngine({
+        engine: new DefaultConversationEngine(),
+        session: session(),
+        ...routinePorts,
+        routineStore: store,
+        routineRunner: claimingRunner,
+      });
+
+      expect(claim?.effects).toEqual({ routineExecution: { routineId: "contact" } });
+      expect(generated).toEqual([]);
+      expect(saved).toEqual([]);
+
+      const outcome = await claim!.reply.render();
+      expect(generated).toEqual(["render"]);
+      expect(saved).toEqual(["ask_message"]);
+      expect(outcome.presentation.answer).toBe("What would you like to tell them?");
+      expect(outcome.result.response.answer).toBe("What would you like to tell them?");
+    });
+
+    it("streams the reply, then settles the streamed turn the way a rendered one settles", async () => {
+      generated.length = 0;
+      const rendered = await (await claimRoutineTurnWithConversationEngine({
+        engine: new DefaultConversationEngine(),
+        session: session(),
+        ...routinePorts,
+        routineStore: activeStore().store,
+        routineRunner: claimingRunner,
+      }))!.reply.render();
+
+      const { saved, store } = activeStore();
+      const claim = await claimRoutineTurnWithConversationEngine({
+        engine: new DefaultConversationEngine(),
+        session: session(),
+        ...routinePorts,
+        routineStore: store,
+        routineRunner: claimingRunner,
+      });
+      const stream = claim!.reply.stream!();
+      const deltas: string[] = [];
+      let next = await stream.next();
+      while (!next.done) {
+        deltas.push(next.value);
+        expect(saved).toEqual([]);
+        next = await stream.next();
+      }
+
+      expect(deltas).toEqual(["What would you like", " to tell them?"]);
+      expect(saved).toEqual(["ask_message"]);
+      expect(next.value.presentation).toEqual(rendered.presentation);
+      expect(next.value.result.response).toEqual(rendered.result.response);
+      expect(next.value.result.trace.stages.map((stage) => stage.kind))
+        .toEqual(rendered.result.trace.stages.map((stage) => stage.kind));
+    });
+  });
+});
+
+describe("ChatTurnAssembly.claimRoutineTurn", () => {
+  const contactRoutine = {
+    id: "contact",
+    rootStepId: "ask_email",
+    steps: [
+      { id: "ask_email", kind: "chat" as const, action: "Ask for the visitor's email." },
+      { id: "ask_message", kind: "chat" as const, action: "Ask what they want to tell us." },
+    ],
+    transitions: [{ from: "ask_email", to: "ask_message", condition: "an email was given" }],
+  };
+  const activeRoutine = { sessionId: "conv_1", routineId: "contact", path: [], variables: {}, status: "active" as const };
+
+  // One assembly per turn, over the real engine, runner, selector, and step renderer: only the
+  // host model gateway is scripted, and it records which call ran, how, and under which usage key.
+  const assemblyForTurn = ({ hostStreams = true }: { hostStreams?: boolean } = {}) => {
+    const modelCalls: string[] = [];
+    const pageReadCommits: number[] = [];
+    const isSelector = (input: ChatGatewayInput): boolean =>
+      (input.systemPrompt ?? "").includes("You are guiding a user through a structured, multi-step routine");
+    const answer = async (input: ChatGatewayInput) => {
+      modelCalls.push(`${isSelector(input) ? "selector" : "reply"} answer ${input.usageContext.attemptKey}`);
+      return isSelector(input)
+        ? JSON.stringify({ claimsAuthority: false, condition: 1, offTopic: false, variables: {} })
+        : "What would you like to tell them?";
+    };
+    const assembly = new ChatTurnAssembly({
+      chatGateway: hostStreams
+        ? {
+            answer,
+            streamAnswer: async function* (input: ChatGatewayInput) {
+              modelCalls.push(`${isSelector(input) ? "selector" : "reply"} stream ${input.usageContext.attemptKey}`);
+              yield "  What would you like";
+              yield " to tell them?  ";
+            },
+          }
+        : { answer },
+      chatAnswerPresenter: {
+        presentRoutineAnswer: (answer: string) => ({ answer, skillName: "routine", skillOutcome: "routine", skillStatus: "completed" }),
+      },
+      chatSessionPreparer: {
+        stagedPageContextFor: () => [],
+        applyFrozenPageReadOutcome: () => {
+          pageReadCommits.push(modelCalls.length);
+        },
+      },
+      conversationEngine: new DefaultConversationEngine(),
+      turnSkills: [],
+      routineStore: { loadActive: async () => activeRoutine, save: async () => {}, clear: async () => {} },
+      routineProvider: {
+        forTurn: async ({ modelGateway }: { modelGateway: ConstructorParameters<typeof RoutineStepRenderer>[0] }) => ({
+          routines: [contactRoutine],
+          activator: { activate: async () => null },
+          runner: new DefaultRoutineRunner(
+            [contactRoutine],
+            new RoutineNextStepSelector(modelGateway),
+            new RoutineStepRenderer(modelGateway),
+          ),
+        }),
+      },
+    } as never);
+    return { assembly, modelCalls, pageReadCommits };
+  };
+  const turnInput = { responseLanguage: Promise.resolve(undefined), activeRoutine };
+
+  it("claims the turn with only the routine walked, and streams the reply it renders whole", async () => {
+    const rendered = assemblyForTurn();
+    const whole = await rendered.assembly.attemptRoutineTurn(session(), turnInput);
+
+    const streamed = assemblyForTurn();
+    const claim = await streamed.assembly.claimRoutineTurn(session(), turnInput);
+    expect(claim?.effects).toEqual({ routineExecution: { routineId: "contact" } });
+    expect(streamed.modelCalls).toEqual(["selector answer routine_turn"]);
+    expect(streamed.pageReadCommits).toEqual([]);
+
+    const stream = claim!.reply.stream!();
+    const deltas: string[] = [];
+    let next = await stream.next();
+    while (!next.done) {
+      deltas.push(next.value);
+      next = await stream.next();
+    }
+
+    expect(deltas).toEqual(["What would you like", " to tell them?"]);
+    expect(streamed.modelCalls).toEqual(["selector answer routine_turn", "reply stream routine_turn:2"]);
+    expect(rendered.modelCalls).toEqual(["selector answer routine_turn", "reply answer routine_turn:2"]);
+    // The page excerpt the routine read is committed once the reply exists, whole or streamed.
+    expect(streamed.pageReadCommits).toEqual([2]);
+    expect(rendered.pageReadCommits).toEqual([2]);
+    expect(next.value.presentation).toEqual(whole?.presentation);
+    expect(next.value.routineStateTransition).toEqual(whole?.routineStateTransition);
+    expect(next.value.routineStateTransition).toMatchObject({ kind: "save", state: { path: ["ask_message"] } });
+    expect(next.value.engineTrace?.stages.map((stage) => stage.kind))
+      .toEqual(whole?.engineTrace?.stages.map((stage) => stage.kind));
+  });
+
+  it("offers no reply stream when the host gateway can only complete, and still renders the reply", async () => {
+    const answerOnly = assemblyForTurn({ hostStreams: false });
+    const claim = await answerOnly.assembly.claimRoutineTurn(session(), turnInput);
+
+    expect(claim?.reply.stream).toBeUndefined();
+    const result = await claim!.reply.render();
+    expect(result.presentation.answer).toBe("What would you like to tell them?");
+    expect(answerOnly.modelCalls).toEqual(["selector answer routine_turn", "reply answer routine_turn:2"]);
   });
 });
 
@@ -504,6 +803,31 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     expect(final.engineTrace.stages.find((stage) => stage.kind === "compose")).toMatchObject({
       outputs: expect.objectContaining({ yielded: true }),
     });
+  });
+
+  it("labels the routine's substituted answer as its own route, not the yielded skill's turn route", async () => {
+    const turnSkills = [coverageReportingSkill(unansweredAssessment)];
+    const retrievalSession: PreparedSession = { ...session(), turnRoute: "retrieval" };
+    const events: RunPreparedChatTurnStreamWithConversationEngineEvent[] = [];
+    for await (const event of runPreparedChatTurnStreamWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: retrievalSession,
+      chatAnswerPresenter: { presentRoutineAnswer: (answer: string) => ({ answer, skillName: "routine", skillOutcome: "completed", skillStatus: "completed" }) } as unknown as ChatAnswerPresenter,
+      turnSkillSelector: new ChatTurnSkillSelector(turnSkills, new DefaultTurnSelectionStrategy()),
+      turnSkills,
+      query: "Where is my order?",
+      ...coverageRoutinePorts,
+    })) {
+      events.push(event);
+    }
+
+    const chunks = events.filter((event) => event.type === "chunk");
+    // The session was routed to retrieval, but the text that actually streams is the
+    // post-evidence routine's substituted reply, not a retrieval answer — it must not
+    // carry the retrieval route label.
+    expect(chunks).toEqual([
+      { type: "chunk", text: "I can connect you with support.", deliveryMode: "committed", route: "other" },
+    ]);
   });
 
   it("yields mapped, deduplicated progress while the engine remains blocked", async () => {

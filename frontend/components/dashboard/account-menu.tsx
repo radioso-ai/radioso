@@ -79,11 +79,17 @@ export function AccountMenu({
     if (lastFetchedAtRef.current !== null && now - lastFetchedAtRef.current < USAGE_MENU_CACHE_MS) {
       return
     }
-    lastFetchedAtRef.current = now
 
     void enterpriseUsageApi.getAccountUsage()
-      .then((response) => setConversationUsage(response.monthlyConversations))
-      .catch(() => setConversationUsage(null))
+      .then((response) => {
+        lastFetchedAtRef.current = Date.now()
+        setConversationUsage(response.monthlyConversations)
+      })
+      .catch(() => {
+        // Leave lastFetchedAtRef untouched: a transient failure must not block the next open
+        // from retrying once the backend recovers.
+        setConversationUsage(null)
+      })
   }
 
   const usageLabel = usageMeterEnabled ? 'Plan & usage' : 'Usage'

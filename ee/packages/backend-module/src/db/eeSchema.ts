@@ -84,6 +84,21 @@ interface EeUsageLimitCreditGrantsTable {
   created_at: Generated<Date>;
 }
 
+interface EeUsageLimitAlertsTable {
+  account_id: string;
+  period_start: string;
+  level: "nearing_limit" | "limit_reached" | "grace_exhausted";
+  created_at: Generated<Date>;
+  sent_at: Date | null;
+  outcome: "sent" | "no_recipients" | "superseded" | "failed" | null;
+  attempts: Generated<number>;
+  next_attempt_at: Generated<Date>;
+  last_error_code: string | null;
+  // JSONB -> unknown: `pg` parses/serializes it transparently (a plain object round-trips as
+  // one), so there is no primitive column type to narrow to; callers cast at the boundary.
+  email_snapshot: unknown;
+}
+
 interface EeUsageLimitAccountAssignmentsTable {
   account_id: string;
   profile_key: string;
@@ -234,6 +249,7 @@ export interface EeDatabase {
   ee_usage_limit_unit_kind_counters: EeUsageLimitUnitKindCountersTable;
   ee_usage_limit_credits: EeUsageLimitCreditsTable;
   ee_usage_limit_credit_grants: EeUsageLimitCreditGrantsTable;
+  ee_usage_limit_alerts: EeUsageLimitAlertsTable;
   ee_usage_limit_document_reservations: EeUsageLimitDocumentReservationsTable;
   ee_usage_limit_storage_reservations: EeUsageLimitStorageReservationsTable;
   ee_usage_limit_monthly_indexed_byte_counters: EeUsageLimitMonthlyIndexedByteCountersTable;

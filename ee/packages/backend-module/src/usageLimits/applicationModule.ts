@@ -7,6 +7,11 @@ import { createUsageLimitRoutes } from "./usageLimitRoutes.js";
 import { EnterpriseUsageLimitService } from "./usageLimitService.js";
 import { EnterpriseOrganizationCreationGuard } from "../orgCreation/organizationCreationGuard.js";
 import { createUsageLimitCopilotToolContribution } from "./copilotTools.js";
+import { UsageLimitAlertDispatcher } from "./alerts/alertDispatcher.js";
+
+// 60s: the design's own ceiling on alert latency ("sweep-only ... ≤1 min latency is fine for
+// usage alerts"); the dispatcher itself bounds one run to at most 1,250 claims.
+const ALERT_SWEEP_INTERVAL_MS = 60_000;
 
 // The free plan in @radioso/plan-catalog: every new account starts here.
 const DEFAULT_PROFILE_KEY = PLAN_CATALOG.defaultPlanId;
@@ -45,5 +50,22 @@ export const createUsageLimitsApplicationModule = (): ApplicationModule => ({
     // on ingestion volume with no idea what the account is allowed to store.
     context.registerCopilotTools?.(({ database }) =>
       createUsageLimitCopilotToolContribution({ usage: new EnterpriseUsageLimitService(database) }));
+    // Sweep-only delivery (no post-commit trigger; see specs/usage-alerts design): a periodic
+    // task in the API runtime claims due `ee_usage_limit_alerts` rows and sends them. Runs only
+    // where `registerPeriodicTask` is wired (the API runtime), never the worker or migrator.
+    context.registerPeriodicTask?.({
+      id: "ee-usage-limit-alerts",
+      intervalMs: ALERT_SWEEP_INTERVAL_MS,
+      create(taskContext) {
+        return new UsageLimitAlertDispatcher({
+          database: taskContext.database,
+          audit: taskContext.audit,
+          noticeMail: taskContext.noticeMail,
+          accountAdministrators: taskContext.accountAdministrators,
+          appBaseUrl: taskContext.appBaseUrl,
+          logger: taskContext.logger,
+        });
+      },
+    });
   },
 });

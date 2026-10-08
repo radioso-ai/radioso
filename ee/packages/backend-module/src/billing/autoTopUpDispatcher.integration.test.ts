@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { PLAN_CATALOG } from "@radioso/plan-catalog";
+
 import { createEeKysely } from "../db/eeSchema.js";
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { EnterpriseUsageLimitService } from "../usageLimits/usageLimitService.js";
@@ -226,6 +228,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
       createTopUpInvoiceDraft: vi.fn(async () => ({ invoiceId: `in_${randomUUID()}` })),
       chargeTopUpInvoice: vi.fn(async () => ({ status: "paid" as const })),
       voidInvoice: vi.fn(async () => undefined),
+      isInvoicePaid: vi.fn(async () => false),
       ...overrides,
     });
 
@@ -286,7 +289,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
     return { addCredits, disableSpy, noticeMailSend };
   };
 
-  it("triggers exactly once when enabled and usage is limit_reached", async () => {
+  it("triggers exactly once when enabled and usage is limit_reached, and settles immediately once our own charge confirms paid", async () => {
     const accountId = await seedEligibleAccount();
     const gateway = createFakeGateway();
     const { dispatcher } = createDispatcher(gateway);
@@ -297,8 +300,12 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
     expect(gateway.chargeTopUpInvoice).toHaveBeenCalledTimes(1);
     const rows = await readRows(accountId);
     expect(rows).toHaveLength(1);
-    expect(rows[0].status).toBe("pending");
+    // Settled right away from the charge call's own "paid" result -- never left waiting on a
+    // webhook that may not arrive.
+    expect(rows[0].status).toBe("paid");
     expect(rows[0].stripe_invoice_id).not.toBeNull();
+    const usage = await new EnterpriseUsageLimitService(database).getAccountUsage(accountId);
+    expect(usage.monthlyConversations?.credits).toBe(PLAN_CATALOG.topUp.conversations);
   });
 
   it("triggers when usage is grace_exhausted", async () => {
@@ -481,26 +488,88 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
       expect(gateway.createTopUpInvoiceDraft).toHaveBeenCalledTimes(1);
       expect(gateway.chargeTopUpInvoice).toHaveBeenCalledTimes(2);
       expect(gateway.chargeTopUpInvoice).toHaveBeenNthCalledWith(2, expect.objectContaining({ invoiceId }));
+      // The re-drive's own charge call confirmed "paid" -- settled immediately, exactly one
+      // invoice and one grant, with no webhook involved at all.
       rows = await readRows(accountId);
       expect(rows).toHaveLength(1);
       expect(rows[0].stripe_invoice_id).toBe(invoiceId);
+      expect(rows[0].status).toBe("paid");
+      const usage = await new EnterpriseUsageLimitService(database).getAccountUsage(accountId);
+      expect(usage.monthlyConversations?.credits).toBe(PLAN_CATALOG.topUp.conversations);
+    });
 
-      // Stripe's own `invoice.paid` webhook resolves the still-pending row -- exactly one grant.
-      const { addCredits } = await fireAutoTopUpWebhookEvent(
+    it("a later invoice.paid webhook replay, after our own charge already settled it, is a no-op", async () => {
+      const accountId = await seedEligibleAccount();
+      const gateway = createFakeGateway();
+      const { dispatcher } = createDispatcher(gateway);
+
+      await dispatcher.run();
+      const rows = await readRows(accountId);
+      expect(rows[0].status).toBe("paid");
+      const usageService = new EnterpriseUsageLimitService(database);
+      const creditsAfterDispatcher = (await usageService.getAccountUsage(accountId)).monthlyConversations?.credits;
+      expect(creditsAfterDispatcher).toBe(PLAN_CATALOG.topUp.conversations);
+
+      // The real, non-mocked usage service: a genuine replay must not double-credit even though
+      // it is a brand-new webhook event id (so `applyIdempotently`'s own event-id claim alone
+      // would not catch it -- the guard here is `addCredits`'s reference-level dedup).
+      const billingRepository = new PostgresBillingCustomerRepository(createEeKysely(pool));
+      const autoTopUpRepository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      const auditRecord = vi.fn(async () => undefined);
+      const result = await handleBillingWebhookEvent(
         {
-          id: "evt_paid_1",
+          id: "evt_replay_1",
           type: "invoice.paid",
           invoice: {
-            id: invoiceId,
+            id: rows[0].stripe_invoice_id!,
             customerId: `cus_${accountId}`,
             metadata: { radioso_kind: "auto_top_up", account_id: accountId, auto_top_up_id: rows[0].id },
             hostedInvoiceUrl: null,
           },
         },
-        gateway,
+        {
+          repository: billingRepository,
+          usage: usageService,
+          gateway,
+          autoTopUps: autoTopUpRepository,
+          noticeMail: { send: vi.fn(async () => ({ dispatched: true })) },
+          accountAdministrators: { list: vi.fn(async () => []) },
+          audit: { record: auditRecord },
+          logger: { info: vi.fn(), warn: vi.fn() },
+          appBaseUrl: "https://app.example.com",
+        },
       );
-      expect(addCredits).toHaveBeenCalledTimes(1);
-      expect((await readRows(accountId))[0].status).toBe("paid");
+
+      expect(result.outcome).toBe("already_settled");
+      const creditsAfterReplay = (await usageService.getAccountUsage(accountId)).monthlyConversations?.credits;
+      expect(creditsAfterReplay).toBe(creditsAfterDispatcher);
+      expect(auditRecord).not.toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: "billing.auto_top_up_paid" }),
+      );
+    });
+
+    it("settles a pending pack whose invoice Stripe already reports paid, instead of re-attempting the charge", async () => {
+      const accountId = await seedEligibleAccount();
+      const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      const id = await repository.claimPending({
+        accountId,
+        periodStart: currentPeriodStart(),
+        maxPacksPerMonth: 3,
+        cooldownMs: 0,
+      });
+      await repository.markInvoiceCreated({ id: id!, stripeInvoiceId: "in_already_paid" });
+      await ageRow(id!, "10 minutes");
+
+      const gateway = createFakeGateway({ isInvoicePaid: vi.fn(async () => true) });
+      const { dispatcher } = createDispatcher(gateway);
+
+      await dispatcher.run();
+
+      expect(gateway.chargeTopUpInvoice).not.toHaveBeenCalled();
+      expect(gateway.voidInvoice).not.toHaveBeenCalled();
+      expect((await repository.findById(id!))?.status).toBe("paid");
+      const usage = await new EnterpriseUsageLimitService(database).getAccountUsage(accountId);
+      expect(usage.monthlyConversations?.credits).toBe(PLAN_CATALOG.topUp.conversations);
     });
 
     it("re-drives a row that crashed right after the claim, before any Stripe call", async () => {
@@ -616,7 +685,9 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
 
     it("gives up on a pending pack past the 20h re-drive window: voids and fails it without disabling", async () => {
       const accountId = await seedEligibleAccount();
-      const gateway = createFakeGateway();
+      // "open": the pay call did not resolve it (no decline, no paid confirmation) -- the row
+      // stays pending after the first run, same as it would waiting on an async confirmation.
+      const gateway = createFakeGateway({ chargeTopUpInvoice: vi.fn(async () => ({ status: "open" as const })) });
       const firstRun = createDispatcher(gateway);
       await firstRun.dispatcher.run();
       const rows = await readRows(accountId);
@@ -646,6 +717,37 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
       // Giving up is us, not Stripe, declining -- auto top-up stays on.
       const settingsRepository = new PostgresAutoTopUpRepository(createEeKysely(pool));
       expect((await settingsRepository.getSettings(accountId))?.enabled).toBe(true);
+    });
+
+    it("a pack past the 20h window whose invoice Stripe reports paid is settled, not voided or failed", async () => {
+      const accountId = await seedEligibleAccount();
+      const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      const id = await repository.claimPending({
+        accountId,
+        periodStart: currentPeriodStart(),
+        maxPacksPerMonth: 3,
+        cooldownMs: 0,
+      });
+      await repository.markInvoiceCreated({ id: id!, stripeInvoiceId: "in_expired_but_paid" });
+      await database.query(
+        `UPDATE ee_billing_auto_top_ups SET created_at = now() - interval '21 hours', updated_at = now() - interval '21 hours' WHERE id = $1`,
+        [id],
+      );
+
+      const gateway = createFakeGateway({ isInvoicePaid: vi.fn(async () => true) });
+      const { dispatcher, auditRecord } = createDispatcher(gateway);
+
+      await dispatcher.run();
+
+      expect(gateway.voidInvoice).not.toHaveBeenCalled();
+      const row = await repository.findById(id!);
+      expect(row?.status).toBe("paid");
+      expect(row?.failureCode).toBeNull();
+      expect(auditRecord).not.toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ errorCode: "redrive_window_expired" }) }),
+      );
+      const usage = await new EnterpriseUsageLimitService(database).getAccountUsage(accountId);
+      expect(usage.monthlyConversations?.credits).toBe(PLAN_CATALOG.topUp.conversations);
     });
 
     it("treats an invalid-request error from draft creation (e.g. a deleted subscription) as definitive: fails and disables", async () => {

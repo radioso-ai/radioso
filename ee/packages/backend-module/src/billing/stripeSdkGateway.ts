@@ -184,6 +184,11 @@ export class StripeSdkGateway implements StripeGateway {
     await this.client.invoices.voidInvoice(invoiceId);
   }
 
+  async isInvoicePaid(invoiceId: string): Promise<boolean> {
+    const invoice = await this.client.invoices.retrieve(invoiceId);
+    return invoice.status === "paid";
+  }
+
   async constructWebhookEvent(rawBody: Buffer, signature: string): Promise<StripeWebhookEvent> {
     let event: Stripe.Event;
     try {

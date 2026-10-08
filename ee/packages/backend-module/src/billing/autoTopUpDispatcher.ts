@@ -46,7 +46,10 @@ interface AutoTopUpDispatcherInput {
   /** `undefined` when billing is unconfigured (self-hosted without Stripe) -- `run()` no-ops
    *  immediately rather than evaluating any account. */
   gateway:
-    | Pick<StripeGateway, "findPriceByLookupKey" | "createTopUpInvoiceDraft" | "chargeTopUpInvoice" | "voidInvoice">
+    | Pick<
+        StripeGateway,
+        "findPriceByLookupKey" | "createTopUpInvoiceDraft" | "chargeTopUpInvoice" | "voidInvoice" | "isInvoicePaid"
+      >
     | undefined;
   audit: {
     record(input: {
@@ -102,9 +105,12 @@ export class AutoTopUpDispatcher {
 
   /**
    * Gives up on any `pending` row older than `REDRIVE_WINDOW_MS` -- re-driving it further would
-   * mean trusting a Stripe idempotency key Stripe itself may no longer remember. Voids the draft
-   * if one exists, then marks the row failed with `redrive_window_expired`; never disables auto
-   * top-up for this, since giving up is us, not Stripe, declining.
+   * mean trusting a Stripe idempotency key Stripe itself may no longer remember. Checks Stripe's
+   * own record of the invoice first: if it is actually paid (our side simply never learned the
+   * outcome), settles it instead of giving up on it -- a charged customer must never end up
+   * un-credited just because this process stopped waiting. Only when Stripe confirms the invoice
+   * is NOT paid does this void the draft and mark the row failed with `redrive_window_expired`;
+   * never disables auto top-up for that, since giving up is us, not Stripe, declining.
    */
   private async expireOverduePending(): Promise<void> {
     for (;;) {
@@ -113,6 +119,10 @@ export class AutoTopUpDispatcher {
         return;
       }
       for (const row of expired) {
+        if (row.stripeInvoiceId && (await this.input.gateway!.isInvoicePaid(row.stripeInvoiceId))) {
+          await this.settlePaid({ id: row.id, accountId: row.accountId, invoiceId: row.stripeInvoiceId });
+          continue;
+        }
         if (row.stripeInvoiceId) {
           try {
             await this.input.gateway!.voidInvoice(row.stripeInvoiceId);
@@ -239,7 +249,10 @@ export class AutoTopUpDispatcher {
   /**
    * Drives one row's charge sequence to the point Stripe has either paid it, declined it, or left
    * it ambiguous. `existingInvoiceId` resumes a re-drive at the charge step, skipping
-   * `createTopUpInvoiceDraft` entirely when a prior attempt already created (and persisted) one.
+   * `createTopUpInvoiceDraft` entirely when a prior attempt already created (and persisted) one --
+   * but checks Stripe's own record of that invoice first, since the prior attempt's response may
+   * have been lost to exactly the kind of ambiguous failure that leaves a row pending: if Stripe
+   * already paid it, this settles the pack instead of re-attempting collection.
    */
   private async chargeClaim(input: {
     id: string;
@@ -262,6 +275,9 @@ export class AutoTopUpDispatcher {
         // Persisted immediately, before the item/finalize/pay sequence below: a crash or timeout
         // from here on must still know which invoice to resume or void, never lose track of it.
         await this.autoTopUps.markInvoiceCreated({ id: input.id, stripeInvoiceId: invoiceId });
+      } else if (await gateway.isInvoicePaid(invoiceId)) {
+        await this.settlePaid({ id: input.id, accountId: input.accountId, invoiceId });
+        return;
       }
 
       const priceRef = await gateway.findPriceByLookupKey(PLAN_CATALOG.topUp.stripeLookupKey);
@@ -269,9 +285,16 @@ export class AutoTopUpDispatcher {
         throw new Error("top_up_price_not_configured");
       }
 
-      // "paid" is resolved by the `invoice.paid` webhook (credits + markPaid); "open" (the pay
-      // call did not resolve it, without throwing) leaves the row pending for a later re-drive.
-      await gateway.chargeTopUpInvoice({ invoiceId, customerId: input.customerId, priceId: priceRef.id, idempotencyKey: input.id });
+      const result = await gateway.chargeTopUpInvoice({ invoiceId, customerId: input.customerId, priceId: priceRef.id, idempotencyKey: input.id });
+      if (result.status === "paid") {
+        // Our own charge call confirmed payment -- settle it right now rather than waiting on
+        // the `invoice.paid` webhook, which may never arrive. The webhook stays a safe, idempotent
+        // backup: `addCredits` dedupes on the same reference this uses, and `markPaid` on an
+        // already-`paid` row is a no-op.
+        await this.settlePaid({ id: input.id, accountId: input.accountId, invoiceId });
+      }
+      // "open" (the pay call did not resolve it, without throwing) leaves the row pending for a
+      // later re-drive.
     } catch (error) {
       if (error instanceof StripeDefinitiveChargeError) {
         await this.failDefinitively({ id: input.id, accountId: input.accountId, invoiceId, error });
@@ -293,6 +316,35 @@ export class AutoTopUpDispatcher {
         metadata: { autoTopUpId: input.id, errorCode: code, definitive: false },
       });
     }
+  }
+
+  /**
+   * Grants the pack's credits and marks the row paid, the moment THIS process learns -- from its
+   * own charge call, a re-drive's status check, or an expiring row's status check -- that Stripe
+   * has paid the invoice. Uses the exact reference the `invoice.paid` webhook also uses
+   * (`auto_top_up:<invoiceId>`), so whichever of the two gets here first grants the credits and
+   * the other is a safe no-op: `addCredits` dedupes on that reference, and `markPaid` on an
+   * already-`paid` row does nothing. Audits only when this call is the one that actually granted
+   * the credits, so a redundant settlement (this process after the webhook, or vice versa) never
+   * reports a second grant that did not happen.
+   */
+  private async settlePaid(input: { id: string; accountId: string; invoiceId: string }): Promise<void> {
+    const creditResult = await this.usage.addCredits({
+      accountId: input.accountId,
+      conversations: PLAN_CATALOG.topUp.conversations,
+      reference: `auto_top_up:${input.invoiceId}`,
+    });
+    await this.autoTopUps.markPaid(input.id);
+    if (!creditResult.applied) {
+      return;
+    }
+    await this.input.audit.record({
+      accountId: input.accountId,
+      workspaceId: null,
+      eventType: "billing.auto_top_up_paid",
+      eventStatus: "success",
+      metadata: { autoTopUpId: input.id, conversations: PLAN_CATALOG.topUp.conversations },
+    });
   }
 
   /**

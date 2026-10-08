@@ -1,3 +1,4 @@
+import { PLAN_CATALOG } from "@radioso/plan-catalog";
 import type { AccountAdministratorContact, NoticeEmailContent } from "../radiosoModuleTypes.js";
 
 /**
@@ -70,12 +71,13 @@ export const buildPaymentFailedEmail = (input: { accountId: string; appBaseUrl: 
 export const buildAutoTopUpFailedEmail = (input: { accountId: string; appBaseUrl: string | null }): BillingEmail => {
   const cta = usageCta(input.accountId, input.appBaseUrl);
   return {
-    subject: "Auto top-up failed",
+    subject: "Auto top-up is off",
     content: {
-      preheader: "Auto top-up failed — update your payment method.",
-      heading: "Auto top-up failed — update your payment method, then turn it back on",
+      preheader: "Your payment for a top-up pack didn't go through.",
+      heading: "Auto top-up is off — your payment didn't go through",
       paragraphs: [
-        "We couldn't charge your payment method for a conversation top-up pack, so auto top-up is now off.",
+        `We couldn't charge your payment method for a ${PLAN_CATALOG.topUp.conversations}-conversation top-up pack, so we turned auto top-up off.`,
+        "Update your payment method under Manage billing, then turn auto top-up back on.",
       ],
       ...(cta ? { cta } : {}),
     },

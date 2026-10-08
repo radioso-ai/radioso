@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-05
+last_updated: 2026-10-08
 ---
 
 # Code Map
@@ -649,8 +649,8 @@ Related specs and issues:
 ## Private Test Execution
 
 Owns operator-private single and comparison conversations pinned to immutable
-agent revisions, including sample-value validation, stream identity, side
-fences, and failed-side retry. It does not publish revisions or expose private
+agent revisions, including sample-value validation, live answer streaming,
+stream identity, side fences, and failed-side retry. It does not publish revisions or expose private
 history through public channels.
 
 Public surfaces and key files:
@@ -660,7 +660,8 @@ Public surfaces and key files:
 - `backend/src/modules/test-execution/testExecutionTurns.ts` (turn read model: turns per side with state and failure code)
 - `backend/src/app/http/routes/testExecutionRoutes.ts`
 - `backend/src/app/http/openapi/paths/testExecutionPaths.ts`
-- `backend/src/modules/chat/services/trustedTestExecutionRunnerAdapter.ts`
+- `backend/src/modules/chat/services/trustedTestExecutionRunnerAdapter.ts` (drives `WorkbenchReplayRunner.stream`)
+- `frontend/lib/agent-test-execution-state.ts` (stream event reducer; `frontend/tests/unit/agent-test-execution-state.test.ts`)
 - `backend/tests/unit/test-execution-service.test.ts`
 - `backend/tests/integration/test-execution-repository.integration.test.ts`
 - `backend/tests/integration/test-execution-routes.integration.test.ts`
@@ -1297,7 +1298,9 @@ Primary internals:
 - `backend/src/modules/routines/compiler.ts`, `validator.ts`, `domain.ts`, `service.ts`
 - `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090` and `194` (exposure columns)
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
-- `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward, re-ask limit)
+- `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward, re-ask limit; `claim` decides the turn before the reply exists, `resume` claims and renders)
+- `packages/conversation-engine/src/routineActivation.ts` and `routineResume.ts` (`claimRoutine` → the host renders or streams the reply → `settle`; `attemptRoutine` is that sequence rendered whole)
+- `backend/src/modules/chat/services/routines/routineReplyDelivery.ts` (the delivery rule: a claimed reply streams when its turn only moves the routine to its next step, and is persisted first and shown whole when a skill acted outside the conversation, the turn queued an action, or ended the routine; `skillActsOutsideConversation` in `backend/src/modules/retrieval/public.ts` is the one rule for which skills act outside, shared with safe-test suppression), consulted through `routineReplyFor.ts` by both live streaming chat (`ChatService`) and streamed Test Chat replay (`WorkbenchReplayRunner.stream`)
 - `packages/conversation-engine/src/slotValue.ts` (the one per-type check every stored slot value passes)
 - `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-step-reask-exhausted.md` (a step asked past the re-ask limit), `routine-step-stuck-handoff.md` (a routine that ends stuck and hands the visitor to a person), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Before editing `routine-next-step.md` or `routine-step-reply.md` (or the fragments built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
@@ -1314,6 +1317,8 @@ Focused checks:
 - `cd frontend && pnpm exec playwright test tests/e2e/routine-canvas.spec.ts`
 - `cd packages/conversation-engine && pnpm test`
 - `cd packages/conversation-defaults && pnpm exec vitest run tests/routines.test.ts` and `cd backend && pnpm exec vitest run tests/unit/routine-next-step-selector.test.ts tests/unit/routine-chat-model-gateway.test.ts` (selector prompt layout, slot coercion, re-ask context, blank retry)
+- `cd packages/conversation-engine && pnpm exec vitest run tests/routineClaimParity.test.ts`, `cd packages/conversation-defaults && pnpm exec vitest run tests/routineStepRendererPrepare.test.ts`, and `cd backend && pnpm exec vitest run tests/unit/workbench-replay-runner.test.ts -t golden` (claiming then rendering keeps every routine turn's model calls, usage keys, reply, and trace)
+- `cd backend && pnpm exec vitest run tests/unit/routine-reply-delivery.test.ts tests/unit/chat-service-routine-reply-streaming.test.ts tests/unit/routine-grounded-answer-renderer.test.ts` (which routine replies stream in live chat, the grounded step's gated stream, and what a failure mid-stream or at persistence leaves behind)
 
 Related docs and specs:
 

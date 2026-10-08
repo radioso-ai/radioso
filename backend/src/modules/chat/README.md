@@ -21,7 +21,26 @@ Revision-pinned private Test Chat is hosted by `modules/test-execution`. Chat
 provides the safe runtime ports and historical conversation behavior it needs;
 it must not resolve a mutable draft or silently fall back to current authoring
 rows. Start at `test-execution/README.md` and
-`services/trustedTestExecutionRunnerAdapter.ts` when changing that flow.
+`services/trustedTestExecutionRunnerAdapter.ts` when changing that flow. The
+adapter drives `WorkbenchReplayRunner.stream`, which is `run` with the answer's
+text yielded as `ChatTurnAssembly.streamPreparedByEngine` produces it. Both share
+the turn's preparation (`prepareTurn`) and settlement (`settleRoutineTurn`,
+`settleRenderedTurn`), so the result, continuation, and state commits match.
+A routine-claimed turn's reply follows the identical rule live chat applies
+(`services/routines/routineReplyFor.ts`, consulting
+`services/routines/routineReplyDelivery.ts`): a turn with no durable effect
+streams its reply as the model writes it and settles once the stream ends; a
+turn that does something durable — an action, a decision gate, a hand-off,
+any routine ending, or a skill step that already acted outside the
+conversation — is rendered and settled before any of its text reaches the
+caller, same as the non-streaming `run()` entry (eval replay, and
+`WorkbenchReplayRunner.run` more broadly) always does through
+`attemptRoutineTurn`. When a coverage routine takes over a grounded turn
+(#1260), `settleRenderedTurn` commits the state it saved, so the exported
+continuation carries the routine into the next Test Chat turn, and the result
+carries its hand-off and operator-notice preview. The first chunk's latency
+lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
+`delivery_mode`), a series apart from live chat's.
 
 ## Public Surfaces
 
@@ -307,6 +326,51 @@ imports from `services/`.
   window behind its `activityCursor`. The public presenters strip both.
   `PostgresAssistantTurnPersistence` records a turn's `handoff_requested` event in
   the turn's transaction when the handoff changed ownership.
+- Routine turns: `ChatTurnAssembly.claimRoutineTurn` runs the routine path up to the
+  reply — whether a routine claims the turn, and its `effects` (actions, decision
+  gate, hand-off, operator notice, how the routine ended) — and its `reply` renders or
+  streams the reply, then settles the turn into a `ChatTurnAssemblyRoutineResult`.
+  `attemptRoutineTurn` is that claim rendered whole, the path the non-stream turn and
+  eval replay take. A claim from an engine without `claimRoutine` comes from a whole
+  `attemptRoutine` and reports the same effects. The stream turn — live chat's SSE turn
+  (`ChatService.routineReplyFor`) and Test Chat's `WorkbenchReplayRunner.stream`
+  (`routineTurnStream`) alike — claims, then asks the one shared helper,
+  `services/routines/routineReplyFor.ts`, how the reply reaches the caller;
+  that helper's decision comes from `services/routines/routineReplyDelivery.ts`,
+  so both surfaces apply the identical rule from the identical inputs. A turn
+  that only moves the routine to its next step (a slot question, a re-ask, a step
+  instruction, a retrieval-fed grounded step answer) streams its reply as the model writes
+  it — `beginTurnEmission` before the first chunk, `observeFirstAnswerChunk("routine", "live")`
+  on live chat (`chat_replay_stream_first_answer_chunk_latency_ms` on Test Chat) — then
+  checks the turn was not cancelled meanwhile. `ChatService`'s `completeAssistantTurn` saves
+  the message and routine state in one transaction; Test Chat's `settleRoutineTurn` commits
+  the same routine, clarification, and directive state its non-stream settlement
+  (`routineTurn`) does. A turn whose skill step acted outside the
+  conversation (`effects.skillsWithExternalEffects`, from the routine skill dispatcher's
+  `actsOutsideConversation`, which uses the retrieval module's
+  `skillActsOutsideConversation` — the same rule safe-test suppression uses), or that has an
+  action, a decision gate, a hand-off, or any routine ending, and a reply that has no
+  `stream`, is persisted first and replayed whole (`"committed"`).
+  When saving a streamed reply fails, `ChatService` logs the content-free
+  `routine_reply_persist_failed_after_stream` (`conversationId`, `routineId`, `stepId`)
+  and counts `chat_stream_persist_failures_total{route}`; the routine stays on its step.
+  The routine trace stage records `replyDelivery` (`stream` or `whole`) on stream turns,
+  Test Chat's `WorkbenchReplayRunner.stream` included; `run()` (eval replay, and a workbench
+  replay that only calls `run`) never marks it, same as a live non-SSE turn.
+  `services/routines/routineChatModelGateway.ts` gives the routine selector and step
+  renderer the turn's model, whole (`complete`) or streamed (`stream`, present only when the
+  host gateway has `streamAnswer`, so a claim's `reply.stream` exists only when it can
+  stream), each call under its own usage attempt in call order; either way a blank answer
+  is retried once under that attempt's `:blank_retry` key, and a stream holds leading
+  whitespace so a blank attempt shows nothing. `services/routines/routineGroundedAnswerRenderer.ts`
+  decides from the staged retrieval alone whether a step is groundable (`prepare`) and
+  writes the grounded answer only when it is rendered or streamed; its stream is the
+  retrieval renderer's own, through `TurnOutcomeRendererRegistry.stream`, so the head
+  reader and citation gate decide what is shown, a bounded decline arrives as the
+  unstreamed remainder, and planned suggestions are expanded as on the whole path.
+  `services/routines/pageReadAwareRoutineRunner.ts`
+  binds the routine to the page excerpt the turn may read, and commits that capture to
+  the session once a turn the routine keeps has its reply.
 - Routine endings: `services/routineEndingEffects.ts` is the one place every chat
   path (routine, coverage, rendered; streaming or not; a resume after an approval in
   `services/approvalResumeTurn.ts`) turns the engine's ending report into effects.
@@ -454,7 +518,9 @@ imports from `services/`.
   send, as the trace's `handoffPreview`, built through the same `operatorNotifications`
   text formatter the real dispatch uses (`WorkbenchReplayRunner.operatorNoticePreviewFor`);
   live delivery additionally appends the conversation link, which a replayed turn
-  has none of.
+  has none of. The preview lists collected slot values, so it follows the same
+  `includeSlotValues` opt-in: eval replay, which persists its trace to append-only
+  evidence, gets no preview.
 - Fused turn planning: `turnPlanService.ts` (one `turn_planning` call on the
   agent's chat model + prompt `backend/prompts/chat/turn-planning.md`, strict
   parse and semantic validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from

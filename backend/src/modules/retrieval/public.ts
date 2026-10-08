@@ -55,6 +55,7 @@ export {
   RetrievalAnswerSkillExecutor,
   readRetrievalResult,
 } from "./services/retrievalAnswerSkillExecutor.js";
+export { skillActsOutsideConversation } from "./services/skillActsOutsideConversation.js";
 export type { ChunkCandidateHydratorPort } from "./infra/chunkCandidateHydrator.js";
 export type {
   VectorAdapter,

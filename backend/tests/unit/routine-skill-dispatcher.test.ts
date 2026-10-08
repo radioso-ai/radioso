@@ -19,13 +19,16 @@ import {
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { initializeTracing, shutdownTracing } from "../../src/shared/observability/tracing/index.js";
-import type { RoutineState, StagedContext, TurnContext } from "@radioso/conversation-contract";
+import type { Routine, RoutineState, StagedContext, TurnContext } from "@radioso/conversation-contract";
+import { DefaultRoutineRunner } from "@radioso/conversation-engine";
 import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import { CUSTOMER_EMAIL_SKILLS_ADAPTER } from "../../src/modules/customerEmail/public.js";
 import { EXTERNAL_SKILLS_ADAPTER } from "../../src/modules/externalSkills/public.js";
 import { NOTIFY_SKILLS_ADAPTER } from "../../src/modules/notify/public.js";
 import { SLACK_SKILLS_ADAPTER } from "../../src/modules/slackSkills/public.js";
 import { WEBHOOK_SKILLS_ADAPTER } from "../../src/modules/webhookSkills/public.js";
+import { RETRIEVAL_ANSWER_ADAPTER, RetrieveRoutineSkillResolver } from "../../src/modules/retrieval/public.js";
+import { retrievalContextSkillDefinition } from "../../src/modules/skills/public.js";
 
 const TEST_EXECUTION = { kind: "internal" as const, adapter: "test-adapter" };
 
@@ -129,6 +132,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
       status: "failed",
       outputs: { skill: "opaque_probe_skill", reason: "suppressed_for_safe_test" },
       metadata: { failureReason: "suppressed_for_safe_test" },
+      actsOutsideConversation: false,
     });
   });
 
@@ -182,6 +186,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
       status: "failed",
       outputs: { skill: "contact_human", reason: "requires_durable_conversation" },
       metadata: { failureReason: "requires_durable_conversation" },
+      actsOutsideConversation: false,
     });
   });
 
@@ -282,6 +287,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
       status: "completed",
       outputs: { bookingId: "bk_1" },
       answer: "Booked.",
+      actsOutsideConversation: true,
     });
   });
 
@@ -402,6 +408,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
       status: "context_ready",
       outputs: { has_context: true },
       metadata: { __retrievalResult: { traceId: "retrieval-trace" } },
+      actsOutsideConversation: true,
     });
   });
 
@@ -561,7 +568,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
     // Degrades rather than throwing: throwing here would 500 the turn pre-persistence
     // and permanently wedge the resumable routine. The runner advances off `failed`.
     const result = await dispatcher.dispatch({ skillName: "missing", state: routineState({}), turn });
-    expect(result).toEqual({ status: "failed", outputs: { skill: "missing", reason: "unknown_skill" }, metadata: { failureReason: "unknown_skill" } });
+    expect(result).toEqual({ status: "failed", outputs: { skill: "missing", reason: "unknown_skill" }, metadata: { failureReason: "unknown_skill" }, actsOutsideConversation: false });
   });
 
   it("degrades to failed when the resolved skill has no execution descriptor", async () => {
@@ -574,7 +581,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
     );
 
     const result = await dispatcher.dispatch({ skillName: "book_meeting", state: routineState({}), turn });
-    expect(result).toEqual({ status: "failed", outputs: { skill: "book_meeting", reason: "no_execution" }, metadata: { failureReason: "no_execution" } });
+    expect(result).toEqual({ status: "failed", outputs: { skill: "book_meeting", reason: "no_execution" }, metadata: { failureReason: "no_execution" }, actsOutsideConversation: false });
   });
 
   it("degrades to failed when no executor is registered for the skill's execution", async () => {
@@ -586,7 +593,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
     );
 
     const result = await dispatcher.dispatch({ skillName: "book_meeting", state: routineState({}), turn });
-    expect(result).toEqual({ status: "failed", outputs: { skill: "book_meeting", reason: "no_executor" }, metadata: { failureReason: "no_executor" } });
+    expect(result).toEqual({ status: "failed", outputs: { skill: "book_meeting", reason: "no_executor" }, metadata: { failureReason: "no_executor" }, actsOutsideConversation: false });
   });
 
   it("degrades to failed when the executor defers — a routine step must branch on a settled result", async () => {
@@ -601,7 +608,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
     );
 
     const result = await dispatcher.dispatch({ skillName: "book_meeting", state: routineState({}), turn });
-    expect(result).toEqual({ status: "failed", outputs: { skill: "book_meeting", reason: "deferred" }, metadata: { failureReason: "deferred" } });
+    expect(result).toEqual({ status: "failed", outputs: { skill: "book_meeting", reason: "deferred" }, metadata: { failureReason: "deferred" }, actsOutsideConversation: true });
   });
 
   it("requires external skill invoke capability for routine external skills", () => {
@@ -623,6 +630,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
       status: "failed",
       outputs: { skill: "crm_lookup", reason: "capability_denied" },
       metadata: { failureReason: "capability_denied" },
+      actsOutsideConversation: false,
     });
     expect(gate).toHaveBeenCalledWith(capabilityNames.externalSkills.invoke);
     expect(dispatch).not.toHaveBeenCalled();
@@ -642,7 +650,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
 
     const result = await dispatcher.dispatch({ skillName: "crm_lookup", state: routineState({}), turn });
 
-    expect(result).toEqual({ status: "completed", outputs: { ok: true }, answer: undefined });
+    expect(result).toEqual({ status: "completed", outputs: { ok: true }, answer: undefined, actsOutsideConversation: true });
     expect(gate).toHaveBeenCalledOnce();
     expect(dispatch).toHaveBeenCalledOnce();
   });
@@ -712,6 +720,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
       status: "failed",
       outputs: { skill: "crm_lookup", reason: "capability_denied" },
       metadata: { failureReason: "capability_denied" },
+      actsOutsideConversation: false,
     });
     expect(dispatch).not.toHaveBeenCalled();
   });
@@ -826,6 +835,168 @@ describe("RoutineSkillExecutorDispatcher", () => {
     expect(contents.join("\n")).not.toContain("RoutineSkillExecutorDispatcher");
     expect(contents.join("\n")).not.toContain("externalSkillRoutineDefinition");
     expect(contents.join("\n")).not.toContain("backend/src/modules/routines");
+  });
+});
+
+describe("RoutineSkillExecutorDispatcher reports whether a skill acted outside the conversation", () => {
+  const settledOn = (adapter: string) => {
+    const dispatch = vi.fn(async () => ({
+      disposition: "settled" as const,
+      outcome: { status: "completed" } as unknown as SkillOutcome,
+    }));
+    const registry = new SkillExecutorRegistry();
+    registry.register({ kind: "internal", adapter, executor: { dispatch } });
+    return { dispatch, registry };
+  };
+
+  it("reports the built-in retrieval.context skill as staying inside the conversation", async () => {
+    const { dispatch, registry } = settledOn(RETRIEVAL_ANSWER_ADAPTER);
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([retrievalContextSkillDefinition]),
+      registry,
+    );
+
+    const result = await dispatcher.dispatch({ skillName: "retrieval.context", state: routineState({}), turn });
+
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(result.actsOutsideConversation).toBe(false);
+  });
+
+  it("reports an agent's named retrieve skill as staying inside the conversation", async () => {
+    const { registry } = settledOn(RETRIEVAL_ANSWER_ADAPTER);
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new RetrieveRoutineSkillResolver([{ skillName: "policy_lookup", enabled: true, invocationMode: "routine_named" }]),
+      registry,
+    );
+
+    const result = await dispatcher.dispatch({ skillName: "policy_lookup", state: routineState({}), turn });
+
+    expect(result.actsOutsideConversation).toBe(false);
+  });
+
+  it.each([
+    ["webhook", WEBHOOK_SKILLS_ADAPTER],
+    ["customer email", CUSTOMER_EMAIL_SKILLS_ADAPTER],
+    ["Slack", SLACK_SKILLS_ADAPTER],
+    ["notify", NOTIFY_SKILLS_ADAPTER],
+    ["external MCP", EXTERNAL_SKILLS_ADAPTER],
+  ])("reports a %s skill that ran as acting outside the conversation", async (_label, adapter) => {
+    const { dispatch, registry } = settledOn(adapter);
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("send_it", { kind: "internal", adapter, enqueue: false })]),
+      registry,
+    );
+
+    const result = await dispatcher.dispatch({ skillName: "send_it", state: routineState({}), turn });
+
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(result.actsOutsideConversation).toBe(true);
+  });
+
+  it("reports a skill whose executor threw as acting outside the conversation, since it may have acted first", async () => {
+    const registry = new SkillExecutorRegistry();
+    registry.register({
+      kind: "internal",
+      adapter: WEBHOOK_SKILLS_ADAPTER,
+      executor: { dispatch: vi.fn(async () => { throw new Error("socket hang up"); }) },
+    });
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("send_it", { kind: "internal", adapter: WEBHOOK_SKILLS_ADAPTER, enqueue: false })]),
+      registry,
+    );
+
+    const result = await dispatcher.dispatch({ skillName: "send_it", state: routineState({}), turn });
+
+    expect(result).toMatchObject({ status: "failed", outputs: { reason: "executor_error" }, actsOutsideConversation: true });
+  });
+
+  describe("in a safe test", () => {
+    // A routine that looks something up, then answers from it: `lookup` (a skill step) → `answer`.
+    const lookupThenAnswer = (skillName: string): Routine => ({
+      id: "lookup_then_answer",
+      rootStepId: "lookup",
+      steps: [
+        { id: "lookup", kind: "skill", skillName },
+        { id: "answer", kind: "chat", action: "Answer from what the lookup found." },
+      ],
+      transitions: [{ from: "lookup", to: "answer", condition: "always" }],
+    });
+    const claimSafeTestTurn = async (skill: SkillDefinition, executor: SkillExecutorPort) => {
+      const registry = new SkillExecutorRegistry();
+      registry.register({ ...(skill.execution as { kind: "internal"; adapter: string }), executor });
+      const rendered: Array<{ stepId: string; staged: StagedContext[] }> = [];
+      const runner = new DefaultRoutineRunner(
+        [lookupThenAnswer(skill.name)],
+        { select: async () => ({ nextStepId: "answer" }) },
+        {
+          render: async ({ step, turn: renderedTurn }) => {
+            rendered.push({ stepId: step.id, staged: renderedTurn.stagedContext });
+            return { answer: `reply:${step.id}` };
+          },
+        },
+        new RoutineSkillExecutorDispatcher(new StaticRoutineSkillResolver([skill]), registry, { skillEffects: "suppressed" }),
+      );
+      const claim = await runner.claim({
+        turn: { ...turn, inputEvent: { id: "input-1", kind: "message", content: "When are you open?" }, history: [], steering: [] },
+        state: { sessionId: "session-1", routineId: "lookup_then_answer", path: [], variables: {}, status: "active" },
+        activationTurn: true,
+      });
+      if (claim.kind !== "claimed") throw new Error("expected the routine to claim the turn");
+      await claim.reply.render();
+      return { claim, rendered };
+    };
+
+    it("runs a retrieval.context step, which stays inside the conversation, and grounds the next step on it", async () => {
+      const retrievalResult = { traceId: "retrieval-trace", contexts: [{ title: "Opening hours", content: "Nine to five." }] };
+      const lookup = vi.fn(async () => ({
+        disposition: "settled" as const,
+        outcome: {
+          status: "context_ready",
+          outputs: { has_context: true },
+          metadata: { __retrievalResult: retrievalResult },
+        } as unknown as SkillOutcome,
+      }));
+
+      const { claim, rendered } = await claimSafeTestTurn(retrievalContextSkillDefinition, { dispatch: lookup });
+
+      expect(lookup).toHaveBeenCalledOnce();
+      expect(claim.effects.skillsWithExternalEffects).toBeUndefined();
+      expect(claim.effects.trace?.steps[0]).toMatchObject({ stepId: "lookup", event: "skill_dispatched", skillStatus: "context_ready" });
+      expect(rendered).toEqual([{
+        stepId: "answer",
+        staged: [expect.objectContaining({
+          source: "retrieval.context",
+          metadata: expect.objectContaining({ skillMetadata: { __retrievalResult: retrievalResult } }),
+        })],
+      }]);
+    });
+
+    it("still suppresses a webhook step, which then reports no effect outside the conversation", async () => {
+      const callWebhook = vi.fn();
+      const webhook = skillNamed("crm_webhook", { kind: "internal", adapter: WEBHOOK_SKILLS_ADAPTER, enqueue: false });
+
+      const { claim } = await claimSafeTestTurn(webhook, { dispatch: callWebhook });
+
+      expect(callWebhook).not.toHaveBeenCalled();
+      expect(claim.effects.trace?.steps[0]).toMatchObject({ stepId: "lookup", skillStatus: "failed", skillReason: "suppressed_for_safe_test" });
+      expect(claim.effects.skillsWithExternalEffects).toBeUndefined();
+    });
+  });
+
+  it("reports a skill that never ran as staying inside the conversation", async () => {
+    const { dispatch, registry } = settledOn(WEBHOOK_SKILLS_ADAPTER);
+    const resolver = new StaticRoutineSkillResolver([
+      skillNamed("send_it", { kind: "internal", adapter: WEBHOOK_SKILLS_ADAPTER, enqueue: false }),
+    ]);
+
+    const unknown = await new RoutineSkillExecutorDispatcher(resolver, registry)
+      .dispatch({ skillName: "missing", state: routineState({}), turn });
+    const suppressed = await new RoutineSkillExecutorDispatcher(resolver, registry, { skillEffects: "suppressed" })
+      .dispatch({ skillName: "send_it", state: routineState({}), turn });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(unknown).toMatchObject({ outputs: { reason: "unknown_skill" }, actsOutsideConversation: false });
+    expect(suppressed).toMatchObject({ outputs: { reason: "suppressed_for_safe_test" }, actsOutsideConversation: false });
   });
 });
 

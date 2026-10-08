@@ -422,6 +422,92 @@ export class RetrievalAnswerComposer {
     return { ...envelope, answer: envelope.answer.trim() };
   }
 
+  /**
+   * Streaming sibling of {@link generateGroundedAnswerEnvelope}: the same prompt and
+   * response format, but driven through `chatGateway.streamAnswer` so the decoded
+   * `answer` field reaches the caller as it arrives instead of only once the whole
+   * generation finishes. No separate head read is needed here — the coverage verdict
+   * for this call is always already known (its caller reports it before generating),
+   * so this only has to avoid leaking raw envelope JSON, which the field reader
+   * already guarantees by construction.
+   */
+  private async *streamGroundedAnswerEnvelope(
+    session: PreparedSession,
+    query: string,
+    prompt: string,
+    accountId: string | undefined,
+    attemptKey: string,
+    signal?: AbortSignal,
+    knownAssessment?: AnswerCoverageAssessment,
+  ): AsyncGenerator<string, GroundedAnswerEnvelope> {
+    const groundedPrompt = this.promptWithConversationContext(prompt, session, knownAssessment);
+    const reader = new GroundedAnswerEnvelopeReader();
+    const citationSanitizer = new CitationAnchorSanitizer();
+    const candidateStream = this.chatGateway.streamAnswer({
+      query,
+      history: session.history,
+      systemPrompt: groundedPrompt.systemPrompt,
+      reusableInputBoundary: groundedPrompt.reusableInputBoundary,
+      prompt: groundedPrompt.prompt,
+      workspaceContext: this.support.buildChatWorkspaceContext(session),
+      usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
+      generation: {
+        responseFormat: buildGroundedAnswerResponseFormat(this.sideChannel(session, knownAssessment)?.schemaExtension() ?? null),
+      },
+      ...(signal ? { signal } : {}),
+    });
+    for await (const text of candidateStream) {
+      if (signal?.aborted) {
+        throw signal.reason ?? new Error("chat_turn_aborted");
+      }
+      if (!text) {
+        continue;
+      }
+      const cleanChunk = citationSanitizer.push(reader.push(text));
+      if (cleanChunk) {
+        yield cleanChunk;
+      }
+    }
+    if (signal?.aborted) {
+      throw signal.reason ?? new Error("chat_turn_aborted");
+    }
+    const finalized = reader.finalize();
+    const fullAnswer = finalized.fullAnswer.trim();
+    if (!fullAnswer) {
+      throw new BlankChatAnswerError();
+    }
+    return { ...finalized, answer: fullAnswer };
+  }
+
+  /**
+   * Streaming sibling of {@link generateAnswerWithPageContext}, used only by the
+   * stream path's zero-context branch. Shares the same early-out (no page context
+   * fragment, nothing to generate) and the same prompt/response-format construction;
+   * only the transport (streamed vs single-shot) differs.
+   */
+  private async *streamAnswerWithPageContext(
+    session: PreparedSession,
+    query: string,
+    accountId: string | undefined,
+    signal?: AbortSignal,
+    knownAssessment?: AnswerCoverageAssessment,
+  ): AsyncGenerator<string, GroundedAnswerEnvelope | null> {
+    const prompt = this.support.buildPromptWithContext(session.retrieval.prompt, session);
+    if (prompt === session.retrieval.prompt) {
+      return null;
+    }
+
+    return yield* this.streamGroundedAnswerEnvelope(
+      session,
+      query,
+      prompt,
+      accountId,
+      "stream_page_context",
+      signal,
+      knownAssessment,
+    );
+  }
+
   async composeAnswer(
     session: PreparedSession,
     query: string,
@@ -611,13 +697,24 @@ export class RetrievalAnswerComposer {
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedStreamResult();
       }
-      const fallbackEnvelope = await this.generateAnswerWithPageContext(
+      const pageContextStream = this.streamAnswerWithPageContext(
         session,
         query,
         accountId,
         signal,
         zeroEvidenceAssessment,
       );
+      let pageContextStep = await pageContextStream.next();
+      while (!pageContextStep.done) {
+        const cleanChunk = pageContextStep.value;
+        if (cleanChunk) {
+          streamedAnswer += cleanChunk;
+          yield cleanChunk;
+          hasStreamedAnswer = true;
+        }
+        pageContextStep = await pageContextStream.next();
+      }
+      const fallbackEnvelope = pageContextStep.value;
       if (fallbackEnvelope) {
         rawAnswer = fallbackEnvelope.answer;
       } else {
@@ -648,8 +745,9 @@ export class RetrievalAnswerComposer {
         maxRetainedCodePoints: RETRIEVAL_BEHAVIOR.groundingStreamGateMaxRetainedCodePoints,
       });
       // Captured page content was never gated by citations (a separate source the
-      // planner's typed gate already admitted) — its delivery stays a single
-      // committed block regardless of this setting. Workspace default true,
+      // planner's typed gate already admitted): once the head resolves, it releases
+      // live from that point on, the same as any other immediate-release case below
+      // (`releasesImmediately`), regardless of this setting. Workspace default true,
       // agent-overridable (FR-025): with it off, an `answer` commitment against
       // indexed sources streams from its first token instead of holding for one
       // (FR-026). `no_support` / `out_of_scope` bypass the gate on their own via
@@ -743,11 +841,10 @@ export class RetrievalAnswerComposer {
           break;
         }
         // Released immediately when the head's own outcome bypassed the gate
-        // (FR-027), or when the citation hold is off for a non-captured answer
-        // (FR-026); a captured page with the gate off still only ever releases
-        // through the gate decision below (never opens, so nothing streams live —
-        // unchanged from before this setting existed).
-        const releasesImmediately = bypassCitationGate || (!citationHoldEnabled && !pageCaptureBypassesGate);
+        // (FR-027), when the answer is grounded in captured page content (never
+        // gated by citations at all, see above), or when the citation hold is off
+        // for a non-captured answer (FR-026).
+        const releasesImmediately = bypassCitationGate || pageCaptureBypassesGate || !citationHoldEnabled;
         const releaseText = releasesImmediately
           ? parsedText
           : (decision?.kind === "release" ? decision.text : "");

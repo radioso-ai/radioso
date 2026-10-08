@@ -16169,6 +16169,9 @@ components:
             messageId:
               type: string
               format: uuid
+            answer:
+              type: string
+              description: The stored answer. It is authoritative over the message_delta text streamed before it, which the runtime's final presentation may normalize.
             turnTrace: {}
           required:
             - type
@@ -16178,6 +16181,7 @@ components:
             - attemptId
             - sideId
             - messageId
+            - answer
         - type: object
           properties:
             type:

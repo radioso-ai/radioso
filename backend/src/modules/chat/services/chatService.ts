@@ -23,6 +23,7 @@ import type {
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
+import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
@@ -39,7 +40,7 @@ import type { ContextVariableResolutionReaderPort } from "../../context-variable
 import type { ApprovalResumeResult, ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatStatusStage, ChatStreamEvent } from "../contracts/streamEvents.js";
-import { observeFirstAnswerChunkLatency } from "./streamPerformanceMetrics.js";
+import { countStreamPersistFailure, observeFirstAnswerChunkLatency } from "./streamPerformanceMetrics.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import type { ChatReviewInput, ChatReviewResult } from "../types/chatReview.js";
@@ -70,6 +71,7 @@ import {
   type ChatTurnAssemblyFactory,
   buildChatTurnContext,
   type ChatTurnAssemblyCoordinationHook,
+  type ChatTurnAssemblyRoutineClaim,
   type ChatTurnAssemblyRoutineResult,
 } from "./chatTurnAssembly.js";
 import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
@@ -154,6 +156,11 @@ import {
   suppressedHumanOwnedResponse,
 } from "./handoffOwnership.js";
 import { routineEndingEffectsForTurn } from "./routineEndingEffects.js";
+import {
+  landedRoutineStep,
+  withRoutineReplyDelivery,
+} from "./routines/routineReplyDelivery.js";
+import { routineReplyFor } from "./routines/routineReplyFor.js";
 import {
   ChatTurnSupersededError,
   InMemoryConversationTurnRegistry,
@@ -610,6 +617,29 @@ export class ChatService {
       signal: coordination.lease?.signal,
       checkpoint: (stage) => this.checkTurnCancellation(coordination, stage),
     };
+  }
+
+  /**
+   * The visitor read a streamed routine reply that the conversation then failed to record.
+   * The routine is still on the step it was on and asks again next turn; this records that it
+   * happened, without the reply.
+   */
+  private reportRoutineReplyPersistFailure(input: {
+    workspaceId: string;
+    conversationId: string;
+    engineTrace?: ConversationTrace;
+    error: unknown;
+  }): void {
+    const { routineId, stepId } = landedRoutineStep(input.engineTrace);
+    this.logger?.warn({
+      event: "routine_reply_persist_failed_after_stream",
+      workspaceId: input.workspaceId,
+      conversationId: input.conversationId,
+      routineId,
+      stepId,
+      errorType: input.error instanceof Error ? input.error.name : typeof input.error,
+    }, "Streamed routine reply was shown but its turn failed to persist");
+    countStreamPersistFailure(this.streamMetrics, { route: "routine" });
   }
 
   private async releaseUsageReservation(
@@ -1537,17 +1567,17 @@ export class ChatService {
       this.checkTurnCancellation(coordination, "routing");
 
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
-      // turn, stream its rendered reply and finish — no retrieval.
+      // turn, deliver its reply and finish — no retrieval.
       const routineStartedAt = Date.now();
       this.checkTurnCancellation(coordination, "routing");
-      const routineResult: { value: Awaited<ReturnType<ChatTurnAssembly["attemptRoutineTurn"]>> } = { value: null };
+      let routineClaim: ChatTurnAssemblyRoutineClaim | null = null;
       if (suspendedRoutine) {
         await this.chatTurnAssembly.describeSuspendedRoutineTurn(session, suspendedRoutine);
       } else {
         // A routine attempt is speculative: it may yield back to interpretation and
         // retrieval. Keep its composing phase private until it claims the turn so the
         // public sequence never backtracks from composing to interpreting/searching.
-        routineResult.value = await this.chatTurnAssembly.attemptRoutineTurn(session, {
+        routineClaim = await this.chatTurnAssembly.claimRoutineTurn(session, {
           accountId: input.accountId,
           responseLanguage: responseLanguagePromise,
           activeRoutine,
@@ -1555,51 +1585,92 @@ export class ChatService {
           coordination: this.turnAssemblyCoordination(coordination),
         });
       }
-      const routineTurn = routineResult.value;
+      const routineReply = routineClaim
+        ? await routineReplyFor({ session, workspaceId: input.workspaceId, claim: routineClaim })
+        : null;
       this.checkTurnCancellation(coordination, "routing");
-      if (routineTurn) {
+      if (routineReply) {
         if (shouldEmitStatus("composing")) {
           yield { type: "status", stage: "composing" };
           this.checkTurnCancellation(coordination, "rendering");
         }
         session = this.withResponseLanguage(session, await responseLanguagePromise);
+        let replyShown = false;
+        let routineTurn: ChatTurnAssemblyRoutineResult;
+        if (routineReply.delivery === "stream") {
+          // The turn only moves the routine to its next step, so its reply streams as the
+          // model writes it; the message and the step are persisted once it is complete.
+          const reply = routineReply.stream();
+          let step = await reply.next();
+          while (!step.done) {
+            if (!replyShown) {
+              this.beginTurnEmission(coordination);
+              replyShown = true;
+            }
+            observeFirstAnswerChunk("routine", "live");
+            yield { type: "chunk", text: step.value };
+            step = await reply.next();
+          }
+          // A provider that ignores the abort can finish its reply after the disconnect
+          // ceiling cancelled the turn; a cancelled turn saves nothing and commits no usage.
+          this.checkTurnCancellation(coordination);
+          routineTurn = step.value;
+        } else {
+          routineTurn = routineReply.turn;
+        }
         const { ownershipHandoff, actions } = routineEndingEffectsForTurn({
           session,
           workspaceId: input.workspaceId,
           turn: routineTurn,
         });
-        // Durably enqueue the action + advance routine state + persist the reply BEFORE
-        // streaming the confirmation. The routine reply is rendered whole (not token-
-        // streamed), so delaying the chunk costs nothing — but it means the visitor only
-        // sees the "sent" confirmation once the request is actually in the outbox; if the
-        // enqueue fails this throws before any chunk and the routine stays recoverable.
-        this.beginTurnEmission(coordination);
-        const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
-          workspaceId: input.workspaceId,
-          accountId: input.accountId,
-          session,
-          presentation: routineTurn.presentation,
-          requestReceivedAt,
-          answerStartedAt: routineStartedAt,
-          stream: input.stream,
-          engineTrace: routineTurn.engineTrace,
-          modelCallTrace,
-          actions,
-          routineStateTransition: routineTurn.routineStateTransition,
-          routineReporter: routineTurn.routineReporter,
-          pendingDecisionTransition: routineTurn.pendingDecisionTransition,
-          ownershipHandoff,
-          suspended: routineTurn.suspended,
-          commitRoutineState: routineTurn.commitRoutineState,
-          clarificationTransition: routineTurn.clarificationTransition,
-          commitClarificationState: routineTurn.commitClarificationState,
-        });
+        // A whole reply is shown only after the action is durably enqueued, the routine state
+        // advanced, and the reply persisted, so the visitor sees a "sent" confirmation only
+        // once the request is actually in the outbox; if the enqueue fails this throws before
+        // any chunk and the routine stays recoverable.
+        if (!replyShown) {
+          this.beginTurnEmission(coordination);
+        }
+        let completedTurn: Awaited<ReturnType<ChatTurnLifecycle["completeAssistantTurn"]>>;
+        try {
+          completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
+            workspaceId: input.workspaceId,
+            accountId: input.accountId,
+            session,
+            presentation: routineTurn.presentation,
+            requestReceivedAt,
+            answerStartedAt: routineStartedAt,
+            stream: input.stream,
+            engineTrace: withRoutineReplyDelivery(routineTurn.engineTrace, routineReply.delivery),
+            modelCallTrace,
+            actions,
+            routineStateTransition: routineTurn.routineStateTransition,
+            routineReporter: routineTurn.routineReporter,
+            pendingDecisionTransition: routineTurn.pendingDecisionTransition,
+            ownershipHandoff,
+            suspended: routineTurn.suspended,
+            commitRoutineState: routineTurn.commitRoutineState,
+            clarificationTransition: routineTurn.clarificationTransition,
+            commitClarificationState: routineTurn.commitClarificationState,
+          });
+        } catch (error) {
+          if (replyShown) {
+            this.reportRoutineReplyPersistFailure({
+              workspaceId: input.workspaceId,
+              conversationId: session.conversation.id,
+              engineTrace: routineTurn.engineTrace,
+              error,
+            });
+          }
+          throw error;
+        }
         assistantMessageId = completedTurn.assistantMessageId;
         await usageReservation.commit();
         usageReservationCommitted = true;
-        for (const text of committedAnswerChunks(routineTurn.presentation.answer)) {
-          observeFirstAnswerChunk("routine", "committed");
-          yield { type: "chunk", text };
+        if (!replyShown) {
+          for (const text of committedAnswerChunks(routineTurn.presentation.answer)) {
+            observeFirstAnswerChunk("routine", "committed");
+            yield { type: "chunk", text };
+          }
         }
         coordination.lease?.complete();
         yield { type: "done", ...completedTurn.response };
@@ -1721,8 +1792,39 @@ export class ChatService {
       let suggestions: TurnStreamSuggestions | null = null;
       let engineTrace: ConversationTrace | undefined;
       let actions: RoutineActionRequest[] | undefined;
+      let suppressedEffects: readonly SuppressedSkillEffect[] = [];
       let coverageRoutineEffects: Partial<ChatTurnAssemblyRoutineResult> = {};
       let emissionStarted = false;
+      // Committed/bounded-decline chunks are replays of already-whole text (a coverage-
+      // routine takeover's reply (#1260), or a composed decline) rather than live token
+      // generation, so holding them here costs nothing. They are released below, once the
+      // turn's durable effects (if any) are known — before `completeAssistantTurn` when
+      // there are none (today's ordering, unchanged), or after it commits when there are,
+      // so the visitor can never read a confirmation the commit still might fail or deny.
+      // A live chunk still streams immediately: today, nothing that reaches this loop live
+      // (grounded or direct) also carries one of those effects.
+      const heldChunks: Array<{
+        text: string;
+        route: "direct" | "retrieval" | "other";
+        deliveryMode: "committed" | "bounded_decline";
+      }> = [];
+      // Arrow function (not a nested `function*`) so `this` still resolves to the
+      // service: a held chunk must not mark emission merely by arriving (that would
+      // close the supersession window before the visitor saw anything); emission
+      // begins only once this actually releases text.
+      const releaseHeldChunks = (): Array<Extract<ChatStreamEvent, { type: "chunk" }>> => {
+        if (heldChunks.length === 0) {
+          return [];
+        }
+        if (!emissionStarted) {
+          this.beginTurnEmission(coordination);
+          emissionStarted = true;
+        }
+        return heldChunks.map((held) => {
+          observeFirstAnswerChunk(held.route, held.deliveryMode);
+          return { type: "chunk" as const, text: held.text };
+        });
+      };
       if (useSenseCompatiblePath) {
         this.checkTurnCancellation(coordination, "rendering");
       }
@@ -1756,21 +1858,26 @@ export class ChatService {
           continue;
         }
         if (event.type === "chunk") {
-          if (!emissionStarted) {
-            this.beginTurnEmission(coordination);
-            emissionStarted = true;
+          if (event.deliveryMode === "live") {
+            if (!emissionStarted) {
+              this.beginTurnEmission(coordination);
+              emissionStarted = true;
+            }
+            observeFirstAnswerChunk(event.route, event.deliveryMode);
+            yield {
+              type: "chunk",
+              text: event.text,
+            };
+          } else {
+            heldChunks.push({ text: event.text, route: event.route, deliveryMode: event.deliveryMode });
           }
-          observeFirstAnswerChunk(event.route, event.deliveryMode);
-          yield {
-            type: "chunk",
-            text: event.text,
-          };
           continue;
         }
         finalPresentation = event.finalPresentation;
         suggestions = event.suggestions;
         engineTrace = event.engineTrace;
         actions = event.actions;
+        suppressedEffects = event.suppressedEffects;
         coverageRoutineEffects = event;
         const eventSession = (event as { session?: PreparedSession }).session;
         if (eventSession) {
@@ -1824,6 +1931,25 @@ export class ChatService {
         workspaceId: input.workspaceId,
         actions: routineEnding.actions,
       });
+      const finalActions = retrievalMissHandoff.actions;
+      const finalOwnershipHandoff = routineEnding.ownershipHandoff ?? retrievalMissHandoff.ownershipHandoff;
+      // What the direct routine branch above also treats as a durable effect worth
+      // protecting: an outbox action (including a routine-ending notice, folded into
+      // `finalActions` by `routineEndingEffectsForTurn`), a human ownership handoff, a
+      // routine suspended at an approval gate, or a skill the routine ran that already
+      // acted outside the conversation (an email sent, a webhook called). A
+      // routine-state/clarification advance with none of those is not held — it is
+      // unobservable to the visitor if lost.
+      const hasDurableEffect = Boolean(
+        finalActions?.length
+        || finalOwnershipHandoff
+        || coverageRoutineEffects.suspended
+        || coverageRoutineEffects.pendingDecisionTransition
+        || coverageRoutineEffects.skillsWithExternalEffects?.length,
+      );
+      if (!hasDurableEffect) {
+        yield* releaseHeldChunks();
+      }
 
       if (!emissionStarted) {
         this.beginTurnEmission(coordination);
@@ -1838,8 +1964,9 @@ export class ChatService {
         stream: input.stream,
         engineTrace,
         modelCallTrace,
-        actions: retrievalMissHandoff.actions,
-        ownershipHandoff: routineEnding.ownershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
+        actions: finalActions,
+        ownershipHandoff: finalOwnershipHandoff,
+        suppressedEffects,
         routineStateTransition: coverageRoutineEffects.routineStateTransition,
         routineReporter: coverageRoutineEffects.routineReporter,
         pendingDecisionTransition: coverageRoutineEffects.pendingDecisionTransition,
@@ -1849,6 +1976,20 @@ export class ChatService {
         commitClarificationState: coverageRoutineEffects.commitClarificationState
           ?? (clarification.store ? () => clarification.store!.commit() : undefined),
       });
+      assistantMessageId = completedTurn.assistantMessageId;
+      await usageReservation.commit();
+      usageReservationCommitted = true;
+
+      // A durable-effect turn's held text is released as soon as the commit and usage
+      // reservation above have actually succeeded — before the best-effort coverage-
+      // reaction bookkeeping below, which is diagnostics, not something the visitor's
+      // confirmation should wait behind. If the commit had thrown, control never
+      // reaches here, and the visitor is never shown the held confirmation for an
+      // action that was denied or failed to enqueue.
+      if (hasDurableEffect) {
+        yield* releaseHeldChunks();
+      }
+
       try {
         await coverageRoutineEffects.commitCoverageReactions?.();
         if (preparedSession.answerCoverageInteractionTrace) {
@@ -1862,9 +2003,6 @@ export class ChatService {
           reasonCode: "coverage_reaction_persistence_failed",
         }, "Answer coverage reaction recording failed after assistant turn commit");
       }
-      assistantMessageId = completedTurn.assistantMessageId;
-      await usageReservation.commit();
-      usageReservationCommitted = true;
 
       coordination.lease?.complete();
       yield {

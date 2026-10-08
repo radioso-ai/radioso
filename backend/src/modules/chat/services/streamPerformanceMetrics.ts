@@ -6,7 +6,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
  * the answer path and `delivery_mode` how the first chunk reached the client;
  * both are small closed enums so the series stays low-cardinality.
  */
-export type FirstAnswerChunkLabels = {
+type FirstAnswerChunkLabels = {
   route: string;
   delivery_mode: string;
 };
@@ -37,4 +37,36 @@ export const observeFirstAnswerChunkLatency = (
       labels,
     });
   }
+};
+
+/**
+ * Time-to-first-token for a streamed replay turn (Test Chat), with the same labels as a live
+ * turn's. It is its own series, without the budget counter, so private operator tests never move
+ * the visitor-facing distribution or its perceived-performance budget.
+ */
+export const observeReplayFirstAnswerChunkLatency = (
+  metrics: Pick<MetricsRegistry, "observeHistogram"> | null | undefined,
+  timeToFirstTokenMs: number,
+  labels: FirstAnswerChunkLabels,
+): void => {
+  metrics?.observeHistogram("chat_replay_stream_first_answer_chunk_latency_ms", {
+    help: "Latency from a streamed replay turn's start (Test Chat) to its first answer chunk",
+    labels,
+    value: timeToFirstTokenMs,
+  });
+};
+
+/**
+ * Counts a streamed chat turn whose reply reached the visitor but whose persistence then
+ * failed: the visitor read a reply the conversation does not record. `route` is the same
+ * small closed enum the first-chunk metric carries.
+ */
+export const countStreamPersistFailure = (
+  metrics: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
+  labels: Pick<FirstAnswerChunkLabels, "route">,
+): void => {
+  metrics?.incrementCounter("chat_stream_persist_failures_total", {
+    help: "Streamed chat turns whose reply was shown but whose persistence then failed",
+    labels,
+  });
 };

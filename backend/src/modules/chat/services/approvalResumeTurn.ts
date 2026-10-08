@@ -157,6 +157,7 @@ export class ApprovalResumeTurn {
         accountId: input.decidedBy,
         responseLanguage: session.responseLanguage,
         turnSkills: this.options.turnSkills,
+        chatAnswerPresenter: this.options.chatAnswerPresenter,
       }),
       throwIfCancelled: () => this.checkTurnCancellation(coordination, "routing"),
     });

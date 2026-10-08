@@ -183,4 +183,222 @@ describe("RoutineChatModelGateway", () => {
 
     expect(calls[0]?.signal).toBe(controller.signal);
   });
+
+  describe("streaming", () => {
+    it("offers a stream only when the host gateway can stream", () => {
+      const answerOnly: Pick<ChatGateway, "answer"> = { answer: async () => "ok" };
+      const streamingHost: Pick<ChatGateway, "answer" | "streamAnswer"> = {
+        answer: async () => "ok",
+        async *streamAnswer() {
+          yield "ok";
+        },
+      };
+
+      expect(new RoutineChatModelGateway(answerOnly, turnContext).stream).toBeUndefined();
+      expect(new RoutineChatModelGateway(streamingHost, turnContext).stream).toBeTypeOf("function");
+    });
+
+    const streaming = (deltas: string[]) => {
+      const calls: Array<{ via: "answer" | "streamAnswer"; input: ChatGatewayInput }> = [];
+      const chatGateway: Pick<ChatGateway, "answer" | "streamAnswer"> = {
+        async answer(input) {
+          calls.push({ via: "answer", input });
+          return "ok";
+        },
+        async *streamAnswer(input) {
+          calls.push({ via: "streamAnswer", input });
+          yield* deltas;
+        },
+      };
+      return { calls, chatGateway };
+    };
+    const collect = async (stream: AsyncIterable<string>): Promise<string[]> => {
+      const deltas: string[] = [];
+      for await (const delta of stream) {
+        deltas.push(delta);
+      }
+      return deltas;
+    };
+
+    it("streams through the host gateway's own receiver (#1179)", async () => {
+      // A class-based host whose `streamAnswer` reads instance state through `this`, the way
+      // `ModelChatGateway.streamAnswer` reads its inference pipeline. A detached method loses it.
+      class ReceiverBoundHost {
+        readonly calls: ChatGatewayInput[] = [];
+        private readonly deltas = ["Which", " email?"];
+
+        async answer(): Promise<string> {
+          return "unused";
+        }
+
+        async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
+          this.calls.push(input);
+          yield* this.deltas;
+        }
+      }
+      const host = new ReceiverBoundHost();
+
+      const deltas = await collect(new RoutineChatModelGateway(host, turnContext).stream!({
+        messages: [{ role: "user", content: "reply" }],
+      }));
+
+      expect(deltas).toEqual(["Which", " email?"]);
+      expect(host.calls).toHaveLength(1);
+      expect(host.calls[0]?.usageContext.attemptKey).toBe("routine_turn");
+    });
+
+    it("streams through the host gateway with the same request a completion sends", async () => {
+      const { calls, chatGateway } = streaming(["Sure", " — what is your email?"]);
+      const request = {
+        messages: [
+          { role: "assistant" as const, content: "How can I help?" },
+          { role: "user" as const, content: "I want a human to call me" },
+        ],
+        systemPrompt: "ROUTINE STEP INSTRUCTIONS",
+      };
+
+      const deltas = await collect(new RoutineChatModelGateway(chatGateway, turnContext).stream!(request));
+      await new RoutineChatModelGateway(chatGateway, turnContext).complete(request);
+
+      expect(deltas).toEqual(["Sure", " — what is your email?"]);
+      expect(calls.map((call) => call.via)).toEqual(["streamAnswer", "answer"]);
+      expect(calls[0].input).toEqual(calls[1].input);
+      expect(calls[0].input.usageContext).toBe(turnContext.usageContext);
+    });
+
+    it("meters a stream under the usage attempt its place in the turn's call order gives it", async () => {
+      const { calls, chatGateway } = streaming(["Which email?"]);
+      const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
+
+      await gateway.complete({ messages: [{ role: "user", content: "select" }] });
+      const reply = gateway.stream!({ messages: [{ role: "user", content: "reply" }] });
+      const retry = gateway.stream!({ messages: [{ role: "user", content: "reply" }] });
+      await collect(retry);
+      await collect(reply);
+
+      expect(calls.map((call) => call.input.usageContext.attemptKey)).toEqual([
+        "routine_turn",
+        "routine_turn:3",
+        "routine_turn:2",
+      ]);
+    });
+
+    /** A host gateway streaming each call's own deltas, in call order. */
+    const streamingAttempts = (attempts: string[][]) => {
+      const calls: ChatGatewayInput[] = [];
+      const chatGateway: Pick<ChatGateway, "answer" | "streamAnswer"> = {
+        async answer(input) {
+          calls.push(input);
+          return "ok";
+        },
+        async *streamAnswer(input) {
+          calls.push(input);
+          yield* attempts[calls.length - 1] ?? [];
+        },
+      };
+      return { calls, chatGateway };
+    };
+
+    it("retries a blank stream once under the blank-retry usage attempt a completion uses, showing only the retry", async () => {
+      const { calls, chatGateway } = streamingAttempts([[" ", "\n"], ["Which ", "email?"]]);
+
+      const deltas = await collect(new RoutineChatModelGateway(chatGateway, turnContext).stream!({
+        messages: [{ role: "user", content: "hmm" }],
+        systemPrompt: "ASK",
+      }));
+
+      expect(deltas.join("")).toBe("Which email?");
+      expect(calls.map((call) => call.usageContext.attemptKey)).toEqual(["routine_turn", "routine_turn:blank_retry"]);
+      expect(calls[1].prompt).toBe(calls[0].prompt);
+      expect(calls[1].systemPrompt).toBe(calls[0].systemPrompt);
+    });
+
+    it("meters a blank stream's retry exactly as a blank completion's retry, from the call's own usage attempt", async () => {
+      const streamed = streamingAttempts([["{}"], [""], ["Which email?"]]);
+      const completedCalls: ChatGatewayInput[] = [];
+      let completions = 0;
+      const completing: Pick<ChatGateway, "answer"> = {
+        async answer(input) {
+          completedCalls.push(input);
+          completions += 1;
+          if (completions === 2) {
+            throw new BlankChatAnswerError();
+          }
+          return completions === 1 ? "{}" : "Which email?";
+        },
+      };
+      const viaStream = new RoutineChatModelGateway(streamed.chatGateway, turnContext);
+      const viaComplete = new RoutineChatModelGateway(completing, turnContext);
+
+      await viaStream.complete({ messages: [{ role: "user", content: "select" }] });
+      await collect(viaStream.stream!({ messages: [{ role: "user", content: "reply" }] }));
+      await viaComplete.complete({ messages: [{ role: "user", content: "select" }] });
+      await viaComplete.complete({ messages: [{ role: "user", content: "reply" }] });
+
+      expect(streamed.calls.map((call) => call.usageContext.attemptKey)).toEqual(
+        completedCalls.map((call) => call.usageContext.attemptKey),
+      );
+      expect(streamed.calls.map((call) => call.usageContext.attemptKey)).toEqual([
+        "routine_turn",
+        "routine_turn:2",
+        "routine_turn:2:blank_retry",
+      ]);
+    });
+
+    it("passes leading whitespace on with the text that follows it, untrimmed like a completion", async () => {
+      const { calls, chatGateway } = streamingAttempts([["  ", "\n", "Which", " email?  "]]);
+
+      const deltas = await collect(new RoutineChatModelGateway(chatGateway, turnContext).stream!({
+        messages: [{ role: "user", content: "hmm" }],
+      }));
+
+      expect(deltas.join("")).toBe("  \nWhich email?  ");
+      expect(calls).toHaveLength(1);
+    });
+
+    it("fails like a completion when the retried stream is blank too, and never retries other errors", async () => {
+      const blankTwice = streamingAttempts([[" "], [""]]);
+      await expect(collect(new RoutineChatModelGateway(blankTwice.chatGateway, turnContext).stream!({
+        messages: [{ role: "user", content: "hmm" }],
+      }))).rejects.toBeInstanceOf(BlankChatAnswerError);
+      expect(blankTwice.calls).toHaveLength(2);
+
+      let attempts = 0;
+      const failing: Pick<ChatGateway, "answer" | "streamAnswer"> = {
+        answer: async () => "ok",
+        async *streamAnswer() {
+          attempts += 1;
+          throw new Error("provider_timeout");
+        },
+      };
+      await expect(collect(new RoutineChatModelGateway(failing, turnContext).stream!({
+        messages: [{ role: "user", content: "hmm" }],
+      }))).rejects.toThrow("provider_timeout");
+      expect(attempts).toBe(1);
+    });
+
+    it("forwards the turn cancellation signal to a streamed routine reply", async () => {
+      const { calls, chatGateway } = streaming(["Done"]);
+      const controller = new AbortController();
+
+      await collect(new RoutineChatModelGateway(chatGateway, { ...turnContext, signal: controller.signal })
+        .stream!({ messages: [{ role: "user", content: "Continue" }] }));
+
+      expect(calls[0]?.input.signal).toBe(controller.signal);
+    });
+
+    it("streams activation ranking under the routine_activation usage label and generation budget", async () => {
+      const { calls, chatGateway } = streaming(["{}"]);
+
+      await collect(new RoutineChatModelGateway(chatGateway, turnContext).stream!({
+        messages: [{ role: "user", content: "Can I book a demo?" }],
+        metadata: { routineActivation: true },
+      }));
+
+      expect(calls[0]?.input).toMatchObject({
+        usageContext: { operation: "routine_activation", attemptKey: "routine_turn:routine_activation" },
+        generation: CHAT_BEHAVIOR.intentRouting,
+      });
+    });
+  });
 });

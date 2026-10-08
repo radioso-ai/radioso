@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Agents and skills
@@ -49,6 +49,18 @@ A test turn that fails settles like any other: the next message starts a new tur
 and the failed side stays retryable until it does. A message sent while another
 turn is still running is refused with `409` and the error code
 `test_turn_in_progress`; send it again once that turn settles.
+
+Sending a message with `POST /api/v1/agents/{agentId}/test-executions/{executionId}/messages`,
+or retrying a side with `POST /api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retry`,
+returns a `text/event-stream`. Each side opens with `side_started` and sends its
+answer as `message_delta` events while the agent writes it; in a comparison, the two
+sides' deltas interleave. A side ends with `side_completed`, whose `answer` is the
+stored answer, or with `side_failed` and its `code`. Show `answer` in place of the
+streamed text once it arrives: the stored answer is the final presentation, which can
+trim whitespace or citation anchors the stream carried. The turn closes with
+`execution_completed`, or `execution_partial` when a side failed. Repeating the
+request for an attempt that already completed replays its stored answer as one
+`message_delta` without running the turn again.
 
 Use `GET /api/v1/agents/{agentId}/test-executions?limit=50` to page through
 private Test Chat history. An execution is listed once it has a user message,

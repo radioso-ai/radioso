@@ -41,8 +41,8 @@ export interface BillingWebhookLogger {
 export interface BillingWebhookHandlerDeps {
   repository: BillingCustomerRepository;
   usage: BillingUsageLimitPort;
-  gateway: Pick<StripeGateway, "getProduct">;
-  autoTopUps: Pick<AutoTopUpRepository, "markPaid" | "markFailed" | "disable">;
+  gateway: Pick<StripeGateway, "getProduct" | "voidInvoice">;
+  autoTopUps: Pick<AutoTopUpRepository, "findById" | "markPaid" | "markFailed" | "disable">;
   noticeMail: NoticeMailPort;
   accountAdministrators: AccountAdministratorDirectoryPort;
   audit: BillingAuditPort;
@@ -375,10 +375,14 @@ const handleInvoicePaid = async (
 
 /**
  * `invoice.paid` for a pack created by the auto-top-up sweep (`radioso_kind: auto_top_up` in the
- * invoice's own metadata, read before any customer lookup). Grants the catalog's top-up credits
- * idempotently -- `addCredits` dedupes on `reference` and repays any grace debt first, same as a
- * one-off top-up purchase -- resolves the row to `paid`, and leaves the subscription's status
- * row untouched: this invoice is out of band from the subscription's own billing cycle.
+ * invoice's own metadata, read before any customer lookup). Always grants the catalog's top-up
+ * credits -- `addCredits` dedupes on `reference` and repays any grace debt first, same as a
+ * one-off top-up purchase -- and resolves the row to `paid` from either `pending` or `failed`:
+ * an out-of-order `invoice.payment_failed` for the same charge may have already marked it failed
+ * before this event arrived (a retried attempt that ultimately succeeded, or plain out-of-order
+ * delivery), and this still counts it toward the monthly cap once resolved. Leaves the
+ * subscription's status row untouched: this invoice is out of band from the subscription's own
+ * billing cycle.
  */
 const handleAutoTopUpInvoicePaid = async (
   event: Extract<StripeWebhookEvent, { type: "invoice.paid" }>,
@@ -461,10 +465,14 @@ const handleInvoicePaymentFailed = async (
 };
 
 /**
- * `invoice.payment_failed` for an auto-top-up pack. Disables auto top-up (never fails the
+ * `invoice.payment_failed` for an auto-top-up pack. Order-safe against `invoice.paid` for the
+ * SAME invoice arriving first (a retried charge that succeeded, or ordinary out-of-order webhook
+ * delivery): a row already `paid` makes this a pure no-op -- no disable, no email, no void --
+ * since the paid webhook already resolved it. Otherwise disables auto top-up (never fails the
  * webhook on a declined one-off charge by setting the subscription itself `past_due` -- the
- * subscription row is never touched here), marks the row `failed`, and emails owners + admins so
- * a human can fix the payment method and turn it back on.
+ * subscription row is never touched here), marks the row `failed`, voids the invoice if it is
+ * still open so a later attempt cannot succeed against it, and emails owners + admins so a human
+ * can fix the payment method and turn it back on.
  */
 const handleAutoTopUpInvoicePaymentFailed = async (
   event: Extract<StripeWebhookEvent, { type: "invoice.payment_failed" }>,
@@ -477,6 +485,11 @@ const handleAutoTopUpInvoicePaymentFailed = async (
     return { outcome: "unmapped_price", accountId: accountId ?? null };
   }
 
+  const existing = await deps.autoTopUps.findById(autoTopUpId);
+  if (existing?.status === "paid") {
+    return { outcome: "superseded", accountId };
+  }
+
   const result = await applyIdempotently(
     deps.repository,
     { eventId: event.id, eventType: event.type, accountId, outcome: "auto_top_up_failed" },
@@ -487,6 +500,13 @@ const handleAutoTopUpInvoicePaymentFailed = async (
   );
   if (result === "duplicate") {
     return { outcome: "duplicate", accountId };
+  }
+  try {
+    await deps.gateway.voidInvoice(invoice.id);
+  } catch {
+    // Already void (the sweep's own decline handling voided it first) or already paid (settled
+    // between our read above and this call) -- either way, nothing left to undo. The `invoice.paid`
+    // webhook, not this one, is what resolves the row if it turns out to have been paid.
   }
   await deps.audit.record({
     accountId,

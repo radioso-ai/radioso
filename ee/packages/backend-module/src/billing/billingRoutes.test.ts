@@ -107,6 +107,10 @@ class FakeAutoTopUpRepository implements AutoTopUpRepository {
     return null;
   }
 
+  async claimStalePending(): Promise<Array<{ id: string; accountId: string; stripeInvoiceId: string | null }>> {
+    return [];
+  }
+
   async findById(): Promise<null> {
     return null;
   }
@@ -140,7 +144,9 @@ const createFakeGateway = (overrides: Partial<StripeGateway> = {}): StripeGatewa
   constructWebhookEvent: vi.fn(async (): Promise<StripeWebhookEvent> => {
     throw new Error("not stubbed");
   }),
-  createTopUpInvoice: vi.fn(async () => ({ invoiceId: "in_new" })),
+  createTopUpInvoiceDraft: vi.fn(async () => ({ invoiceId: "in_new" })),
+  chargeTopUpInvoice: vi.fn(async () => ({ status: "paid" as const })),
+  voidInvoice: vi.fn(async () => undefined),
   ...overrides,
 });
 

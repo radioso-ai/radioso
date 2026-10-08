@@ -156,13 +156,40 @@ describeIfDatabase("EE auto top-up repository + migrator integration", () => {
     await repository.upsertSettings({ accountId: enabledB, enabled: true, maxPacksPerMonth: 3 });
     await repository.upsertSettings({ accountId: disabled, enabled: false, maxPacksPerMonth: 3 });
 
-    const ids = await repository.listEnabledAccountIds(1000);
+    const ids = await repository.listEnabledAccountIds({ after: null, limit: 1000 });
     expect(ids).toContain(enabledA);
     expect(ids).toContain(enabledB);
     expect(ids).not.toContain(disabled);
 
-    const bounded = await repository.listEnabledAccountIds(0);
+    const bounded = await repository.listEnabledAccountIds({ after: null, limit: 0 });
     expect(bounded).toHaveLength(0);
+  });
+
+  it("listEnabledAccountIds pages through every enabled account with a keyset cursor, in a stable order", async () => {
+    const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+    const accountIds: string[] = [];
+    for (let i = 0; i < 25; i += 1) {
+      const accountId = await seedAccount();
+      await repository.upsertSettings({ accountId, enabled: true, maxPacksPerMonth: 3 });
+      accountIds.push(accountId);
+    }
+
+    const seen: string[] = [];
+    let after: string | null = null;
+    for (;;) {
+      const page = await repository.listEnabledAccountIds({ after, limit: 7 });
+      if (page.length === 0) break;
+      seen.push(...page);
+      after = page[page.length - 1];
+      if (page.length < 7) break;
+    }
+
+    for (const accountId of accountIds) {
+      expect(seen).toContain(accountId);
+    }
+    // No account ever repeats across pages, and the full page count matches every account the
+    // cursor walked past -- a page is never re-served once its cursor has advanced beyond it.
+    expect(new Set(seen).size).toBe(seen.length);
   });
 
   it("countForPeriod counts pending and paid rows, not failed, scoped to the period", async () => {
@@ -258,9 +285,85 @@ describeIfDatabase("EE auto top-up repository + migrator integration", () => {
     const afterFailure = await repository.findById(id!);
     expect(afterFailure?.status).toBe("failed");
     expect(afterFailure?.failureCode).toBe("card_declined");
+  });
 
-    // A terminal row never re-resolves -- a late/duplicate call must not flip it back.
+  it("markPaid transitions a failed row to paid -- a retried charge can still succeed", async () => {
+    const accountId = await seedAccount();
+    const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+    const id = await repository.claimPending({ accountId, periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
+    await repository.markFailed({ id: id!, failureCode: "card_declined" });
+
     await repository.markPaid(id!);
-    expect((await repository.findById(id!))?.status).toBe("failed");
+
+    expect((await repository.findById(id!))?.status).toBe("paid");
+    // Counts toward the monthly cap once resolved to paid, even though it was failed a moment ago.
+    expect(await repository.countForPeriod(accountId, periodStart)).toBe(1);
+  });
+
+  it("markPaid on an already-paid row is a no-op", async () => {
+    const accountId = await seedAccount();
+    const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+    const id = await repository.claimPending({ accountId, periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
+    await repository.markPaid(id!);
+
+    await expect(repository.markPaid(id!)).resolves.toBeUndefined();
+    expect((await repository.findById(id!))?.status).toBe("paid");
+  });
+
+  describe("claimStalePending", () => {
+    const ageRow = async (id: string, age: string): Promise<void> => {
+      await database.query(`UPDATE ee_billing_auto_top_ups SET updated_at = now() - interval '${age}' WHERE id = $1`, [id]);
+    };
+
+    it("claims a pending row whose updated_at is older than the lease, and bumps it immediately", async () => {
+      const accountId = await seedAccount();
+      const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      const id = await repository.claimPending({ accountId, periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
+      await repository.markInvoiceCreated({ id: id!, stripeInvoiceId: "in_stale_1" });
+      await ageRow(id!, "10 minutes");
+
+      const claimed = await repository.claimStalePending({ leaseMs: 5 * 60_000, limit: 10 });
+
+      expect(claimed).toEqual([{ id, accountId, stripeInvoiceId: "in_stale_1" }]);
+      // Immediately re-running must not claim it again -- updated_at was just bumped to now().
+      const second = await repository.claimStalePending({ leaseMs: 5 * 60_000, limit: 10 });
+      expect(second).toEqual([]);
+    });
+
+    it("does not claim a pending row still inside the lease", async () => {
+      const accountId = await seedAccount();
+      const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      await repository.claimPending({ accountId, periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
+
+      const claimed = await repository.claimStalePending({ leaseMs: 5 * 60_000, limit: 10 });
+
+      expect(claimed).toEqual([]);
+    });
+
+    it("never lets two concurrent claims take the same stale row", async () => {
+      const accountId = await seedAccount();
+      const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      const id = await repository.claimPending({ accountId, periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
+      await ageRow(id!, "10 minutes");
+
+      const [first, second] = await Promise.all([
+        repository.claimStalePending({ leaseMs: 5 * 60_000, limit: 10 }),
+        repository.claimStalePending({ leaseMs: 5 * 60_000, limit: 10 }),
+      ]);
+
+      const claimed = [...first, ...second];
+      expect(claimed).toHaveLength(1);
+      expect(claimed[0].id).toBe(id);
+    });
+
+    it("does not claim a paid or failed row", async () => {
+      const accountId = await seedAccount();
+      const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      const id = await repository.claimPending({ accountId, periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
+      await repository.markPaid(id!);
+      await ageRow(id!, "10 minutes");
+
+      expect(await repository.claimStalePending({ leaseMs: 5 * 60_000, limit: 10 })).toEqual([]);
+    });
   });
 });

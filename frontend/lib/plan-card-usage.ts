@@ -38,7 +38,7 @@ export const planUsagePercent = (bucket: PlanUsageBucket): number => {
 export const planUsageLevelHasActions = (level: PlanUsageLevel): boolean =>
   level === 'limit_reached' || level === 'grace_exhausted'
 
-const formatResetDate = (value: string): string =>
+export const formatResetDate = (value: string): string =>
   new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value))
 
 const formatConversationCount = (value: number): string => new Intl.NumberFormat('en').format(value)

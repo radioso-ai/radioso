@@ -2,6 +2,7 @@ import Stripe from "stripe";
 
 import type { BillingInterval } from "./planPricing.js";
 import {
+  StripeDefinitiveChargeError,
   StripeSignatureVerificationError,
   type StripeCheckoutSessionEventData,
   type StripeCheckoutSessionParams,
@@ -12,6 +13,9 @@ import {
   type StripePriceRef,
   type StripeProductRef,
   type StripeSubscriptionEventData,
+  type StripeTopUpChargeParams,
+  type StripeTopUpChargeResult,
+  type StripeTopUpInvoiceDraftParams,
   type StripeWebhookEvent,
 } from "./stripeGateway.js";
 
@@ -92,6 +96,97 @@ export class StripeSdkGateway implements StripeGateway {
       return_url: params.returnUrl,
     });
     return { url: session.url };
+  }
+
+  async createTopUpInvoiceDraft(params: StripeTopUpInvoiceDraftParams): Promise<{ invoiceId: string }> {
+    try {
+      // Resolved explicitly: `InvoiceCreateParams.default_payment_method`'s own fallback ("the
+      // subscription's default payment method, if any, or the customer's invoice settings")
+      // applies when Stripe can tie the invoice to that subscription. This invoice is deliberately
+      // standalone (no `subscription` field -- it is an out-of-cycle charge, not a renewal), so we
+      // read the subscription's payment method ourselves rather than rely on that fallback.
+      const subscription = await this.client.subscriptions.retrieve(params.subscriptionId);
+      const defaultPaymentMethod = subscription.default_payment_method
+        ? refId(subscription.default_payment_method)
+        : undefined;
+
+      const invoice = await this.client.invoices.create(
+        {
+          customer: params.customerId,
+          collection_method: "charge_automatically",
+          // Stripe must never retry collection on its own schedule -- a retry outside our control
+          // could succeed on an invoice we already decided, from `invoice.payment_failed`, to void.
+          // Only `chargeTopUpInvoice`'s own explicit `pay` call (and a later re-drive) may attempt it.
+          auto_advance: false,
+          automatic_tax: { enabled: true },
+          // Explicit even though it is the API default: a stray pending item for this customer
+          // (e.g. a future manual adjustment) must never ride along on an auto-top-up charge.
+          pending_invoice_items_behavior: "exclude",
+          ...(defaultPaymentMethod ? { default_payment_method: defaultPaymentMethod } : {}),
+          metadata: params.metadata,
+        },
+        { idempotencyKey: params.idempotencyKey },
+      );
+
+      return { invoiceId: invoice.id };
+    } catch (error) {
+      if (error instanceof Stripe.errors.StripeInvalidRequestError) {
+        // A deleted subscription, or any other parameter Stripe rejects outright, never resolves
+        // itself on retry -- definitive, same as a declined charge.
+        throw new StripeDefinitiveChargeError(error.message, error.code ?? error.type);
+      }
+      throw error;
+    }
+  }
+
+  async chargeTopUpInvoice(params: StripeTopUpChargeParams): Promise<StripeTopUpChargeResult> {
+    try {
+      // State-based, not just idempotency-key-based: Stripe keeps an idempotency key for 24h, so
+      // a re-drive outside that window (never happens today -- the dispatcher gives up well
+      // inside it -- but this is the cheap, durable guard regardless) must still recognize an
+      // item a partial-success attempt already created, rather than trusting the key alone.
+      const existingLines = await this.client.invoices.listLineItems(params.invoiceId, { limit: 100 });
+      const hasTopUpLine = existingLines.data.some((line) => {
+        const price = line.pricing?.price_details?.price;
+        return price ? refId(price) === params.priceId : false;
+      });
+      if (!hasTopUpLine) {
+        await this.client.invoiceItems.create(
+          { customer: params.customerId, invoice: params.invoiceId, pricing: { price: params.priceId } },
+          { idempotencyKey: `${params.idempotencyKey}:item` },
+        );
+      }
+
+      const finalized = await this.client.invoices.finalizeInvoice(params.invoiceId, undefined, {
+        idempotencyKey: `${params.idempotencyKey}:finalize`,
+      });
+      if (finalized.status === "paid") {
+        return { status: "paid" };
+      }
+
+      // `auto_advance: false` means finalizing never attempts collection by itself; this is the
+      // one and only payment attempt for this charge.
+      const paid = await this.client.invoices.pay(finalized.id, undefined, {
+        idempotencyKey: `${params.idempotencyKey}:pay`,
+      });
+      return { status: paid.status === "paid" ? "paid" : "open" };
+    } catch (error) {
+      if (error instanceof Stripe.errors.StripeCardError || error instanceof Stripe.errors.StripeInvalidRequestError) {
+        throw new StripeDefinitiveChargeError(error.message, error.code ?? error.type);
+      }
+      // Ambiguous (network, timeout, 5xx, rate limit, auth, ...): rethrown as-is. The caller must
+      // not treat this as a failed charge -- Stripe may have already collected payment.
+      throw error;
+    }
+  }
+
+  async voidInvoice(invoiceId: string): Promise<void> {
+    await this.client.invoices.voidInvoice(invoiceId);
+  }
+
+  async isInvoicePaid(invoiceId: string): Promise<boolean> {
+    const invoice = await this.client.invoices.retrieve(invoiceId);
+    return invoice.status === "paid";
   }
 
   async constructWebhookEvent(rawBody: Buffer, signature: string): Promise<StripeWebhookEvent> {
@@ -200,4 +295,6 @@ const adaptSubscription = (subscription: Stripe.Subscription): StripeSubscriptio
 const adaptInvoice = (invoice: Stripe.Invoice): StripeInvoiceEventData => ({
   id: invoice.id,
   customerId: invoice.customer ? refId(invoice.customer) : "",
+  metadata: invoice.metadata ?? {},
+  hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
 });

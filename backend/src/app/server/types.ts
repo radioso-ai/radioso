@@ -75,7 +75,12 @@ import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
-import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
+import type {
+  ApplicationAccountAdministratorDirectoryPort,
+  ApplicationModuleCoordinator,
+  ApplicationNoticeMailPort,
+  ApplicationRouteMount,
+} from "../composition/applicationModule.js";
 import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillAuthoringCatalog, SkillCatalogService } from "../../modules/skills/public.js";
@@ -212,6 +217,11 @@ export interface AppDependencies {
   llmCapabilityResolver: LlmCapabilityResolver;
   auditService: AuditService;
   mailService: EmailService;
+  /** Branded-notice sending and the owner+admin directory. Built once in `dependencies.ts` and
+   *  handed to every periodic task AND every route mount, so a route (the EE billing webhook)
+   *  can send a branded notice too, outside any periodic task. */
+  noticeMail: ApplicationNoticeMailPort;
+  accountAdministrators: ApplicationAccountAdministratorDirectoryPort;
   workspaceService: WorkspaceService;
   workspaceSummaryService: WorkspaceSummaryService;
   ingestionSettingsService: IngestionSettingsService;

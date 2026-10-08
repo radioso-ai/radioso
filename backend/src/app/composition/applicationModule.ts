@@ -289,7 +289,7 @@ export interface ApplicationNoticeMailPort {
   send(input: {
     to: string;
     subject: string;
-    kind: "usage_alert";
+    kind: "usage_alert" | "billing_notice";
     content: ApplicationNoticeEmailContent;
     /** Forwarded to the provider (Resend's `Idempotency-Key`) so a retry that resends to
      *  every recipient — including ones a prior attempt already reached — dedupes at the

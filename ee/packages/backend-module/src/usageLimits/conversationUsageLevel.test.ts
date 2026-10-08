@@ -72,6 +72,23 @@ describe("conversationUsageLevel", () => {
     expect(result.level).toBe("ok");
   });
 
+  it("bases capacity on usage past the limit, not on limit + balance, once partially spent credits still cover the overshoot", () => {
+    // used 105 conversations, limit 100: 5 conversations already ran past the limit, funded by
+    // credits that started above 25 and were partly spent getting there. The high-water mark
+    // (max(used, limit)) is 105, not 100, so capacity is 105 + 25 = 130 -- not the 100 + 25 = 125
+    // a naive `limit + balance` would give once usage has passed the limit.
+    const result = conversationUsageLevel({
+      usedTenths: tenths(105),
+      limitTenths: tenths(100),
+      balanceTenths: tenths(25),
+      graceShare: 0.1,
+      conversationWeightTenths,
+    });
+
+    expect(result.capacity).toBe(130);
+    expect(result.grace).toEqual({ limit: 10, borrowed: 0 });
+  });
+
   it("is nearing_limit from 80% of capacity up to the limit", () => {
     const result = conversationUsageLevel({
       usedTenths: tenths(850),

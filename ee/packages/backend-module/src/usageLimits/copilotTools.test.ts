@@ -213,6 +213,31 @@ describe("usage limit copilot contribution", () => {
     });
   });
 
+  it("reports remaining against capacity, not the plan limit alone, once credits extend past the limit", async () => {
+    // limit 1000, used 1050, 250 credits left: capacity 1300, so 250 conversations remain.
+    // `limit - used` alone would read -50, clamp to 0, and hide those 250 credits entirely.
+    const getAccountUsage = vi.fn(async () => summary({
+      monthlyConversations: {
+        periodStart: "2026-08-01",
+        resetAt: "2026-09-01",
+        used: 1050,
+        limit: 1000,
+        credits: 250,
+        capacity: 1300,
+        grace: { limit: 100, borrowed: 0 },
+        level: "ok",
+        byKind: { conversation: 1050, copilot: 0, test_run: 0, pulse_report: 0 },
+      },
+    }));
+    const [descriptor] = createUsageLimitCopilotToolContribution({ usage: { getAccountUsage } }).descriptors;
+    const tool = descriptor.createTool(toolContext);
+
+    const result = await tool.invoke({}, invocation);
+
+    expect(tool.outputSchema.safeParse(result).success).toBe(true);
+    expect((result as { monthlyConversations: { remaining: number } }).monthlyConversations.remaining).toBe(250);
+  });
+
   it("surfaces the account-wide grace allowance and level once a conversation has borrowed", async () => {
     const getAccountUsage = vi.fn(async () => summary({
       monthlyConversations: {

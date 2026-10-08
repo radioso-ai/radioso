@@ -67,11 +67,15 @@ const window = (
 });
 
 /** Adds the account-wide grace allowance and level on top of the plain usage window — the
- *  conversation-metered dimension's only fields the others don't carry. */
+ *  conversation-metered dimension's only fields the others don't carry. Also overrides
+ *  `remaining`: `window()`'s `limit - used` ignores positive credits past the limit, so an
+ *  account with capacity above its plan limit (credits applied) would read 0 remaining
+ *  instead of what it can actually still spend before borrowing. */
 const conversationWindow = (
   entry: NonNullable<AccountUsageSummary["monthlyConversations"]>,
 ): z.infer<typeof fractionalUsageWindowSchema> => ({
   ...window(entry),
+  remaining: Math.max(0, entry.capacity - entry.used),
   capacity: entry.capacity,
   grace: entry.grace,
   level: entry.level,

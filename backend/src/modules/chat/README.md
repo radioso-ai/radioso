@@ -21,7 +21,17 @@ Revision-pinned private Test Chat is hosted by `modules/test-execution`. Chat
 provides the safe runtime ports and historical conversation behavior it needs;
 it must not resolve a mutable draft or silently fall back to current authoring
 rows. Start at `test-execution/README.md` and
-`services/trustedTestExecutionRunnerAdapter.ts` when changing that flow.
+`services/trustedTestExecutionRunnerAdapter.ts` when changing that flow. The
+adapter drives `WorkbenchReplayRunner.stream`, which is `run` with the answer's
+text yielded as `ChatTurnAssembly.streamPreparedByEngine` produces it. Both share
+the turn's preparation (`prepareTurn`) and settlement (`routineTurn`,
+`settleRenderedTurn`), so the result, continuation, and state commits match; a
+routine-claimed reply is yielded whole once its turn settles. When a coverage
+routine takes over a grounded turn (#1260), `settleRenderedTurn` commits the
+state it saved, so the exported continuation carries the routine into the next
+Test Chat turn, and the result carries its hand-off and operator-notice preview. The first chunk's
+latency lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
+`delivery_mode`), a series apart from live chat's.
 
 ## Public Surfaces
 
@@ -426,7 +436,9 @@ imports from `services/`.
   send, as the trace's `handoffPreview`, built through the same `operatorNotifications`
   text formatter the real dispatch uses (`WorkbenchReplayRunner.operatorNoticePreviewFor`);
   live delivery additionally appends the conversation link, which a replayed turn
-  has none of.
+  has none of. The preview lists collected slot values, so it follows the same
+  `includeSlotValues` opt-in: eval replay, which persists its trace to append-only
+  evidence, gets no preview.
 - Fused turn planning: `turnPlanService.ts` (one `turn_planning` call on the
   agent's chat model + prompt `backend/prompts/chat/turn-planning.md`, strict
   parse and semantic validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from

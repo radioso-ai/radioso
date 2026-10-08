@@ -6,7 +6,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
  * the answer path and `delivery_mode` how the first chunk reached the client;
  * both are small closed enums so the series stays low-cardinality.
  */
-export type FirstAnswerChunkLabels = {
+type FirstAnswerChunkLabels = {
   route: string;
   delivery_mode: string;
 };
@@ -37,4 +37,21 @@ export const observeFirstAnswerChunkLatency = (
       labels,
     });
   }
+};
+
+/**
+ * Time-to-first-token for a streamed replay turn (Test Chat), with the same labels as a live
+ * turn's. It is its own series, without the budget counter, so private operator tests never move
+ * the visitor-facing distribution or its perceived-performance budget.
+ */
+export const observeReplayFirstAnswerChunkLatency = (
+  metrics: Pick<MetricsRegistry, "observeHistogram"> | null | undefined,
+  timeToFirstTokenMs: number,
+  labels: FirstAnswerChunkLabels,
+): void => {
+  metrics?.observeHistogram("chat_replay_stream_first_answer_chunk_latency_ms", {
+    help: "Latency from a streamed replay turn's start (Test Chat) to its first answer chunk",
+    labels,
+    value: timeToFirstTokenMs,
+  });
 };

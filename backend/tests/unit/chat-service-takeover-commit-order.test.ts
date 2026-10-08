@@ -191,7 +191,10 @@ const directRoutePipeline = () => ({
 
 interface CoverageTakeoverEnding {
   answer: string;
-  terminal: { kind: "complete" | "handoff"; stepId: string; operatorNotice?: Record<string, unknown> };
+  /** How the routine ended; absent when it rests on a next step instead. */
+  terminal?: { kind: "complete" | "handoff"; stepId: string; operatorNotice?: Record<string, unknown> };
+  /** Skills the routine's skill steps ran that acted outside the conversation. */
+  skillsWithExternalEffects?: string[];
 }
 
 /** A coverage-routine provider that always activates "support" post-evidence and resumes
@@ -208,10 +211,12 @@ const coverageTakeoverRoutineProvider = (ending: CoverageTakeoverEnding): NonNul
         activate: async () => ({ kind: "activate" as const, routineId: "support" }),
       },
       runner: {
-        resume: async () => ({
+        resume: async ({ state }) => ({
           response: { answer: ending.answer },
-          nextState: null,
-          terminal: ending.terminal,
+          ...(ending.terminal
+            ? { nextState: null, terminal: ending.terminal }
+            : { nextState: { ...state, path: ["send_copy", "confirm_sent"], status: "active" as const } }),
+          ...(ending.skillsWithExternalEffects ? { skillsWithExternalEffects: ending.skillsWithExternalEffects } : {}),
         }),
       },
     };
@@ -278,12 +283,12 @@ const drain = async (
 };
 
 /**
- * Replaces `chatTurnAssembly` entirely with a two-method fake (`attemptRoutineTurn`
+ * Replaces `chatTurnAssembly` entirely with a two-method fake (`claimRoutineTurn`
  * always declines, `streamPreparedByEngine` yields one held chunk, then an optional
  * controllable pause, then the final event) so a test can land a gate at the exact
  * point a committed chunk has been held but nothing past it has run yet — a point
  * the real engine's single-hop committed replay never exposes an awaitable seam at.
- * `attemptRoutineTurn`/`streamPreparedByEngine` are the only two `chatTurnAssembly`
+ * `claimRoutineTurn`/`streamPreparedByEngine` are the only two `chatTurnAssembly`
  * methods this chat-service code path calls when no routine is already suspended and
  * `useSenseCompatiblePath` is false (no `turnInterpreter`/`retrievalSenseDetector`
  * configured), so this narrow double is a faithful stand-in for this flow.
@@ -303,7 +308,8 @@ const buildFakeAssemblyTakeoverService = (input: {
   const messageRepository = new InMemoryMessageRepository();
   const auditService = createAuditService();
   const fakeChatTurnAssembly = {
-    async attemptRoutineTurn() {
+    // The stream path claims a routine turn before rendering it; no routine claims this one.
+    async claimRoutineTurn() {
       return null;
     },
     async *streamPreparedByEngine(session: unknown) {
@@ -445,6 +451,67 @@ describe("chat service: takeover reply released only after its effect commits", 
     expect(createMessage).toHaveBeenCalledTimes(2);
     // Preserves today's ordering for a non-effect turn: the text streams before
     // the turn (the later of the two `create` calls, the assistant reply) is persisted.
+    expect(chunkObserved.mock.invocationCallOrder[0]).toBeLessThan(createMessage.mock.invocationCallOrder[1]);
+  });
+
+  it("holds a takeover reply until the turn is saved when its routine's skill acted outside the conversation", async () => {
+    const chunkObserved = vi.fn();
+    const { service, messageRepository } = buildTakeoverService({
+      ending: {
+        answer: "I've emailed you a copy. Anything else?",
+        skillsWithExternalEffects: ["customer_email.send"],
+      },
+    });
+    const createMessage = vi.spyOn(messageRepository, "create");
+
+    const events = await drain(
+      service.streamAnswer({ workspaceId: "workspace-1", query: "missing topic", stream: true }),
+      chunkObserved,
+    );
+
+    expect(events.filter((event) => event.type === "chunk").map((event) => (event as { text: string }).text)).toEqual([
+      "I've emailed you a copy. Anything else?",
+    ]);
+    expect(createMessage).toHaveBeenCalledTimes(2);
+    // The routine rests on its next step with no action or ending; the skill that already
+    // acted is what makes the turn durable, so the reply waits for the assistant message.
+    expect(createMessage.mock.invocationCallOrder[1]).toBeLessThan(chunkObserved.mock.invocationCallOrder[0]);
+  });
+
+  it("shows nothing of that takeover reply when saving the turn fails", async () => {
+    const chunkObserved = vi.fn();
+    const { service, messageRepository } = buildTakeoverService({
+      ending: {
+        answer: "I've emailed you a copy. Anything else?",
+        skillsWithExternalEffects: ["customer_email.send"],
+      },
+    });
+    const createMessage = messageRepository.create.bind(messageRepository);
+    vi.spyOn(messageRepository, "create").mockImplementation(async (message) => {
+      if (message.role === "assistant") {
+        throw new Error("assistant message write failed");
+      }
+      return createMessage(message);
+    });
+
+    await expect(
+      drain(service.streamAnswer({ workspaceId: "workspace-1", query: "missing topic", stream: true }), chunkObserved),
+    ).rejects.toThrow("assistant message write failed");
+
+    expect(chunkObserved).not.toHaveBeenCalled();
+  });
+
+  it("keeps a takeover whose routine ran only read-only skills streaming before persistence", async () => {
+    const chunkObserved = vi.fn();
+    const { service, messageRepository } = buildTakeoverService({
+      ending: { answer: "Here is what I found. Anything else?" },
+    });
+    const createMessage = vi.spyOn(messageRepository, "create");
+
+    await drain(service.streamAnswer({ workspaceId: "workspace-1", query: "missing topic", stream: true }), chunkObserved);
+
+    expect(chunkObserved).toHaveBeenCalledOnce();
+    expect(createMessage).toHaveBeenCalledTimes(2);
     expect(chunkObserved.mock.invocationCallOrder[0]).toBeLessThan(createMessage.mock.invocationCallOrder[1]);
   });
 

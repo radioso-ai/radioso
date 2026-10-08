@@ -296,6 +296,8 @@ export interface ChatTurnAssemblyRoutineResult {
   actions?: RoutineActionRequest[];
   handoff?: RoutineHandoffEffect;
   operatorNotice?: RoutineOperatorNoticeEffect;
+  /** Skills the routine ran this turn that may have acted outside the conversation. */
+  skillsWithExternalEffects?: ProcessTurnResult["skillsWithExternalEffects"];
   routineStateTransition?: CapturedRoutineTransition | null;
   routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
@@ -319,7 +321,7 @@ interface ChatTurnAssemblyRoutineTurnInput {
  * A turn a routine claimed, before its reply exists. `effects` is what the turn does besides
  * replying; rendering or streaming `reply` generates the reply and settles the turn.
  */
-interface ChatTurnAssemblyRoutineClaim {
+export interface ChatTurnAssemblyRoutineClaim {
   effects: RoutineTurnEffects;
   reply: {
     render(): Promise<ChatTurnAssemblyRoutineResult>;
@@ -333,6 +335,8 @@ interface CoverageRoutineEffects {
   actions?: RoutineActionRequest[];
   handoff?: RoutineHandoffEffect;
   operatorNotice?: RoutineOperatorNoticeEffect;
+  /** Skills the coverage-activated routine ran that may have acted outside the conversation. */
+  skillsWithExternalEffects?: ProcessTurnResult["skillsWithExternalEffects"];
   routineStateTransition?: CapturedRoutineTransition | null;
   routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
@@ -517,6 +521,8 @@ export class ChatTurnAssembly {
         accountId: input.accountId,
         responseLanguage: input.responseLanguage,
         turnSkills: this.options.turnSkills,
+        chatAnswerPresenter: this.options.chatAnswerPresenter,
+        signal: input.coordination?.signal,
       }),
       throwIfCancelled: input.coordination
         ? () => input.coordination?.checkpoint("routing")
@@ -736,6 +742,7 @@ export class ChatTurnAssembly {
         accountId: input.accountId,
         responseLanguage: input.responseLanguage,
         turnSkills: this.options.turnSkills,
+        chatAnswerPresenter: this.options.chatAnswerPresenter,
       }),
       throwIfCancelled: input.coordination
         ? () => input.coordination?.checkpoint("routing")
@@ -783,6 +790,7 @@ export class ChatTurnAssembly {
             : result.actions,
           handoff: result.handoff,
           operatorNotice: result.operatorNotice,
+          skillsWithExternalEffects: result.skillsWithExternalEffects,
           routineStateTransition,
           routineReporter: routineTurnPorts.reporter,
           pendingDecisionTransition,

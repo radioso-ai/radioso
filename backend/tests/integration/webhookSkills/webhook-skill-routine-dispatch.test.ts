@@ -71,6 +71,8 @@ describe("routine webhook skill dispatch", () => {
         destinationId: record.destinationId,
       },
       answer: undefined,
+      // The webhook was called before the turn is saved.
+      actsOutsideConversation: true,
     });
     expect(JSON.parse((requests[0] as { rawBody: string }).rawBody).source).toEqual({
       routineId: "routine-1",

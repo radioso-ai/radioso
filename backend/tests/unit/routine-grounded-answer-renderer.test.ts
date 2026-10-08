@@ -95,6 +95,9 @@ const turnWithRetrieval = (retrieval: RetrievalPipelineResult): TurnContext =>
     steering: [],
   });
 
+const chatAnswerPresenter = (): ChatAnswerPresenter =>
+  new ChatAnswerPresenter(new AssistantSuggestionExpansionService(), undefined, { supportsGroundedAnswer: () => true });
+
 const step: RoutineStep = {
   id: "answer",
   kind: "chat",
@@ -141,6 +144,7 @@ describe("createRoutineGroundedAnswerRenderer", () => {
       accountId: "acct_1",
       responseLanguage: Promise.resolve("English"),
       turnSkills: [retrievalSkill],
+      chatAnswerPresenter: chatAnswerPresenter(),
     });
 
     const result = await renderer.render({
@@ -221,6 +225,7 @@ describe("createRoutineGroundedAnswerRenderer", () => {
     const renderer = createRoutineGroundedAnswerRenderer({
       session: { ...session(), directiveSteering: { rules: [], matches: [], omissions: [] } },
       turnSkills: [createRetrievalTurnSkill(composer)],
+      chatAnswerPresenter: chatAnswerPresenter(),
     });
 
     await renderer.render({
@@ -242,6 +247,7 @@ describe("createRoutineGroundedAnswerRenderer", () => {
     const renderer = createRoutineGroundedAnswerRenderer({
       session: session(),
       turnSkills: [],
+      chatAnswerPresenter: chatAnswerPresenter(),
     });
 
     await expect(renderer.render({
@@ -269,7 +275,7 @@ describe("createRoutineGroundedAnswerRenderer", () => {
     });
 
     it("declines at once, from the staged context alone, when no retrieval result was staged", () => {
-      const renderer = createRoutineGroundedAnswerRenderer({ session: session(), turnSkills: [] });
+      const renderer = createRoutineGroundedAnswerRenderer({ session: session(), turnSkills: [], chatAnswerPresenter: chatAnswerPresenter() });
 
       expect(renderer.prepare!({
         step,
@@ -285,6 +291,7 @@ describe("createRoutineGroundedAnswerRenderer", () => {
         accountId: "acct_1",
         responseLanguage: Promise.resolve("English"),
         turnSkills: [retrievalSkillRendering(render)],
+        chatAnswerPresenter: chatAnswerPresenter(),
       };
       const retrieval = retrievalResult();
       const input = {
@@ -302,6 +309,136 @@ describe("createRoutineGroundedAnswerRenderer", () => {
       expect(render).toHaveBeenCalledTimes(2);
       expect(render.mock.calls[0]).toEqual(render.mock.calls[1]);
     });
+  });
+});
+
+describe("createRoutineGroundedAnswerRenderer streamed answer", () => {
+  const groundedAnswer = (answer: string, extra: Record<string, unknown> = {}): string => JSON.stringify({
+    coverage: "answered_sufficient_evidence",
+    requestFocus: "where Kriya is introduced",
+    outcome: "answer",
+    answer,
+    v: 2,
+    claims: [[1]],
+    suggestions: [{ text: "What comes after Kriya?", kind: "deeper", contextIndex: 1 }],
+    grounding: "grounded",
+    ...extra,
+  });
+
+  /** Splits a model output into deltas at the given offsets. */
+  const split = (text: string, offsets: number[]): string[] =>
+    [0, ...offsets].map((start, index) => text.slice(start, [...offsets, text.length][index]));
+
+  /**
+   * The real retrieval skill over a gateway that completes with `output` and streams the
+   * same output as `deltas`, recording how many deltas the model had produced whenever the
+   * routine's stream yields.
+   */
+  const groundedStack = (output: string, deltas: string[], decline = "I can't confirm that here. What email can we reach you at?") => {
+    const streamCalls: Array<{ signal?: AbortSignal }> = [];
+    let modelDeltasProduced = 0;
+    const gateway: ChatGateway = {
+      async answer() {
+        return output;
+      },
+      async *streamAnswer(input) {
+        streamCalls.push({ signal: input.signal });
+        for (const delta of deltas) {
+          modelDeltasProduced += 1;
+          yield delta;
+        }
+      },
+    };
+    const presenter = new ChatAnswerPresenter(new AssistantSuggestionExpansionService(), undefined, { supportsGroundedAnswer: () => true });
+    const composer = new RetrievalAnswerComposer(
+      new ChatAnswerSupport(),
+      gateway,
+      presenter,
+      { async composeNoContext() { return { text: decline, declineReason: "content_gap" as const }; } },
+    );
+    const controller = new AbortController();
+    const options = {
+      session: session(),
+      accountId: "acct_1",
+      responseLanguage: Promise.resolve("English"),
+      turnSkills: [createRetrievalTurnSkill(composer)],
+      chatAnswerPresenter: presenter,
+      signal: controller.signal,
+    };
+    const input = {
+      step,
+      steering: [{ action: "Answer the question, then say Hop.", source: "routine" as const, lifespan: "response" as const }],
+      turn: turnWithRetrieval(retrievalResult()),
+    };
+    const drain = async () => {
+      const reply = createRoutineGroundedAnswerRenderer(options).prepare!(input)!;
+      const stream = reply.stream!();
+      const shown: Array<{ text: string; modelDeltasProduced: number }> = [];
+      let next = await stream.next();
+      while (!next.done) {
+        shown.push({ text: next.value, modelDeltasProduced });
+        next = await stream.next();
+      }
+      return { shown, turn: next.value };
+    };
+    const rendered = () => createRoutineGroundedAnswerRenderer(options).render(input);
+    return { drain, rendered, streamCalls, controller };
+  };
+
+  it("holds unanchored text until the model writes a valid citation, and never shows the envelope head", async () => {
+    const output = groundedAnswer("Kriya is introduced in the first module[[1]]. Hop!");
+    const anchorAt = output.indexOf("[[1]]");
+    const stack = groundedStack(output, split(output, [40, anchorAt - 10, anchorAt + 2, anchorAt + 12]));
+
+    const { shown } = await stack.drain();
+
+    expect(shown.length).toBeGreaterThan(0);
+    // Nothing reaches the visitor before the delta that completes the `[[1]]` anchor.
+    expect(Math.min(...shown.map((entry) => entry.modelDeltasProduced))).toBeGreaterThanOrEqual(4);
+    const visible = shown.map((entry) => entry.text).join("");
+    expect(visible).toBe("Kriya is introduced in the first module. Hop!");
+    for (const headField of ["coverage", "requestFocus", "outcome", "{", "\"answer\""]) {
+      expect(visible).not.toContain(headField);
+    }
+  });
+
+  it("finishes with the turn render() writes, planned suggestions expanded the same way", async () => {
+    const output = groundedAnswer("Kriya is introduced in the first module[[1]]. Hop!");
+    const stack = groundedStack(output, split(output, [30, 120, 160]));
+
+    const { turn } = await stack.drain();
+    const rendered = await stack.rendered();
+
+    expect(turn).toEqual(rendered);
+    expect(turn.suggestions).toEqual(rendered?.suggestions);
+    expect(turn.suggestions?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("shows the bounded decline when the model never cites, as render() does", async () => {
+    const unanchored = "Kriya is introduced somewhere. ".repeat(160);
+    const output = groundedAnswer(unanchored, { claims: [] });
+    const deltas = split(output, Array.from({ length: Math.floor(output.length / 200) }, (_, index) => (index + 1) * 200));
+    const stack = groundedStack(output, deltas);
+
+    const { shown, turn } = await stack.drain();
+    const rendered = await stack.rendered();
+
+    expect(shown.map((entry) => entry.text).join("")).toBe("I can't confirm that here. What email can we reach you at?");
+    expect(turn.answer).toBe("I can't confirm that here. What email can we reach you at?");
+    expect(turn.answer).toBe(rendered?.answer);
+    expect(turn.metadata).toMatchObject({ answerOutcome: rendered?.metadata?.answerOutcome, skillOutcome: rendered?.metadata?.skillOutcome });
+  });
+
+  it("generates under the turn's signal, so cancelling the turn stops the model", async () => {
+    const output = groundedAnswer("Kriya is introduced in the first module[[1]]. Hop!");
+    const stack = groundedStack(output, [output]);
+
+    await stack.drain();
+    expect(stack.streamCalls).toHaveLength(1);
+    expect(stack.streamCalls[0]?.signal?.aborted).toBe(false);
+    stack.controller.abort(new Error("turn cancelled"));
+
+    expect(stack.streamCalls[0]?.signal?.aborted).toBe(true);
   });
 });
 

@@ -1049,7 +1049,21 @@ export interface NoticeEmailContent {
  * delivery lane.
  */
 export interface NoticeMailPort {
-  send(input: { to: string; subject: string; kind: "usage_alert"; content: NoticeEmailContent }): Promise<void>;
+  send(input: {
+    to: string;
+    subject: string;
+    kind: "usage_alert";
+    content: NoticeEmailContent;
+    /** Forwarded to the provider (Resend's `Idempotency-Key`) so a retry that resends to
+     *  every recipient — including ones a prior attempt already reached — dedupes at the
+     *  provider rather than delivering twice. */
+    idempotencyKey?: string;
+  }): Promise<{
+    /** True only when a mail provider accepted the message. A deployment without one
+     *  configured (the log or noop driver) reports false, so a caller never reads "sent"
+     *  as "actually delivered." */
+    dispatched: boolean;
+  }>;
 }
 
 export interface AccountAdministratorContact {

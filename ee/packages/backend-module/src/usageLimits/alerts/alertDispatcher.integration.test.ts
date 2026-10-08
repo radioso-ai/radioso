@@ -146,14 +146,18 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
     await service.assignProfile(accountId, key);
   };
 
-  const insertClaim = async (accountId: string, level: "nearing_limit" | "limit_reached" | "grace_exhausted"): Promise<void> => {
+  const insertClaim = async (
+    accountId: string,
+    level: "nearing_limit" | "limit_reached" | "grace_exhausted",
+    periodStart: string = currentPeriodStart(),
+  ): Promise<void> => {
     await database.query(
       `INSERT INTO ee_usage_limit_alerts (account_id, period_start, level) VALUES ($1, $2::date, $3)`,
-      [accountId, currentPeriodStart(), level],
+      [accountId, periodStart, level],
     );
   };
 
-  const readClaim = async (accountId: string, level: string) => {
+  const readClaim = async (accountId: string, level: string, periodStart: string = currentPeriodStart()) => {
     const rows = await database.query<{
       sent_at: Date | null;
       outcome: string | null;
@@ -163,7 +167,7 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
     }>(
       `SELECT sent_at, outcome, attempts, next_attempt_at, last_error_code FROM ee_usage_limit_alerts
        WHERE account_id = $1 AND period_start = $2::date AND level = $3`,
-      [accountId, currentPeriodStart(), level],
+      [accountId, periodStart, level],
     );
     return rows[0];
   };
@@ -179,14 +183,16 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
   const createDispatcher = (overrides: {
     administrators?: AccountAdministratorContact[];
     sendImpl?: (input: { to: string }) => Promise<void>;
+    dispatched?: boolean;
   } = {}) => {
-    const sent: Array<{ to: string; subject: string }> = [];
+    const sent: Array<{ to: string; subject: string; idempotencyKey?: string }> = [];
     const noticeMail = {
-      send: vi.fn(async (input: { to: string; subject: string }) => {
+      send: vi.fn(async (input: { to: string; subject: string; idempotencyKey?: string }) => {
+        sent.push({ to: input.to, subject: input.subject, idempotencyKey: input.idempotencyKey });
         if (overrides.sendImpl) {
           await overrides.sendImpl(input);
         }
-        sent.push({ to: input.to, subject: input.subject });
+        return { dispatched: overrides.dispatched ?? true };
       }),
     };
     const accountAdministrators = {
@@ -232,7 +238,82 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
       accountId,
       eventType: "usage_limits.alert_delivered",
       eventStatus: "success",
-      metadata: expect.objectContaining({ level: "nearing_limit", recipientCount: 2 }),
+      metadata: expect.objectContaining({ level: "nearing_limit", recipientCount: 2, dispatchedCount: 2 }),
+    }));
+  });
+
+  it("keys each recipient's send with a stable idempotency key scoped to account/period/level/recipient", async () => {
+    const accountId = await seedAccount();
+    await assignProfile(accountId, 10);
+    await insertClaim(accountId, "limit_reached");
+    const { dispatcher, sent } = createDispatcher({
+      administrators: [
+        { email: "owner@example.com", displayName: "Owner" },
+        { email: "admin@example.com", displayName: "Admin" },
+      ],
+    });
+
+    await dispatcher.run();
+
+    const periodStart = currentPeriodStart();
+    expect(sent.find((m) => m.to === "owner@example.com")?.idempotencyKey)
+      .toBe(`usage_alert:${accountId}:${periodStart}:limit_reached:owner@example.com`);
+    expect(sent.find((m) => m.to === "admin@example.com")?.idempotencyKey)
+      .toBe(`usage_alert:${accountId}:${periodStart}:limit_reached:admin@example.com`);
+  });
+
+  it("reuses the same idempotency key on a retry, so the provider's dedup window catches a resend", async () => {
+    const accountId = await seedAccount();
+    await assignProfile(accountId, 10);
+    await insertClaim(accountId, "nearing_limit");
+    let callCount = 0;
+    const { dispatcher, sent } = createDispatcher({
+      sendImpl: async () => {
+        callCount += 1;
+        if (callCount === 1) {
+          throw new Error("temporary failure");
+        }
+      },
+    });
+
+    await dispatcher.run();
+    await pushClaimDue(accountId, "nearing_limit");
+    await dispatcher.run();
+
+    expect(sent).toHaveLength(2);
+    expect(sent[0].idempotencyKey).toBe(sent[1].idempotencyKey);
+  });
+
+  it("marks a claim from an earlier billing period superseded without sending it", async () => {
+    const accountId = await seedAccount();
+    await assignProfile(accountId, 10);
+    const now = new Date();
+    const lastMonth = currentPeriodStart(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)));
+    await insertClaim(accountId, "limit_reached", lastMonth);
+    const { dispatcher, noticeMail, audit } = createDispatcher();
+
+    await dispatcher.run();
+
+    expect(noticeMail.send).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
+    const claim = await readClaim(accountId, "limit_reached", lastMonth);
+    expect(claim.outcome).toBe("superseded");
+    expect(claim.sent_at).not.toBeNull();
+  });
+
+  it("reports a non-dispatching mail driver in the success audit's dispatchedCount", async () => {
+    const accountId = await seedAccount();
+    await assignProfile(accountId, 10);
+    await insertClaim(accountId, "nearing_limit");
+    const { dispatcher, audit } = createDispatcher({ dispatched: false });
+
+    await dispatcher.run();
+
+    const claim = await readClaim(accountId, "nearing_limit");
+    expect(claim.outcome).toBe("sent");
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "success",
+      metadata: expect.objectContaining({ recipientCount: 1, dispatchedCount: 0 }),
     }));
   });
 

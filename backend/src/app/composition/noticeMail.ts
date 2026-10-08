@@ -23,12 +23,14 @@ export const createNoticeMailAdapter = (
 ): ApplicationNoticeMailPort => ({
   async send(input) {
     const content = toEmailContent(input.content);
-    await mailService.send({
+    const result = await mailService.send({
       to: input.to,
       subject: input.subject,
       text: renderEmailText(content),
       html: renderEmail(content, { appBaseUrl: options.appBaseUrl }),
       kind: input.kind,
+      idempotencyKey: input.idempotencyKey,
     });
+    return { dispatched: result.dispatched };
   },
 });

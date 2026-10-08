@@ -214,6 +214,11 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
         attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
         next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         last_error_code TEXT,
+        -- The email built on the first send attempt, so a retry resends byte-identical content.
+        -- The provider's idempotency key is a hash of this claim's identity, not its content;
+        -- resending different content under the same key is a permanent (non-retryable) error
+        -- at the provider, not just a wasted attempt.
+        email_snapshot JSONB,
         PRIMARY KEY (account_id, period_start, level)
       )
     `);

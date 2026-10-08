@@ -50,9 +50,14 @@ export const claimGraceExhaustedSafely = async (
   }
 };
 
-/** Re-arm: deletes the current period's claims for an account, so a level reached again after a
- *  top-up or a profile/plan change alerts again. Called by `addCredits` (only when a grant is
- *  actually applied) and by `assignProfile`. */
+/**
+ * Re-arm: deletes the current period's claims for an account, so a level reached again after a
+ * top-up or a profile/plan change alerts again. Called by `addCredits` (only when a grant is
+ * actually applied) and by `assignProfile`, both inside their own transaction, so `now()` here
+ * is that transaction's frozen start time: a claim a concurrent reservation commits for this
+ * same account while the re-arming transaction is still open has a `created_at` at or after
+ * that moment, and survives instead of being swept up by a clear it raced.
+ */
 export const clearAlertClaims = async (
   db: EeDb,
   input: { accountId: string; periodStart: string },
@@ -61,5 +66,6 @@ export const clearAlertClaims = async (
     .deleteFrom("ee_usage_limit_alerts")
     .where("account_id", "=", input.accountId)
     .where("period_start", "=", sql<string>`${input.periodStart}::date`)
+    .where("created_at", "<", sql<Date>`now()`)
     .execute();
 };

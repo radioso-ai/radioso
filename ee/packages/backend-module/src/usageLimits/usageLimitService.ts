@@ -301,28 +301,32 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
   }
 
   async assignProfile(accountId: string, profileKey: string | null): Promise<AccountUsageSummary> {
-    if (profileKey === null) {
-      await this.db
-        .deleteFrom("ee_usage_limit_account_assignments")
-        .where("account_id", "=", accountId)
-        .execute();
+    // The assignment write and the re-arm clear share one transaction: `clearAlertClaims`
+    // only deletes claims with `created_at` before this transaction's (frozen) `now()`, so a
+    // reservation's claim that commits concurrently, between this transaction's start and its
+    // own commit, is never swept up just because the two happened to overlap.
+    await this.db.transaction().execute(async (trx) => {
+      if (profileKey === null) {
+        await trx
+          .deleteFrom("ee_usage_limit_account_assignments")
+          .where("account_id", "=", accountId)
+          .execute();
+      } else {
+        await trx
+          .insertInto("ee_usage_limit_account_assignments")
+          .values({ account_id: accountId, profile_key: profileKey })
+          .onConflict((oc) =>
+            oc.column("account_id").doUpdateSet({
+              profile_key: (eb) => eb.ref("excluded.profile_key"),
+              updated_at: sql<Date>`now()`,
+            }),
+          )
+          .execute();
+      }
       // Re-arm: a plan/profile change clears this period's alert claims, so a level
       // reached again under the new (or absent) profile alerts again.
-      await clearAlertClaims(this.db, { accountId, periodStart: currentPeriodStart() });
-      return this.getAccountUsage(accountId);
-    }
-
-    await this.db
-      .insertInto("ee_usage_limit_account_assignments")
-      .values({ account_id: accountId, profile_key: profileKey })
-      .onConflict((oc) =>
-        oc.column("account_id").doUpdateSet({
-          profile_key: (eb) => eb.ref("excluded.profile_key"),
-          updated_at: sql<Date>`now()`,
-        }),
-      )
-      .execute();
-    await clearAlertClaims(this.db, { accountId, periodStart: currentPeriodStart() });
+      await clearAlertClaims(trx, { accountId, periodStart: currentPeriodStart() });
+    });
 
     return this.getAccountUsage(accountId);
   }

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -217,10 +217,10 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
     sendImpl?: (input: { to: string }) => Promise<void>;
     dispatched?: boolean;
   } = {}) => {
-    const sent: Array<{ to: string; subject: string; idempotencyKey?: string }> = [];
+    const sent: Array<{ to: string; subject: string; idempotencyKey?: string; content: unknown }> = [];
     const noticeMail = {
-      send: vi.fn(async (input: { to: string; subject: string; idempotencyKey?: string }) => {
-        sent.push({ to: input.to, subject: input.subject, idempotencyKey: input.idempotencyKey });
+      send: vi.fn(async (input: { to: string; subject: string; idempotencyKey?: string; content: unknown }) => {
+        sent.push({ to: input.to, subject: input.subject, idempotencyKey: input.idempotencyKey, content: input.content });
         if (overrides.sendImpl) {
           await overrides.sendImpl(input);
         }
@@ -275,7 +275,7 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
     }));
   });
 
-  it("keys each recipient's send with a stable idempotency key scoped to account/period/level/recipient", async () => {
+  it("keys each recipient's send with a fixed-length digest, not the raw recipient email", async () => {
     const accountId = await seedAccount();
     await assignProfile(accountId, 10);
     await setUsageState(accountId, 100, 0);
@@ -291,10 +291,19 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
 
     const periodStart = currentPeriodStart();
     const createdAtMs = await readCreatedAtMs(accountId, "limit_reached");
-    expect(sent.find((m) => m.to === "owner@example.com")?.idempotencyKey)
-      .toBe(`usage_alert:${accountId}:${periodStart}:limit_reached:${createdAtMs}:owner@example.com`);
-    expect(sent.find((m) => m.to === "admin@example.com")?.idempotencyKey)
-      .toBe(`usage_alert:${accountId}:${periodStart}:limit_reached:${createdAtMs}:admin@example.com`);
+    const expectedKey = (email: string) => {
+      const digest = createHash("sha256")
+        .update(`${accountId}:${periodStart}:limit_reached:${createdAtMs}:${email}`)
+        .digest("hex");
+      return `usage_alert:${digest}`;
+    };
+    const ownerKey = sent.find((m) => m.to === "owner@example.com")?.idempotencyKey;
+    const adminKey = sent.find((m) => m.to === "admin@example.com")?.idempotencyKey;
+    expect(ownerKey).toBe(expectedKey("owner@example.com"));
+    expect(adminKey).toBe(expectedKey("admin@example.com"));
+    expect(ownerKey).not.toContain("owner@example.com");
+    expect(ownerKey?.length).toBeLessThanOrEqual(256);
+    expect(ownerKey).toMatch(/^usage_alert:[0-9a-f]{64}$/);
   });
 
   it("reuses the same idempotency key on a retry, so the provider's dedup window catches a resend", async () => {
@@ -318,6 +327,37 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
 
     expect(sent).toHaveLength(2);
     expect(sent[0].idempotencyKey).toBe(sent[1].idempotencyKey);
+  });
+
+  it("snapshots the email on the first attempt and resends identical content on retry, even once current usage has moved on", async () => {
+    const accountId = await seedAccount();
+    await assignProfile(accountId, 10);
+    await setUsageState(accountId, 100, 0);
+    await insertClaim(accountId, "nearing_limit");
+    let callCount = 0;
+    const { dispatcher, sent } = createDispatcher({
+      sendImpl: async () => {
+        callCount += 1;
+        if (callCount === 1) {
+          throw new Error("temporary failure");
+        }
+      },
+    });
+
+    await dispatcher.run();
+    expect(sent).toHaveLength(1);
+    expect(JSON.stringify(sent[0].content)).toContain("10 of 10");
+
+    // Usage moves between attempts (a different conversation posts, say); a rebuilt email
+    // would now read differently.
+    await setUsageState(accountId, 90, 0);
+    await pushClaimDue(accountId, "nearing_limit");
+    await dispatcher.run();
+
+    expect(sent).toHaveLength(2);
+    expect(sent[1].content).toEqual(sent[0].content);
+    expect(JSON.stringify(sent[1].content)).toContain("10 of 10");
+    expect(JSON.stringify(sent[1].content)).not.toContain("9 of 10");
   });
 
   it("marks a claim from an earlier billing period superseded without sending it", async () => {
@@ -374,6 +414,7 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
   it("marks no_recipients and records a failure audit when the account has no administrators", async () => {
     const accountId = await seedAccount();
     await assignProfile(accountId, 10);
+    await setUsageState(accountId, 100, 0);
     await insertClaim(accountId, "limit_reached");
     const { dispatcher, noticeMail, audit } = createDispatcher({ administrators: [] });
 
@@ -533,6 +574,40 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
       `DELETE FROM ee_usage_limit_alerts WHERE account_id = $1 AND period_start = $2::date AND level = 'limit_reached'`,
       [accountId, currentPeriodStart()],
     );
+  });
+
+  it("sends the still-valid lower claim instead of letting a now-stale higher sibling suppress it", async () => {
+    const accountId = await seedAccount();
+    const workspaceId = randomUUID();
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, 'w', $3)`,
+      [workspaceId, accountId, `route-${workspaceId}`],
+    );
+    await assignProfile(accountId, 10);
+    const service = new EnterpriseUsageLimitService(database);
+    const reserveConversation = () => service.reserveAnswer({
+      accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID(),
+    });
+
+    // Cross into limit_reached (claims both nearing_limit and limit_reached naturally), then
+    // release the last reservation so the real level drops back to nearing_limit. Unlike the
+    // test above, BOTH sibling claims are left in place: the supersede check alone (a higher
+    // sibling exists) would wrongly swallow the still-valid nearing_limit claim, since the
+    // higher one is itself stale and gets deleted rather than sent.
+    const reservations: Array<{ release(): Promise<void> }> = [];
+    for (let i = 0; i < 10; i += 1) {
+      reservations.push(await reserveConversation());
+    }
+    await reservations[reservations.length - 1].release();
+
+    const { dispatcher, noticeMail } = createDispatcher();
+    await dispatcher.run();
+
+    expect(noticeMail.send).toHaveBeenCalledTimes(1);
+    expect(noticeMail.send.mock.calls[0][0].subject).toBe("You've used 80% of this month's conversations");
+    expect(await readClaim(accountId, "limit_reached")).toBeUndefined();
+    const nearing = await readClaim(accountId, "nearing_limit");
+    expect(nearing?.outcome).toBe("sent");
   });
 
   it("a re-armed claim's new generation is unaffected by a finalize step still fenced to the old generation's created_at", async () => {

@@ -280,4 +280,23 @@ describeIfDatabase("EE usage limit alert claims", () => {
     await assignProfile(accountId, { monthlyConversationLimit: 100 });
     expect(await readClaims(accountId)).toEqual([]);
   });
+
+  it("does not delete a claim created after the assignment change's own transaction began", async () => {
+    const { accountId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+
+    // Simulate a reservation's claim committing concurrently, just after this reassignment's
+    // transaction opened: the clear must not sweep it up just because it ran in the same
+    // wall-clock vicinity.
+    await database.query(
+      `INSERT INTO ee_usage_limit_alerts (account_id, period_start, level, created_at)
+       VALUES ($1, $2::date, 'nearing_limit', now() + interval '1 hour')`,
+      [accountId, currentPeriodStart()],
+    );
+
+    await assignProfile(accountId, { monthlyConversationLimit: 100 });
+
+    const claims = await readClaims(accountId);
+    expect(claims).toEqual([expect.objectContaining({ level: "nearing_limit", sent_at: null })]);
+  });
 });

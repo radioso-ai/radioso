@@ -2,7 +2,37 @@ import type {
   ConversationRoutineResumeResult,
   ProcessTurnResult,
   RoutineOperatorNoticeEffect,
+  RoutineState,
 } from "@radioso/conversation-contract";
+
+/**
+ * The record a routine keeps once a turn ends it, built from the state that turn started on:
+ * where it ended, the values it ended with, and how. A live turn and a resume after an approval
+ * keep the same record (#1457), so a later turn finds the run completed whichever path ended it:
+ * the routine is not started again where it runs once, and a slot correction or re-entry reads it.
+ */
+export const completedRoutineState = (
+  state: RoutineState,
+  result: Pick<ConversationRoutineResumeResult, "terminal" | "endedVariables" | "trace">,
+): RoutineState => {
+  // A normal terminal ending lands by moving onto a terminal step the path never held; a stuck
+  // ending (#1384) lands on the chat step already last in `path` — the walk never advanced off
+  // it — so appending it again would duplicate that entry.
+  const landedStepId = result.trace?.landedStepId;
+  const path = landedStepId && landedStepId !== state.path.at(-1) ? [...state.path, landedStepId] : state.path;
+  return {
+    ...state,
+    path,
+    // The values the run ended with: `state` predates the ending turn, which can capture the last
+    // slot or assign a tool output on its way to the ending (#1452).
+    variables: result.endedVariables ?? state.variables,
+    status: "completed",
+    metadata: {
+      ...(state.metadata ?? {}),
+      ...(result.terminal ? { terminalKind: result.terminal.kind, terminalStepId: result.terminal.stepId } : {}),
+    },
+  };
+};
 
 /**
  * What a routine ending does beyond the reply, derived from the landed terminal. Every path

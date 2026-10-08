@@ -1938,6 +1938,41 @@ describe("DefaultRoutineRunner trace", () => {
     expect(JSON.stringify(result.trace)).not.toContain("a@b.c");
   });
 
+  describe("the routine's first turn (#1450)", () => {
+    it("records a first step the opening message did not satisfy as asked for the first time, not re-asked", async () => {
+      const runner = new DefaultRoutineRunner(
+        [slotRoutine],
+        { select: vi.fn(async () => ({ nextStepId: "ask_email" })) },
+        { render: vi.fn(echoRenderer.render) },
+      );
+
+      const result = await runner.resume({ turn, state: state([]), activationTurn: true });
+
+      expect(result.trace?.steps).toEqual([
+        { stepId: "ask_email", kind: "chat", event: "rendered", viaSelector: true, readOpeningMessage: true },
+      ]);
+    });
+
+    it("records a first step the opening message satisfied as read for it", async () => {
+      const runner = new DefaultRoutineRunner(
+        [slotRoutine],
+        { select: vi.fn(async () => ({ nextStepId: "ask_message", variables: { email: "a@b.c" } })) },
+        { render: vi.fn(echoRenderer.render) },
+      );
+
+      const result = await runner.resume({ turn, state: state([]), activationTurn: true });
+
+      expect(result.trace?.steps[0]).toEqual({
+        stepId: "ask_email",
+        kind: "chat",
+        event: "advanced",
+        capturedSlotKeys: ["email"],
+        viaSelector: true,
+        readOpeningMessage: true,
+      });
+    });
+  });
+
   it("records fast-forwarding over a satisfied downstream slot-collection step", async () => {
     const runner = new DefaultRoutineRunner(
       [slotRoutine],

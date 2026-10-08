@@ -22193,6 +22193,10 @@
                 "type": "string",
                 "format": "uuid"
               },
+              "answer": {
+                "type": "string",
+                "description": "The stored answer. It is authoritative over the message_delta text streamed before it, which the runtime's final presentation may normalize."
+              },
               "turnTrace": {}
             },
             "required": [
@@ -22202,7 +22206,8 @@
               "turnId",
               "attemptId",
               "sideId",
-              "messageId"
+              "messageId",
+              "answer"
             ]
           },
           {

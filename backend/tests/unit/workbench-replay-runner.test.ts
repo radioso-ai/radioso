@@ -1463,6 +1463,7 @@ describe("WorkbenchReplayRunner", () => {
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Please book Ananda for me",
       history: [],
+      includeSlotValues: true,
     });
 
     expect(result.handoff).toEqual({
@@ -1486,7 +1487,7 @@ describe("WorkbenchReplayRunner", () => {
     expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("A stay at Ananda");
   });
 
-  it("previews a completion notice with its authored subject and intro, and hands nothing off", async () => {
+  const completionNoticeReplay = () => {
     const fakeEngine = {
       async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
         await input.routineStore!.save({
@@ -1534,15 +1535,19 @@ describe("WorkbenchReplayRunner", () => {
       chatGateway: chatGatewayStub(),
       chatAnswerPresenter: presenterStub(),
     });
-
-    const result = await runner.run({
+    return (options: { includeSlotValues?: boolean } = {}) => runner.run({
       workspaceId: "ws-1",
       executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Please book Ananda for me",
       history: [],
+      ...options,
     });
+  };
+
+  it("previews a completion notice with its authored subject and intro in Test Chat, and hands nothing off", async () => {
+    const result = await completionNoticeReplay()({ includeSlotValues: true });
 
     expect(result.handoff).toBeUndefined();
     expect(result.actions ?? []).not.toEqual(expect.arrayContaining([
@@ -1557,6 +1562,16 @@ describe("WorkbenchReplayRunner", () => {
         "  Name: Ada Lovelace",
       ]),
     });
+  });
+
+  // Eval replay never opts into slot values: it persists the trace to append-only eval evidence
+  // that a source conversation's erasure cannot reach.
+  it("keeps a routine's collected values out of an eval replay's trace", async () => {
+    const result = await completionNoticeReplay()();
+
+    expect(result.turnTrace).toBeDefined();
+    expect(result.turnTrace?.handoffPreview).toBeUndefined();
+    expect(JSON.stringify(result.turnTrace)).not.toContain("Ada Lovelace");
   });
 
   it("wires the coverage routine port into a replayed turn's reported coverage verdict", async () => {
@@ -2019,5 +2034,271 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
       variables: { email: "guest@example.com" },
       status: "active",
     });
+  });
+});
+
+describe("WorkbenchReplayRunner streaming entry", () => {
+  /** Drains a turn stream into the text it yielded and the result it returned. */
+  const collect = async <Result>(turn: AsyncGenerator<string, Result>): Promise<{ deltas: string[]; result: Result }> => {
+    const deltas: string[] = [];
+    let step = await turn.next();
+    while (!step.done) {
+      deltas.push(step.value);
+      step = await turn.next();
+    }
+    return { deltas, result: step.value };
+  };
+
+  /** `answerSkill`, plus a live renderer stream that holds the rest of its answer until `gate` opens. */
+  const streamingAnswerSkill = (gate: Promise<void>): TurnSkill => {
+    const skill = answerSkill();
+    return {
+      ...skill,
+      renderer: {
+        ...skill.renderer,
+        async *stream(outcome, ctx) {
+          const finalPresentation = await skill.renderer.render(outcome, ctx);
+          yield finalPresentation.answer.slice(0, 9);
+          await gate;
+          yield finalPresentation.answer.slice(9);
+          return {
+            finalPresentation,
+            suggestions: { mode: "presentation" },
+            hasStreamedAnswer: true,
+            streamedAnswer: finalPresentation.answer,
+            deliveryMode: "live",
+          };
+        },
+      },
+    };
+  };
+
+  const replayInput = () => ({
+    workspaceId: "ws-1",
+    executionMode: "safe_test" as const,
+    sourceAgentId: "agent-1",
+    conversationId: "private-side-1",
+    baselineAgentConfig: projectInternalAgentConfig(agent()),
+    query: "How long do refunds take?",
+    history: [],
+    directiveStateStartState: { turnSeq: 2, firings: {} },
+  });
+
+  it("streams a rendered answer's text before the turn settles, then settles to the result run() returns", async () => {
+    let openGate!: () => void;
+    const gate = new Promise<void>((resolve) => { openGate = resolve; });
+    const observeHistogram = vi.fn();
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [streamingAnswerSkill(gate)],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+      streamMetrics: { observeHistogram },
+    });
+
+    const ran = await runner.run(replayInput());
+    expect(observeHistogram).not.toHaveBeenCalled();
+
+    const turn = runner.stream(replayInput());
+    // The first chunk arrives while the renderer still holds the rest of the answer.
+    expect(await turn.next()).toEqual({ done: false, value: "Answered " });
+    expect(observeHistogram).toHaveBeenCalledOnce();
+    expect(observeHistogram).toHaveBeenCalledWith(
+      "chat_replay_stream_first_answer_chunk_latency_ms",
+      expect.objectContaining({ labels: { route: "retrieval", delivery_mode: "live" }, value: expect.any(Number) }),
+    );
+    openGate();
+    const { deltas, result: streamed } = await collect(turn);
+
+    expect(deltas).toEqual(["with Answer from the operator baseline."]);
+    expect(streamed.answer).toBe(ran.answer);
+    expect(streamed.citations).toEqual(ran.citations);
+    expect(streamed.groundingSummary).toEqual(ran.groundingSummary);
+    expect(streamed.actions).toEqual(ran.actions);
+    expect(streamed.continuation).toEqual(ran.continuation);
+    expect(streamed.continuation?.directiveState).toMatchObject({ turnSeq: 3 });
+    expect(streamed.resolvedConfig).toEqual(ran.resolvedConfig);
+    expect(streamed.turnTrace?.spine.stages.map((stage) => stage.kind))
+      .toEqual(ran.turnTrace?.spine.stages.map((stage) => stage.kind));
+    expect(observeHistogram).toHaveBeenCalledOnce();
+  });
+
+  it("delivers a routine-claimed turn's reply whole once the routine settles, with the result run() returns", async () => {
+    const processTurnStream = vi.fn(() => {
+      throw new Error("grounding must not run when a routine claims the turn");
+    });
+    const fakeEngine = {
+      async attemptRoutine(): Promise<ProcessTurnResult | null> {
+        return {
+          response: { answer: "It seems you'd like follow-up — what's your email?" },
+          trace: emptyTrace(),
+          decision: { reason: "routine_activated:ask_email_on_interest" },
+          actions: [],
+        } as unknown as ProcessTurnResult;
+      },
+      processTurnStream,
+    } as unknown as ConversationEngine;
+    const observeHistogram = vi.fn();
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: routineProviderStub(),
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+      streamMetrics: { observeHistogram },
+    });
+
+    const ran = await runner.run(replayInput());
+    const { deltas, result } = await collect(runner.stream(replayInput()));
+
+    expect(deltas).toEqual(["It seems you'd like follow-up — what's your email?"]);
+    expect(result.answer).toBe(ran.answer);
+    expect(result.continuation).toEqual(ran.continuation);
+    expect(processTurnStream).not.toHaveBeenCalled();
+    expect(observeHistogram).toHaveBeenCalledWith(
+      "chat_replay_stream_first_answer_chunk_latency_ms",
+      expect.objectContaining({ labels: { route: "routine", delivery_mode: "committed" } }),
+    );
+  });
+});
+
+describe("WorkbenchReplayRunner coverage routine takeover", () => {
+  const drive = async (runner: WorkbenchReplayRunner, mode: "run" | "stream", input: Parameters<WorkbenchReplayRunner["run"]>[0]) => {
+    if (mode === "run") return runner.run(input);
+    const turn = runner.stream(input);
+    let step = await turn.next();
+    while (!step.done) step = await turn.next();
+    return step.value;
+  };
+
+  /**
+   * A grounded turn a coverage routine takes over (#1260 `yield_turn`): the engine starts the
+   * routine through the coverage-wrapped routine store and answers with its first step. On a
+   * later turn, `attemptRoutine` resumes whatever routine the replay's store holds.
+   */
+  const coverageTakeoverEngine = (takeover: Partial<ProcessTurnResult> = {}, routineStatus: "active" | "suspended" = "active"): ConversationEngine => {
+    const takeOver = async (input: ProcessTurnInput): Promise<ProcessTurnResult> => {
+      await input.routineStore!.save({ sessionId: input.sessionId, routineId: "follow_up", path: ["ask_email"], variables: {}, status: routineStatus });
+      return {
+        response: { answer: "What's the best email to reach you?" },
+        trace: emptyTrace(),
+        decision: { reason: "coverage_routine_activated:follow_up" },
+        actions: [],
+        routineExecution: { routineId: "follow_up" },
+        ...takeover,
+      } as unknown as ProcessTurnResult;
+    };
+    return {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        const active = await input.routineStore!.loadActive({ sessionId: input.sessionId });
+        return active
+          ? { response: { answer: `resumed:${active.routineId}:${active.path.at(-1)}` }, trace: emptyTrace(), decision: { reason: "resumed" }, actions: [] } as unknown as ProcessTurnResult
+          : null;
+      },
+      processTurn: takeOver,
+      async *processTurnStream(input: ProcessTurnInput) {
+        yield { type: "final", result: await takeOver(input) };
+      },
+    } as unknown as ConversationEngine;
+  };
+
+  const coverageRoutineProvider = (reporter?: ChatRoutineTurnReporter): ChatRoutineProvider => ({
+    async forTurn() {
+      return {
+        activator: { activate: async () => null },
+        runner: {} as never,
+        coverageActivator: { evaluateCandidates: () => [], activate: async () => null },
+        ...(reporter ? { reporter } : {}),
+      };
+    },
+  });
+
+  const replayRunner = (engine: ConversationEngine, reporter?: ChatRoutineTurnReporter) => new WorkbenchReplayRunner({
+    retrievalTurn: retrievalTurn([]),
+    auditService: createAuditService(),
+    turnSkills: [answerSkill()],
+    conversationEngine: engine,
+    turnRouter: stubTurnRouter("retrieval"),
+    routineProvider: coverageRoutineProvider(reporter),
+    chatGateway: chatGatewayStub(),
+    chatAnswerPresenter: presenterStub(),
+    coverageHeadRecorder: new AnswerCoverageHeadRecorder(),
+  });
+
+  const turnInput = (query: string) => ({
+    workspaceId: "ws-1",
+    executionMode: "safe_test" as const,
+    sourceAgentId: "agent-1",
+    conversationId: "private-side-1",
+    baselineAgentConfig: projectInternalAgentConfig(agent()),
+    query,
+    history: [],
+  });
+
+  it.each(["run", "stream"] as const)("exports the routine a coverage takeover started, so the next Test Chat turn continues it (%s)", async (mode) => {
+    const runner = replayRunner(coverageTakeoverEngine());
+
+    const first = await drive(runner, mode, turnInput("How long do refunds take?"));
+    const second = await drive(runner, mode, { ...turnInput("guest@example.com"), routineStartState: first.continuation?.routineState ?? null });
+
+    expect(first.answer).toBe("What's the best email to reach you?");
+    expect(first.continuation?.routineState).toMatchObject({ routineId: "follow_up", path: ["ask_email"], status: "active" });
+    expect(second.answer).toBe("resumed:follow_up:ask_email");
+  });
+
+  const handoffEnding = { routineId: "follow_up", stepId: "handoff", terminalKind: "handoff" as const, collected: { email: "guest@example.com" } };
+  const describedAs = (name: string) => {
+    const describeRoutineName = vi.fn(() => name);
+    const reporter: ChatRoutineTurnReporter = {
+      describe: () => null,
+      describeDeclined: () => null,
+      describeInvocation: () => null,
+      describeRoutineName,
+    };
+    return { reporter, describeRoutineName };
+  };
+
+  it.each(["run", "stream"] as const)("previews the hand-off a coverage routine ends on in Test Chat, without dispatching it (%s)", async (mode) => {
+    const { reporter, describeRoutineName } = describedAs("Follow up");
+    const runner = replayRunner(coverageTakeoverEngine({ handoff: handoffEnding, operatorNotice: handoffEnding }), reporter);
+
+    const result = await drive(runner, mode, { ...turnInput("How long do refunds take?"), includeSlotValues: true });
+
+    expect(result.handoff).toEqual(handoffEnding);
+    expect(result.actions ?? []).not.toEqual(expect.arrayContaining([expect.objectContaining({ type: "handoff.notify" })]));
+    expect(describeRoutineName).toHaveBeenCalledWith("follow_up");
+    expect(result.turnTrace?.handoffPreview).toMatchObject({ kind: "handoff", subject: "Follow up: needs a human" });
+    expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("guest@example.com");
+  });
+
+  it.each(["run", "stream"] as const)("keeps a coverage routine's collected values out of an eval replay's trace (%s)", async (mode) => {
+    const { reporter } = describedAs("Follow up");
+    const runner = replayRunner(coverageTakeoverEngine({ handoff: handoffEnding, operatorNotice: handoffEnding }), reporter);
+
+    const result = await drive(runner, mode, turnInput("How long do refunds take?"));
+
+    expect(result.turnTrace).toBeDefined();
+    expect(result.turnTrace?.handoffPreview).toBeUndefined();
+    expect(JSON.stringify(result.turnTrace)).not.toContain("guest@example.com");
+  });
+
+  it.each(["run", "stream"] as const)("suspends a coverage routine that waits for approval and carries it into the next turn (%s)", async (mode) => {
+    const runner = replayRunner(coverageTakeoverEngine({
+      awaitingDecision: { stepId: "approval", captureKey: "approval_decision", options: [{ id: "approve", label: "Approve" }] },
+    }, "suspended"));
+
+    const result = await drive(runner, mode, turnInput("How long do refunds take?"));
+
+    expect(result.pendingDecisionTransition).toMatchObject({
+      routineId: "follow_up",
+      stepId: "approval",
+      options: [{ id: "approve", label: "Approve" }],
+    });
+    expect(result.actions).toEqual(expect.arrayContaining([expect.objectContaining({ type: "approval.request" })]));
+    expect(result.continuation?.routineState).toMatchObject({ routineId: "follow_up", status: "suspended" });
   });
 });

@@ -18,6 +18,17 @@ in `app/http/routes/testExecutionRoutes.ts`; the trusted runner adapter is
 `chat/services/trustedTestExecutionRunnerAdapter.ts`. Revision selection belongs
 to `modules/agents`; chat remains the runtime port.
 
+A turn streams. `TrustedTestExecutionRunnerPort.stream` yields the answer's text
+as the runtime generates it and returns the settled result, and each side forwards
+that text as `message_delta` events as it arrives. Every side runs as its own task
+pushing into `liveEventQueue.ts`, so a comparison's sides interleave live, and a
+side's result is stored, fenced, and charged even after the stream's reader has
+gone. A completion sends only what the stored answer adds past the streamed text
+(all of it on a delivery replay, where nothing streamed), and `side_completed`
+carries the stored `answer`, which the client shows in place of the streamed text:
+the runtime's final presentation can trim whitespace or citation anchors the stream
+carried. A side that fails after streaming ends `side_failed` with no completion.
+
 A single execution can start from an existing conversation (`seedConversationId`
 on start). This module only knows the `TestExecutionSeedSource` port: it receives
 an ordered user/assistant thread plus an opaque runner continuation, groups the

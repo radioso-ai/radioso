@@ -1379,7 +1379,7 @@ exports[`routine turn golden record (attemptRoutine) > records the same port cal
     "directiveMatcher:done",
     "render:done:steering=1:staged=0",
     "appendEvent:user",
-    "save:completed:ask_email>ask_message>done:email",
+    "save:completed:ask_email>ask_message>done:email,message",
     "appendEvent:assistant",
   ],
   "result": {

@@ -114,4 +114,40 @@ describe("resumeRoutine completion persistence", () => {
     expect(save).toHaveBeenCalledTimes(1);
     expect(save.mock.calls[0][0].path).toEqual(["ask_contact", "done"]);
   });
+
+  it("keeps every value the run ended with, the ending turn's included, on the completed record (#1452)", async () => {
+    const save = vi.fn(async () => {});
+    const runner: ConversationRoutineRunner = {
+      resume: vi.fn(async () => ({
+        response: { answer: "Thanks, all set." },
+        nextState: null,
+        terminal: { kind: "complete", stepId: "done", collected: { full_name: "Giulia", email: "giulia@example.com" } },
+        endedVariables: { full_name: "Giulia", email: "giulia@example.com", request_ref: "REQ-7" },
+        trace: {
+          routineId: "contact",
+          startStepId: "ask_contact",
+          landedStepId: "done",
+          terminalKind: "complete",
+          capturedSlotKeys: ["email"],
+          filledSlotKeys: ["full_name", "email"],
+          steps: [],
+        },
+      })),
+    };
+    const state = { ...stateOn("ask_contact"), variables: { full_name: "Giulia" } };
+
+    await resumeRoutine({
+      request: requestWith(runner, save),
+      baseTurn: turn,
+      state,
+      resuming: true,
+      history: [],
+    });
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][0]).toMatchObject({
+      status: "completed",
+      variables: { full_name: "Giulia", email: "giulia@example.com", request_ref: "REQ-7" },
+    });
+  });
 });

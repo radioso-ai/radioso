@@ -24,7 +24,6 @@ import { STRIPE_WEBHOOK_EVENT_TYPES, type StripeHandledWebhookEventType } from "
 const SAAS_TAX_CODE = "txcd_10103001";
 
 const TOP_UP_PRODUCT_ID = "radioso_topup";
-const MANAGED_SERVICE_PRODUCT_ID = "radioso_managed_service";
 
 const planProductId = (planId: string): string => `radioso_plan_${planId}`;
 
@@ -117,16 +116,6 @@ export const desiredStripeCatalog = (
     metadata: {},
   });
   prices.push(price(catalog.topUp.stripeLookupKey, TOP_UP_PRODUCT_ID, catalog.topUp.priceCents, null));
-
-  products.push({ id: MANAGED_SERVICE_PRODUCT_ID, name: "Radioso managed service", taxCode: SAAS_TAX_CODE, metadata: {} });
-  prices.push(
-    price(
-      catalog.managedService.stripeLookupKey,
-      MANAGED_SERVICE_PRODUCT_ID,
-      catalog.managedService.priceCents,
-      catalog.managedService.interval,
-    ),
-  );
 
   return {
     metadataKey: options.metadataKey,

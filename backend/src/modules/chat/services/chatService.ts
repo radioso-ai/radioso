@@ -1840,14 +1840,17 @@ export class ChatService {
       const finalOwnershipHandoff = routineEnding.ownershipHandoff ?? retrievalMissHandoff.ownershipHandoff;
       // What the direct routine branch above also treats as a durable effect worth
       // protecting: an outbox action (including a routine-ending notice, folded into
-      // `finalActions` by `routineEndingEffectsForTurn`), a human ownership handoff, or
-      // a routine suspended at an approval gate. A routine-state/clarification advance
-      // with none of those is not held — it is unobservable to the visitor if lost.
+      // `finalActions` by `routineEndingEffectsForTurn`), a human ownership handoff, a
+      // routine suspended at an approval gate, or a skill the routine ran that already
+      // acted outside the conversation (an email sent, a webhook called). A
+      // routine-state/clarification advance with none of those is not held — it is
+      // unobservable to the visitor if lost.
       const hasDurableEffect = Boolean(
         finalActions?.length
         || finalOwnershipHandoff
         || coverageRoutineEffects.suspended
-        || coverageRoutineEffects.pendingDecisionTransition,
+        || coverageRoutineEffects.pendingDecisionTransition
+        || coverageRoutineEffects.skillsWithExternalEffects?.length,
       );
       if (!hasDurableEffect) {
         yield* releaseHeldChunks();

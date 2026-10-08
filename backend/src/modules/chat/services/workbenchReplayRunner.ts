@@ -55,6 +55,8 @@ import {
   type ChatTurnAssemblyOptions,
   type ChatTurnAssemblyRoutineResult,
 } from "./chatTurnAssembly.js";
+import { withRoutineReplyDelivery } from "./routines/routineReplyDelivery.js";
+import { routineReplyFor } from "./routines/routineReplyFor.js";
 import {
   createEphemeralChatTurnEffectProfile,
   type EphemeralChatTurnEffectProfile,
@@ -316,13 +318,8 @@ export class WorkbenchReplayRunner {
   async *stream(input: WorkbenchReplayInput): AsyncGenerator<string, WorkbenchReplayResult> {
     const turn = await this.prepareTurn(input);
     const observeFirstChunk = this.firstAnswerChunkObserver(turn.requestReceivedAt);
-    // A routine's reply arrives whole once its turn settles; a streamed routine step plugs in here.
-    const routineResult = await this.routineTurn(turn);
+    const routineResult = yield* this.routineTurnStream(turn, observeFirstChunk);
     if (routineResult) {
-      if (routineResult.answer) {
-        observeFirstChunk("routine", "committed");
-        yield routineResult.answer;
-      }
       return routineResult;
     }
     let rendered: RenderedReplayAnswer | undefined;
@@ -524,9 +521,82 @@ export class WorkbenchReplayRunner {
       clarification: turn.clarification,
       coordination: turn.coordination,
     });
-    if (!routineResult) {
+    return routineResult ? this.settleRoutineTurn(turn, routineResult, { stream: false }) : null;
+  }
+
+  /**
+   * {@link routineTurn}, but claims the turn without generating its reply, then asks the same
+   * delivery rule live chat applies ({@link routineReplyFor}) whether to stream it. A turn with
+   * no durable effect (a slot ask, a re-ask, a step instruction, a grounded step answer) yields
+   * its reply's text as the model writes it; a turn that does something durable — an action, a
+   * decision gate, a hand-off, any routine ending, or a skill step that already acted outside
+   * the conversation — is rendered and settled before any text reaches the caller, exactly as a
+   * live visitor would see it. Yields nothing when no routine claims the turn, so the caller
+   * falls through to grounded retrieval.
+   */
+  private async *routineTurnStream(
+    turn: PreparedReplayTurn,
+    observeFirstChunk: (route: string, deliveryMode: string) => void,
+  ): AsyncGenerator<string, WorkbenchReplayResult | null> {
+    const claim = await turn.assembly.claimRoutineTurn(turn.session, {
+      accountId: turn.input.accountId ?? undefined,
+      responseLanguage: turn.responseLanguagePromise,
+      activeRoutine: turn.activeRoutine,
+      clarification: turn.clarification,
+      coordination: turn.coordination,
+    });
+    if (!claim) {
       return null;
     }
+    const outcome = await routineReplyFor({
+      session: turn.session,
+      workspaceId: turn.input.workspaceId,
+      claim,
+    });
+    let routineResult: ChatTurnAssemblyRoutineResult;
+    if (outcome.delivery === "stream") {
+      const reply = outcome.stream();
+      let shown = false;
+      let step = await reply.next();
+      while (!step.done) {
+        if (!shown) {
+          observeFirstChunk("routine", "live");
+          shown = true;
+        }
+        yield step.value;
+        step = await reply.next();
+      }
+      // A provider that ignores the abort can finish its reply after the disconnect ceiling
+      // cancelled the turn; a cancelled turn commits nothing.
+      turn.coordination?.checkpoint();
+      routineResult = step.value;
+    } else {
+      routineResult = outcome.turn;
+    }
+    const result = await this.settleRoutineTurn(turn, routineResult, {
+      stream: true,
+      reply: outcome.delivery,
+    });
+    if (outcome.delivery === "whole" && result.answer) {
+      observeFirstChunk("routine", "committed");
+      yield result.answer;
+    }
+    return result;
+  }
+
+  /**
+   * Commits a claimed routine turn's routine, clarification, and directive state, then presents
+   * its result. `run`'s whole claim and `stream`'s claim (rendered whole or streamed) both reach
+   * this, so a Test Chat routine reply persists identically either way. `delivery.reply`, present
+   * only from the streaming entry, marks the trace with how the reply reached the caller
+   * ({@link withRoutineReplyDelivery}) — `run`'s non-stream turn never carries that mark, same as
+   * a live non-SSE turn.
+   */
+  private async settleRoutineTurn(
+    turn: PreparedReplayTurn,
+    routineResult: ChatTurnAssemblyRoutineResult,
+    delivery: { stream: boolean; reply?: "stream" | "whole" },
+  ): Promise<WorkbenchReplayResult> {
     turn.coordination?.checkpoint();
     await routineResult.commitRoutineState();
     await routineResult.commitClarificationState?.();
@@ -536,10 +606,12 @@ export class WorkbenchReplayRunner {
       agent: turn.agent,
       session: turn.session,
       presentation: routineResult.presentation,
-      engineTrace: routineResult.engineTrace,
+      engineTrace: delivery.reply
+        ? withRoutineReplyDelivery(routineResult.engineTrace, delivery.reply)
+        : routineResult.engineTrace,
       requestReceivedAt: turn.requestReceivedAt,
       answerStartedAt: turn.answerStartedAt,
-      stream: false,
+      stream: delivery.stream,
       actions: routineResult.actions,
       pendingDecisionTransition: routineResult.pendingDecisionTransition,
       handoff: routineResult.handoff,

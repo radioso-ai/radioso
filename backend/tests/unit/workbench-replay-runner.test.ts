@@ -6,8 +6,12 @@ import type {
   AnswerCoverageAssessment,
   AttemptRoutineInput,
   ConversationEngine,
+  ConversationRoutineRunEffects,
+  ConversationRoutineRunner,
+  PendingRenderableTurn,
   ProcessTurnInput,
   ProcessTurnResult,
+  RenderableTurn,
   Routine,
 } from "@radioso/conversation-contract";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
@@ -46,10 +50,32 @@ import { createContactRoutineApplicationModule } from "../../src/app/composition
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { contactRoutineDefinition } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import { createRoutineTurnProvider } from "../../src/modules/routines/turnProvider.js";
+import {
+  RoutineSkillExecutorDispatcher,
+  StaticRoutineSkillResolver,
+} from "../../src/modules/routines/skillDispatcher.js";
+import {
+  SkillExecutorRegistry,
+  type SkillDefinition,
+  type SkillExecutorPort,
+  type SkillOutcome,
+} from "../../src/modules/skills/public.js";
+import { WEBHOOK_SKILLS_ADAPTER } from "../../src/modules/webhookSkills/public.js";
 
 const emptyTrace = () => {
   const now = new Date().toISOString();
   return { traceId: "t", startedAt: now, completedAt: now, totalDurationMs: 0, stages: [], links: [] };
+};
+
+/** Drains a turn stream into the text it yielded and the result it returned. */
+const collect = async <Result>(turn: AsyncGenerator<string, Result>): Promise<{ deltas: string[]; result: Result }> => {
+  const deltas: string[] = [];
+  let step = await turn.next();
+  while (!step.done) {
+    deltas.push(step.value);
+    step = await turn.next();
+  }
+  return { deltas, result: step.value };
 };
 
 // Stubs sufficient for the runner's routine wiring — the runner only forwards these to
@@ -2409,17 +2435,6 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
 });
 
 describe("WorkbenchReplayRunner streaming entry", () => {
-  /** Drains a turn stream into the text it yielded and the result it returned. */
-  const collect = async <Result>(turn: AsyncGenerator<string, Result>): Promise<{ deltas: string[]; result: Result }> => {
-    const deltas: string[] = [];
-    let step = await turn.next();
-    while (!step.done) {
-      deltas.push(step.value);
-      step = await turn.next();
-    }
-    return { deltas, result: step.value };
-  };
-
   /** `answerSkill`, plus a live renderer stream that holds the rest of its answer until `gate` opens. */
   const streamingAnswerSkill = (gate: Promise<void>): TurnSkill => {
     const skill = answerSkill();
@@ -2534,6 +2549,241 @@ describe("WorkbenchReplayRunner streaming entry", () => {
       "chat_replay_stream_first_answer_chunk_latency_ms",
       expect.objectContaining({ labels: { route: "routine", delivery_mode: "committed" } }),
     );
+  });
+});
+
+describe("WorkbenchReplayRunner streams routine replies by the live-chat delivery rule", () => {
+  /**
+   * A `ConversationRoutineRunner.claim` double, as `chat-service-routine-reply-streaming.test.ts`
+   * uses it: each entry claims the turn through the real engine with the given effects and reply,
+   * consumed in order across successive turns.
+   */
+  const claimingRoutine = (claims: Array<{ effects?: Partial<ConversationRoutineRunEffects>; reply: PendingRenderableTurn }>) => {
+    const claim = vi.fn<NonNullable<ConversationRoutineRunner["claim"]>>();
+    for (const entry of claims) {
+      claim.mockImplementationOnce(async ({ state }) => ({
+        kind: "claimed" as const,
+        effects: {
+          nextState: { ...state, path: ["ask_email"], status: "active" as const },
+          trace: {
+            routineId: state.routineId,
+            startStepId: "ask_email",
+            landedStepId: "ask_email",
+            capturedSlotKeys: [],
+            filledSlotKeys: [],
+            steps: [],
+          },
+          ...entry.effects,
+        },
+        reply: entry.reply,
+      }));
+    }
+    const runner: ConversationRoutineRunner = {
+      resume: async () => {
+        throw new Error("the claim is the routine's whole walk");
+      },
+      claim,
+    };
+    const routineProvider: ChatRoutineProvider = {
+      forTurn: async () => ({
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
+        runner,
+      }),
+    };
+    return { routineProvider, claim };
+  };
+
+  /** A reply that streams `deltas` (awaiting `hold` before the delta at `holdAt`) and renders their join whole. */
+  const streamingReply = (deltas: string[], options: { hold?: Promise<void>; holdAt?: number } = {}) => {
+    const turn: RenderableTurn = { answer: deltas.join("") };
+    return {
+      render: vi.fn(async () => turn),
+      stream: vi.fn(async function* (): AsyncGenerator<string, RenderableTurn> {
+        for (const [index, delta] of deltas.entries()) {
+          if (options.hold && index === (options.holdAt ?? 0)) {
+            await options.hold;
+          }
+          yield delta;
+        }
+        return turn;
+      }),
+    };
+  };
+
+  const replayInput = () => ({
+    workspaceId: "ws-1",
+    executionMode: "safe_test" as const,
+    sourceAgentId: "agent-1",
+    conversationId: "private-side-1",
+    baselineAgentConfig: projectInternalAgentConfig(agent()),
+    query: "How do I contact a human?",
+    history: [],
+  });
+
+  it("streams a slot ask's reply before the turn settles, then settles to the result run() returns", async () => {
+    const forRun = streamingReply(["Which email ", "can someone reach you at?"]);
+    let openGate!: () => void;
+    const gate = new Promise<void>((resolve) => { openGate = resolve; });
+    const forStream = streamingReply(["Which email ", "can someone reach you at?"], { hold: gate, holdAt: 1 });
+    const { routineProvider, claim } = claimingRoutine([
+      { effects: {}, reply: forRun },
+      { effects: {}, reply: forStream },
+    ]);
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider,
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const ran = await runner.run(replayInput());
+
+    const turn = runner.stream(replayInput());
+    // The first chunk arrives while the second is still held back.
+    expect(await turn.next()).toEqual({ done: false, value: "Which email " });
+    expect(forStream.render).not.toHaveBeenCalled();
+    openGate();
+    const { deltas, result: streamed } = await collect(turn);
+
+    expect(deltas).toEqual(["can someone reach you at?"]);
+    expect(forStream.render).not.toHaveBeenCalled();
+    expect(streamed.answer).toBe(ran.answer);
+    // Each call activates the routine afresh, so its executionId is its own random id;
+    // everything else about the settled turn matches what `run()` produced.
+    expect(streamed.continuation).toEqual({
+      ...ran.continuation,
+      routineState: { ...ran.continuation?.routineState, executionId: streamed.continuation?.routineState?.executionId },
+    });
+    expect(streamed.turnTrace?.spine.stages.map((stage) => stage.kind))
+      .toEqual(ran.turnTrace?.spine.stages.map((stage) => stage.kind));
+    expect(claim).toHaveBeenCalledTimes(2);
+  });
+
+  it("delivers a routine ending's reply whole only after the turn settles, even though the claim can stream", async () => {
+    const reply = streamingReply(["Thanks, ", "all done."]);
+    const { routineProvider } = claimingRoutine([
+      { effects: { terminal: { kind: "complete", stepId: "done" } }, reply },
+    ]);
+    const observeHistogram = vi.fn();
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider,
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+      streamMetrics: { observeHistogram },
+    });
+
+    const { deltas, result } = await collect(runner.stream(replayInput()));
+
+    // A durable ending (here, the routine's own completion) is rendered and settled before
+    // any text reaches the caller, as one whole chunk — never the claim's own stream.
+    expect(deltas).toEqual(["Thanks, all done."]);
+    expect(reply.stream).not.toHaveBeenCalled();
+    expect(reply.render).toHaveBeenCalledOnce();
+    expect(result.answer).toBe("Thanks, all done.");
+    expect(observeHistogram).toHaveBeenCalledWith(
+      "chat_replay_stream_first_answer_chunk_latency_ms",
+      expect.objectContaining({ labels: { route: "routine", delivery_mode: "committed" } }),
+    );
+    const routineStage = result.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_activate");
+    expect(routineStage?.outputs).toMatchObject({ replyDelivery: "whole" });
+  });
+
+  /** A routine whose first step runs `skillName`, then a chat step confirms it. */
+  const skillThenAnswerRoutine = (skillName: string): Routine => ({
+    id: "skill_then_answer",
+    rootStepId: "lookup",
+    steps: [
+      { id: "lookup", kind: "skill", skillName },
+      { id: "answer", kind: "chat", action: "Confirm the request was handled, then ask if anything else is needed." },
+    ],
+    transitions: [{ from: "lookup", to: "answer", condition: "always" }],
+  });
+
+  /** A routine provider over the production runner/renderer/dispatcher, forwarding this turn's
+   * `skillEffects`/`conversationDurability` to the dispatcher the same way the production
+   * routine provider (`createRoutineTurnProvider`) does, so safe-test suppression is real. */
+  const skillStepRoutineProvider = (skill: SkillDefinition, executor: SkillExecutorPort): ChatRoutineProvider => {
+    const registry = new SkillExecutorRegistry();
+    registry.register({ ...(skill.execution as { kind: "internal"; adapter: string }), executor });
+    const routine = skillThenAnswerRoutine(skill.name);
+    return {
+      forTurn: async ({ modelGateway, groundedAnswerRenderer, skillEffects, conversationDurability }) => ({
+        routines: [routine],
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: routine.id }) },
+        runner: new DefaultRoutineRunner(
+          [routine],
+          { select: async () => ({ nextStepId: "answer" }) },
+          new RoutineStepRenderer(modelGateway, { groundedAnswerRenderer }),
+          new RoutineSkillExecutorDispatcher(new StaticRoutineSkillResolver([skill]), registry, {
+            skillEffects,
+            conversationDurability,
+          }),
+        ),
+      }),
+    };
+  };
+
+  it.each([
+    { skillEffects: "allowed" as const, expectDelivery: "whole" as const },
+    { skillEffects: "suppressed" as const, expectDelivery: "stream" as const },
+  ])("delivers a webhook skill step's reply $expectDelivery when skill effects are $skillEffects", async ({ skillEffects, expectDelivery }) => {
+    const callWebhook = vi.fn(async () => ({
+      disposition: "settled" as const,
+      outcome: { status: "completed", outputs: { delivered: true } } as unknown as SkillOutcome,
+    }));
+    const webhookSkill = {
+      name: "crm_webhook",
+      execution: { kind: "internal", adapter: WEBHOOK_SKILLS_ADAPTER, enqueue: false },
+      requiredCapabilities: [],
+      owner: "platform",
+    } as unknown as SkillDefinition;
+    const chatGateway = {
+      answer: vi.fn(async () => "Done — handled. Anything else?"),
+      streamAnswer: vi.fn(async function* () {
+        yield "Done —";
+        yield " handled. Anything else?";
+      }),
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: skillStepRoutineProvider(webhookSkill, { dispatch: callWebhook }),
+      chatGateway,
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const { deltas, result } = await collect(runner.stream({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      skillEffects,
+      sourceAgentId: "agent-1",
+      conversationId: "private-side-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please pass this to the CRM",
+      history: [],
+    }));
+
+    expect(callWebhook).toHaveBeenCalledTimes(skillEffects === "allowed" ? 1 : 0);
+    expect(deltas).toEqual(
+      expectDelivery === "whole"
+        ? ["Done — handled. Anything else?"]
+        : ["Done —", " handled. Anything else?"],
+    );
+    expect(result.answer).toBe("Done — handled. Anything else?");
+    const routineStage = result.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_activate");
+    expect(routineStage?.outputs).toMatchObject({ replyDelivery: expectDelivery });
   });
 });
 

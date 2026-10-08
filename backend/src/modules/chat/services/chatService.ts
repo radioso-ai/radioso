@@ -149,9 +149,9 @@ import {
 import { routineEndingEffectsForTurn } from "./routineEndingEffects.js";
 import {
   landedRoutineStep,
-  routineReplyDelivery,
   withRoutineReplyDelivery,
 } from "./routines/routineReplyDelivery.js";
+import { routineReplyFor } from "./routines/routineReplyFor.js";
 import {
   ChatTurnSupersededError,
   InMemoryConversationTurnRegistry,
@@ -544,31 +544,6 @@ export class ChatService {
       signal: coordination.lease?.signal,
       checkpoint: (stage) => this.checkTurnCancellation(coordination, stage),
     };
-  }
-
-  /**
-   * How a claimed routine turn's reply reaches the visitor ({@link routineReplyDelivery}).
-   * A reply delivered whole is rendered here, before the turn goes public, so the visitor
-   * learns the routine took the turn only once its reply exists.
-   */
-  private async routineReplyFor(
-    session: PreparedSession,
-    workspaceId: string,
-    claim: ChatTurnAssemblyRoutineClaim,
-  ): Promise<
-    | { delivery: "stream"; stream: () => AsyncGenerator<string, ChatTurnAssemblyRoutineResult> }
-    | { delivery: "whole"; turn: ChatTurnAssemblyRoutineResult }
-  > {
-    const stream = claim.reply.stream?.bind(claim.reply);
-    const delivery = routineReplyDelivery({
-      effects: claim.effects,
-      ending: routineEndingEffectsForTurn({ session, workspaceId, turn: claim.effects }),
-      replyStreams: stream !== undefined,
-    });
-    if (delivery === "stream" && stream) {
-      return { delivery, stream };
-    }
-    return { delivery: "whole", turn: await claim.reply.render() };
   }
 
   /**
@@ -1493,7 +1468,7 @@ export class ChatService {
         });
       }
       const routineReply = routineClaim
-        ? await this.routineReplyFor(session, input.workspaceId, routineClaim)
+        ? await routineReplyFor({ session, workspaceId: input.workspaceId, claim: routineClaim })
         : null;
       this.checkTurnCancellation(coordination, "routing");
       if (routineReply) {

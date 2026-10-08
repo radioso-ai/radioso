@@ -29,6 +29,8 @@ import {
   TurnDiagnosticsPanel,
 } from "@/components/dashboard/turn-inspector/turn-diagnostics-panel";
 import { getPrimaryLeafTrace } from "@/lib/turn-trace";
+import { getUsageLimitNotice, type UsageLimitNotice as UsageLimitNoticeData } from "@/lib/usage-limit-error";
+import { UsageLimitNotice } from "@/components/dashboard/shared/usage-limit-notice";
 import { useCopyDashboardLink } from "@/hooks/use-copy-dashboard-link";
 import {
   followRoute,
@@ -206,6 +208,7 @@ export function AgentRevisionTestChat({
   assistantName,
   evalsHref,
   agentVersionsHref,
+  usageHref,
   actionsContainer,
   titleContainer,
   route,
@@ -217,6 +220,8 @@ export function AgentRevisionTestChat({
   assistantName?: string;
   evalsHref: string;
   agentVersionsHref: string;
+  /** The dashboard link to the workspace's usage tab, shown when a test run hits a plan limit. */
+  usageHref: string;
   actionsContainer: HTMLElement | null;
   /** Page-chrome slot beside the title; a single chat shows its conversation id there. */
   titleContainer?: HTMLElement | null;
@@ -240,6 +245,10 @@ export function AgentRevisionTestChat({
   // Why a test opened from the URL could not open. Kept apart from `error`, which starting a chat
   // clears, so a proactive greeting cannot wipe it; the operator's next move does.
   const [linkOpenFailure, setLinkOpenFailure] = useState<string | null>(null);
+  // Set instead of `error` when starting or sending hits a plan limit, so the chat can point at the
+  // Usage tab instead of the bare message. Kept apart from `error` (which session storage persists
+  // as a plain string) because this notice carries a link and is only ever fresh, not resumed.
+  const [usageLimitNotice, setUsageLimitNotice] = useState<UsageLimitNoticeData | null>(null);
   const executionLink = useCopyDashboardLink();
   const resetExecutionLink = executionLink.reset;
   // Clears the stale failure/copy feedback from a previous test before an explicit navigation;
@@ -268,6 +277,13 @@ export function AgentRevisionTestChat({
   const [execution, setExecution] = useState<TestExecutionState | null>(cachedSession?.execution ?? null);
   const [evalRun, setEvalRun] = useState<RevisionEvalRun | null>(cachedSession?.evalRun ?? null);
   const [error, setError] = useState<string | null>(cachedSession?.error ?? null);
+  // A usage-limit rejection gets the plan-aware notice instead of the bare `error` message;
+  // every other failure still falls through to `setError` unchanged.
+  const applyActionFailure = useCallback((cause: unknown, fallback: string) => {
+    const notice = getUsageLimitNotice(cause);
+    setUsageLimitNotice(notice);
+    setError(notice ? null : errorMessage(cause, fallback));
+  }, []);
   // Set only by `load()`; a candidate refusal or degraded eval-case/value-catalog fetch
   // stays legible even once `start()`/`submit` clear the transient `error` above.
   const [degradedNotice, setDegradedNotice] = useState<string | null>(cachedSession?.degradedNotice ?? null);
@@ -702,6 +718,7 @@ export function AgentRevisionTestChat({
     startAbort.current = abortController;
     setStartingState(true);
     setError(null);
+    setUsageLimitNotice(null);
     setRestartNotice(null);
     try {
       const started = await agentRevisionsApi.startTest(
@@ -727,11 +744,7 @@ export function AgentRevisionTestChat({
         testRequestGeneration.current === requestGeneration &&
         readAgentRevisionTestChatSession(sessionKey)?.executionEpoch === executionEpoch
       )
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Unable to start this private test.",
-        );
+        applyActionFailure(cause, "Unable to start this private test.");
     } finally {
       if (startAbort.current === abortController) startAbort.current = null;
       if (
@@ -861,6 +874,7 @@ export function AgentRevisionTestChat({
     event.preventDefault();
     if (!message.trim() || isSending || isStarting) return;
     setLinkOpenFailure(null);
+    setUsageLimitNotice(null);
     const text = message.trim();
     const requestGeneration = testRequestGeneration.current;
     const nextMode = mode;
@@ -971,9 +985,7 @@ export function AgentRevisionTestChat({
         matchesAttempt() &&
         !(cause instanceof DOMException && cause.name === "AbortError")
       ) {
-        const message =
-          cause instanceof Error ? cause.message : "Test message failed.";
-        setError(message);
+        applyActionFailure(cause, "Test message failed.");
         setExecutionState((current) =>
           current
             ? finalizeTestExecutionStream(current, "stream_transport_failed")
@@ -1607,7 +1619,14 @@ export function AgentRevisionTestChat({
                 {degradedNotice}
               </p>
             ) : null}
-            {error ? (
+            {usageLimitNotice ? (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                <UsageLimitNotice notice={usageLimitNotice} href={usageHref} />
+              </p>
+            ) : error ? (
               <p
                 role="alert"
                 className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"

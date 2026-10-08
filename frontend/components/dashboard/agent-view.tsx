@@ -350,6 +350,7 @@ export function AgentView({
     agentSectionRoute('changes'),
   )
   const evalsHref = buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: undefined })
+  const usageHref = buildDashboardHref(accountId, { ...routeState, section: 'account', accountTab: 'usage' })
   // The share link for one saved test: anyone in this workspace who can manage agents can open it.
   const testExecutionHref = useCallback((executionId: string) => buildDashboardHref(accountId, {
     ...routeState,
@@ -518,6 +519,7 @@ export function AgentView({
             assistantName={selectedAgent?.name}
             evalsHref={evalsHref}
             agentVersionsHref={agentVersionsHref}
+            usageHref={usageHref}
             actionsContainer={testActionsContainer}
             titleContainer={testTitleContainer}
             route={testChatRoute}

@@ -120,6 +120,16 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   // made while a previous render's effect was still queued.
   const selectionWriteRef = useRef(0)
   const pendingClearRouteKeyRef = useRef<string | null>(null)
+  // The mirror image of `pendingClearRouteKeyRef`: a click sets the local
+  // selection and `router.push`'s own URL update synchronously, but the
+  // `routeState` prop this effect reads only catches up once Next.js applies
+  // the navigation. Until then `routeTarget` still looks like "nothing
+  // selected", and without this guard the reconciliation below reads that
+  // stale absence as the operator having cleared the row and wipes the
+  // selection it was just handed - which also tears down and restarts the
+  // response pane's conversation-detail and tail-poll hooks on every single
+  // click (see hitl-needs-attention.spec.ts's tail-poll ownership test).
+  const pendingSelectRouteKeyRef = useRef<string | null>(null)
   const [selectionWrite, setSelectionWrite] = useState(0)
   const routeTarget = useMemo<NeedsAttentionRouteTarget | undefined>(() => routeState.historyItemId
     && (routeState.historyItemKind === 'chat' || routeState.historyItemKind === 'inbox')
@@ -265,6 +275,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     }
     beginSelectionWrite()
     pendingClearRouteKeyRef.current = needsAttentionRouteTargetKey(target)
+    pendingSelectRouteKeyRef.current = null
     setSelectedInboxItem(null)
     setSelectedRecentlyClosedItem(null)
     router.replace(buildDashboardHref(accountId, {
@@ -299,6 +310,16 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     }
     if (pendingClearRouteKeyRef.current !== null) {
       pendingClearRouteKeyRef.current = null
+    }
+    // The mirror check: a select just pushed toward a target this render's
+    // `routeTarget` prop hasn't caught up to yet (it still reflects the URL
+    // from before the click). Treating that as "nothing selected" would undo
+    // the click itself, so wait for the prop to agree before reconciling.
+    if (pendingSelectRouteKeyRef.current !== null && pendingSelectRouteKeyRef.current !== routeTargetKey) {
+      return
+    }
+    if (pendingSelectRouteKeyRef.current !== null) {
+      pendingSelectRouteKeyRef.current = null
     }
 
     if (routeSelection.kind === 'item') {
@@ -401,6 +422,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const handleSelectItem = useCallback((item: InboxItem) => {
     beginSelectionWrite()
     pendingClearRouteKeyRef.current = null
+    pendingSelectRouteKeyRef.current = needsAttentionRouteTargetKey(needsAttentionRouteTargetForItem(item))
     preservedNotFoundNoticeRouteKeyRef.current = null
     setNotFoundNotice(null)
     setSelectedInboxItem(item)
@@ -421,6 +443,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const handleSelectRecentlyClosed = useCallback((item: RecentlyClosedInboxItem) => {
     beginSelectionWrite()
     pendingClearRouteKeyRef.current = null
+    pendingSelectRouteKeyRef.current = needsAttentionRouteTargetKey(needsAttentionRouteTargetForItem(item))
     preservedNotFoundNoticeRouteKeyRef.current = null
     setNotFoundNotice(null)
     setSelectedInboxItem(null)

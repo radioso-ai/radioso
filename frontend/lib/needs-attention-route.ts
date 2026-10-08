@@ -54,6 +54,29 @@ export const needsAttentionRouteTargetForItem = (
 export const needsAttentionRouteTargetKey = (target: NeedsAttentionRouteTarget | undefined): string | null =>
   target ? `${target.itemKind}:${target.itemId}` : null
 
+const routeTargetConversationId = (target: NeedsAttentionRouteTarget): string | null =>
+  target.itemKind === 'chat' ? target.itemId : conversationIdFromNeedsAttentionRouteItemId(target.itemId)
+
+/**
+ * The route target an item action (chiefly a not-found clear) should name:
+ * `routeTarget` itself when it still names `item`'s conversation - so a
+ * legacy `chat`-kind All-lens permalink keeps its own shape - and the item's
+ * own synthesized `inbox`-kind key otherwise. A click commits its local
+ * selection before `routeTarget` catches up with the navigation that names
+ * it (`needs-attention-view.tsx` tracks the gap via
+ * `pendingSelectFromRouteKeyRef`); a fast 404 landing in that gap must act
+ * on the item that actually failed, not the previous selection `routeTarget`
+ * still names.
+ */
+export const needsAttentionRouteTargetForItemAction = (
+  item: InboxItem | RecentlyClosedInboxItem,
+  routeTarget: NeedsAttentionRouteTarget | undefined,
+): NeedsAttentionRouteTarget => (
+  routeTarget && routeTargetConversationId(routeTarget) === item.conversationId
+    ? routeTarget
+    : needsAttentionRouteTargetForItem(item)
+)
+
 /** Retains local object identity when polling recreates an unchanged queue row. */
 export const preserveMatchingQueueItem = <T extends { key: string }>(
   current: T | null,

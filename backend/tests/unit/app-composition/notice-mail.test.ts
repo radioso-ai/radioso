@@ -54,4 +54,49 @@ describe("createNoticeMailAdapter", () => {
       ].join("\n\n"),
     );
   });
+
+  it("forwards an idempotency key to the mail service when given one", async () => {
+    const mailService = { send: vi.fn().mockResolvedValue({ dispatched: true }) };
+    const adapter = createNoticeMailAdapter(mailService);
+
+    await adapter.send({
+      to: "admin@example.com",
+      subject: "This month's conversations are used up",
+      kind: "usage_alert",
+      content: { preheader: "p", heading: "h", paragraphs: ["body"] },
+      idempotencyKey: "usage_alert:acc_1:2026-11-01:limit_reached:admin@example.com",
+    });
+
+    expect(mailService.send.mock.calls[0][0].idempotencyKey).toBe(
+      "usage_alert:acc_1:2026-11-01:limit_reached:admin@example.com",
+    );
+  });
+
+  it("sends with no idempotency key when none is given", async () => {
+    const mailService = { send: vi.fn().mockResolvedValue({ dispatched: true }) };
+    const adapter = createNoticeMailAdapter(mailService);
+
+    await adapter.send({
+      to: "admin@example.com",
+      subject: "Hi",
+      kind: "usage_alert",
+      content: { preheader: "p", heading: "h", paragraphs: ["body"] },
+    });
+
+    expect(mailService.send.mock.calls[0][0].idempotencyKey).toBeUndefined();
+  });
+
+  it("reports the mail service's own dispatched flag back to the caller", async () => {
+    const dispatched = { send: vi.fn().mockResolvedValue({ dispatched: true }) };
+    const undispatched = { send: vi.fn().mockResolvedValue({ dispatched: false }) };
+    const content = { preheader: "p", heading: "h", paragraphs: ["body"] } as const;
+
+    await expect(createNoticeMailAdapter(dispatched).send({
+      to: "admin@example.com", subject: "Hi", kind: "usage_alert", content,
+    })).resolves.toEqual({ dispatched: true });
+
+    await expect(createNoticeMailAdapter(undispatched).send({
+      to: "admin@example.com", subject: "Hi", kind: "usage_alert", content,
+    })).resolves.toEqual({ dispatched: false });
+  });
 });

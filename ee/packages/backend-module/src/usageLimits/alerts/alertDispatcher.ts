@@ -3,6 +3,7 @@ import { sql } from "kysely";
 import { createEeKysely, type EeDb } from "../../db/eeSchema.js";
 import type { AccountAdministratorDirectoryPort, NoticeMailPort, UsageLimitDatabasePort } from "../../radiosoModuleTypes.js";
 import { EnterpriseUsageLimitService } from "../usageLimitService.js";
+import { currentPeriodStart } from "../period.js";
 import { alertLevelRank, type AlertLevel } from "./alertLevelOrder.js";
 import { buildAlertEmail } from "./alertContent.js";
 
@@ -122,6 +123,15 @@ export class UsageLimitAlertDispatcher {
   }
 
   private async processClaim(claim: ClaimedAlert): Promise<void> {
+    // A claim whose period has already rolled over (e.g. claimed at 23:59 on the last day of
+    // the month and picked up after midnight) would email last period's numbers and a reset
+    // date already in the past. Supersede it without sending; a level crossed again this
+    // period claims fresh.
+    if (claim.periodStart < currentPeriodStart()) {
+      await this.finalize(claim, { outcome: "superseded" });
+      return;
+    }
+
     if (await this.isSuperseded(claim)) {
       await this.finalize(claim, { outcome: "superseded" });
       return;
@@ -130,7 +140,7 @@ export class UsageLimitAlertDispatcher {
     const recipients = await this.input.accountAdministrators.list(claim.accountId);
     if (recipients.length === 0) {
       await this.finalize(claim, { outcome: "no_recipients" });
-      await this.recordOutcomeAudit(claim, "failure", { recipientCount: 0, reason: "no_recipients" });
+      await this.recordOutcomeAudit(claim, "failure", { recipientCount: 0, dispatchedCount: 0, reason: "no_recipients" });
       return;
     }
 
@@ -163,14 +173,23 @@ export class UsageLimitAlertDispatcher {
           subject: email.subject,
           kind: "usage_alert",
           content: email.content,
+          // Stable across retries (same account/period/level/recipient), so a provider-side
+          // dedup window (Resend: 24h) catches a resend to a recipient a prior, partially
+          // failed attempt already reached. The backoff schedule (cap 30 min, 5 attempts)
+          // fits well inside that window.
+          idempotencyKey: `usage_alert:${claim.accountId}:${claim.periodStart}:${claim.level}:${recipient.email}`,
         }),
       ),
     );
     const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    const dispatchedCount = results.filter(
+      (result): result is PromiseFulfilledResult<{ dispatched: boolean }> =>
+        result.status === "fulfilled" && result.value.dispatched,
+    ).length;
 
     if (failures.length === 0) {
       await this.finalize(claim, { outcome: "sent" });
-      await this.recordOutcomeAudit(claim, "success", { recipientCount: recipients.length });
+      await this.recordOutcomeAudit(claim, "success", { recipientCount: recipients.length, dispatchedCount });
       return;
     }
 
@@ -186,6 +205,7 @@ export class UsageLimitAlertDispatcher {
       await this.finalize(claim, { outcome: "failed", lastErrorCode });
       await this.recordOutcomeAudit(claim, "failure", {
         recipientCount: recipients.length,
+        dispatchedCount,
         reason: "attempts_exhausted",
         lastErrorCode,
       });

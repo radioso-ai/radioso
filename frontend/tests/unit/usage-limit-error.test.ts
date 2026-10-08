@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { getUsageLimitNotice } from '@/lib/usage-limit-error'
+import { getUsageLimitNotice, getUsageLimitNoticeForCode } from '@/lib/usage-limit-error'
 
 const usageLimitError = (resource: string) => ({
   status: 429,
@@ -66,5 +66,24 @@ describe('getUsageLimitNotice', () => {
     expect(getUsageLimitNotice(new Error('network failure'))).toBeNull()
     expect(getUsageLimitNotice(null)).toBeNull()
     expect(getUsageLimitNotice(undefined)).toBeNull()
+  })
+})
+
+describe('getUsageLimitNoticeForCode', () => {
+  // Test Chat's `side_failed` SSE event (`backend/src/modules/test-execution/testExecution.ts`)
+  // reserves usage after the stream has already started, so it only ever carries a bare `code`,
+  // never the 429 body's `details.resource`. Every reservation on that path is an answer/
+  // conversation reservation, so the conversations sentence is always the right one.
+  it('returns the conversations notice for the usage-limit code', () => {
+    expect(getUsageLimitNoticeForCode('usage_limit_exceeded')).toEqual({
+      resource: 'monthly_conversations',
+      message: "This month's conversations are used up.",
+    })
+  })
+
+  it('returns null for any other code', () => {
+    expect(getUsageLimitNoticeForCode('runner_failed')).toBeNull()
+    expect(getUsageLimitNoticeForCode('stale_attempt')).toBeNull()
+    expect(getUsageLimitNoticeForCode('')).toBeNull()
   })
 })

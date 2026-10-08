@@ -1,9 +1,15 @@
 import type {
   AttemptRoutineInput,
   ConversationMessage,
+  ConversationRoutineClaim,
+  ConversationRoutineResumeInput,
+  ConversationRoutineRunEffects,
+  ConversationRoutineRunner,
   ConversationRoutineSteeringInput,
+  ConversationRoutineTurnClaim,
   ConversationTraceStage,
   ProcessTurnResult,
+  RenderableTurn,
   RoutineState,
   SteeringRule,
   TurnContext,
@@ -25,15 +31,39 @@ import {
   stage,
 } from "./traceStages.js";
 
-export const resumeRoutine = async (input: {
+/**
+ * A runner that can only resume renders its reply as it walks, so its claim carries the
+ * reply it already generated.
+ */
+const claimFrom = async (
+  runner: ConversationRoutineRunner,
+  input: ConversationRoutineResumeInput,
+): Promise<ConversationRoutineClaim> => {
+  if (runner.claim) {
+    return runner.claim(input);
+  }
+  const { response, yielded, pendingStep, ...effects } = await runner.resume(input);
+  if (yielded) {
+    return { kind: "yielded", ...(pendingStep ? { pendingStep } : {}) };
+  }
+  return { kind: "claimed", effects, reply: { render: async () => response } };
+};
+
+/**
+ * Walks the routine `state` for this turn and claims the turn for it, or returns null when
+ * the routine yields the turn. Settling records the turn after its reply exists, in the
+ * order a whole resume always did: the directive steering a runner never asked for is
+ * matched after the reply, then the input event, the routine state, the response event.
+ */
+export const claimRoutineResume = async (input: {
   request: AttemptRoutineInput;
   baseTurn: TurnContext;
   state: RoutineState;
   resuming: boolean;
   history: ConversationMessage[];
   activationClarificationStage?: ConversationTraceStage | null;
-}): Promise<ProcessTurnResult | null> => {
-  const { request, baseTurn, state, resuming, history } = input;
+}): Promise<ConversationRoutineTurnClaim | null> => {
+  const { request, baseTurn, state, resuming } = input;
   const turn: TurnContext = {
     ...baseTurn,
     activeRoutineId: state.routineId,
@@ -66,22 +96,65 @@ export const resumeRoutine = async (input: {
   };
 
   reportProgress(request, "routine");
-  const result = await request.routineRunner!.resume({
+  const claim = await claimFrom(request.routineRunner!, {
     turn,
     state,
     steeringResolver: routineSteeringResolver,
     activationTurn: !resuming,
   });
-  if (result.yielded) {
+  if (claim.kind === "yielded") {
     request.routineYieldSink?.yielded({
       sessionId: request.sessionId,
       ...(request.inputEvent.id ? { inputEventId: request.inputEvent.id } : {}),
       routineId: state.routineId,
       ...(state.executionId ? { executionId: state.executionId } : {}),
-      ...(result.pendingStep ? { pendingStep: result.pendingStep } : {}),
+      ...(claim.pendingStep ? { pendingStep: claim.pendingStep } : {}),
     });
     return null;
   }
+  const ending = routineEndingEffects(state.routineId, claim.effects.terminal);
+  const routineExecution = {
+    routineId: state.routineId,
+    ...(state.executionId ? { executionId: state.executionId } : {}),
+  };
+  const claimed: ClaimedRoutineTurn = {
+    ...input,
+    turn,
+    effects: claim.effects,
+    ending,
+    routineExecution,
+    directiveSteeringStage: () => directiveSteeringStage,
+  };
+  return {
+    effects: {
+      routineExecution,
+      ...(claim.effects.terminal ? { terminalKind: claim.effects.terminal.kind } : {}),
+      ...(claim.effects.actions ? { actions: claim.effects.actions } : {}),
+      ...(claim.effects.awaitingDecision ? { awaitingDecision: claim.effects.awaitingDecision } : {}),
+      ...ending,
+    },
+    reply: claim.reply,
+    settle: (response) => settleRoutineTurn(claimed, response),
+  };
+};
+
+interface ClaimedRoutineTurn {
+  request: AttemptRoutineInput;
+  state: RoutineState;
+  resuming: boolean;
+  history: ConversationMessage[];
+  activationClarificationStage?: ConversationTraceStage | null;
+  turn: TurnContext;
+  effects: ConversationRoutineRunEffects;
+  ending: ReturnType<typeof routineEndingEffects>;
+  routineExecution: NonNullable<ProcessTurnResult["routineExecution"]>;
+  /** The step steering the runner resolved while claiming, if it resolved any. */
+  directiveSteeringStage: () => ConversationTraceStage | null;
+}
+
+const settleRoutineTurn = async (claimed: ClaimedRoutineTurn, response: RenderableTurn): Promise<ProcessTurnResult> => {
+  const { request, state, resuming, history, turn, effects: result, ending } = claimed;
+  let directiveSteeringStage = claimed.directiveSteeringStage();
   if (!directiveSteeringStage) {
     const landedStepId = result.nextState?.path.at(-1) ?? state.path.at(-1);
     const resolved = await buildResolvedSteering({
@@ -123,7 +196,7 @@ export const resumeRoutine = async (input: {
     });
   }
 
-  const responseEvent = createResponseEvent(request.sessionId, result.response);
+  const responseEvent = createResponseEvent(request.sessionId, response);
   await request.stores.appendEvent(responseEvent);
   events.push(responseEvent);
 
@@ -138,7 +211,6 @@ export const resumeRoutine = async (input: {
       locale: request.inputEvent.locale ?? undefined,
     },
   });
-  const ending = routineEndingEffects(state.routineId, result.terminal);
   const routineStage = stage({
     id: `routine:${state.routineId}`,
     kind: resuming ? "routine_resume" : "routine_activate",
@@ -149,15 +221,15 @@ export const resumeRoutine = async (input: {
       terminalKind: result.terminal?.kind,
       handoff: ending.handoff !== undefined,
       notifiesOperators: ending.operatorNotice !== undefined,
-      answerLength: result.response.answer.length,
+      answerLength: response.answer.length,
     },
     ...(result.trace ? { subTrace: { namespace: "routine", version: 1, payload: result.trace } } : {}),
   });
-  const routineTraceStages = input.activationClarificationStage
+  const routineTraceStages = claimed.activationClarificationStage
     ? [
         messageStage,
         historyGatherStage(history),
-        input.activationClarificationStage,
+        claimed.activationClarificationStage,
         routineStage,
         directiveSteeringStage,
       ]
@@ -171,13 +243,10 @@ export const resumeRoutine = async (input: {
       reason: `${resuming ? "routine_resumed" : "routine_activated"}:${state.routineId}`,
     },
     outcomes: result.outcomes ?? [],
-    response: result.response,
+    response,
     actions: result.actions,
     ...ending,
-    routineExecution: {
-      routineId: state.routineId,
-      ...(state.executionId ? { executionId: state.executionId } : {}),
-    },
+    routineExecution: claimed.routineExecution,
     awaitingDecision: result.awaitingDecision,
     trace: createTrace(routineTraceStages),
   });

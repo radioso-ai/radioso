@@ -250,6 +250,59 @@ describe("createRoutineGroundedAnswerRenderer", () => {
       turn: { ...turnWithRetrieval(retrievalResult()), stagedContext: [] },
     })).resolves.toBeNull();
   });
+
+  describe("prepare", () => {
+    const presented = (): ChatPresentedAnswer => ({
+      answer: "Kriya is introduced in the first module. Hop!",
+      skillName: RETRIEVAL_TURN_SKILL,
+      skillOutcome: "grounded",
+      skillStatus: "completed" as const,
+      grounding: "grounded" as const,
+    });
+    const retrievalSkillRendering = (render: TurnSkill["renderer"]["render"]): TurnSkill => ({
+      definition: { name: RETRIEVAL_TURN_SKILL, outcomeKinds: [RETRIEVAL_OUTCOME_KIND] },
+      selects: () => true,
+      dispatch: () => {
+        throw new Error("dispatch is not used by routine grounded rendering");
+      },
+      renderer: { supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND, render },
+    });
+
+    it("declines at once, from the staged context alone, when no retrieval result was staged", () => {
+      const renderer = createRoutineGroundedAnswerRenderer({ session: session(), turnSkills: [] });
+
+      expect(renderer.prepare!({
+        step,
+        steering: [],
+        turn: { ...turnWithRetrieval(retrievalResult()), stagedContext: [] },
+      })).toBeNull();
+    });
+
+    it("generates nothing until asked, then renders what render() renders", async () => {
+      const render = vi.fn(async (): Promise<ChatPresentedAnswer> => presented());
+      const options = {
+        session: session(),
+        accountId: "acct_1",
+        responseLanguage: Promise.resolve("English"),
+        turnSkills: [retrievalSkillRendering(render)],
+      };
+      const retrieval = retrievalResult();
+      const input = {
+        step,
+        steering: [{ action: "Answer the question, then say Hop.", source: "routine" as const, lifespan: "response" as const }],
+        turn: turnWithRetrieval(retrieval),
+      };
+
+      const reply = createRoutineGroundedAnswerRenderer(options).prepare!(input);
+      expect(render).not.toHaveBeenCalled();
+      const prepared = await reply!.render();
+      const rendered = await createRoutineGroundedAnswerRenderer(options).render(input);
+
+      expect(prepared).toEqual(rendered);
+      expect(render).toHaveBeenCalledTimes(2);
+      expect(render.mock.calls[0]).toEqual(render.mock.calls[1]);
+    });
+  });
 });
 
 describe("presentRoutineRenderableAnswer", () => {

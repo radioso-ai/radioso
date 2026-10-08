@@ -17,6 +17,7 @@ import type {
   RoutineAwaitingDecision,
   RoutineOperatorNoticeEffect,
   RoutineState,
+  RoutineTurnEffects,
   ProcessTurnResult,
   TurnContext,
   TurnOutcome,
@@ -25,7 +26,6 @@ import type {
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { buildPendingDecisionTransition } from "../../approvals/public.js";
-import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
 import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
@@ -37,7 +37,8 @@ import {
   type PreparedSession,
 } from "./chatSessionPreparer.js";
 import {
-  attemptRoutineTurnWithConversationEngine,
+  claimRoutineTurnWithConversationEngine,
+  type RoutineTurnWithConversationEngineClaim,
   runPreparedChatTurnStreamWithConversationEngine,
   runPreparedChatTurnWithConversationEngine,
 } from "./conversationEngineChatTurn.js";
@@ -54,7 +55,8 @@ import type {
   ChatConversationTurnInterpreter,
   ConversationTurnInterpretationResult,
 } from "./conversationTurnInterpreter.js";
-import { RoutineChatModelGateway } from "./routines/routineChatModelGateway.js";
+import { RoutineChatModelGateway, type RoutineChatGateway } from "./routines/routineChatModelGateway.js";
+import { pageReadAwareRoutineRunner } from "./routines/pageReadAwareRoutineRunner.js";
 import {
   createRoutineGroundedAnswerRenderer,
   presentRoutineRenderableAnswer,
@@ -94,7 +96,6 @@ import type { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
 import type { AnswerCoverageRecord } from "../../answerCoverage/public.js";
 import type { RetrievalCoverageVerdictSink } from "../contracts/answerCoverage.js";
-import { pageReadRoutineCandidates } from "./pageRead/pageReadRoutineCandidates.js";
 import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 import { builtInAnswerSkills } from "./builtInAnswerSkills.js";
 
@@ -305,6 +306,29 @@ export interface ChatTurnAssemblyRoutineResult {
   commitCoverageReactions?: () => Promise<void>;
 }
 
+interface ChatTurnAssemblyRoutineTurnInput {
+  accountId?: string;
+  responseLanguage: Promise<string | undefined>;
+  activeRoutine: RoutineState | null;
+  clarification?: ChatTurnAssemblyClarification;
+  progress?: ConversationProgressPort;
+  coordination?: ChatTurnAssemblyCoordinationHook;
+}
+
+/**
+ * A turn a routine claimed, before its reply exists. `effects` is what the turn does besides
+ * replying; rendering or streaming `reply` generates the reply and settles the turn.
+ */
+interface ChatTurnAssemblyRoutineClaim {
+  effects: RoutineTurnEffects;
+  reply: {
+    render(): Promise<ChatTurnAssemblyRoutineResult>;
+    stream?(): AsyncGenerator<string, ChatTurnAssemblyRoutineResult>;
+  };
+}
+
+type RoutineTurnOutcome = Awaited<ReturnType<RoutineTurnWithConversationEngineClaim["reply"]["render"]>>;
+
 interface CoverageRoutineEffects {
   actions?: RoutineActionRequest[];
   handoff?: RoutineHandoffEffect;
@@ -336,7 +360,8 @@ type PreparedChatStreamTurnEvent =
     } & CoverageRoutineEffects;
 
 export interface ChatTurnAssemblyOptions {
-  chatGateway: Pick<ChatGateway, "answer">;
+  /** Routine replies stream only when this gateway has `streamAnswer`. */
+  chatGateway: RoutineChatGateway;
   chatAnswerPresenter: ChatAnswerPresenter;
   chatSessionPreparer: ChatSessionPreparer;
   conversationEngine: ConversationEngine;
@@ -449,17 +474,24 @@ export class ChatTurnAssembly {
     }
   }
 
+  /** {@link claimRoutineTurn} with the reply rendered whole. */
   async attemptRoutineTurn(
     session: PreparedSession,
-    input: {
-      accountId?: string;
-      responseLanguage: Promise<string | undefined>;
-      activeRoutine: RoutineState | null;
-      clarification?: ChatTurnAssemblyClarification;
-      progress?: ConversationProgressPort;
-      coordination?: ChatTurnAssemblyCoordinationHook;
-    },
+    input: ChatTurnAssemblyRoutineTurnInput,
   ): Promise<ChatTurnAssemblyRoutineResult | null> {
+    const claim = await this.claimRoutineTurn(session, input);
+    return claim ? claim.reply.render() : null;
+  }
+
+  /**
+   * Runs the routine path for this turn up to its reply: whether a routine claims the turn,
+   * and what the turn does besides replying. The reply is generated only when the claim's
+   * `reply` is rendered or streamed, which also records the turn on the session.
+   */
+  async claimRoutineTurn(
+    session: PreparedSession,
+    input: ChatTurnAssemblyRoutineTurnInput,
+  ): Promise<ChatTurnAssemblyRoutineClaim | null> {
     if (!this.options.routineStore || !this.options.routineProvider) {
       return null;
     }
@@ -501,50 +533,19 @@ export class ChatTurnAssembly {
     const deferredStore = new DeferredRoutineStore(this.options.routineStore);
     const deferredClarificationStore = input.clarification?.store;
     input.coordination?.checkpoint("routing");
-    const pageReadAwareRunner: ConversationRoutineRunner = {
-      resume: async (resumeInput) => {
-        const planned = session.turnPlan
-          ? await session.turnPlan.resolve(null)
-          : undefined;
-        const routine = routineTurnPorts.routines?.find(
-          (candidate) => candidate.id === resumeInput.state.routineId,
-        );
-        // Tentative: the routine may yield the turn off-topic, so the decision is
-        // frozen on a detached carrier and the routine binds against a scoped
-        // staged view. Only a non-yielded result commits capture to the session.
-        const candidate = freezePageReadOutcome(
-          { pageReadCapability: session.pageReadCapability },
-          {
-            planner: planned?.status === "planned"
-              ? planned.plan.pageRead ?? null
-              : null,
-            routineCandidates: routine ? pageReadRoutineCandidates(routine) : [],
-            directiveCandidates: [],
-            fallbackRequest: session.effectiveQuery,
-          },
-        );
-        const result = await routineTurnPorts.runner.resume({
-          ...resumeInput,
-          turn: {
-            ...resumeInput.turn,
-            stagedContext: this.options.chatSessionPreparer.stagedPageContextFor(session, candidate),
-          },
-        });
-        if (!result.yielded) {
-          session.pageReadOutcome ??= candidate;
-          this.options.chatSessionPreparer.applyFrozenPageReadOutcome(session);
-        }
-        return result;
-      },
-    };
-    const outcome = await attemptRoutineTurnWithConversationEngine({
+    const claim = await claimRoutineTurnWithConversationEngine({
       engine: this.options.conversationEngine,
       session,
       accountId: input.accountId,
       directiveRuntime: this.options.directiveRuntime,
       directiveStateStore: this.options.directiveStateStore,
       routineStore: deferredStore,
-      routineRunner: pageReadAwareRunner,
+      routineRunner: pageReadAwareRoutineRunner({
+        session,
+        routines: routineTurnPorts.routines,
+        runner: routineTurnPorts.runner,
+        chatSessionPreparer: this.options.chatSessionPreparer,
+      }),
       routineActivator: activator,
       routineSlotCorrection: routineTurnPorts.slotCorrection,
       routineReentryGate: routineTurnPorts.reentryGate,
@@ -560,11 +561,14 @@ export class ChatTurnAssembly {
     });
     // The tool call's outcome is known once the engine ran, whether or not a
     // routine claimed the turn; the lifecycle reports it from the session.
-    const invocationReport = routineTurnPorts.reporter?.describeInvocation() ?? null;
-    if (invocationReport) {
-      session.routineInvocationReport = invocationReport;
-    }
-    if (!outcome) {
+    const reportInvocation = (): void => {
+      const invocationReport = routineTurnPorts.reporter?.describeInvocation() ?? null;
+      if (invocationReport) {
+        session.routineInvocationReport = invocationReport;
+      }
+    };
+    if (!claim) {
+      reportInvocation();
       // A direct invocation the activator declined leaves no routine state; the
       // turn answers normally and the envelope still names the completed routine.
       const declinedRoutine = routineTurnPorts.reporter?.describeDeclined() ?? null;
@@ -573,41 +577,58 @@ export class ChatTurnAssembly {
       }
       return null;
     }
-    this.recordTraceClarificationDecisions(outcome.result.trace);
-    const routineStateTransition = deferredStore.getTransition();
-    const pendingDecisionTransition = buildRoutinePendingDecisionTransition({
-      session,
-      awaitingDecision: outcome.result.awaitingDecision,
-      routineStateTransition,
-    });
-    const actions = pendingDecisionTransition
-      ? [
-          ...(outcome.result.actions ?? []),
-          buildApprovalRequestAction({
-            handle: pendingDecisionTransition.handle,
-            conversationId: pendingDecisionTransition.conversationId,
-            workspaceId: pendingDecisionTransition.workspaceId,
-            agentId: pendingDecisionTransition.agentId,
-            routineId: pendingDecisionTransition.routineId,
-            stepId: pendingDecisionTransition.stepId,
-          }),
-        ]
-      : outcome.result.actions;
+    const routineResult = (outcome: RoutineTurnOutcome): ChatTurnAssemblyRoutineResult => {
+      reportInvocation();
+      this.recordTraceClarificationDecisions(outcome.result.trace);
+      const routineStateTransition = deferredStore.getTransition();
+      const pendingDecisionTransition = buildRoutinePendingDecisionTransition({
+        session,
+        awaitingDecision: outcome.result.awaitingDecision,
+        routineStateTransition,
+      });
+      const actions = pendingDecisionTransition
+        ? [
+            ...(outcome.result.actions ?? []),
+            buildApprovalRequestAction({
+              handle: pendingDecisionTransition.handle,
+              conversationId: pendingDecisionTransition.conversationId,
+              workspaceId: pendingDecisionTransition.workspaceId,
+              agentId: pendingDecisionTransition.agentId,
+              routineId: pendingDecisionTransition.routineId,
+              stepId: pendingDecisionTransition.stepId,
+            }),
+          ]
+        : outcome.result.actions;
+      return {
+        presentation: outcome.presentation,
+        engineTrace: outcome.result.trace,
+        actions,
+        handoff: outcome.result.handoff,
+        operatorNotice: outcome.result.operatorNotice,
+        routineStateTransition,
+        routineReporter: routineTurnPorts.reporter,
+        pendingDecisionTransition,
+        suspended: Boolean(outcome.result.awaitingDecision),
+        clarificationTransition: deferredClarificationStore?.getTransition(),
+        commitRoutineState: () => deferredStore.commit(),
+        commitClarificationState: deferredClarificationStore
+          ? () => deferredClarificationStore.commit()
+          : undefined,
+      };
+    };
+    const stream = claim.reply.stream?.bind(claim.reply);
     return {
-      presentation: outcome.presentation,
-      engineTrace: outcome.result.trace,
-      actions,
-      handoff: outcome.result.handoff,
-      operatorNotice: outcome.result.operatorNotice,
-      routineStateTransition,
-      routineReporter: routineTurnPorts.reporter,
-      pendingDecisionTransition,
-      suspended: Boolean(outcome.result.awaitingDecision),
-      clarificationTransition: deferredClarificationStore?.getTransition(),
-      commitRoutineState: () => deferredStore.commit(),
-      commitClarificationState: deferredClarificationStore
-        ? () => deferredClarificationStore.commit()
-        : undefined,
+      effects: claim.effects,
+      reply: {
+        render: async () => routineResult(await claim.reply.render()),
+        ...(stream
+          ? {
+              stream: async function* () {
+                return routineResult(yield* stream());
+              },
+            }
+          : {}),
+      },
     };
   }
 

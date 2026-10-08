@@ -171,6 +171,27 @@ interface EeBillingProcessedEventsTable {
   processed_at: Generated<Date>;
 }
 
+interface EeBillingAutoTopUpSettingsTable {
+  account_id: string;
+  enabled: Generated<boolean>;
+  max_packs_per_month: number;
+  disabled_reason: "payment_failed" | null;
+  disabled_at: Date | null;
+  updated_by_user_id: string | null;
+  updated_at: Generated<Date>;
+}
+
+interface EeBillingAutoTopUpsTable {
+  id: string;
+  account_id: string;
+  period_start: string;
+  status: "pending" | "paid" | "failed";
+  stripe_invoice_id: string | null;
+  failure_code: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 interface EeStaffUsersTable {
   id: string;
   email: string;
@@ -259,6 +280,8 @@ export interface EeDatabase {
   ee_staff_sessions: EeStaffSessionsTable;
   ee_billing_customers: EeBillingCustomersTable;
   ee_billing_processed_events: EeBillingProcessedEventsTable;
+  ee_billing_auto_top_up_settings: EeBillingAutoTopUpSettingsTable;
+  ee_billing_auto_top_ups: EeBillingAutoTopUpsTable;
   accounts: EeAccountsTable;
   account_memberships: EeAccountMembershipsTable;
   users: EeUsersTable;

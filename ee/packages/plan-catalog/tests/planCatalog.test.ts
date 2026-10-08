@@ -127,6 +127,13 @@ describe("catalog invariants", () => {
       }
     }
   });
+
+  it("keeps the auto top-up pack cap between 1 and the per-account limit, and the limit at or under 50", () => {
+    const { defaultMaxPacksPerMonth, maxPacksPerMonthLimit } = PLAN_CATALOG.autoTopUp;
+    expect(defaultMaxPacksPerMonth).toBeGreaterThanOrEqual(1);
+    expect(defaultMaxPacksPerMonth).toBeLessThanOrEqual(maxPacksPerMonthLimit);
+    expect(maxPacksPerMonthLimit).toBeLessThanOrEqual(50);
+  });
 });
 
 describe("managed models", () => {

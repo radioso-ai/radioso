@@ -7,7 +7,13 @@ import { EnterpriseManagedModelPolicy } from "../managedModels/managedModelPolic
 import { EnterpriseUsageLimitService } from "../usageLimits/usageLimitService.js";
 import { billingMigrator } from "./billingMigrator.js";
 import { createBillingRoutes, type BillingConfig } from "./billingRoutes.js";
+import { AutoTopUpDispatcher } from "./autoTopUpDispatcher.js";
 import { StripeSdkGateway } from "./stripeSdkGateway.js";
+
+// 60s: the same sweep-latency ceiling the usage-alert dispatcher uses -- auto top-up reacts to
+// a usage level that the alert sweep already reports on the same cadence, so there is no reason
+// for this sweep to run any tighter or looser.
+const AUTO_TOP_UP_SWEEP_INTERVAL_MS = 60_000;
 
 /**
  * Reads Stripe config from the environment, the way `googleLogin/applicationModule.ts` reads its
@@ -24,6 +30,13 @@ export const resolveBillingConfig = (processEnv: NodeJS.ProcessEnv = process.env
 
 export const createBillingApplicationModule = (): ApplicationModule => {
   const config = resolveBillingConfig();
+  // Shared between the route mount and the auto-top-up sweep below -- one Stripe client per
+  // process, not one per consumer. `undefined` when billing is unconfigured (self-hosted
+  // installs without Stripe); both consumers degrade accordingly (routes 503, the sweep no-ops).
+  const gateway =
+    config.configured && config.secretKey && config.webhookSecret
+      ? new StripeSdkGateway({ secretKey: config.secretKey, webhookSecret: config.webhookSecret })
+      : undefined;
 
   return {
     id: "radioso-enterprise-billing",
@@ -41,12 +54,20 @@ export const createBillingApplicationModule = (): ApplicationModule => {
       context.registerDatabaseMigrator(billingMigrator);
       context.registerRouteMount({
         path: "/api/v1/ee/billing",
-        createRouter: (dependencies) =>
-          createBillingRoutes(dependencies, config, {
-            gateway:
-              config.configured && config.secretKey && config.webhookSecret
-                ? new StripeSdkGateway({ secretKey: config.secretKey, webhookSecret: config.webhookSecret })
-                : undefined,
+        createRouter: (dependencies) => createBillingRoutes(dependencies, config, { gateway }),
+      });
+
+      // Opt-in auto top-up's sweep: API runtime only, 60s tick (see `registerPeriodicTask`'s own
+      // contract). No-ops immediately when `gateway` is undefined.
+      context.registerPeriodicTask?.({
+        id: "ee-billing-auto-top-up",
+        intervalMs: AUTO_TOP_UP_SWEEP_INTERVAL_MS,
+        create: (taskContext) =>
+          new AutoTopUpDispatcher({
+            database: taskContext.database,
+            gateway,
+            audit: taskContext.audit,
+            logger: taskContext.logger,
           }),
       });
     },

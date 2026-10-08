@@ -732,9 +732,11 @@ test("a recently closed row whose detail 404s before its own route lands keeps t
 
   // Once the closed row's own navigation lands, reconciliation must not
   // silently reselect it (it's still "found" in the recently-closed list) -
-  // it must clear instead, keeping the notice live.
-  await expect(response.getByText("This conversation is no longer available.")).toBeVisible();
+  // it must clear instead, keeping the notice live. Wait for the clear first:
+  // the notice was already visible before release, so asserting it first would
+  // pass before reconciliation ran.
   await expect(page).not.toHaveURL(/itemId=/);
+  await expect(response.getByText("This conversation is no longer available.")).toBeVisible();
 });
 
 test("an empty Needs-you queue hides the filters, keeps the toggle in the left pane, and puts the confidence message in the reading pane", async ({ page }) => {

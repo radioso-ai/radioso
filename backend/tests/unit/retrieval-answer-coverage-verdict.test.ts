@@ -339,7 +339,7 @@ describe("RetrievalAnswerComposer coverage verdict sink — page-read capture pa
     return session;
   };
 
-  it("reports the head exactly once, parsed before any release, on the committed capture path", async () => {
+  it("reports the head exactly once, parsed before any release, then streams the capture answer live", async () => {
     const pageAnswer = "The migration access code is QZ-7419.";
     const raw = structuredEnvelope({
       coverage: "answered_sufficient_evidence",
@@ -362,14 +362,14 @@ describe("RetrievalAnswerComposer coverage verdict sink — page-read capture pa
       ),
     );
 
-    // The capture path skips the citation gate but not the head (spec edge case):
-    // nothing streams live either way, so this only proves the report happened
-    // exactly once and the delivered text is the head-gated body, not raw chunks
-    // released before the head resolved.
+    // The capture path skips the citation gate but not the head: the head
+    // still resolves (and reports to the sink) exactly once before any text
+    // releases, but once it has, the captured answer streams live rather than
+    // waiting for the whole generation to finish.
     expect(calls).toHaveLength(1);
     expect(calls[0].assessment).toMatchObject({ availability: "assessed", coverage: "answered" });
-    expect(chunks).toEqual([]);
-    expect(result.hasStreamedAnswer).toBe(false);
+    expect(chunks.join("")).toBe(pageAnswer);
+    expect(result.hasStreamedAnswer).toBe(true);
     expect(result.finalPresentation.answer).toBe(pageAnswer);
   });
 });

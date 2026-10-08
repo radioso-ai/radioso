@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   formatPlanPriceCents,
+  formatPlanUsageCompact,
+  isPlanUsageMetered,
   largestPlanUsageKind,
   planUsageLevelHasActions,
   planUsageLevelMessage,
+  planUsageLevelTone,
   planUsagePercent,
 } from '@/lib/plan-card-usage'
 
@@ -52,6 +55,41 @@ describe('planUsageLevelMessage', () => {
     const message = planUsageLevelMessage({ level: 'grace_exhausted', graceRemaining: 0, resetAt: '2026-06-01T00:00:00.000Z' })
     expect(message).toContain('Jun 1, 2026')
     expect(message).not.toContain('!')
+  })
+})
+
+describe('planUsageLevelTone', () => {
+  it('is ok for ok', () => {
+    expect(planUsageLevelTone('ok')).toBe('ok')
+  })
+
+  it('is warning for nearing_limit', () => {
+    expect(planUsageLevelTone('nearing_limit')).toBe('warning')
+  })
+
+  it('is destructive for limit_reached and grace_exhausted', () => {
+    expect(planUsageLevelTone('limit_reached')).toBe('destructive')
+    expect(planUsageLevelTone('grace_exhausted')).toBe('destructive')
+  })
+})
+
+describe('formatPlanUsageCompact', () => {
+  it('renders used over the server-computed capacity', () => {
+    expect(formatPlanUsageCompact({ used: 412, capacity: 500 })).toBe('412 / 500')
+  })
+})
+
+describe('isPlanUsageMetered', () => {
+  it('is false for a null bucket', () => {
+    expect(isPlanUsageMetered(null)).toBe(false)
+  })
+
+  it('is false when there is no capacity to measure against', () => {
+    expect(isPlanUsageMetered({ used: 0, capacity: 0 })).toBe(false)
+  })
+
+  it('is true once there is real capacity to measure against', () => {
+    expect(isPlanUsageMetered({ used: 412, capacity: 500 })).toBe(true)
   })
 })
 

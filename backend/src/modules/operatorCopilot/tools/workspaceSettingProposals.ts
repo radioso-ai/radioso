@@ -3,22 +3,24 @@ import {
   copilotWorkspaceSettingPayloadSchema,
   type CopilotWorkspaceSettingPayload,
 } from "../contracts/workspaceSettingAuthoring.js";
-import type { CopilotToolDescriptor } from "../contracts.js";
+import type { CopilotMcpProposalRecoveryPort, CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
   boundedSummary,
+  copilotProposalOrigin,
   proposalAdapterFor,
   proposalOutputSchema,
   recordProposalCreated,
-  requiredCopilotConversation,
   type CopilotProposalToolDependencies,
 } from "./shared.js";
 
 const MANAGE_SETTINGS = ["workspace.settings.manage"] as const;
 const NAME = "propose_workspace_setting";
-const DESCRIPTION = "Propose a change to the workspace's assistant wording or its public channels — assistant name, greeting, default locale, custom instruction, the anonymous chat link, and the website embed's allowed origins and launcher — for the operator to review and apply. Name only the fields you want changed; the rest are carried over from the stored settings. Enabling the anonymous chat link, enabling the embed, or adding an allowed origin changes who can reach the agent, and the card says so. To change the behavior of one agent among several rather than the workspace's own surface, use propose_agent_setting.";
+const DESCRIPTION = "Propose a change to the workspace's assistant wording or its public channels — assistant name, greeting, default locale, custom instruction, the anonymous chat link, and the website embed's allowed origins and launcher — for the operator to review and apply. Name only the fields you want changed; the rest are carried over from the stored settings. Enabling the anonymous chat link, enabling the embed, or adding an allowed origin changes who can reach the agent, and the card says so. To change the behavior of one agent among several rather than the workspace's own surface, use propose_agent_setting. The website embed's install snippet carries its token and is never returned here; workspace_settings returns the dashboard URL where a signed-in operator copies it.";
 
-type WorkspaceSettingProposalCopilotToolDependencies = CopilotProposalToolDependencies;
+interface WorkspaceSettingProposalCopilotToolDependencies extends CopilotProposalToolDependencies {
+  readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
+}
 
 const stated = (value: unknown): string => {
   switch (typeof value) {
@@ -61,6 +63,36 @@ export const createWorkspaceSettingProposalCopilotTools = (
     contributingModule: "settings",
     dashboardSubject: { type: "proposal" },
     requiredPermissions: [...MANAGE_SETTINGS],
+    reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
+      if (!invocation.operationId) return { status: "conflict" };
+      const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
+        invocationId: invocation.id,
+        grantId: invocation.grantId,
+        workspaceId: context.workspaceId,
+        operatorUserId: context.operatorUserId,
+        operationId: invocation.operationId,
+        descriptorName: NAME,
+        inputDigest: invocation.inputDigest,
+        staleBefore,
+        now,
+      });
+      if (recovery.status !== "recovered") return recovery;
+      if (recovery.proposal.targetType !== "workspace_setting") return { status: "conflict" };
+      const payload = copilotWorkspaceSettingPayloadSchema.safeParse(recovery.proposal.payload);
+      // The live call always stores the summary it returned; a payload without one cannot be
+      // answered with the response the first attempt gave.
+      if (!payload.success || !payload.data.summary) return { status: "conflict" };
+      return {
+        status: "recovered",
+        output: {
+          proposalId: recovery.proposal.id,
+          targetType: "workspace_setting" as const,
+          targetLabel: "Workspace settings",
+          summary: payload.data.summary,
+          ...(payload.data.changesReach ? { reach: true as const } : {}),
+        },
+      };
+    },
     createTool: (context) => ({
       ...shared,
       invoke: async (rawChange) => {
@@ -76,7 +108,7 @@ export const createWorkspaceSettingProposalCopilotTools = (
         const proposal = await deps.proposalRepository.createProposal({
           workspaceId: context.workspaceId,
           operatorUserId: context.operatorUserId,
-          conversationId: requiredCopilotConversation(context),
+          origin: copilotProposalOrigin(context),
           targetType: "workspace_setting",
           targetRef: validated.targetRef,
           payload: copilotWorkspaceSettingPayloadSchema.parse({ ...payload, summary }),

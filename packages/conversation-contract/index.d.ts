@@ -1549,6 +1549,13 @@ export interface ConversationRoutineResumeResult {
     collected?: Record<string, unknown>;
     operatorNotice?: RoutineOperatorNoticeTemplate;
   };
+  /**
+   * Reported with `terminal`: every value the run holds as it ends, the slots its ending
+   * turn captured and the tool outputs it assigned included. `nextState` is `null` then, so
+   * this is what a host keeps on the ended run's record (#1452). `terminal.collected` is its
+   * declared-slot projection.
+   */
+  endedVariables?: Record<string, unknown>;
   outcomes?: TurnOutcome[];
   /** Fire-and-forget side effects the routine emitted this turn, for the host to persist. */
   actions?: RoutineActionRequest[];

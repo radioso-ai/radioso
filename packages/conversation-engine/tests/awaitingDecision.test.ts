@@ -195,6 +195,32 @@ describe("resumeAwaitingDecision", () => {
     });
   });
 
+  it("hands back no completed record when the resume yields instead of ending (#1457)", async () => {
+    const llmGateRoutine: Routine = {
+      ...refundRoutine,
+      transitions: [
+        { from: "ask_reason", to: "gate", condition: "a reason was provided", guard: { kind: "default" } },
+        { from: "gate", to: "issue_refund", condition: "the operator approved", guard: { kind: "llm" } },
+        { from: "gate", to: "declined", condition: "the operator rejected", guard: { kind: "llm" } },
+        { from: "issue_refund", to: "confirmed", condition: "the refund was issued" },
+      ],
+    };
+    const select = vi.fn(async () => ({ nextStepId: "gate", yieldTurn: true }));
+    const runner = new DefaultRoutineRunner([llmGateRoutine], { select }, { render: vi.fn(renderer.render) });
+
+    const result = await resumeAwaitingDecision({
+      suspendedReader: readerFor(suspendedAtGate),
+      routineRunner: runner,
+      turn,
+      sessionId: "session_1",
+      decision: { handle: "decision_1", optionId: "approve" },
+    });
+
+    expect(result.yielded).toBe(true);
+    expect(result.terminal).toBeUndefined();
+    expect(result.completedState).toBeUndefined();
+  });
+
   it("CONTROL calls the selector when the same gate uses llm decision edges", async () => {
     const llmGateRoutine: Routine = {
       ...refundRoutine,

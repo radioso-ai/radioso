@@ -758,25 +758,31 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     if (typeof profile.monthlyConversationLimit !== "number") {
       return null;
     }
-    const [counter, credits, kinds] = await Promise.all([
-      this.db
-        .selectFrom("ee_usage_limit_unit_counters")
-        .select("used_tenths")
-        .where("account_id", "=", accountId)
-        .where("period_start", "=", sql<string>`${periodStart}::date`)
-        .executeTakeFirst(),
-      this.db
-        .selectFrom("ee_usage_limit_credits")
-        .select("balance_tenths")
-        .where("account_id", "=", accountId)
-        .executeTakeFirst(),
-      this.db
-        .selectFrom("ee_usage_limit_unit_kind_counters")
-        .select(["kind", "used_tenths"])
-        .where("account_id", "=", accountId)
-        .where("period_start", "=", sql<string>`${periodStart}::date`)
-        .execute(),
-    ]);
+    // One REPEATABLE READ snapshot, not three independent reads: without it, a reservation
+    // committing between them (counter bumped, credits not yet, say) could pair numbers that
+    // never coexisted and report a level that never actually applied. No row locks -- this is
+    // a read, and REPEATABLE READ alone is enough to pin all three to the same snapshot.
+    const [counter, credits, kinds] = await this.db.transaction().setIsolationLevel("repeatable read").execute(
+      (trx) => Promise.all([
+        trx
+          .selectFrom("ee_usage_limit_unit_counters")
+          .select("used_tenths")
+          .where("account_id", "=", accountId)
+          .where("period_start", "=", sql<string>`${periodStart}::date`)
+          .executeTakeFirst(),
+        trx
+          .selectFrom("ee_usage_limit_credits")
+          .select("balance_tenths")
+          .where("account_id", "=", accountId)
+          .executeTakeFirst(),
+        trx
+          .selectFrom("ee_usage_limit_unit_kind_counters")
+          .select(["kind", "used_tenths"])
+          .where("account_id", "=", accountId)
+          .where("period_start", "=", sql<string>`${periodStart}::date`)
+          .execute(),
+      ]),
+    );
     const byKind = Object.fromEntries(USAGE_KINDS.map((kind) => [kind, 0])) as Record<UsageKind, number>;
     for (const row of kinds) {
       if ((USAGE_KINDS as readonly string[]).includes(row.kind)) {

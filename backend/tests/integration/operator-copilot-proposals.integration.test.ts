@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { expect, it } from "vitest";
 
 import { createTestApp, issueTestSession } from "../support/testApp.js";
@@ -118,4 +120,56 @@ it("refuses a workspace-setting proposal enabling the website embed when a concu
 
   await expect(repositories.agentRepository.findByIdAndWorkspaceId(agent.id, workspaceId))
     .resolves.toMatchObject({ surfaceSettings: { websiteEmbed: { enabled: false, allowedOrigins: [] } } });
+});
+
+it("lets an Operator MCP client set up the website embed while the token stays behind a dashboard link", async () => {
+  const { app, dependencies, repositories } = createTestApp();
+  const { workspaceId, accountId, userId } = await issueTestSession(app, "mcp-embed-setup@example.com");
+  const agent = await repositories.agentRepository.create(workspaceId, {
+    name: "Embed setup",
+    retrievalEnabled: true,
+    sourceScope: { mode: "all" },
+  });
+  await repositories.agentRepository.setDefault(workspaceId, agent.id);
+  // A direct Operator MCP call: no Ray conversation, only the invocation that drafted it.
+  const mcpContext = {
+    workspaceId,
+    accountId,
+    operatorUserId: userId,
+    surface: "mcp" as const,
+    operatorMcpInvocationId: randomUUID(),
+    currentAuthorization: { hasAllPermissions: async () => true },
+    pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+  };
+  const descriptor = (name: string) => {
+    const found = dependencies.copilotToolCatalog.find((candidate) => candidate.name === name);
+    if (!found) throw new Error(`Expected ${name} in the copilot catalog`);
+    return found;
+  };
+
+  const proposal = await descriptor("propose_workspace_setting").createTool(mcpContext).invoke({
+    websiteEmbedEnabled: true,
+    websiteEmbedAllowedOrigins: ["https://shop.example.com"],
+  }, {} as never) as { proposalId: string; reach?: boolean };
+  expect(proposal.reach).toBe(true);
+  await expect(dependencies.copilotRepository.findProposal({ id: proposal.proposalId, workspaceId, operatorUserId: userId }))
+    .resolves.toMatchObject({ conversationId: null, origin: { type: "operator_mcp_invocation", invocationId: mcpContext.operatorMcpInvocationId } });
+
+  // The operator still applies the reach change in the dashboard.
+  await expect(dependencies.operatorCopilotService.applyProposal({
+    workspaceId, accountId, operatorUserId: userId, surface: "dashboard", proposalId: proposal.proposalId,
+  })).resolves.toMatchObject({ status: "applied" });
+  const enabled = await repositories.agentRepository.findByIdAndWorkspaceId(agent.id, workspaceId);
+  expect(enabled?.surfaceSettings.websiteEmbed).toMatchObject({ enabled: true, allowedOrigins: ["https://shop.example.com"] });
+  const token = enabled?.surfaceSettings.websiteEmbed.token;
+  expect(token).toEqual(expect.any(String));
+
+  const settings = await descriptor("workspace_settings").createTool(mcpContext).invoke({}, {} as never) as {
+    general: { channels: { websiteEmbedEnabled: boolean; websiteEmbedSnippetUrl: string } };
+  };
+  expect(settings.general.channels.websiteEmbedEnabled).toBe(true);
+  const snippetUrl = new URL(settings.general.channels.websiteEmbedSnippetUrl);
+  expect(snippetUrl.pathname).toMatch(new RegExp(`^/w/[^/]+/agents/${agent.id}$`));
+  expect(snippetUrl.search).toBe("?tab=channels&anchor=web-chat");
+  expect(JSON.stringify(settings)).not.toContain(token);
 });

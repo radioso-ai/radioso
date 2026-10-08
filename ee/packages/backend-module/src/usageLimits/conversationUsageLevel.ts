@@ -68,13 +68,17 @@ export const conversationUsageLevel = (input: ConversationUsageLevelInput): Conv
   const graceTenths = graceLimitTenths(limitTenths, graceShare);
   const capacityTenths = Math.max(usedTenths, limitTenths) + Math.max(balanceTenths, 0);
   const paidRemainingTenths = capacityTenths - usedTenths;
+  // Clamped to zero: debt already larger than the grace (e.g. carried across a plan
+  // downgrade) must shrink this to no headroom, never to a negative number that would
+  // subtract from paidRemainingTenths below and misreport a healthy account as exhausted.
+  const remainingGraceTenths = Math.max(graceTenths - borrowedTenths, 0);
 
   let level: ConversationUsageLevel;
-  if (paidRemainingTenths <= 0 && graceTenths - borrowedTenths < conversationWeightTenths) {
+  if (paidRemainingTenths + remainingGraceTenths < conversationWeightTenths) {
     level = "grace_exhausted";
   } else if (paidRemainingTenths <= 0) {
     level = "limit_reached";
-  } else if (usedTenths / capacityTenths >= 0.8) {
+  } else if (capacityTenths > 0 && usedTenths / capacityTenths >= 0.8) {
     level = "nearing_limit";
   } else {
     level = "ok";

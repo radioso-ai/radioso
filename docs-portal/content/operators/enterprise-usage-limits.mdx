@@ -138,6 +138,8 @@ Ray, Test Chat, Workbench replays, eval runs, and Audience Pulse reports never b
 
 Debt carries across billing periods. The credit balance is one account-wide number with no period column, so an account that borrowed last month still owes it this month even though the plan allowance resets in full on the first of the month. A credit grant — a top-up purchase or a call to [Prepaid credits](#prepaid-credits) — repays the debt first, before any of it shows up as a positive `credits` balance.
 
+A profile change that shrinks the grace (a downgrade to a smaller plan, say) never eats into that fresh allowance either: the next period still starts with the full new allowance, and the debt only reduces how much further borrowing room is left — down to zero once the debt alone exceeds the new, smaller grace, never past zero.
+
 `monthlyConversations` reports three fields for this:
 
 - `capacity` — what the account can spend before borrowing: the plan allowance (or current usage, if higher) plus any positive credits. It is the right denominator for a usage bar; `limit + credits` reads wrong once credits are partly spent, because credits shrink as overshoot consumes them.
@@ -146,7 +148,7 @@ Debt carries across billing periods. The credit balance is one account-wide numb
   - `ok` — comfortably under the allowance.
   - `nearing_limit` — at or above 80% of `capacity`.
   - `limit_reached` — `capacity` is spent, but grace room remains: a customer conversation still gets answered, borrowed from the grace allowance.
-  - `grace_exhausted` — less than one conversation's worth of grace remains unborrowed. The next customer conversation is refused with `429`.
+  - `grace_exhausted` — what's left of `capacity` plus any unborrowed grace covers less than one more conversation. The next customer conversation is refused with `429`.
 
 `monthlyConversations` — and the grace allowance with it — is absent on a profile that meters answers instead of conversations, or carries no limit at all. There is no allowance to borrow against without one.
 

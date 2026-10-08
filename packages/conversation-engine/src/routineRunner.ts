@@ -935,17 +935,21 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       variables = { ...state.variables, ...(decision.variables ?? {}) };
       resumeStepRejected = [...selectorRejected, ...unreplacedStartRejections(variables)];
       // Trace the resume step's outcome: it either advanced off (the user satisfied it) or
-      // was re-asked. Captured keys, if any, belong to this step's edge evaluation.
+      // was re-asked. Captured keys, if any, belong to this step's edge evaluation. On the
+      // routine's first turn the step read the opening message and was never asked, so
+      // staying on it is its first ask, not a re-ask (#1450).
       {
         const captured = capturedKeysFrom(state.variables, decision);
+        const stayed = step.id === currentStepId;
         traceSteps.push({
           stepId: currentStep.id,
           kind: currentStep.kind,
-          event: step.id === currentStepId ? "reasked" : "advanced",
+          event: stayed ? (input.activationTurn ? "rendered" : "reasked") : "advanced",
           ...(captured.length > 0 ? { capturedSlotKeys: captured } : {}),
           ...(tracedRejected.length > 0 ? { rejectedSlots: tracedRejected } : {}),
           viaSelector: mainSelectorRan,
           ...(mainSelection ? { selection: mainSelection } : {}),
+          ...(input.activationTurn ? { readOpeningMessage: true } : {}),
         });
       }
       // Append to the path only on a real advance; re-asking a step keeps it stable.

@@ -964,8 +964,9 @@ exports[`routine turn golden record (attemptRoutine) > records the same port cal
               "startStepId": "ask_email",
               "steps": [
                 {
-                  "event": "reasked",
+                  "event": "rendered",
                   "kind": "chat",
+                  "readOpeningMessage": true,
                   "stepId": "ask_email",
                   "viaSelector": true,
                 },

@@ -1953,6 +1953,63 @@ describe("DefaultRoutineRunner trace", () => {
       ]);
     });
 
+    // The first step already holds its value (the activator read it), yet its selector kept
+    // the turn on it: the walk then moves it on, or renders it after asking again. Either
+    // way it is listed once, as what finally happened to it.
+    const intake = (transitions: Routine["transitions"]): Routine => ({
+      id: "intake",
+      rootStepId: "ask_name",
+      slots: [
+        { id: "slot_name", key: "name", type: "text", required: true },
+        { id: "slot_email", key: "email", type: "email", required: true },
+      ],
+      steps: [
+        { id: "ask_name", kind: "chat", action: "Ask for name.", metadata: { collectsSlots: ["name"] } },
+        { id: "ask_email", kind: "chat", action: "Ask for email.", metadata: { collectsSlots: ["email"] } },
+        { id: "done", kind: "terminal", action: "Confirm intake." },
+        { id: "bail", kind: "terminal", action: "Bail out." },
+      ],
+      transitions,
+    });
+    // The selector reads the opening message as off-topic; the first turn never yields, so
+    // the routine stays on its first step instead.
+    const firstStepEntries = async (routineWith: Routine) => {
+      const runner = new DefaultRoutineRunner(
+        [routineWith],
+        { select: vi.fn(async () => ({ nextStepId: "ask_email", yieldTurn: true })) },
+        { render: vi.fn(echoRenderer.render) },
+      );
+      const result = await runner.resume({
+        turn,
+        state: { ...state([], { name: "Alex" }), routineId: "intake" },
+        activationTurn: true,
+      });
+      return result.trace?.steps.filter((entry) => entry.stepId === "ask_name");
+    };
+
+    it("lists a first step the walk moves past once, as skipped", async () => {
+      const entries = await firstStepEntries(intake([
+        { from: "ask_name", to: "ask_email", condition: "name was provided", origin: "compiler_slot_gate" },
+        { from: "ask_email", to: "done", condition: "email was provided" },
+      ]));
+
+      expect(entries).toEqual([
+        { stepId: "ask_name", kind: "chat", event: "fast_forwarded", viaSelector: true, readOpeningMessage: true },
+      ]);
+    });
+
+    it("lists a first step the walk asks about again and renders once, as its first ask", async () => {
+      const entries = await firstStepEntries(intake([
+        { from: "ask_name", to: "ask_email", condition: "name was provided" },
+        { from: "ask_name", to: "bail", condition: "the user gave up" },
+        { from: "ask_email", to: "done", condition: "email was provided" },
+      ]));
+
+      expect(entries).toEqual([
+        { stepId: "ask_name", kind: "chat", event: "rendered", viaSelector: true, readOpeningMessage: true },
+      ]);
+    });
+
     it("records a first step the opening message satisfied as read for it", async () => {
       const runner = new DefaultRoutineRunner(
         [slotRoutine],

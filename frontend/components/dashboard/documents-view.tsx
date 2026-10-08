@@ -46,6 +46,8 @@ import {
   documentsApi,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { getUsageLimitNotice } from '@/lib/usage-limit-error'
+import { UsageLimitNotice } from '@/components/dashboard/shared/usage-limit-notice'
 import { mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
 import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
 import {
@@ -149,9 +151,9 @@ export function DocumentsView({
   const [isUpdatingRetrieval, setIsUpdatingRetrieval] = useState(false)
   const [retrievalError, setRetrievalError] = useState<string | null>(null)
   const [createEnrichmentChoice, setCreateEnrichmentChoice] = useState<'inherit' | 'on' | 'off'>('inherit')
-  const [importError, setImportError] = useState<string | null>(null)
+  const [importError, setImportError] = useState<ReactNode>(null)
   const [metadataError, setMetadataError] = useState<string | null>(null)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<ReactNode>(null)
   const [deleteCandidate, setDeleteCandidate] = useState<DocumentSummary | null>(null)
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null)
   const [deleteErrorById, setDeleteErrorById] = useState<Record<string, string>>({})
@@ -163,6 +165,13 @@ export function DocumentsView({
 
   const sourceFilterId = routeState.documentSourceFilter ?? null
   const workspaceId = routeState.workspaceId ?? ''
+  const usageHref = buildDashboardHref(accountId, { ...routeState, section: 'account', accountTab: 'usage' })
+  // A usage-limit rejection gets the plan-aware notice (sentence + link to Usage); every other
+  // failure keeps its plain message, unchanged from before this helper existed.
+  const describeActionError = useCallback((error: unknown, fallback: string): ReactNode => {
+    const notice = getUsageLimitNotice(error)
+    return notice ? <UsageLimitNotice notice={notice} href={usageHref} /> : getApiErrorMessage(error, fallback)
+  }, [usageHref])
   const sourcesPolicyKey = dashboardQueryKeys.sources.list(workspaceId)
   const sourcesQuery = useDocumentSourcesListQuery({
     workspaceId,
@@ -193,7 +202,7 @@ export function DocumentsView({
   const [crawlIncludeUrlPatterns, setCrawlIncludeUrlPatterns] = useState('')
   const [crawlExcludeUrlPatterns, setCrawlExcludeUrlPatterns] = useState('')
   const [crawlPreserveContentLinks, setCrawlPreserveContentLinks] = useState(true)
-  const [crawlError, setCrawlError] = useState<string | null>(null)
+  const [crawlError, setCrawlError] = useState<ReactNode>(null)
   const [crawlJobs, setCrawlJobs] = useState<WebsiteCrawlJobSummary[]>([])
   const [dismissedCrawlJobIds, setDismissedCrawlJobIds] = useState<Set<string>>(new Set())
   const [dismissingCrawlJobIds, setDismissingCrawlJobIds] = useState<Set<string>>(new Set())
@@ -591,7 +600,7 @@ export function DocumentsView({
     } catch (error) {
       console.error(`Failed to ${editingDocumentId ? 'update' : 'create'} document:`, error)
       setSaveError(
-        getApiErrorMessage(
+        describeActionError(
           error,
           `Failed to ${editingDocumentId ? 'update' : 'save'} document. Please try again.`,
         ),
@@ -622,7 +631,7 @@ export function DocumentsView({
       setIsImportDialogOpen(false)
       resetImportDialog()
     } catch (error) {
-      setImportError(getApiErrorMessage(error, 'Failed to import document. Please try again.'))
+      setImportError(describeActionError(error, 'Failed to import document. Please try again.'))
     } finally {
       setIsImporting(false)
     }
@@ -687,7 +696,7 @@ export function DocumentsView({
       resetCrawlDialog()
       invalidateDashboardQueries(['crawl.status_changed'])
     } catch (error) {
-      setCrawlError(getApiErrorMessage(error, 'Failed to start crawl. Please try again.'))
+      setCrawlError(describeActionError(error, 'Failed to start crawl. Please try again.'))
     } finally {
       setIsCrawling(false)
     }

@@ -387,7 +387,6 @@
   "types|backend/src/modules/operatorCopilot/proposalEvidence.ts|CopilotProposalEvidenceSummary",
   "types|backend/src/modules/operatorCopilot/services/evalCaseCaptureService.ts|EvalCaseCaptureServiceDependencies",
   "types|backend/src/modules/operatorCopilot/services/evalSuiteProbeService.ts|EvalSuiteProbeServiceDependencies",
-  "types|backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts|CopilotExpensiveOperationSubject",
   "types|backend/src/modules/operatorCopilot/services/proposalEvidenceService.ts|ProposalEvidenceRequest",
   "types|backend/src/modules/operatorCopilot/toolShape.ts|CopilotToolAnnotationHints",
   "types|backend/src/modules/operatorCopilot/tools/quality.ts|CopilotQualityTriageRecord",

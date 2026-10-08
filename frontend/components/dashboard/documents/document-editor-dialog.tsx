@@ -1,6 +1,6 @@
 'use client'
 
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 
 import { MarkdownContent } from '@/components/markdown/markdown-content'
 import { MetadataKeyValueEditor } from '@/components/dashboard/shared/metadata-key-value-editor'
@@ -45,7 +45,7 @@ export function DocumentEditorDialog({
   mode: EditorMode
   values: DocumentEditorValues
   metadataError: string | null
-  saveError?: string | null
+  saveError?: ReactNode
   isSaving: boolean
   isLoading: boolean
   // Only surfaced for mode "create": the override rides on the processing run

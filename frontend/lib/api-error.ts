@@ -26,6 +26,21 @@ export function getApiErrorCode(error: unknown): string | undefined {
   return undefined
 }
 
+/** The machine-readable `error.details` payload of an API error body, when it carries one. */
+export function getApiErrorDetails(error: unknown): unknown {
+  if (
+    error
+    && typeof error === 'object'
+    && 'error' in error
+    && error.error
+    && typeof error.error === 'object'
+    && 'details' in error.error
+  ) {
+    return error.error.details
+  }
+  return undefined
+}
+
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (
     error &&

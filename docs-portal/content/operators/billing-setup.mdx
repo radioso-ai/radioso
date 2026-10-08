@@ -1,7 +1,7 @@
 ---
 title: "Billing setup"
 description: "Connect Stripe to Radioso Enterprise: sync the plan catalog into Stripe products, prices, customer portal, tax defaults, and webhook, then set the environment variables that turn billing on."
-last_updated: 2026-10-05
+last_updated: 2026-10-08
 ---
 
 # Billing setup
@@ -140,7 +140,7 @@ Stripe opens every portal session with the account's default portal configuratio
 
 If the account has no portal configuration yet, the sync creates one. When Stripe doesn't make that new configuration the default, the sync warns: open **Settings → Billing → Customer portal** in the Dashboard, click **Save** once to create the default, and run the sync again so the default carries these settings.
 
-Radioso opens the portal with a `return_url` back to the dashboard, so a customer who cancels or changes plans there lands back on their usage page.
+Radioso opens the portal with a `return_url` back to the dashboard, so a customer who cancels or changes plans there lands back on their Plan & usage page.
 
 ## Webhook endpoint
 

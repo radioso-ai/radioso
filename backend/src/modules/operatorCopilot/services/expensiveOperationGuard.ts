@@ -3,7 +3,7 @@ import type { CopilotExpensiveOperationGuardDependencies } from "../contracts/ex
 
 const EXPENSIVE_OPERATION_SCOPE = "api.expensive_authenticated";
 
-export interface CopilotExpensiveOperationSubject {
+interface CopilotExpensiveOperationSubject {
   accountId: string;
   workspaceId: string;
   operatorUserId: string;
@@ -45,7 +45,7 @@ export class CopilotUsageLimitReachedError extends Error {
   constructor() {
     super(
       "The workspace has used its answer allowance, and every verification run is charged as one answer. "
-      + "Do not retry this call or any other verification in this turn. Answer with what you already have, and tell the operator their plan's allowance is exhausted.",
+      + "Do not retry this call or any other verification in this turn. Answer with what you already have, and tell the operator their plan's allowance is exhausted and that they can top up or upgrade from Plan & usage in the account menu.",
     );
     this.name = "CopilotUsageLimitReachedError";
   }

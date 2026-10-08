@@ -4,6 +4,7 @@ import { DefaultConversationEngine } from "../src/index.js";
 import { DefaultRoutineRunner } from "../src/routineRunner.js";
 import type {
   ConversationEvent,
+  ConversationRoutineActivator,
   ConversationRoutineNextStepSelector,
   ConversationRoutineStepRenderer,
   ConversationRoutineSkillDispatcher,
@@ -121,7 +122,7 @@ const buildInput = (
   routineRunner: new DefaultRoutineRunner([contactRoutine], scriptedSelector, echoRenderer, dispatcher),
   routineActivator: {
     // Start the contact routine on the explicit pill click (intent_click metadata).
-    activate: vi.fn(async ({ turn }) =>
+    activate: vi.fn<ConversationRoutineActivator["activate"]>(async ({ turn }) =>
       turn.inputEvent.metadata?.method === "intent_click"
         ? { kind: "activate", routineId: "human_contact.request" }
         : null,
@@ -286,7 +287,7 @@ describe("approval gate — engine surfaces awaitingDecision and suspends", () =
       routineStore: store,
       routineRunner: new DefaultRoutineRunner([approvalRoutine], throwingSelector, echoRenderer, dispatcher),
       routineActivator: {
-        activate: vi.fn(async ({ turn }) =>
+        activate: vi.fn<ConversationRoutineActivator["activate"]>(async ({ turn }) =>
           turn.inputEvent.metadata?.method === "intent_click"
             ? { kind: "activate", routineId: "refund.flow" }
             : null,

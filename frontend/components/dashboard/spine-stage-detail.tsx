@@ -993,13 +993,14 @@ const ROUTINE_EVENT_DESCRIPTIONS: Record<string, string> = {
 
 // A step the first turn read the opening message for (#1370), flagged explicitly rather
 // than inferred from captured keys (a step can read the message and still come up empty).
-// It either moved on with what the message gave, or is rendered as a first ask — the
-// value it did read is filled into its own instruction, not repeated in this line.
+// It either moved on, or is rendered as a first ask — the value it did read is filled into
+// its own instruction, not repeated in this line. What it moved on with can also come from
+// an earlier run of a re-entered routine, so that line does not credit the message.
 const routineEventDescription = (step: RoutineTraceStepView): string | undefined => {
   if (step.readOpeningMessage) {
     return step.event === 'rendered'
       ? 'Read the opening message first; it did not give everything this step asks for.'
-      : 'Skipped without asking — this turn’s message gave what this step asks for.'
+      : 'Read the opening message first, then moved on without asking.'
   }
   return ROUTINE_EVENT_DESCRIPTIONS[step.event]
 }

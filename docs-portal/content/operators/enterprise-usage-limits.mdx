@@ -1,7 +1,7 @@
 ---
 title: "Enterprise usage limits"
 description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers or conversations per account, and enforces the caps before work begins."
-last_updated: 2026-10-05
+last_updated: 2026-10-08
 ---
 
 # Enterprise usage limits
@@ -118,6 +118,9 @@ The account usage response breaks this down under `monthlyConversations`:
     "used": 42.5,
     "limit": 500,
     "credits": 12,
+    "capacity": 512,
+    "grace": { "limit": 50, "borrowed": 0 },
+    "level": "ok",
     "periodStart": "2026-05-01",
     "resetAt": "2026-06-01T00:00:00.000Z",
     "byKind": { "conversation": 40, "copilot": 2, "test_run": 0.5, "pulse_report": 0 }
@@ -125,7 +128,29 @@ The account usage response breaks this down under `monthlyConversations`:
 }
 ```
 
-`used` and the `byKind` breakdown can land on a half, since a test run and a Ray turn each count as 0.5. `credits` is the account's prepaid balance on top of `monthlyConversationLimit` — see [Prepaid credits](#prepaid-credits). `monthlyConversations` is absent (`null`) on an account whose profile meters answers instead.
+`used` and the `byKind` breakdown can land on a half, since a test run and a Ray turn each count as 0.5. `credits` is the account's prepaid balance on top of `monthlyConversationLimit` — see [Prepaid credits](#prepaid-credits). `capacity`, `grace`, and `level` describe the account's [grace allowance](#grace-allowance). `monthlyConversations` is absent (`null`) on an account whose profile meters answers instead.
+
+## Grace allowance
+
+A customer conversation keeps getting answered for a while after the plan allowance and prepaid credits both run out. The account's credit balance goes negative, as debt, down to a floor of `floor(monthlyConversationLimit × conversationGraceShare)` conversations — `conversationGraceShare` is `0.1` in the catalog, so a 500-conversation plan borrows up to 50 conversations before a customer conversation is refused with `429`.
+
+Ray, Test Chat, Workbench replays, eval runs, and Audience Pulse reports never borrow. Once the allowance and any positive credits are spent, the next one of these is refused immediately — the grace allowance exists for visitor-facing conversations only, and carried debt never pushes that refusal earlier than the plan allowance itself.
+
+Debt carries across billing periods. The credit balance is one account-wide number with no period column, so an account that borrowed last month still owes it this month even though the plan allowance resets in full on the first of the month. A credit grant — a top-up purchase or a call to [Prepaid credits](#prepaid-credits) — repays the debt first, before any of it shows up as a positive `credits` balance.
+
+A profile change that shrinks the grace (a downgrade to a smaller plan, say) never eats into that fresh allowance either: the next period still starts with the full new allowance, and the debt only reduces how much further borrowing room is left — down to zero once the debt alone exceeds the new, smaller grace, never past zero.
+
+`monthlyConversations` reports three fields for this:
+
+- `capacity` — what the account can spend before borrowing: the plan allowance (or current usage, if higher) plus any positive credits. It is the right denominator for a usage bar; `limit + credits` reads wrong once credits are partly spent, because credits shrink as overshoot consumes them.
+- `grace.limit` and `grace.borrowed` — the account's full borrowing room in conversations, and how much of it is currently drawn down as debt.
+- `level` — one of:
+  - `ok` — comfortably under the allowance.
+  - `nearing_limit` — at or above 80% of `capacity`.
+  - `limit_reached` — `capacity` is spent, but grace room remains: a customer conversation still gets answered, borrowed from the grace allowance.
+  - `grace_exhausted` — what's left of `capacity` plus any unborrowed grace covers less than one more conversation. The next customer conversation is refused with `429`.
+
+`monthlyConversations` — and the grace allowance with it — is absent on a profile that meters answers instead of conversations, or carries no limit at all. There is no allowance to borrow against without one.
 
 ## Prepaid credits
 
@@ -138,7 +163,7 @@ curl -X POST https://radioso.example.com/api/v1/ee/usage-limits/accounts/0000000
   -d '{"conversations": 100, "reference": "evt_1Pxxxxxxxxxxxxxxxx"}'
 ```
 
-`reference` identifies the grant — a Stripe event ID or any string unique to the top-up — and makes the call safe to retry. The first call with a given `reference` credits the account and returns `"applied": true`. A later call with the same `reference` grants nothing and returns `"applied": false` with the same `credits` balance as the first call. The response also carries the account's current usage:
+`reference` identifies the grant — a Stripe event ID or any string unique to the top-up — and makes the call safe to retry. The first call with a given `reference` credits the account and returns `"applied": true`. A later call with the same `reference` grants nothing and returns `"applied": false` with the same `credits` balance as the first call. On an account that borrowed against its [grace allowance](#grace-allowance), the grant repays that debt first; `credits` only turns positive once the debt is fully repaid. The response also carries the account's current usage:
 
 ```json
 {
@@ -152,15 +177,72 @@ An `accountId` that does not exist returns `404`.
 
 ## Plan card
 
-On a conversation-metered account, the dashboard's Usage page shows a plan card above the meters. It reads `GET /api/v1/ee/billing/me` and `GET /api/v1/plans` alongside the account usage response above, and renders the plan name and price, a bar for `used / (limit + credits)`, and the `byKind` breakdown split into customer conversations, Ray, test runs, and Pulse.
+On a conversation-metered account, the dashboard's **Plan & usage** page (account menu → Plan & usage) shows a plan card above the meters. It reads `GET /api/v1/ee/billing/me` and `GET /api/v1/plans` alongside the account usage response above, and renders the plan name and price, a bar for `used / capacity`, and the `byKind` breakdown split into customer conversations, Ray, test runs, and Pulse.
 
-At 80% of capacity the card adds a banner naming whichever kind is driving that month's usage. At 100% the banner also carries the **Upgrade** and **Buy** buttons described below.
+The banner follows `level`:
+
+- `nearing_limit` names whichever kind is driving that month's usage.
+- `limit_reached` says the plan allowance is used, how many extra conversations visitors can still get from the grace allowance, and that Ray, Test Chat, and Pulse pause until the reset date.
+- `grace_exhausted` says agents stopped answering visitors and the date they resume.
+
+Both `limit_reached` and `grace_exhausted` carry the **Upgrade** and **Buy** buttons described below; `nearing_limit` does not.
 
 - **Upgrade** starts a subscription checkout for the next self-serve plan above the account's current one. It is absent once the account already holds the catalog's `selfServeCeilingPlanId`.
 - **Buy 300 more** starts a one-time checkout for the catalog's top-up pack. It only appears on a paid plan (Satellite or Planet): Comet, the free plan, doesn't sell top-ups, since a free account plus a few packs would undercut Satellite. `GET /api/v1/ee/billing/me`'s `topUpAvailable` field carries this, and `POST /api/v1/ee/billing/checkout` rejects a pack request from an ineligible account with `409 top_up_unavailable` before it reaches Stripe.
 - **Manage billing** opens the Stripe customer portal. It appears once the account has a Stripe customer, which the first checkout creates.
 
 A deployment without Stripe credentials configured skips the card; see [Billing setup](/operators/billing-setup) for the Stripe environment variables and webhook registration.
+
+## Auto top-up
+
+Below the plan card's actions, a paid-plan account with an active subscription can turn on auto top-up: a Switch, and a count of how many packs it may buy in one billing period. Any member with dashboard access may toggle it — buying a pack is already something every member can do by hand, so auto top-up carries no extra role gate. Once it's on, Radioso buys a pack the moment the account reaches `limit_reached` or `grace_exhausted`, so the [grace allowance](#grace-allowance) only has to cover the few seconds to a minute a charge takes to settle, not the rest of the billing period.
+
+`GET /api/v1/ee/billing/me` reports the setting under `autoTopUp`:
+
+```json
+{
+  "autoTopUp": {
+    "available": true,
+    "enabled": true,
+    "maxPacksPerMonth": 3,
+    "maxPacksPerMonthLimit": 10,
+    "packsThisPeriod": 1,
+    "disabledReason": null,
+    "disabledAt": null
+  }
+}
+```
+
+`available` follows the same eligibility as a one-time top-up purchase, plus an active subscription to charge — false on the free plan, on a plan id the catalog doesn't recognize, or without a subscription. `maxPacksPerMonth` is the account's own cap, from 1 up to `maxPacksPerMonthLimit`; `packsThisPeriod` counts packs already charged or in flight this period against that cap.
+
+```bash
+curl -X PUT https://radioso.example.com/api/v1/ee/billing/auto-top-up \
+  -H "Cookie: radioso_session=..." \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true, "maxPacksPerMonth": 3}'
+```
+
+This returns `409 auto_top_up_unavailable` when `available` is false, and `400` for a `maxPacksPerMonth` outside `1..maxPacksPerMonthLimit`. Turning it on clears a prior payment-failure disable.
+
+A sweep evaluates every enabled account about once a minute: the account's usage level, its monthly pack cap, and a one-hour cooldown after a failed charge, so a declining card is retried on a schedule rather than on every tick. At most one pack is ever in flight for an account at a time, and the sweep covers every enabled account in one pass rather than only the longest-waiting few.
+
+A charge interrupted by a network error or timeout stays in flight rather than being counted as failed, since the card may already have been charged; the next sweep picks it back up a few minutes later and replays the same request to Stripe, which recognizes it and returns the original result instead of charging twice. A pack stuck in flight for more than 20 hours is given up on instead: Radioso voids the draft invoice and marks the pack failed, but leaves auto top-up on, since giving up is Radioso's own call, not a payment decline.
+
+If the charge itself fails — a declined card, or a rejected request such as a deleted subscription — Radioso turns auto top-up off, records why (`disabledReason: "payment_failed"`, `disabledAt`), and emails the account's owners and admins to update the payment method and turn it back on — see [Billing notices](/operators/billing-setup#billing-notices). A successful charge adds the pack's conversations the same way a one-time top-up purchase does, repaying any grace debt first; Stripe's own receipt email covers the payment itself.
+
+## Usage alerts
+
+Radioso emails an account's owners and admins when conversation usage crosses `nearing_limit`, `limit_reached`, or `grace_exhausted` — the same levels [Grace allowance](#grace-allowance) reports. Every active owner and admin on the account gets the email; other roles do not.
+
+- `nearing_limit` — "You've used 80% of this month's conversations." Says how much of `capacity` is used and what happens at 100%: the grace allowance keeps answering visitors for a while, and Ray, Test Chat, and Pulse pause.
+- `limit_reached` — "This month's conversations are used up." Says how many conversations the grace allowance still covers, and that Ray, Test Chat, and Pulse are paused until the reset date.
+- `grace_exhausted` — "Your agents stopped answering visitors." Says visitors see an unavailable message until the reset date, or until the account adds conversations on a plan that sells top-ups.
+
+Each level emails at most once per billing period. Reaching several levels in one reservation — a jump straight from `ok` to `grace_exhausted`, for an account with little or no grace room — emails only the highest level reached; the lower ones are superseded without a separate email. A credit grant that actually applies, or a change to the account's assigned profile, clears the current period's alerts, so a level reached again after a top-up or a plan change emails again.
+
+Delivery runs on a periodic sweep, about once a minute, rather than firing the instant a reservation crosses a level — the account typically gets the email within a minute of crossing, not immediately.
+
+Every dashboard member also sees a banner reflecting the same signal, regardless of role. A past-due billing status takes precedence over `grace_exhausted`, which takes precedence over `limit_reached`, then `nearing_limit`. The `nearing_limit` banner can be dismissed for the rest of the billing period; the other three stay until the condition clears.
 
 ## Enforcement
 
@@ -170,7 +252,11 @@ Limits are enforced before expensive work begins, so customers cannot race past 
 - Assistant and retrieval answers reserve a monthly answer slot before the model is called, or a conversation-meter reservation on a conversation-metered account.
 - The reservation is released if the work fails before commit.
 
-Requests that exceed a cap receive a `429` response with `code: "usage_limit_exceeded"` and a `details.resource` of `stored_indexed_bytes`, `monthly_indexed_bytes`, `stored_documents`, `monthly_answers`, or `monthly_conversations`.
+Requests that exceed a cap receive a `429` response with `code: "usage_limit_exceeded"` and a `details.resource` of `stored_indexed_bytes`, `monthly_indexed_bytes`, `stored_documents`, `monthly_answers`, or `monthly_conversations`. On a conversation-metered account, a `monthly_conversations` refusal only happens once the [grace allowance](#grace-allowance) is also exhausted — Ray, Test Chat, Workbench replays, eval runs, and Pulse reports reach this `429` as soon as the allowance and any positive credits run out, since they never borrow.
+
+In the dashboard, this response becomes a short notice naming the exhausted resource, with a **Review plan and usage** link to Plan & usage, where the operator can top up or upgrade.
+
+The public website chat and anonymous link, which talk to visitors who aren't the account holder, answer with the same `code` but no `details` — the resource, limit, used count, and billing period are account information the visitor has no reason to see. The widget shows a generic "assistant unavailable" message instead.
 
 ## Organization creation cap
 

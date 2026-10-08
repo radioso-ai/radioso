@@ -109,6 +109,11 @@ describe("catalog invariants", () => {
     expect(PLAN_CATALOG.countsAs.copilot).toBe(0.5);
   });
 
+  it("keeps the conversation grace share a small fraction of the plan limit (0 to 0.5)", () => {
+    expect(PLAN_CATALOG.conversationGraceShare).toBeGreaterThanOrEqual(0);
+    expect(PLAN_CATALOG.conversationGraceShare).toBeLessThanOrEqual(0.5);
+  });
+
   it("marks every plan's top-up eligibility, off for the free plan and on for every priced plan (CFO-approved 2026-09-15)", () => {
     for (const plan of PLAN_CATALOG.plans) {
       expect(typeof plan.topUps).toBe("boolean");
@@ -121,6 +126,13 @@ describe("catalog invariants", () => {
         expect(plan.topUps).toBe(true);
       }
     }
+  });
+
+  it("keeps the auto top-up pack cap between 1 and the per-account limit, and the limit at or under 50", () => {
+    const { defaultMaxPacksPerMonth, maxPacksPerMonthLimit } = PLAN_CATALOG.autoTopUp;
+    expect(defaultMaxPacksPerMonth).toBeGreaterThanOrEqual(1);
+    expect(defaultMaxPacksPerMonth).toBeLessThanOrEqual(maxPacksPerMonthLimit);
+    expect(maxPacksPerMonthLimit).toBeLessThanOrEqual(50);
   });
 });
 

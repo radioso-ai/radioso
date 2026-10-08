@@ -1,11 +1,11 @@
 # @radioso/plan-catalog
 
 The single source of truth for Radioso Cloud plan numbers: prices, quotas, the free/default plan,
-the self-serve ceiling, usage-counting weights, the conversation top-up, the managed-service
-add-on, the model set managed plans run on (`managedModels`), and whether prices include VAT
-(`taxBehavior`). `src/plans.json` holds the data; `src/index.ts` exports typed access (`PLAN_CATALOG`,
-`findPlan`, `formatPrice`) and no runtime validation library, so a change here is a data edit plus
-the invariants in `tests/planCatalog.test.ts`.
+the self-serve ceiling, usage-counting weights, the conversation grace share, the conversation
+top-up, the managed-service add-on, the model set managed plans run on (`managedModels`), and
+whether prices include VAT (`taxBehavior`). `src/plans.json` holds the data; `src/index.ts` exports
+typed access (`PLAN_CATALOG`, `findPlan`, `formatPrice`) and no runtime validation library, so a
+change here is a data edit plus the invariants in `tests/planCatalog.test.ts`.
 
 Stripe prices are referenced by `lookup_key` (`satellite_month`, `topup_300`, …), never by price
 id. A price change is a new Stripe price with the key transferred to it; the app needs no config

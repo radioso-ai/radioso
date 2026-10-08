@@ -76,7 +76,12 @@ import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
-import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
+import type {
+  ApplicationAccountAdministratorDirectoryPort,
+  ApplicationModuleCoordinator,
+  ApplicationNoticeMailPort,
+  ApplicationRouteMount,
+} from "../composition/applicationModule.js";
 import type {
   ContactHistoryProviderPort,
   ConversationIngestPort,
@@ -138,6 +143,7 @@ import type { AudiencePulsePort } from "../../modules/audiencePulse/composition.
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { RealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
+import type { PeriodicTasksLifecycle } from "../composition/periodicTaskRunner.js";
 import type {
   ApiPrincipalAuthenticator,
   CredentialExpiryWarningService,
@@ -194,6 +200,11 @@ export interface AppDependencies {
   requestSource: RequestSourceDigestPort;
   machineAccessSecurityObserver?: MachineAccessSecurityObserver;
   credentialExpiryWarningLifecycle: Pick<CredentialExpiryWarningService, "start" | "stop">;
+  /** Every `registerPeriodicTask` registration, aggregated behind one start/stop pair. Started
+   *  and stopped only from the API runtime (see `startApiRuntime.ts`) — the worker and migration
+   *  runners never call this, so a task meant to run once per deployment does not also run once
+   *  per process. */
+  periodicTasksLifecycle: PeriodicTasksLifecycle;
   personalCredentialService: PersonalCredentialService;
   serviceAccountService: ServiceAccountService;
   workspaceSessionService: WorkspaceSessionService;
@@ -214,6 +225,11 @@ export interface AppDependencies {
   llmCapabilityResolver: LlmCapabilityResolver;
   auditService: AuditService;
   mailService: EmailService;
+  /** Branded-notice sending and the owner+admin directory. Built once in `dependencies.ts` and
+   *  handed to every periodic task AND every route mount, so a route (the EE billing webhook)
+   *  can send a branded notice too, outside any periodic task. */
+  noticeMail: ApplicationNoticeMailPort;
+  accountAdministrators: ApplicationAccountAdministratorDirectoryPort;
   workspaceService: WorkspaceService;
   workspaceSummaryService: WorkspaceSummaryService;
   ingestionSettingsService: IngestionSettingsService;

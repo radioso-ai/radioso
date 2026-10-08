@@ -28920,13 +28920,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Rate limit exceeded */
+            /** @description Rate limit exceeded, or the account's conversation quota is exhausted. The usage-limit shape never carries `details` on this anonymous route, unlike the authenticated assistant and retrieval endpoints — the resource, limit, used count, and billing period are account information this caller has no reason to see. */
             429: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                    "application/json": components["schemas"]["RateLimitExceededResponse"] | components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Public chat response is unavailable */

@@ -121,6 +121,9 @@ describe("usage limit copilot contribution", () => {
         used: 12.5,
         limit: 50,
         credits: 0,
+        capacity: 50,
+        grace: { limit: 5, borrowed: 0 },
+        level: "ok",
         byKind: { conversation: 0, copilot: 12.5, test_run: 0, pulse_report: 0 },
       },
     }));
@@ -132,7 +135,15 @@ describe("usage limit copilot contribution", () => {
     };
 
     expect(result.monthlyAnswers).toBeNull();
-    expect(result.monthlyConversations).toEqual({ used: 12.5, limit: 50, remaining: 37.5, resetAt: "2026-09-01T00:00:00.000Z" });
+    expect(result.monthlyConversations).toEqual({
+      used: 12.5,
+      limit: 50,
+      remaining: 37.5,
+      resetAt: "2026-09-01T00:00:00.000Z",
+      capacity: 50,
+      grace: { limit: 5, borrowed: 0 },
+      level: "ok",
+    });
   });
 
   it("still reports a genuinely unlimited answer cap for a plan that meters answers, not conversations", async () => {
@@ -179,6 +190,9 @@ describe("usage limit copilot contribution", () => {
         used: 0.5,
         limit: 100,
         credits: 0,
+        capacity: 100,
+        grace: { limit: 10, borrowed: 0 },
+        level: "ok",
         byKind: { conversation: 0, copilot: 0, test_run: 0.5, pulse_report: 0 },
       },
     }));
@@ -193,6 +207,61 @@ describe("usage limit copilot contribution", () => {
       limit: 100,
       remaining: 99.5,
       resetAt: "2026-09-01T00:00:00.000Z",
+      capacity: 100,
+      grace: { limit: 10, borrowed: 0 },
+      level: "ok",
+    });
+  });
+
+  it("reports remaining against capacity, not the plan limit alone, once credits extend past the limit", async () => {
+    // limit 1000, used 1050, 250 credits left: capacity 1300, so 250 conversations remain.
+    // `limit - used` alone would read -50, clamp to 0, and hide those 250 credits entirely.
+    const getAccountUsage = vi.fn(async () => summary({
+      monthlyConversations: {
+        periodStart: "2026-08-01",
+        resetAt: "2026-09-01",
+        used: 1050,
+        limit: 1000,
+        credits: 250,
+        capacity: 1300,
+        grace: { limit: 100, borrowed: 0 },
+        level: "ok",
+        byKind: { conversation: 1050, copilot: 0, test_run: 0, pulse_report: 0 },
+      },
+    }));
+    const [descriptor] = createUsageLimitCopilotToolContribution({ usage: { getAccountUsage } }).descriptors;
+    const tool = descriptor.createTool(toolContext);
+
+    const result = await tool.invoke({}, invocation);
+
+    expect(tool.outputSchema.safeParse(result).success).toBe(true);
+    expect((result as { monthlyConversations: { remaining: number } }).monthlyConversations.remaining).toBe(250);
+  });
+
+  it("surfaces the account-wide grace allowance and level once a conversation has borrowed", async () => {
+    const getAccountUsage = vi.fn(async () => summary({
+      monthlyConversations: {
+        periodStart: "2026-08-01",
+        resetAt: "2026-09-01",
+        used: 110,
+        limit: 100,
+        credits: 0,
+        capacity: 110,
+        grace: { limit: 10, borrowed: 10 },
+        level: "grace_exhausted",
+        byKind: { conversation: 110, copilot: 0, test_run: 0, pulse_report: 0 },
+      },
+    }));
+    const [descriptor] = createUsageLimitCopilotToolContribution({ usage: { getAccountUsage } }).descriptors;
+    const tool = descriptor.createTool(toolContext);
+
+    const result = await tool.invoke({}, invocation);
+
+    expect(tool.outputSchema.safeParse(result).success).toBe(true);
+    expect((result as { monthlyConversations: unknown }).monthlyConversations).toMatchObject({
+      capacity: 110,
+      grace: { limit: 10, borrowed: 10 },
+      level: "grace_exhausted",
     });
   });
 });

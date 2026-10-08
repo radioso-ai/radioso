@@ -108,9 +108,11 @@ const stepProgressInstruction = (step: RoutineStep): string =>
  * that, and what is still missing, keeps the reply a question rather than an
  * acknowledgement of an answer that was never given (#1369). Slot keys only: a slot's
  * description is guidance written for the extractor, and handed to the reply the model
- * repeated it to the visitor ("a general stay isn't enough"). Past the runner's re-ask
- * limit the exhausted prompt follows, so the reply asks differently instead of repeating
- * the same question (#1376).
+ * repeated it to the visitor ("a general stay isn't enough"). The step instruction is
+ * written for the first ask: followed again in full ("thank them by name, explain the
+ * invite, then ask for the email"), it came back word for word (#1449), so the reply is
+ * told what was already said. Past the runner's re-ask limit the exhausted prompt
+ * follows, so the reply also says what a usable answer looks like (#1376).
  */
 const reaskBlock = (reask: RoutineStepReask | undefined, exhaustedPrompt: string): string => {
   if (!reask) {
@@ -118,7 +120,8 @@ const reaskBlock = (reask: RoutineStepReask | undefined, exhaustedPrompt: string
   }
   const missing = reask.missingSlots.map((slot) => slot.key);
   return [
-    "The user's latest reply did not give everything this step needs, so this message asks again. Do not act as if the step is done: ask the step's question again, focused on what is still missing, and briefly say why when that helps the user answer. Anything else the user asked for that is outside your scope is still declined, as above.",
+    "The user's latest reply did not give everything this step needs, so this message asks again. Do not act as if the step is done.",
+    "You already asked this step's question earlier in the conversation. Whatever you said with it then, such as thanks or explanations the step instruction asks for, has been said: do not say it again. Respond to the user's reply in a few words, then ask for what is still missing in different words from your earlier messages, and briefly say why when that helps the user answer. Do not blame the user or quote their reply back. Anything else the user asked for that is outside your scope is still declined, as above.",
     ...(missing.length > 0 ? [`Still missing: ${missing.join(", ")}.`] : []),
     ...(reask.exhausted ? [exhaustedPrompt] : []),
   ].join("\n");

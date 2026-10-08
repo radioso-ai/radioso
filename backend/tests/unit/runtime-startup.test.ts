@@ -154,6 +154,10 @@ const createDependencies = () =>
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
     },
+    periodicTasksLifecycle: {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+    },
     logger: createLogger().logger,
     documentProcessingWorker: {
       start: vi.fn().mockResolvedValue(undefined),
@@ -239,15 +243,19 @@ describe("runtime startup", () => {
     );
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.credentialExpiryWarningLifecycle?.start).toHaveBeenCalledOnce();
+    expect(dependencies.periodicTasksLifecycle?.start).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
     expect(dependencies.vectorIndexReconciler?.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
     expect(dependencies.credentialExpiryWarningLifecycle?.stop).toHaveBeenCalledOnce();
+    expect(dependencies.periodicTasksLifecycle?.stop).toHaveBeenCalledOnce();
     expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expect(dependencies.connectorRegistry.shutdownAll).toHaveBeenCalledOnce();
     expectCalledBefore(close, dependencies.realtimePublisherLifecycle.shutdown);
+    expectCalledBefore(dependencies.credentialExpiryWarningLifecycle?.stop, dependencies.periodicTasksLifecycle?.stop);
+    expectCalledBefore(dependencies.periodicTasksLifecycle?.stop, dependencies.realtimePublisherLifecycle.shutdown);
     expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
     expectCalledBefore(dependencies.applicationModules.shutdownAll, dependencies.connectorRegistry.shutdownAll);
   });

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   AttemptRoutineInput,
   ClarificationCandidate,
+  ConversationDirectiveMatcher,
   Directive,
   DirectiveMatch,
   TurnContext,
@@ -48,7 +49,7 @@ const baseInput = (overrides: Partial<AttemptRoutineInput> = {}): AttemptRoutine
   },
   directives: [coverageDirective],
   directiveMatcher: {
-    match: vi.fn(async ({ directives }): Promise<DirectiveMatch[]> => directives.map((directive) => ({
+    match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ directives }): Promise<DirectiveMatch[]> => directives.map((directive) => ({
       directive,
       selectionMode: "deterministic" as const,
       selectionReason: "always",

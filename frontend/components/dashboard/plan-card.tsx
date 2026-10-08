@@ -6,6 +6,8 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import {
   enterpriseBillingApi,
   plansApi,
@@ -17,9 +19,11 @@ import {
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   formatPlanPriceCents,
+  formatResetDate,
   largestPlanUsageKind,
+  planUsageLevelHasActions,
+  planUsageLevelMessage,
   planUsagePercent,
-  planUsageThreshold,
   PLAN_USAGE_KIND_LABELS,
   type PlanUsageKind,
 } from '@/lib/plan-card-usage'
@@ -44,6 +48,7 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
   const [error, setError] = useState<string | null>(null)
   const [checkoutInterval, setCheckoutInterval] = useState<BillingInterval>('month')
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
+  const [savingAutoTopUp, setSavingAutoTopUp] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -123,14 +128,27 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
     }
   }
 
-  const plan = plans.plans.find((entry) => entry.id === billing.planId)
-  const usage = {
-    used: monthlyConversations.used,
-    limit: monthlyConversations.limit,
-    credits: monthlyConversations.credits,
+  const updateAutoTopUp = async (patch: Partial<{ enabled: boolean; maxPacksPerMonth: number }>) => {
+    if (!billing.autoTopUp.available) return
+    setSavingAutoTopUp(true)
+    setError(null)
+    try {
+      const { autoTopUp } = await enterpriseBillingApi.setAutoTopUp({
+        enabled: billing.autoTopUp.enabled,
+        maxPacksPerMonth: billing.autoTopUp.maxPacksPerMonth,
+        ...patch,
+      })
+      setBilling((current) => (current ? { ...current, autoTopUp } : current))
+    } catch (nextError) {
+      setError(getApiErrorMessage(nextError, 'Failed to update auto top-up.'))
+    } finally {
+      setSavingAutoTopUp(false)
+    }
   }
-  const percent = planUsagePercent(usage)
-  const threshold = planUsageThreshold(usage)
+
+  const plan = plans.plans.find((entry) => entry.id === billing.planId)
+  const percent = planUsagePercent(monthlyConversations)
+  const level = monthlyConversations.level
   const largestKind = largestPlanUsageKind(monthlyConversations.byKind)
   // The backend derives the next self-serve plan from the catalog; the card never names plans.
   const upgradePlanId = billing.upgradePlanId
@@ -144,9 +162,19 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
       )}/${billing.interval === 'year' ? 'yr' : 'mo'}`
     : billing.planName
 
-  const bannerText = largestKind
-    ? `${PLAN_USAGE_KIND_LABELS[largestKind]} are driving most of this month's usage.`
-    : "This month's usage is close to the plan limit."
+  // `nearing_limit` names whichever kind is using up the month's budget; `limit_reached` and
+  // `grace_exhausted` have a fixed sentence instead, since what matters there is the grace
+  // allowance and the reset date, not which kind happened to be running when the cap hit.
+  const bannerText = level === 'nearing_limit'
+    ? (largestKind
+      ? `${PLAN_USAGE_KIND_LABELS[largestKind]} are driving most of this month's usage.`
+      : "This month's usage is close to the plan limit.")
+    : planUsageLevelMessage({
+      level,
+      graceRemaining: monthlyConversations.grace.limit - monthlyConversations.grace.borrowed,
+      resetAt: monthlyConversations.resetAt,
+    })
+  const showBannerWithActions = planUsageLevelHasActions(level)
 
   const actions = (
     <div className="flex flex-wrap items-center gap-2">
@@ -198,7 +226,7 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
             <div className="h-full rounded-full bg-foreground transition-all" style={{ width: `${percent}%` }} />
           </div>
           <div className="text-xs text-muted-foreground">
-            {monthlyConversations.used} / {monthlyConversations.limit + monthlyConversations.credits} conversations this month
+            {monthlyConversations.used} / {monthlyConversations.capacity} conversations this month
           </div>
         </div>
         <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
@@ -209,14 +237,14 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
             </div>
           ))}
         </div>
-        {threshold === 'exceeded' ? (
+        {showBannerWithActions ? (
           <div role="status" className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
             <p>{bannerText}</p>
             {actions}
           </div>
         ) : (
           <>
-            {threshold === 'warning' ? (
+            {level === 'nearing_limit' ? (
               <p role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
                 {bannerText}
               </p>
@@ -224,6 +252,44 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
             {actions}
           </>
         )}
+        {billing.autoTopUp.available ? (
+          <div className="space-y-2 border-t pt-4">
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={billing.autoTopUp.enabled}
+                onCheckedChange={(checked) => void updateAutoTopUp({ enabled: checked })}
+                disabled={savingAutoTopUp}
+                aria-label="Auto top-up"
+              />
+              <span className="text-sm font-medium">Auto top-up</span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Buy {plans.topUp.conversations} more when this month&apos;s conversations run out, up to{' '}
+              <Select
+                value={String(billing.autoTopUp.maxPacksPerMonth)}
+                onValueChange={(value) => void updateAutoTopUp({ maxPacksPerMonth: Number(value) })}
+                disabled={savingAutoTopUp}
+              >
+                <SelectTrigger size="sm" aria-label="Times a month" className="inline-flex h-7 w-auto px-2 py-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: billing.autoTopUp.maxPacksPerMonthLimit }, (_, index) => index + 1).map((count) => (
+                    <SelectItem key={count} value={String(count)}>
+                      {count}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>{' '}
+              times a month.
+            </p>
+            {billing.autoTopUp.disabledReason === 'payment_failed' && billing.autoTopUp.disabledAt ? (
+              <p className="text-sm text-muted-foreground">
+                Turned off after a payment failed on {formatResetDate(billing.autoTopUp.disabledAt)}.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )

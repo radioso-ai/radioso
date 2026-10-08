@@ -8,6 +8,8 @@ import {
 import { withQuery } from './api-query'
 import type {
   AccountUsageSummary,
+  BillingAutoTopUpRequest,
+  BillingAutoTopUpResponse,
   BillingCheckoutRequest,
   BillingCheckoutResponse,
   BillingPortalRequest,
@@ -56,6 +58,13 @@ export const enterpriseBillingApi = {
   async createPortal(body: BillingPortalRequest): Promise<BillingCheckoutResponse> {
     return request<BillingCheckoutResponse>('/ee/billing/portal', {
       method: 'POST',
+      body: JSON.stringify(body),
+    }, { withSession: true })
+  },
+
+  async setAutoTopUp(body: BillingAutoTopUpRequest): Promise<BillingAutoTopUpResponse> {
+    return request<BillingAutoTopUpResponse>('/ee/billing/auto-top-up', {
+      method: 'PUT',
       body: JSON.stringify(body),
     }, { withSession: true })
   },

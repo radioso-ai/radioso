@@ -2558,6 +2558,7 @@ export const createTestDependencies = (overrides: {
     conversationLinks: { resolve: async () => null },
     realtimePublisherLifecycle: { shutdown: async () => undefined },
     credentialExpiryWarningLifecycle,
+    periodicTasksLifecycle: { start: async () => undefined, stop: async () => undefined },
     realtimeRolloutPolicy: overrides.realtimeRolloutPolicy ?? { allows: () => false },
     logger,
     operatorCopilotService,

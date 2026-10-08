@@ -17,6 +17,8 @@ export type EmailKind =
   | "password_reset"
   | "account_invitation"
   | "conversation_transfer"
+  | "usage_alert"
+  | "billing_notice"
   | "channel_reply";
 
 /** The threading headers of an email-channel reply. `autoSubmitted` is set for agent-authored mail only (RFC 3834). */

@@ -34,6 +34,7 @@ import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-ro
 import { decideDefaultInboxLens, hasBlockingInboxLoadError } from '@/lib/inbox-default-lens'
 import {
   needsAttentionRouteTargetForItem,
+  needsAttentionRouteTargetForItemAction,
   needsAttentionRouteTargetKey,
   needsAttentionNotFoundNotice,
   preserveMatchingQueueItem,
@@ -140,10 +141,33 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   // A route reconciliation must never overwrite a selection the operator just
   // made while a previous render's effect was still queued.
   const selectionWriteRef = useRef(0)
+  // `pendingClearRouteKeyRef` names the route key being cleared *from* - the
+  // key still live when the clear was issued. The reconciliation effect
+  // below waits only while `routeTargetKey` still equals it (the clear's own
+  // push hasn't landed yet); once it differs - whether that's the expected
+  // "nothing selected" or some other navigation that overtook it - the wait
+  // ends and reconciliation runs normally against whatever is actually live.
   const pendingClearRouteKeyRef = useRef<string | null>(null)
-  // A pick is pushed to the URL, and until the router lands on it the route still names the row
-  // open before (or none); reconciling against that would close the pick and reopen it.
-  const pendingPickRouteRef = useRef<{ from: string | null } | null>(null)
+  // The mirror image of `pendingClearRouteKeyRef`, for a select instead of a
+  // clear: a click sets the local selection and `router.push`'s own URL
+  // update synchronously, but the `routeState` prop this effect reads only
+  // catches up once Next.js applies the navigation. Until then `routeTarget`
+  // still reflects the *previous* selection, and without this guard the
+  // reconciliation below reads that as the operator having cleared the row
+  // and wipes the selection it was just handed - which also tears down and
+  // restarts the response pane's conversation-detail and tail-poll hooks on
+  // every single click (see hitl-needs-attention.spec.ts's tail-poll
+  // ownership test). This stores the *from* key - the route key still live
+  // at the moment of the click - not the destination: waiting only while
+  // `routeTargetKey` still equals that stale from-key means any actual
+  // navigation ends the wait, whether it lands on the click's own
+  // destination, a back/forward that supersedes it, or a third target from
+  // an unrelated deep link. Pinning the destination instead would wait
+  // forever for a navigation that no longer arrives whenever something else
+  // wins the race. `undefined` means inactive; `null` is itself a valid
+  // from-key (the click's previous state was "nothing selected"), so it
+  // must stay distinguishable from "no select pending".
+  const pendingSelectFromRouteKeyRef = useRef<string | null | undefined>(undefined)
   const [selectionWrite, setSelectionWrite] = useState(0)
   const routeTarget = useMemo<NeedsAttentionRouteTarget | undefined>(() => routeState.historyItemId
     && (routeState.historyItemKind === 'chat' || routeState.historyItemKind === 'inbox')
@@ -330,8 +354,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       return
     }
     beginSelectionWrite()
-    pendingPickRouteRef.current = null
     pendingClearRouteKeyRef.current = needsAttentionRouteTargetKey(target)
+    pendingSelectFromRouteKeyRef.current = undefined
     setSelectedInboxItem(null)
     setSelectedRecentlyClosedItem(null)
     router.replace(buildDashboardHref(accountId, {
@@ -345,7 +369,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   }, [accountId, beginSelectionWrite, routeState, router])
 
   const clearItemSelectionRoute = useCallback((item: InboxItem | RecentlyClosedInboxItem) => {
-    clearSelectionRoute(routeTarget ?? needsAttentionRouteTargetForItem(item))
+    clearSelectionRoute(needsAttentionRouteTargetForItemAction(item, routeTarget))
   }, [clearSelectionRoute, routeTarget])
 
   /* eslint-disable react-hooks/set-state-in-effect -- This consumes the browser route into queue-local row data once the queues load. */
@@ -367,12 +391,32 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     if (pendingClearRouteKeyRef.current !== null) {
       pendingClearRouteKeyRef.current = null
     }
-    const pendingPick = pendingPickRouteRef.current
-    if (pendingPick !== null) {
-      if (routeTargetKey === pendingPick.from) {
-        return
-      }
-      pendingPickRouteRef.current = null
+    // The mirror check: a select just pushed away from this from-key, and
+    // `routeTargetKey` hasn't moved off it yet (it still reflects the URL
+    // from before the click). Treating that stale reflection as "nothing
+    // selected" would undo the click itself, so wait for it to actually
+    // change - to the click's destination or anything else - before
+    // reconciling.
+    if (pendingSelectFromRouteKeyRef.current !== undefined && pendingSelectFromRouteKeyRef.current === routeTargetKey) {
+      return
+    }
+    if (pendingSelectFromRouteKeyRef.current !== undefined) {
+      pendingSelectFromRouteKeyRef.current = undefined
+    }
+    // A detail fetch can 404 before `routeTargetKey` catches up to the row
+    // it belongs to (the same gap the two guards above wait out) -
+    // `handleReadingPaneItemNotFound` already knows that and records the
+    // row's own key in `preservedNotFoundNoticeRouteKeyRef`, but its own
+    // `clearSelectionRoute` call bails at the time, because the live URL
+    // doesn't match that key yet either. Once this route finally does land,
+    // reconciling it as a normal "item found" selection would silently
+    // reselect a row already known to be dead and drop the notice with it.
+    // Clear it now instead - the live URL matches it this time, so the
+    // retry succeeds.
+    if (routeTargetKey !== null && routeTargetKey === preservedNotFoundNoticeRouteKeyRef.current
+      && (routeSelection.kind === 'item' || routeSelection.kind === 'recently-closed') && routeTarget) {
+      clearSelectionRoute(routeTarget)
+      return
     }
 
     if (routeSelection.kind === 'item') {
@@ -472,15 +516,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     }
   }, [clearItemSelectionRoute, patchLatestQuality])
 
-  const beginPick = useCallback((item: InboxItem | RecentlyClosedInboxItem) => {
+  const handleSelectItem = useCallback((item: InboxItem) => {
     beginSelectionWrite()
     pendingClearRouteKeyRef.current = null
-    const to = needsAttentionRouteTargetKey(needsAttentionRouteTargetForItem(item))
-    pendingPickRouteRef.current = to === routeTargetKey ? null : { from: routeTargetKey }
-  }, [beginSelectionWrite, routeTargetKey])
-
-  const handleSelectItem = useCallback((item: InboxItem) => {
-    beginPick(item)
+    pendingSelectFromRouteKeyRef.current = routeTargetKey
     preservedNotFoundNoticeRouteKeyRef.current = null
     setNotFoundNotice(null)
     setSelectedInboxItem(item)
@@ -496,10 +535,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     if (item.type === 'negative_feedback' && item.triageState === 'open') {
       void handleAcknowledge(item)
     }
-  }, [accountId, beginPick, handleAcknowledge, routeState, router])
+  }, [accountId, beginSelectionWrite, handleAcknowledge, routeState, router, routeTargetKey])
 
   const handleSelectRecentlyClosed = useCallback((item: RecentlyClosedInboxItem) => {
-    beginPick(item)
+    beginSelectionWrite()
+    pendingClearRouteKeyRef.current = null
+    pendingSelectFromRouteKeyRef.current = routeTargetKey
     preservedNotFoundNoticeRouteKeyRef.current = null
     setNotFoundNotice(null)
     setSelectedInboxItem(null)
@@ -512,7 +553,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       historyItemId: needsAttentionRouteTargetForItem(item).itemId,
       historyMessageId: undefined,
     }))
-  }, [accountId, beginPick, routeState, router])
+  }, [accountId, beginSelectionWrite, routeState, router, routeTargetKey])
 
   const handleReadingPaneItemNotFound = useCallback(() => {
     const item = selectedInboxItem ?? selectedRecentlyClosedItem
@@ -520,7 +561,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       return
     }
     preservedNotFoundNoticeRouteKeyRef.current = needsAttentionRouteTargetKey(
-      routeTarget ?? needsAttentionRouteTargetForItem(item),
+      needsAttentionRouteTargetForItemAction(item, routeTarget),
     )
     setNotFoundNotice('This conversation is no longer available.')
     clearItemSelectionRoute(item)

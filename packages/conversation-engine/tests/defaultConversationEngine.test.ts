@@ -5,8 +5,13 @@ import { DefaultRoutineRunner } from "../src/routineRunner.js";
 import type {
   AnswerCoverageAssessment,
   ClarificationCandidate,
+  ConversationCoverageRoutineActivator,
+  ConversationDirectiveMatcher,
   ConversationEvent,
+  ConversationRoutineActivator,
+  ConversationRoutineRunner,
   ConversationSkillInputResolver,
+  ConversationTurnComposer,
   ConversationTurnStreamComposer,
   ProcessTurnResult,
   ProcessTurnStreamEvent,
@@ -67,7 +72,7 @@ const createInput = (overrides: Partial<ProcessTurnInput> = {}): ProcessTurnInpu
       complete: vi.fn(),
     },
     directiveMatcher: {
-      match: vi.fn(async ({ directives }) => [
+      match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ directives }) => [
         {
           directive: directives[0],
           selectionMode: "deterministic",
@@ -138,7 +143,7 @@ describe("DefaultConversationEngine", () => {
       },
       coverageReactionRecorder: { record },
       directiveMatcher: {
-        match: vi.fn(async ({ directives }) => {
+        match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ directives }) => {
           order.push(`directives:${directives.map((directive) => directive.name).join(",")}`);
           return directives.map((directive) => ({
             directive,
@@ -204,7 +209,7 @@ describe("DefaultConversationEngine", () => {
         interpret: vi.fn(async () => ({ route: "direct" as const })),
       },
       directiveMatcher: {
-        match: vi.fn(async ({ directives }) => {
+        match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ directives }) => {
           matchedDirectiveSets.push(directives.map((directive) => directive.name));
           return directives.map((directive) => ({
             directive, selectionMode: "deterministic" as const, selectionReason: "always",
@@ -241,7 +246,7 @@ describe("DefaultConversationEngine", () => {
         interpret: vi.fn(async () => ({ route: "retrieval" as const })),
       },
       directiveMatcher: {
-        match: vi.fn(async ({ directives }) => directives.map((directive) => ({
+        match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ directives }) => directives.map((directive) => ({
           directive, selectionMode: "deterministic" as const, selectionReason: "always",
         }))),
       },
@@ -276,7 +281,7 @@ describe("DefaultConversationEngine", () => {
         interpret: vi.fn(async () => ({ route: "retrieval" as const })),
       },
       directiveMatcher: {
-        match: vi.fn(async ({ directives }) => directives.map((directive) => ({
+        match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ directives }) => directives.map((directive) => ({
           directive, selectionMode: "deterministic" as const, selectionReason: "test",
         }))),
       },
@@ -400,7 +405,7 @@ describe("DefaultConversationEngine", () => {
     ];
     const seenTurns: unknown[] = [];
     const resolver: ConversationSkillInputResolver = {
-      resolve: vi.fn(async ({ selected, turn }) => {
+      resolve: vi.fn<ConversationSkillInputResolver["resolve"]>(async ({ selected, turn }) => {
         // Record what this call RECEIVED before mutating, so the assertion measures what
         // the next resolver was handed rather than this one's own scribbles.
         seenTurns.push({ turn, staged: [...turn.stagedContext], history: [...turn.history] });
@@ -453,14 +458,14 @@ describe("DefaultConversationEngine", () => {
       skills: [{ name: "book", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } }],
       selector: { select: vi.fn(async () => ({ selected: [{ skillName: "book" }] })) },
       skillInputResolver: {
-        resolve: vi.fn(async () => ({
+        resolve: vi.fn<ConversationSkillInputResolver["resolve"]>(async () => ({
           kind: "needs_input",
           fields: [{ name: "date", provenance: "none", status: "absent" }],
           outstanding: [{ name: "date", type: "date", description: "When", reason: "absent" }],
         })),
       },
       dispatcher: { dispatch: dispatcher },
-      composer: { compose: vi.fn(async ({ turn }) => ({ answer: turn.steering.map((rule) => rule.action).join(" ") })) },
+      composer: { compose: vi.fn<ConversationTurnComposer["compose"]>(async ({ turn }) => ({ answer: turn.steering.map((rule) => rule.action).join(" ") })) },
     });
 
     const result = await new DefaultConversationEngine().processTurn(input);
@@ -476,7 +481,7 @@ describe("DefaultConversationEngine", () => {
       answer: turn.steering.some((rule) => rule.source === "skill") ? "asked" : "ordinary reply",
     }));
     const resolver: ConversationSkillInputResolver = {
-      resolve: vi.fn(async ({ selected }) => selected.skillName === "first"
+      resolve: vi.fn<ConversationSkillInputResolver["resolve"]>(async ({ selected }) => selected.skillName === "first"
         ? { kind: "ready", input: { date: "2026-08-07" }, fields: [] }
         : { kind: "failed", code: "parse_error", fields: [] }),
     };
@@ -503,7 +508,7 @@ describe("DefaultConversationEngine", () => {
       answer: turn.steering.some((rule) => rule.source === "skill") ? "asked" : "ordinary reply",
     }));
     const resolver: ConversationSkillInputResolver = {
-      resolve: vi.fn(async ({ selected }) => selected.skillName === "first"
+      resolve: vi.fn<ConversationSkillInputResolver["resolve"]>(async ({ selected }) => selected.skillName === "first"
         ? { kind: "needs_input", fields: [], outstanding: [{ name: "date", type: "date", reason: "absent" }] }
         : { kind: "failed", code: "parse_error", fields: [] }),
     };
@@ -534,7 +539,7 @@ describe("DefaultConversationEngine", () => {
       ] } }],
       selector: { select: vi.fn(async () => ({ selected: [{ skillName: "book" }] })) },
       skillInputResolver: {
-        resolve: vi.fn(async () => ({
+        resolve: vi.fn<ConversationSkillInputResolver["resolve"]>(async () => ({
           kind: "needs_input",
           fields: [],
           outstanding: [
@@ -556,22 +561,24 @@ describe("DefaultConversationEngine", () => {
 
   it("emits a final stream event for a parked skill-input turn", async () => {
     const dispatcher = vi.fn();
+    const composer: ConversationTurnStreamComposer = {
+      compose: vi.fn(async () => ({ answer: "What date works?" })),
+      async *stream() {
+        yield { type: "final" as const, response: { answer: "What date works?" } };
+      },
+    };
     const input = createInput({
       skills: [{ name: "book", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } }],
       selector: { select: vi.fn(async () => ({ selected: [{ skillName: "book" }] })) },
       skillInputResolver: {
-        resolve: vi.fn(async () => ({
+        resolve: vi.fn<ConversationSkillInputResolver["resolve"]>(async () => ({
           kind: "needs_input",
           fields: [{ name: "date", provenance: "none", status: "absent" }],
           outstanding: [{ name: "date", type: "date", reason: "absent" }],
         })),
       },
       dispatcher: { dispatch: dispatcher },
-      composer: {
-        async *stream() {
-          yield { type: "final" as const, response: { answer: "What date works?" } };
-        },
-      },
+      composer,
     }) as ProcessTurnStreamInput;
 
     const events: ProcessTurnStreamEvent[] = [];
@@ -590,7 +597,7 @@ describe("DefaultConversationEngine", () => {
       skills: [{ name: "book", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } }],
       selector: { select: vi.fn(async () => ({ selected: [{ skillName: "book", input: { date: secret } }] })) },
       skillInputResolver: {
-        resolve: vi.fn(async () => ({
+        resolve: vi.fn<ConversationSkillInputResolver["resolve"]>(async () => ({
           kind: "needs_input",
           fields: [{ name: "date", provenance: "host", status: "rejected", reason: "invalid_date" }],
           outstanding: [{ name: "date", type: "date", reason: "rejected" }],
@@ -642,7 +649,7 @@ describe("DefaultConversationEngine", () => {
     });
     const input = createInput({
       turnInterpreter: {
-        interpret: vi.fn(async () => ({ route: "retrieval" })),
+        interpret: vi.fn(async () => ({ route: "retrieval" as const })),
       },
       retrievalWork: {
         run: vi.fn(async () => ({ stagedContext: [] })),
@@ -727,7 +734,7 @@ describe("DefaultConversationEngine", () => {
           answer: "Your order ships tomorrow.",
           metadata: {
             directiveAdherence: [
-              { directive: "be-brief", ruleId: "d1", satisfied: true, note: "kept it concise" },
+              { directive: "be-brief", ruleId: "d1", satisfied: true, applicable: true, note: "kept it concise" },
             ],
           },
         })),
@@ -784,7 +791,7 @@ describe("DefaultConversationEngine", () => {
     let finishDirectives!: () => void;
     const input = createInput({
       turnInterpreter: {
-        interpret: vi.fn(async () => ({ route: "retrieval", metadata: { queryShape: "general_grounding" } })),
+        interpret: vi.fn(async () => ({ route: "retrieval" as const, metadata: { queryShape: "general_grounding" } })),
       },
       retrievalWork: {
         run: vi.fn(async () => {
@@ -795,7 +802,7 @@ describe("DefaultConversationEngine", () => {
         }),
       },
       directiveMatcher: {
-        match: vi.fn(async ({ directives }) => {
+        match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ directives }) => {
           events.push("directives:start");
           await new Promise<void>((resolve) => {
             finishDirectives = resolve;
@@ -859,7 +866,7 @@ describe("DefaultConversationEngine", () => {
     const input = createInput({
       turnInterpreter: {
         interpret: vi.fn(async () => ({
-          route: "retrieval",
+          route: "retrieval" as const,
           framing: {
             isIdentityQuestion: false,
             intentTopic: "sensitive topic",
@@ -921,7 +928,7 @@ describe("DefaultConversationEngine", () => {
   it("does not invoke retrieval work for direct interpretations", async () => {
     const input = createInput({
       turnInterpreter: {
-        interpret: vi.fn(async () => ({ route: "direct", framing: { isIdentityQuestion: true } })),
+        interpret: vi.fn(async () => ({ route: "direct" as const, framing: { isIdentityQuestion: true } })),
       },
       retrievalWork: {
         run: vi.fn(async () => ({ stagedContext: [{ kind: "retrieval", data: {} }] })),
@@ -1030,7 +1037,7 @@ describe("DefaultConversationEngine", () => {
       "compose",
     ]);
     const composeStage = final?.type === "final"
-      ? final.result.trace.stages.findLast((stage) => stage.kind === "compose")
+      ? [...final.result.trace.stages].reverse().find((stage) => stage.kind === "compose")
       : undefined;
     expect(composeStage?.metrics).toEqual({ groundingGateWaitMs: 37 });
     expect(JSON.stringify(composeStage)).not.toContain("PRIVATE ANSWER");
@@ -1041,7 +1048,7 @@ describe("DefaultConversationEngine", () => {
     const input: ProcessTurnStreamInput = {
       ...createInput({
         turnInterpreter: {
-          interpret: vi.fn(async () => ({ route: "retrieval" })),
+          interpret: vi.fn(async () => ({ route: "retrieval" as const })),
         },
         retrievalWork: {
           run: vi.fn(async () => ({ stagedContext: [] })),
@@ -1108,14 +1115,15 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       schemaVersion: 1,
       producer: "answer_head",
     });
-    input.coverageRoutineActivator = {
-      evaluateCandidates: vi.fn(() => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }]),
-      activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
+    const coverageRoutineActivator: ConversationCoverageRoutineActivator = {
+      evaluateCandidates: vi.fn<ConversationCoverageRoutineActivator["evaluateCandidates"]>(() => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }]),
+      activate: vi.fn<ConversationRoutineActivator["activate"]>(async () => ({ kind: "activate", routineId: "support" })),
     };
+    input.coverageRoutineActivator = coverageRoutineActivator;
 
     const result = await new DefaultConversationEngine().processTurn(input);
 
-    expect(input.coverageRoutineActivator.activate).toHaveBeenCalledOnce();
+    expect(coverageRoutineActivator.activate).toHaveBeenCalledOnce();
     expect(input.routineRunner?.resume).toHaveBeenCalledWith(expect.objectContaining({ activationTurn: true }));
     expect(result.response.answer).toBe("I can connect you with support.");
     expect(vi.mocked(input.stores.appendEvent).mock.calls.map(([event]) => event.id)).toEqual([
@@ -1138,7 +1146,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     });
     input.coverageRoutineActivator = {
       evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
-      activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
+      activate: vi.fn<ConversationRoutineActivator["activate"]>(async () => ({ kind: "activate", routineId: "support" })),
     };
     input.coverageReactionRecorder = { record: vi.fn(async () => { throw new Error("storage unavailable"); }) };
 
@@ -1171,7 +1179,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     }, null);
     input.coverageRoutineActivator = {
       evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
-      activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
+      activate: vi.fn<ConversationRoutineActivator["activate"]>(async () => ({ kind: "activate", routineId: "support" })),
     };
     const streamed = {
       ...input,
@@ -1423,7 +1431,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     });
     input.coverageRoutineActivator = {
       evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
-      activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
+      activate: vi.fn<ConversationRoutineActivator["activate"]>(async () => ({ kind: "activate", routineId: "support" })),
     };
     input.coverageReactionRecorder = { record };
 
@@ -1473,7 +1481,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     });
     input.coverageRoutineActivator = {
       evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
-      activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
+      activate: vi.fn<ConversationRoutineActivator["activate"]>(async () => ({ kind: "activate", routineId: "support" })),
     };
 
     const result = await new DefaultConversationEngine().processTurn(input);
@@ -1571,8 +1579,15 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       ],
       activate: vi.fn(async () => ({ kind: "clarify" as const, candidates })),
     };
-    input.clarifier = { phraseQuestion: vi.fn(async () => "Which would help?") };
-    input.clarificationStore = { save: vi.fn(async () => {}) };
+    input.clarifier = {
+      phraseQuestion: vi.fn(async () => "Which would help?"),
+      mapReply: vi.fn(async () => ({ kind: "unrelated" as const })),
+    };
+    input.clarificationStore = {
+      loadPending: vi.fn(async () => null),
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
     input.coverageReactionRecorder = { record };
 
     const result = await new DefaultConversationEngine().processTurn(input);
@@ -1630,7 +1645,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
 
   it("saves a completed marker when the routine completes (null next state)", async () => {
     const input = withRoutine({
-      resume: vi.fn(async () => ({
+      resume: vi.fn<ConversationRoutineRunner["resume"]>(async () => ({
         response: { answer: "Sent — thanks!" },
         nextState: null,
         terminal: { kind: "complete", stepId: "done" },
@@ -1751,7 +1766,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
           yield "What's ";
           yield "your email?";
         }),
-        stream: vi.fn(async function* () {
+        stream: vi.fn<ConversationTurnStreamComposer["stream"]>(async function* () {
           yield { type: "final", response: { answer: "should not run" } };
         }),
       },
@@ -1849,7 +1864,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const input: ProcessTurnInput = {
       ...createInput(),
       routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
-      routineActivator: { activate: vi.fn(async () => ({ kind: "activate", routineId: "contact" })) },
+      routineActivator: { activate: vi.fn<ConversationRoutineActivator["activate"]>(async () => ({ kind: "activate", routineId: "contact" })) },
       routineRunner: { resume: vi.fn(async () => ({ response: { answer: "What's your email?" }, nextState: started })) },
     };
 
@@ -1900,7 +1915,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const input: ProcessTurnInput = {
       ...createInput(),
       routineStore: { loadActive: vi.fn(async () => null), save, clear: vi.fn(async () => {}) },
-      routineActivator: { activate: vi.fn(async () => ({ kind: "activate", routineId: "contact" })) },
+      routineActivator: { activate: vi.fn<ConversationRoutineActivator["activate"]>(async () => ({ kind: "activate", routineId: "contact" })) },
       routineRunner,
     };
 
@@ -1925,7 +1940,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const activation: ProcessTurnInput = {
       ...createInput(),
       routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
-      routineActivator: { activate: vi.fn(async () => ({ kind: "activate", routineId: "contact" })) },
+      routineActivator: { activate: vi.fn<ConversationRoutineActivator["activate"]>(async () => ({ kind: "activate", routineId: "contact" })) },
       routineRunner: { resume: vi.fn(async () => ({ response: { answer: "What's your email?" }, nextState: started })) },
     };
     await new DefaultConversationEngine().processTurn(activation);
@@ -1977,7 +1992,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       ...createInput(),
       routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
       routineActivator: {
-        activate: vi.fn(async () => ({
+        activate: vi.fn<ConversationRoutineActivator["activate"]>(async () => ({
           kind: "activate",
           routineId: "contact",
           decisionMetadata: {
@@ -2041,7 +2056,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const input: ProcessTurnInput = {
       ...createInput(),
       routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(), clear: vi.fn() },
-      routineActivator: { activate: vi.fn(async () => ({ kind: "clarify", candidates })) },
+      routineActivator: { activate: vi.fn<ConversationRoutineActivator["activate"]>(async () => ({ kind: "clarify", candidates })) },
       routineRunner: { resume: vi.fn() },
       clarifier,
       clarificationStore,
@@ -2137,7 +2152,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const input: ProcessTurnInput = {
       ...createInput(),
       routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
-      routineActivator: { activate: vi.fn(async () => ({ kind: "activate", routineId: "contact", variables: { email: "a@b.c" } })) },
+      routineActivator: { activate: vi.fn<ConversationRoutineActivator["activate"]>(async () => ({ kind: "activate", routineId: "contact", variables: { email: "a@b.c" } })) },
       routineRunner: {
         resume: vi.fn(async () => ({ response: { answer: "What's your message?" }, nextState: { ...activeState, variables: { email: "a@b.c" } } })),
       },

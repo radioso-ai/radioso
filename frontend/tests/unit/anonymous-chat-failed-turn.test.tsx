@@ -148,7 +148,28 @@ describe('anonymous chat failed turn', () => {
 
     const assistant = snapshot.messages.find((message) => message.role === 'assistant')
     expect(assistant?.content).toBe('')
+    expect(assistant?.failure).toBeUndefined()
     expect(JSON.stringify(snapshot.messages)).not.toContain('statement timeout')
+  })
+
+  it('marks a usage-limit failure distinctly so the view can show agent-unavailable copy', async () => {
+    publicChatApiMock.streamMessage.mockRejectedValue({
+      error: { code: 'usage_limit_exceeded', message: 'Usage limit exceeded' },
+    })
+
+    let snapshot: Snapshot = { messages: [], isHydrating: true }
+    mounted = renderProvider((next) => {
+      snapshot = next
+    })
+
+    await waitFor(() => {
+      const assistant = snapshot.messages.find((message) => message.role === 'assistant')
+      expect(assistant?.status).toBe('error')
+    })
+
+    const assistant = snapshot.messages.find((message) => message.role === 'assistant')
+    expect(assistant?.content).toBe('')
+    expect(assistant?.failure).toBe('unavailable')
   })
 
   it('keeps text that streamed before the failure', async () => {
@@ -174,5 +195,49 @@ describe('anonymous chat failed turn', () => {
 
     const assistant = snapshot.messages.find((message) => message.role === 'assistant')
     expect(assistant?.content).toBe('Il centro più vicino')
+  })
+
+  it('shows an unavailable message instead of silently dropping a greeting that hits the usage limit', async () => {
+    // The bootstrap greeting placeholder (a streaming typing bubble) must become a
+    // visible failure, not disappear — a blank screen gives a visitor no signal that
+    // anything happened at all.
+    publicChatApiMock.listConversations.mockResolvedValue({
+      ...conversationList,
+      assistantBootstrapActive: true,
+    })
+    publicChatApiMock.bootstrapConversation.mockRejectedValue({
+      error: { code: 'usage_limit_exceeded', message: 'Usage limit exceeded' },
+    })
+
+    let snapshot: Snapshot = { messages: [], isHydrating: true }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    mounted = { container, root }
+
+    function BootstrapProbe() {
+      const chat = useAnonymousChat()
+      useEffect(() => {
+        snapshot = { messages: chat.messages, isHydrating: chat.isHydrating }
+      }, [chat.messages, chat.isHydrating])
+      return null
+    }
+
+    act(() => {
+      root.render(
+        <AnonymousChatProvider token="public-chat-token" sessionChannel={null}>
+          <BootstrapProbe />
+        </AnonymousChatProvider>,
+      )
+    })
+
+    await waitFor(() => {
+      const assistant = snapshot.messages.find((message) => message.role === 'assistant')
+      expect(assistant?.status).toBe('error')
+    })
+
+    const assistant = snapshot.messages.find((message) => message.role === 'assistant')
+    expect(assistant).toBeDefined()
+    expect(assistant?.failure).toBe('unavailable')
   })
 })

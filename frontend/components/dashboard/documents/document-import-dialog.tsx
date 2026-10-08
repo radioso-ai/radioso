@@ -1,6 +1,6 @@
 'use client'
 
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 
 import { MetadataKeyValueEditor } from '@/components/dashboard/shared/metadata-key-value-editor'
 import type { MetadataRecord } from '@/components/dashboard/shared/metadata-key-value-rows'
@@ -32,7 +32,7 @@ export function DocumentImportDialog({
 }: {
   open: boolean
   importTitle: string
-  importError: string | null
+  importError: ReactNode
   isImporting: boolean
   supportedExtensions: string
   enrichmentChoice: DocumentDialogEnrichmentChoice

@@ -274,6 +274,79 @@ type ApplicationCopilotToolRegistration =
   | CopilotToolContribution
   | ((context: ApplicationCopilotRegistrationContext) => CopilotToolContribution);
 
+/**
+ * Branded transactional email content, structurally mirroring EE's `NoticeEmailContent`
+ * (`ee/packages/backend-module/src/radiosoModuleTypes.ts`) and OSS's own `EmailContent`
+ * (`backend/src/modules/mail/templates/layout.ts`). A module assembles this once per notice;
+ * composition renders it with the shared brand layout and sends it with the Resend `kind` tag.
+ */
+export interface ApplicationNoticeEmailContent {
+  preheader: string;
+  heading: string;
+  paragraphs: readonly string[];
+  cta?: { href: string; label: string };
+  metaRows?: readonly { label: string; value: string }[];
+  footnote?: string;
+}
+
+/** Mirrors EE's `NoticeMailPort`. `kind` stays a literal per notice family so a typo cannot
+ *  silently create an untagged Resend delivery lane. */
+export interface ApplicationNoticeMailPort {
+  send(input: {
+    to: string;
+    subject: string;
+    kind: "usage_alert" | "billing_notice";
+    content: ApplicationNoticeEmailContent;
+    /** Forwarded to the provider (Resend's `Idempotency-Key`) so a retry that resends to
+     *  every recipient — including ones a prior attempt already reached — dedupes at the
+     *  provider rather than delivering twice. */
+    idempotencyKey?: string;
+  }): Promise<{
+    /** True only when a mail provider accepted the message. A deployment without one
+     *  configured (the log or noop driver) reports false, so a caller never reads "sent"
+     *  as "actually delivered." */
+    dispatched: boolean;
+  }>;
+}
+
+export interface ApplicationAccountAdministratorContact {
+  email: string;
+  displayName: string | null;
+}
+
+/** Mirrors EE's `AccountAdministratorDirectoryPort`: active owner + admin members of an
+ *  account, never disabled. */
+export interface ApplicationAccountAdministratorDirectoryPort {
+  list(accountId: string): Promise<ApplicationAccountAdministratorContact[]>;
+}
+
+interface ApplicationPeriodicTaskHandle {
+  run(): Promise<void>;
+}
+
+/**
+ * What a module gets to build a periodic background task. Narrower than a module's full
+ * `initialize()` hook on purpose: `applicationModules.initializeAll()` runs in every runtime
+ * (API, worker, migration), so a task that must run on a timer exactly once per deployment —
+ * not once per process — cannot be wired through `initialize()`. Composition owns the actual
+ * timer (`PeriodicTaskRunner` in `periodicTaskRunner.ts`), started only from the API runtime.
+ */
+interface ApplicationPeriodicTaskContext {
+  database: ApplicationDatabasePort;
+  logger: Pick<AppLogger, "warn" | "error">;
+  audit: Pick<AuditService, "record">;
+  noticeMail: ApplicationNoticeMailPort;
+  accountAdministrators: ApplicationAccountAdministratorDirectoryPort;
+  /** Null when `APP_BASE_URL` is unset; a task must omit any link it would otherwise build. */
+  appBaseUrl: string | null;
+}
+
+interface ApplicationPeriodicTaskRegistration {
+  id: string;
+  intervalMs: number;
+  create(context: ApplicationPeriodicTaskContext): ApplicationPeriodicTaskHandle;
+}
+
 interface ApplicationExtensionRegistry {
   connectors: ConnectorPlugin[];
   telemetrySinks: TelemetrySink[];
@@ -321,6 +394,7 @@ interface ApplicationExtensionRegistry {
   chatActionSuggestionProviders: ApplicationChatActionSuggestionProviderRegistration[];
   oauthProviders: OauthProviderDefinition[];
   copilotToolRegistrations: ApplicationCopilotToolRegistration[];
+  periodicTaskRegistrations: ApplicationPeriodicTaskRegistration[];
 }
 
 export interface ApplicationModuleRegistrationContext {
@@ -367,6 +441,9 @@ export interface ApplicationModuleRegistrationContext {
    * the dashboard's card presentation, so an extension-owned target type is its own change.
    */
   registerCopilotTools(registration: ApplicationCopilotToolRegistration): void;
+  /** Schedules a recurring background task in the API runtime only (see
+   *  {@link ApplicationPeriodicTaskRegistration}). */
+  registerPeriodicTask(registration: ApplicationPeriodicTaskRegistration): void;
 }
 
 export interface ApplicationModule {
@@ -396,6 +473,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   chatActionSuggestionProviders: [],
   oauthProviders: [],
   copilotToolRegistrations: [],
+  periodicTaskRegistrations: [],
 });
 
 const createRegistrationContext = (registry: ApplicationExtensionRegistry): ApplicationModuleRegistrationContext => ({
@@ -517,6 +595,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerCopilotTools(registration) {
     registry.copilotToolRegistrations.push(registration);
+  },
+  registerPeriodicTask(registration) {
+    registry.periodicTaskRegistrations.push(registration);
   },
 });
 

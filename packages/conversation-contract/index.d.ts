@@ -1488,7 +1488,8 @@ export interface RoutineTraceStepEntry {
   /**
    * - `resumed`: the step the turn started on.
    * - `advanced`: moved onto this step from the previous one.
-   * - `reasked`: stayed on the step because it isn't satisfied yet (a re-ask).
+   * - `reasked`: stayed on the step because it isn't satisfied yet (a re-ask). On the routine's
+   *   first turn the step was never asked, so staying on it is `rendered` instead.
    * - `fast_forwarded`: a satisfied slot-collection step skipped without re-asking.
    * - `skill_dispatched`: a skill (tool) step ran.
    * - `action_emitted`: an action step emitted a fire-and-forget request.
@@ -1605,6 +1606,13 @@ export interface ConversationRoutineResumeResult {
     collected?: Record<string, unknown>;
     operatorNotice?: RoutineOperatorNoticeTemplate;
   };
+  /**
+   * Reported with `terminal`: every value the run holds as it ends, the slots its ending
+   * turn captured and the tool outputs it assigned included. `nextState` is `null` then, so
+   * this is what a host keeps on the ended run's record (#1452). `terminal.collected` is its
+   * declared-slot projection.
+   */
+  endedVariables?: Record<string, unknown>;
   outcomes?: TurnOutcome[];
   /** Fire-and-forget side effects the routine emitted this turn, for the host to persist. */
   actions?: RoutineActionRequest[];

@@ -1,7 +1,7 @@
 ---
 title: "Billing setup"
 description: "Connect Stripe to Radioso Enterprise: sync the plan catalog into Stripe products, prices, customer portal, tax defaults, and webhook, then set the environment variables that turn billing on."
-last_updated: 2026-10-05
+last_updated: 2026-10-08
 ---
 
 # Billing setup
@@ -140,7 +140,7 @@ Stripe opens every portal session with the account's default portal configuratio
 
 If the account has no portal configuration yet, the sync creates one. When Stripe doesn't make that new configuration the default, the sync warns: open **Settings → Billing → Customer portal** in the Dashboard, click **Save** once to create the default, and run the sync again so the default carries these settings.
 
-Radioso opens the portal with a `return_url` back to the dashboard, so a customer who cancels or changes plans there lands back on their usage page.
+Radioso opens the portal with a `return_url` back to the dashboard, so a customer who cancels or changes plans there lands back on their Plan & usage page.
 
 ## Webhook endpoint
 
@@ -165,6 +165,22 @@ Radioso verifies every webhook call against `STRIPE_WEBHOOK_SECRET` before readi
 Each webhook delivery is idempotent on Stripe's own event ID — replaying the same event through `stripe listen` or Stripe's dashboard retry is a no-op the second time, not a double credit or a double plan change.
 
 If you run more than one region (for example a separate EU stack) on one Stripe account, run the sync once per region with that region's `--webhook-url` and its own `--webhook-secret-file`. Stripe delivers to every endpoint you register, and each region resolves its own accounts with its own signing secret.
+
+## Auto top-up
+
+Auto top-up charges a subscription customer for a conversation top-up pack the moment the account's usage reaches `limit_reached` or `grace_exhausted`, instead of waiting for someone to buy one by hand. It rides the webhook endpoint registered above: the charge resolves through `invoice.paid` and `invoice.payment_failed`, the same two events the sync already subscribes the endpoint to for the subscription itself, so turning auto top-up on needs no change to the webhook registration or another `stripe:sync` run.
+
+Radioso tells an auto-topped-up invoice apart from the subscription's own renewal invoice by its metadata (`radioso_kind: auto_top_up`), checked before any account state changes. A declined charge voids the invoice, turns auto top-up off for that account, and leaves the subscription itself untouched — it never sets the account past due.
+
+The charge itself is idempotent end to end, keyed on the pack's own row id: creating the invoice, attaching the pack's price, finalizing, and paying each carry their own Stripe idempotency key derived from that id. A network error, timeout, or other ambiguous failure during that sequence leaves the attempt in place rather than marking it failed, since Stripe may already have charged the card; a sweep a few minutes later replays the exact same sequence, so Stripe either confirms the existing result or completes it, never both and never a second charge. The price-attachment step also checks the draft invoice's own line items before adding one, so it recognizes a line a prior attempt already created rather than relying on the idempotency key alone. Stripe keeps an idempotency key for 24 hours, so re-driving stops at 20 hours: past that, Radioso voids the draft and marks the pack failed without turning auto top-up off, since giving up is Radioso's own call, not Stripe's.
+
+Turn on Stripe's own payment receipt emails too (Dashboard → Settings → Customer emails → **Successful payments** and **Failed payments**), so a customer gets Stripe's receipt alongside the account-level notice Radioso sends. See [Enterprise usage limits](/operators/enterprise-usage-limits#auto-top-up) for the account-facing side: the plan card toggle, the monthly pack cap, and the sweep that evaluates enabled accounts.
+
+## Billing notices
+
+Radioso emails an account's active owners and admins on four events: a plan change (from checkout or a subscription update), a subscription ending (back to the catalog's default plan), a failed subscription payment, and a failed auto top-up charge. Owners and admins only, by design — never the Stripe customer's billing email, which can outlive its owner's membership on the account. Each notice carries a link back to the account's usage page and goes out once the triggering webhook event has committed, as a best-effort send that never blocks or fails the webhook response.
+
+Stripe's own receipt and payment-failure emails, configured in the customer-emails setting above, cover the payment side; Radioso's notices cover what changed on the account.
 
 ## Test mode
 

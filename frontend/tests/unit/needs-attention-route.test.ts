@@ -5,6 +5,7 @@ import {
   needsAttentionNotFoundNotice,
   needsAttentionRouteItemIdForItem,
   needsAttentionRouteTargetForItem,
+  needsAttentionRouteTargetForItemAction,
   preserveMatchingQueueItem,
   resolveNeedsAttentionRouteSelection,
 } from '@/lib/needs-attention-route'
@@ -172,5 +173,46 @@ describe('resolveNeedsAttentionRouteSelection', () => {
     expect(preserveMatchingQueueItem(closedItem, refreshed)).toBe(closedItem)
     const different = { ...closedItem, key: 'closed:other' }
     expect(preserveMatchingQueueItem(closedItem, different)).toBe(different)
+  })
+})
+
+describe('needsAttentionRouteTargetForItemAction', () => {
+  it('uses the item\'s own key when there is no route target at all', () => {
+    expect(needsAttentionRouteTargetForItemAction(openItem, undefined))
+      .toEqual(needsAttentionRouteTargetForItem(openItem))
+  })
+
+  it('uses the item\'s own key when the route target still names a different conversation - ' +
+    'the shape of a click whose own navigation has not landed yet, leaving routeTarget naming the previous row', () => {
+    const staleRouteTarget = needsAttentionRouteTargetForItem(closedItem)
+
+    expect(needsAttentionRouteTargetForItemAction(openItem, staleRouteTarget))
+      .toEqual(needsAttentionRouteTargetForItem(openItem))
+  })
+
+  it('keeps the stale route target verbatim when it names a different row on the same conversation', () => {
+    const sameConversationStaleTarget = needsAttentionRouteTargetForItem(secondApproval)
+
+    expect(needsAttentionRouteTargetForItemAction(openItem, sameConversationStaleTarget))
+      .toEqual(sameConversationStaleTarget)
+  })
+
+  it('keeps a legacy chat-kind permalink\'s own shape when it still names the item', () => {
+    const chatRouteTarget = { itemKind: 'chat' as const, itemId: openItem.conversationId }
+
+    expect(needsAttentionRouteTargetForItemAction(openItem, chatRouteTarget)).toEqual(chatRouteTarget)
+  })
+
+  it('keeps an inbox-kind route target verbatim when it already names the item', () => {
+    const inboxRouteTarget = needsAttentionRouteTargetForItem(openItem)
+
+    expect(needsAttentionRouteTargetForItemAction(openItem, inboxRouteTarget)).toEqual(inboxRouteTarget)
+  })
+
+  it('falls back to the item\'s own key for a different item under the same stale chat-kind target', () => {
+    const staleChatRouteTarget = { itemKind: 'chat' as const, itemId: openItem.conversationId }
+
+    expect(needsAttentionRouteTargetForItemAction(closedItem, staleChatRouteTarget))
+      .toEqual(needsAttentionRouteTargetForItem(closedItem))
   })
 })

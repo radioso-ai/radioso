@@ -2185,8 +2185,9 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
                 "startStepId": "ask_email",
                 "steps": [
                   {
-                    "event": "reasked",
+                    "event": "rendered",
                     "kind": "chat",
+                    "readOpeningMessage": true,
                     "selection": {
                       "outcome": "stay",
                       "returnedSlotKeys": [],
@@ -2427,6 +2428,7 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
             "status": "completed",
             "variables": {
               "email": "guest@example.com",
+              "message": "Tell them I need a callback",
             },
           },
         },

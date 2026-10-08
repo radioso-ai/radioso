@@ -102,7 +102,7 @@ const createDeps = (overrides: Partial<BillingWebhookHandlerDeps> = {}): {
     return row ? ({ ...row } as unknown as Awaited<ReturnType<AutoTopUpRepository["findById"]>>) : null;
   });
   const markPaid = vi.fn(async () => undefined);
-  const markFailed = vi.fn(async () => undefined);
+  const markFailed = vi.fn(async () => true);
   const disableAutoTopUp = vi.fn(async () => undefined);
   const voidInvoice = vi.fn(async () => undefined);
   const noticeMailSend = vi.fn(async () => ({ dispatched: true }));
@@ -195,10 +195,11 @@ describe("handleBillingWebhookEvent", () => {
     expect(auditRecord).toHaveBeenCalledWith(
       expect.objectContaining({ accountId, eventType: "billing.plan_assigned" }),
     );
+    // Owners/admins only -- never the Stripe customer's billing email, even though one is set.
+    expect(noticeMailSend).toHaveBeenCalledTimes(1);
     expect(noticeMailSend).toHaveBeenCalledWith(
       expect.objectContaining({ to: "owner@example.com", kind: "billing_notice" }),
     );
-    expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "billing@example.com" }));
     const content = noticeMailSend.mock.calls[0][0].content;
     expect(content.paragraphs.join(" ")).toContain(`Satellite: ${satellitePlan.monthlyConversations} conversations a month`);
   });
@@ -384,7 +385,7 @@ describe("handleBillingWebhookEvent", () => {
     expect(noticeMailSend).not.toHaveBeenCalled();
   });
 
-  it("invoice.payment_failed (subscription) marks past_due, emails owners/admins and the billing address, and never downgrades", async () => {
+  it("invoice.payment_failed (subscription) marks past_due, emails owners/admins only, and never downgrades", async () => {
     const { deps, repository, assignProfile, auditRecord, noticeMailSend } = createDeps();
     repository.rows.set(accountId, {
       accountId,
@@ -410,38 +411,12 @@ describe("handleBillingWebhookEvent", () => {
     expect(result.outcome).toBe("payment_failed");
     expect(repository.rows.get(accountId)?.status).toBe("past_due");
     expect(assignProfile).not.toHaveBeenCalled();
+    // Owners/admins only -- never the Stripe customer's billing email, even though one is set.
+    expect(noticeMailSend).toHaveBeenCalledTimes(1);
     expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "owner@example.com" }));
-    expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "billing@example.com" }));
     expect(auditRecord).toHaveBeenCalledWith(
       expect.objectContaining({ accountId, eventType: "billing.payment_failed" }),
     );
-  });
-
-  it("invoice.payment_failed (subscription) still emails owners/admins when there is no distinct billing address", async () => {
-    const { deps, repository, noticeMailSend } = createDeps();
-    repository.rows.set(accountId, {
-      accountId,
-      stripeCustomerId: "cus_1",
-      stripeSubscriptionId: "sub_1",
-      priceId: null,
-      interval: null,
-      status: "active",
-      billingEmail: null,
-      currentPeriodEnd: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    const event: StripeWebhookEvent = {
-      id: "evt_8",
-      type: "invoice.payment_failed",
-      invoice: { id: "in_3", customerId: "cus_1", metadata: {}, hostedInvoiceUrl: null },
-    };
-
-    await handleBillingWebhookEvent(event, deps);
-
-    expect(noticeMailSend).toHaveBeenCalledTimes(1);
-    expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "owner@example.com" }));
   });
 
   it("invoice.payment_failed never fails the webhook when the notice email itself errors", async () => {
@@ -662,7 +637,7 @@ describe("handleBillingWebhookEvent", () => {
       );
     });
 
-    it("invoice.payment_failed disables auto top-up, marks the row failed, voids the invoice, emails owners/admins, and does not set past_due", async () => {
+    it("invoice.payment_failed disables auto top-up, marks the row failed, voids the invoice, emails owners/admins only, and does not set past_due", async () => {
       const { deps, repository, markFailed, disableAutoTopUp, voidInvoice, auditRecord, noticeMailSend } = createDeps();
       repository.rows.set(accountId, {
         accountId,
@@ -696,12 +671,54 @@ describe("handleBillingWebhookEvent", () => {
       expect(voidInvoice).toHaveBeenCalledWith("in_atu_2");
       // Must NOT set the subscription status to past_due.
       expect(repository.rows.get(accountId)?.status).toBe("active");
+      // Owners/admins only -- never the Stripe customer's billing email, even though one is set.
+      expect(noticeMailSend).toHaveBeenCalledTimes(1);
       expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "owner@example.com" }));
-      expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "billing@example.com" }));
       const content = noticeMailSend.mock.calls[0][0].content;
-      expect(content.paragraphs.some((p: string) => p.includes("https://invoice.stripe.com/i/atu2"))).toBe(true);
+      expect(content.paragraphs.some((p: string) => p.includes("http"))).toBe(false);
+      expect(content.cta?.href).toBe(`https://app.example.com/account/${accountId}/account?tab=usage`);
       expect(auditRecord).toHaveBeenCalledWith(
         expect.objectContaining({ accountId, eventType: "billing.auto_top_up_failed" }),
+      );
+    });
+
+    it("invoice.payment_failed does nothing when invoice.paid commits the transition first, even though the pre-check still saw it pending", async () => {
+      const { deps, repository, markFailed, disableAutoTopUp, voidInvoice, auditRecord, noticeMailSend } = createDeps();
+      repository.rows.set(accountId, {
+        accountId,
+        stripeCustomerId: "cus_1",
+        stripeSubscriptionId: "sub_1",
+        priceId: null,
+        interval: null,
+        status: "active",
+        billingEmail: null,
+        currentPeriodEnd: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      const autoTopUpId = randomUUID();
+      // The pre-check (findById) still sees "pending" -- `invoice.paid`'s own transition commits
+      // only after that read, but before `markFailed`'s atomic update below runs.
+      markFailed.mockResolvedValueOnce(false);
+      const event: StripeWebhookEvent = {
+        id: "evt_atu_7",
+        type: "invoice.payment_failed",
+        invoice: {
+          id: "in_atu_7",
+          customerId: "cus_1",
+          metadata: { radioso_kind: "auto_top_up", account_id: accountId, auto_top_up_id: autoTopUpId },
+          hostedInvoiceUrl: null,
+        },
+      };
+
+      const result = await handleBillingWebhookEvent(event, deps);
+
+      expect(result.outcome).toBe("superseded");
+      expect(disableAutoTopUp).not.toHaveBeenCalled();
+      expect(voidInvoice).not.toHaveBeenCalled();
+      expect(noticeMailSend).not.toHaveBeenCalled();
+      expect(auditRecord).not.toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: "billing.auto_top_up_failed" }),
       );
     });
 

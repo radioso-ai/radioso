@@ -111,25 +111,25 @@ const resolvePlanId = async (
 };
 
 /**
- * Sends one branded notice to active owners + admins, plus the customer's billing email when it
- * differs (deduped). Called only AFTER the triggering transaction has committed -- every caller
- * awaits `applyIdempotently` first -- and is itself best-effort: any failure (resolving
- * recipients, or any individual send) is logged and swallowed, never raised to the webhook
- * caller. A webhook must return 200 on its own side effects alone; a notice email is a courtesy,
- * not part of the contract Stripe retries against.
+ * Sends one branded notice to active owners + admins -- the only recipients a billing or usage
+ * notice ever goes to; a former member's address on the Stripe customer never receives one.
+ * Called only AFTER the triggering transaction has committed -- every caller awaits
+ * `applyIdempotently` first -- and is itself best-effort: any failure (resolving recipients, or
+ * any individual send) is logged and swallowed, never raised to the webhook caller. A webhook
+ * must return 200 on its own side effects alone; a notice email is a courtesy, not part of the
+ * contract Stripe retries against.
  */
 const sendBillingNotice = async (
   deps: BillingWebhookHandlerDeps,
   input: {
     accountId: string;
-    billingEmail: string | null;
     eventId: string;
     build: () => { subject: string; content: Parameters<NoticeMailPort["send"]>[0]["content"] };
   },
 ): Promise<void> => {
   try {
     const administrators = await deps.accountAdministrators.list(input.accountId);
-    const recipients = resolveBillingNoticeRecipients(administrators, input.billingEmail);
+    const recipients = resolveBillingNoticeRecipients(administrators);
     if (recipients.length === 0) {
       return;
     }
@@ -234,11 +234,9 @@ const handleCheckoutCompleted = async (
     eventStatus: "success",
     metadata: { eventId: event.id, eventType: event.type, planId },
   });
-  const billingRow = await deps.repository.findByAccount(accountId);
   const display = planDisplay(planId);
   await sendBillingNotice(deps, {
     accountId,
-    billingEmail: billingRow?.billingEmail ?? null,
     eventId: event.id,
     build: () => buildPlanChangedEmail({ accountId, planName: display.name, monthlyConversations: display.monthlyConversations, appBaseUrl: deps.appBaseUrl }),
   });
@@ -299,7 +297,6 @@ const handleSubscriptionUpdated = async (
     const display = planDisplay(planId);
     await sendBillingNotice(deps, {
       accountId,
-      billingEmail: row.billingEmail,
       eventId: event.id,
       build: () => buildPlanChangedEmail({ accountId, planName: display.name, monthlyConversations: display.monthlyConversations, appBaseUrl: deps.appBaseUrl }),
     });
@@ -340,7 +337,6 @@ const handleSubscriptionDeleted = async (
   const display = planDisplay(planId);
   await sendBillingNotice(deps, {
     accountId,
-    billingEmail: row.billingEmail,
     eventId: event.id,
     build: () => buildSubscriptionEndedEmail({ accountId, planName: display.name, monthlyConversations: display.monthlyConversations, appBaseUrl: deps.appBaseUrl }),
   });
@@ -457,7 +453,6 @@ const handleInvoicePaymentFailed = async (
   });
   await sendBillingNotice(deps, {
     accountId,
-    billingEmail: row.billingEmail,
     eventId: event.id,
     build: () => buildPaymentFailedEmail({ accountId, appBaseUrl: deps.appBaseUrl }),
   });
@@ -467,12 +462,14 @@ const handleInvoicePaymentFailed = async (
 /**
  * `invoice.payment_failed` for an auto-top-up pack. Order-safe against `invoice.paid` for the
  * SAME invoice arriving first (a retried charge that succeeded, or ordinary out-of-order webhook
- * delivery): a row already `paid` makes this a pure no-op -- no disable, no email, no void --
- * since the paid webhook already resolved it. Otherwise disables auto top-up (never fails the
- * webhook on a declined one-off charge by setting the subscription itself `past_due` -- the
- * subscription row is never touched here), marks the row `failed`, voids the invoice if it is
- * still open so a later attempt cannot succeed against it, and emails owners + admins so a human
- * can fix the payment method and turn it back on.
+ * delivery). The `findById` read is a fast path only -- it can never be the sole guard, since
+ * `invoice.paid` can commit between that read and the transition below. The real guard is
+ * `markFailed`'s atomic `pending -> failed` transition: disabling, voiding, and emailing all run
+ * only when that transition is the one that actually changed the row. If it reports `false` --
+ * paid won the race either before or during this handler -- this is a pure no-op: no disable, no
+ * email, no void, since the paid webhook already resolved it. Never fails the webhook on a
+ * declined one-off charge by setting the subscription itself `past_due`; the subscription row is
+ * never touched here.
  */
 const handleAutoTopUpInvoicePaymentFailed = async (
   event: Extract<StripeWebhookEvent, { type: "invoice.payment_failed" }>,
@@ -490,37 +487,42 @@ const handleAutoTopUpInvoicePaymentFailed = async (
     return { outcome: "superseded", accountId };
   }
 
+  let changed = false;
   const result = await applyIdempotently(
     deps.repository,
     { eventId: event.id, eventType: event.type, accountId, outcome: "auto_top_up_failed" },
     async () => {
-      await deps.autoTopUps.markFailed({ id: autoTopUpId, failureCode: "payment_failed" });
-      await deps.autoTopUps.disable({ accountId, reason: "payment_failed" });
+      changed = await deps.autoTopUps.markFailed({ id: autoTopUpId, failureCode: "payment_failed" });
+      if (changed) {
+        await deps.autoTopUps.disable({ accountId, reason: "payment_failed" });
+      }
     },
   );
   if (result === "duplicate") {
     return { outcome: "duplicate", accountId };
   }
+  if (!changed) {
+    // `invoice.paid` committed the transition first, between our pre-check above and this one --
+    // its own markPaid already resolved the row; nothing here was ours to do.
+    return { outcome: "superseded", accountId };
+  }
   try {
     await deps.gateway.voidInvoice(invoice.id);
   } catch {
-    // Already void (the sweep's own decline handling voided it first) or already paid (settled
-    // between our read above and this call) -- either way, nothing left to undo. The `invoice.paid`
-    // webhook, not this one, is what resolves the row if it turns out to have been paid.
+    // Already void (the sweep's own decline handling voided it first) or already paid -- either
+    // way, nothing left to undo.
   }
   await deps.audit.record({
     accountId,
     workspaceId: null,
     eventType: "billing.auto_top_up_failed",
     eventStatus: "success",
-    metadata: { eventId: event.id, autoTopUpId, hasHostedInvoiceUrl: invoice.hostedInvoiceUrl !== null },
+    metadata: { eventId: event.id, autoTopUpId },
   });
-  const billingRow = await deps.repository.findByAccount(accountId);
   await sendBillingNotice(deps, {
     accountId,
-    billingEmail: billingRow?.billingEmail ?? null,
     eventId: event.id,
-    build: () => buildAutoTopUpFailedEmail({ accountId, appBaseUrl: deps.appBaseUrl, hostedInvoiceUrl: invoice.hostedInvoiceUrl }),
+    build: () => buildAutoTopUpFailedEmail({ accountId, appBaseUrl: deps.appBaseUrl }),
   });
   return { outcome: "auto_top_up_failed", accountId };
 };

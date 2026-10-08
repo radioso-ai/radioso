@@ -22,6 +22,11 @@ const FAILURE_COOLDOWN_MS = 60 * 60_000;
  *  an in-flight attempt (seconds) is never raced by a re-drive, short enough that a crashed or
  *  ambiguously-failed attempt resumes quickly. */
 const PENDING_LEASE_MS = 5 * 60_000;
+/** How long a `pending` row may be re-driven at all, counted from its own creation. Comfortably
+ *  inside the 24h Stripe keeps an idempotency key for, so every re-drive within this window can
+ *  trust the key -- never trying to re-derive "did Stripe already see this" any other way. Past
+ *  it, re-driving is no longer safe; `expireOverduePending` gives up on the row instead. */
+const REDRIVE_WINDOW_MS = 20 * 60 * 60_000;
 
 const errorCode = (error: unknown): string => {
   if (error && typeof error === "object") {
@@ -90,13 +95,62 @@ export class AutoTopUpDispatcher {
       return;
     }
 
+    await this.expireOverduePending();
     await this.redriveStalePending();
     await this.sweepEnabledAccounts();
   }
 
+  /**
+   * Gives up on any `pending` row older than `REDRIVE_WINDOW_MS` -- re-driving it further would
+   * mean trusting a Stripe idempotency key Stripe itself may no longer remember. Voids the draft
+   * if one exists, then marks the row failed with `redrive_window_expired`; never disables auto
+   * top-up for this, since giving up is us, not Stripe, declining.
+   */
+  private async expireOverduePending(): Promise<void> {
+    for (;;) {
+      const expired = await this.autoTopUps.listExpiredPending({ maxAgeMs: REDRIVE_WINDOW_MS, limit: REDRIVE_BATCH_SIZE });
+      if (expired.length === 0) {
+        return;
+      }
+      for (const row of expired) {
+        if (row.stripeInvoiceId) {
+          try {
+            await this.input.gateway!.voidInvoice(row.stripeInvoiceId);
+          } catch {
+            // Already void or already paid -- nothing left to undo either way.
+          }
+        }
+        const changed = await this.autoTopUps.markFailed({ id: row.id, failureCode: "redrive_window_expired" });
+        if (!changed) {
+          // Resolved by something else (most likely `invoice.paid`) between listing it as
+          // expired and this transition; nothing to report.
+          continue;
+        }
+        this.input.logger.warn(
+          { accountId: row.accountId, autoTopUpId: row.id },
+          "Auto top-up re-drive window expired; giving up",
+        );
+        await this.input.audit.record({
+          accountId: row.accountId,
+          workspaceId: null,
+          eventType: "billing.auto_top_up_invoice_error",
+          eventStatus: "failure",
+          metadata: { autoTopUpId: row.id, errorCode: "redrive_window_expired", definitive: true },
+        });
+      }
+      if (expired.length < REDRIVE_BATCH_SIZE) {
+        return;
+      }
+    }
+  }
+
   private async redriveStalePending(): Promise<void> {
     for (;;) {
-      const stale = await this.autoTopUps.claimStalePending({ leaseMs: PENDING_LEASE_MS, limit: REDRIVE_BATCH_SIZE });
+      const stale = await this.autoTopUps.claimStalePending({
+        leaseMs: PENDING_LEASE_MS,
+        maxAgeMs: REDRIVE_WINDOW_MS,
+        limit: REDRIVE_BATCH_SIZE,
+      });
       if (stale.length === 0) {
         return;
       }
@@ -241,6 +295,16 @@ export class AutoTopUpDispatcher {
     }
   }
 
+  /**
+   * A Stripe-confirmed definitive failure (card decline, or an invalid request from either
+   * `createTopUpInvoiceDraft` -- a deleted subscription, a rejected draft -- or
+   * `chargeTopUpInvoice`). Voids the draft if one was recorded, then gates everything else on
+   * `markFailed`'s atomic `pending -> failed` transition: if `invoice.paid` won a race against
+   * this same row, the transition reports `false` and nothing further happens here -- the paid
+   * outcome already stands. Disables auto top-up unconditionally for a real decline or a rejected
+   * draft (unlike `expireOverduePending`'s "we gave up," this is Stripe or our own params saying
+   * no), including the deleted-subscription case.
+   */
   private async failDefinitively(input: {
     id: string;
     accountId: string;
@@ -255,7 +319,11 @@ export class AutoTopUpDispatcher {
         // and this call) -- either way there is nothing left to undo.
       }
     }
-    await this.autoTopUps.markFailed({ id: input.id, failureCode: input.error.code });
+    const changed = await this.autoTopUps.markFailed({ id: input.id, failureCode: input.error.code });
+    if (!changed) {
+      return;
+    }
+    await this.autoTopUps.disable({ accountId: input.accountId, reason: "payment_failed" });
     this.input.logger.warn(
       { accountId: input.accountId, autoTopUpId: input.id, errorCode: input.error.code },
       "Auto top-up charge declined",

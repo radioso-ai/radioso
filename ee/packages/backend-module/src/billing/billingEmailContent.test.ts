@@ -42,42 +42,28 @@ describe("buildPaymentFailedEmail", () => {
 });
 
 describe("buildAutoTopUpFailedEmail", () => {
-  it("includes the hosted invoice URL as a paragraph when present", () => {
-    const email = buildAutoTopUpFailedEmail({
-      accountId,
-      appBaseUrl,
-      hostedInvoiceUrl: "https://invoice.stripe.com/i/123",
-    });
-    expect(email.content.paragraphs.some((p) => p.includes("https://invoice.stripe.com/i/123"))).toBe(true);
-  });
-
-  it("omits any invoice paragraph when there is no hosted invoice URL", () => {
-    const email = buildAutoTopUpFailedEmail({ accountId, appBaseUrl, hostedInvoiceUrl: null });
+  it("never mentions a Stripe invoice URL -- the log mail driver prints full text", () => {
+    const email = buildAutoTopUpFailedEmail({ accountId, appBaseUrl });
     expect(email.content.paragraphs.some((p) => p.includes("http"))).toBe(false);
+    expect(JSON.stringify(email)).not.toContain("invoice.stripe.com");
   });
 
-  it("still carries the usage-tab CTA", () => {
-    const email = buildAutoTopUpFailedEmail({ accountId, appBaseUrl, hostedInvoiceUrl: null });
+  it("links to the usage tab, not the invoice", () => {
+    const email = buildAutoTopUpFailedEmail({ accountId, appBaseUrl });
     expect(email.content.cta?.href).toBe(`${appBaseUrl}/account/${accountId}/account?tab=usage`);
   });
 });
 
 describe("resolveBillingNoticeRecipients", () => {
-  it("returns every administrator email when there is no billing email", () => {
-    const admins = [{ email: "owner@example.com", displayName: "Owner" }];
-    expect(resolveBillingNoticeRecipients(admins, null)).toEqual(["owner@example.com"]);
+  it("returns every administrator email, and only administrator emails", () => {
+    const admins = [
+      { email: "owner@example.com", displayName: "Owner" },
+      { email: "admin@example.com", displayName: "Admin" },
+    ];
+    expect(resolveBillingNoticeRecipients(admins)).toEqual(["owner@example.com", "admin@example.com"]);
   });
 
-  it("adds the billing email when it differs from every administrator's", () => {
-    const admins = [{ email: "owner@example.com", displayName: "Owner" }];
-    expect(resolveBillingNoticeRecipients(admins, "billing@example.com")).toEqual([
-      "owner@example.com",
-      "billing@example.com",
-    ]);
-  });
-
-  it("does not duplicate the billing email when it matches an administrator's, case-insensitively", () => {
-    const admins = [{ email: "Owner@Example.com", displayName: "Owner" }];
-    expect(resolveBillingNoticeRecipients(admins, "owner@example.com")).toEqual(["Owner@Example.com"]);
+  it("returns no recipients for an account with no active owners or admins", () => {
+    expect(resolveBillingNoticeRecipients([])).toEqual([]);
   });
 });

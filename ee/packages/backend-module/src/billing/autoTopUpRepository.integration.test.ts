@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { createEeKysely } from "../db/eeSchema.js";
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
@@ -80,6 +80,13 @@ describeIfDatabase("EE auto top-up repository + migrator integration", () => {
     } finally {
       await admin.end().catch(() => undefined);
     }
+  });
+
+  // Several tests below assert exact row sets (`toEqual([...])`); a row left `pending` by one
+  // test (e.g. the window-expiry cases, which never resolve the row) would otherwise leak into
+  // the next test's query against the same schema.
+  afterEach(async () => {
+    await database.query(`TRUNCATE ee_billing_auto_top_up_settings, ee_billing_auto_top_ups`);
   });
 
   const seedAccount = async (): Promise<string> => {
@@ -281,10 +288,26 @@ describeIfDatabase("EE auto top-up repository + migrator integration", () => {
     expect(afterInvoice?.stripeInvoiceId).toBe(`in_${id}`);
     expect(afterInvoice?.status).toBe("pending");
 
-    await repository.markFailed({ id: id!, failureCode: "card_declined" });
+    const changed = await repository.markFailed({ id: id!, failureCode: "card_declined" });
+    expect(changed).toBe(true);
     const afterFailure = await repository.findById(id!);
     expect(afterFailure?.status).toBe("failed");
     expect(afterFailure?.failureCode).toBe("card_declined");
+  });
+
+  it("markFailed on an already-paid or already-failed row returns false and changes nothing", async () => {
+    const accountId = await seedAccount();
+    const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+    const paidId = await repository.claimPending({ accountId, periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
+    await repository.markPaid(paidId!);
+
+    expect(await repository.markFailed({ id: paidId!, failureCode: "card_declined" })).toBe(false);
+    expect((await repository.findById(paidId!))?.status).toBe("paid");
+
+    const failedId = await repository.claimPending({ accountId: await seedAccount(), periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
+    await repository.markFailed({ id: failedId!, failureCode: "first_code" });
+    expect(await repository.markFailed({ id: failedId!, failureCode: "second_code" })).toBe(false);
+    expect((await repository.findById(failedId!))?.failureCode).toBe("first_code");
   });
 
   it("markPaid transitions a failed row to paid -- a retried charge can still succeed", async () => {
@@ -311,9 +334,11 @@ describeIfDatabase("EE auto top-up repository + migrator integration", () => {
   });
 
   describe("claimStalePending", () => {
-    const ageRow = async (id: string, age: string): Promise<void> => {
-      await database.query(`UPDATE ee_billing_auto_top_ups SET updated_at = now() - interval '${age}' WHERE id = $1`, [id]);
+    const ageRow = async (id: string, age: string, column: "updated_at" | "created_at" = "updated_at"): Promise<void> => {
+      await database.query(`UPDATE ee_billing_auto_top_ups SET ${column} = now() - interval '${age}' WHERE id = $1`, [id]);
     };
+
+    const DAY_MS = 24 * 60 * 60_000;
 
     it("claims a pending row whose updated_at is older than the lease, and bumps it immediately", async () => {
       const accountId = await seedAccount();
@@ -322,11 +347,11 @@ describeIfDatabase("EE auto top-up repository + migrator integration", () => {
       await repository.markInvoiceCreated({ id: id!, stripeInvoiceId: "in_stale_1" });
       await ageRow(id!, "10 minutes");
 
-      const claimed = await repository.claimStalePending({ leaseMs: 5 * 60_000, limit: 10 });
+      const claimed = await repository.claimStalePending({ leaseMs: 5 * 60_000, maxAgeMs: DAY_MS, limit: 10 });
 
       expect(claimed).toEqual([{ id, accountId, stripeInvoiceId: "in_stale_1" }]);
       // Immediately re-running must not claim it again -- updated_at was just bumped to now().
-      const second = await repository.claimStalePending({ leaseMs: 5 * 60_000, limit: 10 });
+      const second = await repository.claimStalePending({ leaseMs: 5 * 60_000, maxAgeMs: DAY_MS, limit: 10 });
       expect(second).toEqual([]);
     });
 
@@ -335,7 +360,7 @@ describeIfDatabase("EE auto top-up repository + migrator integration", () => {
       const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
       await repository.claimPending({ accountId, periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
 
-      const claimed = await repository.claimStalePending({ leaseMs: 5 * 60_000, limit: 10 });
+      const claimed = await repository.claimStalePending({ leaseMs: 5 * 60_000, maxAgeMs: DAY_MS, limit: 10 });
 
       expect(claimed).toEqual([]);
     });
@@ -347,8 +372,8 @@ describeIfDatabase("EE auto top-up repository + migrator integration", () => {
       await ageRow(id!, "10 minutes");
 
       const [first, second] = await Promise.all([
-        repository.claimStalePending({ leaseMs: 5 * 60_000, limit: 10 }),
-        repository.claimStalePending({ leaseMs: 5 * 60_000, limit: 10 }),
+        repository.claimStalePending({ leaseMs: 5 * 60_000, maxAgeMs: DAY_MS, limit: 10 }),
+        repository.claimStalePending({ leaseMs: 5 * 60_000, maxAgeMs: DAY_MS, limit: 10 }),
       ]);
 
       const claimed = [...first, ...second];
@@ -363,7 +388,53 @@ describeIfDatabase("EE auto top-up repository + migrator integration", () => {
       await repository.markPaid(id!);
       await ageRow(id!, "10 minutes");
 
-      expect(await repository.claimStalePending({ leaseMs: 5 * 60_000, limit: 10 })).toEqual([]);
+      expect(await repository.claimStalePending({ leaseMs: 5 * 60_000, maxAgeMs: DAY_MS, limit: 10 })).toEqual([]);
+    });
+
+    it("excludes a row older than maxAgeMs since creation, even if its lease has also expired", async () => {
+      const accountId = await seedAccount();
+      const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      const id = await repository.claimPending({ accountId, periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
+      await ageRow(id!, "21 hours", "created_at");
+      await ageRow(id!, "21 hours", "updated_at");
+
+      expect(await repository.claimStalePending({ leaseMs: 5 * 60_000, maxAgeMs: 20 * 60 * 60_000, limit: 10 })).toEqual([]);
+    });
+  });
+
+  describe("listExpiredPending", () => {
+    const ageCreatedAt = async (id: string, age: string): Promise<void> => {
+      await database.query(`UPDATE ee_billing_auto_top_ups SET created_at = now() - interval '${age}' WHERE id = $1`, [id]);
+    };
+
+    it("lists a pending row older than maxAgeMs since creation", async () => {
+      const accountId = await seedAccount();
+      const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      const id = await repository.claimPending({ accountId, periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
+      await repository.markInvoiceCreated({ id: id!, stripeInvoiceId: "in_expired_1" });
+      await ageCreatedAt(id!, "21 hours");
+
+      const expired = await repository.listExpiredPending({ maxAgeMs: 20 * 60 * 60_000, limit: 10 });
+
+      expect(expired).toEqual([{ id, accountId, stripeInvoiceId: "in_expired_1" }]);
+    });
+
+    it("does not list a pending row still inside the window", async () => {
+      const accountId = await seedAccount();
+      const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      await repository.claimPending({ accountId, periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
+
+      expect(await repository.listExpiredPending({ maxAgeMs: 20 * 60 * 60_000, limit: 10 })).toEqual([]);
+    });
+
+    it("does not list a paid or failed row", async () => {
+      const accountId = await seedAccount();
+      const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      const id = await repository.claimPending({ accountId, periodStart, maxPacksPerMonth: 5, cooldownMs: 0 });
+      await repository.markPaid(id!);
+      await ageCreatedAt(id!, "21 hours");
+
+      expect(await repository.listExpiredPending({ maxAgeMs: 20 * 60 * 60_000, limit: 10 })).toEqual([]);
     });
   });
 });

@@ -74,14 +74,22 @@ export interface AutoTopUpRepository {
   }): Promise<string | null>;
   findById(id: string): Promise<AutoTopUpRow | null>;
   markInvoiceCreated(input: { id: string; stripeInvoiceId: string }): Promise<void>;
-  markFailed(input: { id: string; failureCode: string }): Promise<void>;
+  /**
+   * Atomic `pending -> failed` transition. Returns `true` only when this call is the one that
+   * actually changed the row -- `false` when it was already something else (most importantly
+   * `paid`, the invoice.paid-vs-payment_failed race). Callers must gate disabling, emailing, and
+   * voiding on this return value: a `false` means a DIFFERENT resolution already happened and
+   * those actions would be wrong to repeat or would undo the real outcome.
+   */
+  markFailed(input: { id: string; failureCode: string }): Promise<boolean>;
   /** Idempotent from either `pending` or `failed` -- an `invoice.paid` webhook can arrive after
    *  an earlier `invoice.payment_failed` already marked the row failed (a retried charge that
    *  succeeded, or simple out-of-order delivery). A no-op once the row is already `paid`. */
   markPaid(id: string): Promise<void>;
   /**
-   * Atomically claims up to `limit` `pending` rows whose `updated_at` is older than `leaseMs` --
-   * stuck because a prior attempt crashed, or failed ambiguously and must be re-driven rather than
+   * Atomically claims up to `limit` `pending` rows whose `updated_at` is older than `leaseMs`,
+   * excluding anything already past `maxAgeMs` since creation (see `listExpiredPending`) -- stuck
+   * because a prior attempt crashed, or failed ambiguously and must be re-driven rather than
    * treated as failed. Bumps `updated_at` immediately (the lease), so a concurrent sweep cannot
    * also claim the same row; `FOR UPDATE SKIP LOCKED` divides the stale set between concurrent
    * sweeps instead of double-claiming. Returns each row's `stripeInvoiceId` so the caller resumes
@@ -90,6 +98,18 @@ export interface AutoTopUpRepository {
    */
   claimStalePending(input: {
     leaseMs: number;
+    maxAgeMs: number;
+    limit: number;
+  }): Promise<Array<{ id: string; accountId: string; stripeInvoiceId: string | null }>>;
+  /**
+   * `pending` rows older than `maxAgeMs` since creation -- past the point a re-drive is safe,
+   * because Stripe only keeps an idempotency key for 24h (`maxAgeMs` is chosen well inside that).
+   * The caller gives up on these rather than re-driving them: void the draft if one exists, then
+   * `markFailed` with a distinct code, never disabling auto top-up for it (unlike a real decline,
+   * this is us giving up waiting, not Stripe saying no).
+   */
+  listExpiredPending(input: {
+    maxAgeMs: number;
     limit: number;
   }): Promise<Array<{ id: string; accountId: string; stripeInvoiceId: string | null }>>;
   /** Called only from the webhook, on a failed charge. Never called for an operator's own
@@ -255,9 +275,12 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
       const recentFailure = await trx
         .selectFrom("ee_billing_auto_top_ups")
         .select("id")
+        // `updated_at`, not `created_at`: a row can sit `pending` for hours (re-driven, or
+        // waiting out the window) before it resolves to `failed`, and the cooldown must count
+        // from when it actually failed, not from a claim that may be a day old by then.
         .where("account_id", "=", input.accountId)
         .where("status", "=", "failed")
-        .where("created_at", ">", sql<Date>`now() - (${input.cooldownMs} * interval '1 millisecond')`)
+        .where("updated_at", ">", sql<Date>`now() - (${input.cooldownMs} * interval '1 millisecond')`)
         .executeTakeFirst();
       if (recentFailure) {
         return null;
@@ -294,13 +317,15 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
       .execute();
   }
 
-  async markFailed(input: { id: string; failureCode: string }): Promise<void> {
-    await this.db
+  async markFailed(input: { id: string; failureCode: string }): Promise<boolean> {
+    const result = await this.db
       .updateTable("ee_billing_auto_top_ups")
       .set({ status: "failed", failure_code: input.failureCode, updated_at: sql<Date>`now()` })
       .where("id", "=", input.id)
       .where("status", "=", "pending")
-      .execute();
+      .returning("id")
+      .executeTakeFirst();
+    return Boolean(result);
   }
 
   async markPaid(id: string): Promise<void> {
@@ -314,6 +339,7 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
 
   async claimStalePending(input: {
     leaseMs: number;
+    maxAgeMs: number;
     limit: number;
   }): Promise<Array<{ id: string; accountId: string; stripeInvoiceId: string | null }>> {
     const rows = await this.db
@@ -325,12 +351,32 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
           from ee_billing_auto_top_ups
           where status = 'pending'
             and updated_at < now() - (${input.leaseMs} * interval '1 millisecond')
+            and created_at > now() - (${input.maxAgeMs} * interval '1 millisecond')
           order by updated_at asc
           limit ${input.limit}
           for update skip locked
         )`,
       )
       .returning(["id", "account_id", "stripe_invoice_id"])
+      .execute();
+    return rows.map((row) => ({
+      id: row.id,
+      accountId: row.account_id,
+      stripeInvoiceId: row.stripe_invoice_id,
+    }));
+  }
+
+  async listExpiredPending(input: {
+    maxAgeMs: number;
+    limit: number;
+  }): Promise<Array<{ id: string; accountId: string; stripeInvoiceId: string | null }>> {
+    const rows = await this.db
+      .selectFrom("ee_billing_auto_top_ups")
+      .select(["id", "account_id", "stripe_invoice_id"])
+      .where("status", "=", "pending")
+      .where("created_at", "<=", sql<Date>`now() - (${input.maxAgeMs} * interval '1 millisecond')`)
+      .orderBy("created_at", "asc")
+      .limit(input.limit)
       .execute();
     return rows.map((row) => ({
       id: row.id,

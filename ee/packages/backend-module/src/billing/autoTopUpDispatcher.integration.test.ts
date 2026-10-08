@@ -530,7 +530,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
       expect(rows[0].stripe_invoice_id).not.toBeNull();
     });
 
-    it("a decline voids the invoice and marks the row failed, and the webhook disables auto top-up", async () => {
+    it("a decline voids the invoice, marks the row failed, and disables auto top-up immediately", async () => {
       const accountId = await seedEligibleAccount();
       const gateway = createFakeGateway({
         chargeTopUpInvoice: vi.fn(async () => {
@@ -549,9 +549,14 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
       expect(auditRecord).toHaveBeenCalledWith(
         expect.objectContaining({ accountId, eventType: "billing.auto_top_up_invoice_error", eventStatus: "failure" }),
       );
+      // The dispatcher itself disables on a definitive decline -- it does not wait for the
+      // asynchronous webhook, since no further charge should be attempted either way.
+      const settingsRepository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      expect((await settingsRepository.getSettings(accountId))?.enabled).toBe(false);
 
-      // Stripe's own `invoice.payment_failed` webhook still arrives; it disables auto top-up and
-      // emails, and its own void attempt (the invoice is already void) is swallowed.
+      // Stripe's own `invoice.payment_failed` webhook still arrives after the row is already
+      // `failed`; `markFailed`'s atomic transition reports no change, so this is a pure no-op --
+      // no second disable call, no duplicate email, no (further) void attempt.
       const { disableSpy, noticeMailSend } = await fireAutoTopUpWebhookEvent(
         {
           id: "evt_failed_1",
@@ -569,8 +574,100 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
           }),
         }),
       );
-      expect(disableSpy).toHaveBeenCalledWith({ accountId, reason: "payment_failed" });
-      expect(noticeMailSend).toHaveBeenCalled();
+      expect(disableSpy).not.toHaveBeenCalled();
+      expect(noticeMailSend).not.toHaveBeenCalled();
+      expect((await settingsRepository.getSettings(accountId))?.enabled).toBe(false);
+    });
+
+    it("an item created by a partial-success attempt (response lost) is not duplicated by a re-drive", async () => {
+      const accountId = await seedEligibleAccount();
+      let chargeAttempts = 0;
+      let seenInvoiceId: string | null = null;
+      const gateway = createFakeGateway({
+        chargeTopUpInvoice: vi.fn(async (params: { invoiceId: string }) => {
+          chargeAttempts += 1;
+          seenInvoiceId = params.invoiceId;
+          if (chargeAttempts === 1) {
+            // The item step succeeded at Stripe, but the response never reached us -- an
+            // ambiguous failure, same as a dropped connection.
+            throw new Error("socket hang up after item create");
+          }
+          return { status: "paid" as const };
+        }),
+      });
+      const { dispatcher } = createDispatcher(gateway);
+
+      await dispatcher.run();
+      const rows = await readRows(accountId);
+      await ageRow(rows[0].id, "10 minutes");
+      await dispatcher.run();
+
+      expect(gateway.createTopUpInvoiceDraft).toHaveBeenCalledTimes(1);
+      expect(gateway.chargeTopUpInvoice).toHaveBeenCalledTimes(2);
+      expect(seenInvoiceId).not.toBeNull();
+      // The real state-based guard lives in `stripeSdkGateway.ts` (checked against Stripe's own
+      // invoice lines before calling `invoiceItems.create` again); this test's fake gateway
+      // models the ambiguous-failure-then-redrive shape the dispatcher must tolerate, while
+      // `chargeTopUpInvoice`'s own unit coverage is the Stripe-call-shape contract.
+      const finalRows = await readRows(accountId);
+      expect(finalRows).toHaveLength(1);
+      expect(finalRows[0].stripe_invoice_id).toBe(seenInvoiceId);
+    });
+
+    it("gives up on a pending pack past the 20h re-drive window: voids and fails it without disabling", async () => {
+      const accountId = await seedEligibleAccount();
+      const gateway = createFakeGateway();
+      const firstRun = createDispatcher(gateway);
+      await firstRun.dispatcher.run();
+      const rows = await readRows(accountId);
+      expect(rows).toHaveLength(1);
+      await database.query(
+        `UPDATE ee_billing_auto_top_ups SET created_at = now() - interval '21 hours', updated_at = now() - interval '21 hours' WHERE id = $1`,
+        [rows[0].id],
+      );
+
+      const { dispatcher: secondRunDispatcher, auditRecord } = createDispatcher(gateway);
+      await secondRunDispatcher.run();
+
+      const afterExpiry = await readRows(accountId);
+      expect(afterExpiry).toHaveLength(1);
+      expect(afterExpiry[0].status).toBe("failed");
+      expect(afterExpiry[0].failure_code).toBe("redrive_window_expired");
+      expect(gateway.voidInvoice).toHaveBeenCalledWith(rows[0].stripe_invoice_id);
+      // Never re-driven: exactly the one charge attempt from the first run.
+      expect(gateway.chargeTopUpInvoice).toHaveBeenCalledTimes(1);
+      expect(auditRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountId,
+          eventType: "billing.auto_top_up_invoice_error",
+          metadata: expect.objectContaining({ errorCode: "redrive_window_expired" }),
+        }),
+      );
+      // Giving up is us, not Stripe, declining -- auto top-up stays on.
+      const settingsRepository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+      expect((await settingsRepository.getSettings(accountId))?.enabled).toBe(true);
+    });
+
+    it("treats an invalid-request error from draft creation (e.g. a deleted subscription) as definitive: fails and disables", async () => {
+      const accountId = await seedEligibleAccount();
+      const gateway = createFakeGateway({
+        createTopUpInvoiceDraft: vi.fn(async () => {
+          throw new StripeDefinitiveChargeError("No such subscription", "resource_missing");
+        }),
+      });
+      const { dispatcher, auditRecord } = createDispatcher(gateway);
+
+      await dispatcher.run();
+
+      const rows = await readRows(accountId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].status).toBe("failed");
+      expect(rows[0].failure_code).toBe("resource_missing");
+      // No invoice was ever created, so there is nothing to void.
+      expect(gateway.voidInvoice).not.toHaveBeenCalled();
+      expect(auditRecord).toHaveBeenCalledWith(
+        expect.objectContaining({ accountId, eventType: "billing.auto_top_up_invoice_error", eventStatus: "failure" }),
+      );
       const settingsRepository = new PostgresAutoTopUpRepository(createEeKysely(pool));
       expect((await settingsRepository.getSettings(accountId))?.enabled).toBe(false);
     });

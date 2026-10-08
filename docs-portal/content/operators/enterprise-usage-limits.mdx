@@ -226,9 +226,9 @@ This returns `409 auto_top_up_unavailable` when `available` is false, and `400` 
 
 A sweep evaluates every enabled account about once a minute: the account's usage level, its monthly pack cap, and a one-hour cooldown after a failed charge, so a declining card is retried on a schedule rather than on every tick. At most one pack is ever in flight for an account at a time, and the sweep covers every enabled account in one pass rather than only the longest-waiting few.
 
-A charge interrupted by a network error or timeout stays in flight rather than being counted as failed, since the card may already have been charged; the next sweep picks it back up a few minutes later and replays the same request to Stripe, which recognizes it and returns the original result instead of charging twice.
+A charge interrupted by a network error or timeout stays in flight rather than being counted as failed, since the card may already have been charged; the next sweep picks it back up a few minutes later and replays the same request to Stripe, which recognizes it and returns the original result instead of charging twice. A pack stuck in flight for more than 20 hours is given up on instead: Radioso voids the draft invoice and marks the pack failed, but leaves auto top-up on, since giving up is Radioso's own call, not a payment decline.
 
-If the charge fails, Radioso turns auto top-up off, records why (`disabledReason: "payment_failed"`, `disabledAt`), and emails the account's owners and admins to update the payment method and turn it back on — see [Billing notices](/operators/billing-setup#billing-notices). A successful charge adds the pack's conversations the same way a one-time top-up purchase does, repaying any grace debt first; Stripe's own receipt email covers the payment itself.
+If the charge itself fails — a declined card, or a rejected request such as a deleted subscription — Radioso turns auto top-up off, records why (`disabledReason: "payment_failed"`, `disabledAt`), and emails the account's owners and admins to update the payment method and turn it back on — see [Billing notices](/operators/billing-setup#billing-notices). A successful charge adds the pack's conversations the same way a one-time top-up purchase does, repaying any grace debt first; Stripe's own receipt email covers the payment itself.
 
 ## Usage alerts
 

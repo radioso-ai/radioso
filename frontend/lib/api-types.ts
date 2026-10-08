@@ -735,6 +735,9 @@ export interface UsageLimitProfile {
   updatedAt: string
 }
 
+/** Server-computed state of the month's conversation budget (EE `conversationUsageLevel`). */
+export type PlanUsageLevel = 'ok' | 'nearing_limit' | 'limit_reached' | 'grace_exhausted'
+
 export interface AccountUsageSummary {
   accountId: string
   profile: UsageLimitProfile | null
@@ -764,8 +767,15 @@ export interface AccountUsageSummary {
     resetAt: string
     used: number
     limit: number
-    /** Remaining prepaid top-up conversations. Never expire. */
+    /** Remaining prepaid top-up conversations. Never expire. `max(balance, 0)`: a negative
+     *  balance (borrowed grace) reports 0 here rather than a negative credit figure. */
     credits: number
+    /** Conversations spendable before borrowing: max(used, limit) + max(balance, 0). The bar
+     *  denominator — `limit + credits` drifts wrong once credits are partly spent. */
+    capacity: number
+    /** How far a customer conversation may still push the account-wide balance negative. */
+    grace: { limit: number; borrowed: number }
+    level: PlanUsageLevel
     byKind: Record<'conversation' | 'copilot' | 'test_run' | 'pulse_report', number>
   } | null
 }

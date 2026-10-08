@@ -19,13 +19,24 @@ const usageWindowSchema = z.object({
   resetAt: resetAtSchema,
 });
 
+const usageLevelSchema = z.enum(["ok", "nearing_limit", "limit_reached", "grace_exhausted"]);
+
+const graceSchema = z.object({
+  limit: z.number().nonnegative(),
+  borrowed: z.number().nonnegative(),
+});
+
 // Conversation metering counts in tenths (ten test runs make one conversation), so used/limit/remaining
-// can land on a fractional value like 0.5; every other window counts whole units.
+// can land on a fractional value like 0.5; every other window counts whole units. Conversations also
+// carry the account-wide grace allowance and resulting level, which no other metered dimension has.
 const fractionalUsageWindowSchema = z.object({
   used: z.number().nonnegative(),
   limit: z.number().nonnegative().nullable(),
   remaining: z.number().nonnegative().nullable(),
   resetAt: resetAtSchema,
+  capacity: z.number().nonnegative(),
+  grace: graceSchema,
+  level: usageLevelSchema,
 });
 
 const outputSchema = z.object({
@@ -53,6 +64,21 @@ const window = (
   limit: entry.limit,
   remaining: entry.limit === null ? null : Math.max(0, entry.limit - entry.used),
   resetAt: formatResetAt(entry.resetAt),
+});
+
+/** Adds the account-wide grace allowance and level on top of the plain usage window — the
+ *  conversation-metered dimension's only fields the others don't carry. Also overrides
+ *  `remaining`: `window()`'s `limit - used` ignores positive credits past the limit, so an
+ *  account with capacity above its plan limit (credits applied) would read 0 remaining
+ *  instead of what it can actually still spend before borrowing. */
+const conversationWindow = (
+  entry: NonNullable<AccountUsageSummary["monthlyConversations"]>,
+): z.infer<typeof fractionalUsageWindowSchema> => ({
+  ...window(entry),
+  remaining: Math.max(0, entry.capacity - entry.used),
+  capacity: entry.capacity,
+  grace: entry.grace,
+  level: entry.level,
 });
 
 /** The usage owner stores monthly boundaries as dates; MCP exposes an explicit UTC instant. */
@@ -115,7 +141,7 @@ const usageDescriptor = (deps: { usage: CopilotAccountUsagePort }): CopilotToolD
         storedDocuments: window(usage.storedDocuments),
         storedIndexedBytes: window(usage.storedIndexedBytes),
         monthlyIndexedBytes: window(usage.monthlyIndexedBytes),
-        monthlyConversations: usage.monthlyConversations ? window(usage.monthlyConversations) : null,
+        monthlyConversations: usage.monthlyConversations ? conversationWindow(usage.monthlyConversations) : null,
       };
     },
   }),

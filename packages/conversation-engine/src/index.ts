@@ -20,6 +20,7 @@ import type {
   RenderableTurn,
   ResumeAwaitingDecisionInput,
   ConversationRoutineDecisionResult,
+  ConversationRoutineTurnClaim,
   RoutineTurnYield,
   SelectionDecision,
   SkillDefinition,
@@ -30,7 +31,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import { resumeAwaitingDecision } from "./awaitingDecision.js";
-import { attemptRoutine } from "./routineActivation.js";
+import { attemptRoutine, claimRoutine } from "./routineActivation.js";
 import { createCoverageVerdictSink, type CoverageVerdictSinkDeps } from "./coverageVerdictSink.js";
 import { buildResolvedSteering, resolveDirectiveMatches } from "./steering.js";
 import {
@@ -472,6 +473,11 @@ export class DefaultConversationEngine implements ConversationEngine {
   /** Runs the routine path before ordinary skill selection when the host wires it. */
   async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
     return attemptRoutine(input);
+  }
+
+  /** The routine path of {@link attemptRoutine}, stopped before the reply is generated. */
+  async claimRoutine(input: AttemptRoutineInput): Promise<ConversationRoutineTurnClaim | null> {
+    return claimRoutine(input);
   }
 
   async resumeAwaitingDecision(input: ResumeAwaitingDecisionInput): Promise<ConversationRoutineDecisionResult> {

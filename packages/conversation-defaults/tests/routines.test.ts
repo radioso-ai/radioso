@@ -915,6 +915,22 @@ describe("routine defaults", () => {
       expect(reaskSection).not.toContain("The program they want to attend.");
     });
 
+    it("tells an ordinary re-ask that what the first ask said has been said (#1449)", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate }).render({
+        step: currentStep,
+        steering: [],
+        turn,
+        reask: { missingSlots: [programSlot] },
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      const reaskSection = systemPrompt.slice(systemPrompt.indexOf("REASK:"));
+      expect(reaskSection).toMatch(/already asked this step's question/);
+      expect(reaskSection).toMatch(/do not say it again/);
+      expect(reaskSection).toMatch(/in different words from your earlier messages/);
+    });
+
     it("re-asks a step that collects no slot without listing any", async () => {
       const gw = gateway("ok");
       await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate }).render({

@@ -63,6 +63,43 @@ describe("PeriodicTaskRunner", () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 
+  it("start() resolves without waiting for the first run to settle, so a hung run never blocks startup", async () => {
+    vi.useFakeTimers();
+    const run = vi.fn().mockImplementation(() => new Promise<void>(() => {})); // never resolves
+    const runner = new PeriodicTaskRunner({ id: "test-task", intervalMs: 60_000, run, logger: createLogger() });
+
+    let started = false;
+    const starting = runner.start().then(() => { started = true; });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(started).toBe(true);
+    expect(run).toHaveBeenCalledTimes(1);
+    await starting;
+  });
+
+  it("stop() returns once its bounded grace period elapses, even though a run never settles", async () => {
+    vi.useFakeTimers();
+    const run = vi.fn().mockImplementation(() => new Promise<void>(() => {})); // never resolves
+    const runner = new PeriodicTaskRunner({
+      id: "test-task",
+      intervalMs: 60_000,
+      run,
+      logger: createLogger(),
+      stopGraceMs: 10_000,
+    });
+
+    await runner.start();
+    let stopped = false;
+    const stopping = runner.stop().then(() => { stopped = true; });
+
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(stopped).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await stopping;
+    expect(stopped).toBe(true);
+  });
+
   it("stop() waits for an in-flight run to finish before resolving", async () => {
     vi.useFakeTimers();
     let resolveRun!: () => void;

@@ -10,13 +10,17 @@ import { buildAlertEmail } from "./alertContent.js";
 /** An attempt is spent at claim time, so a crash mid-send still counts toward the cap — a
  *  claim can be attempted at most this many times before the dispatcher gives up on it. */
 const MAX_ATTEMPTS = 5;
-/** Claimed rows per sweep tick, bounded so one `run()` call cannot run unbounded. */
-const BATCH_SIZE = 25;
+/** Claimed rows per sweep tick, bounded so one `run()` call cannot run unbounded. Small on
+ *  purpose: a smaller batch finishes well inside its lease even when a send is slow, and a
+ *  duplicate claim across batches is already deduped by the provider idempotency key. */
+const BATCH_SIZE = 10;
 /** How far `claimDueAlerts` pushes `next_attempt_at` out immediately on claim, so a second
  *  concurrent sweep's claim query — which only looks at `next_attempt_at <= now()` — cannot see
  *  the same row again while this attempt is still being processed. Replaced by the real backoff
- *  or a terminal state once the attempt finishes. */
-const LEASE_MS = 5 * 60_000;
+ *  or a terminal state once the attempt finishes. Generous (15 min for a batch of 10) so a slow
+ *  batch is very unlikely to outlive it; if one somehow did, the provider idempotency key — not
+ *  this lease — is what actually prevents a duplicate delivery. */
+const LEASE_MS = 15 * 60_000;
 const BACKOFF_BASE_MS = 2 * 60_000;
 const BACKOFF_MAX_MS = 30 * 60_000;
 
@@ -41,6 +45,12 @@ interface ClaimedAlert {
   periodStart: string;
   level: AlertLevel;
   attempts: number;
+  /** The claimed row's `created_at`, as epoch milliseconds (text, to stay precision-exact
+   *  across the round trip). Re-arm deletes and reinserts the same primary key, so this is the
+   *  generation token: every later UPDATE or DELETE of this claim also matches it, and it is
+   *  part of the provider idempotency key, so a re-armed (new) claim never collides with an old
+   *  generation's key. */
+  createdAtMs: string;
 }
 
 interface UsageLimitAlertDispatcherInput {
@@ -93,6 +103,11 @@ export class UsageLimitAlertDispatcher {
   }
 
   private async claimDueAlerts(limit: number): Promise<ClaimedAlert[]> {
+    // No `attempts < MAX_ATTEMPTS` filter here on purpose: attempts are incremented at claim
+    // time below, so a crash right after claiming the final allowed attempt would otherwise
+    // leave `attempts === MAX_ATTEMPTS` and `sent_at` null forever, excluded from every future
+    // sweep by a filter that only ever looks backward. `processClaim` retires that case itself
+    // once reclaimed, by checking `attempts > MAX_ATTEMPTS` before doing anything else.
     const rows = await this.db
       .updateTable("ee_usage_limit_alerts")
       .set({
@@ -105,13 +120,18 @@ export class UsageLimitAlertDispatcher {
           from ee_usage_limit_alerts
           where sent_at is null
             and next_attempt_at <= now()
-            and attempts < ${MAX_ATTEMPTS}
           order by next_attempt_at asc
           limit ${limit}
           for update skip locked
         )`,
       )
-      .returning(["account_id", "level", "attempts", sql<string>`period_start::text`.as("period_start")])
+      .returning([
+        "account_id",
+        "level",
+        "attempts",
+        sql<string>`period_start::text`.as("period_start"),
+        sql<string>`(extract(epoch from created_at) * 1000)::bigint::text`.as("created_at_ms"),
+      ])
       .execute();
 
     return rows.map((row) => ({
@@ -119,10 +139,26 @@ export class UsageLimitAlertDispatcher {
       periodStart: row.period_start,
       level: row.level,
       attempts: row.attempts,
+      createdAtMs: row.created_at_ms,
     }));
   }
 
+  /** Matches the exact row this claim was read from, not merely its primary key — re-arm
+   *  deletes and reinserts the same (account, period, level), so without this an old, still
+   *  in-flight sweep could finalize (or otherwise mutate) a newer generation it never read. */
+  private createdAtFence(claim: ClaimedAlert) {
+    return sql<boolean>`(extract(epoch from created_at) * 1000)::bigint::text = ${claim.createdAtMs}`;
+  }
+
   private async processClaim(claim: ClaimedAlert): Promise<void> {
+    if (claim.attempts > MAX_ATTEMPTS) {
+      // Reclaimed after a crash stranded it at exactly the cap with `sent_at` still null (see
+      // `claimDueAlerts`). Retire it without trying to send again.
+      await this.finalize(claim, { outcome: "failed" });
+      await this.recordOutcomeAudit(claim, "failure", { reason: "attempts_exhausted" });
+      return;
+    }
+
     // A claim whose period has already rolled over (e.g. claimed at 23:59 on the last day of
     // the month and picked up after midnight) would email last period's numbers and a reset
     // date already in the past. Supersede it without sending; a level crossed again this
@@ -155,6 +191,16 @@ export class UsageLimitAlertDispatcher {
       return;
     }
 
+    if (alertLevelRank(conversations.level) < alertLevelRank(claim.level)) {
+      // The crossing this claim represents no longer holds: a reservation `release()`
+      // refunded it (release never re-arms), or a top-up repaid the debt before this
+      // refusal-time `grace_exhausted` claim was swept. Delete rather than finalize — fenced
+      // to this exact generation — so the primary key is free for a later real crossing to
+      // claim again instead of sitting behind a dead, terminal row. Not a delivery failure.
+      await this.deleteClaim(claim);
+      return;
+    }
+
     const email = buildAlertEmail({
       level: claim.level,
       accountId: claim.accountId,
@@ -173,11 +219,13 @@ export class UsageLimitAlertDispatcher {
           subject: email.subject,
           kind: "usage_alert",
           content: email.content,
-          // Stable across retries (same account/period/level/recipient), so a provider-side
-          // dedup window (Resend: 24h) catches a resend to a recipient a prior, partially
-          // failed attempt already reached. The backoff schedule (cap 30 min, 5 attempts)
-          // fits well inside that window.
-          idempotencyKey: `usage_alert:${claim.accountId}:${claim.periodStart}:${claim.level}:${recipient.email}`,
+          // Stable across retries of this same generation (same account/period/level/
+          // created_at/recipient), so a provider-side dedup window (Resend: 24h) catches a
+          // resend to a recipient a prior, partially failed attempt already reached. The
+          // backoff schedule (cap 30 min, 5 attempts) fits well inside that window. Scoped by
+          // `createdAtMs` so a re-armed claim (new generation, same primary key) gets its own
+          // key rather than colliding with — and being silently dropped by — the old one's.
+          idempotencyKey: `usage_alert:${claim.accountId}:${claim.periodStart}:${claim.level}:${claim.createdAtMs}:${recipient.email}`,
         }),
       ),
     );
@@ -221,6 +269,17 @@ export class UsageLimitAlertDispatcher {
       .where("account_id", "=", claim.accountId)
       .where("period_start", "=", sql<string>`${claim.periodStart}::date`)
       .where("level", "=", claim.level)
+      .where(this.createdAtFence(claim))
+      .execute();
+  }
+
+  private async deleteClaim(claim: ClaimedAlert): Promise<void> {
+    await this.db
+      .deleteFrom("ee_usage_limit_alerts")
+      .where("account_id", "=", claim.accountId)
+      .where("period_start", "=", sql<string>`${claim.periodStart}::date`)
+      .where("level", "=", claim.level)
+      .where(this.createdAtFence(claim))
       .execute();
   }
 
@@ -250,6 +309,7 @@ export class UsageLimitAlertDispatcher {
       .where("account_id", "=", claim.accountId)
       .where("period_start", "=", sql<string>`${claim.periodStart}::date`)
       .where("level", "=", claim.level)
+      .where(this.createdAtFence(claim))
       .execute();
   }
 

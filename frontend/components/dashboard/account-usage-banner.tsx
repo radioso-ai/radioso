@@ -83,10 +83,10 @@ export function AccountUsageBanner({
     if (!periodStart) {
       return
     }
-    const isDismissed = window.localStorage.getItem(nearingLimitDismissalKey(periodStart)) === '1'
+    const isDismissed = window.localStorage.getItem(nearingLimitDismissalKey(accountId, periodStart)) === '1'
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reads a client-only localStorage value once the period is known.
     setDismissedPeriod(isDismissed ? periodStart : null)
-  }, [periodStart])
+  }, [accountId, periodStart])
 
   if (!enabled) {
     return null
@@ -115,7 +115,7 @@ export function AccountUsageBanner({
     if (!periodStart) {
       return
     }
-    window.localStorage.setItem(nearingLimitDismissalKey(periodStart), '1')
+    window.localStorage.setItem(nearingLimitDismissalKey(accountId, periodStart), '1')
     setDismissedPeriod(periodStart)
   }
 

@@ -172,6 +172,38 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
     return rows[0];
   };
 
+  // `insertClaim` writes a claim row directly, bypassing the real usage path
+  // (`reserveTenths`) that normally produces one. The dispatcher now reads the account's
+  // actual current level before sending (fix 3), so a test that inserts a synthetic claim
+  // must also set real usage that backs it, or the dispatcher correctly (and intentionally)
+  // treats the claim as stale and deletes it before ever trying to send.
+  const setUsageState = async (accountId: string, usedTenths: number, balanceTenths: number): Promise<void> => {
+    const periodStart = currentPeriodStart();
+    await database.query(
+      `INSERT INTO ee_usage_limit_unit_counters (account_id, period_start, used_tenths) VALUES ($1, $2::date, $3)
+       ON CONFLICT (account_id, period_start) DO UPDATE SET used_tenths = EXCLUDED.used_tenths`,
+      [accountId, periodStart, usedTenths],
+    );
+    await database.query(
+      `INSERT INTO ee_usage_limit_credits (account_id, balance_tenths) VALUES ($1, $2)
+       ON CONFLICT (account_id) DO UPDATE SET balance_tenths = EXCLUDED.balance_tenths`,
+      [accountId, balanceTenths],
+    );
+  };
+
+  const readCreatedAtMs = async (
+    accountId: string,
+    level: string,
+    periodStart: string = currentPeriodStart(),
+  ): Promise<string> => {
+    const rows = await database.query<{ created_at_ms: string }>(
+      `SELECT (extract(epoch from created_at) * 1000)::bigint::text AS created_at_ms
+       FROM ee_usage_limit_alerts WHERE account_id = $1 AND period_start = $2::date AND level = $3`,
+      [accountId, periodStart, level],
+    );
+    return rows[0].created_at_ms;
+  };
+
   const pushClaimDue = async (accountId: string, level: string): Promise<void> => {
     await database.query(
       `UPDATE ee_usage_limit_alerts SET next_attempt_at = now() - interval '1 second'
@@ -219,6 +251,7 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
   it("sends one email per administrator contact and marks the claim sent", async () => {
     const accountId = await seedAccount();
     await assignProfile(accountId, 10);
+    await setUsageState(accountId, 100, 0);
     await insertClaim(accountId, "nearing_limit");
     const { dispatcher, noticeMail, audit, sent } = createDispatcher({
       administrators: [
@@ -245,6 +278,7 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
   it("keys each recipient's send with a stable idempotency key scoped to account/period/level/recipient", async () => {
     const accountId = await seedAccount();
     await assignProfile(accountId, 10);
+    await setUsageState(accountId, 100, 0);
     await insertClaim(accountId, "limit_reached");
     const { dispatcher, sent } = createDispatcher({
       administrators: [
@@ -256,15 +290,17 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
     await dispatcher.run();
 
     const periodStart = currentPeriodStart();
+    const createdAtMs = await readCreatedAtMs(accountId, "limit_reached");
     expect(sent.find((m) => m.to === "owner@example.com")?.idempotencyKey)
-      .toBe(`usage_alert:${accountId}:${periodStart}:limit_reached:owner@example.com`);
+      .toBe(`usage_alert:${accountId}:${periodStart}:limit_reached:${createdAtMs}:owner@example.com`);
     expect(sent.find((m) => m.to === "admin@example.com")?.idempotencyKey)
-      .toBe(`usage_alert:${accountId}:${periodStart}:limit_reached:admin@example.com`);
+      .toBe(`usage_alert:${accountId}:${periodStart}:limit_reached:${createdAtMs}:admin@example.com`);
   });
 
   it("reuses the same idempotency key on a retry, so the provider's dedup window catches a resend", async () => {
     const accountId = await seedAccount();
     await assignProfile(accountId, 10);
+    await setUsageState(accountId, 100, 0);
     await insertClaim(accountId, "nearing_limit");
     let callCount = 0;
     const { dispatcher, sent } = createDispatcher({
@@ -304,6 +340,7 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
   it("reports a non-dispatching mail driver in the success audit's dispatchedCount", async () => {
     const accountId = await seedAccount();
     await assignProfile(accountId, 10);
+    await setUsageState(accountId, 100, 0);
     await insertClaim(accountId, "nearing_limit");
     const { dispatcher, audit } = createDispatcher({ dispatched: false });
 
@@ -320,6 +357,7 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
   it("marks a lower level superseded without sending it, once a higher level exists for the same period", async () => {
     const accountId = await seedAccount();
     await assignProfile(accountId, 10);
+    await setUsageState(accountId, 100, 0);
     await insertClaim(accountId, "nearing_limit");
     await insertClaim(accountId, "limit_reached");
     const { dispatcher, noticeMail } = createDispatcher();
@@ -354,6 +392,7 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
   it("retries a failed send with backoff, logging accountId/level/attempt/errorCode and no email or content", async () => {
     const accountId = await seedAccount();
     await assignProfile(accountId, 10);
+    await setUsageState(accountId, 100, 0);
     await insertClaim(accountId, "nearing_limit");
     let callCount = 0;
     const { dispatcher, logger, audit } = createDispatcher({
@@ -392,6 +431,7 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
   it("gives up after exhausting attempts: outcome failed plus a failure audit", async () => {
     const accountId = await seedAccount();
     await assignProfile(accountId, 10);
+    await setUsageState(accountId, 100, 0);
     await insertClaim(accountId, "limit_reached");
     const { dispatcher, audit } = createDispatcher({
       sendImpl: async () => {
@@ -419,9 +459,125 @@ describeIfDatabase("UsageLimitAlertDispatcher", () => {
     }));
   });
 
+  it("finalizes a stranded claim (attempts already at the cap, sent_at null) as failed without trying to send", async () => {
+    const accountId = await seedAccount();
+    await assignProfile(accountId, 10);
+    await insertClaim(accountId, "limit_reached");
+    // Simulate a crash right after a prior sweep claimed the final allowed attempt: attempts
+    // already at the cap, but sent_at never got written because the process died first.
+    await database.query(
+      `UPDATE ee_usage_limit_alerts SET attempts = 5, next_attempt_at = now() - interval '1 second'
+       WHERE account_id = $1 AND period_start = $2::date AND level = $3`,
+      [accountId, currentPeriodStart(), "limit_reached"],
+    );
+    const { dispatcher, noticeMail, audit } = createDispatcher();
+
+    await dispatcher.run();
+
+    expect(noticeMail.send).not.toHaveBeenCalled();
+    const claim = await readClaim(accountId, "limit_reached");
+    expect(claim.outcome).toBe("failed");
+    expect(claim.sent_at).not.toBeNull();
+    expect(claim.attempts).toBe(6);
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure",
+      metadata: expect.objectContaining({ level: "limit_reached", reason: "attempts_exhausted" }),
+    }));
+  });
+
+  it("deletes the claim and sends nothing once a release has refunded the crossing it represents, and a later real crossing claims again", async () => {
+    const accountId = await seedAccount();
+    const workspaceId = randomUUID();
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, 'w', $3)`,
+      [workspaceId, accountId, `route-${workspaceId}`],
+    );
+    await assignProfile(accountId, 10);
+    const service = new EnterpriseUsageLimitService(database);
+    const reserveConversation = () => service.reserveAnswer({
+      accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID(),
+    });
+
+    // Cross into limit_reached (claims nearing_limit and limit_reached naturally), then
+    // release the last reservation so the account's current level drops back down —
+    // `release()` never re-arms (clears no claims), so the limit_reached row is still there.
+    const reservations: Array<{ release(): Promise<void> }> = [];
+    for (let i = 0; i < 10; i += 1) {
+      reservations.push(await reserveConversation());
+    }
+    expect((await readClaim(accountId, "limit_reached"))?.outcome).toBeNull();
+    await reservations[reservations.length - 1].release();
+    // Isolate fix 3's own check from the supersede check: delete the nearing_limit claim
+    // the earlier crossings also made, so this test's outcome does not depend on which of
+    // the two claims this sweep happens to process first.
+    await database.query(
+      `DELETE FROM ee_usage_limit_alerts WHERE account_id = $1 AND period_start = $2::date AND level = 'nearing_limit'`,
+      [accountId, currentPeriodStart()],
+    );
+
+    const { dispatcher, noticeMail } = createDispatcher();
+    await dispatcher.run();
+
+    expect(noticeMail.send).not.toHaveBeenCalled();
+    expect(await readClaim(accountId, "limit_reached")).toBeUndefined();
+
+    // A later real crossing claims again: the deleted row's primary key is free.
+    await reserveConversation();
+    expect((await readClaim(accountId, "limit_reached"))?.sent_at).toBeNull();
+
+    // Cleanup: this claim is deliberately left pending (sent_at null) to prove the point
+    // above. `claimDueAlerts` sweeps across every account with no account_id filter — exactly
+    // as production must — so a row left pending here would otherwise be swept by a later
+    // test's dispatcher.run() too.
+    await database.query(
+      `DELETE FROM ee_usage_limit_alerts WHERE account_id = $1 AND period_start = $2::date AND level = 'limit_reached'`,
+      [accountId, currentPeriodStart()],
+    );
+  });
+
+  it("a re-armed claim's new generation is unaffected by a finalize step still fenced to the old generation's created_at", async () => {
+    const accountId = await seedAccount();
+    await assignProfile(accountId, 10);
+    await setUsageState(accountId, 100, 0);
+    await insertClaim(accountId, "nearing_limit");
+    let resolveSend!: () => void;
+    const { dispatcher } = createDispatcher({
+      sendImpl: () => new Promise<void>((resolve) => { resolveSend = resolve; }),
+    });
+
+    const running = dispatcher.run();
+    // Give the dispatcher time to claim the row and enter the (still-pending) send call.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // Re-arm concurrently, exactly as `addCredits`/`assignProfile` would: delete and
+    // reinsert the same primary key, producing a new generation with a new created_at.
+    await database.query(
+      `DELETE FROM ee_usage_limit_alerts WHERE account_id = $1 AND period_start = $2::date AND level = $3`,
+      [accountId, currentPeriodStart(), "nearing_limit"],
+    );
+    await insertClaim(accountId, "nearing_limit");
+
+    resolveSend();
+    await running;
+
+    // The in-flight finalize was fenced to the old generation's created_at, so it could not
+    // touch the new row: the new generation stays exactly as re-armed (unsent, zero attempts).
+    const claim = await readClaim(accountId, "nearing_limit");
+    expect(claim?.sent_at).toBeNull();
+    expect(claim?.attempts).toBe(0);
+
+    // Cleanup: this row is deliberately left pending to prove the point above (see the
+    // "release" test's cleanup comment for why a pending row must not survive the test).
+    await database.query(
+      `DELETE FROM ee_usage_limit_alerts WHERE account_id = $1 AND period_start = $2::date AND level = 'nearing_limit'`,
+      [accountId, currentPeriodStart()],
+    );
+  });
+
   it("never double-sends when two sweeps race the same claim", async () => {
     const accountId = await seedAccount();
     await assignProfile(accountId, 10);
+    await setUsageState(accountId, 100, 0);
     await insertClaim(accountId, "nearing_limit");
     const sendCalls: string[] = [];
     const slowSend = async (input: { to: string }) => {

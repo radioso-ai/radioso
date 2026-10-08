@@ -24,11 +24,13 @@ const TONE_BY_LEVEL: Readonly<Record<AccountUsageBannerLevel, AccountUsageBanner
 }
 
 /**
- * localStorage key for a dismissed `nearing_limit` banner, scoped to the billing period so a
- * new period re-shows the heads-up even though last period's dismissal is still in storage.
+ * localStorage key for a dismissed `nearing_limit` banner, scoped to the account and the billing
+ * period: per-period so a new period re-shows the heads-up even though last period's dismissal is
+ * still in storage, and per-account so dismissing one account's banner (localStorage is shared
+ * across a browser, not per-account) never hides a different account's.
  */
-export const nearingLimitDismissalKey = (periodStart: string): string =>
-  `radioso:account-usage-banner:nearing-limit-dismissed:${periodStart}`
+export const nearingLimitDismissalKey = (accountId: string, periodStart: string): string =>
+  `radioso:account-usage-banner:nearing-limit-dismissed:${accountId}:${periodStart}`
 
 /**
  * Precedence: past_due > grace_exhausted > limit_reached > nearing_limit. Hidden on the account

@@ -7,8 +7,10 @@ import {
   isDirectiveEligibleForTurn,
 } from "../src/index.js";
 import type {
+  ConversationDirectiveMatcher,
   ConversationEvent,
   ConversationRoutineStepRenderer,
+  ConversationTurnComposer,
   Directive,
   ProcessTurnInput,
   Routine,
@@ -48,7 +50,7 @@ const createRoutineInput = (
 ): ProcessTurnInput => {
   const events: ConversationEvent[] = [];
   const stepRenderer: ConversationRoutineStepRenderer = renderer ?? {
-    render: vi.fn(async ({ steering }) => ({
+    render: vi.fn<ConversationRoutineStepRenderer["render"]>(async ({ steering }) => ({
       answer: steering.map((rule) => rule.action).join(" | "),
       metadata: { steering },
     })),
@@ -77,9 +79,9 @@ const createRoutineInput = (
     },
     modelGateway: { complete: vi.fn() },
     directiveMatcher: {
-      match: vi.fn(async ({ directives }) => [
+      match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ directives }) => [
         {
-          directive: directives[0]!,
+          directive: directives[0],
           selectionMode: "deterministic",
           selectionReason: "always",
         },
@@ -87,7 +89,7 @@ const createRoutineInput = (
     },
     selector: { select: vi.fn(async () => ({ selected: [] })) },
     dispatcher: { dispatch: vi.fn() },
-    composer: { compose: vi.fn(async ({ turn }) => ({ answer: turn.steering.map((rule) => rule.action).join(" | ") })) },
+    composer: { compose: vi.fn<ConversationTurnComposer["compose"]>(async ({ turn }) => ({ answer: turn.steering.map((rule) => rule.action).join(" | ") })) },
     routineStore: {
       loadActive: vi.fn(async () => activeState),
       save: vi.fn(async () => {}),
@@ -169,10 +171,10 @@ describe("one steering-list pipeline", () => {
     let capturedTurn: TurnContext | null = null;
     const input = createRoutineInput({
       directiveMatcher: {
-        match: vi.fn(async ({ turn, directives }) => {
+        match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ turn, directives }) => {
           capturedTurn = turn;
           return [{
-            directive: directives[0]!,
+            directive: directives[0],
             selectionMode: "deterministic",
             selectionReason: "always",
           }];
@@ -268,7 +270,7 @@ describe("one steering-list pipeline", () => {
         testDirective({ name: "non-scope", action: "Non-scope action", tags: ["foo"] }),
       ],
       directiveMatcher: {
-        match: vi.fn(async ({ directives }) => {
+        match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ directives }) => {
           matchedNames.push(directives.map((directive) => directive.name));
           return directives.map((directive) => ({
             directive,
@@ -311,7 +313,7 @@ describe("one steering-list pipeline", () => {
         testDirective({ name: "rendered-step", action: "Rendered step action", tags: ["step:contact:ask_message"] }),
       ],
       directiveMatcher: {
-        match: vi.fn(async ({ directives }) => {
+        match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ directives }) => {
           matchedNames.push(directives.map((directive) => directive.name));
           return directives.map((directive) => ({
             directive,
@@ -346,7 +348,7 @@ describe("one steering-list pipeline", () => {
         testDirective({ name: "step", action: "Step action", tags: ["step:contact:ask_email"] }),
       ],
       directiveMatcher: {
-        match: vi.fn(async ({ directives }) => {
+        match: vi.fn<ConversationDirectiveMatcher["match"]>(async ({ directives }) => {
           matchedNames.push(directives.map((directive) => directive.name));
           return directives.map((directive) => ({
             directive,

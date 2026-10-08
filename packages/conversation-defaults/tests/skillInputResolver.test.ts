@@ -223,7 +223,7 @@ describe("createConversationSkillInputResolver", () => {
       .resolves.toMatchObject({ kind: "failed", code: "model_error" });
 
     const pending = createConversationSkillInputResolver({
-      modelGateway: { complete: vi.fn(() => new Promise(() => undefined)) },
+      modelGateway: { complete: vi.fn<ConversationModelGateway["complete"]>(() => new Promise<never>(() => undefined)) },
       deadlineMs: 1,
     });
     await expect(pending.resolve({ skill, selected: { skillName: skill.name }, turn: turn() }))

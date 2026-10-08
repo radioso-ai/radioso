@@ -156,7 +156,7 @@ describe("DefaultClarifier", () => {
       },
     });
 
-    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0][0].systemPrompt;
+    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0][0].systemPrompt ?? "";
     expect(systemPrompt.indexOf("Higher priority phrasing.")).toBeLessThan(
       systemPrompt.indexOf("Lower priority phrasing."),
     );
@@ -309,8 +309,8 @@ describe("DefaultClarifier", () => {
       // dropped by `userFacingOptionsList` before numbering, so the visitor reads
       // billing as 1 and support as 2. Resolving against the raw list instead
       // would silently shift every choice by one.
-      const withHiddenCandidate = [
-        { id: "hidden", label: "hidden", confidence: 0.9 },
+      const withHiddenCandidate: ClarificationCandidate[] = [
+        { id: "hidden", label: "hidden", confidence: 0.9, payload: {} },
         ...candidates,
       ];
       const modelGateway = gateway('{"kind":"unrelated"}');

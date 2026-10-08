@@ -107,7 +107,7 @@ describe("completed-instance slot-correction interceptor", () => {
     // Immutable slot — detection misfired; the deterministic gate must reject it and leave
     // the turn to normal answering (only invalid_value re-asks).
     const { input, save, rejectInvalid } = buildInput({
-      detect: vi.fn(async () => ({
+      detect: vi.fn<ConversationRoutineSlotCorrection["detect"]>(async () => ({
         slots: [{ id: "s_email", key: "email", type: "email", required: true, mutable: false }],
         slotKey: "email",
         rawValue: "new@example.com",

@@ -189,6 +189,9 @@ const settleRoutineTurn = async (claimed: ClaimedRoutineTurn, response: Renderab
     await request.routineStore!.save({
       ...state,
       path,
+      // The values the run ended with: `state` predates this turn, which can capture the
+      // last slot or assign a tool output on its way to the ending (#1452).
+      variables: result.endedVariables ?? state.variables,
       status: "completed",
       metadata: {
         ...(state.metadata ?? {}),

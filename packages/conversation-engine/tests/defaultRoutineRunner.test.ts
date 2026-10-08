@@ -484,6 +484,33 @@ describe("DefaultRoutineRunner", () => {
     expect(result.terminal).toEqual({ kind: "complete", stepId: "done", collected: { email: "a@b.c" } });
   });
 
+  it("reports every value the run ends with, the ending turn's answer and tool outputs included (#1452)", async () => {
+    const submitting: Routine = {
+      ...routine,
+      steps: [
+        ...routine.steps.filter((step) => step.kind === "chat"),
+        { id: "submit", kind: "skill", skillName: "human_contact.request", outputAssignments: { reference: "request_ref" } },
+        { id: "done", kind: "terminal", action: "Confirm the request was sent." },
+      ],
+      transitions: [
+        { from: "ask_email", to: "ask_message", condition: "a valid email was provided" },
+        { from: "ask_message", to: "submit", condition: "a message was provided" },
+        { from: "submit", to: "done", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const runner = new DefaultRoutineRunner(
+      [submitting],
+      { select: vi.fn(async () => ({ nextStepId: "submit", variables: { message: "Please call me back" } })) },
+      { render: vi.fn(echoRenderer.render) },
+      { dispatch: vi.fn(async () => ({ status: "completed" as const, outputs: { reference: "REQ-7" } })) },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email", "ask_message"], { email: "a@b.c" }) });
+
+    expect(result.nextState).toBeNull();
+    expect(result.endedVariables).toEqual({ email: "a@b.c", message: "Please call me back", request_ref: "REQ-7" });
+  });
+
   it("does not emit completion export when the terminal kind is not configured", async () => {
     const exportRoutine: Routine = {
       ...routine,
@@ -4281,6 +4308,7 @@ describe("DefaultRoutineRunner bounded re-asks (#1376)", () => {
       expect(askedDifferently.nextState).toMatchObject({ path: ["ask_contact"], reaskCount: 4 });
       expect(stuck.nextState).toBeNull();
       expect(stuck.terminal).toEqual({ kind: "stuck", stepId: "ask_contact", collected: { full_name: "Giulia" } });
+      expect(stuck.endedVariables).toEqual({ full_name: "Giulia" });
       expect(stuck.response.answer).toBe("[ask_contact]");
       expect(render.render).toHaveBeenLastCalledWith({
         step: expect.objectContaining({ id: "ask_contact" }),

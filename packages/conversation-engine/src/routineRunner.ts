@@ -1182,6 +1182,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         effects: {
           nextState: null,
           terminal: { kind: "stuck", stepId: currentStep.id, collected: declaredSlotVariables(routine, variables) },
+          endedVariables: variables,
           trace: {
             routineId: routine.id,
             startStepId: currentStepId,
@@ -1447,8 +1448,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     return {
       kind: "claimed",
       effects: {
-        // A terminal step ends the routine — clear its state.
-        nextState: step.kind === "terminal" ? null : nextState,
+        // A terminal step ends the routine — clear its state, and report the values it ended
+        // with for the host's record of the ended run.
+        ...(step.kind === "terminal" ? { nextState: null, endedVariables: variables } : { nextState }),
         ...(terminalKind
           ? { terminal: terminalResult(terminalKind, step, declaredSlotVariables(routine, variables)) }
           : {}),

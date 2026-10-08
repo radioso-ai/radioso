@@ -296,3 +296,62 @@ test('returning with ?billing=success refetches billing state and clears the que
     .poll(() => requestLog.filter((entry) => entry.startsWith('GET /ee/billing/me')).length)
     .toBeGreaterThan(1)
 })
+
+test('toggling auto top-up on sends enabled and the selected pack count', async ({ page }) => {
+  const billingRequests: Array<{ method: 'GET' | 'POST' | 'PUT'; path: string; body?: unknown }> = []
+  await seedDashboardStorage(page)
+  await installDashboardApiMocks(page, {
+    billingRequests,
+    accountUsageSummary: baseAccountUsageSummary(),
+    billingSummary: baseBillingSummary(),
+    planCatalog: basePlanCatalog(),
+  })
+
+  await page.goto(`/w/${workspaceKey}/usage`)
+  const planCard = page.getByTestId('plan-card')
+  await planCard.getByRole('switch', { name: 'Auto top-up' }).click()
+
+  await expect
+    .poll(() => billingRequests.find((entry) => entry.path === '/ee/billing/auto-top-up'))
+    .toEqual({
+      method: 'PUT',
+      path: '/ee/billing/auto-top-up',
+      body: { enabled: true, maxPacksPerMonth: 3 },
+    })
+  await expect(planCard.getByRole('switch', { name: 'Auto top-up' })).toBeChecked()
+
+  await planCard.getByRole('combobox', { name: 'Times a month' }).click()
+  await page.getByRole('option', { name: '5', exact: true }).click()
+
+  await expect
+    .poll(() => billingRequests.filter((entry) => entry.path === '/ee/billing/auto-top-up').length)
+    .toBeGreaterThan(1)
+  const last = billingRequests.filter((entry) => entry.path === '/ee/billing/auto-top-up').pop()
+  expect(last).toEqual({
+    method: 'PUT',
+    path: '/ee/billing/auto-top-up',
+    body: { enabled: true, maxPacksPerMonth: 5 },
+  })
+})
+
+test('shows the disabled-after-failure line when auto top-up was turned off by a payment failure', async ({ page }) => {
+  await seedDashboardStorage(page)
+  await installDashboardApiMocks(page, {
+    accountUsageSummary: baseAccountUsageSummary(),
+    billingSummary: {
+      ...baseBillingSummary(),
+      autoTopUp: {
+        ...baseBillingSummary().autoTopUp,
+        enabled: false,
+        disabledReason: 'payment_failed' as const,
+        disabledAt: '2026-04-15T00:00:00.000Z',
+      },
+    },
+    planCatalog: basePlanCatalog(),
+  })
+
+  await page.goto(`/w/${workspaceKey}/usage`)
+  const planCard = page.getByTestId('plan-card')
+  await expect(planCard.getByText(/Turned off after a payment failed on/)).toBeVisible()
+  await expect(planCard.getByRole('switch', { name: 'Auto top-up' })).not.toBeChecked()
+})

@@ -8,9 +8,12 @@ import { HttpError } from "../shared/httpError.js";
 import { requireAccountSession } from "../shared/requireAccountSession.js";
 import { createEeKysely } from "../db/eeSchema.js";
 import { EnterpriseUsageLimitService } from "../usageLimits/usageLimitService.js";
+import { currentPeriodStart } from "../usageLimits/period.js";
 import type { BillingCustomerRepository, BillingCustomerRow } from "./billingCustomerRepository.js";
 import { PostgresBillingCustomerRepository } from "./billingCustomerRepository.js";
-import { isTopUpEligible, lookupKeyFor, upgradePlanIdFor } from "./planPricing.js";
+import type { AutoTopUpRepository, AutoTopUpSettingsRow } from "./autoTopUpRepository.js";
+import { PostgresAutoTopUpRepository } from "./autoTopUpRepository.js";
+import { isAutoTopUpAvailable, isTopUpEligible, lookupKeyFor, upgradePlanIdFor } from "./planPricing.js";
 import { handleBillingWebhookEvent } from "./billingWebhookHandler.js";
 import { StripeSignatureVerificationError, type StripeGateway } from "./stripeGateway.js";
 
@@ -59,6 +62,11 @@ const portalBodySchema = z.object({
   returnPath: returnPathSchema,
 });
 
+const autoTopUpBodySchema = z.object({
+  enabled: z.boolean(),
+  maxPacksPerMonth: z.number().int().min(1).max(PLAN_CATALOG.autoTopUp.maxPacksPerMonthLimit),
+});
+
 const parseRequest = <T>(schema: z.ZodType<T>, value: unknown, message: string): T => {
   const parsed = schema.safeParse(value);
   if (parsed.success) {
@@ -79,8 +87,38 @@ const buildReturnUrl = (appBaseUrl: string, returnPath: string, query: string): 
 interface BillingRouteOverrides {
   gateway?: StripeGateway;
   repository?: BillingCustomerRepository;
+  autoTopUpRepository?: AutoTopUpRepository;
   usageService?: Pick<EnterpriseUsageLimitService, "getAccountUsage" | "assignProfile" | "addCredits">;
 }
+
+/** The `autoTopUp` block on `GET /me`, also returned by `PUT /auto-top-up` so a caller sees the
+ *  effect of its own write without a second round trip. */
+const buildAutoTopUpSummary = async (
+  autoTopUpRepository: AutoTopUpRepository,
+  input: { accountId: string; available: boolean },
+): Promise<{
+  available: boolean;
+  enabled: boolean;
+  maxPacksPerMonth: number;
+  maxPacksPerMonthLimit: number;
+  packsThisPeriod: number;
+  disabledReason: AutoTopUpSettingsRow["disabledReason"];
+  disabledAt: string | null;
+}> => {
+  const [settings, packsThisPeriod] = await Promise.all([
+    autoTopUpRepository.getSettings(input.accountId),
+    autoTopUpRepository.countForPeriod(input.accountId, currentPeriodStart()),
+  ]);
+  return {
+    available: input.available,
+    enabled: settings?.enabled ?? false,
+    maxPacksPerMonth: settings?.maxPacksPerMonth ?? PLAN_CATALOG.autoTopUp.defaultMaxPacksPerMonth,
+    maxPacksPerMonthLimit: PLAN_CATALOG.autoTopUp.maxPacksPerMonthLimit,
+    packsThisPeriod,
+    disabledReason: settings?.disabledReason ?? null,
+    disabledAt: settings?.disabledAt ? settings.disabledAt.toISOString() : null,
+  };
+};
 
 const ensureCustomer = async (
   gateway: StripeGateway,
@@ -121,6 +159,8 @@ export const createBillingRoutes = (
 
   const repository =
     overrides.repository ?? new PostgresBillingCustomerRepository(createEeKysely(dependencies.connectorDb.pool));
+  const autoTopUpRepository =
+    overrides.autoTopUpRepository ?? new PostgresAutoTopUpRepository(createEeKysely(dependencies.connectorDb.pool));
   const usageService = overrides.usageService ?? new EnterpriseUsageLimitService(dependencies.connectorDb);
   const gateway = overrides.gateway ?? null;
 
@@ -144,6 +184,14 @@ export const createBillingRoutes = (
       const planId = usage.profile?.key ?? PLAN_CATALOG.defaultPlanId;
       const plan = findPlan(planId) ?? findPlan(PLAN_CATALOG.defaultPlanId)!;
       const row = await repository.findByAccount(accountId);
+      const autoTopUp = await buildAutoTopUpSummary(autoTopUpRepository, {
+        accountId,
+        available: isAutoTopUpAvailable({
+          planId,
+          subscriptionStatus: row?.status ?? "none",
+          hasSubscription: Boolean(row?.stripeSubscriptionId),
+        }),
+      });
 
       res.status(200).json({
         configured: true,
@@ -158,7 +206,49 @@ export const createBillingRoutes = (
         // display fallback above — a legacy or hand-assigned profile must read ineligible rather
         // than inheriting the free plan's display fallback.
         topUpAvailable: isTopUpEligible(planId),
+        autoTopUp,
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.put("/auto-top-up", requireAccountSession(dependencies), async (req, res, next) => {
+    try {
+      const body = parseRequest(autoTopUpBodySchema, req.body, "Invalid auto top-up payload");
+      const { accountId, userId } = res.locals as { accountId: string; userId: string };
+
+      const usage = await usageService.getAccountUsage(accountId);
+      const planId = usage.profile?.key ?? PLAN_CATALOG.defaultPlanId;
+      const row = await repository.findByAccount(accountId);
+      const available = isAutoTopUpAvailable({
+        planId,
+        subscriptionStatus: row?.status ?? "none",
+        hasSubscription: Boolean(row?.stripeSubscriptionId),
+      });
+      if (!available) {
+        throw new HttpError(409, "auto_top_up_unavailable", "Auto top-up is not available for this account.");
+      }
+
+      await autoTopUpRepository.upsertSettings({
+        accountId,
+        enabled: body.enabled,
+        maxPacksPerMonth: body.maxPacksPerMonth,
+        updatedByUserId: userId,
+        // Enabling clears a prior payment-failure disable; disabling (an operator's own
+        // opt-out) leaves any existing reason alone -- only the webhook sets it.
+        ...(body.enabled ? { disabledReason: null, disabledAt: null } : {}),
+      });
+      await dependencies.auditService.record({
+        accountId,
+        workspaceId: null,
+        eventType: "billing.auto_top_up_updated",
+        eventStatus: "success",
+        metadata: { enabled: body.enabled, maxPacksPerMonth: body.maxPacksPerMonth },
+      });
+
+      const autoTopUp = await buildAutoTopUpSummary(autoTopUpRepository, { accountId, available });
+      res.status(200).json({ autoTopUp });
     } catch (error) {
       next(error);
     }
@@ -277,6 +367,7 @@ export const createBillingRoutes = (
         repository,
         usage: usageService,
         gateway: activeGateway,
+        autoTopUps: autoTopUpRepository,
         noticeMail: dependencies.noticeMail,
         accountAdministrators: dependencies.accountAdministrators,
         audit: dependencies.auditService,

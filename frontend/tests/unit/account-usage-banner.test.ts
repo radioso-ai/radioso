@@ -36,6 +36,15 @@ const baseBilling = (overrides: Partial<EnterpriseBillingSummary> = {}): Enterpr
   currentPeriodEnd: '2026-05-01T00:00:00.000Z',
   upgradePlanId: 'planet',
   topUpAvailable: true,
+  autoTopUp: {
+    available: true,
+    enabled: false,
+    maxPacksPerMonth: 3,
+    maxPacksPerMonthLimit: 10,
+    packsThisPeriod: 0,
+    disabledReason: null,
+    disabledAt: null,
+  },
   ...overrides,
 })
 

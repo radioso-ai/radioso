@@ -12,6 +12,8 @@ import {
   type StripePriceRef,
   type StripeProductRef,
   type StripeSubscriptionEventData,
+  type StripeTopUpInvoiceParams,
+  type StripeTopUpInvoiceResult,
   type StripeWebhookEvent,
 } from "./stripeGateway.js";
 
@@ -92,6 +94,49 @@ export class StripeSdkGateway implements StripeGateway {
       return_url: params.returnUrl,
     });
     return { url: session.url };
+  }
+
+  async createTopUpInvoice(params: StripeTopUpInvoiceParams): Promise<StripeTopUpInvoiceResult> {
+    // Resolved explicitly: `InvoiceCreateParams.default_payment_method`'s own fallback ("the
+    // subscription's default payment method, if any, or the customer's invoice settings")
+    // applies when Stripe can tie the invoice to that subscription. This invoice is deliberately
+    // standalone (no `subscription` field -- it is an out-of-cycle charge, not a renewal), so we
+    // read the subscription's payment method ourselves rather than rely on that fallback.
+    const subscription = await this.client.subscriptions.retrieve(params.subscriptionId);
+    const defaultPaymentMethod = subscription.default_payment_method
+      ? refId(subscription.default_payment_method)
+      : undefined;
+
+    const invoice = await this.client.invoices.create(
+      {
+        customer: params.customerId,
+        collection_method: "charge_automatically",
+        auto_advance: true,
+        automatic_tax: { enabled: true },
+        // Explicit even though it is the API default: a stray pending item for this customer
+        // (e.g. a future manual adjustment) must never ride along on an auto-top-up charge.
+        pending_invoice_items_behavior: "exclude",
+        ...(defaultPaymentMethod ? { default_payment_method: defaultPaymentMethod } : {}),
+        metadata: params.metadata,
+      },
+      { idempotencyKey: params.idempotencyKey },
+    );
+
+    await this.client.invoiceItems.create(
+      { customer: params.customerId, invoice: invoice.id, pricing: { price: params.priceId } },
+      { idempotencyKey: `${params.idempotencyKey}:item` },
+    );
+
+    const finalized = await this.client.invoices.finalizeInvoice(invoice.id, undefined, {
+      idempotencyKey: `${params.idempotencyKey}:finalize`,
+    });
+    // `finalizeInvoice` already attempts collection for a `charge_automatically` invoice; `pay`
+    // here is a fallback for the rare case that attempt did not resolve it, not the primary path.
+    if (finalized.status !== "paid") {
+      await this.client.invoices.pay(finalized.id, undefined, { idempotencyKey: `${params.idempotencyKey}:pay` });
+    }
+
+    return { invoiceId: finalized.id };
   }
 
   async constructWebhookEvent(rawBody: Buffer, signature: string): Promise<StripeWebhookEvent> {
@@ -200,4 +245,6 @@ const adaptSubscription = (subscription: Stripe.Subscription): StripeSubscriptio
 const adaptInvoice = (invoice: Stripe.Invoice): StripeInvoiceEventData => ({
   id: invoice.id,
   customerId: invoice.customer ? refId(invoice.customer) : "",
+  metadata: invoice.metadata ?? {},
+  hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
 });

@@ -59,6 +59,18 @@ export const isTopUpPrice = (price: StripePriceLookupKeySource): boolean =>
 export const isTopUpEligible = (planId: string): boolean =>
   PLAN_CATALOG.plans.find((plan) => plan.id === planId)?.topUps ?? false;
 
+/**
+ * Whether an account may turn on auto top-up: the same `topUps` plan eligibility as a one-off
+ * pack purchase, plus an active (not past_due / canceled / absent) subscription to charge. Shared
+ * by `GET /me`, `PUT /auto-top-up`, and the sweep's own eligibility check so the three never
+ * drift on what "available" means.
+ */
+export const isAutoTopUpAvailable = (input: {
+  planId: string;
+  subscriptionStatus: BillingSubscriptionStatus;
+  hasSubscription: boolean;
+}): boolean => isTopUpEligible(input.planId) && input.hasSubscription && input.subscriptionStatus === "active";
+
 /** The next self-serve plan above `planId`, in catalog order. `null` at the self-serve ceiling
  *  plan or for a plan id the catalog does not recognize. */
 export const upgradePlanIdFor = (planId: string): PlanId | null => {

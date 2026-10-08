@@ -193,6 +193,41 @@ Both `limit_reached` and `grace_exhausted` carry the **Upgrade** and **Buy** but
 
 A deployment without Stripe credentials configured skips the card; see [Billing setup](/operators/billing-setup) for the Stripe environment variables and webhook registration.
 
+## Auto top-up
+
+Below the plan card's actions, a paid-plan account with an active subscription can turn on auto top-up: a Switch, and a count of how many packs it may buy in one billing period. Any member with dashboard access may toggle it — buying a pack is already something every member can do by hand, so auto top-up carries no extra role gate. Once it's on, Radioso buys a pack the moment the account reaches `limit_reached` or `grace_exhausted`, so the [grace allowance](#grace-allowance) only has to cover the few seconds to a minute a charge takes to settle, not the rest of the billing period.
+
+`GET /api/v1/ee/billing/me` reports the setting under `autoTopUp`:
+
+```json
+{
+  "autoTopUp": {
+    "available": true,
+    "enabled": true,
+    "maxPacksPerMonth": 3,
+    "maxPacksPerMonthLimit": 10,
+    "packsThisPeriod": 1,
+    "disabledReason": null,
+    "disabledAt": null
+  }
+}
+```
+
+`available` follows the same eligibility as a one-time top-up purchase, plus an active subscription to charge — false on the free plan, on a plan id the catalog doesn't recognize, or without a subscription. `maxPacksPerMonth` is the account's own cap, from 1 up to `maxPacksPerMonthLimit`; `packsThisPeriod` counts packs already charged or in flight this period against that cap.
+
+```bash
+curl -X PUT https://radioso.example.com/api/v1/ee/billing/auto-top-up \
+  -H "Cookie: radioso_session=..." \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true, "maxPacksPerMonth": 3}'
+```
+
+This returns `409 auto_top_up_unavailable` when `available` is false, and `400` for a `maxPacksPerMonth` outside `1..maxPacksPerMonthLimit`. Turning it on clears a prior payment-failure disable.
+
+A sweep evaluates every enabled account about once a minute: the account's usage level, its monthly pack cap, and a one-hour cooldown after a failed charge, so a declining card is retried on a schedule rather than on every tick. At most one pack is ever in flight for an account at a time.
+
+If the charge fails, Radioso turns auto top-up off, records why (`disabledReason: "payment_failed"`, `disabledAt`), and emails the account's owners and admins to update the payment method and turn it back on — see [Billing notices](/operators/billing-setup#billing-notices). A successful charge adds the pack's conversations the same way a one-time top-up purchase does, repaying any grace debt first; Stripe's own receipt email covers the payment itself.
+
 ## Usage alerts
 
 Radioso emails an account's owners and admins when conversation usage crosses `nearing_limit`, `limit_reached`, or `grace_exhausted` — the same levels [Grace allowance](#grace-allowance) reports. Every active owner and admin on the account gets the email; other roles do not.

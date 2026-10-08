@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildAutoTopUpFailedEmail,
   buildPaymentFailedEmail,
   buildPlanChangedEmail,
   buildSubscriptionEndedEmail,
@@ -37,6 +38,27 @@ describe("buildPaymentFailedEmail", () => {
     const email = buildPaymentFailedEmail({ accountId, appBaseUrl });
     expect(email.subject).toBe("Your Radioso payment didn't go through");
     expect(email.content.cta?.label).toBeTruthy();
+  });
+});
+
+describe("buildAutoTopUpFailedEmail", () => {
+  it("includes the hosted invoice URL as a paragraph when present", () => {
+    const email = buildAutoTopUpFailedEmail({
+      accountId,
+      appBaseUrl,
+      hostedInvoiceUrl: "https://invoice.stripe.com/i/123",
+    });
+    expect(email.content.paragraphs.some((p) => p.includes("https://invoice.stripe.com/i/123"))).toBe(true);
+  });
+
+  it("omits any invoice paragraph when there is no hosted invoice URL", () => {
+    const email = buildAutoTopUpFailedEmail({ accountId, appBaseUrl, hostedInvoiceUrl: null });
+    expect(email.content.paragraphs.some((p) => p.includes("http"))).toBe(false);
+  });
+
+  it("still carries the usage-tab CTA", () => {
+    const email = buildAutoTopUpFailedEmail({ accountId, appBaseUrl, hostedInvoiceUrl: null });
+    expect(email.content.cta?.href).toBe(`${appBaseUrl}/account/${accountId}/account?tab=usage`);
   });
 });
 

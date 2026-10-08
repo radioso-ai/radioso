@@ -2,7 +2,9 @@ import { PLAN_CATALOG, STRIPE_PLAN_METADATA_KEY, findPlan, type PlanId } from "@
 
 import type { AccountAdministratorDirectoryPort, NoticeMailPort } from "../radiosoModuleTypes.js";
 import type { BillingCustomerRepository } from "./billingCustomerRepository.js";
+import type { AutoTopUpRepository } from "./autoTopUpRepository.js";
 import {
+  buildAutoTopUpFailedEmail,
   buildPaymentFailedEmail,
   buildPlanChangedEmail,
   buildSubscriptionEndedEmail,
@@ -40,6 +42,7 @@ export interface BillingWebhookHandlerDeps {
   repository: BillingCustomerRepository;
   usage: BillingUsageLimitPort;
   gateway: Pick<StripeGateway, "getProduct">;
+  autoTopUps: Pick<AutoTopUpRepository, "markPaid" | "markFailed" | "disable">;
   noticeMail: NoticeMailPort;
   accountAdministrators: AccountAdministratorDirectoryPort;
   audit: BillingAuditPort;
@@ -77,10 +80,10 @@ const logOutcome = (
  * Claims the event id inside a transaction, then runs `apply` only if the claim succeeded.
  * `markEventProcessed` is called exactly once, BEFORE any side effect. The claim and the
  * customer-row writes share the transaction, so a failure rolls them back together and Stripe's
- * retry sees no marker. Usage-service calls (`assignProfile`, `addCredits`) run on their own
- * connections and are NOT covered by the rollback -- they are safe to re-run only because each is
- * idempotent on its own (`assignProfile` sets a key; `addCredits` dedupes on `reference`). Keep
- * anything non-idempotent out of `apply`.
+ * retry sees no marker. Usage-service calls (`assignProfile`, `addCredits`) and the auto-top-up
+ * row/settings writes run on their own connections and are NOT covered by the rollback -- they
+ * are safe to re-run only because each is idempotent on its own, and because this claim already
+ * guarantees `apply` runs at most once per event id. Keep anything non-idempotent out of `apply`.
  */
 const applyIdempotently = async (
   repository: BillingCustomerRepository,
@@ -349,6 +352,11 @@ const handleInvoicePaid = async (
   deps: BillingWebhookHandlerDeps,
 ): Promise<{ outcome: string; accountId: string | null }> => {
   const { invoice } = event;
+
+  if (invoice.metadata.radioso_kind === "auto_top_up") {
+    return handleAutoTopUpInvoicePaid(event, deps);
+  }
+
   const row = await deps.repository.findByStripeCustomer(invoice.customerId);
   if (!row) {
     return { outcome: "unknown_customer", accountId: null };
@@ -365,11 +373,59 @@ const handleInvoicePaid = async (
   return { outcome: result === "duplicate" ? "duplicate" : "active", accountId };
 };
 
+/**
+ * `invoice.paid` for a pack created by the auto-top-up sweep (`radioso_kind: auto_top_up` in the
+ * invoice's own metadata, read before any customer lookup). Grants the catalog's top-up credits
+ * idempotently -- `addCredits` dedupes on `reference` and repays any grace debt first, same as a
+ * one-off top-up purchase -- resolves the row to `paid`, and leaves the subscription's status
+ * row untouched: this invoice is out of band from the subscription's own billing cycle.
+ */
+const handleAutoTopUpInvoicePaid = async (
+  event: Extract<StripeWebhookEvent, { type: "invoice.paid" }>,
+  deps: BillingWebhookHandlerDeps,
+): Promise<{ outcome: string; accountId: string | null }> => {
+  const { invoice } = event;
+  const accountId = invoice.metadata.account_id;
+  const autoTopUpId = invoice.metadata.auto_top_up_id;
+  if (!accountId || !autoTopUpId) {
+    return { outcome: "unmapped_price", accountId: accountId ?? null };
+  }
+
+  const result = await applyIdempotently(
+    deps.repository,
+    { eventId: event.id, eventType: event.type, accountId, outcome: "auto_top_up_paid" },
+    async () => {
+      await deps.usage.addCredits({
+        accountId,
+        conversations: PLAN_CATALOG.topUp.conversations,
+        reference: `auto_top_up:${invoice.id}`,
+      });
+      await deps.autoTopUps.markPaid(autoTopUpId);
+    },
+  );
+  if (result === "duplicate") {
+    return { outcome: "duplicate", accountId };
+  }
+  await deps.audit.record({
+    accountId,
+    workspaceId: null,
+    eventType: "billing.auto_top_up_paid",
+    eventStatus: "success",
+    metadata: { eventId: event.id, autoTopUpId, conversations: PLAN_CATALOG.topUp.conversations },
+  });
+  return { outcome: "auto_top_up_paid", accountId };
+};
+
 const handleInvoicePaymentFailed = async (
   event: Extract<StripeWebhookEvent, { type: "invoice.payment_failed" }>,
   deps: BillingWebhookHandlerDeps,
 ): Promise<{ outcome: string; accountId: string | null }> => {
   const { invoice } = event;
+
+  if (invoice.metadata.radioso_kind === "auto_top_up") {
+    return handleAutoTopUpInvoicePaymentFailed(event, deps);
+  }
+
   const row = await deps.repository.findByStripeCustomer(invoice.customerId);
   if (!row) {
     return { outcome: "unknown_customer", accountId: null };
@@ -402,6 +458,51 @@ const handleInvoicePaymentFailed = async (
     build: () => buildPaymentFailedEmail({ accountId, appBaseUrl: deps.appBaseUrl }),
   });
   return { outcome: "payment_failed", accountId };
+};
+
+/**
+ * `invoice.payment_failed` for an auto-top-up pack. Disables auto top-up (never fails the
+ * webhook on a declined one-off charge by setting the subscription itself `past_due` -- the
+ * subscription row is never touched here), marks the row `failed`, and emails owners + admins so
+ * a human can fix the payment method and turn it back on.
+ */
+const handleAutoTopUpInvoicePaymentFailed = async (
+  event: Extract<StripeWebhookEvent, { type: "invoice.payment_failed" }>,
+  deps: BillingWebhookHandlerDeps,
+): Promise<{ outcome: string; accountId: string | null }> => {
+  const { invoice } = event;
+  const accountId = invoice.metadata.account_id;
+  const autoTopUpId = invoice.metadata.auto_top_up_id;
+  if (!accountId || !autoTopUpId) {
+    return { outcome: "unmapped_price", accountId: accountId ?? null };
+  }
+
+  const result = await applyIdempotently(
+    deps.repository,
+    { eventId: event.id, eventType: event.type, accountId, outcome: "auto_top_up_failed" },
+    async () => {
+      await deps.autoTopUps.markFailed({ id: autoTopUpId, failureCode: "payment_failed" });
+      await deps.autoTopUps.disable({ accountId, reason: "payment_failed" });
+    },
+  );
+  if (result === "duplicate") {
+    return { outcome: "duplicate", accountId };
+  }
+  await deps.audit.record({
+    accountId,
+    workspaceId: null,
+    eventType: "billing.auto_top_up_failed",
+    eventStatus: "success",
+    metadata: { eventId: event.id, autoTopUpId, hasHostedInvoiceUrl: invoice.hostedInvoiceUrl !== null },
+  });
+  const billingRow = await deps.repository.findByAccount(accountId);
+  await sendBillingNotice(deps, {
+    accountId,
+    billingEmail: billingRow?.billingEmail ?? null,
+    eventId: event.id,
+    build: () => buildAutoTopUpFailedEmail({ accountId, appBaseUrl: deps.appBaseUrl, hostedInvoiceUrl: invoice.hostedInvoiceUrl }),
+  });
+  return { outcome: "auto_top_up_failed", accountId };
 };
 
 export const handleBillingWebhookEvent = async (

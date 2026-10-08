@@ -166,11 +166,19 @@ Each webhook delivery is idempotent on Stripe's own event ID — replaying the s
 
 If you run more than one region (for example a separate EU stack) on one Stripe account, run the sync once per region with that region's `--webhook-url` and its own `--webhook-secret-file`. Stripe delivers to every endpoint you register, and each region resolves its own accounts with its own signing secret.
 
+## Auto top-up
+
+Auto top-up charges a subscription customer for a conversation top-up pack the moment the account's usage reaches `limit_reached` or `grace_exhausted`, instead of waiting for someone to buy one by hand. It rides the webhook endpoint registered above: the charge resolves through `invoice.paid` and `invoice.payment_failed`, the same two events the sync already subscribes the endpoint to for the subscription itself, so turning auto top-up on needs no change to the webhook registration or another `stripe:sync` run.
+
+Radioso tells an auto-topped-up invoice apart from the subscription's own renewal invoice by its metadata (`radioso_kind: auto_top_up`), checked before any account state changes. A declined charge turns auto top-up off for that account and leaves the subscription itself untouched — it never sets the account past due.
+
+Turn on Stripe's own payment receipt emails too (Dashboard → Settings → Customer emails → **Successful payments** and **Failed payments**), so a customer gets Stripe's receipt alongside the account-level notice Radioso sends. See [Enterprise usage limits](/operators/enterprise-usage-limits#auto-top-up) for the account-facing side: the plan card toggle, the monthly pack cap, and the sweep that evaluates enabled accounts.
+
 ## Billing notices
 
-Radioso emails an account's active owners and admins, plus the Stripe customer's billing email when it differs, on three events: a plan change (from checkout or a subscription update), a subscription ending (back to the catalog's default plan), and a failed subscription payment. Each notice carries a link back to the account's usage page and goes out once the triggering webhook event has committed, as a best-effort send that never blocks or fails the webhook response.
+Radioso emails an account's active owners and admins, plus the Stripe customer's billing email when it differs, on four events: a plan change (from checkout or a subscription update), a subscription ending (back to the catalog's default plan), a failed subscription payment, and a failed auto top-up charge. Each notice carries a link back to the account's usage page and goes out once the triggering webhook event has committed, as a best-effort send that never blocks or fails the webhook response.
 
-Turn on Stripe's own payment receipt emails too (Dashboard → Settings → Customer emails → **Successful payments** and **Failed payments**), so a customer gets Stripe's receipt alongside the account-level notice Radioso sends. Stripe's emails cover the payment side; Radioso's notices cover what changed on the account.
+Stripe's own receipt and payment-failure emails, configured in the customer-emails setting above, cover the payment side; Radioso's notices cover what changed on the account.
 
 ## Test mode
 

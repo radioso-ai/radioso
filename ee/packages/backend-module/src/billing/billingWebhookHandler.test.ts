@@ -80,6 +80,9 @@ const createDeps = (overrides: Partial<BillingWebhookHandlerDeps> = {}): {
   assignProfile: ReturnType<typeof vi.fn>;
   addCredits: ReturnType<typeof vi.fn>;
   getProduct: ReturnType<typeof vi.fn>;
+  markPaid: ReturnType<typeof vi.fn>;
+  markFailed: ReturnType<typeof vi.fn>;
+  disableAutoTopUp: ReturnType<typeof vi.fn>;
   noticeMailSend: ReturnType<typeof vi.fn>;
   accountAdministratorsList: ReturnType<typeof vi.fn>;
   auditRecord: ReturnType<typeof vi.fn>;
@@ -89,6 +92,9 @@ const createDeps = (overrides: Partial<BillingWebhookHandlerDeps> = {}): {
   const assignProfile = vi.fn(async () => undefined);
   const addCredits = vi.fn(async () => ({ credits: 300, applied: true }));
   const getProduct = vi.fn(async (id: string) => ({ id, metadata: {} }));
+  const markPaid = vi.fn(async () => undefined);
+  const markFailed = vi.fn(async () => undefined);
+  const disableAutoTopUp = vi.fn(async () => undefined);
   const noticeMailSend = vi.fn(async () => ({ dispatched: true }));
   const accountAdministratorsList = vi.fn(async () => [{ email: "owner@example.com", displayName: "Owner" }]);
   const auditRecord = vi.fn(async () => undefined);
@@ -98,6 +104,7 @@ const createDeps = (overrides: Partial<BillingWebhookHandlerDeps> = {}): {
     repository,
     usage: { assignProfile, addCredits },
     gateway: { getProduct },
+    autoTopUps: { markPaid, markFailed, disable: disableAutoTopUp },
     noticeMail: { send: noticeMailSend },
     accountAdministrators: { list: accountAdministratorsList },
     audit: { record: auditRecord },
@@ -111,6 +118,9 @@ const createDeps = (overrides: Partial<BillingWebhookHandlerDeps> = {}): {
     assignProfile,
     addCredits,
     getProduct,
+    markPaid,
+    markFailed,
+    disableAutoTopUp,
     noticeMailSend,
     accountAdministratorsList,
     auditRecord,
@@ -332,7 +342,7 @@ describe("handleBillingWebhookEvent", () => {
     expect(content.paragraphs.join(" ")).toContain(`${defaultPlan.name}: ${defaultPlan.monthlyConversations} conversations a month`);
   });
 
-  it("invoice.paid sets the row active and never assigns a plan or sends an email", async () => {
+  it("invoice.paid (subscription) sets the row active and never assigns a plan or sends an email", async () => {
     const { deps, repository, assignProfile, noticeMailSend } = createDeps();
     repository.rows.set(accountId, {
       accountId,
@@ -350,7 +360,7 @@ describe("handleBillingWebhookEvent", () => {
     const event: StripeWebhookEvent = {
       id: "evt_6",
       type: "invoice.paid",
-      invoice: { id: "in_1", customerId: "cus_1" },
+      invoice: { id: "in_1", customerId: "cus_1", metadata: {}, hostedInvoiceUrl: null },
     };
 
     const result = await handleBillingWebhookEvent(event, deps);
@@ -361,7 +371,7 @@ describe("handleBillingWebhookEvent", () => {
     expect(noticeMailSend).not.toHaveBeenCalled();
   });
 
-  it("invoice.payment_failed marks past_due, emails owners/admins and the billing address, and never downgrades", async () => {
+  it("invoice.payment_failed (subscription) marks past_due, emails owners/admins and the billing address, and never downgrades", async () => {
     const { deps, repository, assignProfile, auditRecord, noticeMailSend } = createDeps();
     repository.rows.set(accountId, {
       accountId,
@@ -379,7 +389,7 @@ describe("handleBillingWebhookEvent", () => {
     const event: StripeWebhookEvent = {
       id: "evt_7",
       type: "invoice.payment_failed",
-      invoice: { id: "in_2", customerId: "cus_1" },
+      invoice: { id: "in_2", customerId: "cus_1", metadata: {}, hostedInvoiceUrl: null },
     };
 
     const result = await handleBillingWebhookEvent(event, deps);
@@ -394,7 +404,7 @@ describe("handleBillingWebhookEvent", () => {
     );
   });
 
-  it("invoice.payment_failed still emails owners/admins when there is no distinct billing address", async () => {
+  it("invoice.payment_failed (subscription) still emails owners/admins when there is no distinct billing address", async () => {
     const { deps, repository, noticeMailSend } = createDeps();
     repository.rows.set(accountId, {
       accountId,
@@ -412,7 +422,7 @@ describe("handleBillingWebhookEvent", () => {
     const event: StripeWebhookEvent = {
       id: "evt_8",
       type: "invoice.payment_failed",
-      invoice: { id: "in_3", customerId: "cus_1" },
+      invoice: { id: "in_3", customerId: "cus_1", metadata: {}, hostedInvoiceUrl: null },
     };
 
     await handleBillingWebhookEvent(event, deps);
@@ -441,7 +451,7 @@ describe("handleBillingWebhookEvent", () => {
     const event: StripeWebhookEvent = {
       id: "evt_8b",
       type: "invoice.payment_failed",
-      invoice: { id: "in_3b", customerId: "cus_1" },
+      invoice: { id: "in_3b", customerId: "cus_1", metadata: {}, hostedInvoiceUrl: null },
     };
 
     const result = await handleBillingWebhookEvent(event, deps);
@@ -489,7 +499,7 @@ describe("handleBillingWebhookEvent", () => {
     const event: StripeWebhookEvent = {
       id: "evt_10",
       type: "invoice.paid",
-      invoice: { id: "in_4", customerId: "cus_unrecognized" },
+      invoice: { id: "in_4", customerId: "cus_unrecognized", metadata: {}, hostedInvoiceUrl: null },
     };
 
     const result = await handleBillingWebhookEvent(event, deps);
@@ -565,8 +575,12 @@ describe("handleBillingWebhookEvent", () => {
       },
       "customer.subscription.updated": { id: "evt_sub_2", type: "customer.subscription.updated", subscription },
       "customer.subscription.deleted": { id: "evt_sub_3", type: "customer.subscription.deleted", subscription },
-      "invoice.paid": { id: "evt_sub_4", type: "invoice.paid", invoice: { id: "in_1", customerId } },
-      "invoice.payment_failed": { id: "evt_sub_5", type: "invoice.payment_failed", invoice: { id: "in_2", customerId } },
+      "invoice.paid": { id: "evt_sub_4", type: "invoice.paid", invoice: { id: "in_1", customerId, metadata: {}, hostedInvoiceUrl: null } },
+      "invoice.payment_failed": {
+        id: "evt_sub_5",
+        type: "invoice.payment_failed",
+        invoice: { id: "in_2", customerId, metadata: {}, hostedInvoiceUrl: null },
+      },
     };
 
     for (const type of STRIPE_WEBHOOK_EVENT_TYPES) {
@@ -586,5 +600,129 @@ describe("handleBillingWebhookEvent", () => {
 
     expect(result.outcome).toBe("ignored");
     expect(claimSpy).not.toHaveBeenCalled();
+  });
+
+  describe("auto top-up invoices (radioso_kind metadata)", () => {
+    it("invoice.paid grants credits idempotently, marks the row paid, and leaves the subscription status untouched", async () => {
+      const { deps, repository, addCredits, markPaid, auditRecord } = createDeps();
+      repository.rows.set(accountId, {
+        accountId,
+        stripeCustomerId: "cus_1",
+        stripeSubscriptionId: "sub_1",
+        priceId: satellitePlan.stripe!.monthLookupKey,
+        interval: "month",
+        status: "active",
+        billingEmail: null,
+        currentPeriodEnd: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      const autoTopUpId = randomUUID();
+      const event: StripeWebhookEvent = {
+        id: "evt_atu_1",
+        type: "invoice.paid",
+        invoice: {
+          id: "in_atu_1",
+          customerId: "cus_1",
+          metadata: { radioso_kind: "auto_top_up", account_id: accountId, auto_top_up_id: autoTopUpId },
+          hostedInvoiceUrl: null,
+        },
+      };
+
+      const first = await handleBillingWebhookEvent(event, deps);
+      const second = await handleBillingWebhookEvent(event, deps);
+
+      expect(first.outcome).toBe("auto_top_up_paid");
+      expect(second.outcome).toBe("duplicate");
+      expect(addCredits).toHaveBeenCalledTimes(1);
+      expect(addCredits).toHaveBeenCalledWith({
+        accountId,
+        conversations: PLAN_CATALOG.topUp.conversations,
+        reference: "auto_top_up:in_atu_1",
+      });
+      expect(markPaid).toHaveBeenCalledTimes(1);
+      expect(markPaid).toHaveBeenCalledWith(autoTopUpId);
+      // The subscription row itself is untouched by the auto-top-up path.
+      expect(repository.rows.get(accountId)?.status).toBe("active");
+      expect(auditRecord).toHaveBeenCalledWith(
+        expect.objectContaining({ accountId, eventType: "billing.auto_top_up_paid" }),
+      );
+    });
+
+    it("invoice.payment_failed disables auto top-up, marks the row failed, emails owners/admins, and does not set past_due", async () => {
+      const { deps, repository, markFailed, disableAutoTopUp, auditRecord, noticeMailSend } = createDeps();
+      repository.rows.set(accountId, {
+        accountId,
+        stripeCustomerId: "cus_1",
+        stripeSubscriptionId: "sub_1",
+        priceId: satellitePlan.stripe!.monthLookupKey,
+        interval: "month",
+        status: "active",
+        billingEmail: "billing@example.com",
+        currentPeriodEnd: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      const autoTopUpId = randomUUID();
+      const event: StripeWebhookEvent = {
+        id: "evt_atu_2",
+        type: "invoice.payment_failed",
+        invoice: {
+          id: "in_atu_2",
+          customerId: "cus_1",
+          metadata: { radioso_kind: "auto_top_up", account_id: accountId, auto_top_up_id: autoTopUpId },
+          hostedInvoiceUrl: "https://invoice.stripe.com/i/atu2",
+        },
+      };
+
+      const result = await handleBillingWebhookEvent(event, deps);
+
+      expect(result.outcome).toBe("auto_top_up_failed");
+      expect(markFailed).toHaveBeenCalledWith({ id: autoTopUpId, failureCode: "payment_failed" });
+      expect(disableAutoTopUp).toHaveBeenCalledWith({ accountId, reason: "payment_failed" });
+      // Must NOT set the subscription status to past_due.
+      expect(repository.rows.get(accountId)?.status).toBe("active");
+      expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "owner@example.com" }));
+      expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "billing@example.com" }));
+      const content = noticeMailSend.mock.calls[0][0].content;
+      expect(content.paragraphs.some((p: string) => p.includes("https://invoice.stripe.com/i/atu2"))).toBe(true);
+      expect(auditRecord).toHaveBeenCalledWith(
+        expect.objectContaining({ accountId, eventType: "billing.auto_top_up_failed" }),
+      );
+    });
+
+    it("replaying an auto-top-up invoice.payment_failed event is a no-op the second time", async () => {
+      const { deps, repository, markFailed } = createDeps();
+      repository.rows.set(accountId, {
+        accountId,
+        stripeCustomerId: "cus_1",
+        stripeSubscriptionId: "sub_1",
+        priceId: null,
+        interval: null,
+        status: "active",
+        billingEmail: null,
+        currentPeriodEnd: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      const autoTopUpId = randomUUID();
+      const event: StripeWebhookEvent = {
+        id: "evt_atu_3",
+        type: "invoice.payment_failed",
+        invoice: {
+          id: "in_atu_3",
+          customerId: "cus_1",
+          metadata: { radioso_kind: "auto_top_up", account_id: accountId, auto_top_up_id: autoTopUpId },
+          hostedInvoiceUrl: null,
+        },
+      };
+
+      const first = await handleBillingWebhookEvent(event, deps);
+      const second = await handleBillingWebhookEvent(event, deps);
+
+      expect(first.outcome).toBe("auto_top_up_failed");
+      expect(second.outcome).toBe("duplicate");
+      expect(markFailed).toHaveBeenCalledTimes(1);
+    });
   });
 });

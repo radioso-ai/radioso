@@ -91,8 +91,13 @@ describe("Enterprise backend module aggregation", () => {
     expect(capture.usageLimitPolicy).toBeTypeOf("function");
     expect(capture.managedModelPolicy).toBeTypeOf("function");
     expect(capture.organizationCreationGuard).toBeTypeOf("function");
-    expect(capture.periodicTasks).toHaveLength(1);
-    expect(capture.periodicTasks[0]).toMatchObject({ id: "ee-usage-limit-alerts", intervalMs: 60_000 });
-    expect(capture.periodicTasks[0].create).toBeTypeOf("function");
+    expect(capture.periodicTasks.map((task) => task.id).sort()).toEqual([
+      "ee-billing-auto-top-up",
+      "ee-usage-limit-alerts",
+    ]);
+    for (const task of capture.periodicTasks) {
+      expect(task.intervalMs).toBe(60_000);
+      expect(task.create).toBeTypeOf("function");
+    }
   });
 });

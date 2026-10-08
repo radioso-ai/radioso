@@ -64,6 +64,26 @@ export interface StripeSubscriptionEventData {
 export interface StripeInvoiceEventData {
   id: string;
   customerId: string;
+  /** Stripe's own invoice metadata. The webhook branches on `radioso_kind` here first, before
+   *  falling into the subscription-invoice handling every other invoice event takes. */
+  metadata: Record<string, string>;
+  /** Null until the invoice is finalized. Carried into the auto-top-up-failed email when
+   *  present, so the recipient can jump straight to the invoice. */
+  hostedInvoiceUrl: string | null;
+}
+
+export interface StripeTopUpInvoiceParams {
+  customerId: string;
+  subscriptionId: string;
+  priceId: string;
+  metadata: Record<string, string>;
+  /** Derived from the auto-top-up row's id, so a retried sweep attempt against the same row
+   *  dedupes at Stripe rather than charging twice. */
+  idempotencyKey: string;
+}
+
+export interface StripeTopUpInvoiceResult {
+  invoiceId: string;
 }
 
 /**
@@ -105,4 +125,13 @@ export interface StripeGateway {
    *  {@link StripeSignatureVerificationError} on a bad signature. Async: a `checkout.session.completed`
    *  event needs a follow-up Stripe call (line items / subscription) to resolve the price. */
   constructWebhookEvent(rawBody: Buffer, signature: string): Promise<StripeWebhookEvent>;
+  /**
+   * Charges an existing subscription customer for one top-up pack, out of band from the
+   * subscription's own billing cycle. Resolves the subscription's own default payment method and
+   * passes it explicitly -- a standalone invoice (no `subscription` link) does not inherit it
+   * automatically the way a subscription-cycle invoice would. Throws on any Stripe-side failure
+   * (declined charge, network error); the caller marks its own bookkeeping row failed with a code
+   * read off the thrown error.
+   */
+  createTopUpInvoice(params: StripeTopUpInvoiceParams): Promise<StripeTopUpInvoiceResult>;
 }

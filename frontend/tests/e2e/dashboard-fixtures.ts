@@ -959,6 +959,15 @@ export const baseBillingSummary = () => ({
   currentPeriodEnd: "2026-05-01T00:00:00.000Z",
   upgradePlanId: "planet",
   topUpAvailable: true,
+  autoTopUp: {
+    available: true,
+    enabled: false,
+    maxPacksPerMonth: 3,
+    maxPacksPerMonthLimit: 10,
+    packsThisPeriod: 0,
+    disabledReason: null as "payment_failed" | null,
+    disabledAt: null as string | null,
+  },
 });
 
 export const basePlanCatalog = () => ({
@@ -1043,7 +1052,7 @@ export const installDashboardApiMocks = async (
     planCatalog?: unknown;
     billingCheckoutUrl?: string;
     billingPortalUrl?: string;
-    billingRequests?: Array<{ method: "GET" | "POST"; path: string; body?: unknown }>;
+    billingRequests?: Array<{ method: "GET" | "POST" | "PUT"; path: string; body?: unknown }>;
     mcpConnections?: McpConnectionFixture[];
     mcpDiscoveredTools?: DiscoveredMcpToolFixture[];
     mcpConnectionRequests?: string[];
@@ -1461,6 +1470,21 @@ export const installDashboardApiMocks = async (
       const body = request.postDataJSON();
       billingRequests?.push({ method: "POST", path, body });
       await json(route, { url: billingPortalUrl });
+      return;
+    }
+
+    if (request.method() === "PUT" && path === "/ee/billing/auto-top-up") {
+      const body = request.postDataJSON();
+      billingRequests?.push({ method: "PUT", path, body });
+      const currentAutoTopUp = (billingSummary as ReturnType<typeof baseBillingSummary>).autoTopUp;
+      await json(route, {
+        autoTopUp: {
+          ...currentAutoTopUp,
+          enabled: body.enabled,
+          maxPacksPerMonth: body.maxPacksPerMonth,
+          ...(body.enabled ? { disabledReason: null, disabledAt: null } : {}),
+        },
+      });
       return;
     }
 

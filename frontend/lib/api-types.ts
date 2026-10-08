@@ -797,6 +797,23 @@ export interface EnterpriseBillingSummary {
    *  a plan id the catalog does not recognize (a legacy or hand-assigned profile). Server-computed;
    *  the frontend never re-derives this from plan id, since it has no catalog of its own to check it against. */
   topUpAvailable: boolean
+  autoTopUp: EnterpriseAutoTopUpSummary
+}
+
+/** Opt-in auto top-up, read inside `EnterpriseBillingSummary` and returned again by
+ *  `PUT /auto-top-up` so a caller sees the effect of its own write without a second round trip. */
+export interface EnterpriseAutoTopUpSummary {
+  /** False on the free plan or without an active subscription — mirrors `topUpAvailable`'s own
+   *  server-computed contract: the frontend never re-derives this. */
+  available: boolean
+  enabled: boolean
+  maxPacksPerMonth: number
+  /** The upper bound `maxPacksPerMonth` may be set to. */
+  maxPacksPerMonthLimit: number
+  /** Packs already charged or in flight this period, against `maxPacksPerMonth`. */
+  packsThisPeriod: number
+  disabledReason: 'payment_failed' | null
+  disabledAt: string | null
 }
 
 export type BillingCheckoutRequest =
@@ -809,6 +826,15 @@ export interface BillingPortalRequest {
 
 export interface BillingCheckoutResponse {
   url: string
+}
+
+export interface BillingAutoTopUpRequest {
+  enabled: boolean
+  maxPacksPerMonth: number
+}
+
+export interface BillingAutoTopUpResponse {
+  autoTopUp: EnterpriseAutoTopUpSummary
 }
 
 /** `GET /api/v1/plans` — the `@radioso/plan-catalog` payload, read over HTTP rather than imported (EE-only package). */

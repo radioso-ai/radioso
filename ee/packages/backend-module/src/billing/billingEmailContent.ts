@@ -67,6 +67,26 @@ export const buildPaymentFailedEmail = (input: { accountId: string; appBaseUrl: 
   };
 };
 
+export const buildAutoTopUpFailedEmail = (input: {
+  accountId: string;
+  appBaseUrl: string | null;
+  hostedInvoiceUrl: string | null;
+}): BillingEmail => {
+  const cta = usageCta(input.accountId, input.appBaseUrl);
+  return {
+    subject: "Auto top-up failed",
+    content: {
+      preheader: "Auto top-up failed — update your payment method.",
+      heading: "Auto top-up failed — update your payment method, then turn it back on",
+      paragraphs: [
+        "We couldn't charge your payment method for a conversation top-up pack, so auto top-up is now off.",
+        ...(input.hostedInvoiceUrl ? [`Invoice: ${input.hostedInvoiceUrl}`] : []),
+      ],
+      ...(cta ? { cta } : {}),
+    },
+  };
+};
+
 /** Active owners + admins, plus the customer's billing email when it is set and differs from
  *  every admin contact's -- deduped case-insensitively, since the same mailbox should never get
  *  the same notice twice. */

@@ -6,6 +6,8 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import {
   enterpriseBillingApi,
   plansApi,
@@ -17,6 +19,7 @@ import {
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   formatPlanPriceCents,
+  formatResetDate,
   largestPlanUsageKind,
   planUsageLevelHasActions,
   planUsageLevelMessage,
@@ -45,6 +48,7 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
   const [error, setError] = useState<string | null>(null)
   const [checkoutInterval, setCheckoutInterval] = useState<BillingInterval>('month')
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
+  const [savingAutoTopUp, setSavingAutoTopUp] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -121,6 +125,24 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
     } catch (nextError) {
       setError(getApiErrorMessage(nextError, 'Failed to open billing portal.'))
       setPendingAction(null)
+    }
+  }
+
+  const updateAutoTopUp = async (patch: Partial<{ enabled: boolean; maxPacksPerMonth: number }>) => {
+    if (!billing.autoTopUp.available) return
+    setSavingAutoTopUp(true)
+    setError(null)
+    try {
+      const { autoTopUp } = await enterpriseBillingApi.setAutoTopUp({
+        enabled: billing.autoTopUp.enabled,
+        maxPacksPerMonth: billing.autoTopUp.maxPacksPerMonth,
+        ...patch,
+      })
+      setBilling((current) => (current ? { ...current, autoTopUp } : current))
+    } catch (nextError) {
+      setError(getApiErrorMessage(nextError, 'Failed to update auto top-up.'))
+    } finally {
+      setSavingAutoTopUp(false)
     }
   }
 
@@ -230,6 +252,44 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
             {actions}
           </>
         )}
+        {billing.autoTopUp.available ? (
+          <div className="space-y-2 border-t pt-4">
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={billing.autoTopUp.enabled}
+                onCheckedChange={(checked) => void updateAutoTopUp({ enabled: checked })}
+                disabled={savingAutoTopUp}
+                aria-label="Auto top-up"
+              />
+              <span className="text-sm font-medium">Auto top-up</span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Buy {plans.topUp.conversations} more when this month&apos;s conversations run out, up to{' '}
+              <Select
+                value={String(billing.autoTopUp.maxPacksPerMonth)}
+                onValueChange={(value) => void updateAutoTopUp({ maxPacksPerMonth: Number(value) })}
+                disabled={savingAutoTopUp}
+              >
+                <SelectTrigger size="sm" aria-label="Times a month" className="inline-flex h-7 w-auto px-2 py-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: billing.autoTopUp.maxPacksPerMonthLimit }, (_, index) => index + 1).map((count) => (
+                    <SelectItem key={count} value={String(count)}>
+                      {count}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>{' '}
+              times a month.
+            </p>
+            {billing.autoTopUp.disabledReason === 'payment_failed' && billing.autoTopUp.disabledAt ? (
+              <p className="text-sm text-muted-foreground">
+                Turned off after a payment failed on {formatResetDate(billing.autoTopUp.disabledAt)}.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )

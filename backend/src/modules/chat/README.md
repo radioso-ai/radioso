@@ -436,7 +436,9 @@ imports from `services/`.
   send, as the trace's `handoffPreview`, built through the same `operatorNotifications`
   text formatter the real dispatch uses (`WorkbenchReplayRunner.operatorNoticePreviewFor`);
   live delivery additionally appends the conversation link, which a replayed turn
-  has none of.
+  has none of. The preview lists collected slot values, so it follows the same
+  `includeSlotValues` opt-in: eval replay, which persists its trace to append-only
+  evidence, gets no preview.
 - Fused turn planning: `turnPlanService.ts` (one `turn_planning` call on the
   agent's chat model + prompt `backend/prompts/chat/turn-planning.md`, strict
   parse and semantic validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from

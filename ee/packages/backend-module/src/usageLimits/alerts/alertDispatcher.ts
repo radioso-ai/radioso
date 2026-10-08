@@ -1,11 +1,14 @@
+import { createHash } from "node:crypto";
+
 import { sql } from "kysely";
 
 import { createEeKysely, type EeDb } from "../../db/eeSchema.js";
 import type { AccountAdministratorDirectoryPort, NoticeMailPort, UsageLimitDatabasePort } from "../../radiosoModuleTypes.js";
+import type { ConversationUsageLevel } from "../conversationUsageLevel.js";
 import { EnterpriseUsageLimitService } from "../usageLimitService.js";
 import { currentPeriodStart } from "../period.js";
 import { alertLevelRank, type AlertLevel } from "./alertLevelOrder.js";
-import { buildAlertEmail } from "./alertContent.js";
+import { buildAlertEmail, type AlertEmail } from "./alertContent.js";
 
 /** An attempt is spent at claim time, so a crash mid-send still counts toward the cap — a
  *  claim can be attempted at most this many times before the dispatcher gives up on it. */
@@ -48,10 +51,22 @@ interface ClaimedAlert {
   /** The claimed row's `created_at`, as epoch milliseconds (text, to stay precision-exact
    *  across the round trip). Re-arm deletes and reinserts the same primary key, so this is the
    *  generation token: every later UPDATE or DELETE of this claim also matches it, and it is
-   *  part of the provider idempotency key, so a re-armed (new) claim never collides with an old
-   *  generation's key. */
+   *  folded into the provider idempotency key, so a re-armed (new) claim never collides with an
+   *  old generation's key. */
   createdAtMs: string;
+  /** The email built on the first send attempt, persisted so a retry resends byte-identical
+   *  content under the same idempotency key — Resend treats a reused key with a different
+   *  payload as a permanent 409, not a retryable error. `null` until the first attempt builds
+   *  and saves one. */
+  emailSnapshot: AlertEmail | null;
 }
+
+const idempotencyKey = (claim: ClaimedAlert, recipientEmail: string): string => {
+  const digest = createHash("sha256")
+    .update(`${claim.accountId}:${claim.periodStart}:${claim.level}:${claim.createdAtMs}:${recipientEmail}`)
+    .digest("hex");
+  return `usage_alert:${digest}`;
+};
 
 interface UsageLimitAlertDispatcherInput {
   database: UsageLimitDatabasePort;
@@ -129,6 +144,7 @@ export class UsageLimitAlertDispatcher {
         "account_id",
         "level",
         "attempts",
+        "email_snapshot",
         sql<string>`period_start::text`.as("period_start"),
         sql<string>`(extract(epoch from created_at) * 1000)::bigint::text`.as("created_at_ms"),
       ])
@@ -140,6 +156,7 @@ export class UsageLimitAlertDispatcher {
       level: row.level,
       attempts: row.attempts,
       createdAtMs: row.created_at_ms,
+      emailSnapshot: row.email_snapshot as AlertEmail | null,
     }));
   }
 
@@ -168,18 +185,6 @@ export class UsageLimitAlertDispatcher {
       return;
     }
 
-    if (await this.isSuperseded(claim)) {
-      await this.finalize(claim, { outcome: "superseded" });
-      return;
-    }
-
-    const recipients = await this.input.accountAdministrators.list(claim.accountId);
-    if (recipients.length === 0) {
-      await this.finalize(claim, { outcome: "no_recipients" });
-      await this.recordOutcomeAudit(claim, "failure", { recipientCount: 0, dispatchedCount: 0, reason: "no_recipients" });
-      return;
-    }
-
     const usage = await this.usage.getAccountUsage(claim.accountId, claim.periodStart);
     const conversations = usage.monthlyConversations;
     if (!conversations) {
@@ -197,20 +202,43 @@ export class UsageLimitAlertDispatcher {
       // refusal-time `grace_exhausted` claim was swept. Delete rather than finalize — fenced
       // to this exact generation — so the primary key is free for a later real crossing to
       // claim again instead of sitting behind a dead, terminal row. Not a delivery failure.
+      // Checked before the supersede check below: a stale *higher* sibling must not suppress
+      // a lower claim that is still valid — this check is what retires that stale sibling.
       await this.deleteClaim(claim);
       return;
     }
 
-    const email = buildAlertEmail({
-      level: claim.level,
-      accountId: claim.accountId,
-      planId: usage.profile?.key ?? null,
-      used: conversations.used,
-      capacity: conversations.capacity,
-      graceLimit: conversations.grace.limit,
-      resetAt: conversations.resetAt,
-      appBaseUrl: this.input.appBaseUrl,
-    });
+    if (await this.isSuperseded(claim, conversations.level)) {
+      await this.finalize(claim, { outcome: "superseded" });
+      return;
+    }
+
+    const recipients = await this.input.accountAdministrators.list(claim.accountId);
+    if (recipients.length === 0) {
+      await this.finalize(claim, { outcome: "no_recipients" });
+      await this.recordOutcomeAudit(claim, "failure", { recipientCount: 0, dispatchedCount: 0, reason: "no_recipients" });
+      return;
+    }
+
+    let email = claim.emailSnapshot;
+    if (!email) {
+      // First attempt: build from current usage and persist it, so a retry — which reuses
+      // the same idempotency key — resends this exact content rather than whatever usage
+      // looks like by then. Resend treats a reused key with a different payload as a
+      // permanent 409, not a retryable error, so rebuilding on retry would let one admin's
+      // earlier success strand every other recipient's delivery.
+      email = buildAlertEmail({
+        level: claim.level,
+        accountId: claim.accountId,
+        planId: usage.profile?.key ?? null,
+        used: conversations.used,
+        capacity: conversations.capacity,
+        graceLimit: conversations.grace.limit,
+        resetAt: conversations.resetAt,
+        appBaseUrl: this.input.appBaseUrl,
+      });
+      await this.saveEmailSnapshot(claim, email);
+    }
 
     const results = await Promise.allSettled(
       recipients.map((recipient) =>
@@ -219,13 +247,14 @@ export class UsageLimitAlertDispatcher {
           subject: email.subject,
           kind: "usage_alert",
           content: email.content,
-          // Stable across retries of this same generation (same account/period/level/
-          // created_at/recipient), so a provider-side dedup window (Resend: 24h) catches a
-          // resend to a recipient a prior, partially failed attempt already reached. The
+          // A fixed-length digest, not the raw address: Resend caps idempotency keys at 256
+          // characters. Stable across retries of this same generation (same account/period/
+          // level/created_at/recipient), so a provider-side dedup window (Resend: 24h) catches
+          // a resend to a recipient a prior, partially failed attempt already reached. The
           // backoff schedule (cap 30 min, 5 attempts) fits well inside that window. Scoped by
           // `createdAtMs` so a re-armed claim (new generation, same primary key) gets its own
           // key rather than colliding with — and being silently dropped by — the old one's.
-          idempotencyKey: `usage_alert:${claim.accountId}:${claim.periodStart}:${claim.level}:${claim.createdAtMs}:${recipient.email}`,
+          idempotencyKey: idempotencyKey(claim, recipient.email),
         }),
       ),
     );
@@ -283,7 +312,13 @@ export class UsageLimitAlertDispatcher {
       .execute();
   }
 
-  private async isSuperseded(claim: ClaimedAlert): Promise<boolean> {
+  /**
+   * A sibling claim at a higher level only suppresses this one while that sibling is itself
+   * still current — i.e. the account's live level ranks at or above it. Otherwise the sibling
+   * is the stale one (it gets retired by the level check above when its own turn comes), and
+   * this still-valid lower claim must still be sent rather than silently swallowed.
+   */
+  private async isSuperseded(claim: ClaimedAlert, currentLevel: ConversationUsageLevel): Promise<boolean> {
     const siblings = await this.db
       .selectFrom("ee_usage_limit_alerts")
       .select("level")
@@ -291,8 +326,22 @@ export class UsageLimitAlertDispatcher {
       .where("period_start", "=", sql<string>`${claim.periodStart}::date`)
       .execute();
     return siblings.some(
-      (sibling) => sibling.level !== claim.level && alertLevelRank(sibling.level) > alertLevelRank(claim.level),
+      (sibling) =>
+        sibling.level !== claim.level &&
+        alertLevelRank(sibling.level) > alertLevelRank(claim.level) &&
+        alertLevelRank(currentLevel) >= alertLevelRank(sibling.level),
     );
+  }
+
+  private async saveEmailSnapshot(claim: ClaimedAlert, email: AlertEmail): Promise<void> {
+    await this.db
+      .updateTable("ee_usage_limit_alerts")
+      .set({ email_snapshot: email })
+      .where("account_id", "=", claim.accountId)
+      .where("period_start", "=", sql<string>`${claim.periodStart}::date`)
+      .where("level", "=", claim.level)
+      .where(this.createdAtFence(claim))
+      .execute();
   }
 
   private async finalize(

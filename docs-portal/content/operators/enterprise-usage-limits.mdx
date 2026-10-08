@@ -201,7 +201,7 @@ Radioso emails an account's owners and admins when conversation usage crosses `n
 - `limit_reached` — "This month's conversations are used up." Says how many conversations the grace allowance still covers, and that Ray, Test Chat, and Pulse are paused until the reset date.
 - `grace_exhausted` — "Your agents stopped answering visitors." Says visitors see an unavailable message until the reset date, or until the account adds conversations on a plan that sells top-ups.
 
-Each level emails once per billing period. Reaching two levels in one reservation — a jump straight from `ok` to `grace_exhausted`, for an account with little or no grace room — sends one email per level crossed, not just the highest. A credit grant that actually applies, or a change to the account's assigned profile, clears the current period's alerts, so a level reached again after a top-up or a plan change emails again.
+Each level emails at most once per billing period. Reaching several levels in one reservation — a jump straight from `ok` to `grace_exhausted`, for an account with little or no grace room — emails only the highest level reached; the lower ones are superseded without a separate email. A credit grant that actually applies, or a change to the account's assigned profile, clears the current period's alerts, so a level reached again after a top-up or a plan change emails again.
 
 Delivery runs on a periodic sweep, about once a minute, rather than firing the instant a reservation crosses a level — the account typically gets the email within a minute of crossing, not immediately.
 

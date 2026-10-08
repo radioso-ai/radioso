@@ -94,6 +94,9 @@ interface EeUsageLimitAlertsTable {
   attempts: Generated<number>;
   next_attempt_at: Generated<Date>;
   last_error_code: string | null;
+  // JSONB -> unknown: `pg` parses/serializes it transparently (a plain object round-trips as
+  // one), so there is no primitive column type to narrow to; callers cast at the boundary.
+  email_snapshot: unknown;
 }
 
 interface EeUsageLimitAccountAssignmentsTable {

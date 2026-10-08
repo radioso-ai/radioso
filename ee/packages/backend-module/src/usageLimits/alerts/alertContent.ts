@@ -19,7 +19,7 @@ interface AlertEmailInput {
   appBaseUrl: string | null;
 }
 
-interface AlertEmail {
+export interface AlertEmail {
   subject: string;
   content: NoticeEmailContent;
 }

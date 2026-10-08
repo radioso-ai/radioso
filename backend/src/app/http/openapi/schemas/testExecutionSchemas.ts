@@ -9,7 +9,7 @@ export const registerTestExecutionSchemas = (registry: OpenAPIRegistry) => {
   const TestExecutionEventSchema = registry.register("TestExecutionEvent", z.discriminatedUnion("type", [
     z.object({ type: z.literal("side_started"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid }),
     z.object({ type: z.literal("message_delta"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid, delta: z.string() }),
-    z.object({ type: z.literal("side_completed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid, messageId: uuid, turnTrace: z.unknown().optional() }),
+    z.object({ type: z.literal("side_completed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid, messageId: uuid, answer: z.string().describe("The stored answer. It is authoritative over the message_delta text streamed before it, which the runtime's final presentation may normalize."), turnTrace: z.unknown().optional() }),
     z.object({ type: z.literal("side_failed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid, code: z.string(), retryable: z.boolean() }),
     z.object({ type: z.literal("execution_partial"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid }),
     z.object({ type: z.literal("execution_completed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid }),

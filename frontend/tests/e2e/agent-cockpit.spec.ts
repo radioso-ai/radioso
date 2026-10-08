@@ -232,7 +232,7 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
       : options.prematureEof
         ? (() => {
           const delta = { type: 'message_delta', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, delta: 'A fenced answer.', turnId: body.turnId, attemptId: body.attemptId }
-          const done = { type: 'side_completed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, messageId: 'message-0', turnId: body.turnId, attemptId: body.attemptId }
+          const done = { type: 'side_completed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, messageId: 'message-0', answer: 'A fenced answer.', turnId: body.turnId, attemptId: body.attemptId }
           return `data: ${JSON.stringify(delta)}\n\ndata: ${JSON.stringify(done)}\n\n`
         })()
       : Array.from({ length: sideCountByGeneration.get(body.executionGeneration) ?? 1 }, (_, index) => {
@@ -245,7 +245,9 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
           activeSide.history = [{ turnId: body.turnId, role: 'user', content: route.request().postDataJSON().message, attemptId: body.attemptId, createdAt: nowIso }]
           activeSide.state = 'failed'
           attempts.push({ sideId: currentSideId, turnId: body.turnId, attemptId: body.attemptId, fence: 1, state: 'failed', failureCode: 'runner_failed', createdAt: nowIso, updatedAt: nowIso })
-          return `data: ${JSON.stringify({ type: 'side_failed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, code: 'runner_failed', retryable: true, turnId: body.turnId, attemptId: body.attemptId })}\n\n`
+          // The side streams part of an answer before it fails.
+          const partial = { type: 'message_delta', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, delta: 'A half-written', turnId: body.turnId, attemptId: body.attemptId }
+          return `data: ${JSON.stringify(partial)}\n\ndata: ${JSON.stringify({ type: 'side_failed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, code: 'runner_failed', retryable: true, turnId: body.turnId, attemptId: body.attemptId })}\n\n`
         }
         attempts.push({ sideId: currentSideId, turnId: body.turnId, attemptId: body.attemptId, fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso })
         if (activeSide) {
@@ -255,9 +257,10 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
           ]
           activeSide.state = 'completed'
         }
-        const delta = { type: 'message_delta', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, delta: answer, turnId: body.turnId, attemptId: body.attemptId }
-        const done = { type: 'side_completed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, messageId: `message-${index}`, turnId: body.turnId, attemptId: body.attemptId, ...(options.turnTrace ? { turnTrace: options.turnTrace } : {}) }
-        return `data: ${JSON.stringify(delta)}\n\ndata: ${JSON.stringify(done)}\n\n`
+        // Streamed in two chunks, the second with a raw citation anchor the stored answer drops.
+        const deltas = [answer.slice(0, 2), `${answer.slice(2)} [[1]]`].map((delta) => ({ type: 'message_delta', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, delta, turnId: body.turnId, attemptId: body.attemptId }))
+        const done = { type: 'side_completed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, messageId: `message-${index}`, answer, turnId: body.turnId, attemptId: body.attemptId, ...(options.turnTrace ? { turnTrace: options.turnTrace } : {}) }
+        return [...deltas, done].map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')
       }).join('')
     await route.fulfill({ contentType: 'text/event-stream', body: responseEvents })
   })
@@ -289,7 +292,7 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
     const body = route.request().postDataJSON() as { executionGeneration: number; turnId: string; attemptId: string }
     options.requestBodies?.push(body)
     const sideId = `side-${body.executionGeneration}-0`
-    await route.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify({ type: 'message_delta', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, delta: 'Recovered retry answer.', turnId: body.turnId, attemptId: body.attemptId })}\n\ndata: ${JSON.stringify({ type: 'side_completed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, messageId: 'retry-message', turnId: body.turnId, attemptId: body.attemptId })}\n\n` })
+    await route.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify({ type: 'message_delta', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, delta: 'Recovered retry answer.', turnId: body.turnId, attemptId: body.attemptId })}\n\ndata: ${JSON.stringify({ type: 'side_completed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, messageId: 'retry-message', answer: 'Recovered retry answer.', turnId: body.turnId, attemptId: body.attemptId })}\n\n` })
   })
   await page.route('**/backend/api/v1/evals/revision-runs', async (route) => {
     options.requestBodies?.push(route.request().postDataJSON())
@@ -1109,6 +1112,7 @@ test('keeps a failed turn that a later message superseded when a comparison side
   await testChatComposer(page).fill('How do I contact a human?')
   await page.getByRole('button', { name: 'Send to both', exact: true }).click()
   await expect(page.getByText('Test failed: runner_failed', { exact: true })).toBeVisible()
+  await expect(page.getByText('A half-written')).toHaveCount(0)
   await testChatComposer(page).fill('guest@example.com')
   await page.getByRole('button', { name: 'Send to both', exact: true }).click()
   await expect(page.getByText('A fenced answer.', { exact: true })).toBeVisible()

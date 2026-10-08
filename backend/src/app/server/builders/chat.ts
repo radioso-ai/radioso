@@ -953,6 +953,7 @@ export const buildChatServices = (input: {
     // routines fire, but it writes no assessment or reaction rows.
     coverageHeadRecorder: new AnswerCoverageHeadRecorder(),
     logger: input.logger,
+    streamMetrics: input.metricsRegistry,
   });
   const approvalDecisionService = new ApprovalDecisionService(
     new PendingDecisionRepository(input.database.kysely),

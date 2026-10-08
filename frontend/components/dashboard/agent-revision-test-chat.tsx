@@ -159,7 +159,7 @@ const failureLabel = (code: string) =>
     retry_transport_failed: "The retry response stream was interrupted.",
   })[code] ?? "This test side failed.";
 
-const parseEvents = async (
+export const parseEvents = async (
   response: Response,
   onEvent: (event: TestExecutionEvent) => void,
 ): Promise<boolean> => {

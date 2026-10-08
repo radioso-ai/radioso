@@ -1,0 +1,1559 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`routine turn golden record (attemptRoutine) > records a yielded turn without rendering 1`] = `
+{
+  "calls": [
+    "loadActive",
+    "loadHistory",
+    "progress:routine",
+    "select:ask_message",
+    "yielded:ask_message",
+  ],
+  "result": null,
+}
+`;
+
+exports[`routine turn golden record (attemptRoutine) > records the same port calls and result for: activation clarification 1`] = `
+{
+  "calls": [
+    "loadActive",
+    "loadHistory",
+    "loadCompleted",
+    "activate",
+    "directiveMatcher:-",
+    "progress:routine",
+    "clarifier.phraseQuestion",
+    "appendEvent:user",
+    "appendEvent:assistant",
+    "clarificationStore.save:pending",
+  ],
+  "result": {
+    "decision": {
+      "reason": "routine_activation_clarification",
+      "selected": [],
+    },
+    "events": [
+      {
+        "content": "help",
+        "createdAt": "<volatile>",
+        "id": "input_1",
+        "kind": "message",
+        "role": "user",
+        "sessionId": "session_1",
+      },
+      {
+        "content": "Which one did you mean?",
+        "createdAt": "<volatile>",
+        "id": "<assistant-event>",
+        "kind": "assistant.response",
+        "role": "assistant",
+        "sessionId": "session_1",
+      },
+    ],
+    "outcomes": [],
+    "response": {
+      "answer": "Which one did you mean?",
+    },
+    "routineClarificationRoutineIds": [
+      "contact",
+    ],
+    "sessionId": "session_1",
+    "trace": {
+      "completedAt": "<volatile>",
+      "stages": [
+        {
+          "completedAt": "<volatile>",
+          "id": "message",
+          "kind": "message",
+          "outputs": {
+            "contentLength": 4,
+            "eventId": "input_1",
+            "kind": "message",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "gather",
+          "kind": "gather",
+          "outputs": {
+            "history": [],
+            "historyCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "clarification",
+          "kind": "clarification",
+          "outputs": {
+            "candidates": [
+              {
+                "confidence": 0.5,
+                "id": "contact",
+                "label": "Contact",
+              },
+            ],
+            "decision": "asked",
+            "surface": "routine_activation",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "directive_steering",
+          "kind": "directive_steering",
+          "outputs": {
+            "candidateCount": 0,
+            "directives": [],
+            "matchCount": 0,
+            "scopeFilteredCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "skipped",
+        },
+      ],
+      "startedAt": "<volatile>",
+      "traceId": "<volatile>",
+    },
+  },
+}
+`;
+
+exports[`routine turn golden record (attemptRoutine) > records the same port calls and result for: approval 1`] = `
+{
+  "calls": [
+    "loadActive",
+    "loadHistory",
+    "progress:routine",
+    "select:ask_message",
+    "directiveMatcher:approve",
+    "render:approve:steering=1:staged=0",
+    "appendEvent:user",
+    "save:suspended:ask_email>ask_message>approve:email",
+    "appendEvent:assistant",
+  ],
+  "result": {
+    "awaitingDecision": {
+      "captureKey": "approval",
+      "options": [
+        {
+          "id": "yes",
+          "label": "Approve",
+        },
+      ],
+      "stepId": "approve",
+    },
+    "decision": {
+      "reason": "routine_resumed:contact",
+      "selected": [],
+    },
+    "events": [
+      {
+        "content": "this needs a sign-off",
+        "createdAt": "<volatile>",
+        "id": "input_1",
+        "kind": "message",
+        "role": "user",
+        "sessionId": "session_1",
+      },
+      {
+        "content": "reply:approve",
+        "createdAt": "<volatile>",
+        "id": "<assistant-event>",
+        "kind": "assistant.response",
+        "metadata": {
+          "renderedStep": "approve",
+        },
+        "role": "assistant",
+        "sessionId": "session_1",
+      },
+    ],
+    "outcomes": [],
+    "response": {
+      "answer": "reply:approve",
+      "metadata": {
+        "renderedStep": "approve",
+      },
+    },
+    "routineExecution": {
+      "executionId": "exec_1",
+      "routineId": "contact",
+    },
+    "sessionId": "session_1",
+    "trace": {
+      "completedAt": "<volatile>",
+      "stages": [
+        {
+          "completedAt": "<volatile>",
+          "id": "message",
+          "kind": "message",
+          "outputs": {
+            "contentLength": 21,
+            "eventId": "input_1",
+            "kind": "message",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "gather",
+          "kind": "gather",
+          "outputs": {
+            "history": [],
+            "historyCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "routine:contact",
+          "kind": "routine_resume",
+          "outputs": {
+            "answerLength": 13,
+            "completed": false,
+            "handoff": false,
+            "notifiesOperators": false,
+            "routineId": "contact",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+          "subTrace": {
+            "namespace": "routine",
+            "payload": {
+              "capturedSlotKeys": [],
+              "filledSlotKeys": [
+                "email",
+              ],
+              "landedStepId": "approve",
+              "routineId": "contact",
+              "startStepId": "ask_message",
+              "steps": [
+                {
+                  "event": "advanced",
+                  "kind": "chat",
+                  "stepId": "ask_message",
+                  "viaSelector": true,
+                },
+                {
+                  "event": "suspended",
+                  "kind": "await",
+                  "stepId": "approve",
+                },
+              ],
+            },
+            "version": 1,
+          },
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "directive_steering",
+          "kind": "directive_steering",
+          "outputs": {
+            "candidateCount": 0,
+            "directives": [],
+            "matchCount": 0,
+            "routineStep": {
+              "directivesAppliedAs": "subordinate_to_step_instruction",
+              "routineId": "contact",
+              "steeringDirectives": [],
+              "stepId": "approve",
+            },
+            "scopeFilteredCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "skipped",
+        },
+      ],
+      "startedAt": "<volatile>",
+      "traceId": "<volatile>",
+    },
+  },
+}
+`;
+
+exports[`routine turn golden record (attemptRoutine) > records the same port calls and result for: exhausted re-ask 1`] = `
+{
+  "calls": [
+    "loadActive",
+    "loadHistory",
+    "progress:routine",
+    "select:ask_email",
+    "directiveMatcher:ask_email",
+    "render:ask_email:reask(email):exhausted:steering=1:staged=0",
+    "appendEvent:user",
+    "save:active::",
+    "appendEvent:assistant",
+  ],
+  "result": {
+    "decision": {
+      "reason": "routine_resumed:contact",
+      "selected": [],
+    },
+    "events": [
+      {
+        "content": "still not sure",
+        "createdAt": "<volatile>",
+        "id": "input_1",
+        "kind": "message",
+        "role": "user",
+        "sessionId": "session_1",
+      },
+      {
+        "content": "reply:ask_email",
+        "createdAt": "<volatile>",
+        "id": "<assistant-event>",
+        "kind": "assistant.response",
+        "metadata": {
+          "renderedStep": "ask_email",
+        },
+        "role": "assistant",
+        "sessionId": "session_1",
+      },
+    ],
+    "outcomes": [],
+    "response": {
+      "answer": "reply:ask_email",
+      "metadata": {
+        "renderedStep": "ask_email",
+      },
+    },
+    "routineExecution": {
+      "executionId": "exec_1",
+      "routineId": "contact",
+    },
+    "sessionId": "session_1",
+    "trace": {
+      "completedAt": "<volatile>",
+      "stages": [
+        {
+          "completedAt": "<volatile>",
+          "id": "message",
+          "kind": "message",
+          "outputs": {
+            "contentLength": 14,
+            "eventId": "input_1",
+            "kind": "message",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "gather",
+          "kind": "gather",
+          "outputs": {
+            "history": [],
+            "historyCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "routine:contact",
+          "kind": "routine_resume",
+          "outputs": {
+            "answerLength": 15,
+            "completed": false,
+            "handoff": false,
+            "notifiesOperators": false,
+            "routineId": "contact",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+          "subTrace": {
+            "namespace": "routine",
+            "payload": {
+              "capturedSlotKeys": [],
+              "filledSlotKeys": [],
+              "landedStepId": "ask_email",
+              "routineId": "contact",
+              "startStepId": "ask_email",
+              "steps": [
+                {
+                  "event": "reasked",
+                  "kind": "chat",
+                  "stepId": "ask_email",
+                  "viaSelector": true,
+                },
+                {
+                  "event": "reask_limit_reached",
+                  "kind": "chat",
+                  "reaskCount": 4,
+                  "stepId": "ask_email",
+                },
+              ],
+            },
+            "version": 1,
+          },
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "directive_steering",
+          "kind": "directive_steering",
+          "outputs": {
+            "candidateCount": 0,
+            "directives": [],
+            "matchCount": 0,
+            "routineStep": {
+              "directivesAppliedAs": "subordinate_to_step_instruction",
+              "routineId": "contact",
+              "steeringDirectives": [],
+              "stepId": "ask_email",
+            },
+            "scopeFilteredCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "skipped",
+        },
+      ],
+      "startedAt": "<volatile>",
+      "traceId": "<volatile>",
+    },
+  },
+}
+`;
+
+exports[`routine turn golden record (attemptRoutine) > records the same port calls and result for: grounded step 1`] = `
+{
+  "calls": [
+    "loadActive",
+    "loadHistory",
+    "progress:routine",
+    "select:ask_message",
+    "dispatch:retrieval.context",
+    "directiveMatcher:answer_from_docs",
+    "render:answer_from_docs:steering=1:staged=1",
+    "appendEvent:user",
+    "save:active:ask_email>ask_message>lookup>answer_from_docs:email",
+    "appendEvent:assistant",
+  ],
+  "result": {
+    "decision": {
+      "reason": "routine_resumed:contact",
+      "selected": [],
+    },
+    "events": [
+      {
+        "content": "what are your hours?",
+        "createdAt": "<volatile>",
+        "id": "input_1",
+        "kind": "message",
+        "role": "user",
+        "sessionId": "session_1",
+      },
+      {
+        "content": "reply:answer_from_docs",
+        "createdAt": "<volatile>",
+        "id": "<assistant-event>",
+        "kind": "assistant.response",
+        "metadata": {
+          "renderedStep": "answer_from_docs",
+        },
+        "role": "assistant",
+        "sessionId": "session_1",
+      },
+    ],
+    "outcomes": [],
+    "response": {
+      "answer": "reply:answer_from_docs",
+      "metadata": {
+        "renderedStep": "answer_from_docs",
+      },
+    },
+    "routineExecution": {
+      "executionId": "exec_1",
+      "routineId": "contact",
+    },
+    "sessionId": "session_1",
+    "trace": {
+      "completedAt": "<volatile>",
+      "stages": [
+        {
+          "completedAt": "<volatile>",
+          "id": "message",
+          "kind": "message",
+          "outputs": {
+            "contentLength": 20,
+            "eventId": "input_1",
+            "kind": "message",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "gather",
+          "kind": "gather",
+          "outputs": {
+            "history": [],
+            "historyCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "routine:contact",
+          "kind": "routine_resume",
+          "outputs": {
+            "answerLength": 22,
+            "completed": false,
+            "handoff": false,
+            "notifiesOperators": false,
+            "routineId": "contact",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+          "subTrace": {
+            "namespace": "routine",
+            "payload": {
+              "capturedSlotKeys": [],
+              "filledSlotKeys": [
+                "email",
+              ],
+              "landedStepId": "answer_from_docs",
+              "routineId": "contact",
+              "startStepId": "ask_message",
+              "steps": [
+                {
+                  "event": "advanced",
+                  "kind": "chat",
+                  "stepId": "ask_message",
+                  "viaSelector": true,
+                },
+                {
+                  "event": "skill_dispatched",
+                  "kind": "skill",
+                  "skillName": "retrieval.context",
+                  "skillStatus": "success",
+                  "stepId": "lookup",
+                },
+                {
+                  "event": "rendered",
+                  "kind": "chat",
+                  "stepId": "answer_from_docs",
+                },
+              ],
+            },
+            "version": 1,
+          },
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "directive_steering",
+          "kind": "directive_steering",
+          "outputs": {
+            "candidateCount": 0,
+            "directives": [],
+            "matchCount": 0,
+            "routineStep": {
+              "directivesAppliedAs": "subordinate_to_step_instruction",
+              "routineId": "contact",
+              "steeringDirectives": [],
+              "stepId": "answer_from_docs",
+            },
+            "scopeFilteredCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "skipped",
+        },
+      ],
+      "startedAt": "<volatile>",
+      "traceId": "<volatile>",
+    },
+  },
+}
+`;
+
+exports[`routine turn golden record (attemptRoutine) > records the same port calls and result for: handoff 1`] = `
+{
+  "calls": [
+    "loadActive",
+    "loadHistory",
+    "progress:routine",
+    "select:ask_email",
+    "directiveMatcher:to_person",
+    "render:to_person:steering=1:staged=0",
+    "appendEvent:user",
+    "save:completed:to_person:",
+    "appendEvent:assistant",
+  ],
+  "result": {
+    "decision": {
+      "reason": "routine_resumed:contact",
+      "selected": [],
+    },
+    "events": [
+      {
+        "content": "a person please",
+        "createdAt": "<volatile>",
+        "id": "input_1",
+        "kind": "message",
+        "role": "user",
+        "sessionId": "session_1",
+      },
+      {
+        "content": "reply:to_person",
+        "createdAt": "<volatile>",
+        "id": "<assistant-event>",
+        "kind": "assistant.response",
+        "metadata": {
+          "renderedStep": "to_person",
+        },
+        "role": "assistant",
+        "sessionId": "session_1",
+      },
+    ],
+    "handoff": {
+      "collected": {},
+      "routineId": "contact",
+      "stepId": "to_person",
+      "terminalKind": "handoff",
+    },
+    "outcomes": [],
+    "response": {
+      "answer": "reply:to_person",
+      "metadata": {
+        "renderedStep": "to_person",
+      },
+    },
+    "routineExecution": {
+      "executionId": "exec_1",
+      "routineId": "contact",
+    },
+    "sessionId": "session_1",
+    "trace": {
+      "completedAt": "<volatile>",
+      "stages": [
+        {
+          "completedAt": "<volatile>",
+          "id": "message",
+          "kind": "message",
+          "outputs": {
+            "contentLength": 15,
+            "eventId": "input_1",
+            "kind": "message",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "gather",
+          "kind": "gather",
+          "outputs": {
+            "history": [],
+            "historyCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "routine:contact",
+          "kind": "routine_resume",
+          "outputs": {
+            "answerLength": 15,
+            "completed": true,
+            "handoff": true,
+            "notifiesOperators": false,
+            "routineId": "contact",
+            "terminalKind": "handoff",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+          "subTrace": {
+            "namespace": "routine",
+            "payload": {
+              "capturedSlotKeys": [],
+              "filledSlotKeys": [],
+              "landedStepId": "to_person",
+              "routineId": "contact",
+              "startStepId": "ask_email",
+              "steps": [
+                {
+                  "event": "advanced",
+                  "kind": "chat",
+                  "stepId": "ask_email",
+                  "viaSelector": true,
+                },
+                {
+                  "event": "rendered",
+                  "kind": "terminal",
+                  "stepId": "to_person",
+                },
+              ],
+              "terminalKind": "handoff",
+            },
+            "version": 1,
+          },
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "directive_steering",
+          "kind": "directive_steering",
+          "outputs": {
+            "candidateCount": 0,
+            "directives": [],
+            "matchCount": 0,
+            "routineStep": {
+              "directivesAppliedAs": "subordinate_to_step_instruction",
+              "routineId": "contact",
+              "steeringDirectives": [],
+              "stepId": "to_person",
+            },
+            "scopeFilteredCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "skipped",
+        },
+      ],
+      "startedAt": "<volatile>",
+      "traceId": "<volatile>",
+    },
+  },
+}
+`;
+
+exports[`routine turn golden record (attemptRoutine) > records the same port calls and result for: re-ask 1`] = `
+{
+  "calls": [
+    "loadActive",
+    "loadHistory",
+    "progress:routine",
+    "select:ask_email",
+    "directiveMatcher:ask_email",
+    "render:ask_email:reask(email):steering=1:staged=0",
+    "appendEvent:user",
+    "save:active::",
+    "appendEvent:assistant",
+  ],
+  "result": {
+    "decision": {
+      "reason": "routine_resumed:contact",
+      "selected": [],
+    },
+    "events": [
+      {
+        "content": "not sure",
+        "createdAt": "<volatile>",
+        "id": "input_1",
+        "kind": "message",
+        "role": "user",
+        "sessionId": "session_1",
+      },
+      {
+        "content": "reply:ask_email",
+        "createdAt": "<volatile>",
+        "id": "<assistant-event>",
+        "kind": "assistant.response",
+        "metadata": {
+          "renderedStep": "ask_email",
+        },
+        "role": "assistant",
+        "sessionId": "session_1",
+      },
+    ],
+    "outcomes": [],
+    "response": {
+      "answer": "reply:ask_email",
+      "metadata": {
+        "renderedStep": "ask_email",
+      },
+    },
+    "routineExecution": {
+      "executionId": "exec_1",
+      "routineId": "contact",
+    },
+    "sessionId": "session_1",
+    "trace": {
+      "completedAt": "<volatile>",
+      "stages": [
+        {
+          "completedAt": "<volatile>",
+          "id": "message",
+          "kind": "message",
+          "outputs": {
+            "contentLength": 8,
+            "eventId": "input_1",
+            "kind": "message",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "gather",
+          "kind": "gather",
+          "outputs": {
+            "history": [],
+            "historyCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "routine:contact",
+          "kind": "routine_resume",
+          "outputs": {
+            "answerLength": 15,
+            "completed": false,
+            "handoff": false,
+            "notifiesOperators": false,
+            "routineId": "contact",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+          "subTrace": {
+            "namespace": "routine",
+            "payload": {
+              "capturedSlotKeys": [],
+              "filledSlotKeys": [],
+              "landedStepId": "ask_email",
+              "routineId": "contact",
+              "startStepId": "ask_email",
+              "steps": [
+                {
+                  "event": "reasked",
+                  "kind": "chat",
+                  "stepId": "ask_email",
+                  "viaSelector": true,
+                },
+              ],
+            },
+            "version": 1,
+          },
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "directive_steering",
+          "kind": "directive_steering",
+          "outputs": {
+            "candidateCount": 0,
+            "directives": [],
+            "matchCount": 0,
+            "routineStep": {
+              "directivesAppliedAs": "subordinate_to_step_instruction",
+              "routineId": "contact",
+              "steeringDirectives": [],
+              "stepId": "ask_email",
+            },
+            "scopeFilteredCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "skipped",
+        },
+      ],
+      "startedAt": "<volatile>",
+      "traceId": "<volatile>",
+    },
+  },
+}
+`;
+
+exports[`routine turn golden record (attemptRoutine) > records the same port calls and result for: slot ask on activation 1`] = `
+{
+  "calls": [
+    "loadActive",
+    "loadHistory",
+    "loadCompleted",
+    "activate",
+    "progress:routine",
+    "select:ask_email",
+    "directiveMatcher:ask_email",
+    "render:ask_email:steering=1:staged=0",
+    "appendEvent:user",
+    "save:active::",
+    "appendEvent:assistant",
+  ],
+  "result": {
+    "decision": {
+      "reason": "routine_activated:contact",
+      "selected": [],
+    },
+    "events": [
+      {
+        "content": "I want to contact you",
+        "createdAt": "<volatile>",
+        "id": "input_1",
+        "kind": "message",
+        "role": "user",
+        "sessionId": "session_1",
+      },
+      {
+        "content": "reply:ask_email",
+        "createdAt": "<volatile>",
+        "id": "<assistant-event>",
+        "kind": "assistant.response",
+        "metadata": {
+          "renderedStep": "ask_email",
+        },
+        "role": "assistant",
+        "sessionId": "session_1",
+      },
+    ],
+    "outcomes": [],
+    "response": {
+      "answer": "reply:ask_email",
+      "metadata": {
+        "renderedStep": "ask_email",
+      },
+    },
+    "routineExecution": {
+      "executionId": "<new-execution>",
+      "routineId": "contact",
+    },
+    "sessionId": "session_1",
+    "trace": {
+      "completedAt": "<volatile>",
+      "stages": [
+        {
+          "completedAt": "<volatile>",
+          "id": "message",
+          "kind": "message",
+          "outputs": {
+            "contentLength": 21,
+            "eventId": "input_1",
+            "kind": "message",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "gather",
+          "kind": "gather",
+          "outputs": {
+            "history": [],
+            "historyCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "routine:contact",
+          "kind": "routine_activate",
+          "outputs": {
+            "answerLength": 15,
+            "completed": false,
+            "handoff": false,
+            "notifiesOperators": false,
+            "routineId": "contact",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+          "subTrace": {
+            "namespace": "routine",
+            "payload": {
+              "capturedSlotKeys": [],
+              "filledSlotKeys": [],
+              "landedStepId": "ask_email",
+              "routineId": "contact",
+              "startStepId": "ask_email",
+              "steps": [
+                {
+                  "event": "reasked",
+                  "kind": "chat",
+                  "stepId": "ask_email",
+                  "viaSelector": true,
+                },
+              ],
+            },
+            "version": 1,
+          },
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "directive_steering",
+          "kind": "directive_steering",
+          "outputs": {
+            "candidateCount": 0,
+            "directives": [],
+            "matchCount": 0,
+            "routineStep": {
+              "directivesAppliedAs": "subordinate_to_step_instruction",
+              "routineId": "contact",
+              "steeringDirectives": [],
+              "stepId": "ask_email",
+            },
+            "scopeFilteredCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "skipped",
+        },
+      ],
+      "startedAt": "<volatile>",
+      "traceId": "<volatile>",
+    },
+  },
+}
+`;
+
+exports[`routine turn golden record (attemptRoutine) > records the same port calls and result for: slot correction 1`] = `
+{
+  "calls": [
+    "loadActive",
+    "loadHistory",
+    "loadCompleted",
+    "correction.detect",
+    "correction.confirm",
+    "save:completed:ask_email>ask_message:email",
+    "appendEvent:user",
+    "appendEvent:assistant",
+  ],
+  "result": {
+    "decision": {
+      "reason": "routine_slot_correction",
+      "selected": [],
+    },
+    "events": [
+      {
+        "content": "my email is actually new@example.com",
+        "createdAt": "<volatile>",
+        "id": "input_1",
+        "kind": "message",
+        "role": "user",
+        "sessionId": "session_1",
+      },
+      {
+        "content": "Updated your email.",
+        "createdAt": "<volatile>",
+        "id": "<assistant-event>",
+        "kind": "assistant.response",
+        "role": "assistant",
+        "sessionId": "session_1",
+      },
+    ],
+    "outcomes": [],
+    "response": {
+      "answer": "Updated your email.",
+    },
+    "sessionId": "session_1",
+    "trace": {
+      "completedAt": "<volatile>",
+      "stages": [
+        {
+          "completedAt": "<volatile>",
+          "id": "message",
+          "kind": "message",
+          "outputs": {
+            "contentLength": 36,
+            "eventId": "input_1",
+            "kind": "message",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "routine_slot_correction:contact",
+          "kind": "routine_slot_correction",
+          "outputs": {
+            "routineId": "contact",
+            "slotKey": "email",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+      ],
+      "startedAt": "<volatile>",
+      "traceId": "<volatile>",
+    },
+  },
+}
+`;
+
+exports[`routine turn golden record (attemptRoutine) > records the same port calls and result for: step instruction 1`] = `
+{
+  "calls": [
+    "loadActive",
+    "loadHistory",
+    "progress:routine",
+    "select:ask_email",
+    "directiveMatcher:ask_message",
+    "render:ask_message:steering=1:staged=0",
+    "appendEvent:user",
+    "save:active:ask_message:email",
+    "appendEvent:assistant",
+  ],
+  "result": {
+    "decision": {
+      "reason": "routine_resumed:contact",
+      "selected": [],
+    },
+    "events": [
+      {
+        "content": "alex@example.com",
+        "createdAt": "<volatile>",
+        "id": "input_1",
+        "kind": "message",
+        "role": "user",
+        "sessionId": "session_1",
+      },
+      {
+        "content": "reply:ask_message",
+        "createdAt": "<volatile>",
+        "id": "<assistant-event>",
+        "kind": "assistant.response",
+        "metadata": {
+          "renderedStep": "ask_message",
+        },
+        "role": "assistant",
+        "sessionId": "session_1",
+      },
+    ],
+    "outcomes": [],
+    "response": {
+      "answer": "reply:ask_message",
+      "metadata": {
+        "renderedStep": "ask_message",
+      },
+    },
+    "routineExecution": {
+      "executionId": "exec_1",
+      "routineId": "contact",
+    },
+    "sessionId": "session_1",
+    "trace": {
+      "completedAt": "<volatile>",
+      "stages": [
+        {
+          "completedAt": "<volatile>",
+          "id": "message",
+          "kind": "message",
+          "outputs": {
+            "contentLength": 16,
+            "eventId": "input_1",
+            "kind": "message",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "gather",
+          "kind": "gather",
+          "outputs": {
+            "history": [],
+            "historyCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "routine:contact",
+          "kind": "routine_resume",
+          "outputs": {
+            "answerLength": 17,
+            "completed": false,
+            "handoff": false,
+            "notifiesOperators": false,
+            "routineId": "contact",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+          "subTrace": {
+            "namespace": "routine",
+            "payload": {
+              "capturedSlotKeys": [
+                "email",
+              ],
+              "filledSlotKeys": [
+                "email",
+              ],
+              "landedStepId": "ask_message",
+              "routineId": "contact",
+              "startStepId": "ask_email",
+              "steps": [
+                {
+                  "capturedSlotKeys": [
+                    "email",
+                  ],
+                  "event": "advanced",
+                  "kind": "chat",
+                  "stepId": "ask_email",
+                  "viaSelector": true,
+                },
+                {
+                  "event": "rendered",
+                  "kind": "chat",
+                  "stepId": "ask_message",
+                },
+              ],
+            },
+            "version": 1,
+          },
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "directive_steering",
+          "kind": "directive_steering",
+          "outputs": {
+            "candidateCount": 0,
+            "directives": [],
+            "matchCount": 0,
+            "routineStep": {
+              "directivesAppliedAs": "subordinate_to_step_instruction",
+              "routineId": "contact",
+              "steeringDirectives": [],
+              "stepId": "ask_message",
+            },
+            "scopeFilteredCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "skipped",
+        },
+      ],
+      "startedAt": "<volatile>",
+      "traceId": "<volatile>",
+    },
+  },
+}
+`;
+
+exports[`routine turn golden record (attemptRoutine) > records the same port calls and result for: stuck 1`] = `
+{
+  "calls": [
+    "loadActive",
+    "loadHistory",
+    "progress:routine",
+    "select:ask_email",
+    "render:ask_email:stuck:steering=0:staged=0",
+    "directiveMatcher:-",
+    "appendEvent:user",
+    "save:completed:ask_email:",
+    "appendEvent:assistant",
+  ],
+  "result": {
+    "decision": {
+      "reason": "routine_resumed:contact",
+      "selected": [],
+    },
+    "events": [
+      {
+        "content": "no",
+        "createdAt": "<volatile>",
+        "id": "input_1",
+        "kind": "message",
+        "role": "user",
+        "sessionId": "session_1",
+      },
+      {
+        "content": "reply:ask_email",
+        "createdAt": "<volatile>",
+        "id": "<assistant-event>",
+        "kind": "assistant.response",
+        "metadata": {
+          "renderedStep": "ask_email",
+        },
+        "role": "assistant",
+        "sessionId": "session_1",
+      },
+    ],
+    "handoff": {
+      "collected": {},
+      "routineId": "contact",
+      "stepId": "ask_email",
+      "terminalKind": "stuck",
+    },
+    "outcomes": [],
+    "response": {
+      "answer": "reply:ask_email",
+      "metadata": {
+        "renderedStep": "ask_email",
+      },
+    },
+    "routineExecution": {
+      "executionId": "exec_1",
+      "routineId": "contact",
+    },
+    "sessionId": "session_1",
+    "trace": {
+      "completedAt": "<volatile>",
+      "stages": [
+        {
+          "completedAt": "<volatile>",
+          "id": "message",
+          "kind": "message",
+          "outputs": {
+            "contentLength": 2,
+            "eventId": "input_1",
+            "kind": "message",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "gather",
+          "kind": "gather",
+          "outputs": {
+            "history": [],
+            "historyCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "routine:contact",
+          "kind": "routine_resume",
+          "outputs": {
+            "answerLength": 15,
+            "completed": true,
+            "handoff": true,
+            "notifiesOperators": false,
+            "routineId": "contact",
+            "terminalKind": "stuck",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+          "subTrace": {
+            "namespace": "routine",
+            "payload": {
+              "capturedSlotKeys": [],
+              "filledSlotKeys": [],
+              "landedStepId": "ask_email",
+              "routineId": "contact",
+              "startStepId": "ask_email",
+              "steps": [
+                {
+                  "event": "reasked",
+                  "kind": "chat",
+                  "stepId": "ask_email",
+                  "viaSelector": true,
+                },
+                {
+                  "event": "reask_limit_handoff",
+                  "kind": "chat",
+                  "reaskCount": 5,
+                  "stepId": "ask_email",
+                },
+              ],
+              "terminalKind": "stuck",
+            },
+            "version": 1,
+          },
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "directive_steering",
+          "kind": "directive_steering",
+          "outputs": {
+            "candidateCount": 0,
+            "directives": [],
+            "matchCount": 0,
+            "scopeFilteredCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "skipped",
+        },
+      ],
+      "startedAt": "<volatile>",
+      "traceId": "<volatile>",
+    },
+  },
+}
+`;
+
+exports[`routine turn golden record (attemptRoutine) > records the same port calls and result for: terminal with action 1`] = `
+{
+  "calls": [
+    "loadActive",
+    "loadHistory",
+    "progress:routine",
+    "select:ask_message",
+    "directiveMatcher:done",
+    "render:done:steering=1:staged=0",
+    "appendEvent:user",
+    "save:completed:ask_email>ask_message>done:email",
+    "appendEvent:assistant",
+  ],
+  "result": {
+    "actions": [
+      {
+        "payload": {
+          "email": "alex@example.com",
+          "message": "please call me back",
+        },
+        "type": "contact.notify",
+      },
+      {
+        "payload": {
+          "data": {
+            "email": "alex@example.com",
+            "message": "please call me back",
+          },
+          "destinationRef": "dest_1",
+          "source": {
+            "routineId": "contact",
+            "status": "completed",
+            "stepId": "done",
+            "terminalKind": "complete",
+          },
+        },
+        "type": "webhook.send",
+      },
+    ],
+    "decision": {
+      "reason": "routine_resumed:contact",
+      "selected": [],
+    },
+    "events": [
+      {
+        "content": "please call me back",
+        "createdAt": "<volatile>",
+        "id": "input_1",
+        "kind": "message",
+        "role": "user",
+        "sessionId": "session_1",
+      },
+      {
+        "content": "reply:done",
+        "createdAt": "<volatile>",
+        "id": "<assistant-event>",
+        "kind": "assistant.response",
+        "metadata": {
+          "renderedStep": "done",
+        },
+        "role": "assistant",
+        "sessionId": "session_1",
+      },
+    ],
+    "operatorNotice": {
+      "collected": {
+        "email": "alex@example.com",
+        "message": "please call me back",
+      },
+      "routineId": "contact",
+      "stepId": "done",
+      "subject": "New contact",
+      "terminalKind": "complete",
+    },
+    "outcomes": [],
+    "response": {
+      "answer": "reply:done",
+      "metadata": {
+        "renderedStep": "done",
+      },
+    },
+    "routineExecution": {
+      "executionId": "exec_1",
+      "routineId": "contact",
+    },
+    "sessionId": "session_1",
+    "trace": {
+      "completedAt": "<volatile>",
+      "stages": [
+        {
+          "completedAt": "<volatile>",
+          "id": "message",
+          "kind": "message",
+          "outputs": {
+            "contentLength": 19,
+            "eventId": "input_1",
+            "kind": "message",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "gather",
+          "kind": "gather",
+          "outputs": {
+            "history": [],
+            "historyCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "routine:contact",
+          "kind": "routine_resume",
+          "outputs": {
+            "answerLength": 10,
+            "completed": true,
+            "handoff": false,
+            "notifiesOperators": true,
+            "routineId": "contact",
+            "terminalKind": "complete",
+          },
+          "startedAt": "<volatile>",
+          "status": "applied",
+          "subTrace": {
+            "namespace": "routine",
+            "payload": {
+              "capturedSlotKeys": [
+                "message",
+              ],
+              "filledSlotKeys": [
+                "email",
+                "message",
+              ],
+              "landedStepId": "done",
+              "routineId": "contact",
+              "startStepId": "ask_message",
+              "steps": [
+                {
+                  "capturedSlotKeys": [
+                    "message",
+                  ],
+                  "event": "advanced",
+                  "kind": "chat",
+                  "stepId": "ask_message",
+                  "viaSelector": true,
+                },
+                {
+                  "event": "action_emitted",
+                  "kind": "action",
+                  "stepId": "notify",
+                },
+                {
+                  "event": "rendered",
+                  "kind": "terminal",
+                  "stepId": "done",
+                },
+              ],
+              "terminalKind": "complete",
+            },
+            "version": 1,
+          },
+        },
+        {
+          "completedAt": "<volatile>",
+          "id": "directive_steering",
+          "kind": "directive_steering",
+          "outputs": {
+            "candidateCount": 0,
+            "directives": [],
+            "matchCount": 0,
+            "routineStep": {
+              "directivesAppliedAs": "subordinate_to_step_instruction",
+              "routineId": "contact",
+              "steeringDirectives": [],
+              "stepId": "done",
+            },
+            "scopeFilteredCount": 0,
+          },
+          "startedAt": "<volatile>",
+          "status": "skipped",
+        },
+      ],
+      "startedAt": "<volatile>",
+      "traceId": "<volatile>",
+    },
+  },
+}
+`;

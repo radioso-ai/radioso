@@ -237,10 +237,17 @@ export const finalizeTestExecutionStream = (state: TestExecutionState, code: str
   return incompleteSideIds.reduce((current, sideId) => failTestExecutionSide(current, sideId, code), state)
 }
 
+/**
+ * A side whose stream ended early reads as that failure, never as the half answer streamed before
+ * it; reopening the session shows whatever the server stored for the turn.
+ */
 export const failTestExecutionSide = (state: TestExecutionState, sideId: string, code: string): TestExecutionState => {
   const side = state.sides[sideId]
   if (!side) return state
   const lastAssistant = [...side.messages].reverse().find((message) => message.role === 'assistant')
+  const notice = 'The response stream ended before an answer was complete.'
+  const replaceStreamed = (message: TestExecutionMessage): TestExecutionMessage =>
+    ({ ...message, content: message.state === 'streaming' ? notice : message.content || notice, state: 'failed' })
   return {
     ...state,
     state: 'partial',
@@ -251,7 +258,7 @@ export const failTestExecutionSide = (state: TestExecutionState, sideId: string,
         state: 'failed',
         errorCode: code,
         retryable: true,
-        messages: lastAssistant ? side.messages.map((message) => message.id === lastAssistant.id ? { ...message, content: message.content || 'The response stream ended before an answer was complete.', state: 'failed' } : message) : side.messages,
+        messages: lastAssistant ? side.messages.map((message) => message.id === lastAssistant.id ? replaceStreamed(message) : message) : side.messages,
       },
     },
   }
@@ -296,6 +303,8 @@ export const reduceTestExecutionEvent = (
           state: 'completed',
           retryable: false,
           messages: updateLastAssistant({
+            // The stored answer settles the reply; the streamed text was its live preview.
+            ...(event.answer === undefined ? {} : { content: event.answer }),
             state: 'completed',
             persistedAssistantMessageId: event.messageId,
             turnTrace: event.turnTrace,
@@ -307,7 +316,8 @@ export const reduceTestExecutionEvent = (
             state: 'failed',
             errorCode: event.code,
             retryable: event.retryable,
-            messages: updateLastAssistant({ content: lastAssistantMessage?.content || `Test failed: ${event.code}`, state: 'failed' }),
+            // A half-streamed reply was never stored; the turn reads as its failure, as on reopen.
+            messages: updateLastAssistant({ content: `Test failed: ${event.code}`, state: 'failed' }),
           }
           : side
 

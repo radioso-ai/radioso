@@ -15,6 +15,7 @@ import {
   type FrozenTestValue,
   type TestValue,
 } from "../context-variables/public.js";
+import { createLiveEventQueue } from "./liveEventQueue.js";
 import { findTranscriptTurn, readTranscript, settleSentTurn, type TestExecutionTranscript, type TestExecutionTurnRead } from "./testExecutionTurns.js";
 
 // An attempt's lease must outlast the slowest legitimate turn, or a concurrent detail read
@@ -181,7 +182,8 @@ export interface TestExecutionClaim {
 export type TestExecutionEvent =
   | { type: "side_started"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string }
   | { type: "message_delta"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; delta: string }
-  | { type: "side_completed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; messageId: string; turnTrace?: unknown }
+  /** `answer` is the stored answer, the authority over the `message_delta` text streamed before it. */
+  | { type: "side_completed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; messageId: string; answer: string; turnTrace?: unknown }
   | { type: "side_failed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; code: string; retryable: boolean }
   | { type: "execution_partial"; executionId: string; generation: number; turnId: string; attemptId: string }
   | { type: "execution_completed"; executionId: string; generation: number; turnId: string; attemptId: string };
@@ -213,7 +215,13 @@ export interface TrustedTestExecutionRunnerPort {
     candidateRevision: AgentRevision;
     accountId: string | null;
   }): Promise<{ answer: string; messageId: string } | null>;
-  run(input: {
+  /**
+   * Runs one turn, yielding the answer's text as it is generated, then returns the settled result.
+   * The yielded text is a live preview: the returned `answer` is what is stored, and the runtime's
+   * final presentation may normalize it (trimmed whitespace, citation anchors), so it can differ
+   * from the concatenated text.
+   */
+  stream(input: {
     workspaceId: string;
     agentId: string;
     candidateRevision: AgentRevision;
@@ -226,7 +234,7 @@ export interface TrustedTestExecutionRunnerPort {
     skillEffects: SkillEffectPolicy;
     accountId: string | null;
     signal?: AbortSignal;
-  }): Promise<TestExecutionRunnerResult>;
+  }): AsyncGenerator<string, TestExecutionRunnerResult>;
 }
 
 export interface TestExecutionRunnerResult {
@@ -591,20 +599,16 @@ export class TestExecutionService {
   private async *runClaims(execution: TestExecution, claims: readonly TestExecutionClaim[], identity: TestExecutionMessageInput): AsyncGenerator<TestExecutionEvent> {
     const sides = new Map(execution.sides.map((side) => [side.id, side]));
     for (const claim of claims) yield { type: "side_started", executionId: identity.executionId, generation: identity.generation, turnId: identity.turnId, attemptId: identity.attemptId, sideId: claim.sideId };
-    const pending: Array<Promise<SideRunOutcome>> = [];
-    for (const claim of claims) {
-      // Attach the failure boundary while scheduling so a later race result cannot leave a side rejection unobserved.
-      pending.push(this.runSide(execution, sides.get(claim.sideId)!, claim, identity).catch(() => {
-        this.options.logger?.warn({ workspaceId: identity.workspaceId, executionId: identity.executionId, sideId: claim.sideId, turnId: identity.turnId, attemptId: identity.attemptId }, "Test execution side persistence failed");
-        return { failed: true, events: [this.failedEvent(identity, claim.sideId, "persistence_failed", false)] };
-      }));
-    }
-    while (pending.length > 0) {
-      const resolved = await Promise.race(pending.map(async (item, index) => ({ index, outcome: await item })));
-      void pending.splice(resolved.index, 1);
-      const outcome = resolved.outcome;
-      yield* outcome.events;
-    }
+    // Each side runs on its own and pushes its events as they happen, so comparison sides' text
+    // interleaves live, a slow side never holds back a fast one, and a side's result is stored
+    // even when the reader of this stream has gone.
+    const events = createLiveEventQueue<TestExecutionEvent>();
+    const settled = claims.map((claim) => this.runSide(execution, sides.get(claim.sideId)!, claim, identity, (event) => events.push(event)).catch(() => {
+      this.options.logger?.warn({ workspaceId: identity.workspaceId, executionId: identity.executionId, sideId: claim.sideId, turnId: identity.turnId, attemptId: identity.attemptId }, "Test execution side persistence failed");
+      events.push(this.failedEvent(identity, claim.sideId, "persistence_failed", false));
+    }));
+    void Promise.allSettled(settled).then(() => events.close());
+    yield* events.read();
     const durable = await this.options.repository.find({ workspaceId: identity.workspaceId, agentId: identity.agentId, executionId: identity.executionId });
     if (durable?.state === "completed") {
       yield { type: "execution_completed", executionId: identity.executionId, generation: identity.generation, turnId: identity.turnId, attemptId: identity.attemptId };
@@ -615,9 +619,11 @@ export class TestExecutionService {
     }
   }
 
-  private async runSide(execution: TestExecution, side: TestExecutionSide, claim: TestExecutionClaim, identity: TestExecutionMessageInput): Promise<SideRunOutcome> {
+  /** One side's turn: its answer text is emitted as the runner generates it, then its settled outcome. */
+  private async runSide(execution: TestExecution, side: TestExecutionSide, claim: TestExecutionClaim, identity: TestExecutionMessageInput, emit: (event: TestExecutionEvent) => void): Promise<void> {
     if (claim.replay) {
-      return { failed: false, events: this.completedEvents(identity, side.id, claim.replay) };
+      for (const event of this.completedEvents(identity, side.id, claim.replay, "")) emit(event);
+      return;
     }
     let reservation: UsageLimitReservation | null = null;
     try {
@@ -629,10 +635,24 @@ export class TestExecutionService {
         surface: "test_execution",
         usage: "test_run",
       });
-      const result = await this.options.runner.run({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, signal: identity.signal });
+      const turn = this.options.runner.stream({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, signal: identity.signal });
+      let streamed = "";
+      let step = await turn.next();
+      while (!step.done) {
+        if (step.value) {
+          streamed += step.value;
+          emit(this.deltaEvent(identity, side.id, step.value));
+        }
+        step = await turn.next();
+      }
+      const result = step.value;
       const stored = await this.options.repository.complete({ workspaceId: identity.workspaceId, agentId: identity.agentId, executionId: identity.executionId, sideId: side.id, turnId: identity.turnId, attemptId: identity.attemptId, fence: claim.attempt.fence, result, now: this.now() });
       await reservation.commit();
-      return stored === "stale" ? { failed: true, events: [this.failedEvent(identity, side.id, "stale_attempt", false)] } : { failed: false, events: this.completedEvents(identity, side.id, result) };
+      if (stored === "stale") {
+        emit(this.failedEvent(identity, side.id, "stale_attempt", false));
+        return;
+      }
+      for (const event of this.completedEvents(identity, side.id, result, streamed)) emit(event);
     } catch (error) {
       // A reservation means the runner was dispatched or an after-dispatch persistence step
       // failed. That work remains chargeable even when no result could be delivered.
@@ -651,13 +671,19 @@ export class TestExecutionService {
         }, "Test execution side failed");
       }
       const stored = await this.options.repository.fail({ workspaceId: identity.workspaceId, agentId: identity.agentId, executionId: identity.executionId, sideId: side.id, turnId: identity.turnId, attemptId: identity.attemptId, fence: claim.attempt.fence, code, now: this.now() });
-      return { failed: true, events: [this.failedEvent(identity, side.id, stored === "stale" ? "stale_attempt" : code, stored !== "stale")] };
+      emit(this.failedEvent(identity, side.id, stored === "stale" ? "stale_attempt" : code, stored !== "stale"));
     }
   }
 
-  private completedEvents(identity: TestExecutionMessageInput, sideId: string, result: TestExecutionRunnerResult): TestExecutionEvent[] {
+  /**
+   * A side's settled answer after `streamed` text already went out: only what the stored answer adds
+   * past it (the whole answer when nothing streamed, as on a delivery replay), then the completion,
+   * which carries the stored answer for a reader whose streamed text diverged from it.
+   */
+  private completedEvents(identity: TestExecutionMessageInput, sideId: string, result: TestExecutionRunnerResult, streamed: string): TestExecutionEvent[] {
+    const remainder = result.answer.startsWith(streamed) ? result.answer.slice(streamed.length) : "";
     return [
-      { type: "message_delta", executionId: identity.executionId, generation: identity.generation, turnId: identity.turnId, attemptId: identity.attemptId, sideId, delta: result.answer },
+      ...(remainder ? [this.deltaEvent(identity, sideId, remainder)] : []),
       {
         type: "side_completed",
         executionId: identity.executionId,
@@ -666,9 +692,14 @@ export class TestExecutionService {
         attemptId: identity.attemptId,
         sideId,
         messageId: result.messageId,
+        answer: result.answer,
         ...(result.turnTrace ? { turnTrace: result.turnTrace } : {}),
       },
     ];
+  }
+
+  private deltaEvent(identity: TestExecutionMessageInput, sideId: string, delta: string): TestExecutionEvent {
+    return { type: "message_delta", executionId: identity.executionId, generation: identity.generation, turnId: identity.turnId, attemptId: identity.attemptId, sideId, delta };
   }
 
   private failedEvent(identity: TestExecutionMessageInput, sideId: string, code: string, retryable: boolean): TestExecutionEvent {
@@ -683,4 +714,3 @@ export class TestExecutionService {
 
 interface TestExecutionMessageInput { workspaceId: string; agentId: string; accountId: string | null; executionId: string; message: string; generation: number; turnId: string; attemptId: string; signal?: AbortSignal; }
 interface TestExecutionRetryInput extends Omit<TestExecutionMessageInput, "message"> { sideId: string; }
-interface SideRunOutcome { failed: boolean; events: TestExecutionEvent[]; }

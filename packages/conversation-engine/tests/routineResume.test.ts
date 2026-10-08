@@ -6,7 +6,13 @@ import type {
   RoutineState,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { resumeRoutine } from "../src/routineResume.js";
+import { claimRoutineResume } from "../src/routineResume.js";
+
+/** A whole resume: claim the turn, render its reply, settle. */
+const resumeRoutine = async (input: Parameters<typeof claimRoutineResume>[0]) => {
+  const claim = await claimRoutineResume(input);
+  return claim ? claim.settle(await claim.reply.render()) : null;
+};
 
 const turn: TurnContext = {
   agent: { id: "agent_1", name: "Assistant" },

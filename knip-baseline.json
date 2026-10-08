@@ -287,7 +287,6 @@
   "types|backend/src/modules/chat/services/replyDraftRunner.ts|ChatReplyDraftInput",
   "types|backend/src/modules/chat/services/replyDraftRunner.ts|ChatReplyDraftResult",
   "types|backend/src/modules/chat/services/retrievalTurnDispatch.ts|RetrievalTurnDispatchPort",
-  "types|backend/src/modules/chat/services/streamPerformanceMetrics.ts|FirstAnswerChunkLabels",
   "types|backend/src/modules/chat/services/summary/conversationSummaryService.ts|ConversationEarlyTitleGenerationConfig",
   "types|backend/src/modules/chat/services/summary/conversationSummaryService.ts|ConversationSummaryConfig",
   "types|backend/src/modules/chat/services/summary/conversationSummaryService.ts|ConversationSummaryGenerationConfig",

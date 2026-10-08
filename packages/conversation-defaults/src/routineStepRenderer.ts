@@ -3,11 +3,14 @@ import type {
   ConversationCitation,
   ConversationMessage,
   ConversationModelGateway,
+  ConversationModelRequest,
   ConversationRoutineStepRenderer,
+  PendingRenderableTurn,
   RoutineGroundedAnswerRenderer,
   RenderableTurn,
   RoutineStep,
   RoutineStepReask,
+  RoutineStepReplyInput,
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
@@ -299,46 +302,90 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     this.stuckHandoffPromptTemplate = options.stuckHandoffPromptTemplate ?? DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT;
   }
 
-  async render(input: {
-    step: RoutineStep;
-    steering: SteeringRule[];
-    turn: TurnContext;
-    reask?: RoutineStepReask;
-    stuckHandoff?: boolean;
-  }): Promise<RenderableTurn> {
-    const responseLanguage = await this.options.responseLanguage;
+  async render(input: RoutineStepReplyInput): Promise<RenderableTurn> {
+    return this.prepare(input).render();
+  }
+
+  /**
+   * Decides which reply the step gets — a hand-off message, the host's grounded answer, or
+   * the step reply — and generates nothing until it is asked for. A hand-off message is only
+   * ever generated whole; the step reply streams when the model gateway can.
+   */
+  prepare(input: RoutineStepReplyInput): PendingRenderableTurn {
     // The routine ended on a step the visitor stayed stuck on, and a person continues (#1384).
     // The message carries none of the step: its question is exactly what to stop asking.
     if (input.stuckHandoff) {
-      return this.handoffMessage(
-        input.turn,
-        responseLanguage,
-        renderPromptTemplate("chat/routine-step-stuck-handoff.md", this.stuckHandoffPromptTemplate, {
-          language: terminalPromptLanguage(responseLanguage),
-        }),
-      );
+      return {
+        render: async () => {
+          const responseLanguage = await this.options.responseLanguage;
+          return this.handoffMessage(
+            input.turn,
+            responseLanguage,
+            renderPromptTemplate("chat/routine-step-stuck-handoff.md", this.stuckHandoffPromptTemplate, {
+              language: terminalPromptLanguage(responseLanguage),
+            }),
+          );
+        },
+      };
     }
     if (isHandoffTerminal(input.step)) {
-      const message = terminalMessage(input.step, input.steering);
-      return this.handoffMessage(
-        input.turn,
-        responseLanguage,
-        renderPromptTemplate(
-          message ? "chat/routine-step-terminal-handoff-with-message.md" : "chat/routine-step-terminal-handoff-default.md",
-          message ? this.terminalHandoffWithMessagePromptTemplate : this.terminalHandoffDefaultPromptTemplate,
-          {
-            language: terminalPromptLanguage(responseLanguage),
-            ...(message ? { message } : {}),
-          },
-        ),
-      );
+      return {
+        render: async () => {
+          const responseLanguage = await this.options.responseLanguage;
+          const message = terminalMessage(input.step, input.steering);
+          return this.handoffMessage(
+            input.turn,
+            responseLanguage,
+            renderPromptTemplate(
+              message ? "chat/routine-step-terminal-handoff-with-message.md" : "chat/routine-step-terminal-handoff-default.md",
+              message ? this.terminalHandoffWithMessagePromptTemplate : this.terminalHandoffDefaultPromptTemplate,
+              {
+                language: terminalPromptLanguage(responseLanguage),
+                ...(message ? { message } : {}),
+              },
+            ),
+          );
+        },
+      };
     }
 
-    const grounded = await this.options.groundedAnswerRenderer?.render(input);
-    if (grounded) {
-      return grounded;
+    const groundedAnswerRenderer = this.options.groundedAnswerRenderer;
+    if (groundedAnswerRenderer?.prepare) {
+      return groundedAnswerRenderer.prepare(input) ?? this.stepReply(input);
     }
+    if (groundedAnswerRenderer) {
+      // Whether the step is groundable is known only once the host renders it, so this
+      // reply is generated whole.
+      const stepReply = this.stepReply(input);
+      return {
+        render: async () => {
+          await this.options.responseLanguage;
+          return (await groundedAnswerRenderer.render(input)) ?? stepReply.render();
+        },
+      };
+    }
+    return this.stepReply(input);
+  }
 
+  /** The reply that follows the step's own instruction, generated through the model gateway. */
+  private stepReply(input: RoutineStepReplyInput): PendingRenderableTurn {
+    const finish = (answer: string): RenderableTurn => {
+      const citations = citationsFromStagedContext(input.turn);
+      return { answer, ...(citations.length > 0 ? { citations } : {}) };
+    };
+    return {
+      render: async () => {
+        const { text } = await this.modelGateway.complete(await this.stepReplyRequest(input));
+        return finish(text.trim());
+      },
+      ...(this.modelGateway.stream
+        ? { stream: () => this.streamStepReply(input, finish) }
+        : {}),
+    };
+  }
+
+  private async stepReplyRequest(input: RoutineStepReplyInput): Promise<ConversationModelRequest> {
+    const responseLanguage = await this.options.responseLanguage;
     const { instructions, guidance } = stepSteering(input.step, input.steering);
     const systemPrompt = renderPromptTemplate("chat/routine-step-reply.md", this.promptTemplate, {
       answer_scope_reference: scopeReferenceBlock(input.turn.agent),
@@ -352,12 +399,37 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
         renderPromptTemplate("chat/routine-step-reask-exhausted.md", this.reaskExhaustedPromptTemplate, {}),
       ),
     });
-    const { text } = await this.modelGateway.complete({
+    return {
       messages: turnMessages(input.turn),
       systemPrompt,
-    });
-    const citations = citationsFromStagedContext(input.turn);
-    return { answer: text.trim(), ...(citations.length > 0 ? { citations } : {}) };
+    };
+  }
+
+  /**
+   * The step reply as trimmed text deltas. A blank completion is retried once, the way the
+   * host gateway retries a blank `complete`; the blank attempt showed nothing, so only the
+   * retry is seen. A reply still blank after the retry fails rather than send nothing.
+   */
+  private async *streamStepReply(
+    input: RoutineStepReplyInput,
+    finish: (answer: string) => RenderableTurn,
+  ): AsyncGenerator<string, RenderableTurn> {
+    const request = await this.stepReplyRequest(input);
+    let answer = yield* trimmedDeltas(this.streamCompletion(request));
+    if (!answer) {
+      answer = yield* trimmedDeltas(this.streamCompletion(request));
+    }
+    if (!answer) {
+      throw new Error("routine_step_reply_blank");
+    }
+    return finish(answer);
+  }
+
+  private streamCompletion(request: ConversationModelRequest): AsyncIterable<string> {
+    if (!this.modelGateway.stream) {
+      throw new Error("routine_step_reply_stream_unavailable");
+    }
+    return this.modelGateway.stream(request);
   }
 
   /** A message handing the visitor to a person, with only their latest message as a language hint. */
@@ -372,4 +444,24 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     });
     return { answer: text.trim() };
   }
+}
+
+/**
+ * Passes a completion's deltas on as the text `.trim()` would leave: leading whitespace is
+ * dropped and trailing whitespace held back until more text follows it. Returns the text it
+ * passed on, empty when the completion was blank.
+ */
+async function* trimmedDeltas(deltas: AsyncIterable<string>): AsyncGenerator<string, string> {
+  let shown = "";
+  let heldWhitespace = "";
+  for await (const delta of deltas) {
+    const text = shown ? heldWhitespace + delta : (heldWhitespace + delta).trimStart();
+    const visible = text.trimEnd();
+    heldWhitespace = text.slice(visible.length);
+    if (visible) {
+      shown += visible;
+      yield visible;
+    }
+  }
+  return shown;
 }

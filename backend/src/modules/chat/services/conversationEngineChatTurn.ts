@@ -15,10 +15,14 @@ import type {
   ConversationRoutineRunner,
   ConversationRoutineStore,
   ConversationRetrievalWorkPort,
+  ConversationRoutineTurnClaim,
+  AttemptRoutineInput,
   ConversationTrace,
   ConversationTurnInterpreter,
   ProcessTurnResult,
   RenderableTurn,
+  RoutineTerminalKind,
+  RoutineTurnEffects,
 } from "@radioso/conversation-contract";
 
 import type { ChatAnswerPresenter, ChatPresentedAnswer } from "./chatAnswerPresenter.js";
@@ -489,7 +493,62 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
  * selection, dispatch, or composition, so this passes only the narrow routine input —
  * no stub selector/dispatcher/composer.
  */
-export const attemptRoutineTurnWithConversationEngine = async (input: {
+/** A routine turn the engine claimed, its reply still to generate, whole or streamed. */
+export interface RoutineTurnWithConversationEngineClaim {
+  effects: RoutineTurnEffects;
+  reply: {
+    render(): Promise<RunPreparedChatTurnWithConversationEngineResult>;
+    stream?(): AsyncGenerator<string, RunPreparedChatTurnWithConversationEngineResult>;
+  };
+}
+
+const ROUTINE_TERMINAL_KINDS: ReadonlySet<string> = new Set<RoutineTerminalKind>(["complete", "handoff", "action", "stuck"]);
+
+const isRoutineTerminalKind = (value: unknown): value is RoutineTerminalKind =>
+  typeof value === "string" && ROUTINE_TERMINAL_KINDS.has(value);
+
+/** How the turn's routine ended, as its routine trace stage records it; absent when it did not end. */
+const routineTerminalKind = (result: ProcessTurnResult): RoutineTerminalKind | undefined => {
+  const routineId = result.routineExecution?.routineId;
+  const terminalKind = routineId
+    ? result.trace.stages.find((stage) => stage.id === `routine:${routineId}`)?.outputs?.terminalKind
+    : undefined;
+  return isRoutineTerminalKind(terminalKind) ? terminalKind : undefined;
+};
+
+/** The effects a settled routine turn reports, in the shape a claim reports them before its reply exists. */
+const routineTurnEffectsOf = (result: ProcessTurnResult): RoutineTurnEffects => {
+  const terminalKind = routineTerminalKind(result);
+  return {
+    ...(result.routineExecution ? { routineExecution: result.routineExecution } : {}),
+    ...(terminalKind ? { terminalKind } : {}),
+    ...(result.actions ? { actions: result.actions } : {}),
+    ...(result.awaitingDecision ? { awaitingDecision: result.awaitingDecision } : {}),
+    ...(result.handoff ? { handoff: result.handoff } : {}),
+    ...(result.operatorNotice ? { operatorNotice: result.operatorNotice } : {}),
+  };
+};
+
+/**
+ * An engine that cannot claim a routine turn attempts it whole; its claim carries the
+ * finished turn, has no stream, and reports the effects that turn's result reports.
+ */
+const renderedRoutineClaim = async (
+  engine: ConversationEngine,
+  input: AttemptRoutineInput,
+): Promise<ConversationRoutineTurnClaim | null> => {
+  const result = await engine.attemptRoutine(input);
+  if (!result) {
+    return null;
+  }
+  return {
+    effects: routineTurnEffectsOf(result),
+    reply: { render: async () => result.response },
+    settle: async () => result,
+  };
+};
+
+export const claimRoutineTurnWithConversationEngine = async (input: {
   engine: ConversationEngine;
   session: PreparedSession;
   accountId?: string;
@@ -507,28 +566,46 @@ export const attemptRoutineTurnWithConversationEngine = async (input: {
   suppressNewClarification?: boolean;
   progress?: ConversationProgressPort;
   presentRoutineReply: (response: RenderableTurn) => ChatPresentedAnswer;
-}): Promise<RunPreparedChatTurnWithConversationEngineResult | null> => {
-  const result = await input.engine.attemptRoutine(
-    createAttemptRoutineInput({
-      session: input.session,
-      accountId: input.accountId,
-      directives: input.directives,
-      directiveRuntime: input.directiveRuntime,
-      directiveStateStore: input.directiveStateStore,
-      routineStore: input.routineStore,
-      routineRunner: input.routineRunner,
-      routineActivator: input.routineActivator,
-      routineSlotCorrection: input.routineSlotCorrection,
-      routineReentryGate: input.routineReentryGate,
-      clarifier: input.clarifier,
-      clarificationStore: input.clarificationStore,
-      loopGuardCandidateIds: input.loopGuardCandidateIds,
-      suppressNewClarification: input.suppressNewClarification,
-      progress: input.progress,
-    }),
-  );
-  if (!result) {
+}): Promise<RoutineTurnWithConversationEngineClaim | null> => {
+  const attemptInput = createAttemptRoutineInput({
+    session: input.session,
+    accountId: input.accountId,
+    directives: input.directives,
+    directiveRuntime: input.directiveRuntime,
+    directiveStateStore: input.directiveStateStore,
+    routineStore: input.routineStore,
+    routineRunner: input.routineRunner,
+    routineActivator: input.routineActivator,
+    routineSlotCorrection: input.routineSlotCorrection,
+    routineReentryGate: input.routineReentryGate,
+    clarifier: input.clarifier,
+    clarificationStore: input.clarificationStore,
+    loopGuardCandidateIds: input.loopGuardCandidateIds,
+    suppressNewClarification: input.suppressNewClarification,
+    progress: input.progress,
+  });
+  const claim = input.engine.claimRoutine
+    ? await input.engine.claimRoutine(attemptInput)
+    : await renderedRoutineClaim(input.engine, attemptInput);
+  if (!claim) {
     return null;
   }
-  return { presentation: input.presentRoutineReply(result.response), result };
+  const settled = async (response: RenderableTurn): Promise<RunPreparedChatTurnWithConversationEngineResult> => {
+    const result = await claim.settle(response);
+    return { presentation: input.presentRoutineReply(result.response), result };
+  };
+  const stream = claim.reply.stream?.bind(claim.reply);
+  return {
+    effects: claim.effects,
+    reply: {
+      render: async () => settled(await claim.reply.render()),
+      ...(stream
+        ? {
+            stream: async function* () {
+              return settled(yield* stream());
+            },
+          }
+        : {}),
+    },
+  };
 };

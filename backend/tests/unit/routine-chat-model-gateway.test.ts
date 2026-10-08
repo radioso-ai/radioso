@@ -220,6 +220,33 @@ describe("RoutineChatModelGateway", () => {
       return deltas;
     };
 
+    it("streams through the host gateway's own receiver (#1179)", async () => {
+      // A class-based host whose `streamAnswer` reads instance state through `this`, the way
+      // `ModelChatGateway.streamAnswer` reads its inference pipeline. A detached method loses it.
+      class ReceiverBoundHost {
+        readonly calls: ChatGatewayInput[] = [];
+        private readonly deltas = ["Which", " email?"];
+
+        async answer(): Promise<string> {
+          return "unused";
+        }
+
+        async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
+          this.calls.push(input);
+          yield* this.deltas;
+        }
+      }
+      const host = new ReceiverBoundHost();
+
+      const deltas = await collect(new RoutineChatModelGateway(host, turnContext).stream!({
+        messages: [{ role: "user", content: "reply" }],
+      }));
+
+      expect(deltas).toEqual(["Which", " email?"]);
+      expect(host.calls).toHaveLength(1);
+      expect(host.calls[0]?.usageContext.attemptKey).toBe("routine_turn");
+    });
+
     it("streams through the host gateway with the same request a completion sends", async () => {
       const { calls, chatGateway } = streaming(["Sure", " — what is your email?"]);
       const request = {

@@ -76,7 +76,7 @@ describe("directive coherence", () => {
   });
 
   it("includes directive surfaces in the model payload", async () => {
-    const complete = vi.fn(async () => ({
+    const complete = vi.fn<ConversationModelGateway["complete"]>(async () => ({
       text: JSON.stringify({
         verdict: "coherent",
         conflicts: [],

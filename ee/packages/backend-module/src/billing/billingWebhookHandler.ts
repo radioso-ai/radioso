@@ -1,7 +1,13 @@
-import { PLAN_CATALOG, STRIPE_PLAN_METADATA_KEY, type PlanId } from "@radioso/plan-catalog";
+import { PLAN_CATALOG, STRIPE_PLAN_METADATA_KEY, findPlan, type PlanId } from "@radioso/plan-catalog";
 
-import type { MailTransport } from "../radiosoModuleTypes.js";
+import type { AccountAdministratorDirectoryPort, NoticeMailPort } from "../radiosoModuleTypes.js";
 import type { BillingCustomerRepository } from "./billingCustomerRepository.js";
+import {
+  buildPaymentFailedEmail,
+  buildPlanChangedEmail,
+  buildSubscriptionEndedEmail,
+  resolveBillingNoticeRecipients,
+} from "./billingEmailContent.js";
 import { isTopUpPrice, planIdForProduct, statusFromStripe } from "./planPricing.js";
 import type { StripeGateway, StripeWebhookEvent } from "./stripeGateway.js";
 
@@ -34,10 +40,11 @@ export interface BillingWebhookHandlerDeps {
   repository: BillingCustomerRepository;
   usage: BillingUsageLimitPort;
   gateway: Pick<StripeGateway, "getProduct">;
-  mail: MailTransport;
+  noticeMail: NoticeMailPort;
+  accountAdministrators: AccountAdministratorDirectoryPort;
   audit: BillingAuditPort;
   logger: BillingWebhookLogger;
-  /** Base dashboard URL used only for the payment-failed email's link. */
+  /** Base dashboard URL used only for a branded notice's call to action. */
   appBaseUrl: string;
   metadataKey?: string;
 }
@@ -98,6 +105,59 @@ const resolvePlanId = async (
   }
   const product = await deps.gateway.getProduct(productId);
   return product ? planIdForProduct(product, deps.metadataKey ?? STRIPE_PLAN_METADATA_KEY) : null;
+};
+
+/**
+ * Sends one branded notice to active owners + admins, plus the customer's billing email when it
+ * differs (deduped). Called only AFTER the triggering transaction has committed -- every caller
+ * awaits `applyIdempotently` first -- and is itself best-effort: any failure (resolving
+ * recipients, or any individual send) is logged and swallowed, never raised to the webhook
+ * caller. A webhook must return 200 on its own side effects alone; a notice email is a courtesy,
+ * not part of the contract Stripe retries against.
+ */
+const sendBillingNotice = async (
+  deps: BillingWebhookHandlerDeps,
+  input: {
+    accountId: string;
+    billingEmail: string | null;
+    eventId: string;
+    build: () => { subject: string; content: Parameters<NoticeMailPort["send"]>[0]["content"] };
+  },
+): Promise<void> => {
+  try {
+    const administrators = await deps.accountAdministrators.list(input.accountId);
+    const recipients = resolveBillingNoticeRecipients(administrators, input.billingEmail);
+    if (recipients.length === 0) {
+      return;
+    }
+    const { subject, content } = input.build();
+    const results = await Promise.allSettled(
+      recipients.map((email) =>
+        deps.noticeMail.send({
+          to: email,
+          subject,
+          kind: "billing_notice",
+          content,
+          idempotencyKey: `billing:${input.eventId}:${email}`,
+        }),
+      ),
+    );
+    for (const result of results) {
+      if (result.status === "rejected") {
+        deps.logger.warn(
+          { accountId: input.accountId, eventId: input.eventId, error: String(result.reason) },
+          "billing notice email failed",
+        );
+      }
+    }
+  } catch (error) {
+    deps.logger.warn({ accountId: input.accountId, eventId: input.eventId, error: String(error) }, "billing notice email failed");
+  }
+};
+
+const planDisplay = (planId: string): { name: string; monthlyConversations: number } => {
+  const plan = findPlan(planId);
+  return { name: plan?.name ?? planId, monthlyConversations: plan?.monthlyConversations ?? 0 };
 };
 
 const handleCheckoutCompleted = async (
@@ -171,6 +231,14 @@ const handleCheckoutCompleted = async (
     eventStatus: "success",
     metadata: { eventId: event.id, eventType: event.type, planId },
   });
+  const billingRow = await deps.repository.findByAccount(accountId);
+  const display = planDisplay(planId);
+  await sendBillingNotice(deps, {
+    accountId,
+    billingEmail: billingRow?.billingEmail ?? null,
+    eventId: event.id,
+    build: () => buildPlanChangedEmail({ accountId, planName: display.name, monthlyConversations: display.monthlyConversations, appBaseUrl: deps.appBaseUrl }),
+  });
   return { outcome: "plan_assigned", accountId };
 };
 
@@ -217,13 +285,20 @@ const handleSubscriptionUpdated = async (
   if (result === "duplicate") {
     return { outcome: "duplicate", accountId };
   }
-  if (outcome === "plan_assigned") {
+  if (outcome === "plan_assigned" && planId) {
     await deps.audit.record({
       accountId,
       workspaceId: null,
       eventType: "billing.plan_assigned",
       eventStatus: "success",
       metadata: { eventId: event.id, eventType: event.type, planId },
+    });
+    const display = planDisplay(planId);
+    await sendBillingNotice(deps, {
+      accountId,
+      billingEmail: row.billingEmail,
+      eventId: event.id,
+      build: () => buildPlanChangedEmail({ accountId, planName: display.name, monthlyConversations: display.monthlyConversations, appBaseUrl: deps.appBaseUrl }),
     });
   }
   return { outcome, accountId };
@@ -258,6 +333,13 @@ const handleSubscriptionDeleted = async (
     eventType: "billing.subscription_canceled",
     eventStatus: "success",
     metadata: { eventId: event.id, eventType: event.type, planId },
+  });
+  const display = planDisplay(planId);
+  await sendBillingNotice(deps, {
+    accountId,
+    billingEmail: row.billingEmail,
+    eventId: event.id,
+    build: () => buildSubscriptionEndedEmail({ accountId, planName: display.name, monthlyConversations: display.monthlyConversations, appBaseUrl: deps.appBaseUrl }),
   });
   return { outcome: "subscription_canceled", accountId };
 };
@@ -301,16 +383,6 @@ const handleInvoicePaymentFailed = async (
       // Never downgrades: Stripe's own dunning handles retries, and `customer.subscription.deleted`
       // is the only trigger back to the free plan.
       await tx.upsertCustomer({ accountId, stripeCustomerId: invoice.customerId, status: "past_due" });
-      if (row.billingEmail) {
-        await deps.mail.send({
-          to: row.billingEmail,
-          subject: "Your Radioso payment didn't go through",
-          text: [
-            "We couldn't process your latest payment.",
-            `Update your billing details: ${deps.appBaseUrl}`,
-          ].join("\n"),
-        });
-      }
     },
   );
   if (result === "duplicate") {
@@ -322,6 +394,12 @@ const handleInvoicePaymentFailed = async (
     eventType: "billing.payment_failed",
     eventStatus: "success",
     metadata: { eventId: event.id, eventType: event.type },
+  });
+  await sendBillingNotice(deps, {
+    accountId,
+    billingEmail: row.billingEmail,
+    eventId: event.id,
+    build: () => buildPaymentFailedEmail({ accountId, appBaseUrl: deps.appBaseUrl }),
   });
   return { outcome: "payment_failed", accountId };
 };

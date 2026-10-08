@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
-import { PLAN_CATALOG } from "@radioso/plan-catalog";
+import { PLAN_CATALOG, findPlan } from "@radioso/plan-catalog";
 
 import type {
   BillingCustomerPatch,
@@ -80,7 +80,8 @@ const createDeps = (overrides: Partial<BillingWebhookHandlerDeps> = {}): {
   assignProfile: ReturnType<typeof vi.fn>;
   addCredits: ReturnType<typeof vi.fn>;
   getProduct: ReturnType<typeof vi.fn>;
-  mailSend: ReturnType<typeof vi.fn>;
+  noticeMailSend: ReturnType<typeof vi.fn>;
+  accountAdministratorsList: ReturnType<typeof vi.fn>;
   auditRecord: ReturnType<typeof vi.fn>;
   logger: { info: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn> };
 } => {
@@ -88,7 +89,8 @@ const createDeps = (overrides: Partial<BillingWebhookHandlerDeps> = {}): {
   const assignProfile = vi.fn(async () => undefined);
   const addCredits = vi.fn(async () => ({ credits: 300, applied: true }));
   const getProduct = vi.fn(async (id: string) => ({ id, metadata: {} }));
-  const mailSend = vi.fn(async () => undefined);
+  const noticeMailSend = vi.fn(async () => ({ dispatched: true }));
+  const accountAdministratorsList = vi.fn(async () => [{ email: "owner@example.com", displayName: "Owner" }]);
   const auditRecord = vi.fn(async () => undefined);
   const logger = { info: vi.fn(), warn: vi.fn() };
 
@@ -96,18 +98,31 @@ const createDeps = (overrides: Partial<BillingWebhookHandlerDeps> = {}): {
     repository,
     usage: { assignProfile, addCredits },
     gateway: { getProduct },
-    mail: { send: mailSend },
+    noticeMail: { send: noticeMailSend },
+    accountAdministrators: { list: accountAdministratorsList },
     audit: { record: auditRecord },
     logger,
     appBaseUrl: "https://app.example.com",
     ...overrides,
   };
-  return { deps, repository, assignProfile, addCredits, getProduct, mailSend, auditRecord, logger };
+  return {
+    deps,
+    repository,
+    assignProfile,
+    addCredits,
+    getProduct,
+    noticeMailSend,
+    accountAdministratorsList,
+    auditRecord,
+    logger,
+  };
 };
 
 const satellitePlan = PLAN_CATALOG.plans.find((plan) => plan.id === "satellite")!;
 const planetPlan = PLAN_CATALOG.plans.find((plan) => plan.id === "planet")!;
 
+/** Every test that triggers a best-effort branded email awaits the handler's own promise, which
+ *  already awaits `sendBillingNotice` internally before returning -- no extra flush needed. */
 describe("handleBillingWebhookEvent", () => {
   let accountId: string;
 
@@ -115,9 +130,21 @@ describe("handleBillingWebhookEvent", () => {
     accountId = randomUUID();
   });
 
-  it("checkout.session.completed (subscription) upserts the customer row and assigns the plan", async () => {
-    const { deps, repository, assignProfile, auditRecord, getProduct } = createDeps();
+  it("checkout.session.completed (subscription) upserts the customer row, assigns the plan, and emails the plan change", async () => {
+    const { deps, repository, assignProfile, auditRecord, getProduct, noticeMailSend } = createDeps();
     getProduct.mockResolvedValueOnce({ id: "prod_satellite", metadata: { plan: "satellite" } });
+    repository.rows.set(accountId, {
+      accountId,
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: null,
+      priceId: null,
+      interval: null,
+      status: "none",
+      billingEmail: "billing@example.com",
+      currentPeriodEnd: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
 
     const event: StripeWebhookEvent = {
       id: "evt_1",
@@ -145,6 +172,12 @@ describe("handleBillingWebhookEvent", () => {
     expect(auditRecord).toHaveBeenCalledWith(
       expect.objectContaining({ accountId, eventType: "billing.plan_assigned" }),
     );
+    expect(noticeMailSend).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "owner@example.com", kind: "billing_notice" }),
+    );
+    expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "billing@example.com" }));
+    const content = noticeMailSend.mock.calls[0][0].content;
+    expect(content.paragraphs.join(" ")).toContain(`Satellite: ${satellitePlan.monthlyConversations} conversations a month`);
   });
 
   it("checkout.session.completed (payment) grants the catalog's top-up credits, idempotent on event id", async () => {
@@ -180,8 +213,8 @@ describe("handleBillingWebhookEvent", () => {
     );
   });
 
-  it("customer.subscription.updated assigns the new plan when the price changed", async () => {
-    const { deps, repository, assignProfile, getProduct } = createDeps();
+  it("customer.subscription.updated assigns the new plan and emails the plan change when the price changed", async () => {
+    const { deps, repository, assignProfile, getProduct, noticeMailSend } = createDeps();
     repository.rows.set(accountId, {
       accountId,
       stripeCustomerId: "cus_1",
@@ -215,10 +248,11 @@ describe("handleBillingWebhookEvent", () => {
     expect(result.outcome).toBe("plan_assigned");
     expect(assignProfile).toHaveBeenCalledWith(accountId, "planet");
     expect(repository.rows.get(accountId)?.priceId).toBe(planetPlan.stripe!.monthLookupKey);
+    expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "owner@example.com" }));
   });
 
-  it("customer.subscription.updated only syncs the row when the price is unchanged", async () => {
-    const { deps, assignProfile } = createDeps();
+  it("customer.subscription.updated only syncs the row when the price is unchanged, and sends no email", async () => {
+    const { deps, assignProfile, noticeMailSend } = createDeps();
     const { repository } = createDeps();
     repository.rows.set(accountId, {
       accountId,
@@ -252,10 +286,11 @@ describe("handleBillingWebhookEvent", () => {
 
     expect(result.outcome).toBe("subscription_updated");
     expect(assignProfile).not.toHaveBeenCalled();
+    expect(noticeMailSend).not.toHaveBeenCalled();
   });
 
-  it("customer.subscription.deleted returns the account to the catalog's default plan", async () => {
-    const { deps, repository, assignProfile, auditRecord } = createDeps();
+  it("customer.subscription.deleted returns the account to the catalog's default plan and emails that the subscription ended", async () => {
+    const { deps, repository, assignProfile, auditRecord, noticeMailSend } = createDeps();
     repository.rows.set(accountId, {
       accountId,
       stripeCustomerId: "cus_1",
@@ -263,7 +298,7 @@ describe("handleBillingWebhookEvent", () => {
       priceId: satellitePlan.stripe!.monthLookupKey,
       interval: "month",
       status: "active",
-      billingEmail: null,
+      billingEmail: "owner@example.com",
       currentPeriodEnd: null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -291,10 +326,14 @@ describe("handleBillingWebhookEvent", () => {
     expect(auditRecord).toHaveBeenCalledWith(
       expect.objectContaining({ accountId, eventType: "billing.subscription_canceled" }),
     );
+    expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "owner@example.com" }));
+    const content = noticeMailSend.mock.calls[0][0].content;
+    const defaultPlan = findPlan(PLAN_CATALOG.defaultPlanId)!;
+    expect(content.paragraphs.join(" ")).toContain(`${defaultPlan.name}: ${defaultPlan.monthlyConversations} conversations a month`);
   });
 
-  it("invoice.paid sets the row active and never assigns a plan", async () => {
-    const { deps, repository, assignProfile } = createDeps();
+  it("invoice.paid sets the row active and never assigns a plan or sends an email", async () => {
+    const { deps, repository, assignProfile, noticeMailSend } = createDeps();
     repository.rows.set(accountId, {
       accountId,
       stripeCustomerId: "cus_1",
@@ -319,10 +358,11 @@ describe("handleBillingWebhookEvent", () => {
     expect(result.outcome).toBe("active");
     expect(repository.rows.get(accountId)?.status).toBe("active");
     expect(assignProfile).not.toHaveBeenCalled();
+    expect(noticeMailSend).not.toHaveBeenCalled();
   });
 
-  it("invoice.payment_failed marks past_due, emails the billing address, and never downgrades", async () => {
-    const { deps, repository, mailSend, assignProfile, auditRecord } = createDeps();
+  it("invoice.payment_failed marks past_due, emails owners/admins and the billing address, and never downgrades", async () => {
+    const { deps, repository, assignProfile, auditRecord, noticeMailSend } = createDeps();
     repository.rows.set(accountId, {
       accountId,
       stripeCustomerId: "cus_1",
@@ -330,7 +370,7 @@ describe("handleBillingWebhookEvent", () => {
       priceId: satellitePlan.stripe!.monthLookupKey,
       interval: "month",
       status: "active",
-      billingEmail: "owner@example.com",
+      billingEmail: "billing@example.com",
       currentPeriodEnd: null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -347,14 +387,15 @@ describe("handleBillingWebhookEvent", () => {
     expect(result.outcome).toBe("payment_failed");
     expect(repository.rows.get(accountId)?.status).toBe("past_due");
     expect(assignProfile).not.toHaveBeenCalled();
-    expect(mailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "owner@example.com" }));
+    expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "owner@example.com" }));
+    expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "billing@example.com" }));
     expect(auditRecord).toHaveBeenCalledWith(
       expect.objectContaining({ accountId, eventType: "billing.payment_failed" }),
     );
   });
 
-  it("invoice.payment_failed skips the email when the row has no billing address", async () => {
-    const { deps, repository, mailSend } = createDeps();
+  it("invoice.payment_failed still emails owners/admins when there is no distinct billing address", async () => {
+    const { deps, repository, noticeMailSend } = createDeps();
     repository.rows.set(accountId, {
       accountId,
       stripeCustomerId: "cus_1",
@@ -376,7 +417,40 @@ describe("handleBillingWebhookEvent", () => {
 
     await handleBillingWebhookEvent(event, deps);
 
-    expect(mailSend).not.toHaveBeenCalled();
+    expect(noticeMailSend).toHaveBeenCalledTimes(1);
+    expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "owner@example.com" }));
+  });
+
+  it("invoice.payment_failed never fails the webhook when the notice email itself errors", async () => {
+    const { deps, repository, logger } = createDeps({
+      noticeMail: { send: vi.fn(async () => { throw new Error("mail provider down"); }) },
+    });
+    repository.rows.set(accountId, {
+      accountId,
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_1",
+      priceId: null,
+      interval: null,
+      status: "active",
+      billingEmail: null,
+      currentPeriodEnd: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const event: StripeWebhookEvent = {
+      id: "evt_8b",
+      type: "invoice.payment_failed",
+      invoice: { id: "in_3b", customerId: "cus_1" },
+    };
+
+    const result = await handleBillingWebhookEvent(event, deps);
+
+    expect(result.outcome).toBe("payment_failed");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId, eventId: "evt_8b" }),
+      "billing notice email failed",
+    );
   });
 
   it("returns unmapped_price and warns when the product has no catalog plan metadata", async () => {

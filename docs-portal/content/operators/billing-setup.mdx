@@ -166,6 +166,12 @@ Each webhook delivery is idempotent on Stripe's own event ID — replaying the s
 
 If you run more than one region (for example a separate EU stack) on one Stripe account, run the sync once per region with that region's `--webhook-url` and its own `--webhook-secret-file`. Stripe delivers to every endpoint you register, and each region resolves its own accounts with its own signing secret.
 
+## Billing notices
+
+Radioso emails an account's active owners and admins, plus the Stripe customer's billing email when it differs, on three events: a plan change (from checkout or a subscription update), a subscription ending (back to the catalog's default plan), and a failed subscription payment. Each notice carries a link back to the account's usage page and goes out once the triggering webhook event has committed, as a best-effort send that never blocks or fails the webhook response.
+
+Turn on Stripe's own payment receipt emails too (Dashboard → Settings → Customer emails → **Successful payments** and **Failed payments**), so a customer gets Stripe's receipt alongside the account-level notice Radioso sends. Stripe's emails cover the payment side; Radioso's notices cover what changed on the account.
+
 ## Test mode
 
 Stripe test mode works exactly like live mode from Radioso's side: run `stripe:sync` with your test secret key, and use that key and the test endpoint's signing secret in the environment. The Stripe CLI's `stripe listen --forward-to https://<your-app-base-url>/api/v1/ee/billing/webhook` is the fastest way to exercise a full checkout-to-webhook round trip against a local stack, including a test EU VAT ID for reverse charge and a test coupon code for `allow_promotion_codes`. While you forward events that way, set `STRIPE_WEBHOOK_SECRET` to the signing secret `stripe listen` prints.

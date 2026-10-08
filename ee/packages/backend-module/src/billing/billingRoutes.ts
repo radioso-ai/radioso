@@ -277,7 +277,8 @@ export const createBillingRoutes = (
         repository,
         usage: usageService,
         gateway: activeGateway,
-        mail: dependencies.mailService,
+        noticeMail: dependencies.noticeMail,
+        accountAdministrators: dependencies.accountAdministrators,
         audit: dependencies.auditService,
         logger: {
           info: (entry, message) => logger.info?.(entry, message),

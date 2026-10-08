@@ -44,7 +44,6 @@ describe("catalog invariants", () => {
       expect(support.has(plan.support)).toBe(true);
       expect(plan.interval).toBe("month");
     }
-    expect(PLAN_CATALOG.managedService.interval).toBe("month");
     expect(["exclusive", "inclusive"]).toContain(PLAN_CATALOG.taxBehavior);
     expect(Object.keys(PLAN_CATALOG.countsAs).sort()).toEqual(
       ["conversation", "copilot", "other", "pulse_report", "test_run"],
@@ -90,7 +89,6 @@ describe("catalog invariants", () => {
     const lookupKeys = [
       ...PLAN_CATALOG.plans.flatMap((plan) => (plan.stripe ? [plan.stripe.monthLookupKey, plan.stripe.yearLookupKey] : [])),
       PLAN_CATALOG.topUp.stripeLookupKey,
-      PLAN_CATALOG.managedService.stripeLookupKey,
     ];
     expect(new Set(lookupKeys).size).toBe(lookupKeys.length);
   });

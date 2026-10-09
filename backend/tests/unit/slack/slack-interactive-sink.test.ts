@@ -369,7 +369,7 @@ describe("SlackOperatorNotificationSink", () => {
     const sent: Array<Parameters<ContactNotificationMailer["send"]>[0]> = [];
     const emailSink = new EmailWebhookOperatorNotificationSink(
       { send: async (message) => { sent.push(message); } },
-      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null, via: "workspace_owner", recipientsFromWorkspaceOwner: true }) },
     );
     const slack = createSink({ installation: null });
     const dispatcher = new OperatorNotificationDispatcher([emailSink, slack.sink]);

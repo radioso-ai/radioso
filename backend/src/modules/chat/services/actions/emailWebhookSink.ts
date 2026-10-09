@@ -12,9 +12,15 @@ import {
 } from "../../../../shared/domain/conversationLinkResolver.js";
 import type {
   ContactNotificationMailer,
-  ContactRecipientResolver,
   ContactWebhookHttpClient,
+  RoutedContactRecipientResolver,
 } from "./contactSendActionHandler.js";
+
+/** What this sink logs. Lines name the route and counts, never an address or a webhook URL. */
+interface OperatorNotificationSinkLogger {
+  warn(payload: Record<string, unknown>, message: string): void;
+  info(payload: Record<string, unknown>, message: string): void;
+}
 
 /**
  * The webhook carried a relative `dashboardPath` before it carried the absolute `dashboardUrl`.
@@ -53,8 +59,8 @@ const TRANSPORT_TEXT_BY_KIND: Record<OperatorNotification["kind"], { actionType:
 export class EmailWebhookOperatorNotificationSink implements OperatorNotificationSink {
   constructor(
     private readonly mailer: ContactNotificationMailer,
-    private readonly recipients: ContactRecipientResolver,
-    private readonly logger?: { warn(payload: Record<string, unknown>, message: string): void },
+    private readonly recipients: RoutedContactRecipientResolver,
+    private readonly logger?: OperatorNotificationSinkLogger,
     private readonly webhookClient?: ContactWebhookHttpClient,
     private readonly conversationLinks?: ConversationLinkResolver,
   ) {}
@@ -67,19 +73,36 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       conversationId: context.conversationId ?? notification.conversationId,
       idempotencyKey: context.idempotencyKey ?? null,
       attempt: context.attempt ?? 1,
-      // Handoff/approval notifications are emitted by a routine action step, not a
-      // named skill invocation, so there is no firing skill to prefer here.
-      skillName: null,
+      // A routine ending's notice may name the notify skill that sends it; an approval never does.
+      skillName: context.skillName ?? null,
     };
     const target = await this.recipients.resolve(recipientContext);
+    if (recipientContext.skillName && target.via !== "named_skill") {
+      // Delivery still goes to the default destination: a hand-off notice is the only alert that
+      // someone is waiting for a person, so dropping it is worse than sending it to the default.
+      this.logger?.warn(
+        {
+          kind: notification.kind,
+          workspaceId: recipientContext.workspaceId,
+          conversationId: recipientContext.conversationId,
+          skillName: recipientContext.skillName,
+          via: target.via,
+        },
+        "operator_notice_named_skill_unavailable",
+      );
+    }
     if (target.emails.length === 0 && !target.webhook) {
       const { actionType } = TRANSPORT_TEXT_BY_KIND[notification.kind];
       this.logger?.warn(
-        { workspaceId: context.workspaceId ?? notification.workspaceId, conversationId: context.conversationId ?? notification.conversationId },
+        { workspaceId: context.workspaceId ?? notification.workspaceId, conversationId: context.conversationId ?? notification.conversationId, via: target.via },
         `${actionType}: no recipient configured for workspace; skipping`,
       );
       return;
     }
+    this.logger?.info(
+      { kind: notification.kind, via: target.via, emailCount: target.emails.length, webhook: target.webhook !== null },
+      "operator_notice_routed",
+    );
 
     const conversationUrl = await resolveConversationLink(
       this.conversationLinks,

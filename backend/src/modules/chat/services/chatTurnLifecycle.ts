@@ -175,6 +175,7 @@ export interface ChatActionOutboxPort {
     accountId?: string | null;
     conversationId?: string | null;
     idempotencyKey?: string | null;
+    skillName?: string | null;
   }): Promise<{ id: string; duplicate: boolean }>;
 }
 
@@ -561,6 +562,7 @@ export class ChatTurnLifecycle {
         accountId: input.accountId,
         conversationId: input.conversationId,
         idempotencyKey: actionIdempotencyKey(input.conversationId, action.type, action.payload),
+        skillName: action.skillName ?? null,
       });
       if (!outcome.duplicate) {
         insertedActionTypes.push(action.type);

@@ -576,6 +576,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
           collected: { name: "Ada" },
           notice: { subject: "New booking: {{slot.name}}" },
         },
+        skillName: "notify_bookings",
       }],
       assistantMessage: {
         conversationId: conversation.id,
@@ -592,11 +593,15 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       ownershipChanged: false,
     });
     expect(await new ConversationOwnershipRepository(database.kysely).load(conversation.id)).toBeNull();
-    const queued = await database.queryOne<{ type: string; payload: Record<string, unknown> }>(
-      "SELECT type, payload FROM routine_action_requests WHERE conversation_id = $1",
+    const queued = await database.queryOne<{ type: string; payload: Record<string, unknown>; skill_name: string | null }>(
+      "SELECT type, payload, skill_name FROM routine_action_requests WHERE conversation_id = $1",
       [conversation.id],
     );
-    expect(queued).toMatchObject({ type: "completion.notify", payload: { notice: { subject: "New booking: {{slot.name}}" } } });
+    expect(queued).toMatchObject({
+      type: "completion.notify",
+      payload: { notice: { subject: "New booking: {{slot.name}}" } },
+      skill_name: "notify_bookings",
+    });
   });
 
   it("does not report a duplicate contact action as newly inserted", async () => {

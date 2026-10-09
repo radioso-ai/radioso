@@ -91,9 +91,9 @@ export interface ContactNotifySkillLookup {
  * A notify skill a request may be routed through by name: the same enabled, routine-named notify
  * skills the routine authoring catalog offers, so what an author can pick is what delivery honours.
  */
-const isNameableNotifySkill = (
-  skill: Awaited<ReturnType<ContactNotifySkillLookup["findByName"]>> | undefined,
-): skill is NonNullable<typeof skill> =>
+export const isNameableNotifySkill = <TSkill extends { kind: string; enabled: boolean; invocationMode: string }>(
+  skill: TSkill | null | undefined,
+): skill is TSkill =>
   skill?.kind === "notify" && skill.enabled && skill.invocationMode === "routine_named";
 
 export type ContactWebhookHttpClient = WebhookHttpClient;

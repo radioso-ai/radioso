@@ -2414,10 +2414,19 @@ describe("chat service streaming", () => {
     });
     const assistantTurnPersistence = createCapturingAssistantTurnPersistence();
     const conversationEngine = createConversationEngine();
+    const completedState = {
+      sessionId: conversation.id,
+      routineId: "refund-flow",
+      path: ["await-approval", decision.terminal.stepId],
+      variables: { order: "A-17" },
+      status: "completed" as const,
+      metadata: { terminalKind: decision.terminal.kind, terminalStepId: decision.terminal.stepId },
+    };
     vi.spyOn(conversationEngine, "resumeAwaitingDecision").mockResolvedValue({
       resumed: true,
       response: { answer: "Resumed." },
       nextState: null,
+      completedState,
       ...decision,
     });
     const service = makeChatService(
@@ -2477,6 +2486,8 @@ describe("chat service streaming", () => {
     const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     // The ending's effects commit in the decision's own transaction, never a separate one.
     expect(persisted.transaction).toBe(decisionTransaction);
+    // The run is kept as completed, as a live ending keeps it, so it does not start over (#1457).
+    expect(persisted.routineStateTransition).toEqual({ kind: "save", state: completedState });
     expect(persisted.ownershipHandoff ?? null).toEqual(ownershipHandoff);
     if (ownershipHandoff) {
       expect(persisted.ownershipAuditEvent).toMatchObject({ eventType: "hitl.ownership" });

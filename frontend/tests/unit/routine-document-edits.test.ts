@@ -571,4 +571,15 @@ describe('ending operator notices', () => {
     expect(notice).toEqual({ subject: 'Recovery: {{slot.customer_email}}', intro: 'Reply to {{slot.customer_email}} today.' })
     expect(slotReferences(renamed, 'customer_email')).toContain('notice in complete')
   })
+
+  it('keeps the notify skill that sends a notice through a slot rename and onto every copy of the ending', () => {
+    const routed = setEndingNotice(branchedToComplete(), 'complete', { subject: 'Recovery: {{slot.email}}', intro: null, skillName: 'notify_support' })
+
+    const renamed = renameSlot(routed, 'email', 'Customer email')
+
+    expect(draftFromBlockDoc(renamed).terminals.find((terminal) => terminal.stableStepId === 'complete')?.operatorNotice)
+      .toEqual({ subject: 'Recovery: {{slot.customer_email}}', intro: null, skillName: 'notify_support' })
+    const branchEnding = renamed.steps[0].branches[0].target
+    expect(branchEnding.kind === 'ending' ? branchEnding.ending?.operatorNotice?.skillName : undefined).toBe('notify_support')
+  })
 })

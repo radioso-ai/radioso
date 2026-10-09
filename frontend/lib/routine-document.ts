@@ -1,5 +1,6 @@
 import { formatConditionLabel, formatSlotFilledLabel, instructionToBlockSegments, type ProseParagraph, type RoutineBlockBranch, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@/lib/routine-prose'
 
+import { mapRoutineOperatorNoticeText } from '@radioso/routine-definition'
 import type { RoutineDefinitionDraft, RoutineValidationDiagnostic } from '@/lib/api-types'
 import { contextVariableLabel } from '@/lib/routine-context-variables'
 
@@ -159,7 +160,7 @@ export function sanitizeDraftContentForSave(draft: RoutineDefinitionDraft): Rout
       ...terminal,
       instruction: emptyToNull(terminal.instruction),
       ...(terminal.operatorNotice
-        ? { operatorNotice: { subject: emptyToNull(terminal.operatorNotice.subject), intro: emptyToNull(terminal.operatorNotice.intro) } }
+        ? { operatorNotice: mapRoutineOperatorNoticeText(terminal.operatorNotice, emptyToNull) }
         : {}),
     })),
   }
@@ -179,6 +180,7 @@ const DOCUMENT_DIAGNOSTIC_COPY: Partial<Record<RoutineValidationDiagnostic['code
   declared_unused_slot: 'This information is collected but never used.',
   referenced_undeclared_slot: 'This step uses information the routine does not collect.',
   unknown_skill: 'This skill is not available to the agent.',
+  operator_notice_skill_unavailable: 'This notify skill is not available to the agent. Pick another or send with the default.',
   outcome_guard_on_non_tool_step: 'An outcome rule only works after a skill step.',
 }
 

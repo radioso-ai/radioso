@@ -1,3 +1,4 @@
+import { mapRoutineOperatorNoticeText } from '@radioso/routine-definition'
 import { blockSegmentsToInstruction, instructionToBlockSegments, slugifyVariableKey, type ApprovalDocOption, type RoutineBlockBranch, type RoutineBlockDoc, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineBlockSlot, type RoutineBlockStep, type RoutineInputBinding } from '@/lib/routine-prose'
 import type { RoutineGuardKind, RoutineStepKind, RoutineTerminalKind } from '@/lib/api-types'
 import { approvalCaptureFieldRef } from '@/lib/routine-approval'
@@ -342,10 +343,8 @@ export const renameSlot = (doc: RoutineBlockDoc, stableSlotId: string, key: stri
 const renameSlotInText = (text: string | null, from: string, to: string): string | null =>
   text === null ? null : blockSegmentsToInstruction(replaceSlotReferences(instructionToBlockSegments(text), from, to))
 
-const renameNoticeSlot = (notice: EndingNotice, from: string, to: string): EndingNotice => ({
-  subject: renameSlotInText(notice.subject, from, to),
-  intro: renameSlotInText(notice.intro, from, to),
-})
+const renameNoticeSlot = (notice: EndingNotice, from: string, to: string): EndingNotice =>
+  mapRoutineOperatorNoticeText(notice, (text) => renameSlotInText(text ?? null, from, to))
 
 const noticeReferencesSlot = (notice: EndingNotice | undefined, key: string): boolean =>
   [notice?.subject, notice?.intro].some((text) => text

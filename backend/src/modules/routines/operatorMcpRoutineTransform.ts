@@ -97,7 +97,8 @@ const referencesSlot = (draft: RoutineDefinitionDraftAuthoringInput, slot: Routi
     && (binding as { kind?: unknown }).kind === "variableRef"
     && fieldReference((binding as { ref?: unknown }).ref));
   return [...draft.steps, ...draft.terminals].some((node) => template(node.instruction))
-    || draft.terminals.some((terminal) => template(terminal.operatorNotice?.subject) || template(terminal.operatorNotice?.intro))
+    || draft.terminals.some((terminal) => template(terminal.operatorNotice?.subject) || template(terminal.operatorNotice?.intro)
+      || terminal.operatorNotice?.replyToSlot === slot.key)
     || draft.steps.some(bindingReference)
     || (draft.transitions ?? []).some((transition) => fieldReference((transition as { fieldRef?: unknown }).fieldRef)
       || template((transition as { guardText?: unknown }).guardText));

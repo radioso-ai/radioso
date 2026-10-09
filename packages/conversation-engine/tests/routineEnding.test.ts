@@ -43,6 +43,24 @@ describe("routineEndingEffects", () => {
     expect(effects.operatorNotice).toBeUndefined();
   });
 
+  it("carries the notify skill an ending names onto its operator notice", () => {
+    const effects = routineEndingEffects("routine_1", {
+      kind: "complete",
+      stepId: "done",
+      collected: {},
+      operatorNotice: { subject: "Booking", skillName: "notify_bookings" },
+    });
+
+    expect(effects.operatorNotice).toEqual({
+      routineId: "routine_1",
+      stepId: "done",
+      terminalKind: "complete",
+      collected: {},
+      subject: "Booking",
+      skillName: "notify_bookings",
+    });
+  });
+
   it("reports no hand-off for a normal completion", () => {
     const effects = routineEndingEffects("routine_1", {
       kind: "complete",

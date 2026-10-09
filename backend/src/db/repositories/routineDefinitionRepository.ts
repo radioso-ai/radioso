@@ -117,6 +117,17 @@ const readNumber = (record: Record<string, unknown>, key: string): number =>
 const readBoolean = (record: Record<string, unknown>, key: string): boolean =>
   typeof record[key] === "boolean" ? record[key] : false;
 
+const readOperatorNotice = (
+  terminal: Record<string, unknown>,
+): NonNullable<RoutineDefinition["terminals"][number]["operatorNotice"]> => {
+  const skillName = readNullableString(terminal, "operatorNoticeSkillName");
+  return {
+    subject: readNullableString(terminal, "operatorNoticeSubject"),
+    intro: readNullableString(terminal, "operatorNoticeIntro"),
+    ...(skillName ? { skillName } : {}),
+  };
+};
+
 const readMetadata = (record: Record<string, unknown>, key: string): Record<string, unknown> =>
   asRecord(record[key]);
 
@@ -251,6 +262,7 @@ const definitionSelect = sql`
       'operatorNoticeEnabled', te.operator_notice_enabled,
       'operatorNoticeSubject', te.operator_notice_subject,
       'operatorNoticeIntro', te.operator_notice_intro,
+      'operatorNoticeSkillName', te.operator_notice_skill_name,
       'ordinal', te.ordinal
     ) ORDER BY te.ordinal ASC, te.stable_step_id ASC) AS items
     FROM routine_terminal te
@@ -329,15 +341,11 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     stableStepId: readString(terminal, "stableStepId"),
     kind: readString(terminal, "kind") as RoutineTerminalKind,
     instruction: readNullableString(terminal, "instruction"),
-    // Absent, not undefined, when the notice is off: the authoring shape compares terminals as
-    // JSON (operator MCP replace_terminal), and an undefined-valued key is not JSON.
+    // Absent, not undefined, when the notice is off or names no skill: the authoring shape
+    // compares terminals as JSON (operator MCP replace_terminal), and an undefined-valued key is
+    // not JSON.
     ...(readBoolean(terminal, "operatorNoticeEnabled")
-      ? {
-          operatorNotice: {
-            subject: readNullableString(terminal, "operatorNoticeSubject"),
-            intro: readNullableString(terminal, "operatorNoticeIntro"),
-          },
-        }
+      ? { operatorNotice: readOperatorNotice(terminal) }
       : {}),
     ordinal: readNumber(terminal, "ordinal"),
   })),
@@ -988,6 +996,7 @@ export class RoutineDefinitionRepository {
           operator_notice_enabled: terminal.operatorNotice !== undefined,
           operator_notice_subject: terminal.operatorNotice?.subject ?? null,
           operator_notice_intro: terminal.operatorNotice?.intro ?? null,
+          operator_notice_skill_name: terminal.operatorNotice?.skillName ?? null,
           ordinal: terminal.ordinal,
         })
         .execute();

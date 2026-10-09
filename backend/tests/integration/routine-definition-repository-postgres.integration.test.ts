@@ -194,6 +194,7 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       operator_notice_enabled BOOLEAN NOT NULL DEFAULT false,
       operator_notice_subject TEXT NULL,
       operator_notice_intro TEXT NULL,
+      operator_notice_skill_name TEXT NULL,
       ordinal INTEGER NOT NULL,
       PRIMARY KEY (definition_id, stable_step_id),
       UNIQUE(definition_id, ordinal)

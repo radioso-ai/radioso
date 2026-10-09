@@ -1725,6 +1725,14 @@ export interface ConversationRoutineResumeInput {
    * instead. Absent/false on a normal resume, where the message is a reply.
    */
   activationTurn?: boolean;
+  /**
+   * True when the turn applies an operator's decision to a routine parked at an approval
+   * gate. The decision, not the visitor's last message, is what the turn answers, so a
+   * next-step selector that reads that message as off-topic cannot yield the turn: the
+   * routine stays where the selector left it, and a gate with no exit taken parks again for
+   * a new decision (#1460).
+   */
+  decisionTurn?: boolean;
 }
 
 /** Everything a resumed routine turn decided except its reply. */

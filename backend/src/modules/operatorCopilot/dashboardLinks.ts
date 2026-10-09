@@ -17,6 +17,12 @@ export const buildCopilotDashboardLink = (
       return `${base}/settings`;
     case "agent":
       return subject.id ? `${base}/agents/${encodeURIComponent(subject.id)}` : `${base}/agents`;
+    // The website embed's install snippet lives on the agent's Channels tab, anchored to the
+    // web-chat card (see frontend/lib/dashboard-areas.ts's 'web-chat' section route).
+    case "website_embed":
+      return subject.agentId
+        ? `${base}/agents/${encodeURIComponent(subject.agentId)}?tab=channels&anchor=web-chat`
+        : `${base}/agents`;
     case "routine":
       return subject.id && subject.agentId
         ? `${base}/agents/${encodeURIComponent(subject.agentId)}/routines/${encodeURIComponent(subject.id)}`
@@ -61,3 +67,9 @@ export const buildOperatorMcpProposalLink = (proposalId: string): string =>
 
 export const buildAbsoluteOperatorMcpProposalLink = (proposalId: string, appBaseUrl?: string | null): string =>
   appUrl(buildOperatorMcpProposalLink(proposalId), appBaseUrl).toString();
+
+export const buildAbsoluteCopilotDashboardLink = (
+  workspaceKey: string,
+  subject: CopilotEntityReference,
+  appBaseUrl?: string | null,
+): string => appUrl(buildCopilotDashboardLink(workspaceKey, subject), appBaseUrl).toString();

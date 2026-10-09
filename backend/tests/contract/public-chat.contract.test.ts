@@ -4,6 +4,8 @@ import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } 
 import { resetRateLimiterState } from "../../src/app/http/middleware/anonymousRateLimiter.js";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { signVisitorIdentity } from "../../src/modules/context-variables/public.js";
+import type { UsageLimitPolicy, UsageLimitReservation } from "../../src/shared/domain/usageLimitPolicy.js";
+import { usageLimitExceeded } from "../../src/shared/domain/errors.js";
 import {
   DEGRADED_V2_VISIBLE,
   GROUNDED_V2_VISIBLE,
@@ -12,6 +14,42 @@ import {
   groundedV2Envelope,
   noSupportV2Envelope,
 } from "../support/answerEnvelopeV2Fixtures.js";
+
+const noopReservation: UsageLimitReservation = {
+  async commit() {},
+  async release() {},
+};
+
+/**
+ * Mirrors the EE policy's shape on exhaustion (statusCode 429, code
+ * usage_limit_exceeded, a details payload carrying plan/usage numbers) so these
+ * tests exercise the same duck-typed error the public route must redact,
+ * without pulling in the EE module.
+ */
+class BlockingUsageLimitPolicy implements UsageLimitPolicy {
+  async reserveAnswer(): Promise<UsageLimitReservation> {
+    throw usageLimitExceeded("Usage limit exceeded", {
+      profileKey: "starter_250",
+      resource: "monthly_conversations",
+      limit: 250,
+      used: 250,
+      periodStart: "2026-10-01T00:00:00.000Z",
+      resetAt: "2026-11-01T00:00:00.000Z",
+    });
+  }
+
+  async reserveDocument(): Promise<UsageLimitReservation> {
+    return noopReservation;
+  }
+
+  async reserveIndexedStorage(): Promise<UsageLimitReservation> {
+    return noopReservation;
+  }
+
+  async reserveMonthlyIndexedContent(): Promise<UsageLimitReservation> {
+    return noopReservation;
+  }
+}
 
 describe("public chat contract", () => {
   beforeEach(() => {
@@ -1234,6 +1272,76 @@ describe("public chat contract", () => {
       details: {
         retryAfterSeconds: expect.any(Number),
       },
+    });
+  });
+
+  // Usage-limit details (profileKey, limit, used, period) describe the customer's
+  // plan. Authenticated API/MCP callers are the customer and keep them (see
+  // tests/integration/usage-limit-policy.integration.test.ts), but an anonymous
+  // website visitor must never see them.
+  it("hides usage-limit plan details from an anonymous visitor's non-streaming turn", async () => {
+    const { app } = createTestApp({ usageLimitPolicy: new BlockingUsageLimitPolicy() });
+    const session = await issueTestSession(app, "public-chat-usage-limit@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({ message: "What is the answer?", stream: false });
+
+    expect(response.status).toBe(429);
+    expect(response.body.error).toEqual({
+      code: "usage_limit_exceeded",
+      message: "Usage limit exceeded",
+    });
+  });
+
+  it("hides usage-limit plan details from an anonymous visitor's streaming turn", async () => {
+    // The usage reservation always throws before the generator yields its first
+    // event, so this never becomes an SSE response — it is a plain JSON 429, same
+    // as the non-streaming case.
+    const { app } = createTestApp({ usageLimitPolicy: new BlockingUsageLimitPolicy() });
+    const session = await issueTestSession(app, "public-chat-usage-limit-stream@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({ message: "What is the answer?", stream: true });
+
+    expect(response.status).toBe(429);
+    expect(response.headers["content-type"]).not.toContain("text/event-stream");
+    expect(response.body.error).toEqual({
+      code: "usage_limit_exceeded",
+      message: "Usage limit exceeded",
+    });
+  });
+
+  it("hides usage-limit plan details from the anonymous proactive greeting", async () => {
+    const { app } = createTestApp({ usageLimitPolicy: new BlockingUsageLimitPolicy() });
+    const session = await issueTestSession(app, "public-chat-usage-limit-bootstrap@example.com");
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+        assistantName: "Marta",
+        proactiveGreetingEnabled: true,
+      });
+    const chatToken = String(settings.body.anonymousChatUrl).split("/chat/")[1];
+    const publicSession = await createPublicSession(app, chatToken);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({ startConversation: true, stream: false, userExpectedLocale: "en-US" });
+
+    expect(response.status).toBe(429);
+    expect(response.body.error).toEqual({
+      code: "usage_limit_exceeded",
+      message: "Usage limit exceeded",
     });
   });
 });

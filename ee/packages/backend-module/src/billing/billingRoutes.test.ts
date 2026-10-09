@@ -8,6 +8,7 @@ import { PLAN_CATALOG } from "@radioso/plan-catalog";
 import type { ApplicationRouteMount } from "../radiosoModuleTypes.js";
 import { HttpError } from "../shared/httpError.js";
 import type { BillingCustomerPatch, BillingCustomerRepository, BillingCustomerRow } from "./billingCustomerRepository.js";
+import type { AutoTopUpRepository, AutoTopUpSettingsPatch, AutoTopUpSettingsRow } from "./autoTopUpRepository.js";
 import { createBillingRoutes, type BillingConfig } from "./billingRoutes.js";
 import type { StripeGateway, StripeWebhookEvent } from "./stripeGateway.js";
 import { StripeSignatureVerificationError } from "./stripeGateway.js";
@@ -69,6 +70,77 @@ class FakeBillingCustomerRepository implements BillingCustomerRepository {
   }
 }
 
+class FakeAutoTopUpRepository implements AutoTopUpRepository {
+  settings = new Map<string, AutoTopUpSettingsRow>();
+  counts = new Map<string, number>();
+
+  async getSettings(accountId: string): Promise<AutoTopUpSettingsRow | null> {
+    return this.settings.get(accountId) ?? null;
+  }
+
+  async upsertSettings(patch: AutoTopUpSettingsPatch): Promise<AutoTopUpSettingsRow> {
+    const hasOwn = (key: keyof AutoTopUpSettingsPatch): boolean =>
+      Object.prototype.hasOwnProperty.call(patch, key);
+    const existing = this.settings.get(patch.accountId);
+    const row: AutoTopUpSettingsRow = {
+      accountId: patch.accountId,
+      enabled: hasOwn("enabled") ? patch.enabled! : existing?.enabled ?? false,
+      maxPacksPerMonth: hasOwn("maxPacksPerMonth") ? patch.maxPacksPerMonth! : existing?.maxPacksPerMonth ?? 1,
+      disabledReason: hasOwn("disabledReason") ? patch.disabledReason ?? null : existing?.disabledReason ?? null,
+      disabledAt: hasOwn("disabledAt") ? patch.disabledAt ?? null : existing?.disabledAt ?? null,
+      updatedByUserId: hasOwn("updatedByUserId") ? patch.updatedByUserId ?? null : existing?.updatedByUserId ?? null,
+      updatedAt: new Date(),
+    };
+    this.settings.set(patch.accountId, row);
+    return row;
+  }
+
+  async listEnabledAccountIds(): Promise<string[]> {
+    return [...this.settings.values()].filter((row) => row.enabled).map((row) => row.accountId);
+  }
+
+  async countForPeriod(accountId: string): Promise<number> {
+    return this.counts.get(accountId) ?? 0;
+  }
+
+  async claimPending(): Promise<string | null> {
+    return null;
+  }
+
+  async claimStalePending(): Promise<Array<{ id: string; accountId: string; stripeInvoiceId: string | null }>> {
+    return [];
+  }
+
+  async listExpiredPending(): Promise<Array<{ id: string; accountId: string; stripeInvoiceId: string | null }>> {
+    return [];
+  }
+
+  async findById(): Promise<null> {
+    return null;
+  }
+
+  async markInvoiceCreated(): Promise<void> {}
+
+  async markFailed(): Promise<boolean> {
+    return false;
+  }
+
+  async markPaid(): Promise<void> {}
+
+  async disable(input: { accountId: string; reason: "payment_failed" }): Promise<void> {
+    const existing = this.settings.get(input.accountId);
+    this.settings.set(input.accountId, {
+      accountId: input.accountId,
+      enabled: false,
+      maxPacksPerMonth: existing?.maxPacksPerMonth ?? 1,
+      disabledReason: input.reason,
+      disabledAt: new Date(),
+      updatedByUserId: existing?.updatedByUserId ?? null,
+      updatedAt: new Date(),
+    });
+  }
+}
+
 const createFakeGateway = (overrides: Partial<StripeGateway> = {}): StripeGateway => ({
   findPriceByLookupKey: vi.fn(async (key: string) => ({ id: `price_${key}`, lookupKey: key, productId: `prod_${key}` })),
   getProduct: vi.fn(async (id: string) => ({ id, metadata: {} })),
@@ -78,6 +150,10 @@ const createFakeGateway = (overrides: Partial<StripeGateway> = {}): StripeGatewa
   constructWebhookEvent: vi.fn(async (): Promise<StripeWebhookEvent> => {
     throw new Error("not stubbed");
   }),
+  createTopUpInvoiceDraft: vi.fn(async () => ({ invoiceId: "in_new" })),
+  chargeTopUpInvoice: vi.fn(async () => ({ status: "paid" as const })),
+  voidInvoice: vi.fn(async () => undefined),
+  isInvoicePaid: vi.fn(async () => false),
   ...overrides,
 });
 
@@ -134,6 +210,12 @@ const createDependencies = (
   mailService: {
     send: vi.fn(async () => undefined),
   },
+  noticeMail: {
+    send: vi.fn(async () => ({ dispatched: true })),
+  },
+  accountAdministrators: {
+    list: vi.fn(async () => [{ email: "owner@example.com", displayName: "Owner" }]),
+  },
 } as unknown as RouteDependencies);
 
 const createApp = (
@@ -141,6 +223,7 @@ const createApp = (
   overrides: {
     gateway?: StripeGateway;
     repository?: BillingCustomerRepository;
+    autoTopUpRepository?: AutoTopUpRepository;
     dependencyOptions?: Parameters<typeof createDependencies>[1];
     /** The account's assigned usage-limit profile key. `null` (the default) mirrors an
      *  unassigned account, which `getAccountUsage` reports with `profile: null`, and the
@@ -174,6 +257,7 @@ const createApp = (
     createBillingRoutes(dependencies, config, {
       gateway: overrides.gateway,
       repository: overrides.repository ?? new FakeBillingCustomerRepository(),
+      autoTopUpRepository: overrides.autoTopUpRepository ?? new FakeAutoTopUpRepository(),
       usageService: {
         async getAccountUsage() {
           return {
@@ -267,6 +351,173 @@ describe("GET /api/v1/ee/billing/me", () => {
     ).expect(200);
 
     expect(response.body).toEqual(expect.objectContaining({ topUpAvailable: false }));
+  });
+
+  it("reports autoTopUp.available:false with the catalog default cap for a comet account with no settings row", async () => {
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig)).get("/api/v1/ee/billing/me"),
+    ).expect(200);
+
+    expect(response.body.autoTopUp).toEqual({
+      available: false,
+      enabled: false,
+      maxPacksPerMonth: PLAN_CATALOG.autoTopUp.defaultMaxPacksPerMonth,
+      maxPacksPerMonthLimit: PLAN_CATALOG.autoTopUp.maxPacksPerMonthLimit,
+      packsThisPeriod: 0,
+      disabledReason: null,
+      disabledAt: null,
+    });
+  });
+
+  it("reports autoTopUp.available:true for a satellite account with an active subscription", async () => {
+    const repository = new FakeBillingCustomerRepository();
+    repository.rows.set(sessionAccountId, {
+      accountId: sessionAccountId,
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_1",
+      priceId: null,
+      interval: null,
+      status: "active",
+      billingEmail: null,
+      currentPeriodEnd: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig, { repository, profileKey: "satellite" })).get("/api/v1/ee/billing/me"),
+    ).expect(200);
+
+    expect(response.body.autoTopUp.available).toBe(true);
+  });
+
+  it("reflects an enabled setting's cap and a recorded pack count", async () => {
+    const repository = new FakeBillingCustomerRepository();
+    repository.rows.set(sessionAccountId, {
+      accountId: sessionAccountId,
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_1",
+      priceId: null,
+      interval: null,
+      status: "active",
+      billingEmail: null,
+      currentPeriodEnd: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const autoTopUpRepository = new FakeAutoTopUpRepository();
+    await autoTopUpRepository.upsertSettings({ accountId: sessionAccountId, enabled: true, maxPacksPerMonth: 5 });
+    autoTopUpRepository.counts.set(sessionAccountId, 2);
+
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig, { repository, autoTopUpRepository, profileKey: "satellite" })).get(
+        "/api/v1/ee/billing/me",
+      ),
+    ).expect(200);
+
+    expect(response.body.autoTopUp).toEqual(
+      expect.objectContaining({ enabled: true, maxPacksPerMonth: 5, packsThisPeriod: 2 }),
+    );
+  });
+});
+
+describe("PUT /api/v1/ee/billing/auto-top-up", () => {
+  const activeRepository = (): FakeBillingCustomerRepository => {
+    const repository = new FakeBillingCustomerRepository();
+    repository.rows.set(sessionAccountId, {
+      accountId: sessionAccountId,
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_1",
+      priceId: null,
+      interval: null,
+      status: "active",
+      billingEmail: null,
+      currentPeriodEnd: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    return repository;
+  };
+
+  it("requires a session", async () => {
+    await request(createApp(configuredConfig))
+      .put("/api/v1/ee/billing/auto-top-up")
+      .send({ enabled: true, maxPacksPerMonth: 3 })
+      .expect(401);
+  });
+
+  it("rejects maxPacksPerMonth outside 1..limit", async () => {
+    const repository = activeRepository();
+    await withSessionCookie(
+      request(createApp(configuredConfig, { repository, profileKey: "satellite" }))
+        .put("/api/v1/ee/billing/auto-top-up")
+        .send({ enabled: true, maxPacksPerMonth: 0 }),
+    ).expect(400);
+
+    await withSessionCookie(
+      request(createApp(configuredConfig, { repository, profileKey: "satellite" }))
+        .put("/api/v1/ee/billing/auto-top-up")
+        .send({ enabled: true, maxPacksPerMonth: PLAN_CATALOG.autoTopUp.maxPacksPerMonthLimit + 1 }),
+    ).expect(400);
+  });
+
+  it("returns 409 auto_top_up_unavailable for a comet (free plan) account", async () => {
+    const repository = activeRepository();
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig, { repository }))
+        .put("/api/v1/ee/billing/auto-top-up")
+        .send({ enabled: true, maxPacksPerMonth: 3 }),
+    ).expect(409);
+
+    expect(response.body.error.code).toBe("auto_top_up_unavailable");
+  });
+
+  it("returns 409 auto_top_up_unavailable without an active subscription", async () => {
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig, { profileKey: "satellite" }))
+        .put("/api/v1/ee/billing/auto-top-up")
+        .send({ enabled: true, maxPacksPerMonth: 3 }),
+    ).expect(409);
+
+    expect(response.body.error.code).toBe("auto_top_up_unavailable");
+  });
+
+  it("enables auto top-up, records the audit event, and returns the updated summary", async () => {
+    const repository = activeRepository();
+    const auditRecord = vi.fn(async () => undefined);
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig, { repository, profileKey: "satellite", dependencyOptions: { auditRecord } }))
+        .put("/api/v1/ee/billing/auto-top-up")
+        .send({ enabled: true, maxPacksPerMonth: 4 }),
+    ).expect(200);
+
+    expect(response.body.autoTopUp).toEqual(
+      expect.objectContaining({ enabled: true, maxPacksPerMonth: 4, disabledReason: null, disabledAt: null }),
+    );
+    expect(auditRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: sessionAccountId,
+        eventType: "billing.auto_top_up_updated",
+        eventStatus: "success",
+        metadata: { enabled: true, maxPacksPerMonth: 4 },
+      }),
+    );
+  });
+
+  it("enabling clears a prior payment-failure disabled reason", async () => {
+    const repository = activeRepository();
+    const autoTopUpRepository = new FakeAutoTopUpRepository();
+    await autoTopUpRepository.upsertSettings({ accountId: sessionAccountId, enabled: true, maxPacksPerMonth: 3 });
+    await autoTopUpRepository.disable({ accountId: sessionAccountId, reason: "payment_failed" });
+
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig, { repository, autoTopUpRepository, profileKey: "satellite" }))
+        .put("/api/v1/ee/billing/auto-top-up")
+        .send({ enabled: true, maxPacksPerMonth: 3 }),
+    ).expect(200);
+
+    expect(response.body.autoTopUp.disabledReason).toBeNull();
+    expect(response.body.autoTopUp.disabledAt).toBeNull();
   });
 });
 

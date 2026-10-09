@@ -132,7 +132,7 @@ export function UsageView({ accountId }: { accountId: string }) {
 
   return (
     <DashboardPage
-      title="Usage"
+      title={usageLimitsEnabled ? 'Plan & usage' : 'Usage'}
       description={usageLimitsEnabled ? 'Limits, current totals, trends, and detailed AI usage for this account.' : 'Current workspace usage, account trends, and detailed AI usage.'}
       contentClassName="p-6"
     >

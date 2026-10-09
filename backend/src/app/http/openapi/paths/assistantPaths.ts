@@ -406,10 +406,12 @@ export const registerAssistantPublicChatPaths = (
         },
       },
       429: {
-        description: "Rate limit exceeded",
+        description: "Rate limit exceeded, or the account's conversation quota is exhausted. The usage-limit shape never carries `details` on this anonymous route, unlike the authenticated assistant and retrieval endpoints — the resource, limit, used count, and billing period are account information this caller has no reason to see.",
         content: {
           "application/json": {
-            schema: schemas.RateLimitExceededSchema,
+            schema: z.union([schemas.RateLimitExceededSchema, schemas.ErrorResponseSchema]).openapi({
+              description: "Either the rate-limit shape (`code: \"rate_limit_exceeded\"`) or the bare usage-limit shape (`code: \"usage_limit_exceeded\"`, no `details`).",
+            }),
           },
         },
       },

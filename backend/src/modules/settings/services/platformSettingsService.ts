@@ -85,6 +85,8 @@ interface PlatformSettingsReadContext {
 interface VersionedPlatformSettings {
   settings: PlatformSettingsResource;
   updatedAt: Date;
+  /** The default agent these workspace-wide settings are read from. */
+  agentId: string;
 }
 
 export class PlatformSettingsService {
@@ -133,6 +135,7 @@ export class PlatformSettingsService {
         channels: await this.buildChannelsSection(agent, workspace),
       },
       updatedAt: agent.updatedAt,
+      agentId: agent.id,
     };
   }
 
@@ -316,11 +319,19 @@ export class PlatformSettingsService {
       };
     };
     const patch = input.patch;
+    // Opening a public channel needs the token the dashboard's own save mints alongside it; without
+    // one the channel is enabled with no chat link or install snippet to hand out.
+    const lockedInputForPatch = (current: AgentRecord) => {
+      const lockedInput = agentInputForPatch(patch, current);
+      return patch.anonymousChatEnabled === undefined && patch.websiteEmbedEnabled === undefined
+        ? lockedInput
+        : this.dependencies.agentService.withRotatedTokens(current, lockedInput);
+    };
     const outcome = await this.dependencies.agentService.applyProposalPatch(input.workspaceId, agent.id, {
         ...agentInputForPatch(patch),
       }, "expected" in input
-        ? { expectedFields: Object.entries(input.expected).map(([key, value]) => ({ key: key === "assistantName" ? "name" : key, value })), expectedDefaultAgentId: agent.id, normalizeLocked: (current) => agentInputForPatch(patch, current) }
-        : { expectedUpdatedAt: input.expectedUpdatedAt, expectedDefaultAgentId: agent.id, normalizeLocked: (current) => agentInputForPatch(patch, current) });
+        ? { expectedFields: Object.entries(input.expected).map(([key, value]) => ({ key: key === "assistantName" ? "name" : key, value })), expectedDefaultAgentId: agent.id, normalizeLocked: lockedInputForPatch }
+        : { expectedUpdatedAt: input.expectedUpdatedAt, expectedDefaultAgentId: agent.id, normalizeLocked: lockedInputForPatch });
     if (outcome.outcome === "targetDeleted") return outcome;
     if (outcome.outcome === "changed") {
       if (outcome.fields.includes("target")) {

@@ -2356,7 +2356,8 @@ export const createTestDependencies = (overrides: {
         };
       },
       async getGeneralSettings(workspaceId) {
-        return platformSettingsService.getForWorkspace(workspaceId);
+        const { settings, agentId } = await platformSettingsService.getVersionedForWorkspace(workspaceId);
+        return { ...settings, agentId };
       },
     },
     proposalRepository: copilotRepository,
@@ -2500,6 +2501,7 @@ export const createTestDependencies = (overrides: {
     conversationLinks: { resolve: async () => null },
     realtimePublisherLifecycle: { shutdown: async () => undefined },
     credentialExpiryWarningLifecycle,
+    periodicTasksLifecycle: { start: async () => undefined, stop: async () => undefined },
     realtimeRolloutPolicy: overrides.realtimeRolloutPolicy ?? { allows: () => false },
     logger,
     operatorCopilotService,

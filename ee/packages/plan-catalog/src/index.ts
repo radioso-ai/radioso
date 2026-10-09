@@ -50,6 +50,17 @@ export interface PlanTopUp {
   readonly stripeLookupKey: string;
 }
 
+/**
+ * Opt-in auto top-up's per-account pack cap. `defaultMaxPacksPerMonth` is the cap a newly
+ * enabled account starts with; `maxPacksPerMonthLimit` is the upper bound an account may raise
+ * it to. The pack itself is the existing {@link PlanTopUp}; only a plan with `topUps: true` may
+ * enable auto top-up at all.
+ */
+export interface PlanAutoTopUp {
+  readonly defaultMaxPacksPerMonth: number;
+  readonly maxPacksPerMonthLimit: number;
+}
+
 /** The provider names the backend's capability resolver accepts. */
 export type ManagedModelProvider = "openai" | "openai-compatible" | "gemini" | "claude";
 
@@ -95,6 +106,7 @@ export interface PlanCatalog {
   readonly conversationGraceShare: number;
   readonly countsAs: PlanUsageWeights;
   readonly topUp: PlanTopUp;
+  readonly autoTopUp: PlanAutoTopUp;
   readonly managedModels: PlanManagedModels;
 }
 

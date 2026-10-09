@@ -273,7 +273,13 @@ import {
   NoopPublicChatActionAdvertiser,
   type PublicChatActionAdvertiserPort,
 } from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
-import { InMemoryPublicConversationEventBus, ProbeConversationReader } from "../../src/modules/chat/composition.js";
+import {
+  ConfiguredContactDeliveryResolver,
+  InMemoryPublicConversationEventBus,
+  OperatorNoticeDestinationsReader,
+  ProbeConversationReader,
+  WorkspaceOwnerContactRecipientResolver,
+} from "../../src/modules/chat/composition.js";
 import { NoopContactHistoryProvider, type ContactHistoryProviderPort } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
@@ -1665,6 +1671,15 @@ export const createTestDependencies = (overrides: {
     capabilities: skillCapabilityRegistry,
     logger,
   });
+  const operatorNoticeDestinations = new OperatorNoticeDestinationsReader({
+    skills: agentSkillRepository,
+    resolver: new ConfiguredContactDeliveryResolver(
+      conversationRepository,
+      agentRepository,
+      new WorkspaceOwnerContactRecipientResolver(workspaceRepository, accountMembershipRepository),
+      agentSkillRepository,
+    ),
+  });
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
     lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(accessGrantRepository),
@@ -2547,6 +2562,7 @@ export const createTestDependencies = (overrides: {
     slackSkillDefinitionService,
     skillCapabilityRegistry,
     agentSkillsService,
+    operatorNoticeDestinations,
     emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,

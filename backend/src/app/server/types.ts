@@ -6,6 +6,7 @@ import type {
   ChatBootstrapService,
   ChatHistoryService,
   ChatService,
+  OperatorNoticeDestinationsReader,
   PublicConversationEventBus,
   WorkbenchReplayRunner,
 } from "../../modules/chat/composition.js";
@@ -296,6 +297,8 @@ export interface AppDependencies {
   skillAuthoringCatalog: SkillAuthoringCatalog;
   skillCapabilityRegistry: SkillCapabilityRegistry;
   agentSkillsService: AgentSkillsService;
+  /** Where routine ending notices go; names recipient emails, so it serves workspace sessions only. */
+  operatorNoticeDestinations: Pick<OperatorNoticeDestinationsReader, "read">;
   agentService: AgentService;
   agentRevisionService: AgentRevisionService;
   agentBundleExportService: AgentBundleExportService;

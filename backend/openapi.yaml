@@ -3987,6 +3987,10 @@ components:
                       - "null"
                     minLength: 1
                     maxLength: 2000
+                  skillName:
+                    type: string
+                    minLength: 1
+                    maxLength: 300
                 additionalProperties: false
               ordinal:
                 type: integer
@@ -4381,6 +4385,10 @@ components:
                           - "null"
                         minLength: 1
                         maxLength: 2000
+                      skillName:
+                        type: string
+                        minLength: 1
+                        maxLength: 300
                     additionalProperties: false
                   ordinal:
                     type: integer
@@ -4485,6 +4493,7 @@ components:
                   - exposure_tool_name_duplicate
                   - exposure_tool_name_changed
                   - exposure_requires_ungated_activation
+                  - operator_notice_skill_unavailable
               location:
                 type: string
               message:
@@ -4835,6 +4844,10 @@ components:
                       - "null"
                     minLength: 1
                     maxLength: 2000
+                  skillName:
+                    type: string
+                    minLength: 1
+                    maxLength: 300
                 additionalProperties: false
               ordinal:
                 type: integer
@@ -5283,6 +5296,10 @@ components:
                           - "null"
                         minLength: 1
                         maxLength: 2000
+                      skillName:
+                        type: string
+                        minLength: 1
+                        maxLength: 300
                     additionalProperties: false
                   ordinal:
                     type: integer
@@ -6419,6 +6436,10 @@ components:
                           - "null"
                         minLength: 1
                         maxLength: 2000
+                      skillName:
+                        type: string
+                        minLength: 1
+                        maxLength: 300
                     additionalProperties: false
                   ordinal:
                     type: integer
@@ -28479,6 +28500,114 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/operator-notice-destinations:
+    get:
+      tags:
+        - Agent Skills
+      summary: Show where routine ending notices are sent
+      description: "Where a routine ending's Notify-the-team notice is sent: the default destination and each enabled, routine-named notify skill an ending can name. Recipient emails are personal data, so this route accepts workspace sessions only."
+      operationId: listOperatorNoticeDestinations
+      security: *a105
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: Operator notice destinations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  default:
+                    type: object
+                    properties:
+                      skillName:
+                        type:
+                          - string
+                          - "null"
+                        description: The notify skill that sends the notice; null for the default destination.
+                      via:
+                        type: string
+                        enum: &a107
+                          - named_skill
+                          - contact_human
+                          - contact_human_off
+                          - agent_setting
+                          - workspace_owner
+                          - none
+                        description: Which rule picked the recipients.
+                      recipientEmails:
+                        type: array
+                        items:
+                          type: string
+                      recipientsFromWorkspaceOwner:
+                        type: boolean
+                        description: The emails are the workspace owner's because the route lists no recipients of its own.
+                      webhookConfigured:
+                        type: boolean
+                        description: A webhook also receives the notice. Its URL is never returned.
+                    required:
+                      - skillName
+                      - via
+                      - recipientEmails
+                      - recipientsFromWorkspaceOwner
+                      - webhookConfigured
+                  skills:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        skillName:
+                          type:
+                            - string
+                            - "null"
+                          description: The notify skill that sends the notice; null for the default destination.
+                        via:
+                          type: string
+                          enum: *a107
+                          description: Which rule picked the recipients.
+                        recipientEmails:
+                          type: array
+                          items:
+                            type: string
+                        recipientsFromWorkspaceOwner:
+                          type: boolean
+                          description: The emails are the workspace owner's because the route lists no recipients of its own.
+                        webhookConfigured:
+                          type: boolean
+                          description: A webhook also receives the notice. Its URL is never returned.
+                      required:
+                        - skillName
+                        - via
+                        - recipientEmails
+                        - recipientsFromWorkspaceOwner
+                        - webhookConfigured
+                required:
+                  - default
+                  - skills
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent read permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/skills/{skillId}:
     patch:
       tags:
@@ -30434,7 +30563,7 @@ paths:
       summary: List the teammates who can own a conversation
       description: Returns the active teammates who hold conversation takeover permission on the workspace, labelled by display name, else email. These are the valid transfer targets.
       operationId: listConversationOperators
-      security: &a107
+      security: &a108
         - bearerAuth: []
       responses:
         "200":
@@ -30462,7 +30591,7 @@ paths:
       summary: Take human ownership of a conversation
       description: Claims a conversation the AI owns or that waits for a teammate. A conversation another teammate holds returns 409; take it from them by transferring it to yourself.
       operationId: takeOverConversation
-      security: *a107
+      security: *a108
       parameters:
         - schema:
             type: string
@@ -30526,7 +30655,7 @@ paths:
       summary: Reply to a conversation as a human operator
       description: Only the teammate who owns the conversation replies. A reply to a conversation the AI owns, or one waiting for a teammate, claims it for you first. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
       operationId: replyToConversation
-      security: *a107
+      security: *a108
       parameters:
         - schema:
             type: string
@@ -30596,7 +30725,7 @@ paths:
       summary: Transfer human ownership of a conversation
       description: Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404 with code `transfer_target_unavailable`; a conversation that is not in the workspace returns 404 with code `not_found`.
       operationId: transferConversationOwnership
-      security: *a107
+      security: *a108
       parameters:
         - schema:
             type: string
@@ -30666,7 +30795,7 @@ paths:
       summary: Return a human-owned conversation to AI ownership
       description: Only the teammate who owns the conversation hands it back; anyone may while it waits unclaimed. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
       operationId: handBackConversation
-      security: *a107
+      security: *a108
       parameters:
         - schema:
             type: string
@@ -31611,7 +31740,7 @@ paths:
                     type: array
                     items:
                       type: string
-                      enum: &a108
+                      enum: &a109
                         - directive
                         - agent
                         - agent_setting
@@ -31786,7 +31915,7 @@ paths:
                                     format: uuid
                                   targetType:
                                     type: string
-                                    enum: *a108
+                                    enum: *a109
                                   targetLabel:
                                     type: string
                                   summary:
@@ -32003,14 +32132,14 @@ paths:
                     format: uuid
                   targetType:
                     type: string
-                    enum: *a108
+                    enum: *a109
                   targetRef: {}
                   target:
                     type: object
                     properties:
                       type:
                         type: string
-                        enum: *a108
+                        enum: *a109
                       ref: {}
                     required:
                       - type
@@ -32324,7 +32453,7 @@ paths:
         - Evals
       summary: Run frozen Eval cases against immutable agent candidates
       operationId: createRevisionEvalRun
-      security: &a109
+      security: &a110
         - bearerAuth: []
       requestBody:
         required: true
@@ -32357,7 +32486,7 @@ paths:
         - Evals
       summary: Get frozen revision Eval evidence
       operationId: getRevisionEvalRun
-      security: *a109
+      security: *a110
       parameters:
         - schema:
             type: string
@@ -32390,7 +32519,7 @@ paths:
         - Evals
       summary: Retry one failed frozen revision Eval case
       operationId: retryRevisionEvalCase
-      security: *a109
+      security: *a110
       parameters:
         - schema:
             type: string
@@ -32435,7 +32564,7 @@ paths:
         - Evals
       summary: Capture an Eval snapshot
       operationId: createEvalSnapshot
-      security: &a110
+      security: &a111
         - sessionCookie: []
           workspaceSelection: []
         - bearerAuth: []
@@ -32491,7 +32620,7 @@ paths:
         - Evals
       summary: Get an Eval snapshot
       operationId: getEvalSnapshot
-      security: *a110
+      security: *a111
       parameters:
         - schema:
             type: string
@@ -32536,7 +32665,7 @@ paths:
         - Evals
       summary: Create an Eval case
       operationId: createEvalCase
-      security: *a110
+      security: *a111
       requestBody:
         required: true
         content:
@@ -32741,7 +32870,7 @@ paths:
         - Evals
       summary: List Eval cases and latest results
       operationId: listEvalCases
-      security: *a110
+      security: *a111
       responses:
         "200":
           description: Eval cases with each case's latest result
@@ -32907,7 +33036,7 @@ paths:
         - Evals
       summary: Get an Eval case and its run history
       operationId: getEvalCase
-      security: *a110
+      security: *a111
       parameters:
         - schema:
             type: string
@@ -32951,7 +33080,7 @@ paths:
         - Evals
       summary: Rename an Eval case
       operationId: renameEvalCase
-      security: *a110
+      security: *a111
       parameters:
         - schema:
             type: string
@@ -33009,7 +33138,7 @@ paths:
         - Evals
       summary: Replace an Eval case's assertions
       operationId: replaceEvalCaseAssertions
-      security: *a110
+      security: *a111
       parameters:
         - schema:
             type: string
@@ -33277,7 +33406,7 @@ paths:
       summary: Run an Eval case
       description: Replays are safe by default. A live-effect case requires a fresh allowLiveEffects confirmation from an interactive workspace session; API credentials and Ray-triggered replays remain safe.
       operationId: createEvalCaseRun
-      security: *a110
+      security: *a111
       parameters:
         - schema:
             type: string
@@ -33306,7 +33435,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: &a111
+                          enum: &a112
                             - openai
                             - openai-compatible
                             - gemini
@@ -33364,7 +33493,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: &a112
+                              enum: &a113
                                 - openai
                                 - openai-compatible
                                 - gemini
@@ -33399,7 +33528,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: &a113
+                          enum: &a114
                             - active
                             - suspended
                             - completed
@@ -33617,7 +33746,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a111
+                          enum: *a112
                         model:
                           type: string
                       required:
@@ -33671,7 +33800,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: *a112
+                              enum: *a113
                             model:
                               type: string
                           required:
@@ -33702,7 +33831,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: *a113
+                          enum: *a114
                         metadata:
                           type: object
                           additionalProperties: {}
@@ -33753,7 +33882,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a112
+                          enum: *a113
                         model:
                           type: string
                       required:
@@ -33865,7 +33994,7 @@ paths:
         - Agents
       summary: List private immutable revision tests
       operationId: listAgentTestExecutions
-      security: &a114
+      security: &a115
         - bearerAuth: []
       parameters:
         - schema:
@@ -33901,7 +34030,7 @@ paths:
       summary: Start an operator-private immutable revision test
       description: "A `single` execution may set `seedConversationId` to continue an existing conversation of the same workspace and agent: the side starts with that thread as its history and resumes its active routine, pending clarification, and directive state, skipping the greeting. The source conversation is unchanged."
       operationId: startAgentTestExecution
-      security: *a114
+      security: *a115
       parameters:
         - schema:
             type: string
@@ -33928,7 +34057,7 @@ paths:
         - Agents
       summary: Get private immutable revision test evidence
       operationId: getAgentTestExecution
-      security: *a114
+      security: *a115
       parameters:
         - schema:
             type: string
@@ -33955,7 +34084,7 @@ paths:
         - Agents
       summary: Run a fenced private test turn
       operationId: sendAgentTestExecutionMessage
-      security: *a114
+      security: *a115
       parameters:
         - schema:
             type: string
@@ -33988,7 +34117,7 @@ paths:
         - Agents
       summary: Continue one settled comparison version as a private test
       operationId: retainAgentTestExecutionSide
-      security: *a114
+      security: *a115
       parameters:
         - schema:
             type: string
@@ -34021,7 +34150,7 @@ paths:
         - Agents
       summary: Capture a private test response as immutable Eval evidence
       operationId: captureAgentTestExecutionEvalSnapshot
-      security: *a114
+      security: *a115
       parameters:
         - schema:
             type: string
@@ -34060,7 +34189,7 @@ paths:
         - Agents
       summary: Retry one failed private test side
       operationId: retryAgentTestExecutionSide
-      security: *a114
+      security: *a115
       parameters:
         - schema:
             type: string
@@ -34886,7 +35015,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Reconnect or distributed workspace/account/principal admission limit exceeded
-          headers: &a115
+          headers: &a116
             Retry-After:
               description: Minimum reconnect delay in whole seconds. The browser also applies its local jittered exponential backoff.
               schema:
@@ -34898,7 +35027,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: Realtime admission, broker subscription, or runtime capacity is temporarily unavailable
-          headers: *a115
+          headers: *a116
           content:
             application/json:
               schema:

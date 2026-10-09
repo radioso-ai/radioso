@@ -1,5 +1,6 @@
 import {
   ConfiguredContactDeliveryResolver,
+  OperatorNoticeDestinationsReader,
   WorkspaceOwnerContactRecipientResolver,
 } from "../../modules/chat/composition.js";
 import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
@@ -24,3 +25,12 @@ export const buildContactDeliveryResolver = (database: Database): ConfiguredCont
     ),
     new AgentSkillRepository(database.kysely),
   );
+
+/** Shows an operator where a routine ending's notice goes, through the resolver that sends it. */
+export const buildOperatorNoticeDestinationsReader = (database: Database): OperatorNoticeDestinationsReader => {
+  const skills = new AgentSkillRepository(database.kysely);
+  return new OperatorNoticeDestinationsReader({
+    skills: { listByAgent: (workspaceId, agentId) => skills.listByAgent(workspaceId, agentId) },
+    resolver: buildContactDeliveryResolver(database),
+  });
+};

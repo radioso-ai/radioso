@@ -56,6 +56,11 @@ export interface OperatorNotificationContext {
   conversationId?: string | null;
   idempotencyKey?: string | null;
   attempt?: number;
+  /**
+   * The notify skill a routine ending's notice names to send it. A sink that resolves recipients
+   * per skill honours it; a sink with its own destination (Slack) ignores it.
+   */
+  skillName?: string | null;
 }
 
 export interface OperatorNotificationSink {

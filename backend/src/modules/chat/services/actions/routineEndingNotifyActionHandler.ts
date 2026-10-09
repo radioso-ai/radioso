@@ -66,6 +66,9 @@ export class RoutineEndingNotifyActionHandler implements ActionHandler {
       conversationId: input.context.conversationId,
       idempotencyKey: input.context.idempotencyKey,
       attempt: input.context.attempt,
+      // Read off the queued row, never re-read from the routine: the draft may have changed since
+      // the turn that reached this ending, and the row records what that turn's routine named.
+      ...(input.context.skillName ? { skillName: input.context.skillName } : {}),
     });
   }
 }

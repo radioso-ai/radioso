@@ -401,7 +401,7 @@ describe("WorkspaceOwnerContactRecipientResolver", () => {
     const result = await resolver([
       { role: "member", email: "m@x.com" },
       { role: "owner", email: "owner@x.com" },
-    ]).resolve({ ...context, workspaceId: "ws_1", conversationId: "c" });
+    ]).resolve({ workspaceId: "ws_1" });
     expect(result).toEqual({ emails: ["owner@x.com"], webhook: null });
   });
 
@@ -409,26 +409,22 @@ describe("WorkspaceOwnerContactRecipientResolver", () => {
     const result = await resolver([
       { role: "member", email: "m@x.com" },
       { role: "admin", email: "admin@x.com" },
-    ]).resolve({ ...context, workspaceId: "ws_1", conversationId: "c" });
+    ]).resolve({ workspaceId: "ws_1" });
     expect(result).toEqual({ emails: ["admin@x.com"], webhook: null });
   });
 
   it("returns null when no workspaceId, no workspace, or no owner/admin", async () => {
     expect(
-      await resolver([]).resolve({ ...context, workspaceId: null, conversationId: "c" }),
+      await resolver([]).resolve({ workspaceId: null }),
     ).toEqual({ emails: [], webhook: null });
     expect(
       await new WorkspaceOwnerContactRecipientResolver(
         { findById: async () => null },
         { listActiveByAccount: async () => [] },
-      ).resolve({ ...context, workspaceId: "ws_1", conversationId: "c" }),
+      ).resolve({ workspaceId: "ws_1" }),
     ).toEqual({ emails: [], webhook: null });
     expect(
-      await resolver([{ role: "member", email: "m@x.com" }]).resolve({
-        ...context,
-        workspaceId: "ws_1",
-        conversationId: "c",
-      }),
+      await resolver([{ role: "member", email: "m@x.com" }]).resolve({ workspaceId: "ws_1" }),
     ).toEqual({ emails: [], webhook: null });
   });
 });
@@ -451,6 +447,8 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve(context)).resolves.toEqual({
       emails: ["sales@example.com"],
       webhook: { url: "https://hooks.example.com/contact" },
+      via: "agent_setting",
+      recipientsFromWorkspaceOwner: false,
     });
   });
 
@@ -471,6 +469,8 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve(context)).resolves.toEqual({
       emails: ["owner@example.com"],
       webhook: null,
+      via: "workspace_owner",
+      recipientsFromWorkspaceOwner: true,
     });
   });
 
@@ -488,7 +488,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
       { resolve: async () => ({ emails: ["owner@example.com"], webhook: null }) },
       {
         findByName: async () => ({
-          kind: "notify",
+          kind: "notify", invocationMode: "routine_named",
           enabled: true,
           config: {
             delivery: {
@@ -503,6 +503,8 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve(context)).resolves.toEqual({
       emails: ["sales@example.com"],
       webhook: { url: "https://hooks.example.com/contact" },
+      via: "contact_human",
+      recipientsFromWorkspaceOwner: false,
     });
   });
 
@@ -520,7 +522,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
       { resolve: async () => ({ emails: ["owner@example.com"], webhook: null }) },
       {
         findByName: async () => ({
-          kind: "notify",
+          kind: "notify", invocationMode: "routine_named",
           enabled: false,
           config: {
             delivery: { recipientEmails: ["sales@example.com"], webhook: null },
@@ -529,14 +531,19 @@ describe("ConfiguredContactDeliveryResolver", () => {
       },
     );
 
-    await expect(resolver.resolve(context)).resolves.toEqual({ emails: [], webhook: null });
+    await expect(resolver.resolve(context)).resolves.toEqual({
+      emails: [],
+      webhook: null,
+      via: "contact_human_off",
+      recipientsFromWorkspaceOwner: false,
+    });
   });
 
   it("prefers the outbox row's named skill delivery over both the hardcoded contact_human skill and legacy agent delivery", async () => {
     const findByName = vi.fn(async (_ws: string, _agentId: string, skillName: string) => {
       if (skillName === "contact_sales") {
         return {
-          kind: "notify",
+          kind: "notify", invocationMode: "routine_named",
           enabled: true,
           config: {
             delivery: {
@@ -549,7 +556,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
       // A distinct contact_human skill also exists and is enabled — the named
       // skill on the outbox row must still win.
       return {
-        kind: "notify",
+        kind: "notify", invocationMode: "routine_named",
         enabled: true,
         config: { delivery: { recipientEmails: ["generic@example.com"], webhook: null } },
       };
@@ -568,6 +575,8 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve({ ...context, skillName: "contact_sales" })).resolves.toEqual({
       emails: ["sales@example.com"],
       webhook: { url: "https://hooks.example.com/sales" },
+      via: "named_skill",
+      recipientsFromWorkspaceOwner: false,
     });
   });
 
@@ -584,7 +593,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
         findByName: async (_ws, _agentId, skillName) =>
           skillName === "contact_sales"
             ? {
-                kind: "notify",
+                kind: "notify", invocationMode: "routine_named",
                 enabled: true,
                 config: { delivery: { recipientEmails: [], webhook: { url: "https://hooks.example.com/sales" } } },
               }
@@ -595,6 +604,8 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve({ ...context, skillName: "contact_sales" })).resolves.toEqual({
       emails: ["owner@example.com"],
       webhook: { url: "https://hooks.example.com/sales" },
+      via: "named_skill",
+      recipientsFromWorkspaceOwner: true,
     });
   });
 
@@ -613,7 +624,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
         findByName: async (_ws, _agentId, skillName) =>
           skillName === "contact_sales"
             ? {
-                kind: "notify",
+                kind: "notify", invocationMode: "routine_named",
                 enabled: false,
                 config: { delivery: { recipientEmails: ["sales@example.com"], webhook: null } },
               }
@@ -627,6 +638,8 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve({ ...context, skillName: "contact_sales" })).resolves.toEqual({
       emails: ["legacy@example.com"],
       webhook: null,
+      via: "agent_setting",
+      recipientsFromWorkspaceOwner: false,
     });
   });
 
@@ -646,14 +659,16 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve({ ...context, skillName: "renamed_or_deleted_skill" })).resolves.toEqual({
       emails: ["legacy@example.com"],
       webhook: null,
+      via: "agent_setting",
+      recipientsFromWorkspaceOwner: false,
     });
   });
 
   it("behaves exactly as today when the row names no skill, even when other named notify skills exist", async () => {
     const findByName = vi.fn(async (_ws: string, _agentId: string, skillName: string) =>
       skillName === "contact_human"
-        ? { kind: "notify", enabled: true, config: { delivery: { recipientEmails: ["generic@example.com"], webhook: null } } }
-        : { kind: "notify", enabled: true, config: { delivery: { recipientEmails: ["sales@example.com"], webhook: null } } },
+        ? { kind: "notify", invocationMode: "routine_named", enabled: true, config: { delivery: { recipientEmails: ["generic@example.com"], webhook: null } } }
+        : { kind: "notify", invocationMode: "routine_named", enabled: true, config: { delivery: { recipientEmails: ["sales@example.com"], webhook: null } } },
     );
     const resolver = new ConfiguredContactDeliveryResolver(
       { findByIdAndWorkspaceId: async () => ({ agentId: "agent_1" }) },
@@ -665,10 +680,104 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve({ ...context, skillName: null })).resolves.toEqual({
       emails: ["generic@example.com"],
       webhook: null,
+      via: "contact_human",
+      recipientsFromWorkspaceOwner: false,
     });
     // The named-skill branch never runs without a skill name on the row — only the
     // hardcoded contact_human lookup fires, same as before this change.
     expect(findByName).toHaveBeenCalledOnce();
     expect(findByName).toHaveBeenCalledWith(context.workspaceId, "agent_1", "contact_human");
+  });
+});
+
+describe("ConfiguredContactDeliveryResolver.resolveForAgent", () => {
+  const owner = { resolve: async () => ({ emails: ["owner@example.com"], webhook: null }) };
+  const nobody = { resolve: async () => ({ emails: [], webhook: null }) };
+  const noConversation = { findByIdAndWorkspaceId: async () => null };
+  const agentWith = (recipientEmails: string[]) => ({
+    findByIdAndWorkspaceId: async () => ({ contactRequestDelivery: { recipientEmails, webhook: null } }),
+  });
+  const notifySkill = (overrides: { enabled?: boolean; invocationMode?: string; kind?: string; recipientEmails?: string[] } = {}) => ({
+    kind: overrides.kind ?? "notify",
+    enabled: overrides.enabled ?? true,
+    invocationMode: overrides.invocationMode ?? "routine_named",
+    config: { delivery: { recipientEmails: overrides.recipientEmails ?? ["bookings@example.com"], webhook: null } },
+  });
+  const skills = (bySkillName: Record<string, ReturnType<typeof notifySkill>>) => ({
+    findByName: async (_workspaceId: string, _agentId: string, skillName: string) => bySkillName[skillName] ?? null,
+  });
+  const forAgent = (skillName: string | null) => ({ workspaceId: "ws_1", agentId: "agent_1", skillName });
+
+  it("routes through the named notify skill's own recipients", async () => {
+    const resolver = new ConfiguredContactDeliveryResolver(noConversation, agentWith([]), owner, skills({
+      notify_bookings: notifySkill(),
+      contact_human: notifySkill({ recipientEmails: ["support@example.com"] }),
+    }));
+
+    await expect(resolver.resolveForAgent(forAgent("notify_bookings"))).resolves.toEqual({
+      emails: ["bookings@example.com"],
+      webhook: null,
+      via: "named_skill",
+      recipientsFromWorkspaceOwner: false,
+    });
+  });
+
+  it("does not route through a named skill an author could not pick: disabled, not routine-named, or not notify", async () => {
+    for (const unavailable of [
+      notifySkill({ enabled: false }),
+      notifySkill({ invocationMode: "agent_selectable" }),
+      notifySkill({ kind: "email" }),
+    ]) {
+      const resolver = new ConfiguredContactDeliveryResolver(noConversation, agentWith(["team@example.com"]), owner, skills({
+        notify_bookings: unavailable,
+      }));
+
+      await expect(resolver.resolveForAgent(forAgent("notify_bookings"))).resolves.toMatchObject({
+        emails: ["team@example.com"],
+        via: "agent_setting",
+      });
+    }
+  });
+
+  it("names each default branch: contact_human, contact_human turned off, the agent setting, the owner, nobody", async () => {
+    await expect(new ConfiguredContactDeliveryResolver(noConversation, agentWith([]), owner, skills({
+      contact_human: notifySkill({ recipientEmails: ["support@example.com"] }),
+    })).resolveForAgent(forAgent(null))).resolves.toMatchObject({ emails: ["support@example.com"], via: "contact_human" });
+
+    await expect(new ConfiguredContactDeliveryResolver(noConversation, agentWith([]), owner, skills({
+      contact_human: notifySkill({ enabled: false }),
+    })).resolveForAgent(forAgent(null))).resolves.toMatchObject({ emails: [], via: "contact_human_off" });
+
+    await expect(new ConfiguredContactDeliveryResolver(noConversation, agentWith(["team@example.com"]), owner, skills({}))
+      .resolveForAgent(forAgent(null))).resolves.toMatchObject({ emails: ["team@example.com"], via: "agent_setting" });
+
+    await expect(new ConfiguredContactDeliveryResolver(noConversation, agentWith([]), owner, skills({}))
+      .resolveForAgent(forAgent(null))).resolves.toEqual({
+      emails: ["owner@example.com"],
+      webhook: null,
+      via: "workspace_owner",
+      recipientsFromWorkspaceOwner: true,
+    });
+
+    await expect(new ConfiguredContactDeliveryResolver(noConversation, agentWith([]), nobody, skills({}))
+      .resolveForAgent(forAgent(null))).resolves.toEqual({
+      emails: [],
+      webhook: null,
+      via: "none",
+      recipientsFromWorkspaceOwner: false,
+    });
+  });
+
+  it("resolves a queued action through the conversation's agent, the way resolveForAgent does", async () => {
+    const resolver = new ConfiguredContactDeliveryResolver(
+      { findByIdAndWorkspaceId: async () => ({ agentId: "agent_1" }) },
+      agentWith([]),
+      owner,
+      skills({ notify_bookings: notifySkill() }),
+    );
+
+    await expect(resolver.resolve({ ...context, skillName: "notify_bookings" }))
+      .resolves.toEqual(await resolver.resolveForAgent(forAgent("notify_bookings")));
+    await expect(resolver.resolve({ ...context, conversationId: null })).resolves.toMatchObject({ via: "workspace_owner" });
   });
 });

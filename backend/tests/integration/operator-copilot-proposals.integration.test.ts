@@ -178,7 +178,7 @@ it("lets an Operator MCP client read, route, and check which notify skill sends 
   const { app, dependencies } = createTestApp();
   const ownerEmail = "notice-routing-owner@example.com";
   const { workspaceId, accountId, userId } = await issueTestSession(app, ownerEmail);
-  const agentId = (await dependencies.agentService.listExisting(workspaceId))[0]!.id;
+  const agentId = (await dependencies.agentService.listExisting(workspaceId))[0].id;
   for (const [name, recipient] of [["notify_bookings", "francesco@example.com"], ["notify_sales", "sales@example.com"]] as const) {
     await dependencies.agentSkillsService.create(workspaceId, agentId, {
       name,
@@ -235,7 +235,7 @@ it("lets an Operator MCP client read, route, and check which notify skill sends 
   ]));
 
   // Route it through another skill with a reviewed structural edit, then read it back.
-  const previous = routine.terminals[0]!;
+  const previous = routine.terminals[0];
   const prepared = await invoke("prepare_routine_structure", {
     kind: "edit",
     agentId,

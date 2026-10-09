@@ -1590,7 +1590,10 @@ export interface RoutineRunTrace {
 
 export interface ConversationRoutineResumeResult {
   response: RenderableTurn;
-  /** The next state to persist; `null` clears it (the routine reached a terminal step). */
+  /**
+   * The next state to persist; `null` when the routine ended this turn (`terminal` says how). A
+   * host keeps the ended run as completed rather than active, with the values in `endedVariables`.
+   */
   nextState: RoutineState | null;
   /**
    * How the routine ended, when it did: at an authored terminal step of that kind, or `stuck`
@@ -1685,6 +1688,12 @@ export interface ConversationRoutineDecisionResult extends ConversationRoutineRe
    */
   handoff?: ProcessTurnResult["handoff"];
   operatorNotice?: RoutineOperatorNoticeEffect;
+  /**
+   * Present when the resume ended the routine (`terminal` is set, `nextState` is `null`): the
+   * completed record to keep in its place, the same record a live turn that ends a routine keeps
+   * (#1457). A yielded resume reports no next state and no completed record.
+   */
+  completedState?: RoutineState;
 }
 
 /**

@@ -117,6 +117,25 @@ describe("resumeRoutine completion persistence", () => {
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ path: ["ask_contact", "done"] }));
   });
 
+  it("appends the terminal step from the ending itself when the runner reports no trace", async () => {
+    const save = saveSpy();
+    const runner = runnerReturning({
+      response: { answer: "Thanks, all set." },
+      nextState: null,
+      terminal: { kind: "complete", stepId: "done" },
+    });
+
+    await resumeRoutine({
+      request: requestWith(runner, save),
+      baseTurn: turn,
+      state: stateOn("ask_contact"),
+      resuming: true,
+      history: [],
+    });
+
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ path: ["ask_contact", "done"], status: "completed" }));
+  });
+
   it("keeps every value the run ended with, the ending turn's included, on the completed record (#1452)", async () => {
     const save = saveSpy();
     const runner = runnerReturning({

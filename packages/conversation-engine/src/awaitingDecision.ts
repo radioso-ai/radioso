@@ -9,7 +9,7 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 
-import { routineEndingEffects } from "./routineEnding.js";
+import { completedRoutineState, routineEndingEffects } from "./routineEnding.js";
 
 type RoutineStepLookup = {
   getCurrentStep(state: RoutineState): RoutineStep | null;
@@ -62,5 +62,12 @@ export const resumeAwaitingDecision = async (input: {
     state: resumedState,
     ...(input.steeringResolver ? { steeringResolver: input.steeringResolver } : {}),
   });
-  return { ...result, ...routineEndingEffects(state.routineId, result.terminal), resumed: true };
+  return {
+    ...result,
+    ...routineEndingEffects(state.routineId, result.terminal),
+    // Only an ending is kept as completed. A yielded resume also reports no next state, yet the
+    // routine never ended.
+    ...(result.terminal ? { completedState: completedRoutineState(resumedState, result) } : {}),
+    resumed: true,
+  };
 };

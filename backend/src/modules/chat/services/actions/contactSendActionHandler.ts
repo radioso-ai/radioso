@@ -1,6 +1,7 @@
 import { hasConfiguredContactDestination, readNotifyContactDelivery } from "../../../agents/public.js";
 import type { AgentContactRequestDelivery, AgentContactWebhook } from "../../../agents/public.js";
 import type { ActionFailureOutcome } from "../../../../db/repositories/actionRequestRepository.js";
+import type { ContactDeliveryRoute } from "../../../../shared/domain/contactDeliveryRoute.js";
 import type { ErrorReporter } from "../../../../shared/errors/errorReporter.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
@@ -28,19 +29,6 @@ interface ContactDeliveryTarget {
   emails: string[];
   webhook: AgentContactWebhook | null;
 }
-
-/**
- * Which rule picked a destination, in precedence order: the notify skill the request names, the
- * agent's `contact_human` skill (or that skill turned off, which sends nothing), the agent's
- * contact settings, the workspace owner or admin, or nobody at all.
- */
-export type ContactDeliveryRoute =
-  | "named_skill"
-  | "contact_human"
-  | "contact_human_off"
-  | "agent_setting"
-  | "workspace_owner"
-  | "none";
 
 export interface RoutedContactDeliveryTarget extends ContactDeliveryTarget {
   via: ContactDeliveryRoute;
@@ -85,15 +73,6 @@ interface ContactNotifySkillLookup {
     config?: Record<string, unknown>;
   } | null>;
 }
-
-/**
- * A notify skill a request may be routed through by name: the same enabled, routine-named notify
- * skills the routine authoring catalog offers, so what an author can pick is what delivery honours.
- */
-export const isNameableNotifySkill = <TSkill extends { kind: string; enabled: boolean; invocationMode: string }>(
-  skill: TSkill | null | undefined,
-): skill is TSkill =>
-  skill?.kind === "notify" && skill.enabled && skill.invocationMode === "routine_named";
 
 export type ContactWebhookHttpClient = WebhookHttpClient;
 
@@ -170,28 +149,30 @@ export class ConfiguredContactDeliveryResolver implements RoutedContactRecipient
     // names) wins over the `contact_human` lookup below: two notify skills on one agent must be
     // able to deliver to different recipients, not collide on one shared config.
     //
-    // A named skill that is gone, turned off, or no longer routine-named falls through to the
-    // lookups below instead of short-circuiting to no recipient (unlike the `contact_human` branch,
-    // which does short-circuit). `contact_human` is one well-known skill an operator turns off
-    // deliberately, expecting contact requests to stop; a named skill going away is more likely a
+    // Any enabled notify skill delivers, whatever its invocation mode: `contact.send` rows name the
+    // skill that fired them, and an ending's notice was checked against the routine-named catalog
+    // when it was published. A named skill that is gone or turned off falls through to the
+    // lookups below instead of short-circuiting to no recipient. `contact_human` is one well-known
+    // skill an operator turns off deliberately, expecting contact requests to stop, so it
+    // short-circuits only a request that names no skill; a named skill going away is more likely a
     // rename or an authoring change, and a request routed through it must still reach somebody.
     if (input.skillName) {
       const namedSkill = await this.notifySkills?.findByName(input.workspaceId, input.agentId, input.skillName);
-      const delivery = isNameableNotifySkill(namedSkill) ? readNotifyContactDelivery(namedSkill.config) : null;
+      const delivery = namedSkill?.kind === "notify" && namedSkill.enabled ? readNotifyContactDelivery(namedSkill.config) : null;
       if (delivery) {
         return this.resolveConfiguredDelivery(delivery, "named_skill", input.workspaceId);
       }
     }
 
     const notifySkill = await this.notifySkills?.findByName(input.workspaceId, input.agentId, "contact_human");
-    if (notifySkill?.kind === "notify") {
-      if (!notifySkill.enabled) {
-        return { emails: [], webhook: null, via: "contact_human_off", recipientsFromWorkspaceOwner: false };
-      }
-      const delivery = readNotifyContactDelivery(notifySkill.config);
-      if (delivery) {
-        return this.resolveConfiguredDelivery(delivery, "contact_human", input.workspaceId);
-      }
+    if (notifySkill?.kind === "notify" && !notifySkill.enabled && !input.skillName) {
+      return { emails: [], webhook: null, via: "contact_human_off", recipientsFromWorkspaceOwner: false };
+    }
+    const contactHumanDelivery = notifySkill?.kind === "notify" && notifySkill.enabled
+      ? readNotifyContactDelivery(notifySkill.config)
+      : null;
+    if (contactHumanDelivery) {
+      return this.resolveConfiguredDelivery(contactHumanDelivery, "contact_human", input.workspaceId);
     }
     const agent = await this.agents.findByIdAndWorkspaceId(input.agentId, input.workspaceId);
     if (!agent || !hasConfiguredContactDestination(agent.contactRequestDelivery)) {

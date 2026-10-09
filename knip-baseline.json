@@ -91,7 +91,6 @@
   "exports|backend/src/modules/settings/domain/websiteEmbedSettings.ts|DEFAULT_WEBSITE_EMBED_SCRIPT_PATH",
   "exports|backend/src/modules/settings/domain/websiteEmbedSettings.ts|defaultWebsiteEmbedTheme",
   "exports|backend/src/modules/settings/domain/websiteEmbedSettings.ts|normalizeWebsiteEmbedOrigin",
-  "exports|backend/src/modules/skills/capabilities/notify.ts|notifyConfigSchema",
   "exports|backend/src/modules/skills/routineAuthoringPolicy.ts|isRoutineDispatchableBuiltInSkill",
   "exports|backend/src/modules/skills/routineAuthoringPolicy.ts|routineAuthoringBuiltInSkillNames",
   "exports|backend/src/modules/skills/routineAuthoringPolicy.ts|routineDispatchableBuiltInSkillNames",

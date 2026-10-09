@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
+import { contactDeliveryRoutes } from "../../../../shared/domain/contactDeliveryRoute.js";
 
 const AgentParams = z.object({ agentId: z.string().uuid() });
 const AgentSkillParams = AgentParams.extend({ skillId: z.string().uuid() });
@@ -97,7 +98,7 @@ const CapabilitySchema = z.object({
 
 const OperatorNoticeDestinationSchema = z.object({
   skillName: z.string().nullable().describe("The notify skill that sends the notice; null for the default destination."),
-  via: z.enum(["named_skill", "contact_human", "contact_human_off", "agent_setting", "workspace_owner", "none"])
+  via: z.enum(contactDeliveryRoutes)
     .describe("Which rule picked the recipients."),
   recipientEmails: z.array(z.string()),
   recipientsFromWorkspaceOwner: z.boolean()

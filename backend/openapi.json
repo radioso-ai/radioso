@@ -5883,7 +5883,8 @@
                     "skillName": {
                       "type": "string",
                       "minLength": 1,
-                      "maxLength": 300
+                      "maxLength": 300,
+                      "pattern": "^[a-z][a-z0-9_]*$"
                     }
                   },
                   "additionalProperties": false
@@ -6506,7 +6507,8 @@
                         "skillName": {
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 300
+                          "maxLength": 300,
+                          "pattern": "^[a-z][a-z0-9_]*$"
                         }
                       },
                       "additionalProperties": false
@@ -7202,7 +7204,8 @@
                     "skillName": {
                       "type": "string",
                       "minLength": 1,
-                      "maxLength": 300
+                      "maxLength": 300,
+                      "pattern": "^[a-z][a-z0-9_]*$"
                     }
                   },
                   "additionalProperties": false
@@ -7897,7 +7900,8 @@
                         "skillName": {
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 300
+                          "maxLength": 300,
+                          "pattern": "^[a-z][a-z0-9_]*$"
                         }
                       },
                       "additionalProperties": false
@@ -9603,7 +9607,8 @@
                         "skillName": {
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 300
+                          "maxLength": 300,
+                          "pattern": "^[a-z][a-z0-9_]*$"
                         }
                       },
                       "additionalProperties": false

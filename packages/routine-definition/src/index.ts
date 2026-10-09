@@ -350,6 +350,9 @@ const routineTerminalSharedFields = {
   kind: z.enum(routineTerminalKinds),
 };
 
+// The shape every agent skill name has, so a notice can only name something a skill could be called.
+const agentSkillNamePattern = /^[a-z][a-z0-9_]*$/u;
+
 /**
  * What the operators are told when a routine ends on this terminal. Both texts are optional
  * and may reference `{{slot.<key>}}`; an absent text renders the default for the ending's
@@ -363,7 +366,7 @@ const routineTerminalSharedFields = {
 const routineOperatorNoticeSchemaFor = <TText extends z.ZodTypeAny>(text: (maxLength: number) => TText) => z.object({
   subject: text(ROUTINE_DEFINITION_LIMITS.operatorNoticeSubject),
   intro: text(ROUTINE_DEFINITION_LIMITS.operatorNoticeIntro),
-  skillName: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.toolRef).optional(),
+  skillName: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.toolRef).regex(agentSkillNamePattern).optional(),
 }).strict();
 
 export const routineOperatorNoticeSchema = routineOperatorNoticeSchemaFor(optionalTrimmedText);

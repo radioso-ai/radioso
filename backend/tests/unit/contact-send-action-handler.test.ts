@@ -722,10 +722,31 @@ describe("ConfiguredContactDeliveryResolver.resolveForAgent", () => {
     });
   });
 
-  it("does not route through a named skill an author could not pick: disabled, not routine-named, or not notify", async () => {
+  it("routes through an enabled named notify skill whatever its invocation mode, as a contact request names the skill that fired it", async () => {
+    const resolver = new ConfiguredContactDeliveryResolver(noConversation, agentWith(["team@example.com"]), owner, skills({
+      contact_sales: notifySkill({ invocationMode: "agent_selectable", recipientEmails: ["sales@example.com"] }),
+    }));
+
+    await expect(resolver.resolveForAgent(forAgent("contact_sales"))).resolves.toMatchObject({
+      emails: ["sales@example.com"],
+      via: "named_skill",
+    });
+  });
+
+  it("still reaches somebody when the named skill is unavailable and contact_human is turned off", async () => {
+    const resolver = new ConfiguredContactDeliveryResolver(noConversation, agentWith([]), owner, skills({
+      contact_human: notifySkill({ enabled: false }),
+    }));
+
+    await expect(resolver.resolveForAgent(forAgent("notify_bookings"))).resolves.toMatchObject({
+      emails: ["owner@example.com"],
+      via: "workspace_owner",
+    });
+  });
+
+  it("does not route through a named skill that is turned off or is not a notify skill", async () => {
     for (const unavailable of [
       notifySkill({ enabled: false }),
-      notifySkill({ invocationMode: "agent_selectable" }),
       notifySkill({ kind: "email" }),
     ]) {
       const resolver = new ConfiguredContactDeliveryResolver(noConversation, agentWith(["team@example.com"]), owner, skills({

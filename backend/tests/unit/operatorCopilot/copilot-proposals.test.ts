@@ -23,6 +23,7 @@ import {
   type CopilotRepositoryPort,
 } from "../../../src/modules/operatorCopilot/public.js";
 import { createAgentSettingProposalCopilotTools, createGreetingProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/agents.js";
+import { createWorkspaceSettingProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/workspaceSettingProposals.js";
 import { createAgentSkillConfigProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/agentSkills.js";
 import { createDirectiveProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/directives.js";
 import { createRoutineProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
@@ -3263,6 +3264,127 @@ describe("operator MCP proposal reconciliation", () => {
         status: "recovered",
         output: { proposalId: "proposal-5", targetType: "agent_greeting", targetLabel: "Greeting", summary: "Turn on Exact words for the greeting." },
       });
+  });
+
+  const workspaceSettingProposalPayload = (overrides: Record<string, unknown> = {}) => ({
+    name: "Workspace settings" as const,
+    assistantName: "Ada",
+    greetingInstruction: "Greet warmly.",
+    assistantDefaultLocale: null,
+    proactiveGreetingEnabled: false,
+    suggestedQuestionsEnabled: true,
+    customInstruction: "",
+    anonymousChatEnabled: false,
+    websiteEmbedEnabled: true,
+    websiteEmbedAllowedOrigins: ["https://example.com"],
+    websiteEmbedLauncherLabel: "Ask us",
+    websiteEmbedLauncherPosition: "bottom-right" as const,
+    changesReach: false,
+    ...overrides,
+  });
+  it("reconstructs propose_workspace_setting's result from a recovered proposal", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      proposal: recoveredProposal({
+        id: "proposal-6",
+        targetType: "workspace_setting",
+        payload: workspaceSettingProposalPayload({ assistantName: "Ida", summary: "Change workspace assistantName to Ida." }),
+      }),
+    }));
+    const [descriptor] = createWorkspaceSettingProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalAdapters: [{ targetType: "workspace_setting", validatePayload: vi.fn(), readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({
+        status: "recovered",
+        output: { proposalId: "proposal-6", targetType: "workspace_setting", targetLabel: "Workspace settings", summary: "Change workspace assistantName to Ida." },
+      });
+  });
+
+  it("reconstructs propose_workspace_setting's result with the reach flag set", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      proposal: recoveredProposal({
+        id: "proposal-7",
+        targetType: "workspace_setting",
+        payload: workspaceSettingProposalPayload({
+          anonymousChatEnabled: true,
+          changesReach: true,
+          summary: "Turn on the public chat link.",
+        }),
+      }),
+    }));
+    const [descriptor] = createWorkspaceSettingProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalAdapters: [{ targetType: "workspace_setting", validatePayload: vi.fn(), readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({
+        status: "recovered",
+        output: {
+          proposalId: "proposal-7",
+          targetType: "workspace_setting",
+          targetLabel: "Workspace settings",
+          summary: "Turn on the public chat link.",
+          reach: true,
+        },
+      });
+  });
+
+  it("reports a conflict for propose_workspace_setting when the recovered proposal is not a workspace-setting target", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      proposal: recoveredProposal({ id: "proposal-8", targetType: "agent_setting", payload: { value: false } }),
+    }));
+    const [descriptor] = createWorkspaceSettingProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalAdapters: [{ targetType: "workspace_setting", validatePayload: vi.fn(), readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({ status: "conflict" });
+  });
+
+  it("reports a conflict for propose_workspace_setting when the recovered payload does not parse as the stored surface", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      // Missing the full stored surface the live tool always persists.
+      proposal: recoveredProposal({ id: "proposal-9", targetType: "workspace_setting", payload: { assistantName: "Ida" } }),
+    }));
+    const [descriptor] = createWorkspaceSettingProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalAdapters: [{ targetType: "workspace_setting", validatePayload: vi.fn(), readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({ status: "conflict" });
+  });
+
+  it("reports a conflict for propose_workspace_setting when the recovered payload has no stored summary to answer with", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      proposal: recoveredProposal({ id: "proposal-10", targetType: "workspace_setting", payload: workspaceSettingProposalPayload({ rationale: "Rename." }) }),
+    }));
+    const [descriptor] = createWorkspaceSettingProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalAdapters: [{ targetType: "workspace_setting", validatePayload: vi.fn(), readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({ status: "conflict" });
   });
 
   it("reconstructs propose_routine_edit's result, reporting unmeasured validation since diagnostics are never persisted", async () => {

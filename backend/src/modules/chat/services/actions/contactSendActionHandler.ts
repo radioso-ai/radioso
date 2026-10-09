@@ -6,7 +6,6 @@ import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js"
 import {
   FetchWebhookHttpClient,
   type WebhookHttpClient,
-  type WebhookUrlGuard,
 } from "./webhookDelivery.js";
 
 /**
@@ -25,7 +24,7 @@ export interface ContactNotificationMailer {
   }): Promise<unknown>;
 }
 
-export interface ContactDeliveryTarget {
+interface ContactDeliveryTarget {
   emails: string[];
   webhook: AgentContactWebhook | null;
 }
@@ -54,7 +53,7 @@ export interface RoutedContactDeliveryTarget extends ContactDeliveryTarget {
  * destination is host/product policy (workspace owner, configured inboxes, webhook),
  * not something this generic handler should hard-code.
  */
-export interface ContactRecipientResolver {
+interface ContactRecipientResolver {
   resolve(context: ActionHandlerContext): Promise<ContactDeliveryTarget>;
 }
 
@@ -64,21 +63,21 @@ export interface RoutedContactRecipientResolver extends ContactRecipientResolver
 }
 
 /** The last-resort recipient when no route configures one; only the workspace is known. */
-export interface ContactOwnerFallback {
+interface ContactOwnerFallback {
   resolve(context: Pick<ActionHandlerContext, "workspaceId">): Promise<ContactDeliveryTarget>;
 }
 
-export interface ContactConversationLookup {
+interface ContactConversationLookup {
   findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<{ agentId: string | null } | null>;
 }
 
-export interface ContactAgentLookup {
+interface ContactAgentLookup {
   findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{
     contactRequestDelivery: AgentContactRequestDelivery;
   } | null>;
 }
 
-export interface ContactNotifySkillLookup {
+interface ContactNotifySkillLookup {
   findByName(workspaceId: string, agentId: string, skillName: string): Promise<{
     kind: string;
     enabled: boolean;
@@ -98,19 +97,12 @@ export const isNameableNotifySkill = <TSkill extends { kind: string; enabled: bo
 
 export type ContactWebhookHttpClient = WebhookHttpClient;
 
-/**
- * Asserts an outbound URL resolves to a publicly routable host (SSRF guard). A host
- * adapts the website crawler's `assertPublicWebsiteUrl` to it so this module does not
- * depend on the crawler. Throwing rejects the URL; the worker then retries/fails.
- */
-export type ContactWebhookUrlGuard = WebhookUrlGuard;
-
 /** Narrow lookups the workspace-owner resolver needs (a `WorkspaceRepository` satisfies it). */
-export interface ContactWorkspaceLookup {
+interface ContactWorkspaceLookup {
   findById(workspaceId: string): Promise<{ accountId: string } | null>;
 }
 /** Narrow lookup for an account's active members (an `AccountMembershipRepository` satisfies it). */
-export interface ContactMembershipLookup {
+interface ContactMembershipLookup {
   listActiveByAccount(accountId: string): Promise<{ role: string; email: string }[]>;
 }
 

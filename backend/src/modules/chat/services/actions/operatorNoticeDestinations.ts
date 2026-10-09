@@ -5,7 +5,7 @@ import {
 } from "./contactSendActionHandler.js";
 
 /** Where one choice of "Send with" delivers a routine ending's notice. */
-export interface OperatorNoticeDestination {
+interface OperatorNoticeDestination {
   /** The notify skill that sends it, or `null` for the default destination. */
   skillName: string | null;
   via: ContactDeliveryRoute;
@@ -15,13 +15,13 @@ export interface OperatorNoticeDestination {
   webhookConfigured: boolean;
 }
 
-export interface OperatorNoticeDestinations {
+interface OperatorNoticeDestinations {
   default: OperatorNoticeDestination;
   skills: OperatorNoticeDestination[];
 }
 
 /** The agent's skills, enough to pick the notify skills a routine ending may name. */
-export interface OperatorNoticeSkillLister {
+interface OperatorNoticeSkillLister {
   listByAgent(workspaceId: string, agentId: string): Promise<Array<{
     skillName: string;
     kind: string;
@@ -31,7 +31,7 @@ export interface OperatorNoticeSkillLister {
 }
 
 /** The resolver delivery uses, so what an operator is shown is where a notice is sent. */
-export interface OperatorNoticeDestinationResolver {
+interface OperatorNoticeDestinationResolver {
   resolveForAgent(input: {
     workspaceId: string;
     agentId: string;

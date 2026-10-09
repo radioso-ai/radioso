@@ -314,7 +314,10 @@ from a test that kept skills off.
 - The **Send with** select shows a name as **(unavailable)**: the notify skill
   it names was deleted, turned off, or can no longer be named by a routine.
   Validation flags the ending until you pick another skill or switch back to
-  **Default**; until then, the notice still reaches the default destination.
+  **Default**. The notice is never dropped meanwhile: a skill that still exists
+  and is on keeps sending, and otherwise the notice goes to the default
+  destination, or to the agent's contact settings or the workspace owner when
+  `contact_human` is off.
 - Review & Publish refuses the agent with `exposure_tool_name_changed`: a
   published tool name is fixed. Keep the name, or switch exposure off and create
   a new routine under the new name.

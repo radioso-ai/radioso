@@ -21,6 +21,7 @@ import {
   proposalAdapterFor,
   type CopilotProposalToolDependencies,
 } from "./shared.js";
+import { contactDeliveryRoutes } from "../../../shared/domain/contactDeliveryRoute.js";
 
 const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
@@ -146,7 +147,7 @@ export const createAgentSkillsCopilotTools = (deps: AgentSkillsCopilotToolDepend
 /** Where one choice of an ending's notify skill sends its notice; mirrors the dashboard endpoint. */
 const operatorNoticeDestinationSchema = z.object({
   skillName: z.string().nullable(),
-  via: z.enum(["named_skill", "contact_human", "contact_human_off", "agent_setting", "workspace_owner", "none"]),
+  via: z.enum(contactDeliveryRoutes),
   recipientEmails: z.array(z.string()),
   recipientsFromWorkspaceOwner: z.boolean(),
   webhookConfigured: z.boolean(),

@@ -7,6 +7,7 @@ import {
   type SkillCatalogDescriptorSource,
 } from "./authoringDescriptor.js";
 import type { AgentSkillRepositoryPort, AgentSkillSpine } from "../agentSkills/public.js";
+import { isRoutineNamedSkill } from "../../shared/domain/routineNamedSkill.js";
 import type { SkillAvailability } from "./domain.js";
 import type { SkillCapabilityRegistry } from "./capabilityRegistry.js";
 import { isRoutineAuthoringBuiltInSkill } from "./routineAuthoringPolicy.js";
@@ -98,7 +99,7 @@ export class SkillAuthoringCatalogService implements SkillAuthoringCatalog {
     }
     return skills
       .filter((skill) => skill.kind !== "external_mcp")
-      .filter((skill) => skill.enabled && skill.invocationMode === "routine_named")
+      .filter(isRoutineNamedSkill)
       .flatMap((skill) => {
         const capability = this.sources.capabilities?.getByStoredKind(skill.kind);
         return capability && capability.supportedInvocationModes.includes("routine_named")

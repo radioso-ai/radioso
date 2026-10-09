@@ -1,8 +1,6 @@
-import {
-  isNameableNotifySkill,
-  type ContactDeliveryRoute,
-  type RoutedContactDeliveryTarget,
-} from "./contactSendActionHandler.js";
+import type { ContactDeliveryRoute } from "../../../../shared/domain/contactDeliveryRoute.js";
+import { isRoutineNamedSkill } from "../../../../shared/domain/routineNamedSkill.js";
+import type { RoutedContactDeliveryTarget } from "./contactSendActionHandler.js";
 
 /** Where one choice of "Send with" delivers a routine ending's notice. */
 interface OperatorNoticeDestination {
@@ -60,7 +58,9 @@ export class OperatorNoticeDestinationsReader {
 
   async read(input: { workspaceId: string; agentId: string }): Promise<OperatorNoticeDestinations> {
     const skills = await this.options.skills.listByAgent(input.workspaceId, input.agentId);
-    const nameable = skills.filter(isNameableNotifySkill).map((skill) => skill.skillName);
+    const nameable = skills
+      .filter((skill) => skill.kind === "notify" && isRoutineNamedSkill(skill))
+      .map((skill) => skill.skillName);
     const [defaultTarget, ...skillTargets] = await Promise.all(
       [null, ...nameable].map((skillName) => this.options.resolver.resolveForAgent({ ...input, skillName })),
     );

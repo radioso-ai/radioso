@@ -3991,6 +3991,7 @@ components:
                     type: string
                     minLength: 1
                     maxLength: 300
+                    pattern: ^[a-z][a-z0-9_]*$
                 additionalProperties: false
               ordinal:
                 type: integer
@@ -4389,6 +4390,7 @@ components:
                         type: string
                         minLength: 1
                         maxLength: 300
+                        pattern: ^[a-z][a-z0-9_]*$
                     additionalProperties: false
                   ordinal:
                     type: integer
@@ -4848,6 +4850,7 @@ components:
                     type: string
                     minLength: 1
                     maxLength: 300
+                    pattern: ^[a-z][a-z0-9_]*$
                 additionalProperties: false
               ordinal:
                 type: integer
@@ -5300,6 +5303,7 @@ components:
                         type: string
                         minLength: 1
                         maxLength: 300
+                        pattern: ^[a-z][a-z0-9_]*$
                     additionalProperties: false
                   ordinal:
                     type: integer
@@ -6440,6 +6444,7 @@ components:
                         type: string
                         minLength: 1
                         maxLength: 300
+                        pattern: ^[a-z][a-z0-9_]*$
                     additionalProperties: false
                   ordinal:
                     type: integer

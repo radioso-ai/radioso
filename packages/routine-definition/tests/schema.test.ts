@@ -422,8 +422,8 @@ describe("routine ending operator notice", () => {
       .toBe("notify_bookings");
   });
 
-  it("rejects an empty, null, or overlong notify skill name", () => {
-    for (const skillName of ["", "   ", null, "s".repeat(ROUTINE_DEFINITION_LIMITS.toolRef + 1)]) {
+  it("rejects an empty, null, overlong, or malformed notify skill name", () => {
+    for (const skillName of ["", "   ", null, "s".repeat(ROUTINE_DEFINITION_LIMITS.toolRef + 1), ":default", "Notify_Bookings", "1notify", "notify-bookings"]) {
       expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { skillName } }).success).toBe(false);
     }
     expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { skillName: "s".repeat(ROUTINE_DEFINITION_LIMITS.toolRef) } }).success)

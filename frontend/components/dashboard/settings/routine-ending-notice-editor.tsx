@@ -63,7 +63,9 @@ function NoticeSenderField({ id, skillName, onChange }: {
 }) {
   const catalog = useContext(RoutineSkillCatalogContext)
   const notifySkills = catalog.skills.filter((skill) => skill.category === 'notify')
-  const unavailable = skillName && !notifySkills.some((skill) => skill.skillName === skillName) ? skillName : null
+  const unlisted = skillName && !notifySkills.some((skill) => skill.skillName === skillName) ? skillName : null
+  // Only a loaded catalog can say a skill is gone; while it loads, or if it failed, the name just shows.
+  const catalogLoaded = !catalog.isLoading && !catalog.error
   const destination = describeNoticeDestination(catalog.noticeDestinations, skillName)
   return (
     <div className="space-y-1">
@@ -75,7 +77,7 @@ function NoticeSenderField({ id, skillName, onChange }: {
         <SelectContent>
           <SelectItem value={DEFAULT_SENDER}>{defaultNoticeDestinationLabel(catalog.noticeDestinations?.default)}</SelectItem>
           {notifySkills.map((skill) => <SelectItem key={skill.skillName} value={skill.skillName}>{skill.displayName}</SelectItem>)}
-          {unavailable ? <SelectItem value={unavailable}>{`${unavailable} (unavailable)`}</SelectItem> : null}
+          {unlisted ? <SelectItem value={unlisted}>{catalogLoaded ? `${unlisted} (unavailable)` : unlisted}</SelectItem> : null}
         </SelectContent>
       </Select>
       {destination ? <p className="text-xs text-muted-foreground">{destination}</p> : null}

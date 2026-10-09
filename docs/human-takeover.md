@@ -426,7 +426,12 @@ before commit leaves the decision pending and a retry resolves cleanly. Approvin
 resumes the routine and lets the gated action run; rejecting takes the rejection
 branch. A routine that reaches its ending this way is kept as a completed run, like
 one that ends in chat, so its reentry setting decides whether it can start again in
-that conversation. A gated side effect runs as an idempotent outbox action, never inline.
+that conversation. A routine that reaches another approval gate parks there with a new
+pending decision, and operators get an `approval.request` for it, as they do when a chat
+turn reaches a gate. The decision is what the resumed turn answers, so the visitor's last
+message never makes the routine step aside; if the routine can neither carry on, park, nor
+end, the decision fails and stays pending. A gated side effect runs as an idempotent
+outbox action, never inline.
 The same transaction records the teammate who decided and the option they chose
 as an `approval_decided` [activity](#conversation-activity) event.
 

@@ -195,7 +195,7 @@ describe("resumeAwaitingDecision", () => {
     });
   });
 
-  it("hands back no completed record when the resume yields instead of ending (#1457)", async () => {
+  it("never yields the decision: a selector reading it as off-topic parks the routine at the gate again (#1460)", async () => {
     const llmGateRoutine: Routine = {
       ...refundRoutine,
       transitions: [
@@ -216,8 +216,27 @@ describe("resumeAwaitingDecision", () => {
       decision: { handle: "decision_1", optionId: "approve" },
     });
 
+    expect(result.yielded).toBeFalsy();
+    expect(result.awaitingDecision?.stepId).toBe("gate");
+    expect(result.nextState).toMatchObject({ status: "suspended", path: ["ask_reason", "gate"] });
+    expect(result.completedState).toBeUndefined();
+  });
+
+  it("hands back no completed record when a host runner yields instead of ending (#1457)", async () => {
+    const runner = {
+      resume: vi.fn(async () => ({ response: { answer: "" }, nextState: null, yielded: true })),
+      getCurrentStep: (state: RoutineState) => refundRoutine.steps.find((step) => step.id === state.path.at(-1)) ?? null,
+    };
+
+    const result = await resumeAwaitingDecision({
+      suspendedReader: readerFor(suspendedAtGate),
+      routineRunner: runner,
+      turn,
+      sessionId: "session_1",
+      decision: { handle: "decision_1", optionId: "approve" },
+    });
+
     expect(result.yielded).toBe(true);
-    expect(result.terminal).toBeUndefined();
     expect(result.completedState).toBeUndefined();
   });
 

@@ -872,8 +872,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       const decision = await selectNextRaw(selectInput);
       // On the activation turn the user's message is the routine's trigger, not a reply
       // to the current step (which has never been rendered) — an off-topic yield here
-      // would silently drop the activation, so land on the step and render it instead.
-      if (decision.yieldTurn && !input.activationTurn) {
+      // would silently drop the activation, so land on the step and render it instead. A
+      // decision turn answers an operator's decision, not the message, so it lands too.
+      if (decision.yieldTurn && !input.activationTurn && !input.decisionTurn) {
         return decision;
       }
       const landed: RoutineNextStepDecision = decision.yieldTurn ? { nextStepId: selectInput.step.id } : decision;

@@ -1,5 +1,6 @@
 import type {
   ConversationEngine,
+  ConversationRoutineDecisionResult,
   ConversationTrace,
   RoutineState,
 } from "@radioso/conversation-contract";
@@ -25,6 +26,7 @@ import {
   presentRoutineRenderableAnswer,
 } from "./routines/routineGroundedAnswerRenderer.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
+import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
 import {
   toConversationAgentConfig,
   toPreparedStagedContext,
@@ -73,6 +75,23 @@ interface ResumeCoordination {
 }
 
 /** Owns the durable HITL decision-resume turn, including its lease and trace. */
+/**
+ * The routine state an approval resume commits. The decision is the turn's trigger, so the
+ * routine carries on (parked at its next gate, perhaps) or ends, and an ending is kept as a
+ * completed run (#1457). Anything else fails the resume, so the decision's transaction rolls
+ * back and the decision stays pending, rather than wiping the routine (#1460).
+ */
+const approvalResumeTransition = (result: ConversationRoutineDecisionResult): CapturedRoutineTransition => {
+  if (result.yielded) {
+    throw new Error("approval_resume_yielded");
+  }
+  const keptState = result.nextState ?? (result.terminal ? result.completedState : undefined);
+  if (!keptState) {
+    throw new Error("approval_resume_without_routine_state");
+  }
+  return { kind: "save", state: keptState };
+};
+
 export class ApprovalResumeTurn {
   private readonly answerSupport: ChatAnswerSupport;
 
@@ -188,16 +207,19 @@ export class ApprovalResumeTurn {
       throw new Error("approval_resume_suspended_state_missing");
     }
 
-    // An ending keeps the run as completed, as a live turn's ending does (#1457).
-    const keptState = result.nextState ?? result.completedState;
-    const routineStateTransition: CapturedRoutineTransition = keptState
-      ? { kind: "save", state: keptState }
-      : { kind: "clear", sessionId: input.record.sessionId };
+    const routineStateTransition = approvalResumeTransition(result);
     const presentation = presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, result.response);
     const routineEnding = routineEndingEffectsForTurn({
       session,
       workspaceId: input.record.workspaceId,
       turn: { handoff: result.handoff, operatorNotice: result.operatorNotice, actions: result.actions },
+    });
+    // Parked at its next gate, the routine asks operators for that decision as a live turn does.
+    const decisionEffects = routineAwaitingDecisionEffects({
+      session,
+      awaitingDecision: result.awaitingDecision,
+      routineStateTransition,
+      actions: routineEnding.actions,
     });
 
     this.beginTurnEmission(coordination);
@@ -211,9 +233,11 @@ export class ApprovalResumeTurn {
       stream: false,
       engineTrace: result.trace ? conversationTraceWithRoutineTrace(session.turnTrace, result.trace) : session.turnTrace,
       modelCallTrace,
-      actions: routineEnding.actions,
+      actions: decisionEffects.actions,
       ownershipHandoff: routineEnding.ownershipHandoff,
       routineStateTransition,
+      pendingDecisionTransition: decisionEffects.pendingDecisionTransition,
+      suspended: Boolean(result.awaitingDecision),
       additionalAuditEvent: {
         accountId: input.decidedBy,
         workspaceId: input.record.workspaceId,

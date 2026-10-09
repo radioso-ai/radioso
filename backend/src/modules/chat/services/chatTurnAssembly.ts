@@ -14,7 +14,6 @@ import type {
   ClarificationPolicy,
   PendingClarification,
   RoutineActionRequest,
-  RoutineAwaitingDecision,
   RoutineOperatorNoticeEffect,
   RoutineState,
   RoutineTurnEffects,
@@ -25,7 +24,7 @@ import type {
 
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
-import { buildPendingDecisionTransition } from "../../approvals/public.js";
+import type { buildPendingDecisionTransition } from "../../approvals/public.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
 import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
@@ -57,6 +56,7 @@ import type {
 } from "./conversationTurnInterpreter.js";
 import { RoutineChatModelGateway, type RoutineChatGateway } from "./routines/routineChatModelGateway.js";
 import { pageReadAwareRoutineRunner } from "./routines/pageReadAwareRoutineRunner.js";
+import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
 import {
   createRoutineGroundedAnswerRenderer,
   presentRoutineRenderableAnswer,
@@ -91,7 +91,6 @@ import {
   toConversationMessages,
 } from "./conversationContractMappers.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
-import { APPROVAL_REQUEST_ACTION_TYPE } from "./actions/approvalRequestActionHandler.js";
 import type { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
 import type { AnswerCoverageRecord } from "../../answerCoverage/public.js";
@@ -201,49 +200,6 @@ export const applyCoverageInteractionTrace = (
     }),
   };
 };
-
-export const buildRoutinePendingDecisionTransition = (input: {
-  session: PreparedSession;
-  awaitingDecision?: RoutineAwaitingDecision;
-  routineStateTransition?: CapturedRoutineTransition | null;
-}) => {
-  if (!input.awaitingDecision) {
-    return null;
-  }
-  if (
-    input.routineStateTransition?.kind !== "save" ||
-    input.routineStateTransition.state.status !== "suspended"
-  ) {
-    throw new Error("routine_awaiting_decision_without_suspended_state");
-  }
-  return buildPendingDecisionTransition({
-    conversationId: input.session.conversation.id,
-    sessionId: input.routineStateTransition.state.sessionId,
-    workspaceId: input.session.conversation.workspaceId,
-    agentId: input.session.agent.id,
-    routineId: input.routineStateTransition.state.routineId,
-    awaitingDecision: input.awaitingDecision,
-  });
-};
-
-const buildApprovalRequestAction = (input: {
-  handle: string;
-  conversationId: string;
-  workspaceId: string;
-  agentId: string;
-  routineId?: string;
-  stepId?: string;
-}): RoutineActionRequest => ({
-  type: APPROVAL_REQUEST_ACTION_TYPE,
-  payload: {
-    handle: input.handle,
-    conversationId: input.conversationId,
-    workspaceId: input.workspaceId,
-    agentId: input.agentId,
-    routineId: input.routineId,
-    stepId: input.stepId,
-  },
-});
 
 /**
  * Aligns an "offer" clarification's persisted candidates with what the visitor was
@@ -587,24 +543,12 @@ export class ChatTurnAssembly {
       reportInvocation();
       this.recordTraceClarificationDecisions(outcome.result.trace);
       const routineStateTransition = deferredStore.getTransition();
-      const pendingDecisionTransition = buildRoutinePendingDecisionTransition({
+      const { pendingDecisionTransition, actions } = routineAwaitingDecisionEffects({
         session,
         awaitingDecision: outcome.result.awaitingDecision,
         routineStateTransition,
+        actions: outcome.result.actions,
       });
-      const actions = pendingDecisionTransition
-        ? [
-            ...(outcome.result.actions ?? []),
-            buildApprovalRequestAction({
-              handle: pendingDecisionTransition.handle,
-              conversationId: pendingDecisionTransition.conversationId,
-              workspaceId: pendingDecisionTransition.workspaceId,
-              agentId: pendingDecisionTransition.agentId,
-              routineId: pendingDecisionTransition.routineId,
-              stepId: pendingDecisionTransition.stepId,
-            }),
-          ]
-        : outcome.result.actions;
       return {
         presentation: outcome.presentation,
         engineTrace: outcome.result.trace,
@@ -769,25 +713,14 @@ export class ChatTurnAssembly {
       coverageVerdictWrapper,
       effects: (result) => {
         const routineStateTransition = deferredStore.getTransition();
-        const pendingDecisionTransition = buildRoutinePendingDecisionTransition({
+        const { pendingDecisionTransition, actions } = routineAwaitingDecisionEffects({
           session: getSession(),
           awaitingDecision: result.awaitingDecision,
           routineStateTransition,
+          actions: result.actions,
         });
         return {
-          actions: pendingDecisionTransition
-            ? [
-                ...(result.actions ?? []),
-                buildApprovalRequestAction({
-                  handle: pendingDecisionTransition.handle,
-                  conversationId: pendingDecisionTransition.conversationId,
-                  workspaceId: pendingDecisionTransition.workspaceId,
-                  agentId: pendingDecisionTransition.agentId,
-                  routineId: pendingDecisionTransition.routineId,
-                  stepId: pendingDecisionTransition.stepId,
-                }),
-              ]
-            : result.actions,
+          actions,
           handoff: result.handoff,
           operatorNotice: result.operatorNotice,
           skillsWithExternalEffects: result.skillsWithExternalEffects,

@@ -4443,6 +4443,22 @@ describe("DefaultRoutineRunner operator notices", () => {
     });
   });
 
+  it("reports the notify skill the landed terminal names to send its notice, and drops a malformed one", async () => {
+    const named = await new DefaultRoutineRunner(
+      [ending({ terminalKind: "handoff", operatorNotice: { intro: "Call back.", skillName: "notify_bookings" } })],
+      landingOnDone(),
+      renderer,
+    ).resume({ turn, state: state(["ask_name"]) });
+    expect(named.terminal?.operatorNotice).toEqual({ intro: "Call back.", skillName: "notify_bookings" });
+
+    const malformed = await new DefaultRoutineRunner(
+      [ending({ terminalKind: "handoff", operatorNotice: { skillName: 7 } })],
+      landingOnDone(),
+      renderer,
+    ).resume({ turn, state: state(["ask_name"]) });
+    expect(malformed.terminal?.operatorNotice).toEqual({});
+  });
+
   it("reports no notice for a terminal step without notice metadata, and keeps only text fields of a malformed one", async () => {
     const quiet = await new DefaultRoutineRunner([ending({ terminalKind: "complete" })], landingOnDone(), renderer)
       .resume({ turn, state: state(["ask_name"]) });

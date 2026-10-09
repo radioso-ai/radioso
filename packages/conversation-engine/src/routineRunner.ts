@@ -515,17 +515,18 @@ const terminalResult = (
 /**
  * The operator notice template a terminal step carries. The host's compiler puts it there
  * exactly when the ending notifies operators; the runner only reads it back, keeping the
- * text fields that are strings so a malformed metadata value can never reach a notice.
+ * fields that are strings so a malformed metadata value can never reach a notice.
  */
 const operatorNoticeTemplateFor = (step: RoutineStep): RoutineOperatorNoticeTemplate | null => {
   const notice = step.kind === "terminal" ? step.metadata?.operatorNotice : undefined;
   if (typeof notice !== "object" || notice === null || Array.isArray(notice)) {
     return null;
   }
-  const { subject, intro } = notice as Record<string, unknown>;
+  const { subject, intro, skillName } = notice as Record<string, unknown>;
   return {
     ...(typeof subject === "string" ? { subject } : {}),
     ...(typeof intro === "string" ? { intro } : {}),
+    ...(typeof skillName === "string" ? { skillName } : {}),
   };
 };
 

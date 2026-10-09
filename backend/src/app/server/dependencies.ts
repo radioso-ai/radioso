@@ -118,6 +118,7 @@ import { createConversationActivityComposition } from "../composition/conversati
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
 import { ConversationOwnershipService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
+import { buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 import { PostgresSlackInboundEventRetention } from "../../modules/slack/public.js";
@@ -197,6 +198,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     webhookDestinations,
     webhookSkillDefinitionService,
   } = integrations;
+  const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(infrastructure.database);
   const documentRetrievalGraph = buildDocumentRetrievalGraph({
     composition,
     env,
@@ -870,6 +872,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentSourceStatusService: documents.documentIngestionService,
     agentSkillsService,
     skillCapabilityRegistry,
+    operatorNoticeDestinations: { read: (input) => operatorNoticeDestinations.read(input) },
     contextVariables: contextVariableService,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
@@ -1198,6 +1201,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillAuthoringCatalog,
     skillCapabilityRegistry,
     agentSkillsService,
+    operatorNoticeDestinations,
     accountRepository: repositories.accountRepository,
     userRepository: repositories.userRepository,
     workspaceRepository: repositories.workspaceRepository,

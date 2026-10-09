@@ -156,6 +156,14 @@ describe('sanitizeDraftContentForSave', () => {
     expect(saved.terminals[0].operatorNotice).toEqual({ subject: 'Booking: {{slot.a}}', intro: null })
     expect(sanitizeDraftContentForSave(draft).terminals[0]).not.toHaveProperty('operatorNotice')
   })
+
+  it('keeps the notify skill an ending notice names when it saves the notice text', () => {
+    const saved = sanitizeDraftContentForSave({
+      ...draft,
+      terminals: [{ ...draft.terminals[0], operatorNotice: { subject: '', intro: 'Call back.', skillName: 'notify_bookings' } }],
+    })
+    expect(saved.terminals[0].operatorNotice).toEqual({ subject: null, intro: 'Call back.', skillName: 'notify_bookings' })
+  })
 })
 
 describe('documentDiagnosticText', () => {

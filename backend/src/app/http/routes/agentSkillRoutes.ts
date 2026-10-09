@@ -19,6 +19,7 @@ type AgentSkillRouteDependencies = Pick<
   | "agentService"
   | "agentSkillsService"
   | "skillCapabilityRegistry"
+  | "operatorNoticeDestinations"
 >;
 
 const uuidSchema = z.string().uuid();
@@ -91,6 +92,16 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
         description: skill.description,
       }));
       res.status(200).json({ skills, platformSkills });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Where a routine ending's "Notify the team" notice goes, per notify skill an ending may name.
+  router.get("/:agentId/operator-notice-destinations", workspaceSession, agentRead, async (req, res, next) => {
+    try {
+      const { workspaceId, agentId } = await resolveAgent(req, res);
+      res.status(200).json(await dependencies.operatorNoticeDestinations.read({ workspaceId, agentId }));
     } catch (error) {
       next(error);
     }

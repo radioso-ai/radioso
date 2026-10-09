@@ -275,6 +275,37 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     expect(cleared.terminals[0]).not.toHaveProperty("operatorNotice");
   });
 
+  it("round-trips the notify skill a notice names, and omits the key when none is named", async () => {
+    const created = await repository.createDraft(agentId, baseDraft({
+      terminals: [
+        { stableStepId: "term_complete", kind: "complete", instruction: null, operatorNotice: { subject: null, intro: null, skillName: "notify_bookings" }, ordinal: 0 },
+        { stableStepId: "term_handoff", kind: "handoff", instruction: null, operatorNotice: { subject: "Call back", intro: null }, ordinal: 1 },
+      ],
+    }));
+
+    expect(created.terminals[0].operatorNotice).toEqual({ subject: null, intro: null, skillName: "notify_bookings" });
+    expect(created.terminals[1].operatorNotice).toEqual({ subject: "Call back", intro: null });
+    expect(created.terminals[1].operatorNotice).not.toHaveProperty("skillName");
+
+    const read = await repository.findById(agentId, created.id);
+    expect(read?.terminals[0].operatorNotice?.skillName).toBe("notify_bookings");
+  });
+
+  it("refuses a notify skill on a terminal row whose notice is off, or a blank one", async () => {
+    const created = await repository.createDraft(agentId, baseDraft());
+
+    await expect(database.query(
+      `INSERT INTO routine_terminal (definition_id, stable_step_id, kind, instruction, ordinal, operator_notice_skill_name)
+       VALUES ($1, 'term_orphan_skill', 'complete', NULL, 1, 'notify_bookings')`,
+      [created.id],
+    )).rejects.toThrow();
+    await expect(database.query(
+      `INSERT INTO routine_terminal (definition_id, stable_step_id, kind, instruction, ordinal, operator_notice_enabled, operator_notice_skill_name)
+       VALUES ($1, 'term_blank_skill', 'complete', NULL, 1, true, '  ')`,
+      [created.id],
+    )).rejects.toThrow();
+  });
+
   it("reads a terminal row written before operator notices existed back with no notice", async () => {
     const created = await repository.createDraft(agentId, baseDraft());
     await database.query(
@@ -305,7 +336,7 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
 
   it("carries an operator notice into the agent draft snapshot and the published revision", async () => {
     await initAgentDraft(agentId);
-    const notice = { subject: "New booking", intro: "Please confirm with the guest." };
+    const notice = { subject: "New booking", intro: "Please confirm with the guest.", skillName: "notify_bookings" };
     await repository.createDraftWithAgentDraft(workspaceId, agentId, runnableDraft({
       terminals: [{ stableStepId: "term_complete", kind: "complete", instruction: "Done", operatorNotice: notice, ordinal: 0 }],
     }));

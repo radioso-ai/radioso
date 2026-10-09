@@ -1,5 +1,6 @@
 import type { RoutineSkillResolver } from "../routines/public.js";
 import type { SkillDefinition } from "../skills/public.js";
+import { isRoutineNamedSkill } from "../../shared/domain/routineNamedSkill.js";
 import { NOTIFY_SKILLS_ADAPTER } from "./notifyExecutor.js";
 
 export interface NotifyRoutineSkillRecord {
@@ -50,7 +51,7 @@ export class NotifyRoutineSkillResolver implements RoutineSkillResolver {
   ) {
     this.skillNames = new Set(
       [...records]
-        .filter((record) => record.enabled && record.invocationMode === "routine_named")
+        .filter(isRoutineNamedSkill)
         .map((record) => record.skillName),
     );
   }

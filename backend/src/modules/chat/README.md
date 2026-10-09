@@ -381,6 +381,25 @@ imports from `services/`.
   assessment reads per conversation, preserves absent evaluations as
   `not_evaluated`, and exposes persisted target-message and routine-execution
   identifiers without deriving either from response text.
+  An authored hand-off or completion `operatorNotice` can also carry `skillName`,
+  naming the notify skill that should deliver it instead of the default contact
+  chain. The name rides the outbox row's own `skill_name` column
+  (`RoutineActionRequest.skillName` → `ActionHandlerContext.skillName`), the same
+  column a routine action step already uses to record which skill fired it —
+  never the jsonb payload. `RoutineEndingNotifyActionHandler` forwards it onto
+  `OperatorNotificationContext.skillName` for the `operatorNotifications` sinks;
+  the email/webhook sink resolves recipients per skill and the Slack sink ignores
+  it. `contactSendActionHandler.ts`'s `ConfiguredContactDeliveryResolver.resolveForAgent`
+  is the one place that turns a `skillName` (or `null`) into a `RoutedContactDeliveryTarget`,
+  reporting `via` — `named_skill`, `contact_human`, `contact_human_off`, `agent_setting`,
+  `workspace_owner`, or `none` — so delivery and the read-only destinations API agree on
+  where a notice goes. `services/actions/operatorNoticeDestinations.ts`'s
+  `OperatorNoticeDestinationsReader` is that read side: it calls `resolveForAgent` once for
+  the default destination and once per nameable notify skill, and backs
+  `GET /api/v1/agents/{agentId}/operator-notice-destinations` and the Operator MCP
+  `operator_notice_destinations` tool. Recipient emails are personal data: the HTTP route
+  serves workspace sessions only, and the tool answers the signed-in operator's own Ray or
+  Operator MCP client. Neither returns a webhook URL.
 - Conversation summary: `services/summary/conversationSummaryService.ts` maintains
   a bounded, regenerated-per-update rolling summary per conversation (#866). State
   lives in `conversation_summaries` (`db/repositories/conversationSummaryRepository.ts`,

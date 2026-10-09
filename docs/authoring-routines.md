@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-10-02
+last_updated: 2026-10-09
 ---
 
 # Authoring Routines
@@ -283,6 +283,16 @@ write, the notice lists every collected value below the intro, so a short
 subject never hides what the guest said. See [Operator notices](#operator-notices)
 for what the team receives.
 
+**Send with** chooses which notify skill delivers the notice — stored as
+`operatorNotice.skillName` on the ending. Leave it on **Default** and the
+notice follows the agent's usual contact chain; name a skill instead and the
+notice goes to that skill's own recipients and webhook. Ananda's booking
+routine names its `notify_bookings` skill on the **Booked** ending, so the
+line under the select reads `Sends to francesco@ananda.it` — the recipient
+configured on that skill, read live each time the notice sends rather than
+copied onto the routine. A **Hand off** ending offers the same select, since
+it always notifies.
+
 A step the visitor keeps answering without giving what it needs is asked again
 up to three times, then asks differently once. When some branch row leads to a
 **Hand off** ending, a visitor who still gives the step nothing goes to a
@@ -296,8 +306,11 @@ submit. A routine with no **Hand off** ending keeps asking differently instead.
 The editor validates while you work. A note appears next to the row or field that
 needs attention, keeping the issue beside the part of the flow you edit. Common
 notes identify a missing branch target, a step that has no path to an ending, an
-unset required skill input, a value whose type conflicts with a comparison, or a
-missing webhook destination for completion export.
+unset required skill input, a value whose type conflicts with a comparison, a
+missing webhook destination for completion export, or an ending's **Send with**
+skill that is no longer an enabled, routine-named notify skill on the agent
+(`operator_notice_skill_unavailable`). The select shows that skill's name as
+**(unavailable)** next to the note.
 
 ## Map
 
@@ -389,7 +402,9 @@ secret, and delivers it through the action outbox.
 A routine's ending decides two separate things. Its kind decides who has the
 conversation next: a hand-off moves it to a person, a finish leaves it with the
 agent. Its notice decides whether your team hears about it: every hand-off sends
-one, and a finish sends one when **Notify the team** is on.
+one, and a finish sends one when **Notify the team** is on. **Send with** decides
+where the email and webhook go — the agent's usual contact chain, or the recipients
+and webhook on a notify skill the ending names (see [Finish or hand off](#finish-or-hand-off)).
 
 When a routine reaches a hand-off, or a routine with one ends stuck on a step
 its visitor did not answer (see [Finish or hand off](#finish-or-hand-off)), the
@@ -397,10 +412,12 @@ chat turn sends the reply, requests human ownership of the conversation, and
 queues a `handoff.notify` action. The reason is `routine_handoff` for the
 terminal and `routine_stuck` for a stuck routine. When the turn reaches a finish
 that notifies, it sends the reply and queues a `completion.notify` action; the
-agent goes on answering the visitor, and nothing appears in the Inbox. Every
-notice goes to the agent's contact recipients by email, to the contact webhook
-when one is configured, and to the Slack escalation channel when the workspace
-has one.
+agent goes on answering the visitor, and nothing appears in the Inbox. An ending
+with no **Send with** skill sends its email to the agent's contact recipients and
+its webhook to the contact webhook, when one is configured; an ending that names
+a skill sends both to that skill's own recipients and webhook instead. Either way,
+the notice also posts to the Slack escalation channel when the workspace has one
+— **Send with** has no effect on the Slack post.
 
 The email reads as plain prose for whoever picks it up, not a log: it carries
 

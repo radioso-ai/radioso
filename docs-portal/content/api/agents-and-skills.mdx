@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-10-07
+last_updated: 2026-10-09
 ---
 
 # Agents and skills
@@ -349,7 +349,9 @@ Radioso sends the request with `POST`, follows redirects only to publicly routab
 
 ### Operator notifications
 
-Radioso also tells a person when a conversation needs one, or when a routine finished something they act on: a routine reaches a handoff, the agent hands off on a retrieval miss, a routine finishes on an ending with **Notify the team** on, or a routine step pauses for an approval decision. These notices resolve their destination the same way an unnamed contact request does — through the `contact_human` skill when one is configured, then the agent's own delivery setting, then the workspace owner. A notify skill with another name, such as `contact_sales`, is not consulted, and turning `contact_human` off silences these notices along with contact requests.
+Radioso also tells a person when a conversation needs one, or when a routine finished something they act on: a routine reaches a handoff, the agent hands off on a retrieval miss, a routine finishes on an ending with **Notify the team** on, or a routine step pauses for an approval decision. A routine's hand-off and finish endings can each name a notify skill for their own notice; when an ending names one, Radioso sends through that skill's own `recipientEmails` and webhook, whatever the skill is called. A hand-off on a retrieval miss, an approval, and any ending that names no skill resolve their destination the same way an unnamed contact request does: through the `contact_human` skill when one is configured, then the agent's own delivery setting, then the workspace owner. Turning `contact_human` off silences a notice that falls through that chain, along with contact requests, but not a notice whose ending names another skill directly.
+
+`GET /api/v1/agents/{agentId}/operator-notice-destinations` returns where a routine ending's notice would go right now: a `default` destination plus one entry per eligible notify skill, each with its resolved `recipientEmails`, whether those came from the workspace owner, whether a webhook is configured (never the URL itself), and `via` naming the rule that picked the recipients — `named_skill`, `contact_human`, `contact_human_off`, `agent_setting`, `workspace_owner`, or `none`. It needs `workspace.agents.read` and a workspace session; a machine API token gets `401`, because recipient emails are personal data.
 
 Each notice is emailed to the resolved recipients as plain text and, when a webhook is configured, posted to it as JSON. Here is the notice a "Book accommodation" routine sends when it finishes with a notice of its own:
 
@@ -533,6 +535,7 @@ GET    /api/v1/agents/{agentId}/bundle
 POST   /api/v1/agents/bundle
 GET    /api/v1/agents/bundle/imports/{importId}
 GET    /api/v1/agents/{agentId}/skill-capabilities
+GET    /api/v1/agents/{agentId}/operator-notice-destinations
 GET    /api/v1/agents/{agentId}/directives
 POST   /api/v1/agents/{agentId}/directives
 POST   /api/v1/agents/{agentId}/directives/draft

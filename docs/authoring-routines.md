@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-10-09
+last_updated: 2026-10-10
 ---
 
 # Authoring Routines
@@ -293,6 +293,18 @@ configured on that skill, read live each time the notice sends rather than
 copied onto the routine. A **Hand off** ending offers the same select, since
 it always notifies.
 
+**Replies go to** chooses where reception's reply to the notice email lands —
+stored as `operatorNotice.replyToSlot` on the ending. It lists the routine's
+email fields, plus **No reply-to**. Pick `guest_email` on Ananda's **Booked**
+ending, and when Francesco hits Reply, his answer goes to the address the guest
+gave in the chat. Radioso only ever uses the field you pick: a gift booking can
+collect the buyer's address and the recipient's, and only you know which one
+reception should answer. A notice you turn on, or a new **Hand off** ending,
+starts on the routine's email field when it has exactly one; with several, it
+starts on **No reply-to** until you choose. When the guest never gave that
+field, the email goes out with no reply-to. Rename the field and the ending
+follows; the editor will not remove a field an ending replies to.
+
 A step the visitor keeps answering without giving what it needs is asked again
 up to three times, then asks differently once. When some branch row leads to a
 **Hand off** ending, a visitor who still gives the step nothing goes to a
@@ -310,7 +322,9 @@ unset required skill input, a value whose type conflicts with a comparison, a
 missing webhook destination for completion export, or an ending's **Send with**
 skill that is no longer an enabled, routine-named notify skill on the agent
 (`operator_notice_skill_unavailable`). The select shows that skill's name as
-**(unavailable)** next to the note.
+**(unavailable)** next to the note. An ending whose **Replies go to** names a
+field that is no longer an email field gets `operator_notice_reply_to_slot_invalid`,
+and its select shows that field as **(not an email field)**.
 
 ## Map
 
@@ -428,6 +442,10 @@ The email reads as plain prose for whoever picks it up, not a log: it carries
   the order the routine declares them;
 - the page the conversation started on, when the conversation has one.
 
+When the ending names a **Replies go to** field and the visitor gave that
+address, the email's reply-to header is set to it, so reception answers the
+guest by hitting Reply.
+
 The Slack post carries the same subject, headline, intro, collected values, and
 entry page as one block of text, led by the subject line. Before posting, the
 text escapes `&`, `<`, and `>`, so a collected value or an authored intro can't
@@ -435,8 +453,9 @@ open a channel mention like `<!channel>` or a labelled link
 (`<https://example.com|label>`). `*bold*`, `_italic_`, and `` `code` `` still
 format, and Slack auto-links any bare URL the text contains. The webhook body
 carries the ids, the reason, the routine, the collected values in that same
-order, and the authored subject and intro as JSON fields; the entry page
-appears only in the email and Slack text. If the routine is deleted before the
+order, the authored subject and intro, and the reply-to address as JSON fields;
+the entry page appears only in the email and Slack text, and the Slack post has
+no reply-to. If the routine is deleted before the
 notice goes out, the collected values still arrive, in storage order rather
 than declaration order.
 
@@ -452,8 +471,8 @@ webhook body is documented under
 [Operator notifications](../docs-portal/content/api/agents-and-skills.mdx).
 
 Test Chat never sends a notice. A test turn that reaches an ending that notifies
-shows what the notice would say — its kind, subject, and body — in the turn's
-trace instead.
+shows what the notice would say — its kind, subject, and body, and the address
+replies would go to — in the turn's trace instead.
 
 ## How a routine goes live
 

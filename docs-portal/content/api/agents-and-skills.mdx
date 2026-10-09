@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-10-09
+last_updated: 2026-10-10
 ---
 
 # Agents and skills
@@ -371,6 +371,7 @@ Each notice is emailed to the resolved recipients as plain text and, when a webh
   },
   "subject": "New booking: Alex Rivera, 2026-10-12",
   "intro": "Please confirm the room with Alex Rivera.",
+  "replyTo": "alex@example.com",
   "dashboardUrl": "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=...",
   "requestId": "..."
 }
@@ -379,6 +380,8 @@ Each notice is emailed to the resolved recipients as plain text and, when a webh
 `reason` says what raised the notice: `routine_handoff` when a routine reached its hand-off ending, `routine_stuck` when a routine ended on a step its visitor stayed stuck on, or `retrieval_miss` — all three for a handoff — and `routine_completed` for a routine that finished and kept the conversation with the agent. `routine` names the routine whose ending raised the notice, with `name` set to `null` when the routine has since been deleted; it is `null` for a retrieval-miss handoff. `collected` holds the routine's declared values keyed by slot key, in the order the routine declares them (in storage order once the routine has been deleted), and is empty for a retrieval-miss handoff. Text, number, and boolean values are included; a slot holding a structured value is left out. The email version of the notice reads as plain prose: it lists the same values under a `Collected:` heading and, when the conversation has one, the page it started on. The JSON body carries `collected` as structured data instead of that heading, and has no field for the entry page.
 
 `subject` and `intro` are the text the routine's author wrote for that ending, with each `{{slot.<key>}}` replaced by the collected value, or `—` when the routine did not collect it. Each is `null` when the author wrote none; the email then uses the default subject (`Book accommodation: completed`, or `Book accommodation: needs a human` for a handoff) and no intro.
+
+`replyTo` is the address a reply to the notice should go to: the value the visitor gave in the email field the ending's author chose under **Replies go to** (`operatorNotice.replyToSlot` on the routine), here `guest_email`. The email sets it as its reply-to header, so reception answers the guest by hitting Reply; a webhook receiver that writes back to the visitor uses the same address. It is `null` when the ending names no field, when the visitor never gave that field, and for a retrieval-miss handoff. Radioso never picks an address on its own, even when `collected` holds one.
 
 An approval carries `handle` instead — the value you pass to `POST /api/v1/agents/{agentId}/decisions/{handle}/resolve`, described in [Human takeover](/operators/human-takeover). That is how a receiver tells an approval from a routine or retrieval-miss notice. `dashboardUrl` opens the conversation in the dashboard; it is `null` when the link cannot be resolved, for example because the workspace has since been deleted, so a receiver that needs a link should fall back to `conversationId`. The same `Idempotency-Key` and delivery rules as contact requests apply.
 

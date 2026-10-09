@@ -188,8 +188,10 @@ export class ApprovalResumeTurn {
       throw new Error("approval_resume_suspended_state_missing");
     }
 
-    const routineStateTransition: CapturedRoutineTransition = result.nextState
-      ? { kind: "save", state: result.nextState }
+    // An ending keeps the run as completed, as a live turn's ending does (#1457).
+    const keptState = result.nextState ?? result.completedState;
+    const routineStateTransition: CapturedRoutineTransition = keptState
+      ? { kind: "save", state: keptState }
       : { kind: "clear", sessionId: input.record.sessionId };
     const presentation = presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, result.response);
     const routineEnding = routineEndingEffectsForTurn({

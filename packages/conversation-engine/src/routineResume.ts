@@ -14,7 +14,7 @@ import type {
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { routineEndingEffects } from "./routineEnding.js";
+import { completedRoutineState, routineEndingEffects } from "./routineEnding.js";
 import {
   buildResolvedSteering,
   knownAnswerCoverage,
@@ -176,29 +176,7 @@ const settleRoutineTurn = async (claimed: ClaimedRoutineTurn, response: Renderab
   }
   events.push(inputEvent);
 
-  if (result.nextState) {
-    await request.routineStore!.save(result.nextState);
-  } else {
-    // A normal terminal ending lands by moving onto a terminal step the path never
-    // held; a stuck ending (#1384) lands on the chat step already last in `path` — the
-    // walk never advanced off it — so appending it again would duplicate that entry.
-    const landedStepId = result.trace?.landedStepId;
-    const path = landedStepId && landedStepId !== state.path.at(-1)
-      ? [...state.path, landedStepId]
-      : state.path;
-    await request.routineStore!.save({
-      ...state,
-      path,
-      // The values the run ended with: `state` predates this turn, which can capture the
-      // last slot or assign a tool output on its way to the ending (#1452).
-      variables: result.endedVariables ?? state.variables,
-      status: "completed",
-      metadata: {
-        ...(state.metadata ?? {}),
-        ...(result.terminal ? { terminalKind: result.terminal.kind, terminalStepId: result.terminal.stepId } : {}),
-      },
-    });
-  }
+  await request.routineStore!.save(result.nextState ?? completedRoutineState(state, result));
 
   const responseEvent = createResponseEvent(request.sessionId, response);
   await request.stores.appendEvent(responseEvent);

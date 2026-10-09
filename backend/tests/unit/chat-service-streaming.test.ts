@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   ConversationCoverageReactionRecorder,
   ConversationEngine,
+  ConversationRoutineDecisionResult,
   RoutineState,
 } from "@radioso/conversation-contract";
 import { createConversationEngine } from "@radioso/conversation-engine";
@@ -2298,6 +2299,14 @@ describe("chat service streaming", () => {
       resumed: true,
       response: { answer: "Tagasimakse on kinnitatud." },
       nextState: null,
+      terminal: { kind: "complete", stepId: "refunded" },
+      completedState: {
+        sessionId: conversation.id,
+        routineId: "refund-flow",
+        path: ["await-approval", "refunded"],
+        variables: {},
+        status: "completed",
+      },
     });
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
       forTurn: vi.fn(async () => ({
@@ -2504,6 +2513,143 @@ describe("chat service streaming", () => {
         routineId: "refund-flow",
         collected: { order: "A-17" },
       }),
+    });
+  });
+
+  describe("an approval resume's other outcomes (#1460)", () => {
+    // Applies an operator's approval to a routine parked at `manager-approval`, with the engine's
+    // decision result built for the conversation the resume runs in.
+    const resumeApproval = async (resultFor: (conversationId: string) => ConversationRoutineDecisionResult) => {
+      const conversationRepository = new InMemoryConversationRepository();
+      const messageRepository = new InMemoryMessageRepository();
+      const agentRepository = new InMemoryAgentRepository();
+      const agent = await agentRepository.create("workspace-1", { name: "Support" });
+      const conversation = await conversationRepository.create({ workspaceId: "workspace-1", agentId: agent.id });
+      await messageRepository.create({
+        conversationId: conversation.id,
+        workspaceId: "workspace-1",
+        role: "user",
+        content: "Please refund order A-17.",
+      });
+      const assistantTurnPersistence = createCapturingAssistantTurnPersistence();
+      const conversationEngine = createConversationEngine();
+      const result = resultFor(conversation.id);
+      vi.spyOn(conversationEngine, "resumeAwaitingDecision").mockResolvedValue(result);
+      const service = makeChatService(
+        conversationRepository,
+        messageRepository,
+        new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+        { async answer() { return "unused"; }, async *streamAnswer() { yield "unused"; } },
+        createAuditService(),
+        fallbackReplyComposer,
+        undefined, undefined, undefined,
+        { resolve: vi.fn(async () => agent) },
+        undefined, undefined, undefined, undefined, undefined,
+        conversationEngine,
+        {
+          routineStore: undefined,
+          routineProvider: {
+            forTurn: vi.fn(async () => ({
+              activator: { activate: vi.fn(async () => null) },
+              runner: {} as never,
+            })),
+          },
+          suspendedRoutineReader: { loadSuspended: vi.fn(async () => null) },
+          assistantTurnPersistence,
+        },
+      );
+      const now = new Date("2026-07-19T12:00:00.000Z");
+      const run = service.resumeAwaitingDecisionTurn({
+        record: {
+          id: "decision-1",
+          handle: "manager-approval-1",
+          conversationId: conversation.id,
+          sessionId: conversation.id,
+          workspaceId: "workspace-1",
+          agentId: agent.id,
+          routineId: "refund-flow",
+          stepId: "manager-approval",
+          reason: "refund_review",
+          options: [{ id: "approve", label: "Approve" }],
+          deciderScope: {},
+          contentHash: "hash-1",
+          status: "resolved",
+          decision: { optionId: "approve" },
+          decidedBy: "account-1",
+          decidedByUserId: null,
+          decidedAt: now,
+          deadline: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+        optionId: "approve",
+        decidedBy: "account-1",
+        transaction: {} as never,
+      });
+      return { run, result, conversation, agent, assistantTurnPersistence };
+    };
+
+    it("asks for the next approval when the routine parks at another gate", async () => {
+      const { run, result, conversation, agent, assistantTurnPersistence } = await resumeApproval((conversationId) => ({
+        resumed: true,
+        response: { answer: "Finance will review the refund next." },
+        nextState: {
+          sessionId: conversationId,
+          routineId: "refund-flow",
+          path: ["manager-approval", "finance-approval"],
+          variables: { manager_decision: { id: "approve" } },
+          status: "suspended",
+        },
+        awaitingDecision: {
+          stepId: "finance-approval",
+          options: [{ id: "approve", label: "Approve" }, { id: "reject", label: "Reject" }],
+          captureKey: "finance_decision",
+          reason: "refund_finance_review",
+        },
+      }));
+      await run;
+
+      const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+      expect(persisted.routineStateTransition).toEqual({ kind: "save", state: result.nextState });
+      expect(persisted.pendingDecisionTransition).toMatchObject({
+        conversationId: conversation.id,
+        routineId: "refund-flow",
+        stepId: "finance-approval",
+      });
+      expect(persisted.actions).toContainEqual({
+        type: APPROVAL_REQUEST_ACTION_TYPE,
+        payload: expect.objectContaining({
+          handle: persisted.pendingDecisionTransition?.handle,
+          conversationId: conversation.id,
+          agentId: agent.id,
+          routineId: "refund-flow",
+          stepId: "finance-approval",
+        }),
+      });
+    });
+
+    it("fails a resume that yields instead of wiping the routine", async () => {
+      const { run, assistantTurnPersistence } = await resumeApproval(() => ({
+        resumed: true,
+        yielded: true,
+        response: { answer: "" },
+        nextState: null,
+      }));
+
+      await expect(run).rejects.toThrow("approval_resume_yielded");
+      expect(assistantTurnPersistence.completeAssistantTurn).not.toHaveBeenCalled();
+    });
+
+    it("fails an ending reported without the completed run to keep", async () => {
+      const { run, assistantTurnPersistence } = await resumeApproval(() => ({
+        resumed: true,
+        response: { answer: "Refund issued." },
+        nextState: null,
+        terminal: { kind: "complete", stepId: "refunded" },
+      }));
+
+      await expect(run).rejects.toThrow("approval_resume_without_routine_state");
+      expect(assistantTurnPersistence.completeAssistantTurn).not.toHaveBeenCalled();
     });
   });
 

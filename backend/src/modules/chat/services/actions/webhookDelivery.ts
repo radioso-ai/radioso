@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac } from "node:crypto";
 
 import { fetchPublicUrl } from "../../../../shared/infra/http/publicUrlFetch.js";
 
@@ -14,7 +14,7 @@ export interface WebhookHttpClient {
  * Asserts an outbound URL resolves to a publicly routable host. Throwing rejects
  * the URL before visitor data leaves the worker.
  */
-export type WebhookUrlGuard = (url: string) => Promise<void>;
+type WebhookUrlGuard = (url: string) => Promise<void>;
 
 const DEFAULT_WEBHOOK_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_WEBHOOK_REDIRECTS = 3;
@@ -78,21 +78,4 @@ export const createSignedWebhookHeaders = (input: {
     "X-Radioso-Timestamp": timestamp,
     "X-Radioso-Signature": `sha256=${digest}`,
   };
-};
-
-export const verifyWebhookSignature = (input: {
-  rawBody: string;
-  secret: string;
-  timestamp: string;
-  signatureHeader: string | null | undefined;
-}): boolean => {
-  const signature = input.signatureHeader?.startsWith("sha256=")
-    ? input.signatureHeader.slice("sha256=".length)
-    : "";
-  if (!/^[a-f0-9]{64}$/iu.test(signature)) {
-    return false;
-  }
-  const expected = Buffer.from(signatureDigest(input), "hex");
-  const actual = Buffer.from(signature, "hex");
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
 };

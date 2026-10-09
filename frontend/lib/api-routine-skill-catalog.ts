@@ -1,4 +1,5 @@
 import { request } from './api-client'
+import { parseOperatorNoticeDestinations, type OperatorNoticeDestinations } from './operator-notice-destinations'
 
 export type SkillAuthoringInputType = 'text' | 'number' | 'boolean' | 'email' | 'date' | 'phone' | 'enum'
 export type RoutineSkillCategory = 'retrieval' | 'built_in' | 'external_mcp' | 'customer_email' | 'webhook' | 'slack' | 'notify'
@@ -149,5 +150,11 @@ export const routineSkillCatalogApi = {
       method: 'GET',
     }, { withSession: true })
     return parseSkillAuthoringCatalogResponse(payload)
+  },
+  async listOperatorNoticeDestinations(agentId: string): Promise<OperatorNoticeDestinations> {
+    const payload = await request<unknown>(`/agents/${agentId}/operator-notice-destinations`, {
+      method: 'GET',
+    }, { withSession: true })
+    return parseOperatorNoticeDestinations(payload)
   },
 }

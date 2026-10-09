@@ -57,17 +57,31 @@ const inDeclaredSlotOrder = (
   return Object.fromEntries(keys.map((key) => [key, collected[key]]));
 };
 
-/** Keeps only the authored text fields; an empty notice means "use the defaults". */
+/** Keeps only the authored fields; an empty notice means "use the defaults, with no reply-to". */
 const noticeFromPayload = (value: unknown): OperatorNoticeTemplate | null => {
   if (!isRecord(value)) {
     return null;
   }
   const subject = asString(value.subject);
   const intro = asString(value.intro);
-  return subject || intro
-    ? { ...(subject ? { subject } : {}), ...(intro ? { intro } : {}) }
+  const replyToSlot = asString(value.replyToSlot);
+  return subject || intro || replyToSlot
+    ? { ...(subject ? { subject } : {}), ...(intro ? { intro } : {}), ...(replyToSlot ? { replyToSlot } : {}) }
     : null;
 };
+
+/**
+ * The address collected in the field the notice names. Only the author's choice decides it, never
+ * a field's key or the first address collected: a routine can collect several addresses, and a
+ * guessed one sends the reply to a third party. An email field's value was checked as an address
+ * when the routine stored it.
+ */
+const replyToFrom = (
+  notice: OperatorNoticeTemplate | null,
+  collected: Record<string, HandoffCollectedValue> | null,
+): string | null => notice?.replyToSlot && collected && Object.hasOwn(collected, notice.replyToSlot)
+  ? asString(collected[notice.replyToSlot])
+  : null;
 
 /**
  * Builds the same {@link RoutineEndingOperatorNotification} the real dispatch handler sends, from
@@ -99,6 +113,7 @@ export const routineEndingNotificationFromAction = (input: {
   const stored = collectedFromPayload(input.payload.collected);
   const collected = stored ? inDeclaredSlotOrder(stored, input.subject?.routineSlotKeys) : null;
   const notice = noticeFromPayload(input.payload.notice);
+  const replyTo = replyToFrom(notice, stored);
   return {
     kind: input.kind,
     workspaceId,
@@ -109,6 +124,7 @@ export const routineEndingNotificationFromAction = (input: {
     ...(routineId ? { routine: { id: routineId, name: input.subject?.routineName ?? null } } : {}),
     ...(collected ? { collected } : {}),
     ...(notice ? { notice } : {}),
+    ...(replyTo ? { replyTo } : {}),
     ...(input.subject?.conversation ? { conversation: input.subject.conversation } : {}),
   };
 };

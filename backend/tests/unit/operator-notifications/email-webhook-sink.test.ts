@@ -139,6 +139,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:approval.request:email:owner%40business.example");
     expect(sent[0].text).toContain("Conversation: conv_1");
     expect(sent[0].text).toContain("Decision: pd_abc");
+    expect(sent[0].replyTo ?? null).toBeNull();
     // No link resolver is wired here, so the mail omits the line rather than printing a
     // path that does not resolve. See the permalink cases below.
     expect(sent[0].text).not.toContain("Open:");
@@ -263,6 +264,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       collected: {},
       subject: null,
       intro: null,
+      replyTo: null,
       dashboardUrl: null,
       dashboardPath: null,
       requestId: "request_1",
@@ -371,6 +373,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       collected: { program: "Yoga retreat", arrival_date: "2026-10-12" },
       subject: null,
       intro: null,
+      replyTo: null,
       dashboardUrl: null,
       dashboardPath: null,
       requestId: "request_1",
@@ -438,9 +441,62 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       collected: { name: "Ada Lovelace", arrival_date: "2026-10-12" },
       subject: "New booking: Ada Lovelace",
       intro: "Confirm 2026-10-12 with the guest.",
+      replyTo: null,
       dashboardUrl: null,
       dashboardPath: null,
       requestId: "request_1",
+    });
+  });
+
+  describe("a routine ending notice that names the field replies go to", () => {
+    // A gift booking collects the buyer's and the recipient's address; the author chose the recipient's.
+    const giftNotification = () => routineEndingNotificationFromAction({
+      kind: "completion",
+      payload: {
+        routineId: "routine_1",
+        collected: { buyer_email: "ada@example.com", recipient_email: "grace@example.com" },
+        notice: { subject: "Gift booking", replyToSlot: "recipient_email" },
+      },
+      ids: { conversationId: "conv_1", workspaceId: "ws_1", agentId: "agent_1" },
+      fallback: { reason: "routine_completed" },
+    });
+
+    it("sets every recipient's reply-to to the address collected in the chosen field", async () => {
+      const { mailer, sent } = recordingMailer();
+      const sink = new EmailWebhookOperatorNotificationSink(
+        mailer,
+        { resolve: async () => routedTo(["reception@ananda.example", "owner@ananda.example"]) },
+      );
+
+      await sink.deliver(giftNotification(), { ...context, idempotencyKey: "routine-action:conv_1:completion.notify" });
+
+      expect(sent.map((message) => [message.to, message.replyTo])).toEqual([
+        ["reception@ananda.example", "grace@example.com"],
+        ["owner@ananda.example", "grace@example.com"],
+      ]);
+    });
+
+    it("posts the reply-to address on the webhook", async () => {
+      const { httpClient, requests } = recordingWebhookClient();
+      const sink = new EmailWebhookOperatorNotificationSink(
+        recordingMailer().mailer,
+        { resolve: async () => routedTo([], { url: "https://hooks.example.com/notices" }) },
+        undefined,
+        httpClient,
+      );
+
+      await sink.deliver(giftNotification(), { ...context, idempotencyKey: "routine-action:conv_1:completion.notify" });
+
+      expect(JSON.parse(requests[0].rawBody)).toEqual(expect.objectContaining({ replyTo: "grace@example.com" }));
+    });
+
+    it("sends with no reply-to when the notice has none", async () => {
+      const { mailer, sent } = recordingMailer();
+      const sink = new EmailWebhookOperatorNotificationSink(mailer, { resolve: async () => routedTo(["reception@ananda.example"]) });
+
+      await sink.deliver(completionNotification, { ...context, idempotencyKey: "routine-action:conv_1:completion.notify" });
+
+      expect(sent[0].replyTo ?? null).toBeNull();
     });
   });
 

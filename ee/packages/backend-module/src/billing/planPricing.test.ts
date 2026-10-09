@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { PLAN_CATALOG } from "@radioso/plan-catalog";
 
 import {
+  isAutoTopUpAvailable,
   isTopUpEligible,
   isTopUpPrice,
   lookupKeyFor,
@@ -99,6 +100,25 @@ describe("isTopUpEligible", () => {
   it("is false for a plan id the catalog does not recognize (legacy or hand-assigned profiles)", () => {
     expect(isTopUpEligible("starter_100")).toBe(false);
     expect(isTopUpEligible("not-a-plan")).toBe(false);
+  });
+});
+
+describe("isAutoTopUpAvailable", () => {
+  it("is true for a top-up-eligible plan with an active subscription", () => {
+    expect(isAutoTopUpAvailable({ planId: "satellite", subscriptionStatus: "active", hasSubscription: true })).toBe(true);
+  });
+
+  it("is false for the free plan even with an active subscription", () => {
+    expect(isAutoTopUpAvailable({ planId: PLAN_CATALOG.defaultPlanId, subscriptionStatus: "active", hasSubscription: true })).toBe(false);
+  });
+
+  it("is false without a subscription", () => {
+    expect(isAutoTopUpAvailable({ planId: "satellite", subscriptionStatus: "none", hasSubscription: false })).toBe(false);
+  });
+
+  it("is false for a past_due or canceled subscription", () => {
+    expect(isAutoTopUpAvailable({ planId: "satellite", subscriptionStatus: "past_due", hasSubscription: true })).toBe(false);
+    expect(isAutoTopUpAvailable({ planId: "satellite", subscriptionStatus: "canceled", hasSubscription: true })).toBe(false);
   });
 });
 

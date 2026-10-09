@@ -1,11 +1,13 @@
-// Pure math for the dashboard plan card: usage percent, threshold banding, and which
-// `byKind` bucket is driving this month's usage. Kept separate from plan-card.tsx so the
+// Pure math for the dashboard plan card: usage percent, level-driven messaging and tone, and
+// which `byKind` bucket is driving this month's usage. Kept separate from plan-card.tsx so the
 // arithmetic is unit-testable without mounting a component.
 
 import type { PlanUsageLevel } from './api-types'
 
 export type PlanUsageKind = 'conversation' | 'copilot' | 'test_run' | 'pulse_report'
 
+/** A tone for a compact meter display. */
+export type PlanUsageTone = 'ok' | 'warning' | 'destructive'
 
 interface PlanUsageBucket {
   used: number
@@ -36,7 +38,7 @@ export const planUsagePercent = (bucket: PlanUsageBucket): number => {
 export const planUsageLevelHasActions = (level: PlanUsageLevel): boolean =>
   level === 'limit_reached' || level === 'grace_exhausted'
 
-const formatResetDate = (value: string): string =>
+export const formatResetDate = (value: string): string =>
   new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value))
 
 const formatConversationCount = (value: number): string => new Intl.NumberFormat('en').format(value)
@@ -62,6 +64,27 @@ export const planUsageLevelMessage = (input: {
       return null
   }
 }
+
+/** Display tone for a compact meter, from the server-computed level — not a client threshold. */
+export const planUsageLevelTone = (level: PlanUsageLevel): PlanUsageTone => {
+  switch (level) {
+    case 'nearing_limit':
+      return 'warning'
+    case 'limit_reached':
+    case 'grace_exhausted':
+      return 'destructive'
+    case 'ok':
+      return 'ok'
+  }
+}
+
+/** `used / capacity`, e.g. "412 / 500". */
+export const formatPlanUsageCompact = (bucket: PlanUsageBucket): string =>
+  `${bucket.used} / ${bucket.capacity}`
+
+/** A bucket is worth showing a meter for only once it has real capacity to measure against. */
+export const isPlanUsageMetered = (bucket: PlanUsageBucket | null): bucket is PlanUsageBucket =>
+  bucket !== null && bucket.capacity > 0
 
 /** The kind with the largest share of this month's usage, or null when every kind is at 0. */
 export const largestPlanUsageKind = (

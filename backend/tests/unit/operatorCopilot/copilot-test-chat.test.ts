@@ -696,7 +696,10 @@ describe("TestChatService", () => {
     const runnerFailed = await serviceHarness({ settled: failed("runner_failed") }).service.sendMessage({ ...sender, message: "hi" });
     expect(runnerFailed).toMatchObject({ outcome: "failed", failureCode: "runner_failed", answer: null, messageId: null, turnTrace: undefined });
 
-    await expect(serviceHarness({ settled: failed(USAGE_LIMIT_EXCEEDED_CODE) }).service.sendMessage({ ...sender, message: "hi" }))
-      .rejects.toBeInstanceOf(CopilotUsageLimitReachedError);
+    const usageLimited = serviceHarness({ settled: failed(USAGE_LIMIT_EXCEEDED_CODE) }).service.sendMessage({ ...sender, message: "hi" });
+    await expect(usageLimited).rejects.toBeInstanceOf(CopilotUsageLimitReachedError);
+    // The model only reads this refusal from a transcript, so it needs the concrete next step
+    // (not just "exhausted") to pass on to the operator: where to top up or upgrade.
+    await expect(usageLimited).rejects.toThrow(/Plan & usage in the account menu/);
   });
 });

@@ -4,6 +4,7 @@ import { Router } from "express";
 import type { AppDependencies } from "../../server/types.js";
 import { sendChatSse } from "../presenters/chatPresenter.js";
 import { AppError, badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
+import { isUsageLimitExceededError, USAGE_LIMIT_EXCEEDED_CODE } from "../../../shared/domain/usageLimitPolicy.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { requirePublicChatPermission } from "../middleware/requirePermission.js";
 import {
@@ -713,6 +714,22 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           res.status(200).json(stripPublicChatCitationArtifacts(result, citationDisplayEnabled));
         }
       } catch (error) {
+        // The usage-limit reservation always throws before any answer or SSE byte is
+        // produced (bootstrap greeting and both send paths above), so this is reached
+        // for the proactive greeting, non-streaming replies, and streaming replies
+        // alike. Its `details` (profileKey, limit, used, period) describe the
+        // customer's plan — an anonymous visitor is not the customer, so the public
+        // route answers with the bare code and message, unlike the authenticated
+        // assistant/retrieval routes, which keep `details` for the caller who owns it.
+        if (isUsageLimitExceededError(error)) {
+          res.status(429).json({
+            error: {
+              code: USAGE_LIMIT_EXCEEDED_CODE,
+              message: error.message ?? "Usage limit exceeded",
+            },
+          });
+          return;
+        }
         next(error);
       }
     },

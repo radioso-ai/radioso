@@ -9,7 +9,9 @@ export type EmailKind =
   | "email_verification"
   | "password_reset"
   | "account_invitation"
-  | "conversation_transfer";
+  | "conversation_transfer"
+  | "usage_alert"
+  | "billing_notice";
 
 export interface EmailMessage {
   to: string;

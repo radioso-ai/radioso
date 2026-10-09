@@ -10,6 +10,7 @@ import type { TelemetryService } from "../../shared/observability/telemetry/tele
 import { traceOperation } from "../../shared/observability/tracing/operations.js";
 import type { SkillAuthoringCatalog, SkillAuthoringDescriptor } from "../skills/public.js";
 import {
+  mapRoutineOperatorNoticeText,
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
@@ -241,10 +242,7 @@ const normalizeDraftSlotReferences = (
       ...terminal,
       instruction: normalizeSlotReferencesInText(terminal.instruction, slotKeys),
       ...(terminal.operatorNotice ? {
-        operatorNotice: {
-          subject: normalizeSlotReferencesInText(terminal.operatorNotice.subject, slotKeys),
-          intro: normalizeSlotReferencesInText(terminal.operatorNotice.intro, slotKeys),
-        },
+        operatorNotice: mapRoutineOperatorNoticeText(terminal.operatorNotice, (text) => normalizeSlotReferencesInText(text, slotKeys)),
       } : {}),
     })),
   };

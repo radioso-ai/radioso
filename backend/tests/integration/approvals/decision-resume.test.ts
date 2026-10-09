@@ -253,6 +253,38 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     expect(runner.resume).toHaveBeenCalledTimes(1);
   });
 
+  it("re-parks at the same gate: the decision resolves and the gate's next decision opens in one transaction (#1460)", async () => {
+    // A routine whose gate took no exit parks there again: the resumed turn opens a new
+    // pending decision for the same conversation, routine, and step while the resolved one is
+    // still in the open transaction. Only one decision per gate may be open at a time.
+    const input = decisionInput();
+    await repository.create(input);
+    const next = decisionInput({ agentId: input.agentId, sessionId: input.sessionId });
+    const runner: ResumeRunner = {
+      resume: vi.fn(async ({ transaction }) => {
+        await new PendingDecisionRepository(transaction).create(next);
+        return {
+          conversationId,
+          resumed: true as const,
+          assistantMessageId: randomUUID(),
+          postCommitReceipt: { workspaceId, changeKinds: ["conversation.turn_committed"] as const },
+        };
+      }),
+    };
+    const service = new ApprovalDecisionService(repository, runner, activity);
+
+    await service.resolve({
+      agentId: input.agentId,
+      handle: input.handle,
+      optionId: "approve",
+      contentHash: input.contentHash,
+      caller: { accountId: operatorId, workspaceId },
+    });
+
+    expect(await statusOf(input.handle)).toBe("resolved");
+    expect(await statusOf(next.handle)).toBe("pending");
+  });
+
   it("resolves via a non-approve option: the routine branches on the chosen option id", async () => {
     const input = decisionInput();
     await repository.create(input);

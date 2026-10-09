@@ -1,7 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
 describe("unified agent skills contract", () => {
   it("projects skill capabilities including unavailable capabilities", async () => {
@@ -236,5 +236,48 @@ describe("unified agent skills contract", () => {
       expect.objectContaining({ name: "answer", enabled: false }),
     ]);
     expect(disabledListed.body.platformSkills).toEqual(listed.body.platformSkills);
+  });
+
+  it("shows a workspace member where routine ending notices go, and refuses a machine principal", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestToken(app, "notice-destinations-owner@example.com");
+    const headers = adminSessionHeaders(session);
+    const agentId = (await request(app).get("/api/v1/agents").set(headers)).body.agents[0].id as string;
+    const created = await request(app)
+      .post(`/api/v1/agents/${agentId}/skills`)
+      .set(headers)
+      .send({
+        name: "notify_bookings",
+        capability: "notify",
+        target: { kind: "notify_delivery", id: null },
+        config: { delivery: { recipientEmails: ["francesco@example.com"], webhook: { url: "https://hooks.example.com/secret" } } },
+        invocationMode: "routine_named",
+        enabled: true,
+      });
+    expect(created.status).toBe(201);
+
+    const destinations = await request(app).get(`/api/v1/agents/${agentId}/operator-notice-destinations`).set(headers);
+
+    expect(destinations.status).toBe(200);
+    expect(destinations.body.default).toMatchObject({
+      skillName: null,
+      via: "workspace_owner",
+      recipientEmails: ["notice-destinations-owner@example.com"],
+      recipientsFromWorkspaceOwner: true,
+      webhookConfigured: false,
+    });
+    expect(destinations.body.skills).toEqual([{
+      skillName: "notify_bookings",
+      via: "named_skill",
+      recipientEmails: ["francesco@example.com"],
+      recipientsFromWorkspaceOwner: false,
+      webhookConfigured: true,
+    }]);
+    expect(JSON.stringify(destinations.body)).not.toContain("hooks.example.com");
+
+    const machine = await request(app)
+      .get(`/api/v1/agents/${agentId}/operator-notice-destinations`)
+      .set("Authorization", `Bearer ${session.token}`);
+    expect(machine.status).toBe(401);
   });
 });

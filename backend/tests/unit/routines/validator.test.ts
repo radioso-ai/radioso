@@ -584,6 +584,61 @@ describe("validateRoutineDefinition operator notice references", () => {
   });
 });
 
+describe("validateRoutineDefinition operator notice skill", () => {
+  const notifySkill = (skillName: string): SkillAuthoringDescriptor => ({ ...descriptor(skillName, []), category: "notify" });
+  const routineNamingSkill = (
+    kind: "complete" | "handoff",
+    skillName: string,
+  ): RoutineDefinition => ({
+    ...definitionWithTool(null),
+    steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask what they need.", toolRef: null, ordinal: 0, metadata: {} }],
+    transitions: [{ fromStep: "ask", toRef: "done", guardKind: "default", guardText: null, ordinal: 0 }],
+    terminals: [{ stableStepId: "done", kind, instruction: null, operatorNotice: { subject: null, intro: null, skillName }, ordinal: 0 }],
+  });
+
+  it("accepts a notice sent with one of the agent's notify skills", () => {
+    const result = validateRoutineDefinition(routineNamingSkill("handoff", "notify_bookings"), {
+      skillDescriptors: descriptors(notifySkill("notify_bookings")),
+    });
+
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("flags a notice sent with a skill the agent does not have as a notify skill", () => {
+    const result = validateRoutineDefinition(routineNamingSkill("complete", "notify_bookings"), {
+      skillDescriptors: descriptors(notifySkill("contact_human")),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ code: "operator_notice_skill_unavailable", location: "step:done.operatorNotice.skillName" }),
+    ]);
+    expect(result.diagnostics[0].message).toContain("notify_bookings");
+  });
+
+  it("flags a notice sent with a skill that is not a notify skill, with its own message", () => {
+    const missing = validateRoutineDefinition(routineNamingSkill("handoff", "order.lookup"), { skillDescriptors: descriptors() });
+    const wrongKind = validateRoutineDefinition(routineNamingSkill("handoff", "order.lookup"), {
+      skillDescriptors: descriptors(descriptor("order.lookup", [])),
+    });
+
+    expect(wrongKind.diagnostics).toEqual([
+      expect.objectContaining({ code: "operator_notice_skill_unavailable", location: "step:done.operatorNotice.skillName" }),
+    ]);
+    expect(wrongKind.diagnostics[0].message).not.toEqual(missing.diagnostics[0].message);
+  });
+
+  it("reports nothing without the agent's skill catalog, so a pinned revision still compiles", () => {
+    expect(validateRoutineDefinition(routineNamingSkill("handoff", "notify_bookings")).diagnostics).toEqual([]);
+  });
+
+  it("names the rule in the safe diagnostic an external caller sees", () => {
+    const safe = toSafeRoutineValidationDiagnostic({ code: "operator_notice_skill_unavailable", location: "step:done.operatorNotice.skillName" });
+
+    expect(safe.message).not.toBe("The routine structure is not valid for serving.");
+  });
+});
+
 describe("toSafeRoutineValidationDiagnostic", () => {
   it("names the rule and the slot for a declared-but-unused slot, not a generic fallback", () => {
     // Issue #1371: the operator got a bare `invalid_arguments` with no way to tell which rule

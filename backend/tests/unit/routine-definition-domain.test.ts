@@ -519,6 +519,18 @@ describe("routine definition compiler and validator", () => {
     expect(metadataFor("human_noted")).toEqual({ terminalKind: "handoff", operatorNotice: { intro: "Call {{slot.name}} back." } });
   });
 
+  it("carries the notify skill an ending names onto its compiled notice", () => {
+    const routine = compileRoutineDefinition({
+      ...baseDefinition(),
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: null, operatorNotice: { subject: null, intro: null, skillName: "notify_bookings" }, ordinal: 0 },
+      ],
+    });
+
+    expect(routine.steps.find((step) => step.id === "done")?.metadata)
+      .toEqual({ terminalKind: "complete", operatorNotice: { skillName: "notify_bookings" } });
+  });
+
   it("is deterministic for the same authored document", () => {
     expect(compileRoutineDefinition(baseDefinition())).toEqual(compileRoutineDefinition(baseDefinition()));
   });

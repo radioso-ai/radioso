@@ -5,10 +5,17 @@ import { buildHandoffNotifyAction } from "../../../src/modules/chat/services/han
 import type {
   ContactNotificationMailer,
   ContactWebhookHttpClient,
+  RoutedContactDeliveryTarget,
 } from "../../../src/modules/chat/services/actions/contactSendActionHandler.js";
 import { formatRoutineEndingNotification, routineEndingNotificationFromAction } from "../../../src/modules/operatorNotifications/public.js";
 
 type SentMessage = Parameters<ContactNotificationMailer["send"]>[0];
+
+const routedTo = (
+  emails: string[],
+  webhook: { url: string } | null = null,
+  via: RoutedContactDeliveryTarget["via"] = "agent_setting",
+): RoutedContactDeliveryTarget => ({ emails, webhook, via, recipientsFromWorkspaceOwner: false });
 type WebhookRequest = Parameters<ContactWebhookHttpClient["post"]>[0];
 
 const notification = {
@@ -56,7 +63,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      { resolve: async () => routedTo(["owner@business.example"]) },
       undefined,
       undefined,
       { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=conv_1" },
@@ -74,7 +81,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const resolve = vi.fn(async () => "https://app.radioso.ai/w/support-abc/activity");
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      { resolve: async () => routedTo(["owner@business.example"]) },
       undefined,
       undefined,
       { resolve },
@@ -89,7 +96,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      { resolve: async () => routedTo(["owner@business.example"]) },
       undefined,
       undefined,
       { resolve: async () => null },
@@ -106,7 +113,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      { resolve: async () => routedTo(["owner@business.example"]) },
       undefined,
       undefined,
       { resolve: async () => { throw new Error("workspace lookup failed"); } },
@@ -121,7 +128,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
   it("preserves approval email delivery", async () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(mailer, {
-      resolve: async () => ({ emails: ["owner@business.example"], webhook: null }),
+      resolve: async () => routedTo(["owner@business.example"]),
     });
 
     await sink.deliver(notification, context);
@@ -143,10 +150,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
       {
-        resolve: async () => ({
-          emails: [],
-          webhook: { url: "https://hooks.example.com/approval" },
-        }),
+        resolve: async () => routedTo([], { url: "https://hooks.example.com/approval" }),
       },
       undefined,
       httpClient,
@@ -174,7 +178,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const { httpClient, requests } = recordingWebhookClient();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => ({ emails: [], webhook: { url: "https://hooks.example.com/approval" } }) },
+      { resolve: async () => routedTo([], { url: "https://hooks.example.com/approval" }) },
       undefined,
       httpClient,
       { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=conv_1" },
@@ -195,7 +199,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const { httpClient, requests } = recordingWebhookClient();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => ({ emails: [], webhook: { url: "https://hooks.example.com/approval" } }) },
+      { resolve: async () => routedTo([], { url: "https://hooks.example.com/approval" }) },
       undefined,
       httpClient,
       { resolve: async () => null },
@@ -210,7 +214,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
   it("preserves handoff email delivery", async () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(mailer, {
-      resolve: async () => ({ emails: ["owner@business.example"], webhook: null }),
+      resolve: async () => routedTo(["owner@business.example"]),
     });
 
     await sink.deliver(handoffNotification, {
@@ -235,10 +239,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
       {
-        resolve: async () => ({
-          emails: [],
-          webhook: { url: "https://hooks.example.com/handoff" },
-        }),
+        resolve: async () => routedTo([], { url: "https://hooks.example.com/handoff" }),
       },
       undefined,
       httpClient,
@@ -272,7 +273,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => ({ emails: ["desk@business.example"], webhook: null }) },
+      { resolve: async () => routedTo(["desk@business.example"]) },
       undefined,
       undefined,
       { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?itemId=conv_1" },
@@ -303,7 +304,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => ({ emails: ["desk@business.example"], webhook: null }) },
+      { resolve: async () => routedTo(["desk@business.example"]) },
       undefined,
       undefined,
       { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?itemId=conv_1" },
@@ -350,7 +351,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const { httpClient, requests } = recordingWebhookClient();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => ({ emails: [], webhook: { url: "https://hooks.example.com/handoff" } }) },
+      { resolve: async () => routedTo([], { url: "https://hooks.example.com/handoff" }) },
       undefined,
       httpClient,
     );
@@ -391,7 +392,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => ({ emails: ["reception@ananda.example"], webhook: null }) },
+      { resolve: async () => routedTo(["reception@ananda.example"]) },
       undefined,
       undefined,
       { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?itemId=conv_1" },
@@ -420,7 +421,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const { httpClient, requests } = recordingWebhookClient();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => ({ emails: [], webhook: { url: "https://hooks.example.com/notices" } }) },
+      { resolve: async () => routedTo([], { url: "https://hooks.example.com/notices" }) },
       undefined,
       httpClient,
     );
@@ -449,8 +450,8 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const warn = vi.fn();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => ({ emails: [], webhook: null }) },
-      { warn },
+      { resolve: async () => routedTo([]) },
+      { warn, info: vi.fn() },
       httpClient,
     );
 
@@ -458,6 +459,60 @@ describe("EmailWebhookOperatorNotificationSink", () => {
 
     expect(sent).toHaveLength(0);
     expect(requests).toHaveLength(0);
-    expect(warn).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ via: "agent_setting" }), expect.any(String));
+  });
+
+  describe("a routine ending notice routed through a named notify skill", () => {
+    const completionNotification = { ...handoffNotification, kind: "completion" as const, reason: "routine_completed" };
+
+    it("asks the resolver for the skill the notice names, and logs the route without any address", async () => {
+      const { mailer, sent } = recordingMailer();
+      const resolve = vi.fn(async () => routedTo(["bookings@business.example"], { url: "https://hooks.example.com/secret-token" }, "named_skill"));
+      const logger = { warn: vi.fn(), info: vi.fn() };
+      const sink = new EmailWebhookOperatorNotificationSink(mailer, { resolve }, logger, recordingWebhookClient().httpClient);
+
+      await sink.deliver(completionNotification, { ...context, skillName: "notify_bookings" });
+
+      expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ skillName: "notify_bookings" }));
+      expect(sent.map((message) => message.to)).toEqual(["bookings@business.example"]);
+      expect(logger.warn).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        { kind: "completion", via: "named_skill", emailCount: 1, webhook: true },
+        "operator_notice_routed",
+      );
+      const logged = JSON.stringify([...logger.info.mock.calls, ...logger.warn.mock.calls]);
+      expect(logged).not.toContain("bookings@business.example");
+      expect(logged).not.toContain("hooks.example.com");
+    });
+
+    it("still delivers to the default destination when the named skill is unavailable, and warns", async () => {
+      const { mailer, sent } = recordingMailer();
+      const logger = { warn: vi.fn(), info: vi.fn() };
+      const sink = new EmailWebhookOperatorNotificationSink(
+        mailer,
+        { resolve: async () => routedTo(["owner@business.example"], null, "workspace_owner") },
+        logger,
+      );
+
+      await sink.deliver(completionNotification, { ...context, skillName: "notify_bookings" });
+
+      expect(sent.map((message) => message.to)).toEqual(["owner@business.example"]);
+      expect(logger.warn).toHaveBeenCalledWith(
+        { kind: "completion", workspaceId: "ws_1", conversationId: "conv_1", skillName: "notify_bookings", via: "workspace_owner" },
+        "operator_notice_named_skill_unavailable",
+      );
+      expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("owner@business.example");
+    });
+
+    it("names no skill to the resolver when the notice names none", async () => {
+      const resolve = vi.fn(async () => routedTo(["owner@business.example"], null, "workspace_owner"));
+      const logger = { warn: vi.fn(), info: vi.fn() };
+      const sink = new EmailWebhookOperatorNotificationSink(recordingMailer().mailer, { resolve }, logger);
+
+      await sink.deliver(completionNotification, context);
+
+      expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ skillName: null }));
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
   });
 });

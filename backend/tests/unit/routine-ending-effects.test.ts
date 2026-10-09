@@ -62,6 +62,37 @@ describe("routineEndingEffectsForTurn", () => {
     ]);
   });
 
+  it("routes the notice through the notify skill its ending names, on the action and never in the payload", () => {
+    const effects = routineEndingEffectsForTurn({
+      session,
+      workspaceId: "ws_1",
+      turn: {
+        operatorNotice: {
+          routineId: "routine_1",
+          stepId: "done",
+          terminalKind: "complete",
+          subject: "Booking",
+          skillName: "notify_bookings",
+        },
+      },
+    });
+
+    const action = effects.actions?.at(-1);
+    expect(action?.type).toBe(COMPLETION_NOTIFY_ACTION_TYPE);
+    expect(action?.skillName).toBe("notify_bookings");
+    expect(JSON.stringify(action?.payload)).not.toContain("notify_bookings");
+  });
+
+  it("names no skill on the action when the ending sends to the default destination", () => {
+    const effects = routineEndingEffectsForTurn({
+      session,
+      workspaceId: "ws_1",
+      turn: { operatorNotice: { routineId: "routine_1", stepId: "done", terminalKind: "complete" } },
+    });
+
+    expect(effects.actions?.at(-1)).not.toHaveProperty("skillName");
+  });
+
   it("hands the conversation off and queues handoff.notify for a hand-off ending", () => {
     const effects = routineEndingEffectsForTurn({
       session,

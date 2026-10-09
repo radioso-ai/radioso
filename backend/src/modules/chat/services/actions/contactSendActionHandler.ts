@@ -1,12 +1,12 @@
-import { readNotifyContactDelivery } from "../../../agents/public.js";
+import { hasConfiguredContactDestination, readNotifyContactDelivery } from "../../../agents/public.js";
 import type { AgentContactRequestDelivery, AgentContactWebhook } from "../../../agents/public.js";
 import type { ActionFailureOutcome } from "../../../../db/repositories/actionRequestRepository.js";
+import type { ContactDeliveryRoute } from "../../../../shared/domain/contactDeliveryRoute.js";
 import type { ErrorReporter } from "../../../../shared/errors/errorReporter.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
   FetchWebhookHttpClient,
   type WebhookHttpClient,
-  type WebhookUrlGuard,
 } from "./webhookDelivery.js";
 
 /**
@@ -25,9 +25,15 @@ export interface ContactNotificationMailer {
   }): Promise<unknown>;
 }
 
-export interface ContactDeliveryTarget {
+interface ContactDeliveryTarget {
   emails: string[];
   webhook: AgentContactWebhook | null;
+}
+
+export interface RoutedContactDeliveryTarget extends ContactDeliveryTarget {
+  via: ContactDeliveryRoute;
+  /** The emails are the workspace owner's because the chosen route lists no recipients of its own. */
+  recipientsFromWorkspaceOwner: boolean;
 }
 
 /**
@@ -35,43 +41,47 @@ export interface ContactDeliveryTarget {
  * destination is host/product policy (workspace owner, configured inboxes, webhook),
  * not something this generic handler should hard-code.
  */
-export interface ContactRecipientResolver {
+interface ContactRecipientResolver {
   resolve(context: ActionHandlerContext): Promise<ContactDeliveryTarget>;
 }
 
-export interface ContactConversationLookup {
+/** A {@link ContactRecipientResolver} that also says which rule picked the destination. */
+export interface RoutedContactRecipientResolver extends ContactRecipientResolver {
+  resolve(context: ActionHandlerContext): Promise<RoutedContactDeliveryTarget>;
+}
+
+/** The last-resort recipient when no route configures one; only the workspace is known. */
+interface ContactOwnerFallback {
+  resolve(context: Pick<ActionHandlerContext, "workspaceId">): Promise<ContactDeliveryTarget>;
+}
+
+interface ContactConversationLookup {
   findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<{ agentId: string | null } | null>;
 }
 
-export interface ContactAgentLookup {
+interface ContactAgentLookup {
   findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{
     contactRequestDelivery: AgentContactRequestDelivery;
   } | null>;
 }
 
-export interface ContactNotifySkillLookup {
+interface ContactNotifySkillLookup {
   findByName(workspaceId: string, agentId: string, skillName: string): Promise<{
     kind: string;
     enabled: boolean;
+    invocationMode: string;
     config?: Record<string, unknown>;
   } | null>;
 }
 
 export type ContactWebhookHttpClient = WebhookHttpClient;
 
-/**
- * Asserts an outbound URL resolves to a publicly routable host (SSRF guard). A host
- * adapts the website crawler's `assertPublicWebsiteUrl` to it so this module does not
- * depend on the crawler. Throwing rejects the URL; the worker then retries/fails.
- */
-export type ContactWebhookUrlGuard = WebhookUrlGuard;
-
 /** Narrow lookups the workspace-owner resolver needs (a `WorkspaceRepository` satisfies it). */
-export interface ContactWorkspaceLookup {
+interface ContactWorkspaceLookup {
   findById(workspaceId: string): Promise<{ accountId: string } | null>;
 }
 /** Narrow lookup for an account's active members (an `AccountMembershipRepository` satisfies it). */
-export interface ContactMembershipLookup {
+interface ContactMembershipLookup {
   listActiveByAccount(accountId: string): Promise<{ role: string; email: string }[]>;
 }
 
@@ -80,13 +90,13 @@ export interface ContactMembershipLookup {
  * A sensible destination with no extra configuration — a host that wants a dedicated
  * contact inbox registers its own {@link ContactRecipientResolver} instead.
  */
-export class WorkspaceOwnerContactRecipientResolver implements ContactRecipientResolver {
+export class WorkspaceOwnerContactRecipientResolver implements ContactRecipientResolver, ContactOwnerFallback {
   constructor(
     private readonly workspaces: ContactWorkspaceLookup,
     private readonly members: ContactMembershipLookup,
   ) {}
 
-  async resolve(context: ActionHandlerContext): Promise<ContactDeliveryTarget> {
+  async resolve(context: Pick<ActionHandlerContext, "workspaceId">): Promise<ContactDeliveryTarget> {
     if (!context.workspaceId) {
       return { emails: [], webhook: null };
     }
@@ -101,80 +111,95 @@ export class WorkspaceOwnerContactRecipientResolver implements ContactRecipientR
   }
 }
 
-export class ConfiguredContactDeliveryResolver implements ContactRecipientResolver {
+export class ConfiguredContactDeliveryResolver implements RoutedContactRecipientResolver {
   constructor(
     private readonly conversations: ContactConversationLookup,
     private readonly agents: ContactAgentLookup,
-    private readonly fallback: ContactRecipientResolver,
+    private readonly fallback: ContactOwnerFallback,
     private readonly notifySkills?: ContactNotifySkillLookup,
   ) {}
 
-  async resolve(context: ActionHandlerContext): Promise<ContactDeliveryTarget> {
+  /** Where a queued request goes: its conversation's agent decides, through {@link resolveForAgent}. */
+  async resolve(context: ActionHandlerContext): Promise<RoutedContactDeliveryTarget> {
     if (!context.workspaceId || !context.conversationId) {
-      return this.fallback.resolve(context);
+      return this.workspaceOwnerTarget(context.workspaceId);
     }
     const conversation = await this.conversations.findByIdAndWorkspaceId(context.conversationId, context.workspaceId);
     if (!conversation?.agentId) {
-      return this.fallback.resolve(context);
+      return this.workspaceOwnerTarget(context.workspaceId);
     }
+    return this.resolveForAgent({
+      workspaceId: context.workspaceId,
+      agentId: conversation.agentId,
+      skillName: context.skillName,
+    });
+  }
 
-    // The outbox row names the skill that actually fired this request (set by
-    // NotifyExecutor at enqueue time — see EnqueueActionRequestInput.skillName).
-    // Prefer THAT skill's own delivery config over the hardcoded `contact_human`
-    // lookup below: two differently-named notify skills on the same agent must be
+  /**
+   * Where a request from this agent goes, optionally routed through a named notify skill. The one
+   * statement of contact precedence: delivery calls it for a queued request, and the dashboard calls
+   * it to show an operator where a notice will be sent before anything is.
+   */
+  async resolveForAgent(input: {
+    workspaceId: string;
+    agentId: string;
+    skillName: string | null;
+  }): Promise<RoutedContactDeliveryTarget> {
+    // The skill a request names (an outbox row's skill_name, or the notify skill an ending's notice
+    // names) wins over the `contact_human` lookup below: two notify skills on one agent must be
     // able to deliver to different recipients, not collide on one shared config.
     //
-    // A disabled or deleted named skill falls through to the lookup below instead
-    // of short-circuiting to no recipient (unlike the `contact_human` branch just
-    // below, which does short-circuit). `contact_human` is one well-known skill an
-    // operator disables deliberately, expecting contact requests to stop; an
-    // arbitrary named skill going away is more likely a rename or a routine
-    // authoring change, and a request that used to route through it must still
-    // reach somewhere rather than being silently dropped.
-    if (context.skillName) {
-      const namedSkill = await this.notifySkills?.findByName(context.workspaceId, conversation.agentId, context.skillName);
-      if (namedSkill?.kind === "notify" && namedSkill.enabled) {
-        const delivery = readNotifyContactDelivery(namedSkill.config);
-        if (delivery) {
-          return this.resolveConfiguredDelivery(delivery, context);
-        }
-      }
-    }
-
-    const notifySkill = await this.notifySkills?.findByName(context.workspaceId, conversation.agentId, "contact_human");
-    if (notifySkill?.kind === "notify") {
-      if (!notifySkill.enabled) {
-        return { emails: [], webhook: null };
-      }
-      const delivery = readNotifyContactDelivery(notifySkill.config);
+    // Any enabled notify skill delivers, whatever its invocation mode: `contact.send` rows name the
+    // skill that fired them, and an ending's notice was checked against the routine-named catalog
+    // when it was published. A named skill that is gone or turned off falls through to the
+    // lookups below instead of short-circuiting to no recipient. `contact_human` is one well-known
+    // skill an operator turns off deliberately, expecting contact requests to stop, so it
+    // short-circuits only a request that names no skill; a named skill going away is more likely a
+    // rename or an authoring change, and a request routed through it must still reach somebody.
+    if (input.skillName) {
+      const namedSkill = await this.notifySkills?.findByName(input.workspaceId, input.agentId, input.skillName);
+      const delivery = namedSkill?.kind === "notify" && namedSkill.enabled ? readNotifyContactDelivery(namedSkill.config) : null;
       if (delivery) {
-        return this.resolveConfiguredDelivery(delivery, context);
+        return this.resolveConfiguredDelivery(delivery, "named_skill", input.workspaceId);
       }
     }
-    const agent = await this.agents.findByIdAndWorkspaceId(conversation.agentId, context.workspaceId);
-    if (!agent) {
-      return this.fallback.resolve(context);
-    }
 
-    return this.resolveConfiguredDelivery(agent.contactRequestDelivery, context);
+    const notifySkill = await this.notifySkills?.findByName(input.workspaceId, input.agentId, "contact_human");
+    if (notifySkill?.kind === "notify" && !notifySkill.enabled && !input.skillName) {
+      return { emails: [], webhook: null, via: "contact_human_off", recipientsFromWorkspaceOwner: false };
+    }
+    const contactHumanDelivery = notifySkill?.kind === "notify" && notifySkill.enabled
+      ? readNotifyContactDelivery(notifySkill.config)
+      : null;
+    if (contactHumanDelivery) {
+      return this.resolveConfiguredDelivery(contactHumanDelivery, "contact_human", input.workspaceId);
+    }
+    const agent = await this.agents.findByIdAndWorkspaceId(input.agentId, input.workspaceId);
+    if (!agent || !hasConfiguredContactDestination(agent.contactRequestDelivery)) {
+      return this.workspaceOwnerTarget(input.workspaceId);
+    }
+    return this.resolveConfiguredDelivery(agent.contactRequestDelivery, "agent_setting", input.workspaceId);
   }
 
   /** Configured recipients win; empty recipients fall back to the owner while keeping the configured webhook. */
   private async resolveConfiguredDelivery(
     delivery: AgentContactRequestDelivery,
-    context: ActionHandlerContext,
-  ): Promise<ContactDeliveryTarget> {
+    via: ContactDeliveryRoute,
+    workspaceId: string,
+  ): Promise<RoutedContactDeliveryTarget> {
     if (delivery.recipientEmails.length > 0) {
-      return {
-        emails: delivery.recipientEmails,
-        webhook: delivery.webhook,
-      };
+      return { emails: delivery.recipientEmails, webhook: delivery.webhook, via, recipientsFromWorkspaceOwner: false };
     }
-    const fallback = await this.fallback.resolve(context);
-    return {
-      emails: fallback.emails,
-      webhook: delivery.webhook,
-    };
+    const owner = await this.fallback.resolve({ workspaceId });
+    return { emails: owner.emails, webhook: delivery.webhook, via, recipientsFromWorkspaceOwner: owner.emails.length > 0 };
+  }
+
+  private async workspaceOwnerTarget(workspaceId: string | null): Promise<RoutedContactDeliveryTarget> {
+    const owner = await this.fallback.resolve({ workspaceId });
+    if (owner.emails.length === 0 && !owner.webhook) {
+      return { emails: [], webhook: null, via: "none", recipientsFromWorkspaceOwner: false };
+    }
+    return { ...owner, via: "workspace_owner", recipientsFromWorkspaceOwner: owner.emails.length > 0 };
   }
 }
 

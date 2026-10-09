@@ -3191,8 +3191,10 @@ CREATE TABLE public.routine_terminal (
     operator_notice_enabled boolean DEFAULT false NOT NULL,
     operator_notice_subject text,
     operator_notice_intro text,
+    operator_notice_skill_name text,
     CONSTRAINT routine_terminal_check CHECK ((((kind = 'action'::text) AND (NULLIF(btrim(action_type), ''::text) IS NOT NULL)) OR (kind <> 'action'::text))),
     CONSTRAINT routine_terminal_kind_check CHECK ((kind = ANY (ARRAY['complete'::text, 'handoff'::text]))),
+    CONSTRAINT routine_terminal_operator_notice_skill_check CHECK (((operator_notice_enabled OR (operator_notice_skill_name IS NULL)) AND ((operator_notice_skill_name IS NULL) OR (btrim(operator_notice_skill_name) <> ''::text)))),
     CONSTRAINT routine_terminal_operator_notice_text_check CHECK ((operator_notice_enabled OR ((operator_notice_subject IS NULL) AND (operator_notice_intro IS NULL)))),
     CONSTRAINT routine_terminal_ordinal_check CHECK ((ordinal >= 0)),
     CONSTRAINT routine_terminal_stable_step_id_check CHECK ((NULLIF(btrim(stable_step_id), ''::text) IS NOT NULL))

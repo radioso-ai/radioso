@@ -33,6 +33,7 @@ export const realCatalogDependencies = () => {
     testChat: { listSessions: stub(), readSession: stub(), readTurn: stub(), sendMessage: stub() },
     audiencePulseService: { read: stub() },
     agentSkillsService: { list: stub() },
+    operatorNoticeDestinations: { read: stub() },
     skillCapabilityTargets: { list: stub() },
     contextVariables: { listByWorkspace: stub(), listByAgent: stub() },
     workspaceSettings: {

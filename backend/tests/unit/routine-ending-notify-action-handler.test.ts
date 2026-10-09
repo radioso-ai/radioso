@@ -55,6 +55,20 @@ describe("RoutineEndingNotifyActionHandler", () => {
     });
   });
 
+  it("forwards the notify skill the queued row names to the sinks", async () => {
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
+    dispatch.mockResolvedValue();
+    const handler = new RoutineEndingNotifyActionHandler({
+      ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
+      dispatcher: { dispatch },
+      subjects: { resolve: async () => ({ agentId: "agent_1", agentName: null, routineName: null }) },
+    });
+
+    await handler.handle({ payload: { reason: "routine_completed" }, context: { ...context, skillName: "notify_bookings" } });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ skillName: "notify_bookings" }));
+  });
+
   it("forwards the routine id, resolved names, and the scalar collected values", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();

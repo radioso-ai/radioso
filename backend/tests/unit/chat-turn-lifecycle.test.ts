@@ -1634,6 +1634,41 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(records).toHaveLength(1);
   });
 
+  it("records the notify skill an action names on the fallback outbox path", async () => {
+    const actionOutbox: ChatActionOutboxPort = {
+      enqueue: vi.fn(async () => ({ id: "action_1", duplicate: false })),
+    };
+    const lifecycle = new ChatTurnLifecycle(
+      { touch: vi.fn(async () => {}) } as unknown as ConversationRepositoryPort,
+      { create: vi.fn(async () => ({ id: "assistant_msg_1" })) } as unknown as MessageRepositoryPort,
+      { record: vi.fn(async () => {}), updateChatAnswerSuggestions: vi.fn(async () => {}) } as unknown as AuditService,
+      undefined,
+      actionOutbox,
+      undefined,
+      new FakeActionCapabilityMap(new Map([
+        ["completion.notify", [capabilityNames.humanContact.request]],
+      ])),
+      new FakeCapabilityPolicy(),
+    );
+
+    await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      accountId: "account_1",
+      session: session(),
+      presentation: presentation(),
+      requestReceivedAt: Date.now(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      actions: [{ type: "completion.notify", payload: { reason: "routine_completed" }, skillName: "notify_bookings" }],
+    });
+
+    expect(actionOutbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      type: "completion.notify",
+      payload: { reason: "routine_completed" },
+      skillName: "notify_bookings",
+    }));
+  });
+
   it("requests handoff ownership and records hitl audit on the fallback path", async () => {
     const records: RecordedAudit[] = [];
     const auditService = {

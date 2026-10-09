@@ -207,6 +207,17 @@ subject never hides what the guest said. A value the routine did not collect
 shows as `—`. The webhook body is documented under
 [Operator notifications](/api/agents-and-skills#operator-notifications).
 
+Under **Notify the team**, the **Send with** select chooses which notify
+skill delivers the notice: **Default**, or any enabled notify skill the
+routine can name directly. The line underneath shows where that choice goes
+right now — Ananda's booking routine names its `notify_bookings` skill on the
+**Booked** ending, so the line reads `Sends to francesco@ananda.it`, the
+recipient on that skill's own delivery config. Choosing **Default** falls
+back to the chain above: the line then shows the `contact_human` recipients,
+the agent's own delivery setting, or the workspace owner's email, whichever
+resolves first. A **Hand off** ending offers the same select, since it always
+notifies.
+
 A step is asked the same way at most three times in a row when the visitor's
 replies give it nothing new. From then on it asks in different words, saying
 plainly what it needs and giving an example of an answer that works. The limit
@@ -300,6 +311,13 @@ from a test that kept skills off.
 - A finish sends no team notice: check that **Notify the team** is on for that
   ending, and that the agent has a contact recipient — the notice goes where
   contact requests go.
+- The **Send with** select shows a name as **(unavailable)**: the notify skill
+  it names was deleted, turned off, or can no longer be named by a routine.
+  Validation flags the ending until you pick another skill or switch back to
+  **Default**. The notice is never dropped meanwhile: a skill that still exists
+  and is on keeps sending, and otherwise the notice goes to the default
+  destination, or to the agent's contact settings or the workspace owner when
+  `contact_human` is off.
 - Review & Publish refuses the agent with `exposure_tool_name_changed`: a
   published tool name is fixed. Keep the name, or switch exposure off and create
   a new routine under the new name.

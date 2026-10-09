@@ -5474,6 +5474,7 @@ export interface components {
                     subject?: string | null;
                     intro?: string | null;
                     skillName?: string;
+                    replyToSlot?: string;
                 };
                 ordinal: number;
             }[];
@@ -5583,6 +5584,7 @@ export interface components {
                     subject?: string | null;
                     intro?: string | null;
                     skillName?: string;
+                    replyToSlot?: string;
                 };
                 ordinal: number;
             }[];
@@ -5604,7 +5606,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable" | "operator_notice_reply_to_slot_invalid";
                 location: string;
                 message: string;
             }[];
@@ -5703,6 +5705,7 @@ export interface components {
                     subject?: string | null;
                     intro?: string | null;
                     skillName?: string;
+                    replyToSlot?: string;
                 };
                 ordinal: number;
             }[];
@@ -5839,6 +5842,7 @@ export interface components {
                         subject?: string | null;
                         intro?: string | null;
                         skillName?: string;
+                        replyToSlot?: string;
                     };
                     ordinal: number;
                 }[];
@@ -6212,6 +6216,7 @@ export interface components {
                         subject?: string | null;
                         intro?: string | null;
                         skillName?: string;
+                        replyToSlot?: string;
                     };
                     ordinal: number;
                 }[];

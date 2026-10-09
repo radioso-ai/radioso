@@ -44,6 +44,7 @@ const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, strin
   missing_terminal: "The routine needs at least one terminal.",
   declared_unused_slot: declaredUnusedSlotMessage,
   operator_notice_skill_unavailable: "An ending's operator notice is sent with a skill that is not one of this agent's enabled notify skills.",
+  operator_notice_reply_to_slot_invalid: "An ending's operator notice sends replies to a field that is not one of this routine's email fields.",
 };
 
 /** External diagnostic DTO: preserves only structural location, never authored validation text. */
@@ -605,6 +606,23 @@ export const validateRoutineDefinition = (
           code: "referenced_undeclared_slot",
           location: `step:${terminal.stableStepId}.operatorNotice.${field}`,
           message: `referenced-but-undeclared slot: the operator notice ${field} of ending "${terminal.stableStepId}" references "${key}", which is not declared.`,
+        });
+      }
+    }
+    // Replies go to the address in the field the author chose. Only an email field qualifies: its
+    // collected value is checked as an address, and a reply sent anywhere else reaches a stranger.
+    const replyToSlot = terminal.operatorNotice?.replyToSlot;
+    if (replyToSlot) {
+      const replySlot = slotByKey.get(replyToSlot);
+      if (replySlot?.type === "email") {
+        referencedSlotKeys.add(replyToSlot);
+      } else {
+        diagnostics.push({
+          code: "operator_notice_reply_to_slot_invalid",
+          location: `step:${terminal.stableStepId}.operatorNotice.replyToSlot`,
+          message: replySlot
+            ? `operator notice reply-to invalid: ending "${terminal.stableStepId}" sends replies to "${replyToSlot}", which is a ${replySlot.type} field. Choose an email field, or no reply-to.`
+            : `operator notice reply-to invalid: ending "${terminal.stableStepId}" sends replies to "${replyToSlot}", which this routine does not collect. Choose one of its email fields, or no reply-to.`,
         });
       }
     }

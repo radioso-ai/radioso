@@ -584,6 +584,68 @@ describe("validateRoutineDefinition operator notice references", () => {
   });
 });
 
+describe("validateRoutineDefinition operator notice reply-to", () => {
+  // A gift booking collects two addresses, and a text field keyed `email` that holds no address.
+  const giftRoutine = (replyToSlot: string): RoutineDefinition => ({
+    ...definitionWithTool(null),
+    slots: [
+      { stableSlotId: "slot_buyer", key: "buyer_email", type: "email", required: true, description: null, ordinal: 0 },
+      { stableSlotId: "slot_recipient", key: "recipient_email", type: "email", required: true, description: null, ordinal: 1 },
+      { stableSlotId: "slot_email", key: "email", type: "text", required: false, description: null, ordinal: 2 },
+    ],
+    steps: [
+      { stableStepId: "ask", kind: "chat", instruction: "Ask for {{slot.buyer_email}}, {{slot.recipient_email}} and {{slot.email}}.", toolRef: null, ordinal: 0, metadata: {} },
+    ],
+    transitions: [{ fromStep: "ask", toRef: "done", guardKind: "default", guardText: null, ordinal: 0 }],
+    terminals: [
+      { stableStepId: "done", kind: "complete", instruction: null, operatorNotice: { subject: null, intro: null, replyToSlot }, ordinal: 0 },
+    ],
+  });
+
+  it("accepts a reply-to that names any of the routine's email fields, the second one included", () => {
+    expect(validateRoutineDefinition(giftRoutine("recipient_email")).diagnostics).toEqual([]);
+    expect(validateRoutineDefinition(giftRoutine("buyer_email")).diagnostics).toEqual([]);
+  });
+
+  it("refuses a text field as the reply-to, even one keyed email, and says to pick an email field", () => {
+    const result = validateRoutineDefinition(giftRoutine("email"));
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ code: "operator_notice_reply_to_slot_invalid", location: "step:done.operatorNotice.replyToSlot" }),
+    ]);
+    expect(result.diagnostics[0].message).toContain("\"email\"");
+    expect(result.diagnostics[0].message).toContain("email field");
+  });
+
+  it("refuses a reply-to that names a field the routine does not declare, with its own message", () => {
+    const undeclared = validateRoutineDefinition(giftRoutine("guest_email"));
+    const notEmail = validateRoutineDefinition(giftRoutine("email"));
+
+    expect(undeclared.diagnostics).toEqual([
+      expect.objectContaining({ code: "operator_notice_reply_to_slot_invalid", location: "step:done.operatorNotice.replyToSlot" }),
+    ]);
+    expect(undeclared.diagnostics[0].message).toContain("guest_email");
+    expect(undeclared.diagnostics[0].message).not.toEqual(notEmail.diagnostics[0].message);
+  });
+
+  it("counts the reply-to as a use of its field", () => {
+    const routine = giftRoutine("recipient_email");
+    const result = validateRoutineDefinition({
+      ...routine,
+      steps: [{ ...routine.steps[0], instruction: "Ask for {{slot.buyer_email}} and {{slot.email}}." }],
+    });
+
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("names the rule in the safe diagnostic an external caller sees", () => {
+    const safe = toSafeRoutineValidationDiagnostic({ code: "operator_notice_reply_to_slot_invalid", location: "step:done.operatorNotice.replyToSlot" });
+
+    expect(safe.message).not.toBe("The routine structure is not valid for serving.");
+  });
+});
+
 describe("validateRoutineDefinition operator notice skill", () => {
   const notifySkill = (skillName: string): SkillAuthoringDescriptor => ({ ...descriptor(skillName, []), category: "notify" });
   const routineNamingSkill = (

@@ -88,10 +88,12 @@ const toolFor = (adapter: ReturnType<typeof createWorkspaceSettingCopilotProposa
     ...input,
   }) as never);
   const record = vi.fn(async () => undefined);
+  const recoverOperatorMcpProposal = vi.fn();
   const [descriptor] = createWorkspaceSettingProposalCopilotTools({
     proposalRepository: { createProposal },
     proposalAdapters: [adapter],
     auditService: { record },
+    proposalRecovery: { recoverOperatorMcpProposal },
   });
   if (!descriptor) throw new Error("No workspace setting proposal descriptor");
   return { descriptor, createProposal, record };
@@ -115,6 +117,23 @@ describe("propose_workspace_setting", () => {
     settings.applyFieldProposal.mockResolvedValueOnce({ status: "changed", fields: ["assistantName"] });
     await expect(adapter.applyIfVersionMatches("workspace-1", { expectedFields: { assistantName: "Ada" } }, storedPayload({ assistantName: "Ida" }), "fields:test"))
       .resolves.toEqual({ outcome: "stale", reason: "Field changed: assistantName" });
+  });
+
+  it("creates a proposal with an operator MCP invocation origin when no conversation is present", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor, createProposal } = toolFor(adapter);
+    const mcpContext = {
+      ...context,
+      surface: "mcp" as const,
+      copilotConversationId: undefined,
+      operatorMcpInvocationId: "33333333-3333-4333-8333-333333333333",
+    };
+
+    await descriptor.createTool(mcpContext).invoke({ assistantName: "Ida" }, {} as never);
+
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      origin: { type: "operator_mcp_invocation", invocationId: "33333333-3333-4333-8333-333333333333" },
+    }));
   });
 
   it("expands a one-field change against the stored settings, because the write is a whole-object replace", async () => {

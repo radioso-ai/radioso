@@ -1,7 +1,8 @@
 import { z } from "zod";
 
-import type { CopilotToolDescriptor } from "../contracts.js";
+import type { CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../contracts.js";
 import { boundPayload } from "../payloadCompaction.js";
+import { buildAbsoluteCopilotDashboardLink } from "../dashboardLinks.js";
 
 export interface CopilotWorkspaceSettingsPort {
   getRetrievalDefaults(workspaceId: string): Promise<{
@@ -75,6 +76,8 @@ export interface CopilotWorkspaceSettingsPort {
     };
   }>;
   getGeneralSettings(workspaceId: string): Promise<{
+    /** The agent whose surface these workspace-wide settings are — the workspace's default agent. */
+    agentId: string;
     assistant: {
       assistantName: string;
       greetingInstruction: string;
@@ -184,20 +187,27 @@ const workspaceSettingsOutputSchema = z.object({
       websiteEmbedAllowedOrigins: z.array(z.string()),
       websiteEmbedLauncherLabel: z.string(),
       websiteEmbedLauncherPosition: z.string(),
+      /** Dashboard page where a signed-in operator copies the embed's install snippet. The
+       * snippet itself carries the embed token and is never returned over this surface. */
+      websiteEmbedSnippetUrl: z.string(),
     }).strict(),
   }).strict(),
 }).strict();
 
+const DESCRIPTION = "Read safe workspace retrieval, ingestion, model, credential-health, embedding-coverage, and general configuration. Use workspace_usage_limits in Enterprise workspaces for plan limits and current usage. Tokens, secrets, credential values, and connection strings are excluded. For the website embed, general.channels.websiteEmbedSnippetUrl is the dashboard page where a signed-in operator copies the install snippet; the snippet itself is never returned here.";
+
 export const createWorkspaceSettingsCopilotTools = (deps: {
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
+  readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
+  readonly appBaseUrl?: string | null;
 }): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "workspace_settings", shape: "read", verificationCost: () => 0, uiLabel: "Reading workspace settings", contributingModule: "settings", dashboardSubject: { type: "workspace_settings" }, requiredPermissions: ["workspace.settings.read"],
-    description: "Read safe workspace retrieval, ingestion, model, credential-health, embedding-coverage, and general configuration. Use workspace_usage_limits in Enterprise workspaces for plan limits and current usage. Tokens, secrets, credential values, and connection strings are excluded.",
+    description: DESCRIPTION,
     inputSchema: workspaceSettingsInputSchema, outputSchema: workspaceSettingsOutputSchema,
     createTool: (context) => ({
       name: "workspace_settings",
-      description: "Read safe workspace retrieval, ingestion, model, credential-health, embedding-coverage, and general configuration. Use workspace_usage_limits in Enterprise workspaces for plan limits and current usage. Tokens, secrets, credential values, and connection strings are excluded.",
+      description: DESCRIPTION,
       inputSchema: workspaceSettingsInputSchema,
       outputSchema: workspaceSettingsOutputSchema,
       invoke: async () => {
@@ -209,6 +219,7 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
           general,
           embeddingCoverage,
           managedModels,
+          workspaceKey,
         ] = await Promise.all([
           deps.workspaceSettings.getRetrievalDefaults(context.workspaceId),
           deps.workspaceSettings.getIngestionSettings(context.workspaceId),
@@ -217,6 +228,7 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
           deps.workspaceSettings.getGeneralSettings(context.workspaceId),
           deps.workspaceSettings.getEmbeddingCoverage(context.workspaceId),
           deps.workspaceSettings.getManagedLlmModels(context.workspaceId),
+          deps.workspaceRouteKeyResolver.resolveWorkspaceKey(context.workspaceId),
         ]);
         const managedSelection = (capability: "chat" | "rewrite" | "rerank") => {
           const selection = managedModels[capability];
@@ -319,6 +331,11 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
               websiteEmbedAllowedOrigins: [...general.channels.websiteEmbedAllowedOrigins],
               websiteEmbedLauncherLabel: general.channels.websiteEmbedLauncherLabel,
               websiteEmbedLauncherPosition: general.channels.websiteEmbedLauncherPosition,
+              websiteEmbedSnippetUrl: buildAbsoluteCopilotDashboardLink(
+                workspaceKey,
+                { type: "website_embed", agentId: general.agentId },
+                deps.appBaseUrl,
+              ),
             },
           },
         });

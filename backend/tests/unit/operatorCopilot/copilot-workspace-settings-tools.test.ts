@@ -76,6 +76,7 @@ const workspaceSettingsPort = () => ({
     value: "credential-value-secret",
   })),
   getGeneralSettings: vi.fn(async () => ({
+    agentId: "agent-1",
     assistant: {
       assistantName: "Support",
       greetingInstruction: "Greet warmly.",
@@ -108,9 +109,12 @@ const workspaceSettingsPort = () => ({
   })),
 });
 
+const workspaceRouteKeyResolver = { resolveWorkspaceKey: vi.fn(async () => "acme") };
+const appBaseUrl = "https://app.example.com";
+
 describe("workspace settings copilot reader", () => {
   it("declares one read-shaped settings reader", () => {
-    const descriptors = createWorkspaceSettingsCopilotTools({ workspaceSettings: workspaceSettingsPort() });
+    const descriptors = createWorkspaceSettingsCopilotTools({ workspaceSettings: workspaceSettingsPort(), workspaceRouteKeyResolver, appBaseUrl });
 
     expect(descriptors.map(({ name, requiredPermissions, contributingModule, uiLabel, shape }) => ({ name, requiredPermissions, contributingModule, uiLabel, shape }))).toEqual([
       {
@@ -125,7 +129,7 @@ describe("workspace settings copilot reader", () => {
 
   it("reads retrieval, ingestion, coverage, LLM, credential-health, and general workspace configuration", async () => {
     const workspaceSettings = workspaceSettingsPort();
-    const [descriptor] = createWorkspaceSettingsCopilotTools({ workspaceSettings });
+    const [descriptor] = createWorkspaceSettingsCopilotTools({ workspaceSettings, workspaceRouteKeyResolver, appBaseUrl });
 
     const result = await descriptor.createTool(context).invoke({}, {} as never);
 
@@ -177,13 +181,19 @@ describe("workspace settings copilot reader", () => {
       },
       general: {
         assistant: { assistantName: "Support", assistantDefaultLocale: "en" },
-        channels: { anonymousChatEnabled: true, websiteEmbedEnabled: true, websiteEmbedScriptUrl: "https://app.example.test/embed.js" },
+        channels: {
+          anonymousChatEnabled: true,
+          websiteEmbedEnabled: true,
+          websiteEmbedScriptUrl: "https://app.example.test/embed.js",
+          websiteEmbedSnippetUrl: "https://app.example.com/w/acme/agents/agent-1?tab=channels&anchor=web-chat",
+        },
       },
     });
+    expect(workspaceRouteKeyResolver.resolveWorkspaceKey).toHaveBeenCalledWith("workspace-1");
   });
 
   it("never emits secrets, tokens, credential values, or connection strings", async () => {
-    const [descriptor] = createWorkspaceSettingsCopilotTools({ workspaceSettings: workspaceSettingsPort() });
+    const [descriptor] = createWorkspaceSettingsCopilotTools({ workspaceSettings: workspaceSettingsPort(), workspaceRouteKeyResolver, appBaseUrl });
 
     const serialized = JSON.stringify(await descriptor.createTool(context).invoke({}, {} as never));
 

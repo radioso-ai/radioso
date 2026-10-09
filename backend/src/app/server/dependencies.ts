@@ -999,7 +999,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         };
       },
       async getGeneralSettings(workspaceId) {
-        return platformSettingsService.getForWorkspace(workspaceId);
+        const { settings, agentId } = await platformSettingsService.getVersionedForWorkspace(workspaceId);
+        return { ...settings, agentId };
       },
     },
     proposalRepository: repositories.copilotRepository,

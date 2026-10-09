@@ -143,6 +143,55 @@ export const createAgentSkillsCopilotTools = (deps: AgentSkillsCopilotToolDepend
   },
 ];
 
+/** Where one choice of an ending's notify skill sends its notice; mirrors the dashboard endpoint. */
+const operatorNoticeDestinationSchema = z.object({
+  skillName: z.string().nullable(),
+  via: z.enum(["named_skill", "contact_human", "contact_human_off", "agent_setting", "workspace_owner", "none"]),
+  recipientEmails: z.array(z.string()),
+  recipientsFromWorkspaceOwner: z.boolean(),
+  webhookConfigured: z.boolean(),
+});
+const operatorNoticeDestinationsOutputSchema = z.object({
+  default: operatorNoticeDestinationSchema,
+  skills: z.array(operatorNoticeDestinationSchema),
+});
+type CopilotOperatorNoticeDestinations = z.infer<typeof operatorNoticeDestinationsOutputSchema>;
+
+export interface CopilotOperatorNoticeDestinationsPort {
+  read(input: { workspaceId: string; agentId: string }): Promise<CopilotOperatorNoticeDestinations>;
+}
+export interface OperatorNoticeDestinationsCopilotToolDependencies {
+  readonly agentService: CopilotAgentSkillsAgentPort;
+  readonly operatorNoticeDestinations: CopilotOperatorNoticeDestinationsPort;
+}
+
+const operatorNoticeDestinationsDescription = "Read where a routine ending's Notify-the-team email is sent. `default` is where an ending sends when its `operatorNotice` names no skill; `skills` lists each notify skill an ending can name as `operatorNotice.skillName`, with where it sends. Each destination gives the recipient emails and `via`, the rule that picked them: named_skill (the skill's own recipients), contact_human (the contact_human skill), contact_human_off (contact_human is turned off, so nothing is sent), agent_setting (the agent's contact settings), workspace_owner (the workspace owner or admin), or none. A webhook shows only as webhookConfigured; its URL is never returned.";
+
+// Recipient emails are the team's own addresses, shown to the operator who asks so a notice's
+// destination is never implicit. Webhook URLs stay out: they often carry a token.
+export const createOperatorNoticeDestinationsCopilotTools = (
+  deps: OperatorNoticeDestinationsCopilotToolDependencies,
+): ReadonlyArray<CopilotToolDescriptor> => [
+  {
+    name: "operator_notice_destinations", shape: "read", verificationCost: () => 0, uiLabel: "Reading where notices are sent", contributingModule: "agentSkills", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
+    description: operatorNoticeDestinationsDescription,
+    inputSchema, outputSchema: operatorNoticeDestinationsOutputSchema,
+    createTool: (context) => ({
+      name: "operator_notice_destinations", description: operatorNoticeDestinationsDescription, inputSchema, outputSchema: operatorNoticeDestinationsOutputSchema,
+      invoke: async ({ agentId }) => {
+        const resolvedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
+        await deps.agentService.get(context.workspaceId, resolvedAgentId);
+        return deps.operatorNoticeDestinations.read({ workspaceId: context.workspaceId, agentId: resolvedAgentId });
+      },
+    }),
+    describeEntity: (input, context) => {
+      const parsed = input as { agentId?: string; agentName?: string };
+      const agentLookup = deps.agentService.listExisting ? { listExisting: deps.agentService.listExisting } : undefined;
+      return parsed.agentName ? describeNamedAgent(parsed, context, agentLookup) : entity("agent", parsed.agentId ?? context?.pageContext.agentId);
+    },
+  },
+];
+
 // Only the retrieve capability's default-answer skill is synced onto a legacy per-agent settings
 // slot a replay override can express (agentRepository keys it by kind + invocation_mode, not by
 // the skill's own name). Every other capability/invocation-mode pair has no such seam, so evidence

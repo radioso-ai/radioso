@@ -872,6 +872,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentSourceStatusService: documents.documentIngestionService,
     agentSkillsService,
     skillCapabilityRegistry,
+    operatorNoticeDestinations: { read: (input) => operatorNoticeDestinations.read(input) },
     contextVariables: contextVariableService,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,

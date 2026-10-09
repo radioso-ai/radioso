@@ -162,6 +162,8 @@ export interface RoutineStructuralPreparationDependencies extends ReviewedPrepar
 }
 
 /** Prepares a structurally explicit routine draft; applying it remains the reviewed-operation path. */
+const routineStructuralPreparationDescription = "Prepare a routine change for review; this does not change the routine. Set kind to \"edit\" to apply explicit graph commands to an existing routine, \"create\" to draft a new one, or \"delete\" to retire one. An ending's `operatorNotice.skillName` names the notify skill that sends its notice to the team (operator_notice_destinations lists them and where each sends); leave it out to send to the default destination. To change it, use replace_terminal with the ending exactly as routine_definition's authoringDetail shows it as `previous`.";
+
 export const createRoutineStructuralPreparationTool = (
   deps: RoutineStructuralPreparationDependencies,
 ): CopilotToolDescriptor => ({
@@ -169,7 +171,7 @@ export const createRoutineStructuralPreparationTool = (
   shape: "propose",
   verificationCost: () => 0,
   uiLabel: "Preparing routine structure",
-  description: "Prepare a routine change for review; this does not change the routine. Set kind to \"edit\" to apply explicit graph commands to an existing routine, \"create\" to draft a new one, or \"delete\" to retire one.",
+  description: routineStructuralPreparationDescription,
   contributingModule: "routines",
   dashboardSubject: { type: "proposal" },
   requiredPermissions: ["workspace.agents.manage"],
@@ -187,7 +189,7 @@ export const createRoutineStructuralPreparationTool = (
   },
   createTool: (context) => ({
     name: "prepare_routine_structure",
-    description: "Prepare a routine change for review; this does not change the routine. Set kind to \"edit\" to apply explicit graph commands to an existing routine, \"create\" to draft a new one, or \"delete\" to retire one.",
+    description: routineStructuralPreparationDescription,
     inputSchema,
     outputSchema,
     invoke: async (rawInput) => {

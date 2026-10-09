@@ -173,3 +173,107 @@ it("lets an Operator MCP client set up the website embed while the token stays b
   expect(snippetUrl.search).toBe("?tab=channels&anchor=web-chat");
   expect(JSON.stringify(settings)).not.toContain(token);
 });
+
+it("lets an Operator MCP client read, route, and check which notify skill sends a routine ending's notice", async () => {
+  const { app, dependencies } = createTestApp();
+  const ownerEmail = "notice-routing-owner@example.com";
+  const { workspaceId, accountId, userId } = await issueTestSession(app, ownerEmail);
+  const agentId = (await dependencies.agentService.listExisting(workspaceId))[0]!.id;
+  for (const [name, recipient] of [["notify_bookings", "francesco@example.com"], ["notify_sales", "sales@example.com"]] as const) {
+    await dependencies.agentSkillsService.create(workspaceId, agentId, {
+      name,
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: { delivery: { recipientEmails: [recipient], webhook: null } },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+  }
+  const { routine } = await dependencies.routineDefinitionService.createDraft(workspaceId, agentId, {
+    name: "book-a-stay",
+    enabled: true,
+    activation: { triggerDescription: "A guest wants to book a stay", gateRef: null, priority: 10, reentryMode: "once_per_conversation" },
+    slots: [],
+    steps: [{ stableStepId: "ask_dates", kind: "chat", instruction: "Ask for the dates.", toolRef: null, ordinal: 0, metadata: {} }],
+    transitions: [{ fromStep: "ask_dates", toRef: "booked", guardKind: "default", guardText: null, ordinal: 0 }],
+    terminals: [{ stableStepId: "booked", kind: "handoff", instruction: null, operatorNotice: { subject: null, intro: null, skillName: "notify_bookings" }, ordinal: 0 }],
+  });
+  const mcpContext = {
+    workspaceId,
+    accountId,
+    operatorUserId: userId,
+    surface: "mcp" as const,
+    operatorMcpInvocationId: randomUUID(),
+    operatorMcpGrantId: randomUUID(),
+    operatorMcpClientId: "notice-routing-client",
+    currentAuthorization: { hasAllPermissions: async () => true },
+    pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+  };
+  const invoke = async (name: string, input: Record<string, unknown>) => {
+    const found = dependencies.copilotToolCatalog.find((candidate) => candidate.name === name);
+    if (!found) throw new Error(`Expected ${name} in the copilot catalog`);
+    expect(found.mcpDisposition?.status).toBe("eligible");
+    return found.createTool({ ...mcpContext, operatorMcpInvocationId: randomUUID() }).invoke(input, {} as never);
+  };
+  const endingSkill = async () => {
+    const read = await invoke("routine_definition", { agentId, routineId: routine.id }) as {
+      routine: { editable: { endings: Array<{ operatorNotice: { skillName: string | null } | null }> } };
+    };
+    return read.routine.editable.endings[0]?.operatorNotice?.skillName;
+  };
+
+  // Read which skill sends the notice, and where each choice sends.
+  expect(await endingSkill()).toBe("notify_bookings");
+  const destinations = await invoke("operator_notice_destinations", { agentId }) as {
+    default: { via: string; recipientEmails: string[] };
+    skills: Array<{ skillName: string; via: string; recipientEmails: string[] }>;
+  };
+  expect(destinations.default).toMatchObject({ via: "workspace_owner", recipientEmails: [ownerEmail] });
+  expect(destinations.skills).toEqual(expect.arrayContaining([
+    expect.objectContaining({ skillName: "notify_bookings", via: "named_skill", recipientEmails: ["francesco@example.com"] }),
+    expect.objectContaining({ skillName: "notify_sales", via: "named_skill", recipientEmails: ["sales@example.com"] }),
+  ]));
+
+  // Route it through another skill with a reviewed structural edit, then read it back.
+  const previous = routine.terminals[0]!;
+  const prepared = await invoke("prepare_routine_structure", {
+    kind: "edit",
+    agentId,
+    routineId: routine.id,
+    operations: [{
+      kind: "replace_terminal",
+      previous,
+      next: { ...previous, operatorNotice: { subject: null, intro: null, skillName: "notify_sales" } },
+    }],
+  }) as { proposalId: string; reviewDigest: string };
+  const executed = await invoke("execute_reviewed_proposal", { proposalId: prepared.proposalId, reviewDigest: prepared.reviewDigest }) as { status: string };
+  expect(executed.status).toBe("applied");
+  expect(await endingSkill()).toBe("notify_sales");
+
+  // Send it back to the default destination with a routine edit proposal.
+  const proposal = await invoke("propose_routine_edit", {
+    agentId,
+    routineId: routine.id,
+    changes: { terminals: [{ stableStepId: "booked", operatorNotice: { skillName: null } }] },
+  }) as { proposalId: string };
+  await expect(dependencies.operatorCopilotService.applyProposal({
+    workspaceId, accountId, operatorUserId: userId, surface: "dashboard", proposalId: proposal.proposalId,
+  })).resolves.toMatchObject({ status: "applied" });
+  expect(await endingSkill()).toBeNull();
+
+  // A skill the agent does not have is reported before it can be published.
+  const { id: _id, agentId: _agentId, lineageId: _lineageId, version: _version, createdAt: _createdAt, updatedAt: _updatedAt, ...current } =
+    await dependencies.routineDefinitionService.get(workspaceId, agentId, routine.id);
+  await dependencies.routineDefinitionService.updateDraft(workspaceId, agentId, routine.id, {
+    ...current,
+    terminals: current.terminals.map((terminal) => ({ ...terminal, operatorNotice: { subject: null, intro: null, skillName: "notify_nobody" } })),
+  });
+  const validation = await invoke("validate_routine", { agentId, routineId: routine.id }) as {
+    ok: boolean;
+    diagnostics: Array<{ code: string; location: string }>;
+  };
+  expect(validation.ok).toBe(false);
+  expect(validation.diagnostics).toEqual(expect.arrayContaining([
+    expect.objectContaining({ code: "operator_notice_skill_unavailable", location: "step:booked.operatorNotice.skillName" }),
+  ]));
+});

@@ -1736,6 +1736,8 @@ export const createTestDependencies = (overrides: {
   const skillAuthoringCatalog = new SkillAuthoringCatalogService({
     skillCatalog: skillCatalogService,
     externalSkills: externalSkillDefinitionService,
+    agentSkills: agentSkillRepository,
+    capabilities: skillCapabilityRegistry,
   });
   const actionComposition = createDefaultApplicationComposition({ logger });
   const routineDefinitionService = new RoutineDefinitionService({
@@ -2340,6 +2342,7 @@ export const createTestDependencies = (overrides: {
     documentSourceStatusService: documentIngestionService,
     agentSkillsService,
     skillCapabilityRegistry,
+    operatorNoticeDestinations,
     contextVariables: contextVariableService,
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {
@@ -2383,8 +2386,9 @@ export const createTestDependencies = (overrides: {
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     revisions: agentRevisionService,
     routines: {
+      findCreateConflict: routineDefinitionService.findCreateConflict.bind(routineDefinitionService),
       get: routineDefinitionService.get.bind(routineDefinitionService),
-      validate: routineDefinitionService.validate.bind(routineDefinitionService),
+      validateForDraftMutation: routineDefinitionService.validateForDraftMutation.bind(routineDefinitionService),
     },
     scopedReferences: scopedRoutineReferences,
     reviewedProposalExecution: {

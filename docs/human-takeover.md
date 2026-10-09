@@ -444,7 +444,9 @@ the value from the pending decision; a stale hash returns `409`. The decision fl
 the routine resume, and the resumed turn commit in one transaction, so a crash
 before commit leaves the decision pending and a retry resolves cleanly. Approving
 resumes the routine and lets the gated action run; rejecting takes the rejection
-branch. A gated side effect runs as an idempotent outbox action, never inline.
+branch. A routine that reaches its ending this way is kept as a completed run, like
+one that ends in chat, so its reentry setting decides whether it can start again in
+that conversation. A gated side effect runs as an idempotent outbox action, never inline.
 The same transaction records the teammate who decided and the option they chose
 as an `approval_decided` [activity](#conversation-activity) event.
 

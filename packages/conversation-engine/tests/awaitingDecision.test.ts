@@ -120,6 +120,29 @@ describe("resumeAwaitingDecision", () => {
     expect(result.response.answer).toContain("declined");
   });
 
+  it("hands back the completed record a live ending keeps, the decision included (#1457)", async () => {
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([refundRoutine], throwingSelector(), { render: vi.fn(renderer.render) }, { dispatch });
+
+    const result = await resumeAwaitingDecision({
+      suspendedReader: readerFor(suspendedAtGate),
+      routineRunner: runner,
+      turn,
+      sessionId: "session_1",
+      decision: { handle: "decision_1", optionId: "approve" },
+    });
+
+    expect(result.nextState).toBeNull();
+    expect(result.completedState).toMatchObject({
+      sessionId: "session_1",
+      routineId: suspendedAtGate.routineId,
+      path: ["ask_reason", "gate", "confirmed"],
+      variables: { reason: "item arrived damaged", approval_decision: { id: "approve" } },
+      status: "completed",
+      metadata: { terminalKind: "complete", terminalStepId: "confirmed" },
+    });
+  });
+
   it("reports a hand-off ending's ownership and notice the same way a live turn does", async () => {
     const handoffRoutine: Routine = {
       ...refundRoutine,
@@ -170,6 +193,32 @@ describe("resumeAwaitingDecision", () => {
       collected: {},
       subject: "Refund issued",
     });
+  });
+
+  it("hands back no completed record when the resume yields instead of ending (#1457)", async () => {
+    const llmGateRoutine: Routine = {
+      ...refundRoutine,
+      transitions: [
+        { from: "ask_reason", to: "gate", condition: "a reason was provided", guard: { kind: "default" } },
+        { from: "gate", to: "issue_refund", condition: "the operator approved", guard: { kind: "llm" } },
+        { from: "gate", to: "declined", condition: "the operator rejected", guard: { kind: "llm" } },
+        { from: "issue_refund", to: "confirmed", condition: "the refund was issued" },
+      ],
+    };
+    const select = vi.fn(async () => ({ nextStepId: "gate", yieldTurn: true }));
+    const runner = new DefaultRoutineRunner([llmGateRoutine], { select }, { render: vi.fn(renderer.render) });
+
+    const result = await resumeAwaitingDecision({
+      suspendedReader: readerFor(suspendedAtGate),
+      routineRunner: runner,
+      turn,
+      sessionId: "session_1",
+      decision: { handle: "decision_1", optionId: "approve" },
+    });
+
+    expect(result.yielded).toBe(true);
+    expect(result.terminal).toBeUndefined();
+    expect(result.completedState).toBeUndefined();
   });
 
   it("CONTROL calls the selector when the same gate uses llm decision edges", async () => {

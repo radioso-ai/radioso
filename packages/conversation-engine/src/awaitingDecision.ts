@@ -60,6 +60,7 @@ export const resumeAwaitingDecision = async (input: {
   const result = await input.routineRunner.resume({
     turn: input.turn,
     state: resumedState,
+    decisionTurn: true,
     ...(input.steeringResolver ? { steeringResolver: input.steeringResolver } : {}),
   });
   return {

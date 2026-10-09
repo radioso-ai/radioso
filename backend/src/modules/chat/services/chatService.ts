@@ -175,7 +175,7 @@ import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
 export type { ChatRoutineProvider } from "../contracts/routineProvider.js";
-export { buildRoutinePendingDecisionTransition } from "./chatTurnAssembly.js";
+export { buildRoutinePendingDecisionTransition } from "./routines/routinePendingDecision.js";
 export { BlankChatAnswerError } from "./chatAnswerErrors.js";
 export { ModelChatGateway } from "./chatGateways.js";
 export type { SuspendedRoutineReader } from "./approvalResumeTurn.js";

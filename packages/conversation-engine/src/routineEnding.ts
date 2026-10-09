@@ -17,8 +17,9 @@ export const completedRoutineState = (
 ): RoutineState => {
   // A normal terminal ending lands by moving onto a terminal step the path never held; a stuck
   // ending (#1384) lands on the chat step already last in `path` — the walk never advanced off
-  // it — so appending it again would duplicate that entry.
-  const landedStepId = result.trace?.landedStepId;
+  // it — so appending it again would duplicate that entry. The trace is optional; the ending
+  // names the same step.
+  const landedStepId = result.trace?.landedStepId ?? result.terminal?.stepId;
   const path = landedStepId && landedStepId !== state.path.at(-1) ? [...state.path, landedStepId] : state.path;
   return {
     ...state,

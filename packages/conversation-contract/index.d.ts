@@ -1534,7 +1534,10 @@ export interface RoutineRunTrace {
 
 export interface ConversationRoutineResumeResult {
   response: RenderableTurn;
-  /** The next state to persist; `null` clears it (the routine reached a terminal step). */
+  /**
+   * The next state to persist; `null` when the routine ended this turn (`terminal` says how). A
+   * host keeps the ended run as completed rather than active, with the values in `endedVariables`.
+   */
   nextState: RoutineState | null;
   /**
    * How the routine ended, when it did: at an authored terminal step of that kind, or `stuck`

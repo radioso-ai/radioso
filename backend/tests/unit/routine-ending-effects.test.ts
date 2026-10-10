@@ -83,6 +83,39 @@ describe("routineEndingEffectsForTurn", () => {
     expect(JSON.stringify(action?.payload)).not.toContain("notify_bookings");
   });
 
+  it("queues the field the notice replies to inside the payload's notice, with or without authored text", () => {
+    const effects = routineEndingEffectsForTurn({
+      session,
+      workspaceId: "ws_1",
+      turn: {
+        operatorNotice: {
+          routineId: "routine_1",
+          stepId: "done",
+          terminalKind: "complete",
+          collected: { buyer_email: "ada@example.com", recipient_email: "grace@example.com" },
+          replyToSlot: "recipient_email",
+        },
+      },
+    });
+
+    expect(effects.actions?.at(-1)?.payload.notice).toEqual({ replyToSlot: "recipient_email" });
+
+    const worded = routineEndingEffectsForTurn({
+      session,
+      workspaceId: "ws_1",
+      turn: {
+        operatorNotice: {
+          routineId: "routine_1",
+          stepId: "done",
+          terminalKind: "handoff",
+          subject: "Gift booking",
+          replyToSlot: "recipient_email",
+        },
+      },
+    });
+    expect(worded.actions?.at(-1)?.payload.notice).toEqual({ subject: "Gift booking", replyToSlot: "recipient_email" });
+  });
+
   it("names no skill on the action when the ending sends to the default destination", () => {
     const effects = routineEndingEffectsForTurn({
       session,

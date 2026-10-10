@@ -4459,6 +4459,22 @@ describe("DefaultRoutineRunner operator notices", () => {
     expect(malformed.terminal?.operatorNotice).toEqual({});
   });
 
+  it("reports the field the landed terminal's notice replies to, and drops a malformed one", async () => {
+    const named = await new DefaultRoutineRunner(
+      [ending({ terminalKind: "complete", operatorNotice: { subject: "Booking", replyToSlot: "guest_email" } })],
+      landingOnDone(),
+      renderer,
+    ).resume({ turn, state: state(["ask_name"]) });
+    expect(named.terminal?.operatorNotice).toEqual({ subject: "Booking", replyToSlot: "guest_email" });
+
+    const malformed = await new DefaultRoutineRunner(
+      [ending({ terminalKind: "complete", operatorNotice: { replyToSlot: ["guest_email"] } })],
+      landingOnDone(),
+      renderer,
+    ).resume({ turn, state: state(["ask_name"]) });
+    expect(malformed.terminal?.operatorNotice).toEqual({});
+  });
+
   it("reports no notice for a terminal step without notice metadata, and keeps only text fields of a malformed one", async () => {
     const quiet = await new DefaultRoutineRunner([ending({ terminalKind: "complete" })], landingOnDone(), renderer)
       .resume({ turn, state: state(["ask_name"]) });

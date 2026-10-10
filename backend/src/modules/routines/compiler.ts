@@ -93,6 +93,7 @@ const operatorNoticeTemplate = (
   ...(notice?.subject ? { subject: notice.subject } : {}),
   ...(notice?.intro ? { intro: notice.intro } : {}),
   ...(notice?.skillName ? { skillName: notice.skillName } : {}),
+  ...(notice?.replyToSlot ? { replyToSlot: notice.replyToSlot } : {}),
 });
 
 export const compileRoutineDefinition = (definition: RoutineDefinition): Routine => {

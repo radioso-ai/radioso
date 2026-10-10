@@ -484,12 +484,12 @@ describe("RoutineDraftAssistService", () => {
     expect(result.validation).toEqual({ ok: true, diagnostics: [] });
   });
 
-  it("keeps the notify skill a notice names while it normalizes the notice text", async () => {
+  it("keeps the notify skill and the reply-to field a notice names while it normalizes the notice text", async () => {
     const textGenerationClient = new FakeTextClient([
       completion(validDraft({
         terminals: [{
           ...validDraft().terminals[0],
-          operatorNotice: { subject: "Support request from {{ email }}", intro: null, skillName: "notify_support" },
+          operatorNotice: { subject: "Support request from {{ email }}", intro: null, skillName: "notify_support", replyToSlot: "email" },
         }],
       })),
     ]);
@@ -503,6 +503,7 @@ describe("RoutineDraftAssistService", () => {
       subject: "Support request from {{slot.email}}",
       intro: null,
       skillName: "notify_support",
+      replyToSlot: "email",
     });
   });
 

@@ -400,6 +400,14 @@ imports from `services/`.
   `operator_notice_destinations` tool. Recipient emails are personal data: the HTTP route
   serves workspace sessions only, and the tool answers the signed-in operator's own Ray or
   Operator MCP client. Neither returns a webhook URL.
+  An authored notice can also carry `replyToSlot`, the key of the email slot replies go
+  to. Unlike `skillName` it is content, not routing, so it rides the payload's `notice`
+  next to `subject` and `intro` (`operatorNoticeActionPayload`). At delivery
+  `routineEndingNotificationFromAction` reads it off the queued row and sets
+  `RoutineEndingOperatorNotification.replyTo` to the value collected under that key, when
+  it is a non-empty string; nothing else ever chooses a reply-to address. The email/webhook
+  sink passes it to `mailer.send` as `replyTo` and posts it as the webhook body's
+  `replyTo` (`null` when none); approval emails and the Slack sink carry none.
 - Conversation summary: `services/summary/conversationSummaryService.ts` maintains
   a bounded, regenerated-per-update rolling summary per conversation (#866). State
   lives in `conversation_summaries` (`db/repositories/conversationSummaryRepository.ts`,
@@ -505,8 +513,8 @@ imports from `services/`.
   turn that ends on a routine ending that notifies operators — a hand-off, or a
   completion with an operator notice, whose `handoff.notify` / `completion.notify`
   action a replayed turn never dispatches — carries the notice content (`kind`,
-  subject, and body, authored text included) that the operator notification would
-  send, as the trace's `handoffPreview`, built through the same `operatorNotifications`
+  subject, and body, authored text included, plus the `replyTo` address when there is
+  one) that the operator notification would send, as the trace's `handoffPreview`, built through the same `operatorNotifications`
   text formatter the real dispatch uses (`WorkbenchReplayRunner.operatorNoticePreviewFor`);
   live delivery additionally appends the conversation link, which a replayed turn
   has none of. The preview lists collected slot values, so it follows the same

@@ -53,12 +53,14 @@ export const turnTraceEnvelopeSchema = z.object({
    * replayed turn never actually delivers it. Live delivery additionally appends an
    * `Open: <conversation URL>` line this preview omits. Absent on a customer
    * conversation's `turn_trace`, which sends for real. `kind` is absent on a trace stored
-   * before completions could notify; such a preview is a hand-off.
+   * before completions could notify; such a preview is a hand-off. `replyTo` is the address
+   * replies to the notice would go to, absent when the notice has none.
    */
   handoffPreview: z.object({
     kind: z.enum(["handoff", "completion"]).optional(),
     subject: z.string(),
     lines: z.array(z.string()),
+    replyTo: z.string().optional(),
   }).optional(),
 });
 

@@ -1017,13 +1017,15 @@ export interface RoutineStep {
  * `metadata.operatorNotice` exactly when that ending notifies operators. Either text may hold
  * `{{slot.<key>}}` references the host substitutes; an absent text means the host's default
  * for the ending's kind. `skillName` names the host skill that delivers the notice; absent
- * means the host's default destination. The engine reports the template, it never renders or
- * delivers it.
+ * means the host's default destination. `replyToSlot` is the key of the collected slot whose
+ * value replies to the notice go to; absent means no reply-to. The engine reports the template,
+ * it never renders or delivers it.
  */
 export interface RoutineOperatorNoticeTemplate {
   subject?: string;
   intro?: string;
   skillName?: string;
+  replyToSlot?: string;
 }
 
 /** A fire-and-forget side effect a routine requested: an authored `type` + payload. */

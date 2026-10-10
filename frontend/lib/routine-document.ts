@@ -181,6 +181,7 @@ const DOCUMENT_DIAGNOSTIC_COPY: Partial<Record<RoutineValidationDiagnostic['code
   referenced_undeclared_slot: 'This step uses information the routine does not collect.',
   unknown_skill: 'This skill is not available to the agent.',
   operator_notice_skill_unavailable: 'This notify skill is not available to the agent. Pick another or send with the default.',
+  operator_notice_reply_to_slot_invalid: 'Replies can only go to an email field. Pick one or choose No reply-to.',
   outcome_guard_on_non_tool_step: 'An outcome rule only works after a skill step.',
 }
 

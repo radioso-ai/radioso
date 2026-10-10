@@ -162,7 +162,7 @@ export interface RoutineStructuralPreparationDependencies extends ReviewedPrepar
 }
 
 /** Prepares a structurally explicit routine draft; applying it remains the reviewed-operation path. */
-const routineStructuralPreparationDescription = "Prepare a routine change for review; this does not change the routine. Set kind to \"edit\" to apply explicit graph commands to an existing routine, \"create\" to draft a new one, or \"delete\" to retire one. An ending's `operatorNotice.skillName` names the notify skill that sends its notice to the team (operator_notice_destinations lists them and where each sends); leave it out to send to the default destination. To change it, use replace_terminal with the ending exactly as routine_definition's authoringDetail shows it as `previous`.";
+const routineStructuralPreparationDescription = "Prepare a routine change for review; this does not change the routine. Set kind to \"edit\" to apply explicit graph commands to an existing routine, \"create\" to draft a new one, or \"delete\" to retire one. An ending's `operatorNotice.skillName` names the notify skill that sends its notice to the team (operator_notice_destinations lists them and where each sends); leave it out to send to the default destination. Its `operatorNotice.replyToSlot` is the key of the email field whose collected address replies to the notice go to; leave it out for no reply-to, and set it only to the field the operator names. To change either, use replace_terminal with the ending exactly as routine_definition's authoringDetail shows it as `previous`.";
 
 export const createRoutineStructuralPreparationTool = (
   deps: RoutineStructuralPreparationDependencies,

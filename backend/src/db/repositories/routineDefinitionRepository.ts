@@ -121,10 +121,12 @@ const readOperatorNotice = (
   terminal: Record<string, unknown>,
 ): NonNullable<RoutineDefinition["terminals"][number]["operatorNotice"]> => {
   const skillName = readNullableString(terminal, "operatorNoticeSkillName");
+  const replyToSlot = readNullableString(terminal, "operatorNoticeReplyToSlot");
   return {
     subject: readNullableString(terminal, "operatorNoticeSubject"),
     intro: readNullableString(terminal, "operatorNoticeIntro"),
     ...(skillName ? { skillName } : {}),
+    ...(replyToSlot ? { replyToSlot } : {}),
   };
 };
 
@@ -263,6 +265,7 @@ const definitionSelect = sql`
       'operatorNoticeSubject', te.operator_notice_subject,
       'operatorNoticeIntro', te.operator_notice_intro,
       'operatorNoticeSkillName', te.operator_notice_skill_name,
+      'operatorNoticeReplyToSlot', te.operator_notice_reply_to_slot,
       'ordinal', te.ordinal
     ) ORDER BY te.ordinal ASC, te.stable_step_id ASC) AS items
     FROM routine_terminal te
@@ -341,7 +344,7 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     stableStepId: readString(terminal, "stableStepId"),
     kind: readString(terminal, "kind") as RoutineTerminalKind,
     instruction: readNullableString(terminal, "instruction"),
-    // Absent, not undefined, when the notice is off or names no skill: the authoring shape
+    // Absent, not undefined, when the notice is off or names no skill or reply-to: the authoring shape
     // compares terminals as JSON (operator MCP replace_terminal), and an undefined-valued key is
     // not JSON.
     ...(readBoolean(terminal, "operatorNoticeEnabled")
@@ -997,6 +1000,7 @@ export class RoutineDefinitionRepository {
           operator_notice_subject: terminal.operatorNotice?.subject ?? null,
           operator_notice_intro: terminal.operatorNotice?.intro ?? null,
           operator_notice_skill_name: terminal.operatorNotice?.skillName ?? null,
+          operator_notice_reply_to_slot: terminal.operatorNotice?.replyToSlot ?? null,
           ordinal: terminal.ordinal,
         })
         .execute();

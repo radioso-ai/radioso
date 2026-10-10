@@ -164,6 +164,14 @@ describe('sanitizeDraftContentForSave', () => {
     })
     expect(saved.terminals[0].operatorNotice).toEqual({ subject: null, intro: 'Call back.', skillName: 'notify_bookings' })
   })
+
+  it('keeps the field an ending notice replies to when it saves the notice text', () => {
+    const saved = sanitizeDraftContentForSave({
+      ...draft,
+      terminals: [{ ...draft.terminals[0], operatorNotice: { subject: '', intro: null, replyToSlot: 'guest_email' } }],
+    })
+    expect(saved.terminals[0].operatorNotice).toEqual({ subject: null, intro: null, replyToSlot: 'guest_email' })
+  })
 })
 
 describe('documentDiagnosticText', () => {

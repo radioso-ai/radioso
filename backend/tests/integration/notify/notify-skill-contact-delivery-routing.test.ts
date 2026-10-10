@@ -13,6 +13,11 @@ import {
   type ContactNotificationMailer,
 } from "../../../src/modules/chat/services/actions/contactSendActionHandler.js";
 import { CONTACT_SEND_ACTION_TYPE } from "../../../src/modules/chat/contracts/index.js";
+import { EmailWebhookOperatorNotificationSink } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
+import { RoutineEndingNotifyActionHandler } from "../../../src/modules/chat/services/actions/routineEndingNotifyActionHandler.js";
+import { ROUTINE_ENDING_NOTICE_ACTIONS } from "../../../src/modules/chat/services/operatorNoticeAction.js";
+import { buildRoutineEndingNotifyAction } from "../../../src/modules/chat/services/routineEndingEffects.js";
+import { OperatorNotificationDispatcher } from "../../../src/modules/operatorNotifications/public.js";
 import { InMemoryAgentSkillRepository } from "../../support/inMemoryAgentSkills.js";
 import type {
   ActionFailureOutcome,
@@ -139,5 +144,61 @@ describe("notify skill contact delivery routing (enqueue through drain)", () => 
     await dispatcher.dispatchPending();
 
     expect(sent.map((message) => message.to).sort()).toEqual(["sales@example.com", "support@example.com"]);
+  });
+
+  it("delivers a routine ending notice to the recipients of the notify skill the ending names", async () => {
+    const outbox = new InMemoryActionOutbox();
+    const skills = new InMemoryAgentSkillRepository();
+    await skills.create({
+      workspaceId: "ws_1",
+      agentId: "agent_1",
+      skillName: "contact_human",
+      kind: "notify",
+      targetType: "notify_delivery",
+      invocationMode: "routine_named",
+      enabled: true,
+      config: { delivery: { recipientEmails: ["support@example.com"], webhook: null } },
+    });
+    await skills.create({
+      workspaceId: "ws_1",
+      agentId: "agent_1",
+      skillName: "notify_bookings",
+      kind: "notify",
+      targetType: "notify_delivery",
+      invocationMode: "routine_named",
+      enabled: true,
+      config: { delivery: { recipientEmails: ["francesco@example.com"], webhook: null } },
+    });
+
+    // The turn that reached the ending queues its notice the way the chat turn lifecycle does:
+    // the skill name rides on the outbox row, not in the payload.
+    const action = buildRoutineEndingNotifyAction({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+      agentId: "agent_1",
+      userMessageId: "message_1",
+      notice: { routineId: "routine_1", stepId: "booked", terminalKind: "complete", skillName: "notify_bookings" },
+    });
+    await outbox.enqueue({ ...action, workspaceId: "ws_1", conversationId: "conv_1", skillName: action.skillName ?? null });
+
+    const sent: { to: string }[] = [];
+    const mailer: ContactNotificationMailer = { send: async (message) => { sent.push({ to: message.to }); } };
+    const resolver = new ConfiguredContactDeliveryResolver(
+      { findByIdAndWorkspaceId: async () => ({ agentId: "agent_1" }) },
+      { findByIdAndWorkspaceId: async () => ({ contactRequestDelivery: { recipientEmails: [], webhook: null } }) },
+      { resolve: async () => ({ emails: ["owner@example.com"], webhook: null }) },
+      skills,
+    );
+    const ending = ROUTINE_ENDING_NOTICE_ACTIONS.complete;
+    const handler = new RoutineEndingNotifyActionHandler({
+      ending,
+      dispatcher: new OperatorNotificationDispatcher([new EmailWebhookOperatorNotificationSink(mailer, resolver)]),
+      subjects: { resolve: async () => ({ agentId: "agent_1", agentName: null, routineName: null }) },
+    });
+    const dispatcher = new ActionDispatcher(outbox, new ActionHandlerRegistry([{ type: ending.type, handler }]));
+
+    await dispatcher.dispatchPending();
+
+    expect(sent.map((message) => message.to)).toEqual(["francesco@example.com"]);
   });
 });

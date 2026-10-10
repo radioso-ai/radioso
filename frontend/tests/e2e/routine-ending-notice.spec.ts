@@ -145,3 +145,46 @@ test("a notice's fields reference only the slots the routine declares and stop a
   ).toEqual({ subject: `${"a".repeat(195)}bcdef`, intro: "Confirm the room. @room_type" });
   expect(lastPatch()?.slots?.map((slot) => slot.key)).toEqual(["guest_name"]);
 });
+
+test("an ending's notice names the notify skill that sends it, and shows who that reaches", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routines: [bookingRoutine],
+    routineSkillCatalog: [{
+      skillName: "notify_bookings",
+      displayName: "Notify bookings",
+      category: "notify",
+      inputs: [{ key: "message", type: "text", required: true }],
+      outcomes: [{ name: "delivered", displayName: "Delivered", status: "completed" }],
+      hasDataOutputs: false,
+    }],
+    operatorNoticeDestinations: {
+      default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@ananda.it"], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
+      skills: [{ skillName: "notify_bookings", via: "named_skill", recipientEmails: ["francesco@ananda.it"], recipientsFromWorkspaceOwner: false, webhookConfigured: false }],
+    },
+  });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${bookingRoutine.id}`);
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Hand-off ending", exact: true }).click();
+
+  // The default names where it goes, down to the address.
+  const sendWith = documentEditor.getByRole("combobox", { name: "Send with" });
+  await expect(sendWith).toContainText("Default (workspace owner)");
+  await expect(documentEditor.getByText("Sends to owner@ananda.it (workspace owner)")).toBeVisible();
+
+  await sendWith.click();
+  await page.getByRole("option", { name: "Notify bookings" }).click();
+  await expect(documentEditor.getByText("Sends to francesco@ananda.it")).toBeVisible();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect.poll(
+    () => routineUpdates.filter((update) => update.method === "PATCH").at(-1)?.body?.terminals
+      ?.find((terminal) => terminal.stableStepId === "reception")?.operatorNotice,
+    { timeout: 15_000 },
+  ).toEqual({ subject: null, intro: null, skillName: "notify_bookings" });
+});

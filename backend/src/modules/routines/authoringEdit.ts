@@ -50,8 +50,15 @@ export const routineFieldPatchSchema = z.object({
   }).strict()).min(1), (step) => step.stableStepId, "step").optional(),
   terminals: addressedOnce(z.array(z.object({
     stableStepId: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.stableId),
-    instruction: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.instruction).nullable(),
-  }).strict()).min(1), (terminal) => terminal.stableStepId, "ending").optional(),
+    instruction: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.instruction).nullable().optional(),
+    // Which notify skill sends the ending's operator notice: a name routes it through that skill,
+    // null sends it to the default destination. The notice's subject and intro stay as stored.
+    operatorNotice: z.object({
+      skillName: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.toolRef).nullable(),
+    }).strict().optional(),
+  }).strict().refine((terminal) => terminal.instruction !== undefined || terminal.operatorNotice !== undefined, {
+    message: "an ending edit must set an instruction or the operator notice's skillName",
+  })).min(1), (terminal) => terminal.stableStepId, "ending").optional(),
   slots: addressedOnce(z.array(z.object({
     key: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.slotKey),
     description: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.slotDescription).nullable().optional(),
@@ -130,6 +137,26 @@ export const resolveRoutineFieldPatch = (
     : rest;
 };
 
+type DraftTerminal = RoutineDefinitionDraftAuthoringInput["terminals"][number];
+
+const withNoticeSkill = (terminal: DraftTerminal, skillName: string | null): DraftTerminal => {
+  const { operatorNotice, ...withoutNotice } = terminal;
+  if (skillName === null) {
+    if (!operatorNotice) return terminal;
+    const { skillName: _defaultDestination, ...text } = operatorNotice;
+    return { ...withoutNotice, operatorNotice: text };
+  }
+  // A hand-off always tells the team, so naming its sender gives it a notice with default text. A
+  // finish tells the team only when its author turned the notice on; routing one that is off would
+  // turn it on behind the author's back.
+  if (!operatorNotice && terminal.kind !== "handoff") {
+    throw new RoutineFieldPatchError(
+      `Ending ${terminal.stableStepId} does not notify the team, so no skill sends its notice. Turn on its notice in the routine editor first.`,
+    );
+  }
+  return { ...withoutNotice, operatorNotice: { subject: null, intro: null, ...operatorNotice, skillName } };
+};
+
 export const applyRoutineFieldPatch = (
   routine: RoutineDefinition,
   rawPatch: RoutineFieldPatch,
@@ -165,7 +192,9 @@ export const applyRoutineFieldPatch = (
     }),
     terminals: draft.terminals.map((terminal) => {
       const edit = terminalEdits.get(terminal.stableStepId);
-      return edit ? { ...terminal, instruction: edit.instruction } : terminal;
+      if (!edit) return terminal;
+      const reworded = edit.instruction === undefined ? terminal : { ...terminal, instruction: edit.instruction };
+      return edit.operatorNotice ? withNoticeSkill(reworded, edit.operatorNotice.skillName) : reworded;
     }),
   };
 };

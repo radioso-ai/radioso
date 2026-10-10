@@ -14,6 +14,8 @@ interface RoutineEndingTurnEffects {
 /**
  * Builds the action an ending's operator notice is queued as. Exported so a Test Chat turn —
  * whose actions are suppressed rather than dispatched — can preview the identical payload.
+ * The notify skill the ending names rides on the action, not the payload: it is routing, and
+ * the outbox keeps it in its own column for the delivery handler to resolve recipients from.
  */
 export const buildRoutineEndingNotifyAction = (input: {
   conversationId: string;
@@ -36,6 +38,7 @@ export const buildRoutineEndingNotifyAction = (input: {
       collected: input.notice.collected,
       notice: input.notice,
     }),
+    ...(input.notice.skillName ? { skillName: input.notice.skillName } : {}),
   };
 };
 

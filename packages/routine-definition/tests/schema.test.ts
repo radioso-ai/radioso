@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   collectContextVariableRefs,
   endingNotifiesOperators,
+  mapRoutineOperatorNoticeText,
   ROUTINE_DEFINITION_LIMITS,
   routineDefinitionDraftEditingInputSchema,
   routineDefinitionDraftUpdateInputSchema,
@@ -406,6 +407,39 @@ describe("routine ending operator notice", () => {
     expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { intro: "i".repeat(ROUTINE_DEFINITION_LIMITS.operatorNoticeIntro) } }).success).toBe(true);
     expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { intro: "i".repeat(ROUTINE_DEFINITION_LIMITS.operatorNoticeIntro + 1) } }).success).toBe(false);
     expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { subject: "Booking", body: "x" } }).success).toBe(false);
+  });
+
+  it("names the notify skill that sends the notice, and an absent name means the default destination", () => {
+    expect(routineTerminalSchema.parse({ ...validTerminal, operatorNotice: { skillName: " notify_bookings " } }).operatorNotice)
+      .toEqual({ subject: null, intro: null, skillName: "notify_bookings" });
+    const withoutSkill = routineTerminalSchema.parse({ ...validTerminal, operatorNotice: { subject: "Booking" } }).operatorNotice;
+    expect(withoutSkill).toEqual({ subject: "Booking", intro: null });
+    expect(withoutSkill && "skillName" in withoutSkill).toBe(false);
+    const terminal = { ...validTerminal, operatorNotice: { subject: "Booking", intro: null, skillName: "notify_bookings" } };
+    expect(routineDefinitionDraftEditingInputSchema.parse({ ...draft, terminals: [terminal] }).terminals[0].operatorNotice?.skillName)
+      .toBe("notify_bookings");
+    expect(routineDefinitionDraftInputSchema.parse({ ...draft, terminals: [terminal] }).terminals[0].operatorNotice?.skillName)
+      .toBe("notify_bookings");
+  });
+
+  it("rejects an empty, null, overlong, or malformed notify skill name", () => {
+    for (const skillName of ["", "   ", null, "s".repeat(ROUTINE_DEFINITION_LIMITS.toolRef + 1), ":default", "Notify_Bookings", "1notify", "notify-bookings"]) {
+      expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { skillName } }).success).toBe(false);
+    }
+    expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { skillName: "s".repeat(ROUTINE_DEFINITION_LIMITS.toolRef) } }).success)
+      .toBe(true);
+  });
+
+  it("maps only the notice text, keeping the notify skill that sends it", () => {
+    expect(mapRoutineOperatorNoticeText({ subject: "a", intro: null, skillName: "notify_bookings" }, (text) => text?.toUpperCase() ?? ""))
+      .toEqual({ subject: "A", intro: "", skillName: "notify_bookings" });
+    const withoutSkill = mapRoutineOperatorNoticeText({ subject: null, intro: "b" }, (text) => text);
+    expect(withoutSkill).toEqual({ subject: null, intro: "b" });
+    expect("skillName" in withoutSkill).toBe(false);
+  });
+
+  it("exports the code routine hosts report for a notice routed through an unavailable skill", () => {
+    expect(routineValidationCodes).toContain("operator_notice_skill_unavailable");
   });
 
   it("decides which endings notify operators: every hand-off, and a completion only when it carries a notice", () => {

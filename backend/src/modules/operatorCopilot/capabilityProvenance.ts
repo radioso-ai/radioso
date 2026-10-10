@@ -5,7 +5,7 @@ type ProductionDescriptorName =
   | "agent_configuration" | "agent_skills" | "analyze_website" | "audience_topics" | "context_variables"
   | "conversation_history_search"
   | "conversation_transcript" | "create_eval_case_from_turn" | "draft_reply" | "document_chunks" | "document_search" | "document_status" | "list_documents"
-  | "eval_results" | "needs_attention" | "propose_agent" | "propose_agent_setting" | "propose_context_variable" | "propose_directive" | "propose_greeting"
+  | "eval_results" | "needs_attention" | "operator_notice_destinations" | "propose_agent" | "propose_agent_setting" | "propose_context_variable" | "propose_directive" | "propose_greeting"
   | "propose_document" | "propose_document_removal" | "propose_document_retrieval"
   | "product_doc_page" | "product_docs"
   | "propose_ingestion_settings" | "prepare_ingestion_settings" | "prepare_agent_settings" | "prepare_directive" | "propose_workspace_setting" | "start_crawl"
@@ -32,6 +32,7 @@ const rayOnly = (reason: string) => ({ rayOnly: { reason } }) as const;
 export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorName, CopilotCapabilityProvenance>> = {
   agent_configuration: { backingOperationIds: ["listAgents", "getAgent", "listAgentDirectives"], applicationPrimitiveIds: ["agents.configuration.read"] },
   agent_skills: { backingOperationIds: ["listAgentSkills", "listAgentSkillCapabilities"], applicationPrimitiveIds: ["agents.configuration.read"] },
+  operator_notice_destinations: { backingOperationIds: ["listOperatorNoticeDestinations"] },
   agent_publication_state: { backingOperationIds: ["getAgentRevisionState"], applicationPrimitiveIds: ["agents.revision.publish"] },
   prepare_agent_publication: { backingOperationIds: ["createAgentRevisionCandidate"], applicationPrimitiveIds: ["agents.revision.publish", "operatorCopilot.proposal.create"] },
   agent_publication_candidate: { backingOperationIds: ["getAgentRevision"], applicationPrimitiveIds: ["agents.revision.publish"] },

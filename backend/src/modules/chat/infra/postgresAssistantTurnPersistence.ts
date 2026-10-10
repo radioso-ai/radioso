@@ -77,14 +77,15 @@ const enqueueActions = async (
   const insertedActionTypes: string[] = [];
   for (const action of input.actions) {
     const result = await sql`
-      INSERT INTO routine_action_requests (type, payload, workspace_id, account_id, conversation_id, idempotency_key)
+      INSERT INTO routine_action_requests (type, payload, workspace_id, account_id, conversation_id, idempotency_key, skill_name)
       VALUES (
         ${action.type},
         ${toJsonb(action.payload ?? {})},
         ${input.workspaceId},
         ${input.accountId ?? null},
         ${input.conversationId},
-        ${actionIdempotencyKey(input.conversationId, action.type, action.payload)}
+        ${actionIdempotencyKey(input.conversationId, action.type, action.payload)},
+        ${action.skillName ?? null}
       )
       ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
     `.execute(db);

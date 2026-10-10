@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-10-07
+last_updated: 2026-10-09
 ---
 
 # Conversational Routines
@@ -441,11 +441,28 @@ conversation afterwards: `handoff` moves it to a person, `complete` leaves it
 with the agent. Its notice decides whether operators are told. One rule,
 `endingNotifiesOperators` in `@radioso/routine-definition`, states which
 endings notify: every `handoff`, and a `complete` that carries an
-`operatorNotice`. An `operatorNotice` holds an optional `subject` and `intro`;
-either may reference `{{slot.<key>}}`, and validation reports a reference to an
-undeclared slot as `referenced_undeclared_slot` at the notice field
-(`step:<terminal>.operatorNotice.subject`). A notice reads collected values; it
+`operatorNotice`. An `operatorNotice` holds an optional `subject`, `intro`, and
+`skillName`; `subject` and `intro` may reference `{{slot.<key>}}`, and
+validation reports a reference to an undeclared slot as
+`referenced_undeclared_slot` at the notice field
+(`step:<terminal>.operatorNotice.subject`). `skillName` names the notify skill
+the notice should send through instead of the default contact chain;
+validation reports a name that is not an enabled, routine-named notify skill
+on the agent as `operator_notice_skill_unavailable` at
+`step:<terminal>.operatorNotice.skillName`. A notice reads collected values; it
 never collects one, so it plays no part in which step collects a slot.
+
+`skillName` travels by a separate path from the rest of the notice. The
+compiled terminal metadata carries it, the engine's `operatorNotice` effect
+reports it back next to `subject` and `intro`, and the host copies it onto the
+queued `RoutineActionRequest.skillName` rather than into the action payload —
+the same column (`skill_name`) and field a routine step already uses to record
+which skill fired a tool action. The action dispatcher reads that column back
+onto `ActionHandlerContext.skillName` for every handler, including
+`RoutineEndingNotifyActionHandler`, which forwards it onto
+`OperatorNotificationContext.skillName` for the sink. A stuck-routine or
+retrieval-miss hand-off never enters an authored terminal, so neither ever
+carries a `skillName` — both always resolve through the default chain.
 
 The compiler applies the rule when it builds the routine graph from the stored
 definition: every terminal step that notifies carries the notice template in its

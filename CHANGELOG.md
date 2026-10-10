@@ -9,6 +9,42 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.16.0] - 2026-10-10
+
+### Added
+
+- **routines:** choose where replies to a routine ending notice go ([#1466](https://github.com/radioso-ai/radioso/pull/1466))
+- **routines:** choose the notify skill that sends a routine ending's notice ([#1465](https://github.com/radioso-ai/radioso/pull/1465))
+- **operator-mcp:** set up the website embed from Operator MCP ([#1461](https://github.com/radioso-ai/radioso/pull/1461))
+- **billing:** add opt-in auto top-up and branded billing emails ([#1453](https://github.com/radioso-ai/radioso/pull/1453))
+- **dashboard:** name the plan in the account menu and show the month's usage ([#1447](https://github.com/radioso-ai/radioso/pull/1447))
+- **usage:** alert account admins and show a dashboard banner as conversations run out ([#1445](https://github.com/radioso-ai/radioso/pull/1445))
+- **dashboard:** point operators to their plan when a usage limit stops them ([#1448](https://github.com/radioso-ai/radioso/pull/1448))
+- **chat:** tell visitors when the agent is out of conversations ([#1442](https://github.com/radioso-ai/radioso/pull/1442))
+- **usage:** let customer conversations borrow a grace allowance past the limit ([#1441](https://github.com/radioso-ai/radioso/pull/1441))
+
+### Fixed
+
+- **routine:** handle an approval resume that reaches another gate or would yield ([#1462](https://github.com/radioso-ai/radioso/pull/1462))
+- **routine:** keep a routine that ends after an approval as a completed run ([#1459](https://github.com/radioso-ai/radioso/pull/1459))
+- **inbox:** stop a Needs-you click from remounting the response pane ([#1446](https://github.com/radioso-ai/radioso/pull/1446))
+- **routine:** trace a routine's first step on its first turn as asked, not re-asked ([#1455](https://github.com/radioso-ai/radioso/pull/1455))
+- **routine:** stop a re-ask from repeating the earlier ask word for word ([#1456](https://github.com/radioso-ai/radioso/pull/1456))
+- **routine:** keep the ending turn's values on a completed routine's record ([#1454](https://github.com/radioso-ai/radioso/pull/1454))
+
+### Internal
+
+- typecheck conversation-engine and conversation-defaults tests in CI ([#1458](https://github.com/radioso-ai/radioso/pull/1458))
+
+### Database migrations
+
+This release adds 2 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `210_routine_terminal_operator_notice_skill.sql`
+- `211_routine_terminal_operator_notice_reply_to.sql`
+
+[1.16.0]: https://github.com/radioso-ai/radioso/compare/v1.15.0...v1.16.0
+
 ## [1.15.0] - 2026-10-08
 
 ### Added

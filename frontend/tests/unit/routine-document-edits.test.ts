@@ -10,6 +10,7 @@ import {
   createEndingForBranch,
   insertStep,
   moveStep,
+  newEndingNotice,
   nextApprovalOptionId,
   referenceEnding,
   removeBranch,
@@ -581,5 +582,54 @@ describe('ending operator notices', () => {
       .toEqual({ subject: 'Recovery: {{slot.customer_email}}', intro: null, skillName: 'notify_support' })
     const branchEnding = renamed.steps[0].branches[0].target
     expect(branchEnding.kind === 'ending' ? branchEnding.ending?.operatorNotice?.skillName : undefined).toBe('notify_support')
+  })
+
+  it('follows a slot rename into the field a notice replies to, on every copy of the ending', () => {
+    const replying = setEndingNotice(branchedToComplete(), 'complete', { subject: null, intro: null, replyToSlot: 'email' })
+
+    const renamed = renameSlot(replying, 'email', 'Customer email')
+
+    expect(draftFromBlockDoc(renamed).terminals.find((terminal) => terminal.stableStepId === 'complete')?.operatorNotice)
+      .toEqual({ subject: null, intro: null, replyToSlot: 'customer_email' })
+    const branchEnding = renamed.steps[0].branches[0].target
+    expect(branchEnding.kind === 'ending' ? branchEnding.ending?.operatorNotice?.replyToSlot : undefined).toBe('customer_email')
+  })
+
+  it('counts the field a notice replies to as a reference, so it cannot be removed from under the notice', () => {
+    const replying = setEndingNotice(source(), 'complete', { subject: null, intro: null, replyToSlot: 'email' })
+    const withoutInstruction = replaceInstruction(replying, 'ask_email', [{ kind: 'text', text: 'Ask how we can help.' }])
+
+    expect(slotReferences(withoutInstruction, 'email')).toEqual(['notice in complete'])
+  })
+
+  describe('a notice the editor creates', () => {
+    const fields = (...types: Array<'text' | 'email'>) => types.map((type, index) => ({ key: `field_${index}`, type }))
+
+    it('replies to the routine\'s only email field', () => {
+      expect(newEndingNotice(fields('text', 'email'))).toEqual({ subject: null, intro: null, replyToSlot: 'field_1' })
+    })
+
+    it('names no reply-to when the routine collects no address or several, leaving the choice to the author', () => {
+      for (const notice of [newEndingNotice(fields('text')), newEndingNotice(fields('email', 'text', 'email'))]) {
+        expect(notice).toEqual({ subject: null, intro: null })
+      }
+    })
+
+    it('starts a new hand-off ending replying to the only email field, and a new finish with no notice', () => {
+      const handoff = addEnding(source(), 'handoff').unreferencedEndings.find((ending) => ending.kind === 'handoff')
+      expect(handoff?.operatorNotice).toEqual({ subject: null, intro: null, replyToSlot: 'email' })
+
+      const branched = createEndingForBranch(addBranch(source(), 'ask_email', 'llm'), 'ask_email', 0, 'handoff')
+      const target = branched.steps[0].branches[0].target
+      expect(target.kind === 'ending' ? target.ending?.operatorNotice?.replyToSlot : undefined).toBe('email')
+
+      expect(addEnding(source(), 'complete').unreferencedEndings.at(-1)).not.toHaveProperty('operatorNotice')
+    })
+
+    it('starts a new hand-off ending with no notice of its own when the routine collects two addresses', () => {
+      const twoAddresses = updateSlot(renameSlot(addSlot(source()), 'slot_1', 'colleague_email'), 'slot_1', { type: 'email' })
+
+      expect(addEnding(twoAddresses, 'handoff').unreferencedEndings.find((ending) => ending.kind === 'handoff')).not.toHaveProperty('operatorNotice')
+    })
   })
 })

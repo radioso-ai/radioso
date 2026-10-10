@@ -5885,6 +5885,12 @@
                       "minLength": 1,
                       "maxLength": 300,
                       "pattern": "^[a-z][a-z0-9_]*$"
+                    },
+                    "replyToSlot": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
                     }
                   },
                   "additionalProperties": false
@@ -6509,6 +6515,12 @@
                           "minLength": 1,
                           "maxLength": 300,
                           "pattern": "^[a-z][a-z0-9_]*$"
+                        },
+                        "replyToSlot": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
                         }
                       },
                       "additionalProperties": false
@@ -6646,7 +6658,8 @@
                     "exposure_tool_name_duplicate",
                     "exposure_tool_name_changed",
                     "exposure_requires_ungated_activation",
-                    "operator_notice_skill_unavailable"
+                    "operator_notice_skill_unavailable",
+                    "operator_notice_reply_to_slot_invalid"
                   ]
                 },
                 "location": {
@@ -7206,6 +7219,12 @@
                       "minLength": 1,
                       "maxLength": 300,
                       "pattern": "^[a-z][a-z0-9_]*$"
+                    },
+                    "replyToSlot": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
                     }
                   },
                   "additionalProperties": false
@@ -7902,6 +7921,12 @@
                           "minLength": 1,
                           "maxLength": 300,
                           "pattern": "^[a-z][a-z0-9_]*$"
+                        },
+                        "replyToSlot": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
                         }
                       },
                       "additionalProperties": false
@@ -9609,6 +9634,12 @@
                           "minLength": 1,
                           "maxLength": 300,
                           "pattern": "^[a-z][a-z0-9_]*$"
+                        },
+                        "replyToSlot": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
                         }
                       },
                       "additionalProperties": false

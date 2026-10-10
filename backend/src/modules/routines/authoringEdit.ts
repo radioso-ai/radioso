@@ -51,13 +51,18 @@ export const routineFieldPatchSchema = z.object({
   terminals: addressedOnce(z.array(z.object({
     stableStepId: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.stableId),
     instruction: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.instruction).nullable().optional(),
-    // Which notify skill sends the ending's operator notice: a name routes it through that skill,
-    // null sends it to the default destination. The notice's subject and intro stay as stored.
+    // Where the ending's operator notice goes. `skillName`: a name routes it through that notify
+    // skill, null sends it to the default destination. `replyToSlot`: the key of the email field
+    // replies go to, null for no reply-to. An absent key stays as stored, and so do the notice's
+    // subject and intro.
     operatorNotice: z.object({
-      skillName: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.toolRef).nullable(),
-    }).strict().optional(),
+      skillName: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.toolRef).nullable().optional(),
+      replyToSlot: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.slotKey).nullable().optional(),
+    }).strict().refine((notice) => notice.skillName !== undefined || notice.replyToSlot !== undefined, {
+      message: "an operator notice edit must set its skillName or replyToSlot",
+    }).optional(),
   }).strict().refine((terminal) => terminal.instruction !== undefined || terminal.operatorNotice !== undefined, {
-    message: "an ending edit must set an instruction or the operator notice's skillName",
+    message: "an ending edit must set an instruction or the operator notice's skillName or replyToSlot",
   })).min(1), (terminal) => terminal.stableStepId, "ending").optional(),
   slots: addressedOnce(z.array(z.object({
     key: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.slotKey),
@@ -139,22 +144,34 @@ export const resolveRoutineFieldPatch = (
 
 type DraftTerminal = RoutineDefinitionDraftAuthoringInput["terminals"][number];
 
-const withNoticeSkill = (terminal: DraftTerminal, skillName: string | null): DraftTerminal => {
+type NoticeRoutingEdit = NonNullable<NonNullable<RoutineFieldPatch["terminals"]>[number]["operatorNotice"]>;
+
+const noticeRoutingKeys = ["skillName", "replyToSlot"] as const;
+
+const withNoticeRouting = (terminal: DraftTerminal, edit: NoticeRoutingEdit): DraftTerminal => {
   const { operatorNotice, ...withoutNotice } = terminal;
-  if (skillName === null) {
-    if (!operatorNotice) return terminal;
-    const { skillName: _defaultDestination, ...text } = operatorNotice;
-    return { ...withoutNotice, operatorNotice: text };
+  const setsAny = noticeRoutingKeys.some((key) => typeof edit[key] === "string");
+  if (!operatorNotice) {
+    // Clearing a sender or reply-to the ending never had changes nothing.
+    if (!setsAny) return terminal;
+    // A hand-off always tells the team, so routing it gives it a notice with default text. A
+    // finish tells the team only when its author turned the notice on; routing one that is off
+    // would turn it on behind the author's back.
+    if (terminal.kind !== "handoff") {
+      throw new RoutineFieldPatchError(
+        `Ending ${terminal.stableStepId} does not notify the team, so its notice has no sender or reply-to to set. Turn on its notice in the routine editor first.`,
+      );
+    }
   }
-  // A hand-off always tells the team, so naming its sender gives it a notice with default text. A
-  // finish tells the team only when its author turned the notice on; routing one that is off would
-  // turn it on behind the author's back.
-  if (!operatorNotice && terminal.kind !== "handoff") {
-    throw new RoutineFieldPatchError(
-      `Ending ${terminal.stableStepId} does not notify the team, so no skill sends its notice. Turn on its notice in the routine editor first.`,
-    );
+  const next: NonNullable<DraftTerminal["operatorNotice"]> = { subject: null, intro: null, ...operatorNotice };
+  for (const key of noticeRoutingKeys) {
+    const value = edit[key];
+    if (value === undefined) continue;
+    // The default destination and no reply-to are the absence of the key, never a null.
+    if (value === null) delete next[key];
+    else next[key] = value;
   }
-  return { ...withoutNotice, operatorNotice: { subject: null, intro: null, ...operatorNotice, skillName } };
+  return { ...withoutNotice, operatorNotice: next };
 };
 
 export const applyRoutineFieldPatch = (
@@ -194,7 +211,7 @@ export const applyRoutineFieldPatch = (
       const edit = terminalEdits.get(terminal.stableStepId);
       if (!edit) return terminal;
       const reworded = edit.instruction === undefined ? terminal : { ...terminal, instruction: edit.instruction };
-      return edit.operatorNotice ? withNoticeSkill(reworded, edit.operatorNotice.skillName) : reworded;
+      return edit.operatorNotice ? withNoticeRouting(reworded, edit.operatorNotice) : reworded;
     }),
   };
 };

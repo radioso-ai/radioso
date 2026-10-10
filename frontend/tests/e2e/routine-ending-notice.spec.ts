@@ -188,3 +188,106 @@ test("an ending's notice names the notify skill that sends it, and shows who tha
     { timeout: 15_000 },
   ).toEqual({ subject: null, intro: null, skillName: "notify_bookings" });
 });
+
+// A gift stay collects the buyer's address and the recipient's, so the author picks where replies go.
+const giftRoutine: RoutineFixture = {
+  ...bookingRoutine,
+  id: "55555555-5555-4555-9555-000000000502",
+  lineageId: "77777777-7777-4777-8777-000000000502",
+  name: "Gift a stay",
+  slots: [
+    { stableSlotId: "guest_name", key: "guest_name", type: "text", required: true, description: "The guest's name", ordinal: 0 },
+    { stableSlotId: "buyer_email", key: "buyer_email", type: "email", required: true, description: "Who pays", ordinal: 1 },
+    { stableSlotId: "recipient_email", key: "recipient_email", type: "email", required: true, description: "Who stays", ordinal: 2 },
+  ],
+  steps: [{ ...bookingRoutine.steps[0], instruction: "Ask for {{slot.guest_name}}, {{slot.buyer_email}} and {{slot.recipient_email}}." }],
+};
+
+test("replies to an ending's notice go to the email field its author picks, and the choice survives a reload", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates, routines: [giftRoutine] });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${giftRoutine.id}`);
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Hand-off ending", exact: true }).click();
+
+  // Two addresses, so nothing is picked for the author; only email fields are offered.
+  const repliesGoTo = documentEditor.getByRole("combobox", { name: "Replies go to" });
+  await expect(repliesGoTo).toContainText("No reply-to");
+  await repliesGoTo.click();
+  await expect(page.getByRole("option", { name: "guest_name" })).toHaveCount(0);
+  await expect(page.getByRole("option", { name: "buyer_email" })).toBeVisible();
+  await page.getByRole("option", { name: "recipient_email" }).click();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect.poll(
+    () => routineUpdates.filter((update) => update.method === "PATCH").at(-1)?.body?.terminals
+      ?.find((terminal) => terminal.stableStepId === "reception")?.operatorNotice,
+    { timeout: 15_000 },
+  ).toEqual({ subject: null, intro: null, replyToSlot: "recipient_email" });
+
+  await page.reload();
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Hand-off ending", exact: true }).click();
+  await expect(documentEditor.getByRole("combobox", { name: "Replies go to" })).toContainText("recipient_email");
+});
+
+test("a notice the author turns on replies to the routine's only email field, and an existing notice is left as stored", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+  const singleAddress: RoutineFixture = {
+    ...giftRoutine,
+    slots: giftRoutine.slots.filter((slot) => slot.key !== "buyer_email"),
+    steps: [{ ...bookingRoutine.steps[0], instruction: "Ask for {{slot.guest_name}} and {{slot.recipient_email}}." }],
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates, routines: [singleAddress] });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${singleAddress.id}`);
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+
+  // The stored hand-off has no reply-to, and opening it does not give it one.
+  await documentEditor.getByRole("button", { name: "Hand-off ending", exact: true }).click();
+  await expect(documentEditor.getByRole("combobox", { name: "Replies go to" })).toContainText("No reply-to");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Finish ending", exact: true }).click();
+  await documentEditor.getByRole("switch", { name: "Notify the team" }).click();
+  await expect(documentEditor.getByRole("combobox", { name: "Replies go to" })).toContainText("recipient_email");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  const lastPatch = () => routineUpdates.filter((update) => update.method === "PATCH").at(-1)?.body;
+  await expect.poll(
+    () => lastPatch()?.terminals?.find((terminal) => terminal.stableStepId === "booked")?.operatorNotice,
+    { timeout: 15_000 },
+  ).toEqual({ subject: null, intro: null, replyToSlot: "recipient_email" });
+  expect(lastPatch()?.terminals?.find((terminal) => terminal.stableStepId === "reception")).not.toHaveProperty("operatorNotice");
+});
+
+test("an ending whose reply-to field stops being an email field says so", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+  const replying: RoutineFixture = {
+    ...giftRoutine,
+    terminals: giftRoutine.terminals.map((terminal) => terminal.stableStepId === "reception"
+      ? { ...terminal, operatorNotice: { subject: null, intro: null, replyToSlot: "recipient_email" } }
+      : terminal),
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates, routines: [replying] });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${replying.id}`);
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "recipient_email", exact: true }).click();
+  await documentEditor.getByLabel("Slot recipient_email type").selectOption("text");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect(documentEditor.getByText("Replies can only go to an email field. Pick one or choose No reply-to.")).toBeVisible({ timeout: 15_000 });
+  await documentEditor.getByRole("button", { name: "Hand-off ending", exact: true }).click();
+  await expect(documentEditor.getByRole("combobox", { name: "Replies go to" })).toContainText("recipient_email (not an email field)");
+});

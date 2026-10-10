@@ -72,6 +72,7 @@ export const routineValidationCodes = [
   "exposure_tool_name_changed",
   "exposure_requires_ungated_activation",
   "operator_notice_skill_unavailable",
+  "operator_notice_reply_to_slot_invalid",
 ] as const;
 
 export const routineIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
@@ -362,11 +363,17 @@ const agentSkillNamePattern = /^[a-z][a-z0-9_]*$/u;
  * `skillName` names the agent's notify skill that delivers the notice, by name the way a step
  * names its skill. Absent means the default destination. It has no null form, so a stored
  * notice without one reads back without the key and published snapshots stay unchanged.
+ *
+ * `replyToSlot` is the key of the email field whose collected address replies to the notice go
+ * to. The author chooses it; nothing infers it, because a routine can collect several addresses
+ * and a guessed one sends the reply to a third party. Absent means no reply-to, with no null form
+ * for the same reason as `skillName`. Validation checks it names an email field the routine declares.
  */
 const routineOperatorNoticeSchemaFor = <TText extends z.ZodTypeAny>(text: (maxLength: number) => TText) => z.object({
   subject: text(ROUTINE_DEFINITION_LIMITS.operatorNoticeSubject),
   intro: text(ROUTINE_DEFINITION_LIMITS.operatorNoticeIntro),
   skillName: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.toolRef).regex(agentSkillNamePattern).optional(),
+  replyToSlot: trimmedText(ROUTINE_DEFINITION_LIMITS.slotKey).regex(slotKeyPattern).optional(),
 }).strict();
 
 export const routineOperatorNoticeSchema = routineOperatorNoticeSchemaFor(optionalTrimmedText);
@@ -660,8 +667,8 @@ export type RoutineTerminalKind = typeof routineTerminalKinds[number];
 export type RoutineOperatorNotice = z.infer<typeof routineOperatorNoticeSchema>;
 
 /**
- * Transforms a notice's two texts and keeps every other field — the notify skill that sends it —
- * so an edit to the wording can never change where the notice goes.
+ * Transforms a notice's two texts and keeps every other field — the notify skill that sends it and
+ * the field replies go to — so an edit to the wording can never change where the notice goes.
  */
 export const mapRoutineOperatorNoticeText = <
   TNotice extends { subject?: unknown; intro?: unknown },

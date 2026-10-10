@@ -277,3 +277,81 @@ it("lets an Operator MCP client read, route, and check which notify skill sends 
     expect.objectContaining({ code: "operator_notice_skill_unavailable", location: "step:booked.operatorNotice.skillName" }),
   ]));
 });
+
+it("lets an Operator MCP client read, set, and check the field a routine ending's notice replies to", async () => {
+  const { app, dependencies } = createTestApp();
+  const { workspaceId, accountId, userId } = await issueTestSession(app, "notice-reply-to-owner@example.com");
+  const agentId = (await dependencies.agentService.listExisting(workspaceId))[0].id;
+  // A gift booking collects two addresses and a text field keyed `email` that holds no address.
+  const { routine } = await dependencies.routineDefinitionService.createDraft(workspaceId, agentId, {
+    name: "gift-a-stay",
+    enabled: true,
+    activation: { triggerDescription: "A guest wants to gift a stay", gateRef: null, priority: 10, reentryMode: "once_per_conversation" },
+    slots: [
+      { stableSlotId: "slot_buyer", key: "buyer_email", type: "email", required: true, description: null, ordinal: 0 },
+      { stableSlotId: "slot_recipient", key: "recipient_email", type: "email", required: true, description: null, ordinal: 1 },
+      { stableSlotId: "slot_email", key: "email", type: "text", required: false, description: null, ordinal: 2 },
+    ],
+    steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask for {{slot.buyer_email}}, {{slot.recipient_email}} and {{slot.email}}.", toolRef: null, ordinal: 0, metadata: {} }],
+    transitions: [{ fromStep: "ask", toRef: "booked", guardKind: "default", guardText: null, ordinal: 0 }],
+    terminals: [{ stableStepId: "booked", kind: "handoff", instruction: null, operatorNotice: { subject: null, intro: null }, ordinal: 0 }],
+  });
+  const mcpContext = {
+    workspaceId,
+    accountId,
+    operatorUserId: userId,
+    surface: "mcp" as const,
+    operatorMcpInvocationId: randomUUID(),
+    operatorMcpGrantId: randomUUID(),
+    operatorMcpClientId: "notice-reply-to-client",
+    currentAuthorization: { hasAllPermissions: async () => true },
+    pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+  };
+  const invoke = async (name: string, input: Record<string, unknown>) => {
+    const found = dependencies.copilotToolCatalog.find((candidate) => candidate.name === name);
+    if (!found) throw new Error(`Expected ${name} in the copilot catalog`);
+    expect(found.mcpDisposition?.status).toBe("eligible");
+    return found.createTool({ ...mcpContext, operatorMcpInvocationId: randomUUID() }).invoke(input, {} as never);
+  };
+  const endingReplyTo = async () => {
+    const read = await invoke("routine_definition", { agentId, routineId: routine.id }) as {
+      routine: { editable: { endings: Array<{ operatorNotice: { replyToSlot: string | null } | null }> } };
+    };
+    return read.routine.editable.endings[0]?.operatorNotice?.replyToSlot;
+  };
+  const applyEdit = async (operatorNotice: Record<string, unknown>) => {
+    const proposal = await invoke("propose_routine_edit", {
+      agentId,
+      routineId: routine.id,
+      changes: { terminals: [{ stableStepId: "booked", operatorNotice }] },
+    }) as { proposalId: string };
+    await expect(dependencies.operatorCopilotService.applyProposal({
+      workspaceId, accountId, operatorUserId: userId, surface: "dashboard", proposalId: proposal.proposalId,
+    })).resolves.toMatchObject({ status: "applied" });
+  };
+
+  expect(await endingReplyTo()).toBeNull();
+
+  // Replies go to the second address, the one the operator chose.
+  await applyEdit({ replyToSlot: "recipient_email" });
+  expect(await endingReplyTo()).toBe("recipient_email");
+
+  await applyEdit({ replyToSlot: null });
+  expect(await endingReplyTo()).toBeNull();
+
+  // A text field is reported before it can be published, even one keyed `email`.
+  const { id: _id, agentId: _agentId, lineageId: _lineageId, version: _version, createdAt: _createdAt, updatedAt: _updatedAt, ...current } =
+    await dependencies.routineDefinitionService.get(workspaceId, agentId, routine.id);
+  await dependencies.routineDefinitionService.updateDraft(workspaceId, agentId, routine.id, {
+    ...current,
+    terminals: current.terminals.map((terminal) => ({ ...terminal, operatorNotice: { subject: null, intro: null, replyToSlot: "email" } })),
+  });
+  const validation = await invoke("validate_routine", { agentId, routineId: routine.id }) as {
+    ok: boolean;
+    diagnostics: Array<{ code: string; location: string }>;
+  };
+  expect(validation.ok).toBe(false);
+  expect(validation.diagnostics).toEqual(expect.arrayContaining([
+    expect.objectContaining({ code: "operator_notice_reply_to_slot_invalid", location: "step:booked.operatorNotice.replyToSlot" }),
+  ]));
+});

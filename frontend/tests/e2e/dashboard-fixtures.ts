@@ -547,6 +547,17 @@ const validateRoutineFixture = (routine: RoutineDraftFixture | RoutineFixture): 
       message: `missing terminal: no terminal is reachable from the first step.`,
     });
   }
+  // Mirrors the backend validator's reply-to rule: an ending's notice replies only to an email field.
+  for (const terminal of routine.terminals) {
+    const replyToSlot = terminal.operatorNotice?.replyToSlot;
+    if (replyToSlot && routine.slots.find((slot) => slot.key === replyToSlot)?.type !== "email") {
+      diagnostics.push({
+        code: "operator_notice_reply_to_slot_invalid",
+        location: `step:${terminal.stableStepId}.operatorNotice.replyToSlot`,
+        message: `operator notice reply-to invalid: ending "${terminal.stableStepId}" sends replies to "${replyToSlot}", which is not an email field.`,
+      });
+    }
+  }
   // Mirrors the backend validator's tool-name grammar (routineExposureToolNamePattern).
   if (routine.exposure?.enabled && !/^[a-z][a-z0-9_]{1,62}$/u.test(routine.exposure.toolName)) {
     diagnostics.push({

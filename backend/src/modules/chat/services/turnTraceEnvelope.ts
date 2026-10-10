@@ -68,6 +68,8 @@ export interface OperatorNoticePreview {
   kind: "handoff" | "completion";
   subject: string;
   lines: string[];
+  /** The address replies to the notice would go to; absent when the notice has no reply-to. */
+  replyTo?: string;
 }
 
 export interface TurnTraceOpenTelemetryCorrelation {

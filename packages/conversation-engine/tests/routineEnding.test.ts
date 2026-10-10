@@ -61,6 +61,24 @@ describe("routineEndingEffects", () => {
     });
   });
 
+  it("carries the field an ending's notice replies to onto its operator notice", () => {
+    const effects = routineEndingEffects("routine_1", {
+      kind: "complete",
+      stepId: "done",
+      collected: { guest_email: "ada@example.com" },
+      operatorNotice: { subject: "Booking", replyToSlot: "guest_email" },
+    });
+
+    expect(effects.operatorNotice).toEqual({
+      routineId: "routine_1",
+      stepId: "done",
+      terminalKind: "complete",
+      collected: { guest_email: "ada@example.com" },
+      subject: "Booking",
+      replyToSlot: "guest_email",
+    });
+  });
+
   it("reports no hand-off for a normal completion", () => {
     const effects = routineEndingEffects("routine_1", {
       kind: "complete",

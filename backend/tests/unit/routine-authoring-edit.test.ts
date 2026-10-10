@@ -239,6 +239,49 @@ describe("routine authoring edits", () => {
     expect(routineFieldPatchSchema.safeParse({ terminals: [{ stableStepId: "done" }] }).success).toBe(false);
   });
 
+  it("sets or clears the field an ending's notice replies to, keeping its sender and text", () => {
+    const operatorNotice = { subject: "Support", intro: null, skillName: "notify_support" };
+    const source = routine({ terminals: [
+      { stableStepId: "done", kind: "complete", instruction: "Thank them.", operatorNotice, ordinal: 0 },
+      { stableStepId: "human", kind: "handoff", instruction: null, ordinal: 1 },
+    ] });
+
+    const replying = applyRoutineFieldPatch(source, routineFieldPatchSchema.parse({
+      terminals: [
+        { stableStepId: "done", operatorNotice: { replyToSlot: "customer_email" } },
+        { stableStepId: "human", operatorNotice: { replyToSlot: "customer_email" } },
+      ],
+    }));
+    expect(replying.terminals.map((terminal) => terminal.operatorNotice)).toEqual([
+      { ...operatorNotice, replyToSlot: "customer_email" },
+      { subject: null, intro: null, replyToSlot: "customer_email" },
+    ]);
+
+    const cleared = applyRoutineFieldPatch(
+      routine({ terminals: [{ stableStepId: "done", kind: "complete", instruction: "Thank them.", operatorNotice: { ...operatorNotice, replyToSlot: "customer_email" }, ordinal: 0 }] }),
+      routineFieldPatchSchema.parse({ terminals: [{ stableStepId: "done", operatorNotice: { replyToSlot: null } }] }),
+    );
+    expect(cleared.terminals[0]?.operatorNotice).toEqual(operatorNotice);
+    expect(cleared.terminals[0]?.operatorNotice).not.toHaveProperty("replyToSlot");
+  });
+
+  it("leaves the reply-to alone when an edit changes only the notice's sender", () => {
+    const operatorNotice = { subject: null, intro: null, replyToSlot: "customer_email" };
+    const routed = applyRoutineFieldPatch(
+      routine({ terminals: [{ stableStepId: "done", kind: "complete", instruction: "Thank them.", operatorNotice, ordinal: 0 }] }),
+      routineFieldPatchSchema.parse({ terminals: [{ stableStepId: "done", operatorNotice: { skillName: "notify_support" } }] }),
+    );
+
+    expect(routed.terminals[0]?.operatorNotice).toEqual({ ...operatorNotice, skillName: "notify_support" });
+  });
+
+  it("refuses a reply-to on a finish that tells the team nothing, and a notice edit that changes nothing", () => {
+    expect(() => applyRoutineFieldPatch(routine(), routineFieldPatchSchema.parse({
+      terminals: [{ stableStepId: "done", operatorNotice: { replyToSlot: "customer_email" } }],
+    }))).toThrow(RoutineFieldPatchError);
+    expect(routineFieldPatchSchema.safeParse({ terminals: [{ stableStepId: "done", operatorNotice: {} }] }).success).toBe(false);
+  });
+
   it("applies and projects a tool exposure change, leaving everything else as stored", () => {
     const exposure = { enabled: true, toolName: "start_return", description: "Start a return for an order." };
     const patched = applyRoutineFieldPatch(routine(), routineFieldPatchSchema.parse({ exposure }));

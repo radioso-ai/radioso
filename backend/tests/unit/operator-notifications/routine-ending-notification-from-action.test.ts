@@ -145,6 +145,57 @@ describe("routineEndingNotificationFromAction", () => {
     }));
   });
 
+  describe("reply-to", () => {
+    // A gift booking collects the buyer's and the recipient's address; the author chose the recipient's.
+    const giftPayload = (collected: Record<string, unknown>, notice: Record<string, unknown> = { replyToSlot: "recipient_email" }) => ({
+      routineId: "routine_1",
+      collected,
+      notice,
+    });
+
+    it("replies to the address collected in the field the notice names, even when an earlier field holds an address too", () => {
+      const notification = routineEndingNotificationFromAction({
+        kind: "completion",
+        payload: giftPayload({ buyer_email: "ada@example.com", recipient_email: "grace@example.com" }),
+        ids,
+        fallback: { reason: "routine_completed" },
+      });
+
+      expect(notification.replyTo).toBe("grace@example.com");
+      expect(notification.notice).toEqual({ replyToSlot: "recipient_email" });
+    });
+
+    it("sets no reply-to when the named field was never collected, or holds no text", () => {
+      for (const collected of [{ buyer_email: "ada@example.com" }, { buyer_email: "ada@example.com", recipient_email: "  " }, { recipient_email: 7 }]) {
+        const notification = routineEndingNotificationFromAction({ kind: "handoff", payload: giftPayload(collected), ids, fallback });
+        expect(notification).not.toHaveProperty("replyTo");
+      }
+    });
+
+    it("never guesses a reply-to when the notice names no field, whatever addresses were collected", () => {
+      const notification = routineEndingNotificationFromAction({
+        kind: "handoff",
+        payload: giftPayload({ email: "ada@example.com" }, { subject: "Call back" }),
+        ids,
+        fallback,
+      });
+
+      expect(notification).not.toHaveProperty("replyTo");
+      expect(notification.notice).toEqual({ subject: "Call back" });
+    });
+
+    it("sets no reply-to on a retrieval-miss hand-off, which has no routine notice", () => {
+      const notification = routineEndingNotificationFromAction({
+        kind: "handoff",
+        payload: { reason: "retrieval_miss", collected: { email: "ada@example.com" } },
+        ids,
+        fallback,
+      });
+
+      expect(notification).not.toHaveProperty("replyTo");
+    });
+  });
+
   it("builds a completion notification from a completion.notify payload, with its notice and conversation facts", () => {
     const notification = routineEndingNotificationFromAction({
       kind: "completion",

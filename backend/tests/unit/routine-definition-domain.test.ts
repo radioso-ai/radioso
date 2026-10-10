@@ -531,6 +531,23 @@ describe("routine definition compiler and validator", () => {
       .toEqual({ terminalKind: "complete", operatorNotice: { skillName: "notify_bookings" } });
   });
 
+  it("carries the field an ending's notice replies to onto its compiled notice", () => {
+    const definition = baseDefinition();
+    const routine = compileRoutineDefinition({
+      ...definition,
+      slots: [
+        ...definition.slots,
+        { stableSlotId: "slot_guest_email", key: "guest_email", type: "email", required: false, description: "Where replies go.", ordinal: 2 },
+      ],
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: null, operatorNotice: { subject: null, intro: null, replyToSlot: "guest_email" }, ordinal: 0 },
+      ],
+    });
+
+    expect(routine.steps.find((step) => step.id === "done")?.metadata)
+      .toEqual({ terminalKind: "complete", operatorNotice: { replyToSlot: "guest_email" } });
+  });
+
   it("is deterministic for the same authored document", () => {
     expect(compileRoutineDefinition(baseDefinition())).toEqual(compileRoutineDefinition(baseDefinition()));
   });

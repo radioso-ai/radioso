@@ -442,6 +442,35 @@ describe("routine ending operator notice", () => {
     expect(routineValidationCodes).toContain("operator_notice_skill_unavailable");
   });
 
+  it("names the field whose collected address replies go to, and an absent name means no reply-to", () => {
+    expect(routineTerminalSchema.parse({ ...validTerminal, operatorNotice: { replyToSlot: " guest_email " } }).operatorNotice)
+      .toEqual({ subject: null, intro: null, replyToSlot: "guest_email" });
+    const withoutReplyTo = routineTerminalSchema.parse({ ...validTerminal, operatorNotice: { subject: "Booking" } }).operatorNotice;
+    expect(withoutReplyTo && "replyToSlot" in withoutReplyTo).toBe(false);
+    const terminal = { ...validTerminal, operatorNotice: { subject: "Booking", intro: null, replyToSlot: "guest_email" } };
+    expect(routineDefinitionDraftEditingInputSchema.parse({ ...draft, terminals: [terminal] }).terminals[0].operatorNotice?.replyToSlot)
+      .toBe("guest_email");
+    expect(routineDefinitionDraftInputSchema.parse({ ...draft, terminals: [terminal] }).terminals[0].operatorNotice?.replyToSlot)
+      .toBe("guest_email");
+  });
+
+  it("rejects an empty, null, overlong, or malformed reply-to field key", () => {
+    for (const replyToSlot of ["", "   ", null, "s".repeat(ROUTINE_DEFINITION_LIMITS.slotKey + 1), "{{slot.email}}", "guest-email", "1email", "guest.email"]) {
+      expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { replyToSlot } }).success).toBe(false);
+    }
+    expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { replyToSlot: "s".repeat(ROUTINE_DEFINITION_LIMITS.slotKey) } }).success)
+      .toBe(true);
+  });
+
+  it("maps only the notice text, keeping the field replies go to", () => {
+    expect(mapRoutineOperatorNoticeText({ subject: "a", intro: null, skillName: "notify_bookings", replyToSlot: "guest_email" }, (text) => text ?? ""))
+      .toEqual({ subject: "a", intro: "", skillName: "notify_bookings", replyToSlot: "guest_email" });
+  });
+
+  it("exports the code routine hosts report for a reply-to that names no email field", () => {
+    expect(routineValidationCodes).toContain("operator_notice_reply_to_slot_invalid");
+  });
+
   it("decides which endings notify operators: every hand-off, and a completion only when it carries a notice", () => {
     expect(endingNotifiesOperators({ kind: "handoff" })).toBe(true);
     expect(endingNotifiesOperators({ kind: "handoff", operatorNotice: { subject: null, intro: null } })).toBe(true);

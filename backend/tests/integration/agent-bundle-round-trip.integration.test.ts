@@ -163,11 +163,19 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
         required: true,
         description: null,
         ordinal: 0,
+      }, {
+        // The ending's notice replies to this field, and the bundle carries that choice with the routine.
+        stableSlotId: "slot_visitor_email",
+        key: "visitor_email",
+        type: "email",
+        required: false,
+        description: null,
+        ordinal: 1,
       }],
       steps: [{
         stableStepId: "step_collect_topic",
         kind: "chat",
-        instruction: "Ask for {{slot.topic}}.",
+        instruction: "Ask for {{slot.topic}} and {{slot.visitor_email}}.",
         toolRef: null,
         ordinal: 0,
         metadata: {},
@@ -185,7 +193,7 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
         stableStepId: "terminal_complete",
         kind: "complete",
         instruction: "Explain the plan difference for {{slot.topic}}.",
-        operatorNotice: { subject: "Plan question: {{slot.topic}}", intro: null, skillName: "notify_plans" },
+        operatorNotice: { subject: "Plan question: {{slot.topic}}", intro: null, skillName: "notify_plans", replyToSlot: "visitor_email" },
         ordinal: 1,
       }],
     } as never);
@@ -197,7 +205,7 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
     expect(bundle.agent.internalName).toBe("Procurement (EU)");
     expect(bundle.agent.handoffOnRetrievalMiss).toBe(true);
     expect(bundle.routines.map((routine) => routine.name)).toEqual(["answer-with-context"]);
-    expect(bundle.routines[0]?.definition.terminals[0]?.operatorNotice).toEqual({ subject: "Plan question: {{slot.topic}}", intro: null, skillName: "notify_plans" });
+    expect(bundle.routines[0]?.definition.terminals[0]?.operatorNotice).toEqual({ subject: "Plan question: {{slot.topic}}", intro: null, skillName: "notify_plans", replyToSlot: "visitor_email" });
     expect(bundle.contextVariables).toEqual([expect.objectContaining({
       variableName: "plan_tier",
       resolverSkillName: "knowledge_lookup",

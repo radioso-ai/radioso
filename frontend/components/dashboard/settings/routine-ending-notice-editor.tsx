@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { defaultNoticeDestinationLabel, describeNoticeDestination } from '@/lib/operator-notice-destinations'
 import { instructionToProseParagraphs, proseParagraphsToInstruction } from '@/lib/routine-document'
-import type { EndingNotice } from '@/lib/routine-document-edits'
+import { newEndingNotice, type EndingNotice } from '@/lib/routine-document-edits'
 import { blockSegmentsToInstruction, instructionToBlockSegments, type ChipDocVariable, type ProseParagraph, type RoutineBlockEnding } from '@/lib/routine-prose'
 
 // One notice text, edited with the same chip editor as a step instruction, so `@` inserts a
@@ -85,6 +85,37 @@ function NoticeSenderField({ id, skillName, onChange }: {
   )
 }
 
+// A slot key starts with a letter or underscore, so this can never name one.
+const NO_REPLY_TO = ':none'
+
+// Which collected address replies to the notice go to. Only the routine's email fields are
+// offered, and only the author picks one. A stored key that is no longer an email field stays
+// visible so the author sees what the routine says; validation reports it.
+function NoticeReplyToField({ id, replyToSlot, variables, onChange }: {
+  id: string
+  replyToSlot: string | undefined
+  variables: ChipDocVariable[]
+  onChange: (replyToSlot: string | null) => void
+}) {
+  const emailFields = variables.filter((variable) => variable.type === 'email')
+  const unlisted = replyToSlot && !emailFields.some((field) => field.name === replyToSlot) ? replyToSlot : null
+  return (
+    <div className="space-y-1">
+      <Label htmlFor={`${id}-reply-to`} className="text-xs font-medium">Replies go to</Label>
+      <Select value={replyToSlot ?? NO_REPLY_TO} onValueChange={(value) => onChange(value === NO_REPLY_TO ? null : value)}>
+        <SelectTrigger id={`${id}-reply-to`} aria-label="Replies go to" className="h-8">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NO_REPLY_TO}>No reply-to</SelectItem>
+          {emailFields.map((field) => <SelectItem key={field.id} value={field.name}>{field.name}</SelectItem>)}
+          {unlisted ? <SelectItem value={unlisted}>{`${unlisted} (not an email field)`}</SelectItem> : null}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
 // What the team is told when the routine ends here. A hand-off always notifies, so its switch
 // stays on; a finish notifies only when the author turns it on. Blank text means the default.
 export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
@@ -104,6 +135,13 @@ export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
     else delete next.skillName
     onChange(next)
   }
+  // No reply-to is the absence of a key, the same way.
+  const replyTo = (replyToSlot: string | null) => {
+    const next: EndingNotice = { subject: null, intro: null, ...notice }
+    if (replyToSlot) next.replyToSlot = replyToSlot
+    else delete next.replyToSlot
+    onChange(next)
+  }
 
   return (
     <div className="w-full space-y-2 rounded-md border border-border p-3">
@@ -112,7 +150,7 @@ export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
           id={`${id}-enabled`}
           checked={notifies}
           disabled={handoff}
-          onCheckedChange={(checked) => onChange(checked ? { subject: null, intro: null } : null)}
+          onCheckedChange={(checked) => onChange(checked ? newEndingNotice(variables.map((variable) => ({ key: variable.name, type: variable.type }))) : null)}
         />
         <Label htmlFor={`${id}-enabled`} className="text-sm">Notify the team</Label>
         {handoff ? <span className="text-xs text-muted-foreground">Always on for a hand-off.</span> : null}
@@ -120,6 +158,7 @@ export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
       {notifies ? (
         <div className="space-y-2">
           <NoticeSenderField id={id} skillName={notice?.skillName} onChange={sendWith} />
+          <NoticeReplyToField id={id} replyToSlot={notice?.replyToSlot} variables={variables} onChange={replyTo} />
           <NoticeTextField
             label="Subject"
             placeholder="Default subject. Type @ to insert a value."

@@ -42,8 +42,8 @@ export const routineEndingNoticeAction = (
 
 /**
  * The payload every operator-notice action carries (`handoff.notify`, `completion.notify`): ids,
- * the reason code, the routine's declared slot values as-is, and the authored notice text when
- * the ending has some. One builder, so the two action types cannot drift apart.
+ * the reason code, the routine's declared slot values as-is, and the authored notice when the
+ * ending has some text or a reply-to field. One builder, so the two action types cannot drift apart.
  */
 export const operatorNoticeActionPayload = (input: {
   conversationId: string;
@@ -65,11 +65,17 @@ export const operatorNoticeActionPayload = (input: {
   routineId: input.routineId,
   stepId: input.stepId,
   ...(input.collected ? { collected: input.collected } : {}),
-  ...(input.notice?.subject || input.notice?.intro ? { notice: authoredNoticeText(input.notice) } : {}),
+  ...(input.notice?.subject || input.notice?.intro || input.notice?.replyToSlot ? { notice: authoredNotice(input.notice) } : {}),
 });
 
-/** Only the text the author wrote; an absent field means the default for the ending's kind. */
-const authoredNoticeText = (notice: RoutineOperatorNoticeTemplate): RoutineOperatorNoticeTemplate => ({
+/**
+ * Only what the author wrote: the text, where an absent field means the default for the ending's
+ * kind, and the field replies go to. It travels with the queued row so delivery replies to the
+ * field this turn's routine named, whatever the routine says by the time the row is sent. The
+ * notify skill stays off the payload; it rides on the action.
+ */
+const authoredNotice = (notice: RoutineOperatorNoticeTemplate): RoutineOperatorNoticeTemplate => ({
   ...(notice.subject ? { subject: notice.subject } : {}),
   ...(notice.intro ? { intro: notice.intro } : {}),
+  ...(notice.replyToSlot ? { replyToSlot: notice.replyToSlot } : {}),
 });

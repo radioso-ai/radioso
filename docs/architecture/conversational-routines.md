@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-10-09
+last_updated: 2026-10-10
 ---
 
 # Conversational Routines
@@ -45,7 +45,8 @@ A routine definition has four parts.
   the edge is taken.
 - **Terminals** — where the flow ends: `complete` (done) or `handoff` (escalate
   to a person). A terminal can also carry an `operatorNotice` — an optional
-  subject and intro for the notice operators get when the flow ends there
+  subject and intro for the notice operators get when the flow ends there, the
+  notify skill that sends it, and the email field replies to it go to
   ([How an ending notifies operators](#how-an-ending-notifies-operators)).
 
 ## Guards
@@ -441,16 +442,34 @@ conversation afterwards: `handoff` moves it to a person, `complete` leaves it
 with the agent. Its notice decides whether operators are told. One rule,
 `endingNotifiesOperators` in `@radioso/routine-definition`, states which
 endings notify: every `handoff`, and a `complete` that carries an
-`operatorNotice`. An `operatorNotice` holds an optional `subject`, `intro`, and
-`skillName`; `subject` and `intro` may reference `{{slot.<key>}}`, and
+`operatorNotice`. An `operatorNotice` holds an optional `subject`, `intro`,
+`skillName`, and `replyToSlot`; `subject` and `intro` may reference `{{slot.<key>}}`, and
 validation reports a reference to an undeclared slot as
 `referenced_undeclared_slot` at the notice field
 (`step:<terminal>.operatorNotice.subject`). `skillName` names the notify skill
 the notice should send through instead of the default contact chain;
 validation reports a name that is not an enabled, routine-named notify skill
 on the agent as `operator_notice_skill_unavailable` at
-`step:<terminal>.operatorNotice.skillName`. A notice reads collected values; it
-never collects one, so it plays no part in which step collects a slot.
+`step:<terminal>.operatorNotice.skillName`. `replyToSlot` is the key of the
+email slot whose collected address replies to the notice go to; the author
+chooses it, and nothing infers it from slot keys or from which values look like
+addresses, because a routine can collect several addresses. Validation reports
+a key that names no declared `email` slot as
+`operator_notice_reply_to_slot_invalid` at
+`step:<terminal>.operatorNotice.replyToSlot`, and counts a valid one as a use of
+its slot. A notice reads collected values; it never collects one, so it plays no
+part in which step collects a slot.
+
+`replyToSlot` travels with the notice text: the compiled terminal metadata
+carries it, the engine's `operatorNotice` effect reports it, and the host
+copies it into the queued payload's `notice` next to `subject` and `intro`. At
+delivery `routineEndingNotificationFromAction` reads it off the queued row,
+never off the routine, whose draft may have changed since the turn, and sets
+the notification's `replyTo` to the value collected under that key when it is a
+non-empty string. The email sink sets that as the reply-to header for every
+recipient and the webhook body carries it as `replyTo`, `null` when there is
+none; the Slack post and approval emails carry none. A Test Chat notice preview
+shows the same `replyTo` on the turn trace.
 
 `skillName` travels by a separate path from the rest of the notice. The
 compiled terminal metadata carries it, the engine's `operatorNotice` effect

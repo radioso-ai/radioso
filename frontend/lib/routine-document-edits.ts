@@ -217,6 +217,10 @@ const createEndingTarget = (doc: RoutineBlockDoc, kind: RoutineTerminalKind): Ro
   ]
   const stableStepId = nextId(kind === 'complete' ? 'complete' : 'handoff', ids)
   const ending: RoutineBlockEnding = { stableStepId, kind, instruction: '', ordinal: ids.length }
+  // A hand-off always notifies, so creating one creates its notice. It carries a notice of its
+  // own only when there is a reply-to to start it with; otherwise the default notice stands.
+  const notice = kind === 'handoff' ? newEndingNotice(doc.information) : null
+  if (notice?.replyToSlot) ending.operatorNotice = notice
   return { kind: 'ending', terminalId: stableStepId, ending }
 }
 
@@ -276,6 +280,17 @@ export const addEnding = (doc: RoutineBlockDoc, kind: RoutineTerminalKind): Rout
 
 /** The operator notice an ending carries, as the document editor holds it. */
 export type EndingNotice = NonNullable<RoutineBlockEnding['operatorNotice']>
+
+/**
+ * The notice the editor starts when the author creates one. With exactly one email field there is
+ * only one address to reply to, so replies start going there, in plain sight in the editor. With
+ * none or several the author picks; nothing chooses by a field's name. An ending that already has
+ * a notice never gets one filled in.
+ */
+export const newEndingNotice = (fields: ReadonlyArray<{ key: string; type: string }>): EndingNotice => {
+  const emailFields = fields.filter((field) => field.type === 'email')
+  return { subject: null, intro: null, ...(emailFields.length === 1 ? { replyToSlot: emailFields[0].key } : {}) }
+}
 
 // An ending is defined once but copied onto every branch that targets it, so an edit to one
 // ending rewrites each copy.
@@ -343,11 +358,13 @@ export const renameSlot = (doc: RoutineBlockDoc, stableSlotId: string, key: stri
 const renameSlotInText = (text: string | null, from: string, to: string): string | null =>
   text === null ? null : blockSegmentsToInstruction(replaceSlotReferences(instructionToBlockSegments(text), from, to))
 
-const renameNoticeSlot = (notice: EndingNotice, from: string, to: string): EndingNotice =>
-  mapRoutineOperatorNoticeText(notice, (text) => renameSlotInText(text ?? null, from, to))
+const renameNoticeSlot = (notice: EndingNotice, from: string, to: string): EndingNotice => {
+  const renamed = mapRoutineOperatorNoticeText(notice, (text) => renameSlotInText(text ?? null, from, to))
+  return renamed.replyToSlot === from ? { ...renamed, replyToSlot: to } : renamed
+}
 
 const noticeReferencesSlot = (notice: EndingNotice | undefined, key: string): boolean =>
-  [notice?.subject, notice?.intro].some((text) => text
+  notice?.replyToSlot === key || [notice?.subject, notice?.intro].some((text) => text
     ? instructionToBlockSegments(text).some((segment) => segment.kind === 'slotReference' && segment.key === key)
     : false)
 

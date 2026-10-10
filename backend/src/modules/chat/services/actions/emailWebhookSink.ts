@@ -116,6 +116,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     const delivery = notification.kind === "approval"
       ? {
           subject: "Conversation needs an approval",
+          replyTo: null,
           text: [
             "A conversation is waiting for an approval decision.",
             "",
@@ -140,6 +141,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       ...target.emails.map((to) =>
         this.mailer.send({
           to,
+          ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),
           subject: delivery.subject,
           text: delivery.text,
           idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(to)}`,
@@ -156,18 +158,21 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
   /**
    * A hand-off and a completion notice share one delivery: the kind only picks the default text
    * (inside the formatter) and the `reason` the payload already carries. The email stays plain
-   * text, so collected values reach it unescaped and never as markup.
+   * text, so collected values reach it unescaped and never as markup. Replying to the email goes
+   * to the address the notice's chosen field collected; the webhook names it as `replyTo`.
    */
   private routineEndingDelivery(
     notification: RoutineEndingOperatorNotification,
     context: OperatorNotificationContext,
     openLine: string[],
     links: { dashboardUrl: string | null; dashboardPath: string | null },
-  ): { subject: string; text: string; webhookPayload: Record<string, unknown> } {
+  ): { subject: string; text: string; replyTo: string | null; webhookPayload: Record<string, unknown> } {
     const formatted = formatRoutineEndingNotification(notification);
+    const replyTo = notification.replyTo ?? null;
     return {
       subject: formatted.subject,
       text: [...formatted.lines, ...openLine].join("\n"),
+      replyTo,
       webhookPayload: {
         workspaceId: notification.workspaceId,
         agentId: notification.agentId,
@@ -177,6 +182,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         collected: notification.collected ?? {},
         subject: formatted.notice.subject,
         intro: formatted.notice.intro,
+        replyTo,
         ...links,
         requestId: context.requestId,
       },

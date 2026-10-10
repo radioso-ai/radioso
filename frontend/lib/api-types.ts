@@ -426,6 +426,12 @@ export type ConversationChannelContext =
       provider: 'web'
       origin?: string
     }
+  | {
+      provider: 'email'
+      mailbox: { id: string; address: string }
+      threadKey: string
+      participant: { address: string }
+    }
 
 export type ChatConversationSummary = ApiSchemas['ChatConversationSummary'] & {
   channelContext?: ConversationChannelContext | null
@@ -469,7 +475,7 @@ export type ChatConversationTurnDebug = ApiSchemas['ChatConversationMessageDebug
 export type ChatConversationTurn = ApiSchemas['ChatConversationMessage'] & {
   answerFeedbackEntries?: AnswerFeedbackEntry[]
 }
-export type ChatConversationDetail = Omit<ApiSchemas['ChatConversationDetail'], 'messages'> & {
+export type ChatConversationDetail = Omit<ApiSchemas['ChatConversationDetail'], 'messages' | 'channelContext'> & {
   messages: ChatConversationTurn[]
   tailCursor: string | null
   channelContext?: ConversationChannelContext | null

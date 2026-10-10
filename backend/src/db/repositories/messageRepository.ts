@@ -62,7 +62,28 @@ export interface ConversationMessageSummary {
 export interface MessageRepositoryPort {
   findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null>;
   listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]>;
-  listRecentByConversationId(workspaceId: string, conversationId: string, limit: number): Promise<MessageRecord[]>;
+  /**
+   * The newest `limit` messages, oldest first. `roles` filters before the limit, so a filtered-out
+   * row never takes a place in the window.
+   */
+  listRecentByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    limit: number,
+    options?: { roles?: readonly MessageRole[] },
+  ): Promise<MessageRecord[]>;
+  /**
+   * The newest `limit` messages recorded before the conversation's message `beforeMessageId` in
+   * `(created_at, id)` order, oldest first. The boundary is that message's own `(created_at, id)`,
+   * read by id at the store's full timestamp precision, and applies before the limit, so messages
+   * recorded after it never take a place. A boundary that is not a message of the conversation has
+   * nothing before it.
+   */
+  listBeforeByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    input: { beforeMessageId: string; limit: number },
+  ): Promise<MessageRecord[]>;
   countByConversationId(workspaceId: string, conversationId: string): Promise<number>;
   listWindowByConversationId(
     workspaceId: string,
@@ -251,8 +272,14 @@ export class MessageRepository implements MessageRepositoryPort {
     return rows.map((row) => mapMessageRow(row as MessageRow));
   }
 
-  async listRecentByConversationId(workspaceId: string, conversationId: string, limit: number): Promise<MessageRecord[]> {
-    if (limit <= 0) {
+  async listRecentByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    limit: number,
+    options: { roles?: readonly MessageRole[] } = {},
+  ): Promise<MessageRecord[]> {
+    const { roles } = options;
+    if (limit <= 0 || roles?.length === 0) {
       return [];
     }
 
@@ -261,9 +288,42 @@ export class MessageRepository implements MessageRepositoryPort {
       .select(messageColumns)
       .where("workspace_id", "=", workspaceId)
       .where("conversation_id", "=", conversationId)
+      .$if(roles !== undefined, (qb) => qb.where("role", "in", [...(roles ?? [])]))
       .orderBy("created_at", "desc")
       .orderBy("id", "desc")
       .limit(limit)
+      .execute();
+
+    return rows.map((row) => mapMessageRow(row as MessageRow)).reverse();
+  }
+
+  async listBeforeByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    input: { beforeMessageId: string; limit: number },
+  ): Promise<MessageRecord[]> {
+    if (input.limit <= 0) {
+      return [];
+    }
+
+    // The boundary is resolved in Postgres: `created_at` carries microseconds (`clock_timestamp()`),
+    // and a JavaScript Date round trip would truncate them, dropping a predecessor recorded within the
+    // boundary's millisecond. No such message makes the row comparison null, so nothing matches.
+    const rows = await this.db
+      .selectFrom("messages")
+      .select(messageColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("conversation_id", "=", conversationId)
+      .where(sql<boolean>`(created_at, id) < (
+        SELECT boundary.created_at, boundary.id
+          FROM messages boundary
+         WHERE boundary.id = ${input.beforeMessageId}
+           AND boundary.workspace_id = ${workspaceId}
+           AND boundary.conversation_id = ${conversationId}
+      )`)
+      .orderBy("created_at", "desc")
+      .orderBy("id", "desc")
+      .limit(input.limit)
       .execute();
 
     return rows.map((row) => mapMessageRow(row as MessageRow)).reverse();

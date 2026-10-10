@@ -1,6 +1,6 @@
 import type { Router } from "express";
 import type { QueryResultRow } from "pg";
-import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { ConversationChannelContext, ReplyDraft, ReplyOutcome, ReviewTurnFacts } from "@radioso/conversation-contract";
 import type { ConfigFieldDefinition } from "./configSchema.js";
 
 /**
@@ -16,13 +16,87 @@ export interface ConnectorDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
 }
 
-export type ConnectorChatOutcome =
-  | "answered"
-  | "no_context"
-  | "out_of_scope"
-  | "unavailable";
+/** How a turn answered: the host's reply outcome codes. */
+export type ConnectorChatOutcome = ReplyOutcome;
+
+/**
+ * A customer message a connector records without running a turn. The connector allocates both
+ * ids, so a retry with the same ids records nothing twice: an existing conversation (even one
+ * named by `kind: "new"`) and an existing message are left as they are.
+ */
+export interface ConnectorIngestInput {
+  workspaceId: string;
+  agentId: string | null;
+  conversation:
+    | { kind: "new"; conversationId: string; sourceChannel: string; channelContext: ConversationChannelContext }
+    | { kind: "existing"; conversationId: string };
+  message: { id: string; text: string; receivedAt: Date };
+  /** Hands the conversation to a person, with this reason, when the AI owns it; null leaves ownership as it is. */
+  humanOwnership: { reason: string } | null;
+}
+
+export interface ConnectorIngestResult {
+  conversationId: string;
+  messageId: string;
+  conversationCreated: boolean;
+  messageCreated: boolean;
+  /** Ownership as the ingest left it; version 0 while no ownership row exists. */
+  ownership: { state: "ai_owned" | "human_owned"; version: number };
+}
+
+/** The only execution mode a connector may ask `respond` for. */
+export type ConnectorTurnExecutionMode = "review";
+
+/** A turn on a recorded customer message (from `ingest`) whose reply comes back unpublished. */
+export interface ConnectorRespondInput {
+  workspaceId: string;
+  agentId: string;
+  conversationId: string;
+  /** The recorded customer message the turn answers. */
+  respondToMessageId: string;
+  executionMode: ConnectorTurnExecutionMode;
+  /** The most earlier messages the turn reads as conversation history. */
+  historyWindow: { maxMessages: number };
+}
+
+/**
+ * What the turn recorded about itself, for the connector's publication decision. A
+ * connector decides on these facts and never on the reply's text. `unknown`,
+ * `not_assessed` and `unavailable` mean the host could not tell; treat them as not publishable.
+ */
+export type ConnectorTurnFacts = ReviewTurnFacts;
+
+/**
+ * An unpublished reply. Its presentation is host-owned; a connector stores it and hands it back
+ * unchanged, never inspecting it.
+ */
+export type ConnectorReplyDraft = ReplyDraft;
+
+/**
+ * How a `respond` turn ended. `ownershipVersion` is the ownership the turn read; a
+ * connector compares it before publishing, since a person may have taken over meanwhile.
+ */
+export type ConnectorTurnResult =
+  | { kind: "draft"; conversationId: string; ownershipVersion: number; facts: ReviewTurnFacts; draft: ReplyDraft }
+  /** No reviewable reply: no text, or the model could not be reached. `facts.handoff` names who should take it. */
+  | { kind: "no_draft"; conversationId: string; ownershipVersion: number; facts: ReviewTurnFacts }
+  /** A person owns the conversation, so no turn ran. */
+  | { kind: "human_owned"; conversationId: string; ownershipVersion: number };
 
 export interface ConnectorChatPort {
+  /**
+   * Records the customer's message, and the human ownership asked for, in one unit of work. Runs
+   * no turn and reserves no usage.
+   */
+  // Message-queue impact: synchronous host port only; no AMQP or worker payload changes.
+  ingest(input: ConnectorIngestInput): Promise<ConnectorIngestResult>;
+  /**
+   * Runs a turn on a recorded customer message and returns its reply unpublished, with the
+   * facts a publication decision needs. Writes no reply, applies no hand-off, runs no
+   * skill effect and starts no routine; reserves usage as a conversation reply.
+   */
+  // Message-queue impact: synchronous host port only; no AMQP or worker payload changes.
+  respond(input: ConnectorRespondInput): Promise<ConnectorTurnResult>;
   answer(input: {
     workspaceId: string;
     agentId?: string;

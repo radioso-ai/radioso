@@ -1,0 +1,16 @@
+Return-Path: <support@customer.test>
+Received: from mx.in.relay.test (mx.in.relay.test [192.0.2.50])
+	by inbound.in.relay.test with ESMTPS id c8d9e0f1a2
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 18:35:10 +0000 (UTC)
+Message-ID: <msg-0208@example.test>
+From: Support <support@customer.test>
+To: QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+Subject: Re: Question about my account
+Date: Sat, 03 Oct 2026 18:35:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hi Alice, you can update your billing address from Settings > Billing >
+Advanced. Let us know if you still can't find it.

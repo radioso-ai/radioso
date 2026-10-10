@@ -66,8 +66,26 @@ const qualityTurn = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const deliveryFailure = (overrides: Record<string, unknown> = {}) => ({
+  id: "33333333-3333-4333-8333-333333333333",
+  conversationId: "conversation-delivery",
+  kind: "bounced",
+  detailCode: "mailbox_full",
+  openedAt: new Date("2026-08-26T05:30:00.000Z"),
+  ...overrides,
+});
+
+/** The owning reader: the open failures waiting longest, up to the limit, and how many are open. */
+const deliveryFailureQueue = (rows: Array<ReturnType<typeof deliveryFailure>>, total = rows.length) => ({
+  longestWaiting: vi.fn(async (_workspaceId: string, query: { agentId?: string; limit: number }) => ({
+    total,
+    items: [...rows].sort((left, right) => left.openedAt.getTime() - right.openedAt.getTime()).slice(0, query.limit),
+  })),
+});
+
 const dependencies = (overrides: Partial<NeedsAttentionCopilotToolDependencies> = {}): NeedsAttentionCopilotToolDependencies => ({
   pendingApprovals: { listPending: vi.fn(async () => []) },
+  deliveryFailures: deliveryFailureQueue([]),
   chatHistoryService: {
     getConversation: vi.fn(),
     getConversationTurn: vi.fn(),
@@ -158,6 +176,7 @@ describe("needs_attention", () => {
     expect(result.sources).toEqual(expect.arrayContaining([
       { source: "approvals", status: "unauthorized", total: null, included: 0 },
       { source: "quality", status: "unauthorized", total: null, included: 0 },
+      { source: "delivery_failures", status: "unauthorized", total: null, included: 0 },
       { source: "handoffs", status: "ok", total: 1, included: 1 },
     ]));
   });
@@ -188,7 +207,8 @@ describe("needs_attention", () => {
       },
     };
 
-    const result = await list(populated(), {}, invocation);
+    // Delivery failures read under the same permission, so they are left out to count the approvals' checks alone.
+    const result = await list(populated(), { kinds: ["approval", "handoff", "negative_feedback"] }, invocation);
 
     expect(approvalChecks).toBe(2);
     expect(result.items.map((item) => item.kind)).toEqual(["handoff", "negative_feedback"]);
@@ -312,5 +332,160 @@ describe("needs_attention", () => {
       "workspace-1",
       expect.objectContaining({ agentId: "11111111-1111-4111-8111-111111111111" }),
     );
+  });
+});
+
+describe("needs_attention delivery failures", () => {
+  it("lists a reply that may not have reached the customer by its wait, with its sanitized code", async () => {
+    const deps = populated({ deliveryFailures: deliveryFailureQueue([deliveryFailure()]) });
+
+    const result = await list(deps);
+
+    expect(result.items.map((item) => item.kind)).toEqual(["delivery_failed", "approval", "handoff", "negative_feedback"]);
+    expect(result.items[0]).toMatchObject({
+      kind: "delivery_failed",
+      title: "bounced",
+      detail: "mailbox_full",
+      since: "2026-08-26T05:30:00.000Z",
+      conversationId: "conversation-delivery",
+      approvalHandle: null,
+      assistantMessageId: null,
+      dashboardUrl: "/w/acme/activity?itemKind=chat&itemId=conversation-delivery",
+    });
+    expect(result.sources).toContainEqual({ source: "delivery_failures", status: "ok", total: 1, included: 1 });
+  });
+
+  it("reads the failures under the conversation takeover permission and states the gap without it", async () => {
+    const deps = populated({ deliveryFailures: deliveryFailureQueue([deliveryFailure()]) });
+
+    const result = await list(deps, {}, context(new Set(["workspace.history.read", "workspace.quality.read"])));
+
+    expect(result.items.map((item) => item.kind)).not.toContain("delivery_failed");
+    expect(result.sources).toContainEqual({ source: "delivery_failures", status: "unauthorized", total: null, included: 0 });
+    expect(deps.deliveryFailures?.longestWaiting).not.toHaveBeenCalled();
+  });
+
+  it("asks the owning reader for only the longest waits it lists, and reports every open failure it counted", async () => {
+    const newest = deliveryFailure({ conversationId: "conversation-newest", openedAt: new Date("2026-08-26T09:00:00.000Z") });
+    const oldest = deliveryFailure({ conversationId: "conversation-oldest", kind: "halted", detailCode: null, openedAt: new Date("2026-08-26T01:00:00.000Z") });
+    const deps = dependencies({ deliveryFailures: deliveryFailureQueue([newest, oldest], 100_000) });
+
+    const result = await list(deps, { kinds: ["delivery_failed"], limit: 1 });
+
+    expect(result.items).toEqual([expect.objectContaining({ conversationId: "conversation-oldest", title: "halted", detail: null })]);
+    expect(result.sources).toEqual([{ source: "delivery_failures", status: "ok", total: 100_000, included: 1 }]);
+    expect(deps.deliveryFailures?.longestWaiting).toHaveBeenCalledExactlyOnceWith("workspace-1", { limit: 1 });
+  });
+
+  it("scopes the failures to the requested agent and reads no other source when asked for this kind alone", async () => {
+    const deps = populated({ deliveryFailures: deliveryFailureQueue([deliveryFailure()]) });
+
+    const result = await list(deps, { kinds: ["delivery_failed"], agentId: "11111111-1111-4111-8111-111111111111" });
+
+    expect(result.sources.map((source) => source.source)).toEqual(["delivery_failures"]);
+    expect(deps.deliveryFailures?.longestWaiting).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({ agentId: "11111111-1111-4111-8111-111111111111" }),
+    );
+    expect(deps.pendingApprovals.listPending).not.toHaveBeenCalled();
+  });
+
+  it("reports a failure read that threw as failed rather than as no failures", async () => {
+    const deps = populated({ deliveryFailures: { longestWaiting: vi.fn(async () => { throw new Error("connection reset"); }) } });
+
+    const result = await list(deps);
+
+    expect(result.sources).toContainEqual({ source: "delivery_failures", status: "failed", total: null, included: 0 });
+  });
+});
+
+/** A held reply as the owning reader ranks it: who waits and since when, never its draft. */
+const heldReply = (overrides: Record<string, unknown> = {}) => ({
+  id: "44444444-4444-4444-8444-444444444444",
+  conversationId: "conversation-held",
+  agentId: "11111111-1111-4111-8111-111111111111",
+  holdReason: "draft_mode",
+  createdAt: new Date("2026-08-26T05:45:00.000Z"),
+  ...overrides,
+});
+
+/** The owning reader: the held replies waiting longest, up to the limit, and how many wait. */
+const heldReplyQueue = (rows: Array<ReturnType<typeof heldReply>>, total = rows.length) => ({
+  longestWaiting: vi.fn(async (_actor: unknown, query: { agentId?: string; limit: number }) => ({
+    total,
+    items: [...rows].sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime()).slice(0, query.limit),
+  })),
+});
+
+describe("needs_attention held replies", () => {
+  it("lists a held reply as an approval carrying its heldReplyId, ranked by wait with the routine decisions", async () => {
+    const deps = populated({ heldReplies: heldReplyQueue([heldReply()]) });
+
+    const result = await list(deps);
+
+    expect(result.items.map((item) => [item.kind, item.conversationId])).toEqual([
+      ["approval", "conversation-held"],
+      ["approval", "conversation-approval"],
+      ["handoff", "conversation-handoff"],
+      ["negative_feedback", "conversation-quality"],
+    ]);
+    expect(result.items[0]).toEqual(expect.objectContaining({
+      kind: "approval",
+      title: "draft_mode",
+      detail: null,
+      since: "2026-08-26T05:45:00.000Z",
+      agentId: "11111111-1111-4111-8111-111111111111",
+      heldReplyId: "44444444-4444-4444-8444-444444444444",
+      approvalHandle: null,
+      dashboardUrl: "/w/acme/activity?itemKind=chat&itemId=conversation-held",
+    }));
+    expect(result.sources).toContainEqual({ source: "approvals", status: "ok", total: 2, included: 2 });
+  });
+
+  it("leaves routine decisions as they were: the decision handle, and no held reply", async () => {
+    const result = await list(populated({ heldReplies: heldReplyQueue([heldReply()]) }), { kinds: ["approval"] });
+
+    expect(result.items[1]).toEqual(expect.objectContaining({
+      conversationId: "conversation-approval",
+      title: "Refund over limit",
+      detail: null,
+      approvalHandle: "decision-handle-1",
+      heldReplyId: null,
+    }));
+  });
+
+  it("reads only the longest-waiting held replies it lists as the signed-in teammate, scoped to the requested agent", async () => {
+    const newest = heldReply({ id: "66666666-6666-4666-8666-666666666666", conversationId: "conversation-newest", createdAt: new Date("2026-08-26T09:00:00.000Z") });
+    const oldest = heldReply({ conversationId: "conversation-oldest", createdAt: new Date("2026-08-26T01:00:00.000Z") });
+    const deps = dependencies({ heldReplies: heldReplyQueue([newest, oldest], 100_000) });
+
+    const result = await list(deps, { kinds: ["approval"], agentId: "11111111-1111-4111-8111-111111111111", limit: 1 });
+
+    expect(result.items).toEqual([expect.objectContaining({ conversationId: "conversation-oldest", heldReplyId: oldest.id })]);
+    expect(result.sources).toEqual([{ source: "approvals", status: "ok", total: 100_000, included: 1 }]);
+    expect(deps.heldReplies?.longestWaiting).toHaveBeenCalledExactlyOnceWith(
+      { workspaceId: "workspace-1", accountId: "account-1", userId: "operator-1" },
+      { agentId: "11111111-1111-4111-8111-111111111111", limit: 1 },
+    );
+  });
+
+  it("reads held replies under the approvals source's conversation takeover permission", async () => {
+    const deps = populated({ heldReplies: heldReplyQueue([heldReply()]) });
+
+    const result = await list(deps, {}, context(new Set(["workspace.history.read", "workspace.quality.read"])));
+
+    expect(result.items.map((item) => item.kind)).not.toContain("approval");
+    expect(result.sources).toContainEqual({ source: "approvals", status: "unauthorized", total: null, included: 0 });
+    expect(deps.heldReplies?.longestWaiting).not.toHaveBeenCalled();
+  });
+
+  it("reports the approvals as failed when the held replies cannot be read, rather than as routine decisions alone", async () => {
+    const deps = populated({
+      heldReplies: { longestWaiting: vi.fn(async () => { throw new Error("connection reset"); }) },
+    });
+
+    const result = await list(deps);
+
+    expect(result.sources).toContainEqual({ source: "approvals", status: "failed", total: null, included: 0 });
   });
 });

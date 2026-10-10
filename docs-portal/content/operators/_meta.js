@@ -6,6 +6,7 @@ const meta = {
   'human-takeover': 'Human takeover',
   copilot: 'Ray',
   'slack-channel': 'Slack channel',
+  'email-channel': 'Email channel',
   'wordpress-connector': 'WordPress and WooCommerce',
   'document-processing': 'Document processing',
   'enterprise-usage-limits': 'Enterprise usage limits',

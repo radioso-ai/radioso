@@ -1,7 +1,7 @@
 ---
 title: "Monitoring And Alerts"
 description: "Alert on a Radioso deployment: which signals exist, how to reach them through Prometheus metrics and the ops event feed, and example alert rules that work on any host."
-last_updated: 2026-09-22
+last_updated: 2026-10-06
 ---
 
 # Monitoring And Alerts
@@ -20,6 +20,11 @@ Radioso emits signals through standard interfaces — a Prometheus-compatible me
 | Is anything throwing | `radioso_errors_total`, or JSON logs at `severity>=ERROR` | `/metrics`, stdout |
 | Are documents being indexed | `radioso_document_worker_queue_jobs` | `/metrics` |
 | Are conversation actions being delivered | `radioso_action_dispatch_oldest_pending_age_ms` | `/metrics` |
+| Is inbound email stuck past its processing deadline | `radioso_email_backlog{table="inbound_events",state="pending"}` | `/metrics` |
+| Is the email webhook being forged or misconfigured | `radioso_email_webhook_requests_total{result=~"bad_signature\|stale_timestamp"}` | `/metrics` |
+| Did an email sending domain stop verifying | `radioso_email_domain_readiness_transitions_total{capability="sending",to!="verified"}` | `/metrics` |
+| Are email sends piling up with no resolved outcome | `radioso_email_send_intents_total{state="uncertain"}` | `/metrics` |
+| Is the email bounce rate spiking | `radioso_email_send_intents_total{state="bounced"}` against `{state="accepted"}` | `/metrics` |
 | Did someone sign up, did a conversation finish | `account.registered`, `chat.completed` | [ops event feed](ops-event-feed.md) |
 | Is a caller being throttled | `security.rate_limit_enforced` | `audit_events` |
 | What exactly broke, with a stack trace | error events | [ops event feed](ops-event-feed.md), `audit_events` |
@@ -108,9 +113,50 @@ groups:
         for: 5m
         annotations:
           summary: "Conversation actions have been undelivered for 15 minutes"
+
+      - alert: RadiosoEmailInboundBacklog
+        expr: max(radioso_email_backlog{table="inbound_events",state="pending"}) > 0
+        for: 10m
+        annotations:
+          summary: "Inbound email events have been stuck past the processing deadline"
+
+      - alert: RadiosoEmailWebhookAuthFailing
+        expr: sum(rate(radioso_email_webhook_requests_total{result=~"bad_signature|stale_timestamp"}[5m])) > 0
+        for: 5m
+        annotations:
+          summary: "Email webhook requests are failing signature verification"
+
+      - alert: RadiosoEmailDomainReadinessLost
+        expr: increase(radioso_email_domain_readiness_transitions_total{capability="sending",to!="verified"}[15m]) > 0
+        annotations:
+          summary: "An email sending domain lost its verified status"
+
+      - alert: RadiosoEmailSendUncertain
+        expr: increase(radioso_email_send_intents_total{state="uncertain"}[1h]) > 0
+        annotations:
+          summary: "An email send's outcome never resolved and needs an operator decision"
+
+      - alert: RadiosoEmailBounceSpike
+        expr: >
+          sum(increase(radioso_email_send_intents_total{state="accepted"}[1h])) >= 20
+          and
+          (sum(increase(radioso_email_send_intents_total{state="bounced"}[1h]))
+            / sum(increase(radioso_email_send_intents_total{state="accepted"}[1h]))) > 0.2
+        annotations:
+          summary: "More than 20% of accepted email sends bounced in the last hour"
 ```
 
-That last one earns its place. While the action outbox is stalled, customer-facing work — a contact request, a notification — sits undelivered and nothing else reports it. There is no error and no failed request; the queue just stops.
+The outbox and email-backlog alerts earn their place the same way. While the action outbox is stalled, customer-facing work — a contact request, a notification — sits undelivered and nothing else reports it. There is no error and no failed request; the queue just stops.
+
+`radioso_email_backlog` counts only work that has waited past its deadline, so a busy queue that keeps draining reads zero. The API samples it from the database when its metrics endpoint is scraped, at most once every 30 seconds per instance; scrapes in between report the last sample. The counts cover every workspace, so each API instance reports the same value, which is why the alert takes the `max`. It carries one series per stage:
+
+| `table` | `state` | Counts |
+|---|---|---|
+| `inbound_events` | `pending`, `processing` | Inbound events received more than 10 minutes ago and not yet processed |
+| `reviews_due` | `due` | Threads whose review fell due more than 5 minutes ago and has not run |
+| `send_intents` | `queued` | Sends created more than 10 minutes ago that the provider has not accepted |
+
+The gauge exists only on an API with metrics enabled and the email channel configured. A deployment with the channel turned off never samples it, so the series is absent and the alert stays quiet. When a sample fails, the gauge keeps its previous values and the API logs `email_backlog_sample_failed`.
 
 ## Rate limits
 

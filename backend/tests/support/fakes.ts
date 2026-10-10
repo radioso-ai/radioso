@@ -4057,9 +4057,17 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     }), created: true };
   }
 
-  async create(input: CreateConversationInput): Promise<ConversationRecord> {
+  async createIfAbsent(input: CreateConversationInput & { id: string }): Promise<boolean> {
+    if (this.items.has(input.id)) {
+      return false;
+    }
+    await this.create(input);
+    return true;
+  }
+
+  async create(input: CreateConversationInput & { id?: string }): Promise<ConversationRecord> {
     const record: ConversationRecord = {
-      id: randomUUID(),
+      id: input.id ?? randomUUID(),
       workspaceId: input.workspaceId,
       agentId: input.agentId ?? null,
       agentRevisionId: input.agentRevisionId ?? null,
@@ -4613,6 +4621,23 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       .filter((message) => message.workspaceId === workspaceId)
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
       .slice(-limit);
+  }
+
+  async listBeforeByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    input: { beforeMessageId: string; limit: number },
+  ): Promise<MessageRecord[]> {
+    if (input.limit <= 0) return [];
+    const messages = [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
+    const target = messages.find((message) => message.id === input.beforeMessageId);
+    if (!target) return [];
+    const boundary = target.createdAt.getTime();
+    return messages
+      .filter((message) => message.createdAt.getTime() < boundary
+        || (message.createdAt.getTime() === boundary && message.id < target.id))
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id))
+      .slice(-input.limit);
   }
 
   async countByConversationId(workspaceId: string, conversationId: string): Promise<number> {

@@ -1,5 +1,6 @@
 import type { Router } from "express";
 import type { ConnectorPlugin } from "@radioso/connector-api";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { QueryResultRow } from "pg";
 
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
@@ -8,6 +9,7 @@ import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import type { TelemetrySink } from "../../shared/observability/telemetry/telemetrySink.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type {
   DocumentJobDispatcherPort,
   DocumentStoragePort,
@@ -222,6 +224,10 @@ interface ApplicationActionHandlerRegistration {
         // Terminal (non-retryable) action-dispatch failures are alertable — a handler
         // that wants that signal (e.g. ContactSendActionHandler) reports through this.
         errorReporter: ErrorReporter;
+        // Null when metrics are disabled.
+        metrics: MetricsRegistry | null;
+        // Tells the dashboard of what a handler committed, e.g. a held reply it returned to a teammate.
+        publisher: WorkspaceInvalidationPublisher;
       }) => ActionHandler);
 }
 

@@ -31,3 +31,4 @@ export {
   type SampleScore,
 } from "./sampling.js";
 export type { ConversationQualityRunnerPort } from "./runnerPort.js";
+export type { ConversationQualityObservedOutput } from "./observedOutput.js";

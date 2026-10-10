@@ -19,6 +19,7 @@ COPY frontend/package.json ./frontend/package.json
 COPY packages/census/package.json ./packages/census/package.json
 COPY packages/conversation-contract/package.json ./packages/conversation-contract/package.json
 COPY packages/conversation-contract/*.d.ts ./packages/conversation-contract/
+COPY packages/conversation-contract/*.js ./packages/conversation-contract/
 COPY packages/conversation-engine/package.json ./packages/conversation-engine/package.json
 COPY packages/conversation-defaults/package.json ./packages/conversation-defaults/package.json
 COPY packages/conversation-tools/package.json ./packages/conversation-tools/package.json

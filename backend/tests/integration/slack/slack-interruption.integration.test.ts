@@ -89,7 +89,7 @@ describe("Slack interruption", () => {
     const posts: string[] = [];
     const handler = new SlackMessageHandler({
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-      chat: createConnectorChatPort(ctx.dependencies.chatService),
+      chat: createConnectorChatPort(ctx.dependencies.chatService, ctx.dependencies.conversationIngestService),
       installations: { findByTeamId: async () => installation } as never,
       bindings: {
         findAnswerer: async () => ({

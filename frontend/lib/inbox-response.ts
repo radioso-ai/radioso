@@ -20,8 +20,18 @@ import { deriveOperatorActions } from '@/lib/operator-actions'
  * `anonymousSessionId` is only loaded for handoff items (see `InboxItem`); for
  * approvals and feedback it's `undefined` rather than a known verified/anonymous
  * state, so this returns a generic label instead of guessing either way.
+ *
+ * A session only means something on a channel that has one. An email sender has
+ * no browser session, and the address they wrote from verifies nobody, so an
+ * email conversation is never labeled verified (nor anonymous).
  */
-export const visitorIdentityLabel = (conversation: { anonymousSessionId: string | null | undefined }): string => {
+export const visitorIdentityLabel = (conversation: {
+  anonymousSessionId: string | null | undefined
+  channel?: ConversationChannelContext['provider'] | null
+}): string => {
+  if (conversation.channel === 'email') {
+    return 'Email sender'
+  }
   if (conversation.anonymousSessionId === undefined) {
     return 'Visitor'
   }
@@ -129,13 +139,18 @@ export const freshestOwnership = (
 
 // ── Channel label (FR-006) ──────────────────────────────────────────────────
 
+const CHANNEL_LABELS: Partial<Record<ConversationChannelContext['provider'], string>> = {
+  slack: 'Slack',
+  email: 'Email',
+}
+
 /**
  * Labels the channel only when it adds information. The default web embed is
- * never labeled; a non-default channel such as Slack is.
+ * never labeled; a non-default channel such as Slack or email is.
  */
 export const informativeChannelLabel = (
   channelContext: ConversationChannelContext | null | undefined,
-): string | null => channelContext?.provider === 'slack' ? 'Slack' : null
+): string | null => (channelContext ? CHANNEL_LABELS[channelContext.provider] ?? null : null)
 
 // ── Situation card (FR-007) ─────────────────────────────────────────────────
 

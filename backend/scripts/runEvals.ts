@@ -6,9 +6,10 @@
  *   pnpm run evals -- --tag routine     # only cases carrying a tag (repeatable)
  *
  * It assembles the real application stack (buildDependencies), seeds the fixture corpus,
- * directives, and routines onto a target agent, drives each case through the composed
- * WorkbenchReplayRunner, scores the observed output, and exits non-zero if any case
- * regressed relative to backend/tests/fixtures/conversation-quality/baseline.json.
+ * directives, and routines onto a target agent, drives each live case through the composed
+ * WorkbenchReplayRunner and each `review` case through ChatService.review() on the published
+ * agent, scores the observed output, and exits non-zero if any case regressed relative to
+ * backend/tests/fixtures/conversation-quality/baseline.json.
  *
  * REQUIREMENTS (this is a live path, not a unit test):
  *   - DATABASE_URL to a Postgres with pgvector, migrated.
@@ -17,7 +18,11 @@
  *   - A running document worker (or run this against the dev stack) so ingested corpus
  *     documents get chunked + embedded before retrieval.
  *   - RADIOSO_EVAL_WORKSPACE_ID / RADIOSO_EVAL_AGENT_ID pointing at a disposable agent to
- *     seed. The suite mutates that agent's directives and routines.
+ *     seed. The suite mutates that agent's directives and routines, and publishes it when the
+ *     run includes review cases.
+ *   - A non-production NODE_ENV when the run includes review cases: publishing needs the skills
+ *     the seeded routines dispatch, which the runner adds as webhook skills on a loopback
+ *     destination for the length of the publication only.
  *
  * The `--judge` (llm_judge) layer is a deliberate fast-follow: it needs a judge seam on
  * AppDependencies and per-case sampling to be stable enough to gate on. Until then this
@@ -49,8 +54,8 @@ import {
 import { conversationQualityCases } from "../tests/fixtures/conversation-quality/cases.js";
 import { conversationQualityCorpus } from "../tests/fixtures/conversation-quality/corpus.js";
 import { conversationQualityDirectives } from "../tests/fixtures/conversation-quality/directives.js";
-import { conversationQualityRoutines } from "../tests/fixtures/conversation-quality/routines.js";
-import { createWorkbenchReplayRunnerPort } from "./evalRunnerAdapter.js";
+import { conversationQualityRoutines, CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
+import { createReviewTurnRunnerPort, createWorkbenchReplayRunnerPort } from "./evalRunnerAdapter.js";
 
 const BASELINE_PATH = fileURLToPath(
   new URL("../tests/fixtures/conversation-quality/baseline.json", import.meta.url),
@@ -247,6 +252,76 @@ const seedFixtures = async (
   return { documentIds, routineIds };
 };
 
+/** Only a review case runs the published revision, so only a run that selects one publishes the agent. */
+export const needsPublishedAgent = (cases: readonly ConversationQualityCase[]): boolean =>
+  cases.some((evalCase) => evalCase.executionMode === "review");
+
+/**
+ * The skills the seeded routines dispatch. Publishing refuses a routine whose tool step names a
+ * skill the agent lacks, so the agent holds these skills while it is published.
+ */
+export const seededRoutineSkillNames: readonly string[] = [CREATE_RETURN_TICKET_SKILL];
+
+const ROUTINE_SKILL_DESTINATION = {
+  name: "Conversation-quality evals (publication only)",
+  // Nothing delivers to it, since the skills are gone before any case runs, and a loopback
+  // address could not reach anything outside the machine regardless.
+  url: "http://127.0.0.1/conversation-quality-skill",
+};
+
+/**
+ * Gives the agent the routine skills as webhook skills while `run` runs, then removes them. With
+ * them gone, a live case that reaches a skill step finds no such skill, exactly as it does in a
+ * run without review cases, so live outcomes do not depend on which cases a run selects.
+ */
+const withRoutineSkills = async <T>(deps: Deps, flags: Flags, run: () => Promise<T>): Promise<T> => {
+  const actor = { accountId: null };
+  const destination = (await deps.webhookDestinations.list(flags.workspaceId))
+    .find((candidate) => candidate.name === ROUTINE_SKILL_DESTINATION.name)
+    ?? (await deps.webhookDestinations.create({ workspaceId: flags.workspaceId, ...ROUTINE_SKILL_DESTINATION, actor })).destination;
+  // A run that died before its clean-up left these behind; they are removed with the new ones.
+  const skills = (await deps.webhookSkillDefinitionService.list(flags.workspaceId, flags.agentId))
+    .filter((skill) => seededRoutineSkillNames.includes(skill.skillName));
+  try {
+    for (const skillName of seededRoutineSkillNames.filter((name) => !skills.some((skill) => skill.skillName === name))) {
+      skills.push(await deps.webhookSkillDefinitionService.create(flags.workspaceId, flags.agentId, {
+        skillName,
+        destinationId: destination.id,
+        boundPayload: {},
+        exposedPayload: {},
+        enabled: true,
+      }));
+    }
+    return await run();
+  } finally {
+    for (const skill of skills) {
+      await deps.webhookSkillDefinitionService.remove(flags.workspaceId, flags.agentId, skill.id);
+    }
+    await deps.webhookDestinations.delete(flags.workspaceId, destination.id, actor);
+  }
+};
+
+/**
+ * Publishes the seeded agent and returns the published revision's id. A review case runs the
+ * published revision, as the email channel does, while a live case replays the draft
+ * configuration directly; publishing makes both see the seeded directives and routines.
+ */
+const publishSeededAgent = (deps: Deps, flags: Flags): Promise<string> =>
+  withRoutineSkills(deps, flags, async () => {
+    const state = await deps.agentRevisionService.state(flags.workspaceId, flags.agentId);
+    if (state.status === "draft_clean" && state.publishedRevision) {
+      return state.publishedRevision.id;
+    }
+    const candidate = await deps.agentRevisionService.createCandidate(flags.workspaceId, flags.agentId, state.draft.generation);
+    const published = await deps.agentRevisionService.publish(flags.workspaceId, flags.agentId, null, {
+      revisionId: candidate.id,
+      expectedDraftGeneration: state.draft.generation,
+      expectedPublishedRevisionId: state.publishedRevision?.id ?? null,
+      idempotencyKey: `conversation-quality-${candidate.id}`,
+    });
+    return published.revisionId;
+  });
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -307,7 +382,8 @@ const main = async (): Promise<void> => {
     console.log("Applying migrations…");
     await runMigrations(env.DATABASE_URL, createLogger("silent"));
   }
-  const deps = buildDependencies(env);
+  // The routine skills' destination is a loopback address, which a default stack refuses.
+  const deps = buildDependencies({ ...env, WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: true });
 
   try {
     const target = await ensureTarget(deps, flags);
@@ -323,17 +399,28 @@ const main = async (): Promise<void> => {
     }
     const baselineAgentConfig = projectInternalAgentConfig(agent);
 
-    const port = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
-      workspaceId: flags.workspaceId,
-      agentId: flags.agentId,
-      baselineAgentConfig,
-    });
-
     let cases = filterByTags(dataset, flags.tags);
     cases = remapIds(cases, documentIds, routineIds);
     // Judge grading is not wired yet (see the --judge guard above), so always score the
     // deterministic layer and skip llm_judge assertions rather than erroring them.
     cases = stripJudgeAssertions(cases);
+
+    const replayPort = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
+      workspaceId: flags.workspaceId,
+      agentId: flags.agentId,
+      baselineAgentConfig,
+    });
+    const reviewPort = needsPublishedAgent(cases)
+      ? createReviewTurnRunnerPort(
+          { chat: deps.chatService, conversations: deps.conversationRepository, messages: deps.messageRepository },
+          {
+            workspaceId: flags.workspaceId,
+            agentId: flags.agentId,
+            agentRevisionId: await publishSeededAgent(deps, flags),
+          },
+        )
+      : {};
+    const port = { ...replayPort, ...reviewPort };
 
     if (flags.samples > 1) {
       console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);

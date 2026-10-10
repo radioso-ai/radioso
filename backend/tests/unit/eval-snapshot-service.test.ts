@@ -161,6 +161,10 @@ class StubMessageRepository implements MessageRepositoryPort {
     throw new Error("not implemented");
   }
 
+  async listBeforeByConversationId(): Promise<MessageRecord[]> {
+    throw new Error("not implemented");
+  }
+
   async countByConversationId(): Promise<number> {
     throw new Error("not implemented");
   }

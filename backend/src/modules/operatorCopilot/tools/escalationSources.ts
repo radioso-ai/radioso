@@ -1,4 +1,5 @@
 import type { AccountPermission } from "../../account/public.js";
+import type { HeldReplyService, OwnershipActor } from "../../handoff/public.js";
 import type { CopilotToolInvocationContext } from "../contracts.js";
 import type { CopilotTriageSourceId, CopilotTriageSourceReport } from "../triageDigest.js";
 import type { CopilotConversationSummary } from "./chat.js";
@@ -34,6 +35,36 @@ export interface CopilotPendingApprovalsPort {
   listPending(workspaceId: string): Promise<ReadonlyArray<CopilotPendingApproval>>;
 }
 
+/** A reply that may not have reached the customer, as the queue ranks it. */
+export interface CopilotDeliveryFailure {
+  readonly conversationId: string;
+  /** The delivering channel's enum code: `bounced`, `failed`, `uncertain` or `halted`. */
+  readonly kind: string;
+  /** The provider's code, sanitized; never its bounce message. */
+  readonly detailCode: string | null;
+  readonly openedAt: Date;
+}
+
+/** The open delivery failures waiting longest, and how many are open. */
+export interface CopilotDeliveryFailuresPort {
+  longestWaiting(workspaceId: string, query: { agentId?: string; limit: number }): Promise<{
+    readonly total: number;
+    readonly items: ReadonlyArray<CopilotDeliveryFailure>;
+  }>;
+}
+
+/**
+ * Replies an agent wrote in review that wait for a teammate, read through handoff's operator port
+ * as the signed-in teammate. They are approvals: the `approvals` source ranks the longest waits
+ * beside the routine decisions, and `held_replies` reads them whole.
+ */
+export type CopilotHeldRepliesPort = Pick<HeldReplyService, "list" | "current" | "longestWaiting">;
+
+/** The held replies waiting longest, and how many wait: what the escalation sources rank. */
+export type CopilotHeldReplyQueuePort = Pick<CopilotHeldRepliesPort, "longestWaiting">;
+
+type CopilotHeldReplyWait = Awaited<ReturnType<CopilotHeldReplyQueuePort["longestWaiting"]>>["items"][number];
+
 /** Records a source Ray could not read, so a swallowed failure is still traceable in support. */
 export interface CopilotTriageLogPort {
   warn(fields: Record<string, unknown>, message: string): void;
@@ -52,6 +83,8 @@ export const copilotTriageSourcePermissions: Record<CopilotTriageSourceId, Accou
   documents: "workspace.documents.read",
   document_sources: "workspace.documents.read",
   evals: "workspace.retrieval.query",
+  // Read from the Inbox, where a teammate acknowledges or resolves one, so it takes the Inbox's permission.
+  delivery_failures: "workspace.conversation.takeover",
 };
 
 /** What one authorized source read produced: the rows it listed and the rows it matched. */
@@ -104,6 +137,37 @@ export const readAuthorizedSource = async <TRow, TSource extends CopilotTriageSo
     return { report: { source, status: "failed", total: null }, items: [] };
   }
 };
+
+/*
+ * Open delivery failures and held replies are each a reply a person has to look at, so their totals
+ * count every open row. The owning reader ranks and counts them in the database: one bounded
+ * oldest-first read of the `limit` rows listed and one count, however long the backlog.
+ */
+
+/** A workspace's open delivery failures waiting longest, up to `limit`, with how many are open. */
+export const readOpenDeliveryFailures = (
+  port: CopilotDeliveryFailuresPort,
+  workspaceId: string,
+  agentId: string | null,
+  limit: number,
+): Promise<AuthorizedSourceRead<CopilotDeliveryFailure>> =>
+  port.longestWaiting(workspaceId, { ...(agentId === null ? {} : { agentId }), limit });
+
+/** The held replies waiting longest for a teammate, up to `limit`, with how many wait, read as the signed-in teammate. */
+export const readOpenHeldReplies = (
+  port: CopilotHeldReplyQueuePort,
+  actor: OwnershipActor,
+  agentId: string | null,
+  limit: number,
+): Promise<AuthorizedSourceRead<CopilotHeldReplyWait>> =>
+  port.longestWaiting(actor, { ...(agentId === null ? {} : { agentId }), limit });
+
+/** The teammate a Ray turn reads as, for the operator ports that take one. */
+export const copilotOperatorActor = (context: CopilotToolInvocationContext): OwnershipActor => ({
+  workspaceId: context.workspaceId,
+  accountId: context.accountId,
+  userId: context.operatorUserId,
+});
 
 /** When the wait started: ownership's own clock while a person holds it, the conversation's otherwise. */
 export const escalatedAt = (conversation: CopilotConversationSummary): string =>

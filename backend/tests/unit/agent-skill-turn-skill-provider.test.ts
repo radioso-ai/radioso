@@ -20,6 +20,7 @@ import { ChatTurnSupersededError } from "../../src/modules/chat/services/convers
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../src/modules/retrieval/public.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
+import { resolveSkillEffectPolicy } from "../../src/shared/domain/turnExecutionMode.js";
 
 const workspaceId = randomUUID();
 const agentId = randomUUID();
@@ -508,5 +509,155 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       capabilityDenied: true,
     });
     expect(checks).toEqual([{ capability: "external_skills.invoke", workspaceId }]);
+  });
+});
+
+describe("RepositoryAgentSkillTurnSkillProvider suppressed-effects collector", () => {
+  const settledDispatch = () => vi.fn(async (): Promise<SkillDispatchResult> => ({
+    disposition: "settled",
+    outcome: { status: "completed", answer: "escaped" },
+  }));
+
+  const externalExecutorRegistry = (dispatch: SkillExecutorPort["dispatch"]): SkillExecutorRegistry =>
+    new SkillExecutorRegistry([{ kind: "internal", adapter: EXTERNAL_SKILLS_ADAPTER, executor: { dispatch } }]);
+
+  // A retrieve binding whose execution config points at an external executor: the
+  // only staged-tool shape the safe-test policy suppresses.
+  const externallyExecutedRetrieveSkill = (skillName: string): AgentSkillSpine => agentSkill({
+    skillName,
+    kind: "retrieve",
+    targetType: null,
+    targetId: null,
+    config: { execution: { kind: "internal", adapter: EXTERNAL_SKILLS_ADAPTER, enqueue: false } },
+  });
+
+  const dispatchSelectedTurnSkill = async (
+    runtime: Awaited<ReturnType<RepositoryAgentSkillTurnSkillProvider["forSession"]>>,
+    session: PreparedSession,
+  ) => new ChatTurnSkillSelector(
+    [defaultTurnSkill, ...runtime.turnSkills],
+    strategy,
+    { agentSkillStates: runtime.skillStates },
+  ).select(session).skill.dispatch(session);
+
+  const invokeFirstStagedTool = async (
+    runtime: Awaited<ReturnType<RepositoryAgentSkillTurnSkillProvider["forSession"]>>,
+    session: PreparedSession,
+  ) => {
+    const tools = runtime.agenticRetrievalToolFactories(session).flatMap((factory) => factory({
+      registry: { record: vi.fn(), resolve: vi.fn(), has: vi.fn() },
+      snippetChars: 48,
+    }));
+    return tools[0].invoke(
+      { query: "query" },
+      { signal: new AbortController().signal, stepIndex: 0, callId: "call-1" },
+    );
+  };
+
+  it("starts each turn empty", async () => {
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
+      executorRegistry: externalExecutorRegistry(settledDispatch()),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    });
+    const session = sessionWithBinding("order_lookup");
+    session.skillEffects = "suppressed";
+
+    const runtime = await provider.forSession(session);
+
+    expect(runtime.suppressedEffects()).toEqual([]);
+  });
+
+  it("records a suppressed direct turn-skill dispatch without changing the persisted reason or counter", async () => {
+    const dispatch = settledDispatch();
+    const metricsRegistry = new MetricsRegistry();
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
+      executorRegistry: externalExecutorRegistry(dispatch),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      metricsRegistry,
+    });
+    const session = sessionWithBinding("order_lookup");
+    session.skillEffects = resolveSkillEffectPolicy("safe_test");
+    const runtime = await provider.forSession(session);
+
+    const outcome = await dispatchSelectedTurnSkill(runtime, session);
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(runtime.suppressedEffects()).toEqual([{ skillName: "order_lookup", site: "turn" }]);
+    expect(outcome).toMatchObject({
+      outcome: { status: "failed", outputs: { skill: "order_lookup", reason: "suppressed_for_safe_test" } },
+    });
+    expect(metricsRegistry.renderPrometheus()).toContain(
+      'agent_skill_safe_test_dispatch_total{outcome="suppressed",reason="suppressed_for_safe_test",skill_kind="external_mcp",surface="turn"} 1',
+    );
+  });
+
+  it("records a suppressed staged-tool invocation without changing the persisted reason or counter", async () => {
+    const dispatch = settledDispatch();
+    const metricsRegistry = new MetricsRegistry();
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([externallyExecutedRetrieveSkill("grounded_search")]),
+      executorRegistry: externalExecutorRegistry(dispatch),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      metricsRegistry,
+    });
+    const session = sessionWithBinding("grounded_search");
+    session.skillEffects = resolveSkillEffectPolicy("safe_test");
+    const runtime = await provider.forSession(session);
+
+    const output = await invokeFirstStagedTool(runtime, session);
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(runtime.suppressedEffects()).toEqual([{ skillName: "grounded_search", site: "staged_tool" }]);
+    expect(output).toMatchObject({ ok: false, skillName: "grounded_search", error: "suppressed_for_safe_test" });
+    expect(metricsRegistry.renderPrometheus()).toContain(
+      'agent_skill_safe_test_dispatch_total{outcome="suppressed",reason="suppressed_for_safe_test",skill_kind="retrieve",surface="staged_tool"} 1',
+    );
+  });
+
+  it("stays empty for a live turn even when suppression was requested", async () => {
+    const dispatch = settledDispatch();
+    const metricsRegistry = new MetricsRegistry();
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([
+        agentSkill({ skillName: "order_lookup" }),
+        externallyExecutedRetrieveSkill("grounded_search"),
+      ]),
+      executorRegistry: externalExecutorRegistry(dispatch),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      metricsRegistry,
+    });
+    const turnSession = sessionWithBinding("order_lookup");
+    turnSession.skillEffects = resolveSkillEffectPolicy("live", "suppressed");
+    const stagedSession = sessionWithBinding("grounded_search");
+    stagedSession.skillEffects = resolveSkillEffectPolicy("live", "suppressed");
+
+    const turnRuntime = await provider.forSession(turnSession);
+    await dispatchSelectedTurnSkill(turnRuntime, turnSession);
+    const stagedRuntime = await provider.forSession(stagedSession);
+    await invokeFirstStagedTool(stagedRuntime, stagedSession);
+
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(turnRuntime.suppressedEffects()).toEqual([]);
+    expect(stagedRuntime.suppressedEffects()).toEqual([]);
+    expect(metricsRegistry.renderPrometheus()).not.toContain("agent_skill_safe_test_dispatch_total");
+  });
+
+  it("scopes the collector to one turn", async () => {
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
+      executorRegistry: externalExecutorRegistry(settledDispatch()),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    });
+    const session = sessionWithBinding("order_lookup");
+    session.skillEffects = "suppressed";
+
+    const firstTurn = await provider.forSession(session);
+    await dispatchSelectedTurnSkill(firstTurn, session);
+    const secondTurn = await provider.forSession(session);
+
+    expect(firstTurn.suppressedEffects()).toEqual([{ skillName: "order_lookup", site: "turn" }]);
+    expect(secondTurn.suppressedEffects()).toEqual([]);
   });
 });

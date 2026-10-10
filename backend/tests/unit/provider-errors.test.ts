@@ -43,3 +43,57 @@ describe("isPermanentProviderFailure", () => {
     expect(isPermanentProviderFailure(new Error("Gemini embedding request failed: 400"))).toBe(false);
   });
 });
+
+describe("ProviderHttpError typed code", () => {
+  const bodyFor = (inner: Record<string, unknown>) => ({ error: inner });
+
+  it("carries the provider's structural code for non-credential failures", () => {
+    const error = new ProviderHttpError({
+      provider: "Claude",
+      operation: "messages",
+      status: 400,
+      bodyJson: bodyFor({ type: "invalid_request_error", message: "customer text" }),
+    });
+    expect(error.code).toBe("invalid_request_error");
+  });
+
+  it("prefers the provider code, then its status enum", () => {
+    expect(new ProviderHttpError({
+      provider: "Gemini",
+      operation: "generate",
+      status: 429,
+      bodyJson: bodyFor({ status: "RESOURCE_EXHAUSTED", message: "customer text" }),
+    }).code).toBe("RESOURCE_EXHAUSTED");
+    expect(new ProviderHttpError({
+      provider: "OpenAI-compatible",
+      operation: "chat",
+      status: 400,
+      bodyJson: bodyFor({ code: "context_length_exceeded", type: "invalid_request_error" }),
+    }).code).toBe("context_length_exceeded");
+  });
+
+  it("keeps invalid_api_key for credential failures", () => {
+    const error = new ProviderHttpError({
+      provider: "Gemini",
+      operation: "generate",
+      status: 400,
+      bodyJson: bodyFor({ status: "INVALID_ARGUMENT", message: "API key not valid" }),
+    });
+    expect(error.code).toBe("invalid_api_key");
+  });
+
+  it("never takes prose from the body as its code", () => {
+    const error = new ProviderHttpError({
+      provider: "OpenAI-compatible",
+      operation: "chat",
+      status: 400,
+      bodyJson: bodyFor({ code: "customer jane@example.org rejected", message: "customer text" }),
+    });
+    expect(error.code).toBe("provider_http_error");
+  });
+
+  it("falls back to a generic code when the body carries none", () => {
+    const error = new ProviderHttpError({ provider: "Gemini", operation: "generate", status: 503 });
+    expect(error.code).toBe("provider_http_error");
+  });
+});

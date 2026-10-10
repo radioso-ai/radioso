@@ -63,7 +63,7 @@ const makeHandler = (input: {
   outbox?: SlackPostOutboxPort;
   conversationLinks?: { resolve: () => Promise<string | null> };
 }) => {
-  const chat: ConnectorChatPort = {
+  const chat: Pick<ConnectorChatPort, "answer"> = {
     answer: vi.fn(async () => ({
       conversationId: "44444444-4444-4444-4444-444444444444",
       answer: input.answer ?? "I cannot find that in the docs.",
@@ -283,7 +283,7 @@ describe("Slack gap escalation policy", () => {
       },
       created: false,
     });
-    const chat: ConnectorChatPort = {
+    const chat: Pick<ConnectorChatPort, "answer"> = {
       answer: vi.fn(async (input) => ({
         conversationId: input.conversationId ?? "44444444-4444-4444-4444-444444444444",
         answer: "Mention reply",

@@ -32,6 +32,7 @@ jobs:
       crawler: ${{ steps.filter.outputs.crawler }}
       census: ${{ steps.filter.outputs.census }}
       ee: ${{ steps.filter.outputs.ee }}
+      terraform: ${{ steps.filter.outputs.terraform }}
       wordpress_companion: ${{ steps.filter.outputs.wordpress_companion }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -58,6 +59,7 @@ jobs:
           crawler=false
           census=false
           ee=false
+          terraform=false
           wordpress_companion=false
 
           mark_all() {
@@ -69,6 +71,7 @@ jobs:
             crawler=true
             census=true
             ee=true
+            terraform=true
             wordpress_companion=true
           }
 
@@ -154,6 +157,7 @@ jobs:
             echo "crawler=${crawler}"
             echo "census=${census}"
             echo "ee=${ee}"
+            echo "terraform=${terraform}"
             echo "wordpress_companion=${wordpress_companion}"
           } >> "$GITHUB_OUTPUT"
 
@@ -746,6 +750,38 @@ jobs:
         working-directory: ee
         run: pnpm test
 
+  terraform:
+    name: Terraform
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TF_IN_AUTOMATION: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+
+      - name: Terraform fmt
+        run: terraform -chdir="infra/terraform" fmt -check -recursive
+
+      # The Terraform workflow validates one environment, and only when someone runs it before a
+      # deploy. This checks every root on the pull request instead, with no backend and no cloud
+      # credentials. The lock files are readonly, so a provider change that skipped the lock file
+      # update fails here instead of being quietly re-resolved on the runner. After bumping a
+      # provider, record every platform's hashes in each root, or this runner cannot verify the
+      # package it downloads:
+      #   terraform providers lock -platform=linux_amd64 -platform=darwin_arm64 -platform=darwin_amd64
+      - name: Terraform validate
+        run: |
+          set -euo pipefail
+          for root in environments/staging environments/live environments/live-eu foundation bootstrap; do
+            echo "::group::infra/terraform/${root}"
+            terraform -chdir="infra/terraform/${root}" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="infra/terraform/${root}" validate
+            echo "::endgroup::"
+          done
+
   ci-gate:
     name: CI Gate
     needs:
@@ -761,6 +797,7 @@ jobs:
       - census
       - wordpress-companion
       - ee
+      - terraform
     if: always()
     runs-on: ubuntu-latest
     env:
@@ -785,6 +822,8 @@ jobs:
       WORDPRESS_COMPANION_RESULT: ${{ needs['wordpress-companion'].result }}
       EE_SELECTED: ${{ needs.changes.outputs.ee }}
       EE_RESULT: ${{ needs.ee.result }}
+      TERRAFORM_SELECTED: ${{ needs.changes.outputs.terraform }}
+      TERRAFORM_RESULT: ${{ needs.terraform.result }}
     steps:
       - name: Verify selected CI checks
         run: |
@@ -827,3 +866,4 @@ jobs:
           check_selected_job "Census Package" "$CENSUS_SELECTED" "$CENSUS_RESULT"
           check_selected_job "WordPress Companion Plugin" "$WORDPRESS_COMPANION_SELECTED" "$WORDPRESS_COMPANION_RESULT"
           check_selected_job "Enterprise Edition" "$EE_SELECTED" "$EE_RESULT"
+          check_selected_job "Terraform" "$TERRAFORM_SELECTED" "$TERRAFORM_RESULT"

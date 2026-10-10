@@ -23,6 +23,7 @@ import type {
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
+import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
@@ -42,6 +43,8 @@ import type { ChatStatusStage, ChatStreamEvent } from "../contracts/streamEvents
 import { countStreamPersistFailure, observeFirstAnswerChunkLatency } from "./streamPerformanceMetrics.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
+import type { ChatReviewInput, ChatReviewResult } from "../types/chatReview.js";
+import { chatReviewResult } from "./reviewDraft.js";
 import type {
   AssistantClientContextCapabilities,
   AssistantPageContext,
@@ -102,6 +105,7 @@ import {
   ChatTurnLifecycle,
   type AssistantTurnPersistencePort,
   type ChatActionOutboxPort,
+  type CompletedAssistantTurn,
 } from "./chatTurnLifecycle.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import {
@@ -135,11 +139,16 @@ import type { TurnRouter } from "./turnRouter.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import type { HandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
-import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import {
+  turnExecutionCapabilities,
+  type AnswerTurnExecutionMode,
+  type TurnExecutionMode,
+} from "../../../shared/domain/turnExecutionMode.js";
 import { pageReadCapabilityFromRequest } from "./pageRead/pageReadCapabilityResolver.js";
 import {
   isHumanOwned,
   type ConversationOwnershipReader,
+  type ConversationOwnershipRecord,
 } from "../../handoff/public.js";
 import {
   isHumanAgentMessage,
@@ -185,12 +194,14 @@ const chatTurnTraceAttributes = (input: {
   sourceChannel?: string | null;
   stream: boolean;
   workspaceId: string;
+  executionMode?: TurnExecutionMode;
 }): Record<string, unknown> => ({
   "radioso.account_id": input.accountId,
   "radioso.conversation_id": input.conversationId,
   "radioso.workspace_id": input.workspaceId,
   "chat.source_channel": input.sourceChannel ?? "assistant",
   "chat.stream": input.stream,
+  "chat.execution_mode": input.executionMode ?? "live",
 });
 
 /**
@@ -306,13 +317,75 @@ interface ChatAnswerInput {
   previewRoutineIds?: string[];
   routineInvocation?: RoutineInvocation;
   usageAttribution?: ModelCallUsageAttribution;
-  executionMode?: TurnExecutionMode;
+  /** `answer()` persists its reply; a `review` turn runs through {@link ChatService.review}. */
+  executionMode?: AnswerTurnExecutionMode;
 }
 
 interface ChatTurnReceipt {
   response: ChatResponse;
   userMessageId: string;
 }
+
+/** A turn's input as the shared turn runner reads it, in any execution mode. */
+interface ChatTurnInput extends Omit<ChatAnswerInput, "executionMode"> {
+  executionMode?: TurnExecutionMode;
+}
+
+/** What differs between the turn entry points before the shared runner takes over. */
+interface ChatTurnEntry {
+  /** Prepares the turn's session, recording the customer message or loading it. */
+  prepare(): Promise<PreparedSession>;
+  /** The channel the reply goes out on, which usage is metered against. */
+  usageSurface(session: PreparedSession): string | null | undefined;
+}
+
+/** How a turn ended, before its entry point shapes the result. */
+type ChatTurnOutcome =
+  | {
+    kind: "human_owned";
+    session: PreparedSession;
+    ownership: ConversationOwnershipRecord | null;
+    waitingMessage: string;
+  }
+  | {
+    kind: "completed";
+    session: PreparedSession;
+    ownership: ConversationOwnershipRecord | null;
+    completedTurn: CompletedAssistantTurn;
+  };
+
+/** `answer()` runs only modes that persist their reply, so a completed turn is always persisted. */
+const chatTurnReceipt = (outcome: ChatTurnOutcome): ChatTurnReceipt => {
+  if (outcome.kind === "human_owned") {
+    return {
+      response: suppressedHumanOwnedResponse(outcome.session, outcome.waitingMessage),
+      userMessageId: outcome.session.userMessage.id,
+    };
+  }
+  if (outcome.completedTurn.kind !== "persisted") {
+    throw new Error("An answered turn completed without persisting its reply");
+  }
+  return { response: outcome.completedTurn.response, userMessageId: outcome.session.userMessage.id };
+};
+
+/** A review turn always completes as a draft; the ownership it read binds the result. */
+const chatReviewResultFor = (outcome: ChatTurnOutcome): ChatReviewResult => {
+  const conversationId = outcome.session.conversation.id;
+  // Version 0 while the conversation has no ownership row, as recording a message reports it.
+  const ownershipVersion = outcome.ownership?.version ?? 0;
+  if (outcome.kind === "human_owned") {
+    return { kind: "human_owned", conversationId, ownershipVersion };
+  }
+  if (outcome.completedTurn.kind !== "draft") {
+    throw new Error("A review turn persisted its reply");
+  }
+  return chatReviewResult({
+    conversationId,
+    ownershipVersion,
+    draft: outcome.completedTurn.draft,
+    facts: outcome.completedTurn.facts,
+  });
+};
 
 const routineActivationFailureFields = (error: unknown): Record<string, string> | undefined => {
   if (!(error instanceof Error) || error.name !== "RoutineActivationFailure") {
@@ -876,6 +949,47 @@ export class ChatService {
 
   /** Internal composition seam for callers that need the persisted input/output pair. */
   async answerWithReceipt(input: ChatAnswerInput): Promise<ChatTurnReceipt> {
+    return chatTurnReceipt(await this.runTurn(input, {
+      prepare: () => this.chatSessionPreparer.prepare({
+        ...input,
+        pageReadCapability: pageReadCapabilityFromRequest(
+          input.clientContextCapabilities,
+          input.pageContext,
+        ),
+      }, { skipRetrieval: true }),
+      usageSurface: () => input.sourceChannel,
+    }));
+  }
+
+  /**
+   * Runs a `review` turn on a recorded customer message and returns its reply as a draft.
+   * Internal: no HTTP route reaches it, and `answer()`'s contract is unchanged.
+   */
+  async review(input: ChatReviewInput): Promise<ChatReviewResult> {
+    const requestMessage = await this.chatSessionPreparer.loadExistingUserMessage({
+      workspaceId: input.workspaceId,
+      conversationId: input.conversationId,
+      messageId: input.existingUserMessageId,
+    });
+    const turnInput: ChatTurnInput = {
+      workspaceId: input.workspaceId,
+      agentId: input.agentId,
+      conversationId: input.conversationId,
+      query: requestMessage.content,
+      stream: false,
+      executionMode: "review",
+    };
+    return chatReviewResultFor(await this.runTurn(turnInput, {
+      prepare: () => this.chatSessionPreparer.prepare(turnInput, {
+        skipRetrieval: true,
+        existingUserMessage: { message: requestMessage, historyWindow: input.historyWindow },
+      }),
+      // The reply goes out on the conversation's own channel, so usage is metered there.
+      usageSurface: (session) => session.conversation.sourceChannel,
+    }));
+  }
+
+  private async runTurn(input: ChatTurnInput, entry: ChatTurnEntry): Promise<ChatTurnOutcome> {
     const requestReceivedAt = Date.now();
     const coordination: TurnCoordinationState = {
       lease: input.conversationId
@@ -890,7 +1004,7 @@ export class ChatService {
         attributes: chatTurnTraceAttributes(input),
         run: () => runWithModelCallTrace(
           modelCallTrace,
-          () => this.answerWithinTrace(input, coordination, modelCallTrace, requestReceivedAt),
+          () => this.runTurnWithinTrace(input, entry, coordination, modelCallTrace, requestReceivedAt),
         ),
       });
     } finally {
@@ -898,57 +1012,54 @@ export class ChatService {
     }
   }
 
-  private async answerWithinTrace(
-    input: ChatAnswerInput,
+  private async runTurnWithinTrace(
+    input: ChatTurnInput,
+    entry: ChatTurnEntry,
     coordination: TurnCoordinationState,
     modelCallTrace: ModelCallTraceCollector,
     requestReceivedAt: number,
-  ): Promise<ChatTurnReceipt> {
+  ): Promise<ChatTurnOutcome> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
+    const capabilities = turnExecutionCapabilities(input.executionMode);
     let usageReservation: UsageLimitReservation | null = null;
 
     try {
       this.setTurnStage(coordination, "preparing");
-      session = await this.chatSessionPreparer.prepare({
-        ...input,
-        pageReadCapability: pageReadCapabilityFromRequest(
-          input.clientContextCapabilities,
-          input.pageContext,
-        ),
-      }, { skipRetrieval: true });
+      session = await entry.prepare();
       // Reserved after prepare, once the conversation is known: a customer conversation's
       // reply block is keyed on `session.conversation.id`, which does not exist yet for a
       // brand-new conversation until prepare() creates it.
+      const usageSurface = entry.usageSurface(session);
       usageReservation = await this.usageLimitPolicy.reserveAnswer({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
-        surface: input.sourceChannel ?? "assistant",
-        usage: chatAnswerUsageKind(input.sourceChannel),
+        surface: usageSurface ?? "assistant",
+        usage: chatAnswerUsageKind(usageSurface),
         conversationId: session.conversation.id,
       });
       await this.registerPreparedTurn(coordination, session.conversation.id);
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       this.checkTurnCancellation(coordination, "routing");
       if (isHumanOwned(ownership)) {
-        const waitingMessage = await this.generateHandoffWaitingMessage(input, session);
+        const waitingMessage = capabilities.humanOwnedWaitingMessage === "generate"
+          ? await this.generateHandoffWaitingMessage(input, session)
+          : "";
         this.checkTurnCancellation(coordination, "rendering");
         this.beginTurnEmission(coordination);
         await this.releaseUsageReservation(usageReservation, {
           ...input,
           conversationId: session.conversation.id,
         });
-        return {
-          response: suppressedHumanOwnedResponse(session, waitingMessage),
-          userMessageId: session.userMessage.id,
-        };
+        return { kind: "human_owned", session, ownership, waitingMessage };
       }
 
+      const routinesActivate = capabilities.routines === "activate";
       const clarification = await this.resolvePendingForTurn(session, input.accountId);
-      const activeRoutine = await this.loadActiveRoutine(session);
+      const activeRoutine = routinesActivate ? await this.loadActiveRoutine(session) : null;
       const activeRoutineAtTurnStart = activeRoutine?.status === "active";
-      const suspendedRoutine = await this.loadSuspendedRoutine(session);
+      const suspendedRoutine = routinesActivate ? await this.loadSuspendedRoutine(session) : null;
       // Fuse this turn's classification calls into one plan (memoized on the session)
       // when eligible; the interpreter, response-language, and directive adapters then
       // consume it, falling back to their staged calls when it is absent or invalid.
@@ -964,10 +1075,10 @@ export class ChatService {
       this.checkTurnCancellation(coordination, "routing");
       // A suspended routine keeps the turn without running: it waits for an operator's
       // decision, not for this input, so the attempt is bypassed and only described.
-      if (suspendedRoutine) {
+      if (routinesActivate && suspendedRoutine) {
         await this.chatTurnAssembly.describeSuspendedRoutineTurn(session, suspendedRoutine);
       }
-      const routineTurn = suspendedRoutine
+      const routineTurn = !routinesActivate || suspendedRoutine
         ? null
         : await this.chatTurnAssembly.attemptRoutineTurn(session, {
             accountId: input.accountId,
@@ -1006,9 +1117,9 @@ export class ChatService {
           clarificationTransition: routineTurn.clarificationTransition,
           commitClarificationState: routineTurn.commitClarificationState,
         });
-        assistantMessageId = completedTurn.assistantMessageId;
+        assistantMessageId = completedTurn.kind === "persisted" ? completedTurn.assistantMessageId : undefined;
         await usageReservation.commit();
-        return { response: completedTurn.response, userMessageId: session.userMessage.id };
+        return { kind: "completed", session, ownership, completedTurn };
       }
 
       // The router is authoritative for fresh turns, but resolving a retrieval-sense
@@ -1070,7 +1181,12 @@ export class ChatService {
         }
         this.checkTurnCancellation(coordination, "rendering");
         const renderedTurn = clarificationTurn?.kind === "ask"
-          ? { presentation: clarificationTurn.presentation, engineTrace: clarificationTurn.engineTrace, actions: undefined }
+          ? {
+            presentation: clarificationTurn.presentation,
+            engineTrace: clarificationTurn.engineTrace,
+            actions: undefined,
+            suppressedEffects: [],
+          }
           : await this.chatTurnAssembly.renderTurn(session, {
               ...retrievalInput,
               responseLanguage: responseLanguagePromise,
@@ -1115,10 +1231,11 @@ export class ChatService {
           clarificationTransition: renderedTurn.clarificationTransition ?? clarification.store?.getTransition(),
           commitClarificationState: renderedTurn.commitClarificationState
             ?? (clarification.store ? () => clarification.store!.commit() : undefined),
+          suppressedEffects: renderedTurn.suppressedEffects,
         });
         try {
           await renderedTurn.commitCoverageReactions?.();
-          if (session.answerCoverageInteractionTrace) {
+          if (session.answerCoverageInteractionTrace && completedTurn.kind === "persisted") {
             completedTurn.response.interactionTrace = session.answerCoverageInteractionTrace;
           }
         } catch {
@@ -1128,10 +1245,10 @@ export class ChatService {
             reasonCode: "coverage_reaction_persistence_failed",
           }, "Answer coverage reaction recording failed after assistant turn commit");
         }
-        assistantMessageId = completedTurn.assistantMessageId;
+        assistantMessageId = completedTurn.kind === "persisted" ? completedTurn.assistantMessageId : undefined;
         await usageReservation.commit();
 
-        return { response: completedTurn.response, userMessageId: session.userMessage.id };
+        return { kind: "completed", session, ownership, completedTurn };
       }
       const preparedTurn = await this.chatTurnAssembly.renderPreparedByEngine(session, {
         request: {
@@ -1184,6 +1301,7 @@ export class ChatService {
         commitRoutineState: renderedTurn.commitRoutineState,
         clarificationTransition: clarification.store?.getTransition(),
         commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
+        suppressedEffects: renderedTurn.suppressedEffects,
       });
       // Diagnostics are intentionally post-commit. On success the recorder's
       // callback advances the live session to evaluated; copy that canonical
@@ -1191,7 +1309,7 @@ export class ChatService {
       // truthful not_evaluated state and never fails a durable chat turn.
       try {
         await renderedTurn.commitCoverageReactions?.();
-        if (session.answerCoverageInteractionTrace) {
+        if (session.answerCoverageInteractionTrace && completedTurn.kind === "persisted") {
           completedTurn.response.interactionTrace = session.answerCoverageInteractionTrace;
         }
       } catch {
@@ -1202,10 +1320,10 @@ export class ChatService {
           reasonCode: "coverage_reaction_persistence_failed",
         }, "Answer coverage reaction recording failed after assistant turn commit");
       }
-      assistantMessageId = completedTurn.assistantMessageId;
+      assistantMessageId = completedTurn.kind === "persisted" ? completedTurn.assistantMessageId : undefined;
       await usageReservation.commit();
 
-      return { response: completedTurn.response, userMessageId: session.userMessage.id };
+      return { kind: "completed", session, ownership, completedTurn };
     } catch (error) {
       let preferredError = error;
       try {
@@ -1674,6 +1792,7 @@ export class ChatService {
       let suggestions: TurnStreamSuggestions | null = null;
       let engineTrace: ConversationTrace | undefined;
       let actions: RoutineActionRequest[] | undefined;
+      let suppressedEffects: readonly SuppressedSkillEffect[] = [];
       let coverageRoutineEffects: Partial<ChatTurnAssemblyRoutineResult> = {};
       let emissionStarted = false;
       // Committed/bounded-decline chunks are replays of already-whole text (a coverage-
@@ -1758,6 +1877,7 @@ export class ChatService {
         suggestions = event.suggestions;
         engineTrace = event.engineTrace;
         actions = event.actions;
+        suppressedEffects = event.suppressedEffects;
         coverageRoutineEffects = event;
         const eventSession = (event as { session?: PreparedSession }).session;
         if (eventSession) {
@@ -1846,6 +1966,7 @@ export class ChatService {
         modelCallTrace,
         actions: finalActions,
         ownershipHandoff: finalOwnershipHandoff,
+        suppressedEffects,
         routineStateTransition: coverageRoutineEffects.routineStateTransition,
         routineReporter: coverageRoutineEffects.routineReporter,
         pendingDecisionTransition: coverageRoutineEffects.pendingDecisionTransition,

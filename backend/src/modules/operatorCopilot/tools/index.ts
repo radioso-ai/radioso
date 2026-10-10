@@ -65,6 +65,8 @@ import { createProposalDetailTool } from "./proposalDetail.js";
 import type { CopilotProposalDetailReadPort } from "../service.js";
 import { createDocumentReviewedOperationTools } from "./documentReviewedOperations.js";
 import type { DocumentReviewedOperationToolDependencies } from "./documentReviewedOperations.js";
+import { createEmailChannelCopilotTools } from "./emailChannel.js";
+import type { EmailChannelCopilotToolDependencies } from "./emailChannel.js";
 
 export type CopilotAgentPort = CopilotAgentConfigurationPort & CopilotAgentSkillsAgentPort & CopilotContextVariablesAgentPort;
 
@@ -106,6 +108,7 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & AgentPublicationCopilotToolDependencies
   & RetrievalAuthoringCopilotToolDependencies
   & DocumentReviewedOperationToolDependencies
+  & EmailChannelCopilotToolDependencies
   & { readonly reviewedProposalExecution: ReviewedProposalExecutionPort; readonly reviewedProposalOutcome: ReviewedProposalOutcomePort; readonly cancelReviewedProposal: CancelReviewedProposalPort; readonly proposalDetail: CopilotProposalDetailReadPort };
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
@@ -132,6 +135,7 @@ export const createCopilotToolDescriptors = (
   ...createOperatorNoticeDestinationsCopilotTools(deps),
   ...createContextVariablesCopilotTools(deps),
   ...createWorkspaceSettingsCopilotTools(deps),
+  ...createEmailChannelCopilotTools(deps),
   ...createProductDocsCopilotTools(deps),
   ...createWorkspaceTriageCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createNeedsAttentionCopilotTools({ ...deps, agentLookup: deps.agentService }),
@@ -174,4 +178,5 @@ export type { CopilotTestChatPort } from "./testChat.js";
 export type { CopilotRoutineDefinitionPort } from "./routines.js";
 export type { CopilotProductDocsPort } from "./productDocs.js";
 export type { CopilotWorkspaceSettingsPort } from "./settings.js";
+export type { CopilotEmailChannelPort } from "./emailChannel.js";
 export type { CopilotPendingApprovalsPort, CopilotTriageLogPort } from "./escalationSources.js";

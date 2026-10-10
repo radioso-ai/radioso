@@ -1,12 +1,19 @@
-export interface MetricWriteOptions {
+interface MetricWriteOptions {
   help: string;
   labels?: Record<string, string>;
   value?: number;
 }
 
-export interface HistogramWriteOptions extends MetricWriteOptions {
+interface HistogramWriteOptions extends MetricWriteOptions {
   buckets?: number[];
 }
+
+/**
+ * Refreshes series whose source is state this process does not write itself, such as counts read
+ * from the shared database, just before a scrape renders them. A collector owns its own failure
+ * handling and pacing; one that rejects leaves its series at their last values.
+ */
+export type MetricsCollector = () => Promise<void>;
 
 interface MetricSeries {
   labels: Record<string, string>;
@@ -75,6 +82,16 @@ export class MetricsRegistry {
   private readonly counters = new Map<string, { help: string; series: Map<string, MetricSeries> }>();
   private readonly gauges = new Map<string, { help: string; series: Map<string, MetricSeries> }>();
   private readonly histograms = new Map<string, HistogramDefinition>();
+  private readonly collectors: MetricsCollector[] = [];
+
+  registerCollector(collector: MetricsCollector): void {
+    this.collectors.push(collector);
+  }
+
+  /** Runs every collector before a scrape; never rejects, so one failing source cannot fail the scrape. */
+  async collect(): Promise<void> {
+    await Promise.allSettled(this.collectors.map((collector) => collector()));
+  }
 
   incrementCounter(name: string, options: MetricWriteOptions): void {
     const metricName = sanitizeMetricName(name);

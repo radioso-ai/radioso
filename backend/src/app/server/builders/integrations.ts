@@ -1,3 +1,5 @@
+import type { ConnectorPlugin } from "@radioso/connector-api";
+
 import type { AuditPort } from "../../../modules/audit/contracts/index.js";
 import { createDefaultConnectorRegistry, type ApplicationComposition } from "../../composition/index.js";
 import {
@@ -153,8 +155,10 @@ export const buildConnectorRegistry = (input: {
   composition: ApplicationComposition;
   env: Env;
   logger: AppLogger;
+  /** The email channel's webhook plugin, when an email provider is configured. */
+  emailPlugin?: ConnectorPlugin | null;
 }) => {
-  const connectorRegistry = createDefaultConnectorRegistry(input.composition.connectors, input.env);
+  const connectorRegistry = createDefaultConnectorRegistry(input.composition.connectors, input.env, { email: input.emailPlugin });
   if (input.env.CONNECTOR_ENCRYPTION_KEY) {
     connectorRegistry.setEncryptionKey(input.env.CONNECTOR_ENCRYPTION_KEY);
   } else {

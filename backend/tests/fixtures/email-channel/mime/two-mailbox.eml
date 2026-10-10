@@ -1,0 +1,23 @@
+Return-Path: <dave@example.test>
+Received: from relay.in.relay.test (relay.in.relay.test [192.0.2.60])
+	by inbound.in.relay.test with ESMTPS id 9d2a7c4e1b
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 09:12:40 +0000 (UTC)
+X-MS-Exchange-Organization-AutoForwarded: true
+Received: from EXAMPLEORG01.outlook.example.test (2603:10b6::25)
+ by EXAMPLEORG02.outlook.example.test with Microsoft SMTP Server
+ (version=TLS1_2, cipher=TLS_ECDHA_WITH_AES_256_CBC_SHA384_P384) id
+ 15.20.1234.56; Sat, 3 Oct 2026 09:12:35 +0000
+Message-ID: <msg-0020@example.test>
+From: Dave Ortiz <dave@example.test>
+To: support@customer.test, sales@customer.test
+Subject: Pricing for two teams
+Date: Sat, 03 Oct 2026 09:12:30 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hi, we're looking to roll this out to two teams at once. Could someone
+send over pricing for a 25 and a 10 seat plan?
+
+Dave

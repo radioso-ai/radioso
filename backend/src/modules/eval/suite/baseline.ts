@@ -34,13 +34,13 @@ export interface BaselineCaseRecord {
 /** A bare status is the single-sample form; suites that do not sample still write it. */
 export type BaselineCaseEntry = EvalRunStatus | BaselineCaseRecord;
 
-export const baselineCaseStatus = (entry: BaselineCaseEntry): EvalRunStatus =>
+const baselineCaseStatus = (entry: BaselineCaseEntry): EvalRunStatus =>
   typeof entry === "string" ? entry : entry.status;
 
-export const baselineCaseRate = (entry: BaselineCaseEntry): number | null =>
+const baselineCaseRate = (entry: BaselineCaseEntry): number | null =>
   typeof entry === "string" || entry.passRate === undefined ? null : entry.passRate;
 
-export const baselineCaseSamples = (entry: BaselineCaseEntry): number | null =>
+const baselineCaseSamples = (entry: BaselineCaseEntry): number | null =>
   typeof entry === "string" || entry.samples === undefined ? null : entry.samples;
 
 export interface CaseOutcome {
@@ -79,7 +79,7 @@ export interface BaselineDiff {
   unchanged: CaseOutcome[];
 }
 
-export interface BaselineDiffOptions {
+interface BaselineDiffOptions {
   /** The pass threshold used to reduce the current sampled run. */
   passThreshold?: number;
   /**

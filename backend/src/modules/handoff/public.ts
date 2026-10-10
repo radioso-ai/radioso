@@ -4,7 +4,9 @@ export {
   canResume,
   isHumanOwned,
   ownerLabel,
+  ownershipVersionOf,
   presentOwnership,
+  readConversationOwnershipState,
 } from "./ownershipState.js";
 export { OperatorReplyService } from "./operatorReplyService.js";
 export { OperatorIdentityResolver, type OperatorIdentity } from "./operatorIdentity.js";
@@ -16,6 +18,7 @@ export {
 } from "./transferNotice.js";
 export {
   ConversationOwnershipService,
+  type HumanOwnershipRequestScope,
   type OwnershipActor,
   type OwnershipChangeUnitOfWork,
   type OwnershipReplyUnitOfWork,
@@ -24,6 +27,30 @@ export type {
   ConversationOwnershipRecord,
   ConversationOwnershipScope,
 } from "./ownershipState.js";
+// The machine's events and refusals stay inside handoff: its service applies them, and the
+// repository (a handoff adapter) reads them from the state module itself.
+export {
+  HELD_REPLY_STATES,
+  type HeldReplyRecord,
+  type HeldReplyState,
+} from "./heldReplies/heldReplyState.js";
+// Producers call hold or queueAuto; a channel's send handler calls materializeAuto on a queued send,
+// and its sweep returnAbandonedAuto on one whose dispatch gave up.
+export {
+  HeldReplyService,
+  type HeldReplyAuthorityView,
+  type HeldReplyChannelScope,
+  type HeldReplyDispatchPort,
+  type HeldReplyInsert,
+  type HeldReplyProducerPort,
+  type HeldReplyReadStore,
+  type HeldReplySupersedeScope,
+  type HeldReplyUnitOfWork,
+  type HeldReplyView,
+  type HeldReplyWriteStore,
+  type HoldReplyInput,
+  type QueueAutoInput,
+} from "./heldReplies/heldReplyService.js";
 
 export interface ConversationOwnershipReader {
   load(conversationId: string): Promise<ConversationOwnershipRecord | null>;

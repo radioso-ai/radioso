@@ -29,7 +29,7 @@ type OperatorActionStatus = 'ai_owned' | 'awaiting_human' | 'owned_by_me' | 'own
 
 interface OperatorActions {
   status: OperatorActionStatus
-  /** Sending takes the conversation first: it is AI-owned or waits unclaimed. */
+  /** Sending claims the conversation: it is AI-owned or waits unclaimed. */
   claimsOnSend: boolean
   /** The reply composer shows: nobody holds the conversation, or I do. */
   canReply: boolean

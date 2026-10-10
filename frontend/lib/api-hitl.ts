@@ -1,5 +1,5 @@
 import { request, type ErrorResponse } from './api-client'
-import { getApiErrorCode } from './api-error'
+import { getApiErrorCode, getApiErrorMessage } from './api-error'
 import { withQuery } from './api-query'
 import type {
   ChatConversationTail,
@@ -31,6 +31,23 @@ export const isHitlApiStatusError = (
   error: unknown,
   status: HitlApiStatus,
 ): error is ErrorResponse & { status: HitlApiStatus } => getHitlApiErrorStatus(error) === status
+
+/**
+ * Why the server refused to send a reply, when the refusal is about the
+ * conversation's channel rather than an ownership race: a 409 whose code is not
+ * the ownership `conflict` (an email mailbox whose sending is not available, for
+ * one). Null for every other failure.
+ */
+export const replyRefusalReason = (error: unknown): string | null => {
+  if (!isHitlApiStatusError(error, 409)) {
+    return null
+  }
+  const code = getApiErrorCode(error)
+  if (!code || code === 'conflict') {
+    return null
+  }
+  return getApiErrorMessage(error, '') || null
+}
 
 type TransferFailureCause = 'target_unavailable' | 'conversation_missing'
 

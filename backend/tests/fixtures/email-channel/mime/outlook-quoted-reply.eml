@@ -1,0 +1,28 @@
+Return-Path: <henry@example.test>
+Received: from mx.in.relay.test (mx.in.relay.test [192.0.2.50])
+	by inbound.in.relay.test with ESMTPS id 5e6f708192
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 16:25:10 +0000 (UTC)
+Message-ID: <msg-0102@example.test>
+In-Reply-To: <out-0102@in.relay.test>
+References: <out-0102@in.relay.test>
+From: Henry Pak <henry@example.test>
+To: support@customer.test
+Subject: RE: Your invoice #2291
+Date: Sat, 03 Oct 2026 16:25:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Thanks, I've paid the invoice now. Please confirm when you see it.
+
+Henry
+
+-----Original Message-----
+From: Support <support@customer.test>
+Sent: Saturday, October 3, 2026 3:40 PM
+To: Henry Pak <henry@example.test>
+Subject: Your invoice #2291
+
+Hi Henry, invoice #2291 for 240.00 is now overdue. Let us know if you
+have any questions about it.

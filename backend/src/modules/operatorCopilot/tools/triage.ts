@@ -5,13 +5,18 @@ import type { CopilotEvalResultsPort } from "../contracts/evalCases.js";
 import { buildCopilotDashboardLink } from "../dashboardLinks.js";
 import {
   clip,
+  copilotOperatorActor,
   escalatedAt,
   latestDownComment,
   readAuthorizedSource,
+  readOpenDeliveryFailures,
+  readOpenHeldReplies,
   HANDOFF_RANKING_WINDOW,
   MAX_DETAIL_CHARS,
   MAX_TITLE_CHARS,
   type AuthorizedSourceRead,
+  type CopilotDeliveryFailuresPort,
+  type CopilotHeldReplyQueuePort,
   type CopilotPendingApprovalsPort,
   type CopilotTriageLogPort,
 } from "./escalationSources.js";
@@ -46,6 +51,10 @@ const SUCCESSFUL_SYNC_STATUS = "success";
 export interface WorkspaceTriageCopilotToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly pendingApprovals: CopilotPendingApprovalsPort;
+  /** Absent where no channel's held replies are composed into Ray; approvals are then the routine decisions alone. */
+  readonly heldReplies?: CopilotHeldReplyQueuePort;
+  /** Absent where no delivering channel's failures are composed into Ray, and then not a source. */
+  readonly deliveryFailures?: CopilotDeliveryFailuresPort;
   readonly chatHistoryService: CopilotConversationHistoryPort;
   readonly qualitySignalsService: CopilotQualitySignalsPort;
   readonly documentStatusService: CopilotDocumentStatusPort;
@@ -65,6 +74,7 @@ const triageOutputSchema = z.object({
     kind: z.enum([
       "approval",
       "handoff",
+      "delivery_failed",
       "negative_feedback",
       "failed_document",
       "failed_source_sync",
@@ -73,7 +83,7 @@ const triageOutputSchema = z.object({
       "documents_processing",
     ]),
     urgency: z.enum(["blocking", "attention", "backlog"]),
-    /** Workspace data, never composed copy: a reason, preview, name, or signal id, or null. */
+    /** Workspace data, never composed copy: a reason, preview, name, signal id, or failure kind, or null. */
     title: z.string().nullable(),
     detail: z.string().nullable(),
     since: z.string().nullable(),
@@ -84,7 +94,7 @@ const triageOutputSchema = z.object({
     dashboardUrl: z.string().startsWith("/"),
   }).strict()),
   sources: z.array(z.object({
-    source: z.enum(["approvals", "handoffs", "quality", "documents", "document_sources", "evals"]),
+    source: z.enum(["approvals", "handoffs", "quality", "documents", "document_sources", "evals", "delivery_failures"]),
     status: z.enum(["ok", "unauthorized", "failed"]),
     total: z.number().int().nonnegative().nullable(),
     included: z.number().int().nonnegative(),
@@ -94,7 +104,7 @@ const triageOutputSchema = z.object({
 type WorkspaceTriageInput = z.infer<typeof triageInputSchema>;
 type WorkspaceTriageOutput = z.infer<typeof triageOutputSchema>;
 
-const description = "Read one ranked digest of what needs the operator's attention: waiting handoffs and approvals first, then failures and written complaints, then untriaged backlog counts. Every line carries a dashboard link. Sources report whether they were read: a source marked unauthorized or failed is unknown, never zero. The knowledge base is workspace-wide, so its lines stay in the digest even when the request names one agent. This is the answer to a broad opening question about the workspace; needs_attention lists the same escalations as a working queue when the operator is about to act on one.";
+const description = "Read one ranked digest of what needs the operator's attention: waiting handoffs, approvals and replies that may not have reached the customer first, then failures and written complaints, then untriaged backlog counts. Every line carries a dashboard link. Sources report whether they were read: a source marked unauthorized or failed is unknown, never zero. The knowledge base is workspace-wide, so its lines stay in the digest even when the request names one agent. This is the answer to a broad opening question about the workspace; needs_attention lists the same escalations as a working queue when the operator is about to act on one.";
 
 export const createWorkspaceTriageCopilotTools = (
   deps: WorkspaceTriageCopilotToolDependencies,
@@ -133,16 +143,20 @@ const buildDigest = async (
   agentId: string | null,
 ): Promise<WorkspaceTriageOutput> => {
   const now = new Date();
+  const { deliveryFailures } = deps;
   // A digest is many results in one call, and the catalog boundary links one subject per result.
   // Resolving the key here is what lets every line carry its own handoff.
   const [workspaceKey, ...sources] = await Promise.all([
     deps.workspaceRouteKeyResolver.resolveWorkspaceKey(context.workspaceId),
-    readAuthorizedSource(deps, context, "approvals", () => readApprovals(deps, context.workspaceId, agentId)),
+    readAuthorizedSource(deps, context, "approvals", () => readApprovals(deps, context, agentId)),
     readAuthorizedSource(deps, context, "handoffs", () => readHandoffs(deps, context.workspaceId, agentId)),
     readAuthorizedSource(deps, context, "quality", () => readQuality(deps, context.workspaceId, agentId)),
     readAuthorizedSource(deps, context, "documents", () => readDocuments(deps, context.workspaceId)),
     readAuthorizedSource(deps, context, "document_sources", () => readDocumentSources(deps, context.workspaceId)),
     readAuthorizedSource(deps, context, "evals", () => readEvalCases(deps, context.workspaceId, agentId)),
+    ...(deliveryFailures
+      ? [readAuthorizedSource(deps, context, "delivery_failures", () => readDeliveryFailures(deliveryFailures, context.workspaceId, agentId))]
+      : []),
   ]);
 
   const ranked = buildCopilotTriageDigest(sources.flatMap((source) => source.items));
@@ -170,30 +184,73 @@ const buildDigest = async (
   };
 };
 
+/**
+ * Two kinds of approval wait on a person: a routine's decision, and a reply an agent wrote in review.
+ * Both count toward the approvals source and are ranked together by how long they have waited.
+ */
 const readApprovals = async (
   deps: WorkspaceTriageCopilotToolDependencies,
+  context: CopilotToolInvocationContext,
+  agentId: string | null,
+): Promise<SourceResult> => {
+  const { heldReplies } = deps;
+  const [decisions, held] = await Promise.all([
+    deps.pendingApprovals.listPending(context.workspaceId),
+    heldReplies ? readOpenHeldReplies(heldReplies, copilotOperatorActor(context), agentId, MAX_ITEMS_PER_SOURCE) : { total: 0, items: [] },
+  ]);
+  const pending = decisions.filter((decision) => agentId === null || decision.agentId === agentId);
+  const decisionItems = pending.map((decision): CopilotTriageItem => ({
+    kind: "approval",
+    urgency: "blocking",
+    title: decision.reason,
+    detail: null,
+    since: decision.createdAt.toISOString(),
+    count: 1,
+    agentId: decision.agentId,
+    conversationId: decision.conversationId,
+    subject: { type: "conversation", id: decision.conversationId },
+  }));
+  // Titled by why it is held: the ranking read never carries a draft, and held_replies reads it whole.
+  const heldReplyItems = held.items.map((heldReply): CopilotTriageItem => ({
+    kind: "approval",
+    urgency: "blocking",
+    title: heldReply.holdReason,
+    detail: null,
+    since: heldReply.createdAt.toISOString(),
+    count: 1,
+    agentId: heldReply.agentId,
+    conversationId: heldReply.conversationId,
+    subject: { type: "conversation", id: heldReply.conversationId },
+  }));
+  return {
+    total: pending.length + held.total,
+    items: [...decisionItems, ...heldReplyItems]
+      .sort((left, right) => (left.since ?? "").localeCompare(right.since ?? ""))
+      .slice(0, MAX_ITEMS_PER_SOURCE),
+  };
+};
+
+const readDeliveryFailures = async (
+  deliveryFailures: CopilotDeliveryFailuresPort,
   workspaceId: string,
   agentId: string | null,
 ): Promise<SourceResult> => {
-  const pending = (await deps.pendingApprovals.listPending(workspaceId))
-    .filter((decision) => agentId === null || decision.agentId === agentId);
+  const open = await readOpenDeliveryFailures(deliveryFailures, workspaceId, agentId, MAX_ITEMS_PER_SOURCE);
   return {
-    total: pending.length,
-    items: pending
-      .slice()
-      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
-      .slice(0, MAX_ITEMS_PER_SOURCE)
-      .map((decision) => ({
-        kind: "approval" as const,
-        urgency: "blocking" as const,
-        title: decision.reason,
-        detail: null,
-        since: decision.createdAt.toISOString(),
-        count: 1,
-        agentId: decision.agentId,
-        conversationId: decision.conversationId,
-        subject: { type: "conversation", id: decision.conversationId },
-      })),
+    total: open.total,
+    items: open.items.slice(0, MAX_ITEMS_PER_SOURCE).map((failure) => ({
+      kind: "delivery_failed" as const,
+      // A reply the customer may never have received waits on a person as much as a handoff does.
+      urgency: "blocking" as const,
+      title: failure.kind,
+      detail: failure.detailCode,
+      since: failure.openedAt.toISOString(),
+      count: 1,
+      // A failure names its conversation, not the agent; an agent-scoped read has already narrowed it.
+      agentId: null,
+      conversationId: failure.conversationId,
+      subject: { type: "conversation", id: failure.conversationId },
+    })),
   };
 };
 

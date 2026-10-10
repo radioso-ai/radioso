@@ -528,4 +528,24 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       },
     ],
   },
+  {
+    id: "email-review-covered-refund",
+    name: "An emailed refund question the policy covers is drafted and not sent",
+    description:
+      "A review turn, as the email channel runs one: the customer's message is already recorded and the reply comes back as a draft, and the conversation gains no assistant message. The 30-day refund window covers the question, but the turn sometimes asks which sense the customer means instead of answering; that ask is a non-retrieval reply with no grounding or coverage verdict, so the case asserts neither.",
+    tags: ["email", "review", "grounding", "coverage"],
+    executionMode: "review",
+    query: "Hi, I bought an annual plan two weeks ago and it isn't working out for us. Can I still get a full refund?",
+    assertions: [{ type: "turn_persists_no_reply" }],
+  },
+  {
+    id: "email-review-uncovered-nonprofit-discount",
+    name: "An emailed question the corpus does not answer is drafted and not sent",
+    description:
+      "A review turn on a question next to the pricing material that no document answers: the reply comes back as a draft and the conversation gains no assistant message. The turn mostly asks which plan or discount the customer means, a non-retrieval reply with no grounding or coverage verdict, so the case asserts neither.",
+    tags: ["email", "review", "grounding", "coverage"],
+    executionMode: "review",
+    query: "Hello, we are a registered charity. Do you offer a nonprofit discount on your plans?",
+    assertions: [{ type: "turn_persists_no_reply" }],
+  },
 ];

@@ -54,6 +54,13 @@ describe('dashboard query invalidation coordinator', () => {
       .toEqual(['conversation.ownership_changed', 'hitl.decision_resolved', 'quality.triage_changed'])
   })
 
+  it('refreshes held replies, which are approvals, on the approval events and on a takeover that supersedes them', () => {
+    const heldReplies = dashboardQueryKeys.attention.heldReplies(workspaceId, { limit: 50 })
+
+    expect(INVALIDATION_KINDS.filter((kind) => matchesWorkspaceInvalidation(kind, heldReplies, workspaceId)))
+      .toEqual(['conversation.ownership_changed', 'hitl.decision_created', 'hitl.decision_resolved'])
+  })
+
   it('rejects unrelated workspaces and non-owning query families', () => {
     const key = dashboardQueryKeys.history.list('workspace-b', { variant: 'all', page: 1, pageSize: 50 })
     expect(matchesWorkspaceInvalidation('conversation.created', key, workspaceId)).toBe(false)
@@ -105,6 +112,7 @@ describe('dashboard query invalidation coordinator', () => {
       qualityTurns: dashboardQueryKeys.quality.turns(workspaceId, { page: 1, pageSize: 25 }),
       decisions: dashboardQueryKeys.attention.decisions(workspaceId),
       humanOwned: dashboardQueryKeys.attention.humanOwned(workspaceId, { pageSize: 25 }),
+      heldReplies: dashboardQueryKeys.attention.heldReplies(workspaceId, { limit: 50 }),
     }
     const expected: Record<(typeof INVALIDATION_KINDS)[number], readonly (keyof typeof familyKeys)[]> = {
       'document.status_changed': ['documentList', 'sources'],
@@ -113,10 +121,10 @@ describe('dashboard query invalidation coordinator', () => {
       'conversation.created': ['historyAll', 'historyChat'],
       'conversation.turn_committed': ['historyAll', 'historyChat'],
       'conversation.contact_delivery_changed': ['historyAll', 'historyContact'],
-      'conversation.ownership_changed': ['historyAll', 'historyChat', 'humanOwned'],
+      'conversation.ownership_changed': ['historyAll', 'historyChat', 'humanOwned', 'heldReplies'],
       'search.created': ['historyAll', 'historySearch'],
-      'hitl.decision_created': ['decisions'],
-      'hitl.decision_resolved': ['decisions'],
+      'hitl.decision_created': ['decisions', 'heldReplies'],
+      'hitl.decision_resolved': ['decisions', 'heldReplies'],
       'quality.feedback_changed': ['qualityStats', 'qualityTurns'],
       'quality.triage_changed': ['qualityStats', 'qualityTurns'],
     }

@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations, suppressing AI while handling manual responses, and reading who did what to a conversation."
-last_updated: 2026-10-02
+last_updated: 2026-10-05
 ---
 
 # Human Takeover
@@ -56,6 +56,16 @@ There are three request triggers:
 
 In the agent's **Profile → Answers** settings, turn on **Hand off on retrieval
 miss** to enable this trigger.
+
+A channel can also put a conversation in a person's hands when the agent may
+not answer it. The [email channel](email-channel.md#bounds) does this with
+four reasons: `operator_only_mailbox` (the mailbox only operators answer,
+including one disabled or left without an agent while a draft waited),
+`generation_budget` (the mailbox's hourly review budget is spent),
+`review_unavailable` (the review turn failed past its retries or produced
+nothing to review), and `policy_changed` (a change to the mailbox's mode or
+agent superseded the draft the customer was waiting on). The conversation is `human_owned` with that reason, the
+same as after any other handoff.
 
 Every trigger requests human ownership and notifies an operator through the
 contact-delivery transport with a `handoff.notify` action. Each also records a
@@ -128,7 +138,10 @@ for a teammate; on one you already hold it returns the record unchanged. One a
 teammate already holds returns `409` with the current ownership in
 `error.details.ownership`; you take it from them with a
 [transfer](#transfer-ownership) to yourself, which is what the dashboard's
-**Reassign → Me** does on a teammate's conversation.
+**Reassign → Me** does on a teammate's conversation. On an email
+conversation, taking over also replaces any held reply the agent hasn't
+sent, including one already queued to send automatically — see
+[What replaces a draft](#what-replaces-a-draft).
 
 ### Reply as a human
 
@@ -174,15 +187,22 @@ ownership in `error.details.ownership`. `expectedVersion` must match the
 ownership record you replied from; a stale value also returns `409` with the
 current record.
 
-The ownership check, the saved reply, and its delivery to a customer channel
-such as Slack commit together, with the conversation and its ownership record
-locked in between. A transfer or hand-back that commits first refuses the reply
-with `409`, and no message is saved; one that arrives while the reply is being
-saved waits for it. The Slack post is queued on the action outbox in the same
-database transaction, keyed by the message, so the worker posts each reply once
-and retries a failed post. A reply that could not be saved or queued leaves
-nothing behind, so after a `5xx` you can send it again and the visitor sees it
-once.
+On an email conversation, the reply goes out as an email in the same thread
+the customer wrote to and renews the thread's
+[send budget](email-channel.md#budgets) — see [Email channel](email-channel.md#send-a-reply-and-track-delivery)
+for its headers and delivery states. On one whose sending domain has not
+verified, the reply is refused before anything is written at all.
+
+Otherwise, the ownership check, the saved reply, and its delivery to a
+customer channel such as Slack or email commit together, with the
+conversation and its ownership record locked in between. A transfer or
+hand-back that commits first refuses the reply with `409`, and no message is
+saved; one that arrives while the reply is being saved waits for it. The
+Slack post or email send is queued on the action outbox in the same database
+transaction, keyed by the message, so the worker posts or sends each reply
+once and retries a failed attempt. A reply that could not be saved or queued
+leaves nothing behind, so after a `5xx` you can send it again and the
+visitor sees it once.
 
 The visitor, the dashboard, and the customer channel hear of a reply only once
 it has committed, and from then on the reply stands: the endpoint answers `201`
@@ -437,6 +457,167 @@ as an `approval_decided` [activity](#conversation-activity) event.
 
 Operators are notified of a new pending approval through the contact-delivery
 transport with an `approval.request` action, mirroring `handoff.notify`.
+
+## Held replies
+
+An email mailbox's review turn doesn't write a customer-visible message —
+it writes a **held reply**: the agent's draft text, its judgment of the turn
+(grounded? fully answered? did it ask for a person?), and whether it depends
+on a skill effect that was suppressed. A held reply opens the same
+`approval` attention kind a routine's [approval](#approvals) gate uses and
+shows in the Inbox the same way, but it's a distinct resource with its own
+list, its own release, and no `routineId` or `stepId`. Its `holdReason` is
+the channel's code for why it waited. On email that's `draft_mode` on a
+`draft` mailbox, `sending_not_verified` while the sending domain is
+unverified, `send_budget` once the thread's
+[send budget](email-channel.md#budgets) is spent, `outcome_not_publishable`
+when an `auto` mailbox's turn wasn't a grounded, complete answer free of a
+hand-off, `incomplete_answer` when a completeness check found the reply
+left part of the question unanswered, `authority_changed` when ownership
+or the mailbox's policy moved before an automatic reply could send, or
+`policy_changed` when an operator switched the mailbox from `auto` to
+`draft` while the reply was queued. See
+[Email channel](email-channel.md#draft-mode-review-before-it-sends) for what
+a review turn can and can't do, and what the operator's three choices mean.
+
+On an `auto` mailbox, a reply that qualifies to send is held in state
+`queued_auto` until the send worker re-checks its authority and sends it,
+which moves it to `released` with the agent as the releaser. A queued reply
+opens no attention item and can't be released or discarded; when the
+re-check fails it returns to `pending` with `authority_changed` and opens
+`approval` like any other held reply. Switching the mailbox from `auto` to
+`draft` returns every queued reply to `pending` the same way, with
+`policy_changed`. See
+[Automatic mode](email-channel.md#automatic-mode-replies-that-send-themselves).
+
+### List held replies
+
+`GET /api/v1/held-replies`
+
+Query `attention=open|all`, `agentId?`, `cursor?`, `limit` (up to 100).
+Requires the `workspace.conversation.takeover` permission.
+
+### Read a conversation's current draft
+
+`GET /api/v1/conversations/{conversationId}/held-reply`
+
+Returns `{ "heldReply": ... }`, or `{ "heldReply": null }` when the
+conversation has no draft waiting.
+
+### Release
+
+`POST /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/release`
+
+Body:
+
+```json
+{ "editedText": "Thanks for waiting — here's what I found." }
+```
+
+Omit `editedText` to send the draft exactly as written: the delivered
+message is attributed to the agent. Include it to send your own wording
+instead: the delivered message is attributed to you, and the original
+draft stays on the held reply. Either way, release never changes who owns
+the conversation — it stays `ai_owned`, the same as before the review ran —
+and it renews the thread's [send budget](email-channel.md#budgets).
+Returns `201` with the held reply, the new message's id, and
+`"delivery": "queued"`.
+
+A release that no longer applies is refused with `409`:
+`held_reply_not_pending` (the body carries the held reply as it is now,
+under `error.details.heldReply`, so you can re-render without a re-read),
+`ownership_changed` (someone took the conversation over since the draft was
+held), `policy_changed` (the mailbox's mode or agent changed since), or
+`channel_not_ready` (the mailbox can't send right now — see
+[Email channel](email-channel.md#verify-sending)).
+
+### Discard
+
+`POST /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/discard`
+
+Nothing is sent. The conversation keeps its attention flag until an
+operator replies or takes it over; the next inbound message on the thread
+gets a fresh draft. Returns the held reply with its new state. A draft
+that's already settled returns `409` with code `held_reply_not_pending`.
+
+### What replaces a draft
+
+A newer inbound message, a free-form operator reply, a takeover, a change
+to the mailbox's mode, agent, or enabled flag, or removing the mailbox all
+supersede a pending held reply before an operator acts on it: the draft is
+replaced, not released, and nothing is sent for it. Where there's a new
+customer message behind the supersede, a fresh review turn runs in its
+place; a mailbox change hands the conversation to a person instead.
+Switching a mailbox from `auto` to `draft`, or changing its thread send
+budget, keeps its drafts instead: queued replies return to `pending` and
+pending ones stay, all bound to the mailbox's new policy version so a
+release goes through.
+
+An automatic reply never gets around a takeover. The same events supersede
+a `queued_auto` reply, and the send worker writes the agent's message only
+while the held reply is still `queued_auto` and the conversation is still
+AI-owned at the version the review ran under, so a takeover that lands
+before that re-check leaves the worker nothing to send.
+
+## Delivery failures
+
+A reply can fail after it was already accepted for delivery — a bounce, a
+provider rejection, an authority check that failed before the provider was
+even called, or an outcome that never resolved. Each of these flags the
+conversation with a `delivery_failed` item, visible in the Inbox alongside
+handoffs and approvals, carrying the failed message and a sanitized reason.
+It changes no ownership; it is a flag that something meant for the customer
+might not have reached them. The
+[email channel](email-channel.md#send-a-reply-and-track-delivery) opens one
+for each failed send; the flag belongs to no single channel, so any
+channel's deliverer can open one.
+
+A `delivery_failed` flag clears itself when later evidence from the
+provider shows the message was actually delivered, or when a later reply on
+the same conversation is delivered: that delivery clears the flags of every
+reply sent before it, and leaves a reply sent after it flagged. An operator
+can also act on it below.
+
+### List open delivery failures
+
+`GET /api/v1/delivery-failures`
+
+Query `state=open|all`, `agentId?`, `cursor?`, `limit` (up to 100). Requires
+the `workspace.conversation.takeover` permission.
+
+### Acknowledge
+
+`POST /api/v1/delivery-failures/{failureId}/acknowledge`
+
+Dismisses a `bounced` or `failed` failure once you've seen it and there is
+nothing further to do — you've already followed up with the customer another
+way, say. Returns `409` with code `already_cleared` on one that is already
+cleared.
+
+### Resolve an uncertain or halted send
+
+`POST /api/v1/delivery-failures/{failureId}/resolve`
+
+Body:
+
+```json
+{ "decision": "marked_sent" }
+```
+
+`decision` is `marked_sent` for a send whose outcome never resolved
+(`uncertain`), once you've confirmed delivery some other way, or `resend`,
+which sends a fresh copy under a new idempotency key and is recorded
+against you. `resend` is available for an `uncertain` or `halted` send once
+sending is ready again; a domain still unverified returns `409` with code
+`email_sending_not_verified`. Radioso never resends a send on its own — this
+is the only path to a second attempt. A send that is not `uncertain` or
+`halted` returns `409` with code `not_resolvable`.
+
+A decision applies to the failure you named and to nothing else. If that
+failure was cleared or changed after you read it — a teammate already
+resolved it and their resend failed again, say, which opens a new failure on
+the same message — the request returns `409` with code `not_resolvable` and
+nothing is sent. Read the open failures again and decide on the current one.
 
 ## Live updates
 

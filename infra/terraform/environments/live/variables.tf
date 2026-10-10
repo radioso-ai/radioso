@@ -484,3 +484,71 @@ variable "stripe_webhook_secret" {
   sensitive   = true
   default     = null
 }
+
+# --- Email channel ---
+# Unset email_channel_provider leaves the channel off: no plugin, routes, workers
+# or sweep job. The Cloud Tasks queue is provisioned either way so a rollout can
+# set the remaining inputs first.
+
+variable "email_channel_provider" {
+  description = "Email channel provider in live (EMAIL_CHANNEL_PROVIDER). Unset leaves the channel off; the only deployed value is \"resend\"."
+  type        = string
+  default     = null
+}
+
+variable "email_channel_inbound_domain" {
+  description = "DNS hostname that receives inbound email-channel relay addresses in live (EMAIL_CHANNEL_INBOUND_DOMAIN). Provision and verify the domain before setting it."
+  type        = string
+  default     = null
+}
+
+variable "email_channel_webhook_secret" {
+  description = "Signing secret the email provider signs inbound webhook deliveries with in live (EMAIL_CHANNEL_WEBHOOK_SECRET)."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "email_channel_webhook_secret_previous" {
+  description = "Previous webhook signing secret in live, accepted beside the current one while a rotation overlaps (EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS)."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "resend_channel_api_key" {
+  description = "Resend API key the email channel receives and sends channel mail with in live (RESEND_CHANNEL_API_KEY). Unset, the channel uses resend_mail_api_key."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "email_channel_workers_enabled" {
+  description = "Whether the email-channel worker loop, drain and sweep routes run in live (EMAIL_CHANNEL_WORKERS_ENABLED)."
+  type        = bool
+  default     = false
+}
+
+variable "email_channel_task_max_dispatches_per_second" {
+  description = "Cloud Tasks dispatch rate for email-channel drain pushes in live. Kept in step with the root module default."
+  type        = number
+  default     = 5
+}
+
+variable "email_channel_task_max_concurrent_dispatches" {
+  description = "Maximum concurrent Cloud Tasks dispatches for email-channel drain pushes in live. Kept in step with the root module default."
+  type        = number
+  default     = 5
+}
+
+variable "email_channel_sweep_schedule" {
+  description = "Optional override for the live email-channel sweep schedule. Null uses the root module default."
+  type        = string
+  default     = null
+}
+
+variable "email_channel_sweep_max_jobs" {
+  description = "Maximum items each scheduled email-channel sweep request processes in live. Kept in step with the root module default."
+  type        = number
+  default     = 20
+}

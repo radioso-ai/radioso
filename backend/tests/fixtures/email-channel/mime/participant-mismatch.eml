@@ -1,0 +1,28 @@
+Return-Path: <bob@example.test>
+Delivered-To: QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+Received: from mx.in.relay.test (mx.in.relay.test [192.0.2.50])
+	by inbound.in.relay.test with ESMTPS id 6e0b4c2d5f
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 14:20:45 +0000 (UTC)
+X-Forwarded-To: QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+X-Forwarded-For: bob@example.test QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+Delivered-To: support@customer.test
+Received: from mail-sor-f52.example.test (mail-sor-f52.example.test [203.0.113.52])
+	by mx.google-workspace.example.test with SMTP id a3c5d1e9b2
+	for <support@customer.test>;
+	Sat, 03 Oct 2026 14:20:40 +0000 (UTC)
+Message-ID: <msg-0004@example.test>
+In-Reply-To: <out-0001@in.relay.test>
+References: <msg-0001@example.test> <out-0001@in.relay.test>
+From: Bob Nolan <bob@example.test>
+To: support@customer.test
+Subject: Re: Question about my account
+Date: Sat, 03 Oct 2026 14:20:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Alice forwarded this to me - I have the same billing question for my own
+account. Can you help?
+
+Bob

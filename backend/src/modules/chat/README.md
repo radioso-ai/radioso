@@ -101,6 +101,34 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   lead-back, and the grounded prompt adds `chat/routine-lead-back-decline-handoff.md`
   so a `no_support` answer leaves it out.
 - `composition.ts`: chat module wiring used by application composition.
+- `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
+  records a customer message without running a turn, for a channel that decides
+  later whether one runs. The caller allocates the conversation and message ids,
+  so a retry records nothing twice; the conversation, the message, and a handoff
+  through `ConversationOwnershipService.requestHumanOwnership` commit in one
+  `ConversationIngestUnitOfWork` (bound in `app/composition/conversationIngest.ts`).
+  It reserves no usage. `ConnectorChatPort.ingest` delegates to it.
+- `ChatService.review` (`types/chatReview.ts`, `services/reviewDraft.ts`): runs a
+  `review` turn on a recorded customer message and returns `draft`, `no_draft`, or
+  `human_owned` with the turn's facts, instead of persisting a reply. The preparer
+  loads the message scoped to its conversation and workspace and reads only
+  `historyWindow.maxMessages` earlier messages. The turn starts and resumes no
+  routine, suppresses every skill effect, drops actions, and reports a hand-off
+  without applying it; the lifecycle's `draft` completion commits only a
+  `chat.answer` audit event keyed on `requestMessageId` and `turnId`. Review
+  audits, successful or failed, keep to the allowlist in
+  `services/reviewTurnAudit.ts` (ids, outcome codes, counts, an error code) and
+  never carry the draft, the customer's words, queries, or traces (FR-045). The
+  directive firing memory advance the turn would have committed rides with the
+  draft (`deferredDirectiveTransitionOf`); `reviewedDraftWriter` writes an
+  unchanged publication's reply row and applies that advance once, so edited,
+  discarded, and superseded drafts never consume it. The preparer applies the
+  answered message's `(created_at, id)` boundary in the history query, before the
+  window's limit. Usage is reserved as a reply on the conversation's channel.
+  The draft is `@radioso/conversation-contract`'s `ReplyDraft`, which a
+  connector and a held reply receive as the turn wrote it;
+  `ConnectorChatPort.respond` maps the turn's facts to the contract's
+  `ReviewTurnFacts` through `connectors/services/connectorTurnFacts.ts`.
 - `llmAdapters.ts`: LLM-provider registration for chat.
 - `retrievalSupport.ts`: narrow helpers used by retrieval answer assembly.
 

@@ -1,14 +1,26 @@
 import { randomUUID } from "node:crypto";
 import { scopeTag } from "@radioso/conversation-defaults";
-import { getEnv, type Env } from "../config/env.js";
+import { getEnv, parseEmailChannelConfig, type Env } from "../config/env.js";
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
+import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
+import {
+  createEmailChannelComposition,
+  createEmailHeldReplyChannelRegistration,
+  type EmailChannelOptions,
+} from "../composition/emailChannel/index.js";
+import {
+  ConnectorManagementService,
+  createConnectorChatPort,
+  createConnectorIngestionPort,
+} from "../../modules/connectors/services/public.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import { requestSourceDigestPort } from "../http/middleware/requestSource.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
+  createDefaultEmailChannelDrainDispatcher,
   createDefaultFacetExtractionDrainDispatcher,
   createLiveAgentConfigReader,
   createRealtimePublisherComposition,
@@ -20,7 +32,11 @@ import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRed
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, createRoutineScopedReferenceGuard, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
 import { AgentRetrievalAuthoringService } from "../../modules/agentSkills/public.js";
-import { InMemoryPublicConversationEventBus, TrustedTestExecutionRunnerAdapter } from "../../modules/chat/composition.js";
+import {
+  ConversationIngestService,
+  InMemoryPublicConversationEventBus,
+  TrustedTestExecutionRunnerAdapter,
+} from "../../modules/chat/composition.js";
 import { TestExecutionService } from "../../modules/test-execution/testExecution.js";
 import {
   createFacetExtractionWorker,
@@ -32,7 +48,7 @@ import { ProductDocsService } from "../../modules/productDocs/public.js";
 import { MetadataRuleFieldReferenceService } from "../../modules/retrieval/public.js";
 import { MetadataFieldSuggestionService } from "../../modules/settings/composition.js";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
-import { createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
+import { ContextualStructuredInferenceFactory, createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { EvalRunOverrides } from "../../modules/eval/composition.js";
 import { CopilotReplayEvidenceRepository } from "../../db/repositories/copilotReplayEvidenceRepository.js";
 import { OperatorMcpAuthorizationRepository } from "../../db/repositories/operatorMcpAuthorizationRepository.js";
@@ -64,8 +80,6 @@ import { ContextVariableRepository } from "../../db/repositories/contextVariable
 import { AccessGrantLifecycleUnitOfWork } from "../../db/repositories/accessGrantRepository.js";
 import { ContextVariableService } from "../../modules/context-variables/public.js";
 import { createAgentBundleServices } from "../composition/agentBundleComposition.js";
-import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
-import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { normalizeBaseUrl } from "../../modules/websiteCrawler/public.js";
@@ -86,6 +100,7 @@ import { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
+import { ReviewTurnAuditReader } from "../../modules/chat/contracts/index.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
@@ -116,7 +131,11 @@ import { createTeammateLabelReader } from "../composition/teammateLabelReader.js
 import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
 import { createConversationActivityComposition } from "../composition/conversationActivity.js";
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
-import { ConversationOwnershipService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
+import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitOfWork.js";
+import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
+import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
+import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
+import { DeliveryFailureDecisions } from "../../modules/customerReplyDelivery/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
 import { buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
@@ -130,6 +149,8 @@ interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
   realtimePublisherComposition?: RealtimePublisherComposition;
   operatorMcpPreregisteredClients?: ReadonlyMap<string, OperatorMcpClientMetadataSnapshot>;
+  /** Test and harness overrides of the email channel's fixed timings, limits and local spool. */
+  emailChannel?: EmailChannelOptions;
 }
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
@@ -148,6 +169,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     env,
     modules: options.modules,
+    emailChannel: options.emailChannel,
     widgetOrigin: env.RADIOSO_WIDGET_ORIGIN ?? env.APP_BASE_URL,
   });
   const infrastructure = buildInfrastructure({ env, logger, composition });
@@ -378,7 +400,35 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
-  const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
+  const emailChannelConfig = parseEmailChannelConfig(env);
+  const emailChannel = createEmailChannelComposition({
+    config: emailChannelConfig,
+    options: options.emailChannel,
+    db: infrastructure.database.kysely,
+    drains: createDefaultEmailChannelDrainDispatcher(env, emailChannelConfig),
+    activity: conversationActivity.recorder,
+    // Reached only while the worker drains, after this build returns; the channel's reply
+    // deliverer is needed sooner, by the operator reply service, so the channel is built here.
+    chat: createConnectorChatPort(chat.chatService, { ingest: (input) => conversationIngestService.ingest(input) }),
+    heldReplies: {
+      hold: (input) => heldReplies.hold(input),
+      queueAuto: (input) => heldReplies.queueAuto(input),
+      findByReviewRef: (conversationId, reviewRef) => heldReplies.findByReviewRef(conversationId, reviewRef),
+      materializeAuto: (heldReplyId) => heldReplies.materializeAuto(heldReplyId),
+      returnAbandonedAuto: (heldReplyId) => heldReplies.returnAbandonedAuto(heldReplyId),
+    },
+    ownership: { requestHumanOwnership: (scope, input) => conversationOwnershipService.requestHumanOwnership(scope, input) },
+    publisher: realtimePublisherComposition.publisher,
+    // The answer tier the review turn resolves through: the checks judge a reply before it can be sent.
+    reviewInference: new ContextualStructuredInferenceFactory({ resolver: llmCapabilityResolver }, infrastructure.usageEventRecorder),
+    agents: repositories.agentRepository,
+    audit: infrastructure.auditService,
+    actionDrain: chat.actionDrainDispatcher,
+    errorReporter: infrastructure.errorReportingService,
+    metrics: infrastructure.metricsRegistry,
+    logger,
+  });
+  const connectorRegistry = buildConnectorRegistry({ composition, env, logger, emailPlugin: emailChannel?.plugin });
   const connectorManagementService = new ConnectorManagementService({
     database: infrastructure.database,
     registry: connectorRegistry,
@@ -469,6 +519,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillSettingsResolver,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     revisionEvalRunRetentionDays: env.AGENT_REVISION_EVAL_RUN_RETENTION_DAYS,
+    emailCustomerReplyDeliverer: emailChannel?.customerReplyDeliverer,
   });
   const {
     evalCaseService,
@@ -479,6 +530,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalSnapshotService,
     evalSuiteService,
     operatorReplyService,
+    customerReplyDelivery,
   } = evalServices;
   const conversationOperatorDirectory = createConversationOperatorDirectory({ accountAccess: access.accountAccessService });
   const conversationOwnershipService = new ConversationOwnershipService({
@@ -505,6 +557,48 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     publisher: realtimePublisherComposition.publisher,
     logger,
     errorReporter: infrastructure.errorReportingService,
+  });
+  const deliveryFailureRecords = createPostgresDeliveryFailures({
+    db: infrastructure.database.kysely,
+    activity: conversationActivity.recorder,
+  });
+  const deliveryFailures = new DeliveryFailureDecisions({
+    failures: deliveryFailureRecords,
+    // Resolution settles a send on the channel that carried it. Without the email channel nothing
+    // raises a failure that resolves, so a resolution answers not_resolvable; acknowledgement clears.
+    resolver: emailChannel?.deliveryFailureResolver ?? null,
+    audit: infrastructure.auditService,
+    logger,
+  });
+  const heldReplies = new HeldReplyService({
+    conversations: repositories.conversationRepository,
+    writes: createPostgresHeldReplyUnitOfWork({
+      db: infrastructure.database.kysely,
+      // The channel's own registration grants automatic sending where it runs `auto`. Without a
+      // configured provider, drafts held earlier can still be decided, and nothing sends automatically.
+      channels: [emailChannel?.heldReplyChannel ?? createEmailHeldReplyChannelRegistration({ autoSend: false })],
+      activity: conversationActivity.recorder,
+      actionDrain: chat.actionDrainDispatcher,
+      logger,
+      errorReporter: infrastructure.errorReportingService,
+    }),
+    reads: new HeldReplyRepository(infrastructure.database.kysely),
+    operatorIdentities: operatorIdentityResolver,
+    customerReplyDelivery,
+    replies: operatorReplyService,
+    audit: infrastructure.auditService,
+    publisher: realtimePublisherComposition.publisher,
+    metrics: infrastructure.metricsRegistry,
+    logger,
+    errorReporter: infrastructure.errorReportingService,
+  });
+  const conversationIngestService = new ConversationIngestService({
+    unitOfWork: createPostgresConversationIngestUnitOfWork({
+      db: infrastructure.database.kysely,
+      activity: conversationActivity.recorder,
+    }),
+    ownership: conversationOwnershipService,
+    publisher: realtimePublisherComposition.publisher,
   });
   const qualitySignalsService = new QualityTurnsService(
     infrastructure.database.kysely,
@@ -824,6 +918,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const copilotToolCatalog = createCopilotToolCatalog({
     appBaseUrl: env.APP_BASE_URL,
     toolContributions: copilotToolContributions,
+    emailChannel: emailChannel?.copilotView ?? null,
+    deliveryFailures: deliveryFailureRecords,
+    heldReplies,
     agentService: {
       get: agentService.get.bind(agentService),
       listExisting: agentService.listExisting.bind(agentService),
@@ -1160,8 +1257,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
     conversationOwnershipService,
+    conversationIngestService,
     conversationOperatorDirectory,
     conversationActivityReads: conversationActivity.reads,
+    deliveryFailures,
+    heldReplies,
+    reviewTurnAudits: new ReviewTurnAuditReader(infrastructure.auditEventRepository),
     workbenchReplayRunner: chat.workbenchReplayRunner,
     testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,
@@ -1180,6 +1281,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalAnswerService: chat.retrievalAnswerService,
     retrievalDefaultsProvider,
     actionDispatchWorker: chat.actionDispatchWorker,
+    emailChannel: emailChannel ?? undefined,
+    emailChannelWorker: emailChannel?.worker,
+    emailReviewChecks: emailChannel?.reviewChecks,
     evalSnapshotService,
     evalMessageCaseService,
     evalCaseService,

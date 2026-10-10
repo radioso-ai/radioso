@@ -119,6 +119,79 @@ describeIntegration("MessageRepository (Postgres)", () => {
     expect(page2.hasMore).toBe(false);
   });
 
+  it("lists the newest messages before a (created_at, id) boundary, oldest first, ignoring later ones before limiting", async () => {
+    const created = [];
+    for (let i = 0; i < 7; i += 1) {
+      created.push(await repository.create({ conversationId, workspaceId, role: i % 2 === 0 ? "user" : "assistant", content: `m${i}` }));
+    }
+    for (const [index, message] of created.entries()) {
+      await setTime(message.id, `2026-06-01T00:00:0${index}.000Z`);
+    }
+    // A message sharing the boundary's timestamp orders by id: one sorting before it is earlier, one after it later.
+    const tied = await repository.create({ conversationId, workspaceId, role: "user", content: "tied" });
+    const boundary = created[4];
+    await setTime(tied.id, "2026-06-01T00:00:04.000Z");
+    const tiedIsEarlier = tied.id < boundary.id;
+
+    const window = await repository.listBeforeByConversationId(workspaceId, conversationId, {
+      beforeMessageId: boundary.id,
+      limit: 3,
+    });
+
+    const expected = tiedIsEarlier
+      ? [created[2].id, created[3].id, tied.id]
+      : [created[1].id, created[2].id, created[3].id];
+    expect(window.map((message) => message.id)).toEqual(expected);
+    expect(await repository.listBeforeByConversationId(workspaceId, conversationId, {
+      beforeMessageId: boundary.id,
+      limit: 0,
+    })).toEqual([]);
+    expect(await repository.listBeforeByConversationId(randomUUID(), conversationId, {
+      beforeMessageId: boundary.id,
+      limit: 3,
+    })).toEqual([]);
+    // A boundary that is not a message of the conversation has nothing before it.
+    expect(await repository.listBeforeByConversationId(workspaceId, conversationId, {
+      beforeMessageId: randomUUID(),
+      limit: 3,
+    })).toEqual([]);
+  });
+
+  it("keeps a predecessor recorded within the same millisecond as the boundary, at full Postgres precision", async () => {
+    const earlier = await repository.create({ conversationId, workspaceId, role: "user", content: "earlier" });
+    const boundary = await repository.create({ conversationId, workspaceId, role: "user", content: "boundary" });
+    // Both read back as .123 in a JavaScript Date; only the microseconds order them.
+    await setTime(earlier.id, "2026-06-02T00:00:00.123100Z");
+    await setTime(boundary.id, "2026-06-02T00:00:00.123900Z");
+    // A later message within the same millisecond, sorting before the boundary by id or not, stays out.
+    const later = await repository.create({ conversationId, workspaceId, role: "user", content: "later" });
+    await setTime(later.id, "2026-06-02T00:00:00.123950Z");
+
+    const window = await repository.listBeforeByConversationId(workspaceId, conversationId, {
+      beforeMessageId: boundary.id,
+      limit: 1,
+    });
+
+    expect(window.map((message) => message.id)).toEqual([earlier.id]);
+  });
+
+  it("filters the newest messages by role before limiting, so a filtered-out row takes no place", async () => {
+    const roles = ["user", "assistant", "system", "system", "user"] as const;
+    const created = [];
+    for (const [index, role] of roles.entries()) {
+      const message = await repository.create({ conversationId, workspaceId, role, content: `m${index}` });
+      await setTime(message.id, `2026-06-01T00:00:0${index}.000Z`);
+      created.push(message);
+    }
+
+    const window = await repository.listRecentByConversationId(workspaceId, conversationId, 2, { roles: ["user", "assistant"] });
+
+    expect(window.map((message) => message.id)).toEqual([created[1].id, created[4].id]);
+    expect(await repository.listRecentByConversationId(workspaceId, conversationId, 2, { roles: [] })).toEqual([]);
+    expect((await repository.listRecentByConversationId(workspaceId, conversationId, 2)).map((message) => message.id))
+      .toEqual([created[3].id, created[4].id]);
+  });
+
   it("summarizes counts and previews by conversation", async () => {
     await repository.create({ conversationId, workspaceId, role: "user", content: "question" });
     await repository.create({ conversationId, workspaceId, role: "assistant", content: "the answer" });

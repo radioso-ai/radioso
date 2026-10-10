@@ -1,0 +1,20 @@
+Return-Path: <carol@example.test>
+Received: from mx.in.relay.test (mx.in.relay.test [192.0.2.50])
+	by inbound.in.relay.test with ESMTPS id 2b3c4d5e6f
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 10:00:50 +0000 (UTC)
+Message-ID: <msg-0011@example.test>
+In-Reply-To: <msg-0010@example.test>
+References: <msg-0010@example.test>
+From: Carol Diaz <carol@example.test>
+To: support@customer.test
+Subject: Re: Shipping delay
+Date: Sat, 03 Oct 2026 10:00:40 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Also, the tracking link in my confirmation email just 404s. Could you
+send a working one?
+
+Carol

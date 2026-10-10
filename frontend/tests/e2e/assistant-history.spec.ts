@@ -906,11 +906,11 @@ test("selecting an in-progress conversation in the All lens shows a composer, an
   await replyBox.fill("Certo, controllo subito il tuo ordine.");
   await response.getByRole("button", { name: "Send" }).click();
 
-  // Sending claims the conversation before replying — the same claim-on-send
+  // The reply claims the conversation in the same write — the claim-on-send
   // flow a handoff uses (OperatorComposer.handleSend), never a separate step.
-  await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/takeover`);
   await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/reply`);
   await expect(replyBox).toHaveValue("");
+  expect(requestLog).not.toContainEqual(`POST /conversations/${conversationId}/takeover`);
 
   // The claim-on-send flow's detail refetch now shows an ownership record —
   // there's something to wrap up, so Done appears.

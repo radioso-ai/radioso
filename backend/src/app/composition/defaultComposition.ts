@@ -1,6 +1,7 @@
-import type { Env } from "../config/env.js";
+import { parseEmailChannelConfig, type Env } from "../config/env.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
-import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
+import { ConnectorRegistry } from "../../modules/connectors/services/public.js";
+import type { ConnectorPlugin } from "@radioso/connector-api";
 import {
   AmqpDocumentJobConsumer,
   AmqpDocumentJobDispatcher,
@@ -41,6 +42,11 @@ import {
 } from "../../modules/chat/composition.js";
 import { CloudTasksActionDrainDispatcher } from "../../modules/chat/infra/cloudTasksActionDrainDispatcher.js";
 import {
+  CloudTasksEmailChannelDrainDispatcher,
+  NoopEmailChannelDrainDispatcher,
+  type EmailChannelDrainDispatcherPort,
+} from "../../modules/emailChannel/public.js";
+import {
   CloudTasksFacetExtractionDrainDispatcher,
   NoopFacetExtractionDrainDispatcher,
   type FacetExtractionDrainDispatcher,
@@ -66,6 +72,7 @@ import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirecti
 import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
 import { createWebhookSendApplicationModule } from "./builtIn/webhookSendModule.js";
 import { createConversationTransferNoticeApplicationModule } from "./builtIn/conversationTransferNoticeModule.js";
+import { createEmailChannelApplicationModule, type EmailChannelOptions } from "./emailChannel/index.js";
 import { createCustomerEmailApplicationModule } from "../../modules/customerEmail/composition.js";
 import { createSlackApplicationModule } from "../../modules/slack/composition.js";
 import { createOssOrganizationCreationApplicationModule } from "../../modules/auth/composition.js";
@@ -144,7 +151,9 @@ export const createDefaultApplicationComposition = (options: {
     | "SLACK_OAUTH_CLIENT_ID"
     | "SLACK_OAUTH_CLIENT_SECRET"
     | "SLACK_SIGNING_SECRET"
-  >>;
+  >> & Parameters<typeof parseEmailChannelConfig>[0];
+  /** Test and harness overrides of the email channel's fixed timings, limits and local spool. */
+  emailChannel?: EmailChannelOptions;
   modules?: ApplicationModule[];
   widgetOrigin?: string;
 }): ApplicationComposition => {
@@ -170,6 +179,11 @@ export const createDefaultApplicationComposition = (options: {
     createOssOrganizationCreationApplicationModule(),
     createCustomerEmailApplicationModule(options.env),
     createSlackApplicationModule(options.env),
+    createEmailChannelApplicationModule({
+      config: parseEmailChannelConfig(options.env ?? {}),
+      options: options.emailChannel,
+      drainDispatcherFor: createDefaultEmailChannelDrainDispatcher,
+    }),
     ...(options.modules ?? []),
   ]);
 
@@ -230,6 +244,7 @@ export const createDefaultConnectorRegistry = (
     Env,
     "SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET" | "SLACK_SIGNING_SECRET" | "CONNECTOR_ENCRYPTION_KEY"
   >>,
+  builtIn: { email?: ConnectorPlugin | null } = {},
 ): ConnectorRegistry => {
   const registry = new ConnectorRegistry();
   registerBuiltInConnectors(registry, {
@@ -239,6 +254,7 @@ export const createDefaultConnectorRegistry = (
       SLACK_SIGNING_SECRET: env?.SLACK_SIGNING_SECRET,
       encryptionKey: env?.CONNECTOR_ENCRYPTION_KEY,
     },
+    email: builtIn.email,
   });
   for (const connector of connectors) {
     registry.register(connector);
@@ -337,6 +353,35 @@ export const createDefaultActionDrainDispatcher = (
         logger,
       })
     : new NoopActionDrainDispatcher();
+
+/**
+ * Selects how the email channel pushes drains (research B7): through its own Cloud Tasks queue,
+ * at once or scheduled for a retry or review due time, when the worker is dispatched by Cloud
+ * Tasks and `EMAIL_CHANNEL_TASK_QUEUE_NAME` is set. Otherwise a no-op, and the worker's interval
+ * loop and the sweep find due work; like the action queue, an unprovisioned queue never blocks
+ * startup.
+ */
+export const createDefaultEmailChannelDrainDispatcher = (
+  env: Pick<Env,
+    | "WORKER_DISPATCH_DRIVER"
+    | "GOOGLE_CLOUD_PROJECT"
+    | "WORKER_TASKS_QUEUE_LOCATION"
+    | "WORKER_TASKS_SERVICE_URL"
+    | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
+    | "WORKER_TASK_AUTH_TOKEN"
+  >,
+  emailChannel: { taskQueueName?: string } | undefined,
+): EmailChannelDrainDispatcherPort =>
+  env.WORKER_DISPATCH_DRIVER === "cloud-tasks" && emailChannel?.taskQueueName
+    ? new CloudTasksEmailChannelDrainDispatcher({
+        projectId: env.GOOGLE_CLOUD_PROJECT!,
+        location: env.WORKER_TASKS_QUEUE_LOCATION!,
+        queueName: emailChannel.taskQueueName,
+        workerServiceUrl: env.WORKER_TASKS_SERVICE_URL!,
+        invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
+        workerTaskAuthToken: env.WORKER_TASK_AUTH_TOKEN!,
+      })
+    : new NoopEmailChannelDrainDispatcher();
 
 /**
  * Facet jobs share the configured Cloud Tasks worker queue with document work. The

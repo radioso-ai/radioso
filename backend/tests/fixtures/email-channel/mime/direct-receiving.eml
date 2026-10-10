@@ -1,0 +1,18 @@
+Return-Path: <frank@example.test>
+Received: from mail-sor-f30.example.test (mail-sor-f30.example.test [203.0.113.30])
+	by mx.receiving.customer.test with ESMTPS id 8e1f3a5c7b
+	for <care@receiving.customer.test>;
+	Sat, 03 Oct 2026 11:15:05 +0000 (UTC)
+Message-ID: <msg-0040@example.test>
+From: Frank Lopez <frank@example.test>
+To: care@receiving.customer.test
+Subject: Return authorization
+Date: Sat, 03 Oct 2026 11:15:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hello, I'd like to return item #220 from order #9921. Could you send me
+a return authorization number?
+
+Frank

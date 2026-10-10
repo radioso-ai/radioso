@@ -24,6 +24,8 @@ import type {
 
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
+import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
+import { turnExecutionCapabilities } from "../../../shared/domain/turnExecutionMode.js";
 import type { buildPendingDecisionTransition } from "../../approvals/public.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
 import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
@@ -317,6 +319,7 @@ type PreparedChatStreamTurnEvent =
       suggestions: TurnStreamSuggestions;
       engineTrace?: ConversationTrace;
       actions?: RoutineActionRequest[];
+      suppressedEffects: readonly SuppressedSkillEffect[];
     } & CoverageRoutineEffects;
 
 export interface ChatTurnAssemblyOptions {
@@ -655,7 +658,13 @@ export class ChatTurnAssembly {
         ? () => deferredReactionRecorder.commit()
         : undefined,
     });
-    if (!this.options.routineStore || !this.options.routineProvider) {
+    // A coverage reaction that starts a routine is routine activation, which a turn whose
+    // execution mode skips routines never does.
+    if (
+      !this.options.routineStore
+      || !this.options.routineProvider
+      || turnExecutionCapabilities(session.executionMode).routines === "skip"
+    ) {
       return {
         coverageReactionRecorder: deferredReactionRecorder,
         coverageVerdictWrapper,
@@ -755,6 +764,7 @@ export class ChatTurnAssembly {
     presentation: ChatPresentedAnswer;
     engineTrace?: ConversationTrace;
     actions?: RoutineActionRequest[];
+    suppressedEffects: readonly SuppressedSkillEffect[];
   } & CoverageRoutineEffects> {
     const coverageTurnRuntime = await this.coverageTurnRuntime(session, {
       accountId: input.accountId,
@@ -763,7 +773,7 @@ export class ChatTurnAssembly {
       getSession: () => session,
       clarification: input.clarification,
     });
-    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(session, {
+    const { turnSkills, turnSkillSelector, agentSkillRuntime } = await this.turnSelectionRuntime(session, {
       coordination: input.coordination,
     });
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
@@ -783,6 +793,7 @@ export class ChatTurnAssembly {
     return {
       presentation,
       engineTrace: result.trace,
+      suppressedEffects: agentSkillRuntime?.suppressedEffects?.() ?? [],
       ...(coverageTurnRuntime.effects?.(result) ?? { actions: result.actions }),
     };
   }
@@ -808,6 +819,7 @@ export class ChatTurnAssembly {
     presentation: ChatPresentedAnswer;
     engineTrace?: ConversationTrace;
     actions?: RoutineActionRequest[];
+    suppressedEffects: readonly SuppressedSkillEffect[];
   } & CoverageRoutineEffects> {
     const sessionRef = { current: { ...session, effectiveQuery: input.retrievalInput.query } };
     const clarificationState: { current: RetrievalSenseClarificationTurn | null } = { current: null };
@@ -872,6 +884,7 @@ export class ChatTurnAssembly {
       session: sessionRef.current,
       presentation,
       engineTrace,
+      suppressedEffects: agentSkillRuntime?.suppressedEffects?.() ?? [],
       ...(coverageTurnRuntime.effects?.(result) ?? { actions: result.actions }),
     };
   }
@@ -894,7 +907,7 @@ export class ChatTurnAssembly {
       getSession: () => session,
       clarification: input.clarification,
     });
-    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(session, {
+    const { turnSkills, turnSkillSelector, agentSkillRuntime } = await this.turnSelectionRuntime(session, {
       coordination: input.coordination,
     });
     for await (const event of runPreparedChatTurnStreamWithConversationEngine({
@@ -921,6 +934,7 @@ export class ChatTurnAssembly {
         finalPresentation: event.presentation,
         suggestions: event.suggestions,
         engineTrace: event.engineTrace,
+        suppressedEffects: agentSkillRuntime?.suppressedEffects?.() ?? [],
         ...(coverageTurnRuntime.effects?.(event.result) ?? { actions: event.result.actions }),
       };
     }
@@ -1011,6 +1025,7 @@ export class ChatTurnAssembly {
         engineTrace: stage
           ? this.conversationTraceWithStage(event.engineTrace, stage)
           : event.engineTrace,
+        suppressedEffects: agentSkillRuntime?.suppressedEffects?.() ?? [],
         ...(coverageTurnRuntime.effects?.(event.result) ?? { actions: event.result.actions }),
         session: sessionRef.current,
       };

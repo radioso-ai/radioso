@@ -1,0 +1,16 @@
+Return-Path: <list-bounce@example.test>
+Received: from mx.in.relay.test (mx.in.relay.test [192.0.2.50])
+	by inbound.in.relay.test with ESMTPS id e4d5f6a7b8
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 18:15:10 +0000 (UTC)
+Message-ID: <msg-0204@example.test>
+Precedence: list
+From: Announce List <announce@example.test>
+To: support@customer.test
+Subject: List announcement
+Date: Sat, 03 Oct 2026 18:15:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+This is a message sent to a mailing list.

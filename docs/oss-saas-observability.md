@@ -1,7 +1,7 @@
 ---
 title: "OSS And SaaS Observability"
 description: "Vendor-neutral observability strategy separating telemetry, analytics, and error reporting via internal contracts with OSS defaults and optional SaaS exporters."
-last_updated: 2026-06-24
+last_updated: 2026-10-07
 ---
 
 # OSS And SaaS Observability
@@ -393,6 +393,15 @@ Trace attributes follow the backend privacy policy. Raw prompts, completions,
 document bodies, retrieved chunks, connector secrets, cookies, access tokens,
 database credentials, and connection strings are redacted or omitted. URLs are
 exported without query strings, fragments, usernames, or passwords.
+
+A failed span carries an `exception` event with the error's class
+(`exception.type`, also on the span as `error.type`), its machine code when it
+has one (`exception.code`, such as `context_length_exceeded` or
+`RESOURCE_EXHAUSTED`), and the HTTP status a provider answered with
+(`http.response.status_code`). The error's message and stack stay out of the
+trace, because a provider can echo the customer text it rejected. To see what
+failed, filter on those fields and follow the span's `radioso.request_id`,
+`radioso.conversation_id`, and `radioso.workspace_id` to the request.
 
 Current backend tracing covers API and worker-task HTTP requests, chat turns,
 retrieval stages, model and embedding provider calls, document worker jobs, and

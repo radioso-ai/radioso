@@ -1515,7 +1515,7 @@ describe("WorkbenchReplayRunner", () => {
     expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("A stay at Ananda");
   });
 
-  const completionNoticeReplay = () => {
+  const completionNoticeReplay = (notice: { collected?: Record<string, unknown>; replyToSlot?: string } = {}) => {
     const fakeEngine = {
       async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
         await input.routineStore!.save({
@@ -1533,9 +1533,10 @@ describe("WorkbenchReplayRunner", () => {
             routineId: "booking",
             stepId: "done",
             terminalKind: "complete",
-            collected: { name: "Ada Lovelace", guests: 2 },
+            collected: notice.collected ?? { name: "Ada Lovelace", guests: 2 },
             subject: "New booking: {{slot.name}}",
             intro: "Confirm {{slot.guests}} guests with {{slot.name}}.",
+            ...(notice.replyToSlot ? { replyToSlot: notice.replyToSlot } : {}),
           },
         } as unknown as ProcessTurnResult;
       },
@@ -1590,6 +1591,22 @@ describe("WorkbenchReplayRunner", () => {
         "  Name: Ada Lovelace",
       ]),
     });
+  });
+
+  it("previews the address replies to the notice would go to, from the field the ending names", async () => {
+    const result = await completionNoticeReplay({
+      collected: { name: "Ada Lovelace", guests: 2, buyer_email: "ada@example.com", recipient_email: "grace@example.com" },
+      replyToSlot: "recipient_email",
+    })({ includeSlotValues: true });
+
+    expect(result.turnTrace?.handoffPreview?.replyTo).toBe("grace@example.com");
+  });
+
+  it("previews no reply-to when the ending names no field", async () => {
+    const result = await completionNoticeReplay({ collected: { name: "Ada Lovelace", buyer_email: "ada@example.com" } })({ includeSlotValues: true });
+
+    expect(result.turnTrace?.handoffPreview).toBeDefined();
+    expect(result.turnTrace?.handoffPreview).not.toHaveProperty("replyTo");
   });
 
   // Eval replay never opts into slot values: it persists the trace to append-only eval evidence

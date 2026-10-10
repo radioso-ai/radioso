@@ -123,7 +123,7 @@ describe("copilot routine readers", () => {
       .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { endings: unknown[] } } };
 
     expect(result.routine.editable.endings).toEqual([
-      { stableStepId: "done", kind: "complete", instruction: null, notifiesOperators: true, operatorNotice: { subject: "Booking: {{slot.name}}", intro: null, skillName: null } },
+      { stableStepId: "done", kind: "complete", instruction: null, notifiesOperators: true, operatorNotice: { subject: "Booking: {{slot.name}}", intro: null, skillName: null, replyToSlot: null } },
       { stableStepId: "human", kind: "handoff", instruction: null, notifiesOperators: true, operatorNotice: null },
     ]);
   });
@@ -138,9 +138,23 @@ describe("copilot routine readers", () => {
       .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { endings: unknown[] } } };
 
     expect(result.routine.editable.endings).toEqual([
-      { stableStepId: "done", kind: "handoff", instruction: null, notifiesOperators: true, operatorNotice: { subject: null, intro: null, skillName: "notify_bookings" } },
+      { stableStepId: "done", kind: "handoff", instruction: null, notifiesOperators: true, operatorNotice: { subject: null, intro: null, skillName: "notify_bookings", replyToSlot: null } },
     ]);
     expect(JSON.stringify(result)).not.toContain("@");
+  });
+
+  it("names the field an ending's notice replies to", async () => {
+    const ports = dependencies([routine({
+      terminals: [{ stableStepId: "done", kind: "handoff", instruction: null, operatorNotice: { subject: null, intro: null, replyToSlot: "guest_email" }, ordinal: 0 }],
+    })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { endings: unknown[] } } };
+
+    expect(result.routine.editable.endings).toEqual([
+      { stableStepId: "done", kind: "handoff", instruction: null, notifiesOperators: true, operatorNotice: { subject: null, intro: null, skillName: null, replyToSlot: "guest_email" } },
+    ]);
   });
 
   it("keeps the addressable list short when an element's wording is long", async () => {

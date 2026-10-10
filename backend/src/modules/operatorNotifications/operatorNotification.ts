@@ -10,12 +10,14 @@ export type ApprovalOperatorNotification = {
 export type HandoffCollectedValue = string | number | boolean;
 
 /**
- * The authored notice text, as `{{slot.<key>}}` templates. An absent text renders the default for
- * the notice's kind.
+ * The authored notice: its text, as `{{slot.<key>}}` templates, and the key of the collected field
+ * replies go to. An absent text renders the default for the notice's kind; an absent
+ * `replyToSlot` means no reply-to.
  */
 export type OperatorNoticeTemplate = {
   subject?: string;
   intro?: string;
+  replyToSlot?: string;
 };
 
 /** Facts already stored about the conversation, shown as context lines; `null` when not stored. */
@@ -36,6 +38,11 @@ type RoutineEndingNoticeFields = {
   /** The routine's declared slot values keyed by slot key, in the order the routine declares them. */
   collected?: Record<string, HandoffCollectedValue>;
   notice?: OperatorNoticeTemplate;
+  /**
+   * The address replies to the notice go to: the value collected in the field the notice's
+   * `replyToSlot` names. Absent when the notice names no field or the field was not collected.
+   */
+  replyTo?: string;
   conversation?: OperatorNoticeConversationFacts;
 };
 

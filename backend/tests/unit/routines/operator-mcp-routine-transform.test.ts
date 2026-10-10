@@ -178,6 +178,15 @@ describe("applyOperatorMcpRoutineTransform", () => {
     })).toThrow(/slot_email.*referenced/u);
   });
 
+  it("rejects removing the field an ending's operator notice replies to", () => {
+    const replyOnly = routine();
+    replyOnly.steps[0] = { ...replyOnly.steps[0], instruction: "Start." };
+    replyOnly.terminals[0] = { ...replyOnly.terminals[0], operatorNotice: { subject: null, intro: null, replyToSlot: "email" } };
+    expect(() => applyOperatorMcpRoutineTransform(replyOnly, {
+      operations: [{ kind: "remove_slot", stableSlotId: "slot_email" }],
+    })).toThrow(/slot_email.*referenced/u);
+  });
+
   it("replaces an ending's operator notice when the client names the stored ending exactly", () => {
     const source = routine();
     source.terminals[0] = { ...source.terminals[0], operatorNotice: { subject: "Eligibility", intro: null } };

@@ -218,6 +218,16 @@ the agent's own delivery setting, or the workspace owner's email, whichever
 resolves first. A **Hand off** ending offers the same select, since it always
 notifies.
 
+**Replies go to** picks the email field whose address reception's reply goes
+to: any of the routine's email fields, or **No reply-to**. With
+`guest_email` chosen on Ananda's **Booked** ending, Francesco hits Reply and
+writes straight to the guest. Radioso uses only the field you pick — a gift
+booking that collects the buyer's address and the recipient's is answered at
+whichever one you chose. A notice you turn on, or a new **Hand off** ending,
+starts on the routine's only email field when there is exactly one, and on
+**No reply-to** when there are several. A guest who never gave that address
+gets a notice with no reply-to.
+
 A step is asked the same way at most three times in a row when the visitor's
 replies give it nothing new. From then on it asks in different words, saying
 plainly what it needs and giving an example of an answer that works. The limit
@@ -279,7 +289,7 @@ exactly as it would for a customer. Retrieval skills run in both modes, and
 test values still stand in for context variables either way. Action steps,
 handoffs, team notices, and completion export stay off in every private test;
 a test turn that reaches an ending that notifies shows the notice it would
-send in the turn's trace instead.
+send, and the address replies would go to, in the turn's trace instead.
 
 A notify skill delivers through the saved conversation, so it stays off in
 every private test even with **Run skills for real** on. **Retry** re-runs
@@ -318,6 +328,13 @@ from a test that kept skills off.
   and is on keeps sending, and otherwise the notice goes to the default
   destination, or to the agent's contact settings or the workspace owner when
   `contact_human` is off.
+- The **Replies go to** select shows a field as **(not an email field)**: its
+  type changed after you picked it. Validation reports
+  `operator_notice_reply_to_slot_invalid` until you pick an email field or
+  **No reply-to**.
+- Reception's reply goes nowhere useful, or the email has no reply-to: check
+  **Replies go to** on that ending, and that the routine asked for that field
+  on the path the visitor took.
 - Review & Publish refuses the agent with `exposure_tool_name_changed`: a
   published tool name is fixed. Keep the name, or switch exposure off and create
   a new routine under the new name.

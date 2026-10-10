@@ -749,7 +749,8 @@ export class WorkbenchReplayRunner {
 
   /**
    * The message content the suppressed `handoff.notify` / `completion.notify` action carries —
-   * the subject and body a real dispatch renders, authored notice text included — built through
+   * the subject and body a real dispatch renders, authored notice text included, and the address
+   * replies would go to — built through
    * the same action builder and text formatter the real dispatch handler uses
    * (`buildRoutineEndingNotifyAction`, `routineEndingNotificationFromAction`,
    * `formatRoutineEndingNotification`) so this content cannot drift from what a live notice
@@ -796,7 +797,12 @@ export class WorkbenchReplayRunner {
       },
     });
     const formatted = formatRoutineEndingNotification(notification);
-    return { kind: ending.notificationKind, subject: formatted.subject, lines: formatted.lines };
+    return {
+      kind: ending.notificationKind,
+      subject: formatted.subject,
+      lines: formatted.lines,
+      ...(notification.replyTo ? { replyTo: notification.replyTo } : {}),
+    };
   }
 
   private presentResult(input: {

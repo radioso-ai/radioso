@@ -522,11 +522,12 @@ const operatorNoticeTemplateFor = (step: RoutineStep): RoutineOperatorNoticeTemp
   if (typeof notice !== "object" || notice === null || Array.isArray(notice)) {
     return null;
   }
-  const { subject, intro, skillName } = notice as Record<string, unknown>;
+  const { subject, intro, skillName, replyToSlot } = notice as Record<string, unknown>;
   return {
     ...(typeof subject === "string" ? { subject } : {}),
     ...(typeof intro === "string" ? { intro } : {}),
     ...(typeof skillName === "string" ? { skillName } : {}),
+    ...(typeof replyToSlot === "string" ? { replyToSlot } : {}),
   };
 };
 

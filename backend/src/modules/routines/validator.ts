@@ -43,6 +43,7 @@ const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, strin
   node_id_collision: "A step or terminal identifier is used more than once.",
   missing_terminal: "The routine needs at least one terminal.",
   declared_unused_slot: declaredUnusedSlotMessage,
+  operator_notice_skill_unavailable: "An ending's operator notice is sent with a skill that is not one of this agent's enabled notify skills.",
 };
 
 /** External diagnostic DTO: preserves only structural location, never authored validation text. */
@@ -606,6 +607,29 @@ export const validateRoutineDefinition = (
           message: `referenced-but-undeclared slot: the operator notice ${field} of ending "${terminal.stableStepId}" references "${key}", which is not declared.`,
         });
       }
+    }
+  }
+
+  // The notify skill a notice names is checked against the agent's live skill catalog only. The
+  // compile path has no catalog, so a pinned revision always compiles; at send time a skill that
+  // has since gone away falls back to the default destination.
+  if (context.skillDescriptors) {
+    for (const terminal of terminals) {
+      const skillName = terminal.operatorNotice?.skillName;
+      if (!skillName) {
+        continue;
+      }
+      const descriptor = context.skillDescriptors.get(skillName);
+      if (descriptor?.category === "notify") {
+        continue;
+      }
+      diagnostics.push({
+        code: "operator_notice_skill_unavailable",
+        location: `step:${terminal.stableStepId}.operatorNotice.skillName`,
+        message: descriptor
+          ? `operator notice skill unavailable: ending "${terminal.stableStepId}" sends its notice with "${skillName}", which is not a notify skill.`
+          : `operator notice skill unavailable: ending "${terminal.stableStepId}" sends its notice with "${skillName}", which is not an enabled notify skill on this agent.`,
+      });
     }
   }
 

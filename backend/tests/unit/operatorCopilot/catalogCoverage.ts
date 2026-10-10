@@ -38,6 +38,7 @@ const catalogToolCoverage = {
   updateDocumentRetrieval: "propose_document_retrieval",
   deleteDocument: "propose_document_removal",
   listAgentSkills: "agent_skills",
+  listOperatorNoticeDestinations: "operator_notice_destinations",
   listAgentSkillCapabilities: "agent_skills",
   listMcpConnections: "agent_skills",
   getMcpConnection: "agent_skills",

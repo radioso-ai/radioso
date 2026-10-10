@@ -484,6 +484,28 @@ describe("RoutineDraftAssistService", () => {
     expect(result.validation).toEqual({ ok: true, diagnostics: [] });
   });
 
+  it("keeps the notify skill a notice names while it normalizes the notice text", async () => {
+    const textGenerationClient = new FakeTextClient([
+      completion(validDraft({
+        terminals: [{
+          ...validDraft().terminals[0],
+          operatorNotice: { subject: "Support request from {{ email }}", intro: null, skillName: "notify_support" },
+        }],
+      })),
+    ]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Collect the visitor email and tell the support team when the request is complete.",
+    });
+
+    expect(result.draft.terminals[0]?.operatorNotice).toEqual({
+      subject: "Support request from {{slot.email}}",
+      intro: null,
+      skillName: "notify_support",
+    });
+  });
+
   it("accepts a null operator notice from the draft response as no notice", async () => {
     const textGenerationClient = new FakeTextClient([
       completion(validDraft({

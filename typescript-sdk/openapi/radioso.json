@@ -5879,6 +5879,12 @@
                       ],
                       "minLength": 1,
                       "maxLength": 2000
+                    },
+                    "skillName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 300,
+                      "pattern": "^[a-z][a-z0-9_]*$"
                     }
                   },
                   "additionalProperties": false
@@ -6497,6 +6503,12 @@
                           ],
                           "minLength": 1,
                           "maxLength": 2000
+                        },
+                        "skillName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300,
+                          "pattern": "^[a-z][a-z0-9_]*$"
                         }
                       },
                       "additionalProperties": false
@@ -6633,7 +6645,8 @@
                     "exposure_tool_name_reserved",
                     "exposure_tool_name_duplicate",
                     "exposure_tool_name_changed",
-                    "exposure_requires_ungated_activation"
+                    "exposure_requires_ungated_activation",
+                    "operator_notice_skill_unavailable"
                   ]
                 },
                 "location": {
@@ -7187,6 +7200,12 @@
                       ],
                       "minLength": 1,
                       "maxLength": 2000
+                    },
+                    "skillName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 300,
+                      "pattern": "^[a-z][a-z0-9_]*$"
                     }
                   },
                   "additionalProperties": false
@@ -7877,6 +7896,12 @@
                           ],
                           "minLength": 1,
                           "maxLength": 2000
+                        },
+                        "skillName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300,
+                          "pattern": "^[a-z][a-z0-9_]*$"
                         }
                       },
                       "additionalProperties": false
@@ -9578,6 +9603,12 @@
                           ],
                           "minLength": 1,
                           "maxLength": 2000
+                        },
+                        "skillName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300,
+                          "pattern": "^[a-z][a-z0-9_]*$"
                         }
                       },
                       "additionalProperties": false
@@ -46843,6 +46874,173 @@
           },
           "409": {
             "description": "Skill name or default-answer already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/operator-notice-destinations": {
+      "get": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "Show where routine ending notices are sent",
+        "description": "Where a routine ending's Notify-the-team notice is sent: the default destination and each enabled, routine-named notify skill an ending can name. Recipient emails are personal data, so this route accepts workspace sessions only.",
+        "operationId": "listOperatorNoticeDestinations",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operator notice destinations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "default": {
+                      "type": "object",
+                      "properties": {
+                        "skillName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The notify skill that sends the notice; null for the default destination."
+                        },
+                        "via": {
+                          "type": "string",
+                          "enum": [
+                            "named_skill",
+                            "contact_human",
+                            "contact_human_off",
+                            "agent_setting",
+                            "workspace_owner",
+                            "none"
+                          ],
+                          "description": "Which rule picked the recipients."
+                        },
+                        "recipientEmails": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "recipientsFromWorkspaceOwner": {
+                          "type": "boolean",
+                          "description": "The emails are the workspace owner's because the route lists no recipients of its own."
+                        },
+                        "webhookConfigured": {
+                          "type": "boolean",
+                          "description": "A webhook also receives the notice. Its URL is never returned."
+                        }
+                      },
+                      "required": [
+                        "skillName",
+                        "via",
+                        "recipientEmails",
+                        "recipientsFromWorkspaceOwner",
+                        "webhookConfigured"
+                      ]
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "skillName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "The notify skill that sends the notice; null for the default destination."
+                          },
+                          "via": {
+                            "type": "string",
+                            "enum": [
+                              "named_skill",
+                              "contact_human",
+                              "contact_human_off",
+                              "agent_setting",
+                              "workspace_owner",
+                              "none"
+                            ],
+                            "description": "Which rule picked the recipients."
+                          },
+                          "recipientEmails": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "recipientsFromWorkspaceOwner": {
+                            "type": "boolean",
+                            "description": "The emails are the workspace owner's because the route lists no recipients of its own."
+                          },
+                          "webhookConfigured": {
+                            "type": "boolean",
+                            "description": "A webhook also receives the notice. Its URL is never returned."
+                          }
+                        },
+                        "required": [
+                          "skillName",
+                          "via",
+                          "recipientEmails",
+                          "recipientsFromWorkspaceOwner",
+                          "webhookConfigured"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "default",
+                    "skills"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
             "content": {
               "application/json": {
                 "schema": {

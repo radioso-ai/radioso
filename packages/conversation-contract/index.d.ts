@@ -1072,17 +1072,25 @@ export interface RoutineStep {
  * The authored text an operator notice renders from, carried on a compiled terminal step's
  * `metadata.operatorNotice` exactly when that ending notifies operators. Either text may hold
  * `{{slot.<key>}}` references the host substitutes; an absent text means the host's default
- * for the ending's kind. The engine reports the template, it never renders or delivers it.
+ * for the ending's kind. `skillName` names the host skill that delivers the notice; absent
+ * means the host's default destination. The engine reports the template, it never renders or
+ * delivers it.
  */
 export interface RoutineOperatorNoticeTemplate {
   subject?: string;
   intro?: string;
+  skillName?: string;
 }
 
 /** A fire-and-forget side effect a routine requested: an authored `type` + payload. */
 export interface RoutineActionRequest {
   type: string;
   payload: Record<string, unknown>;
+  /**
+   * The host skill that delivers this request, kept off the payload because it is routing,
+   * not content. The engine never sets it; a host that turns an effect into an action does.
+   */
+  skillName?: string;
 }
 
 /** The kinds an authored `terminal` step declares in `metadata.terminalKind`. */

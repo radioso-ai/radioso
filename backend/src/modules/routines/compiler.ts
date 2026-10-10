@@ -92,6 +92,7 @@ const operatorNoticeTemplate = (
 ): RoutineOperatorNoticeTemplate => ({
   ...(notice?.subject ? { subject: notice.subject } : {}),
   ...(notice?.intro ? { intro: notice.intro } : {}),
+  ...(notice?.skillName ? { skillName: notice.skillName } : {}),
 });
 
 export const compileRoutineDefinition = (definition: RoutineDefinition): Routine => {

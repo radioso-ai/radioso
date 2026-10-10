@@ -952,6 +952,31 @@ describe("RoutineDefinitionService", () => {
     expect(results.get(knownWebhook.routine.id)).toMatchObject({ ok: true, diagnostics: [] });
   });
 
+  it("gates serving on the notify skill an ending's notice names, against the agent's catalog", async () => {
+    const catalog = {
+      listForAgent: vi.fn(async () => [{ ...skillDescriptor("notify_bookings"), category: "notify" as const }]),
+      getForAgent: vi.fn(),
+    };
+    const { service } = createService({ skillAuthoringCatalog: catalog });
+    const noticeWith = (skillName: string) => validDraft().terminals.map((terminal) => ({
+      ...terminal,
+      operatorNotice: { subject: null, intro: null, skillName },
+    }));
+    const routed = await service.createDraft(workspaceId, agentId, { ...validDraft(), name: "routine-routed", terminals: noticeWith("notify_bookings") });
+    const misrouted = await service.createDraft(workspaceId, agentId, { ...validDraft(), name: "routine-misrouted", terminals: noticeWith("notify_sales") });
+
+    const results = await service.validateManyForServing(workspaceId, [routed.routine, misrouted.routine]);
+
+    expect(results.get(routed.routine.id)).toMatchObject({ ok: true, diagnostics: [] });
+    expect(results.get(misrouted.routine.id)).toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({
+        code: "operator_notice_skill_unavailable",
+        location: "step:terminal_complete.operatorNotice.skillName",
+      })],
+    });
+  });
+
   it("resolves an empty map without touching the workspace-scoped catalog for an empty batch", async () => {
     const catalog = { listForAgent: vi.fn(async () => []), getForAgent: vi.fn() };
     const { service } = createService({ skillAuthoringCatalog: catalog });

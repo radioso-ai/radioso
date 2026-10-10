@@ -2692,6 +2692,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/operator-notice-destinations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show where routine ending notices are sent
+         * @description Where a routine ending's Notify-the-team notice is sent: the default destination and each enabled, routine-named notify skill an ending can name. Recipient emails are personal data, so this route accepts workspace sessions only.
+         */
+        get: operations["listOperatorNoticeDestinations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/skills/{skillId}": {
         parameters: {
             query?: never;
@@ -5892,6 +5912,7 @@ export interface components {
                 operatorNotice?: {
                     subject?: string | null;
                     intro?: string | null;
+                    skillName?: string;
                 };
                 ordinal: number;
             }[];
@@ -6000,6 +6021,7 @@ export interface components {
                 operatorNotice?: {
                     subject?: string | null;
                     intro?: string | null;
+                    skillName?: string;
                 };
                 ordinal: number;
             }[];
@@ -6021,7 +6043,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable";
                 location: string;
                 message: string;
             }[];
@@ -6119,6 +6141,7 @@ export interface components {
                 operatorNotice?: {
                     subject?: string | null;
                     intro?: string | null;
+                    skillName?: string;
                 };
                 ordinal: number;
             }[];
@@ -6254,6 +6277,7 @@ export interface components {
                     operatorNotice?: {
                         subject?: string | null;
                         intro?: string | null;
+                        skillName?: string;
                     };
                     ordinal: number;
                 }[];
@@ -6626,6 +6650,7 @@ export interface components {
                     operatorNotice?: {
                         subject?: string | null;
                         intro?: string | null;
+                        skillName?: string;
                     };
                     ordinal: number;
                 }[];
@@ -22833,6 +22858,84 @@ export interface operations {
             };
             /** @description Skill name or default-answer already exists */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listOperatorNoticeDestinations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Operator notice destinations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        default: {
+                            /** @description The notify skill that sends the notice; null for the default destination. */
+                            skillName: string | null;
+                            /**
+                             * @description Which rule picked the recipients.
+                             * @enum {string}
+                             */
+                            via: "named_skill" | "contact_human" | "contact_human_off" | "agent_setting" | "workspace_owner" | "none";
+                            recipientEmails: string[];
+                            /** @description The emails are the workspace owner's because the route lists no recipients of its own. */
+                            recipientsFromWorkspaceOwner: boolean;
+                            /** @description A webhook also receives the notice. Its URL is never returned. */
+                            webhookConfigured: boolean;
+                        };
+                        skills: {
+                            /** @description The notify skill that sends the notice; null for the default destination. */
+                            skillName: string | null;
+                            /**
+                             * @description Which rule picked the recipients.
+                             * @enum {string}
+                             */
+                            via: "named_skill" | "contact_human" | "contact_human_off" | "agent_setting" | "workspace_owner" | "none";
+                            recipientEmails: string[];
+                            /** @description The emails are the workspace owner's because the route lists no recipients of its own. */
+                            recipientsFromWorkspaceOwner: boolean;
+                            /** @description A webhook also receives the notice. Its URL is never returned. */
+                            webhookConfigured: boolean;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

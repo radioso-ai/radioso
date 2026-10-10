@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
+import { contactDeliveryRoutes } from "../../../../shared/domain/contactDeliveryRoute.js";
 
 const AgentParams = z.object({ agentId: z.string().uuid() });
 const AgentSkillParams = AgentParams.extend({ skillId: z.string().uuid() });
@@ -95,6 +96,21 @@ const CapabilitySchema = z.object({
   unavailableReason: z.literal("no_connection").nullable(),
 });
 
+const OperatorNoticeDestinationSchema = z.object({
+  skillName: z.string().nullable().describe("The notify skill that sends the notice; null for the default destination."),
+  via: z.enum(contactDeliveryRoutes)
+    .describe("Which rule picked the recipients."),
+  recipientEmails: z.array(z.string()),
+  recipientsFromWorkspaceOwner: z.boolean()
+    .describe("The emails are the workspace owner's because the route lists no recipients of its own."),
+  webhookConfigured: z.boolean().describe("A webhook also receives the notice. Its URL is never returned."),
+});
+
+const OperatorNoticeDestinationsResponseSchema = z.object({
+  default: OperatorNoticeDestinationSchema,
+  skills: z.array(OperatorNoticeDestinationSchema),
+});
+
 export const registerAgentSkillsPaths = (
   registry: OpenAPIRegistry,
   schemas: OpenApiSchemas,
@@ -140,6 +156,23 @@ export const registerAgentSkillsPaths = (
         skills: z.array(AgentSkillSchema),
         platformSkills: z.array(PlatformAnswerSkillSchema),
       })) },
+      401: errorResponse("Authentication required"),
+      403: errorResponse("Agent read permission required"),
+      404: errorResponse("Agent not found"),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/operator-notice-destinations",
+    tags: ["Agent Skills"],
+    summary: "Show where routine ending notices are sent",
+    description: "Where a routine ending's Notify-the-team notice is sent: the default destination and each enabled, routine-named notify skill an ending can name. Recipient emails are personal data, so this route accepts workspace sessions only.",
+    operationId: "listOperatorNoticeDestinations",
+    security: sec,
+    request: { params: AgentParams },
+    responses: {
+      200: { description: "Operator notice destinations", content: json(OperatorNoticeDestinationsResponseSchema) },
       401: errorResponse("Authentication required"),
       403: errorResponse("Agent read permission required"),
       404: errorResponse("Agent not found"),

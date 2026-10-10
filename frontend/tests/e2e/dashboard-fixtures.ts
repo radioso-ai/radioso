@@ -1,6 +1,7 @@
 import type { Page, Route } from "@playwright/test";
 import type { components, operations } from "../../../typescript-sdk/src/generated/types";
 import type { SkillAuthoringDescriptor } from "@/lib/api-routine-skill-catalog";
+import type { OperatorNoticeDestinations } from "@/lib/operator-notice-destinations";
 
 type ApiSchemas = components["schemas"];
 type TransferRequestFixture = operations["transferConversationOwnership"]["requestBody"]["content"]["application/json"];
@@ -1071,6 +1072,7 @@ export const installDashboardApiMocks = async (
     agentSkills?: AgentSkillFixture[];
     agentSkillRequests?: Array<{ method: string; path: string; body?: unknown }>;
     routineSkillCatalog?: RoutineSkillCatalogFixture;
+    operatorNoticeDestinations?: OperatorNoticeDestinations;
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
@@ -1192,6 +1194,10 @@ export const installDashboardApiMocks = async (
     { owner: "platform", name: "direct.answer", displayName: "Direct answer", description: "Answer without retrieval." },
   ];
   const routineSkillCatalog = options.routineSkillCatalog ?? [];
+  const operatorNoticeDestinations: OperatorNoticeDestinations = options.operatorNoticeDestinations ?? {
+    default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@example.com"], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
+    skills: [],
+  };
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
   const mcpConnections = options.mcpConnections ?? [];
@@ -2568,6 +2574,11 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}/routine-skill-catalog` && request.method() === "GET") {
       await json(route, { skills: routineSkillCatalog });
+      return;
+    }
+
+    if (path === `/agents/${defaultAgentId}/operator-notice-destinations` && request.method() === "GET") {
+      await json(route, operatorNoticeDestinations);
       return;
     }
 

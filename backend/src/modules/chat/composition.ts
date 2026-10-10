@@ -59,6 +59,7 @@ export { RoutineEndingNotifyActionHandler } from "./services/actions/routineEndi
 export { RepositoryRoutineEndingNotificationSubjectResolver } from "./services/actions/routineEndingNotificationSubjectResolver.js";
 export { ROUTINE_ENDING_NOTICE_ACTIONS } from "./services/operatorNoticeAction.js";
 export { EmailWebhookOperatorNotificationSink } from "./services/actions/emailWebhookSink.js";
+export { OperatorNoticeDestinationsReader } from "./services/actions/operatorNoticeDestinations.js";
 export {
   ApprovalRequestActionHandler,
   APPROVAL_REQUEST_ACTION_TYPE,

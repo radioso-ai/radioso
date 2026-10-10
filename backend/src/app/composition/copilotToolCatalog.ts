@@ -2,6 +2,7 @@ import {
   createCopilotToolDescriptors,
   type CopilotAgentPort,
   type CopilotAgentSkillsPort,
+  type CopilotOperatorNoticeDestinationsPort,
   type CopilotConversationHistoryPort,
   type CopilotAgentTurnProbePort,
   type CopilotDocumentSearchPort,
@@ -173,6 +174,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly documentSourceStatusService: CopilotDocumentSourceStatusPort;
   readonly agentSkillsService: CopilotAgentSkillsPort;
   readonly skillCapabilityRegistry: CopilotSkillCapabilityTargetsPort;
+  readonly operatorNoticeDestinations: CopilotOperatorNoticeDestinationsPort;
   readonly contextVariables: CopilotContextVariablesPort;
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
   /** Null when the deployment has no email provider. */

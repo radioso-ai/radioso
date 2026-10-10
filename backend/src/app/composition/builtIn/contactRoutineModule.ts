@@ -4,7 +4,6 @@ import {
   CONTACT_SEND_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
-  ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
   EmailWebhookOperatorNotificationSink,
   FetchContactWebhookHttpClient,
@@ -13,20 +12,16 @@ import {
   ROUTINE_ENDING_NOTICE_ACTIONS,
   ApprovalRequestActionHandler,
   APPROVAL_REQUEST_ACTION_TYPE,
-  WorkspaceOwnerContactRecipientResolver,
   type PublicChatActionAdvertiserPort,
   type PublicChatIntakeAction,
 } from "../../../modules/chat/composition.js";
 import { compileRoutineDefinition } from "../../../modules/routines/public.js";
 import { hasConfiguredContactDestination, type AgentRecord } from "../../../modules/agents/public.js";
-import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
-import { AccountMembershipRepository } from "../../../db/repositories/accountMembershipRepository.js";
 import { AgentRepository } from "../../../db/repositories/agentRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { ActionRequestRepository } from "../../../db/repositories/actionRequestRepository.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import { RoutineDefinitionRepository } from "../../../db/repositories/routineDefinitionRepository.js";
-import { AgentSkillRepository } from "../../../modules/agentSkills/repository.js";
 import { OperatorNotificationDispatcher } from "../../../modules/operatorNotifications/public.js";
 import {
   SlackChannelBindingRepository,
@@ -40,6 +35,7 @@ import type { Env } from "../../config/env.js";
 import type { ApplicationModule, MailTransportPort } from "../applicationModule.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import { buildConversationLinkResolver } from "../conversationLinkResolver.js";
+import { buildContactDeliveryResolver } from "../contactDelivery.js";
 
 /** Reads the per-agent contact-requests flag and delivery config for the advertiser. */
 interface AgentContactFlagLookup {
@@ -86,16 +82,7 @@ const buildOperatorNotificationDispatcher = (input: {
   mailService: MailTransportPort;
   assertPublicWebsiteUrl: (url: string) => Promise<void>;
 }): OperatorNotificationDispatcher => {
-  const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
-    new WorkspaceRepository(input.database.kysely),
-    new AccountMembershipRepository(input.database.kysely),
-  );
-  const recipients = new ConfiguredContactDeliveryResolver(
-    new ConversationRepository(input.database.kysely),
-    new AgentRepository(input.database.kysely),
-    ownerFallback,
-    new AgentSkillRepository(input.database.kysely),
-  );
+  const recipients = buildContactDeliveryResolver(input.database);
   const conversationLinks = buildConversationLinkResolver({ database: input.database, appBaseUrl: input.env.APP_BASE_URL });
   return new OperatorNotificationDispatcher([
     new EmailWebhookOperatorNotificationSink(
@@ -147,18 +134,9 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       requiredCapabilities: [capabilityNames.humanContact.request],
       queuedFrom: "routine_action_step",
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl, errorReporter }) => {
-        const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
-          new WorkspaceRepository(database.kysely),
-          new AccountMembershipRepository(database.kysely),
-        );
         return new ContactSendActionHandler(
           mailService,
-          new ConfiguredContactDeliveryResolver(
-            new ConversationRepository(database.kysely),
-            new AgentRepository(database.kysely),
-            ownerFallback,
-            new AgentSkillRepository(database.kysely),
-          ),
+          buildContactDeliveryResolver(database),
           logger,
           // SSRF guard: every webhook hop is re-validated against the public-host
           // policy before the worker sends visitor data outbound.

@@ -115,6 +115,19 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
       enabled: true,
     });
 
+    // The ending's notice names this skill, and the bundle carries that name with the routine.
+    await agentSkillRepository.create({
+      workspaceId: workspace.id,
+      agentId: source.id,
+      skillName: "notify_plans",
+      kind: "notify",
+      targetType: "notify_delivery",
+      targetId: null,
+      config: {},
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
     const variable = await contextVariableRepository.create({
       workspaceId: workspace.id,
       name: "plan_tier",
@@ -172,7 +185,7 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
         stableStepId: "terminal_complete",
         kind: "complete",
         instruction: "Explain the plan difference for {{slot.topic}}.",
-        operatorNotice: { subject: "Plan question: {{slot.topic}}", intro: null },
+        operatorNotice: { subject: "Plan question: {{slot.topic}}", intro: null, skillName: "notify_plans" },
         ordinal: 1,
       }],
     } as never);
@@ -184,7 +197,7 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
     expect(bundle.agent.internalName).toBe("Procurement (EU)");
     expect(bundle.agent.handoffOnRetrievalMiss).toBe(true);
     expect(bundle.routines.map((routine) => routine.name)).toEqual(["answer-with-context"]);
-    expect(bundle.routines[0]?.definition.terminals[0]?.operatorNotice).toEqual({ subject: "Plan question: {{slot.topic}}", intro: null });
+    expect(bundle.routines[0]?.definition.terminals[0]?.operatorNotice).toEqual({ subject: "Plan question: {{slot.topic}}", intro: null, skillName: "notify_plans" });
     expect(bundle.contextVariables).toEqual([expect.objectContaining({
       variableName: "plan_tier",
       resolverSkillName: "knowledge_lookup",

@@ -1604,6 +1604,7 @@ export interface RoutineTerminal {
   kind: string;
   operator_notice_enabled: Generated<boolean>;
   operator_notice_intro: string | null;
+  operator_notice_skill_name: string | null;
   operator_notice_subject: string | null;
   ordinal: number;
   stable_step_id: string;

@@ -137,9 +137,9 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await page.getByRole("option", { name: "Reasoning" }).click();
   await page.getByRole("button", { name: "Override Vector top K" }).click();
   await page.getByLabel("Vector top K", { exact: true }).fill("12");
-  await expect(page.getByLabel("Rerank top K", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Rerank top K", { exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Override Rerank results" }).click();
-  await page.getByRole("switch", { name: "Rerank results" }).click();
+  await expect(page.getByRole("switch", { name: "Rerank results" })).toBeChecked();
   await page.getByRole("button", { name: "Override Rerank top K" }).click();
   await page.getByLabel("Rerank top K", { exact: true }).fill("6");
   await page.getByRole("button", { name: "Override Hold the answer until it cites a source" }).click();
@@ -277,7 +277,7 @@ test("Vector top K names the answer candidate pool once it is set past it", asyn
   await expect(unusedCandidatesNotice).toHaveText(/top 12 candidates/);
 
   await page.getByRole("button", { name: "Override Rerank results" }).click();
-  await page.getByRole("switch", { name: "Rerank results" }).click();
+  await expect(page.getByRole("switch", { name: "Rerank results" })).toBeChecked();
   await page.getByRole("button", { name: "Override Rerank top K" }).click();
   await page.getByLabel("Rerank top K", { exact: true }).fill("20");
   await expect(unusedCandidatesNotice).toHaveText(/top 20 candidates/);

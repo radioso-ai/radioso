@@ -4,6 +4,8 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { agentSkillCreateSchema, agentSkillUpdateSchema } from "../../../modules/agentSkills/public.js";
 import { builtInAnswerSkillDefinitions } from "../../../modules/chat/public.js";
+import { resolveRetrievalSkillSettings } from "../../../modules/retrieval/public.js";
+import type { SkillCapabilityDescriptor } from "../../../modules/skills/public.js";
 import { badRequest, forbidden } from "../../../shared/domain/errors.js";
 import {
   recipientEmailChangeMetadata,
@@ -23,6 +25,7 @@ type AgentSkillRouteDependencies = Pick<
   | "agentService"
   | "agentSkillsService"
   | "skillCapabilityRegistry"
+  | "retrievalDefaultsProvider"
   | "operatorNoticeDestinations"
 >;
 
@@ -52,22 +55,44 @@ const requireRecipientManagement = async (
   }
 };
 
+const withEffectiveRetrievalDefaults = (
+  descriptor: SkillCapabilityDescriptor,
+  effectiveSettings: object,
+): SkillCapabilityDescriptor["settingsFields"] => {
+  if (descriptor.id !== "retrieve") {
+    return descriptor.settingsFields;
+  }
+  return descriptor.settingsFields.map((field) => {
+    if (field.defaultValue === undefined) {
+      return field;
+    }
+    const effectiveDefault = (effectiveSettings as Record<string, unknown>)[field.key];
+    return typeof effectiveDefault === "string" || typeof effectiveDefault === "number" || typeof effectiveDefault === "boolean"
+      ? { ...field, defaultValue: effectiveDefault }
+      : field;
+  });
+};
+
 export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
   const agentRead = requireWorkspacePermission(dependencies, "workspace.agents.read");
   const agentManage = requireWorkspacePermission(dependencies, "workspace.agents.manage");
 
-  const resolveAgent = async (req: Request, res: Response): Promise<{ workspaceId: string; agentId: string }> => {
+  const resolveAgent = async (req: Request, res: Response) => {
     const { workspaceId } = res.locals as { workspaceId: string };
     const agentId = parseUuid(req.params.agentId, "agentId");
-    await dependencies.agentService.get(workspaceId, agentId);
-    return { workspaceId, agentId };
+    const agent = await dependencies.agentService.get(workspaceId, agentId);
+    return { workspaceId, agentId, agent };
   };
 
   router.get("/:agentId/skill-capabilities", workspaceSession, agentRead, async (req, res, next) => {
     try {
-      const { workspaceId, agentId } = await resolveAgent(req, res);
+      const { workspaceId, agentId, agent } = await resolveAgent(req, res);
+      const effectiveRetrievalSettings = resolveRetrievalSkillSettings(
+        dependencies.retrievalDefaultsProvider.getDefaults(workspaceId),
+        agent.skillSettings["retrieval.answer"],
+      );
       const capabilities = await Promise.all(dependencies.skillCapabilityRegistry.list().map(async (descriptor) => {
         const targets = await descriptor.enumerateTargets({ workspaceId, agentId });
         const requiresTarget = descriptor.requiresTarget ?? true;
@@ -78,7 +103,7 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
           targetKind: descriptor.targetKind,
           requiresTarget,
           inputSchema: descriptor.inputSchema,
-          settingsFields: descriptor.settingsFields,
+          settingsFields: withEffectiveRetrievalDefaults(descriptor, effectiveRetrievalSettings),
           outcomeVocabulary: descriptor.outcomeVocabulary,
           supportedInvocationModes: descriptor.supportedInvocationModes,
           defaultInvocationMode: descriptor.defaultInvocationMode ?? descriptor.supportedInvocationModes[0],

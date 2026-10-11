@@ -121,11 +121,12 @@ export class ActionDispatcher {
     }
   }
 
-  async dispatchPending(limit = 20): Promise<{ dispatched: number; retried: number; failed: number }> {
+  async dispatchPending(limit = 20): Promise<{ dispatched: number; retried: number; failed: number; skipped: number }> {
     const claimed = await this.outbox.claimPending(limit, this.options.leaseSeconds);
     let dispatched = 0;
     let retried = 0;
     let failed = 0;
+    let skipped = 0;
 
     for (const request of claimed) {
       this.observePersistedOutcome({ request, outcome: "claimed" });
@@ -178,6 +179,7 @@ export class ActionDispatcher {
         if (error instanceof ActionDispatchSkippedError) {
           const changed = await this.outbox.markSkipped(request.id, error.reason, request.attempts);
           if (changed) {
+            skipped += 1;
             this.observePersistedOutcome({ request, outcome: "skipped" });
           }
           continue;
@@ -213,6 +215,6 @@ export class ActionDispatcher {
       }
     }
 
-    return { dispatched, retried, failed };
+    return { dispatched, retried, failed, skipped };
   }
 }

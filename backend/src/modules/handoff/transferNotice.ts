@@ -1,4 +1,6 @@
 import type { ActionFailureOutcome } from "../../db/repositories/actionRequestRepository.js";
+import { ActionDispatchSkippedError } from "../../shared/domain/actionDispatchOutcome.js";
+import { mailDeliverySkipReason } from "../../shared/domain/mailDeliveryOutcome.js";
 import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import type { ActionHandler, ActionHandlerContext } from "../chat/contracts/index.js";
 import {
@@ -81,7 +83,7 @@ interface TransferNoticeOwnershipReader {
 }
 
 interface TransferNoticeMailer {
-  send(message: Omit<EmailMessage, "from">): Promise<{ dispatched: boolean }>;
+  send(message: Omit<EmailMessage, "from">): Promise<{ dispatched: boolean; driver?: string }>;
 }
 
 const readId = (value: unknown): string | null =>
@@ -163,7 +165,7 @@ export class ConversationTransferNoticeActionHandler implements ActionHandler {
     }
 
     try {
-      await this.dependencies.mail.send({
+      const mailResult = await this.dependencies.mail.send({
         ...renderConversationTransferEmail({
           to: delivery.recipientEmail,
           appBaseUrl: this.dependencies.appBaseUrl,
@@ -173,7 +175,14 @@ export class ConversationTransferNoticeActionHandler implements ActionHandler {
         }),
         idempotencyKey: context.idempotencyKey,
       });
+      const skipReason = mailDeliverySkipReason([mailResult]);
+      if (skipReason) {
+        throw new ActionDispatchSkippedError(skipReason);
+      }
     } catch (error) {
+      if (error instanceof ActionDispatchSkippedError) {
+        throw error;
+      }
       // The recipient's address stays out of the log; the ids are enough to find the row.
       this.dependencies.logger.warn(
         {

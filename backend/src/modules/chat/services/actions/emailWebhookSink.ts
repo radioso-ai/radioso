@@ -4,19 +4,19 @@ import {
   type OperatorNotification,
   type OperatorNotificationContext,
   type OperatorNotificationSink,
+  type OperatorNotificationSinkOutcome,
   type RoutineEndingOperatorNotification,
 } from "../../../operatorNotifications/public.js";
 import {
   resolveConversationLink,
   type ConversationLinkResolver,
 } from "../../../../shared/domain/conversationLinkResolver.js";
-import { ActionDispatchSkippedError } from "../../../../shared/domain/actionDispatchOutcome.js";
+import { mailDeliverySkipReason } from "../../../../shared/domain/mailDeliveryOutcome.js";
 import type {
   ContactNotificationMailer,
   ContactWebhookHttpClient,
   RoutedContactRecipientResolver,
 } from "./contactSendActionHandler.js";
-import { mailDeliverySkipReason } from "./contactSendActionHandler.js";
 
 /** What this sink logs. Lines name the route and counts, never an address or a webhook URL. */
 interface OperatorNotificationSinkLogger {
@@ -67,7 +67,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     private readonly conversationLinks?: ConversationLinkResolver,
   ) {}
 
-  async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<void> {
+  async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome> {
     const recipientContext = {
       requestId: context.requestId,
       workspaceId: context.workspaceId ?? notification.workspaceId,
@@ -99,7 +99,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         { workspaceId: context.workspaceId ?? notification.workspaceId, conversationId: context.conversationId ?? notification.conversationId, via: target.via },
         `${actionType}: no recipient configured for workspace; skipping`,
       );
-      return;
+      return { disposition: "skipped", reason: "contact_destination_not_configured" };
     }
     this.logger?.info(
       { kind: notification.kind, via: target.via, emailCount: target.emails.length, webhook: target.webhook !== null },
@@ -159,9 +159,10 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     if (!target.webhook) {
       const skipReason = mailDeliverySkipReason(emailResults);
       if (skipReason) {
-        throw new ActionDispatchSkippedError(skipReason);
+        return { disposition: "skipped", reason: skipReason };
       }
     }
+    return { disposition: "delivered" };
   }
 
   /**

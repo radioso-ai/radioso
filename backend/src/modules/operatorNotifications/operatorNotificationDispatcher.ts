@@ -3,6 +3,7 @@ import type {
   OperatorNotification,
   OperatorNotificationContext,
   OperatorNotificationSink,
+  OperatorNotificationSinkOutcome,
 } from "./operatorNotification.js";
 
 export class OperatorNotificationDispatcher {
@@ -19,15 +20,15 @@ export class OperatorNotificationDispatcher {
       this.sinks.map((sink) => sink.deliver(notification, context)),
     );
     const failures: unknown[] = [];
-    const skips: ActionDispatchSkippedError[] = [];
+    const skips: Extract<OperatorNotificationSinkOutcome, { disposition: "skipped" }>[] = [];
     let delivered = false;
     for (const result of results) {
       if (result.status === "fulfilled") {
-        delivered = true;
-        continue;
-      }
-      if (result.reason instanceof ActionDispatchSkippedError) {
-        skips.push(result.reason);
+        if (result.value.disposition === "delivered") {
+          delivered = true;
+        } else {
+          skips.push(result.value);
+        }
         continue;
       }
       failures.push(result.reason);
@@ -45,8 +46,8 @@ export class OperatorNotificationDispatcher {
         "Operator notification delivery failed",
       );
     }
-    if (!delivered && skips.length > 0) {
-      throw skips[0];
+    if (!delivered) {
+      throw new ActionDispatchSkippedError(skips[0]?.reason ?? "operator_notification_no_sink");
     }
   }
 }

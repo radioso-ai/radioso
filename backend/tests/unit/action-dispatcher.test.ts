@@ -80,7 +80,7 @@ describe("ActionDispatcher", () => {
     });
     expect(store.markDispatched).toHaveBeenCalledWith("r1", 1);
     expect(store.recordFailure).not.toHaveBeenCalled();
-    expect(result).toEqual({ dispatched: 1, retried: 0, failed: 0 });
+    expect(result).toEqual({ dispatched: 1, retried: 0, failed: 0, skipped: 0 });
   });
 
   it("carries the row's skill_name through to the handler context", async () => {
@@ -108,7 +108,7 @@ describe("ActionDispatcher", () => {
     const result = await dispatcher.dispatchPending();
 
     expect(store.recordFailure).toHaveBeenCalledWith("r1", "no_handler_for_type:unknown.action", 1, 5, 60);
-    expect(result).toEqual({ dispatched: 0, retried: 0, failed: 1 });
+    expect(result).toEqual({ dispatched: 0, retried: 0, failed: 1, skipped: 0 });
   });
 
   it("counts a within-budget handler failure as a retry, not a terminal failure", async () => {
@@ -145,7 +145,7 @@ describe("ActionDispatcher", () => {
       error: "smtp down",
     });
     expect(store.markDispatched).not.toHaveBeenCalled();
-    expect(result).toEqual({ dispatched: 0, retried: 1, failed: 0 });
+    expect(result).toEqual({ dispatched: 0, retried: 1, failed: 0, skipped: 0 });
   });
 
   it("marks terminal handler skips as dispatched when the handler returns successfully", async () => {
@@ -160,7 +160,7 @@ describe("ActionDispatcher", () => {
 
     expect(store.markDispatched).toHaveBeenCalledWith("r1", 1);
     expect(store.recordFailure).not.toHaveBeenCalled();
-    expect(result).toEqual({ dispatched: 1, retried: 0, failed: 0 });
+    expect(result).toEqual({ dispatched: 1, retried: 0, failed: 0, skipped: 0 });
   });
 
   it("persists an explicit handler skip without retrying it", async () => {
@@ -173,7 +173,7 @@ describe("ActionDispatcher", () => {
       }]),
     );
 
-    await expect(dispatcher.dispatchPending()).resolves.toEqual({ dispatched: 0, retried: 0, failed: 0 });
+    await expect(dispatcher.dispatchPending()).resolves.toEqual({ dispatched: 0, retried: 0, failed: 0, skipped: 1 });
     expect(store.markSkipped).toHaveBeenCalledWith("r1", "mail_not_dispatched:driver=log", 1);
     expect(store.markDispatched).not.toHaveBeenCalled();
     expect(store.recordFailure).not.toHaveBeenCalled();
@@ -193,7 +193,7 @@ describe("ActionDispatcher", () => {
       onPersistedOutcome,
     );
 
-    await expect(dispatcher.dispatchPending()).resolves.toEqual({ dispatched: 0, retried: 0, failed: 0 });
+    await expect(dispatcher.dispatchPending()).resolves.toEqual({ dispatched: 0, retried: 0, failed: 0, skipped: 0 });
     expect(store.markDispatched).toHaveBeenCalledWith("r1", 1);
     expect(handle).toHaveBeenCalledOnce();
     expect(onPersistedOutcome).toHaveBeenCalledTimes(1);
@@ -221,28 +221,28 @@ describe("ActionDispatcher", () => {
       failureOutcome: "failed" as const,
       handle: vi.fn(async () => undefined),
       throwingOutcome: "claimed" as const,
-      expected: { dispatched: 1, retried: 0, failed: 0 },
+      expected: { dispatched: 1, retried: 0, failed: 0, skipped: 0 },
     },
     {
       name: "dispatched",
       failureOutcome: "failed" as const,
       handle: vi.fn(async () => undefined),
       throwingOutcome: "dispatched" as const,
-      expected: { dispatched: 1, retried: 0, failed: 0 },
+      expected: { dispatched: 1, retried: 0, failed: 0, skipped: 0 },
     },
     {
       name: "retry",
       failureOutcome: "retry" as const,
       handle: vi.fn(async () => { throw new Error("provider unavailable"); }),
       throwingOutcome: "retry" as const,
-      expected: { dispatched: 0, retried: 1, failed: 0 },
+      expected: { dispatched: 0, retried: 1, failed: 0, skipped: 0 },
     },
     {
       name: "failed",
       failureOutcome: "failed" as const,
       handle: vi.fn(async () => { throw new Error("invalid destination"); }),
       throwingOutcome: "failed" as const,
-      expected: { dispatched: 0, retried: 0, failed: 1 },
+      expected: { dispatched: 0, retried: 0, failed: 1, skipped: 0 },
     },
   ])("isolates a throwing $name observer from persisted dispatcher outcomes", async ({
     failureOutcome,
@@ -279,7 +279,7 @@ describe("ActionDispatcher", () => {
 
     const result = await dispatcher.dispatchPending();
 
-    expect(result).toEqual({ dispatched: 0, retried: 0, failed: 0 });
+    expect(result).toEqual({ dispatched: 0, retried: 0, failed: 0, skipped: 0 });
   });
 
   it("counts a budget-exhausted handler failure as a terminal failure", async () => {
@@ -291,6 +291,6 @@ describe("ActionDispatcher", () => {
 
     const result = await dispatcher.dispatchPending();
 
-    expect(result).toEqual({ dispatched: 0, retried: 0, failed: 1 });
+    expect(result).toEqual({ dispatched: 0, retried: 0, failed: 1, skipped: 0 });
   });
 });

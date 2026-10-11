@@ -42,6 +42,7 @@ describe("remote MCP HTTP error boundary", () => {
         bindPort: 0,
         requestTimeoutMs: 30_000,
         serverName: "radioso-test",
+        signingSecret: "0123456789abcdef0123456789abcdef",
         trustedProxyHops: 0,
       },
     });

@@ -30,6 +30,7 @@ The package has no stdio MCP entrypoint.
 ### Required Environment Variables
 
 - `RADIOSO_BASE_URL`
+- `RADIOSO_MCP_SIGNING_SECRET`, the same at-least-32-character random value on standalone MCP and the backend. It keys source-budget digests, authenticates the signed source proof, and encrypts persisted backend session material when `RADIOSO_MCP_REDIS_URL` is set.
 
 Operator MCP additionally requires these values in both the standalone service and backend:
 
@@ -49,10 +50,9 @@ The Operator surface starts when all four values are present. A complete configu
 - `RADIOSO_MCP_AUDIT_LOG_PATH`
 - `RADIOSO_MCP_REDIS_URL` enables a shared runtime store for sessions
 - `RADIOSO_MCP_REDIS_KEY_PREFIX` default `radioso-mcp`
-- `RADIOSO_MCP_SIGNING_SECRET` lets standalone MCP carry its digested client-source identity to the backend with a signed proof. It is also required with `RADIOSO_MCP_REDIS_URL`, where it encrypts persisted backend session material. Use at least 32 random characters.
 - `RADIOSO_TRUSTED_PROXY_HOPS` default `0`. Set it only when requests arrive through a proxy chain whose rightmost hops are controlled by your deployment.
 
-Hosted Terraform generates `RADIOSO_MCP_SIGNING_SECRET`, injects the same value into standalone MCP and the backend, and sets `RADIOSO_TRUSTED_PROXY_HOPS=1`, because Cloud Run appends exactly the connecting client's address, on the `run.app` URL and on a mapped domain alike. Caller-supplied values earlier in the header are ignored. For a manual deployment, set the same signing value in both processes and configure the hop count only when you control the rightmost proxy chain. With the default `0`, both services ignore forwarded addresses and budget requests by their direct socket peer.
+Hosted Terraform generates `RADIOSO_MCP_SIGNING_SECRET`, injects the same value into standalone MCP and the backend, and sets `RADIOSO_TRUSTED_PROXY_HOPS=1`, because Cloud Run appends exactly the connecting client's address, on the `run.app` URL and on a mapped domain alike. Caller-supplied values earlier in the header are ignored. For a manual deployment, set the same signing value in both processes and configure the hop count only when you control the rightmost proxy chain. With the default `0`, both services ignore forwarded addresses and budget requests by their direct socket peer. Deploying a new key changes every source-budget key once, so existing source budgets start a new window.
 
 When `RADIOSO_MCP_REDIS_URL` is omitted, the standalone server keeps short-lived backend session tokens in memory. After a restart or cache miss, it exchanges the original credential again; the backend retains that credential version's conversation identity in PostgreSQL. When Redis is set, that cache is shared across standalone MCP instances and its session tokens are encrypted with the signing secret.
 

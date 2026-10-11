@@ -11,6 +11,7 @@ import { resolveRequestSourceAddress } from "../../src/shared/domain/requestSour
 import { createTestApp } from "../support/testApp.js";
 
 const SECRET = "e".repeat(32);
+const SESSION_COOKIE_SECRET = "0123456789abcdef0123456789abcdef";
 const ECHO_PATH = "/__test/request-source/echo";
 const CLIENT = "203.0.113.7";
 const FORGED = "198.51.100.99";
@@ -89,7 +90,7 @@ describe("request source", () => {
       trustedProxyHops: HOSTED_HOPS,
       envelope: { status: "absent" },
     }));
-    expect(body.source.digest).toBe(digestSourceAddress(CLIENT));
+    expect(body.source.digest).toBe(digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET));
     expect(body.mountDigest).toBe(body.source.digest);
   });
 
@@ -109,7 +110,7 @@ describe("request source", () => {
       trustedProxyHops: HOSTED_HOPS,
       envelope: readEdgeFactsEnvelope({ headers, secret: SECRET, method: "GET", path: ECHO_PATH }),
     }));
-    expect(body.mountDigest).toBe(digestSourceAddress(CLIENT));
+    expect(body.mountDigest).toBe(digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET));
   });
 
   it("publishes the visitor from a verified envelope whose chain carries a prefix the visitor forged", async () => {
@@ -121,7 +122,7 @@ describe("request source", () => {
       .expect(200) as { body: EchoBody };
 
     expect(body.source.address).toBe(CLIENT);
-    expect(body.mountDigest).toBe(digestSourceAddress(CLIENT));
+    expect(body.mountDigest).toBe(digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET));
   });
 
   it("publishes the socket peer when the backend trusts no proxy hops", async () => {
@@ -133,6 +134,6 @@ describe("request source", () => {
       .expect(200) as { body: EchoBody };
 
     expect(body.source.address).toBe(body.socketAddress);
-    expect(body.source.digest).toBe(digestSourceAddress(body.socketAddress ?? "unknown"));
+    expect(body.source.digest).toBe(digestSourceAddress(body.socketAddress ?? "unknown", SESSION_COOKIE_SECRET));
   });
 });

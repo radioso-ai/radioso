@@ -5,9 +5,10 @@ export interface PreAuthSourceBudget {
   consume(input: { sourceDigest: string }): boolean | Promise<boolean>;
 }
 
-export const digestPeerSource = (req: IncomingMessage, trustedProxyHops = 0): string =>
+export const digestPeerSource = (req: IncomingMessage, secret: string, trustedProxyHops = 0): string =>
   resolveSourceDigest({
     forwardedFor: req.headers["x-forwarded-for"],
+    secret,
     socketAddress: req.socket.remoteAddress,
     trustedProxyHops,
   });

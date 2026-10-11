@@ -92,6 +92,7 @@ describe("MCP runtime-store readiness", () => {
         redisKeyPrefix: "radioso-mcp",
         requestTimeoutMs: 1_000,
         serverName: "radioso-test",
+        signingSecret: "0123456789abcdef0123456789abcdef",
         trustedProxyHops: 0,
       },
       runtimeStores: {

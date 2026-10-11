@@ -213,7 +213,8 @@ describe("ContactSendActionHandler", () => {
       { admit: async () => ({ dispatchAllowed: false, emailAllowed: false, reason: "conversation_dispatch_cap" }) },
     );
 
-    await handler.handle({ payload: { message: "hi" }, context });
+    await expect(handler.handle({ payload: { message: "hi" }, context }))
+      .rejects.toMatchObject({ name: "ActionDispatchSkippedError", reason: "conversation_dispatch_cap" });
 
     expect(sent).toHaveLength(0);
     expect(requests).toHaveLength(0);

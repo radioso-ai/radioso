@@ -28,6 +28,7 @@ describe("NotificationDeliveryAdmissionService", () => {
       workspaceId: "workspace-1",
       accountId: "account-1",
       conversationId: "conversation-1",
+      recipientEmails: ["recipient@example.com", "second@example.com", "third@example.com"],
       requestedEmailCount: 3,
     })).resolves.toEqual({
       dispatchAllowed: true,
@@ -56,6 +57,7 @@ describe("NotificationDeliveryAdmissionService", () => {
       workspaceId: null,
       accountId: null,
       conversationId: null,
+      recipientEmails: ["recipient@example.com"],
       requestedEmailCount: 1,
     })).resolves.toEqual({ dispatchAllowed: false, emailAllowed: false, reason: "missing_context" });
     expect(reserve).not.toHaveBeenCalled();
@@ -80,9 +82,35 @@ describe("NotificationDeliveryAdmissionService", () => {
       workspaceId: "workspace-1",
       accountId: "account-1",
       conversationId: "conversation-1",
+      recipientEmails: ["recipient@example.com"],
       requestedEmailCount: 1,
     });
 
     expect(record).not.toHaveBeenCalled();
+  });
+
+  it("binds a replay admission to the recipient set resolved for that attempt", async () => {
+    const reserve = vi.fn<NotificationDeliveryOutcomeRepositoryPort["reserve"]>().mockResolvedValue({
+      dispatchAllowed: true,
+      emailAllowed: true,
+      reason: null,
+      newlyRecorded: true,
+    });
+    const service = new NotificationDeliveryAdmissionService({ reserve }, new NoopUsageLimitPolicy());
+    const admission = {
+      requestId: "request-1",
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      requestedEmailCount: 1,
+    };
+
+    await service.admit({ ...admission, recipientEmails: ["before@example.com"] });
+    await service.admit({ ...admission, recipientEmails: ["after@example.com"] });
+
+    const [first, retry] = reserve.mock.calls.map(([input]) => input);
+    expect(first.recipientDigest).not.toBe(retry.recipientDigest);
+    expect(first.recipientDigest).toMatch(/^[a-f0-9]{64}$/u);
+    expect(JSON.stringify(reserve.mock.calls)).not.toContain("@example.com");
   });
 });

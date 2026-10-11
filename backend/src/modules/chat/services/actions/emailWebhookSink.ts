@@ -109,6 +109,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       workspaceId: recipientContext.workspaceId,
       accountId: recipientContext.accountId,
       conversationId: recipientContext.conversationId,
+      recipientEmails: target.emails,
       requestedEmailCount: target.emails.length,
     });
     if (admission && !admission.dispatchAllowed) {

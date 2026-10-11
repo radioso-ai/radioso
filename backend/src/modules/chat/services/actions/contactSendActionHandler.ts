@@ -275,6 +275,7 @@ export class ContactSendActionHandler implements ActionHandler {
       workspaceId: input.context.workspaceId,
       accountId: input.context.accountId,
       conversationId: input.context.conversationId,
+      recipientEmails: target.emails,
       requestedEmailCount: target.emails.length,
     });
     if (admission && !admission.dispatchAllowed) {

@@ -13,6 +13,18 @@ const normalize = (emails: readonly string[]): string[] =>
 const hashes = (emails: readonly string[]): string[] =>
   emails.map((email) => createHash("sha256").update(email).digest("hex"));
 
+/**
+ * Stable, non-reversible identity for an admitted delivery recipient snapshot.
+ * It binds an idempotent action replay to both the normalized set and the
+ * recipient count without putting addresses into operational records.
+ */
+export const recipientEmailDeliveryDigest = (
+  emails: readonly string[],
+  recipientCount: number,
+): string => createHash("sha256")
+  .update(JSON.stringify({ recipientCount, recipients: normalize(emails) }))
+  .digest("hex");
+
 export const recipientEmailsFromDeliveryConfig = (config: Record<string, unknown>): string[] => {
   const delivery = config.delivery;
   if (!delivery || typeof delivery !== "object" || Array.isArray(delivery)) return [];

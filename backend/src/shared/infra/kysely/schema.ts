@@ -1021,6 +1021,7 @@ export interface NotificationDeliveryOutcomes {
   created_at: Generated<Timestamp>;
   daily_email_limit: number;
   outcome: string;
+  recipient_digest: string;
   request_id: string;
   requested_email_count: number;
   reserved_email_count: number;

@@ -120,7 +120,7 @@ export const createHttpServer = ({ authService, auditLogger, config, operatorMcp
           return;
         }
         case "agent_mcp": {
-          if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.trustedProxyHops) })) {
+          if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.signingSecret, config.trustedProxyHops) })) {
             writeJsonRpcError(res, 429, -32003, "Too many requests.", { code: "rate_limit_exceeded" });
             return;
           }
@@ -139,7 +139,7 @@ export const createHttpServer = ({ authService, auditLogger, config, operatorMcp
             writeJson(res, 404, { error: { code: "not_found", message: "Route not found." } });
             return;
           }
-          const sourceDigest = digestPeerSource(req, config.trustedProxyHops);
+          const sourceDigest = digestPeerSource(req, config.signingSecret, config.trustedProxyHops);
           if (operatorMcp.rateLimit && !await operatorMcp.rateLimit.consume({ sourceDigest })) {
             writeJson(res, 429, { error: { code: "rate_limit_exceeded", message: "Too many requests." } });
             return;
@@ -150,7 +150,7 @@ export const createHttpServer = ({ authService, auditLogger, config, operatorMcp
           return;
         }
         case "agent_walk_in_mcp": {
-          if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.trustedProxyHops) })) {
+          if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.signingSecret, config.trustedProxyHops) })) {
             writeJsonRpcError(res, 429, -32003, "Too many requests.", { code: "rate_limit_exceeded" });
             return;
           }
@@ -158,7 +158,7 @@ export const createHttpServer = ({ authService, auditLogger, config, operatorMcp
           return;
         }
         case "agent_server_card": {
-          if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.trustedProxyHops) })) {
+          if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.signingSecret, config.trustedProxyHops) })) {
             writeJson(res, 429, { error: { code: "rate_limit_exceeded", message: "Too many requests." } });
             return;
           }

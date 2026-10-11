@@ -63,7 +63,7 @@ export class LocalEmailDriver implements EmailDriver {
     if (sent.bodyHash !== bodyHash) {
       throw new EmailSendError("rejected", "idempotency_body_mismatch");
     }
-    return { dispatched: true, providerMessageId, deliveredMessageId: parseOrNull(sent.rfcMessageId) };
+    return { dispatched: true, driver: "local", providerMessageId, deliveredMessageId: parseOrNull(sent.rfcMessageId) };
   }
 
   async lookup(providerMessageId: string): Promise<SentEmailStatus | null> {

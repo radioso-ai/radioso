@@ -49,9 +49,25 @@ SELECT
     'exposedInputs', jsonb_build_object('message', TRUE, 'email', TRUE)
   ),
   'routine_named',
-  COALESCE((a.behavior_settings ->> 'contactRequestsEnabled')::boolean, FALSE)
+  COALESCE(
+    CASE
+      WHEN a.behavior_settings ->> 'contactRequestsEnabled' IS NULL
+      THEN (a.behavior_settings ->> 'contactRequestsEnabled')::boolean
+      WHEN a.behavior_settings ->> 'contactRequestsEnabled' ~* '^[[:space:]]*(t(r(u(e)?)?)?|f(a(l(s(e)?)?)?)?|y(e(s)?)?|n(o)?|on|of(f)?|1|0)[[:space:]]*$'
+      THEN (a.behavior_settings ->> 'contactRequestsEnabled')::boolean
+    END,
+    FALSE
+  )
 FROM agents a
-WHERE COALESCE((a.behavior_settings ->> 'contactRequestsEnabled')::boolean, FALSE) = TRUE
+WHERE COALESCE(
+  CASE
+    WHEN a.behavior_settings ->> 'contactRequestsEnabled' IS NULL
+    THEN (a.behavior_settings ->> 'contactRequestsEnabled')::boolean
+    WHEN a.behavior_settings ->> 'contactRequestsEnabled' ~* '^[[:space:]]*(t(r(u(e)?)?)?|f(a(l(s(e)?)?)?)?|y(e(s)?)?|n(o)?|on|of(f)?|1|0)[[:space:]]*$'
+    THEN (a.behavior_settings ->> 'contactRequestsEnabled')::boolean
+  END,
+  FALSE
+) = TRUE
 ON CONFLICT (agent_id, skill_name)
 DO UPDATE SET
   kind = 'notify',
@@ -75,7 +91,15 @@ WITH ranked_exports AS (
    AND wd.id::text = lower(ce.destination_ref)
   WHERE d.status = 'published'
     AND ce.enabled = TRUE
-    AND COALESCE((a.behavior_settings ->> 'webhookExportsEnabled')::boolean, FALSE) = TRUE
+    AND COALESCE(
+      CASE
+        WHEN a.behavior_settings ->> 'webhookExportsEnabled' IS NULL
+        THEN (a.behavior_settings ->> 'webhookExportsEnabled')::boolean
+        WHEN a.behavior_settings ->> 'webhookExportsEnabled' ~* '^[[:space:]]*(t(r(u(e)?)?)?|f(a(l(s(e)?)?)?)?|y(e(s)?)?|n(o)?|on|of(f)?|1|0)[[:space:]]*$'
+        THEN (a.behavior_settings ->> 'webhookExportsEnabled')::boolean
+      END,
+      FALSE
+    ) = TRUE
     AND NULLIF(BTRIM(ce.destination_ref), '') IS NOT NULL
   ORDER BY d.agent_id, d.updated_at DESC, ce.destination_ref ASC
 )

@@ -137,6 +137,7 @@ describe("mail service", () => {
 
     expect(result).toEqual({
       dispatched: true,
+      driver: "resend",
       providerMessageId: "01a101f5-b214-78b7-9004-18f685cb0238",
       deliveredMessageId: null,
     });
@@ -148,7 +149,7 @@ describe("mail service", () => {
 
     const result = await service.send({ to: "ada@example.com", subject: "Hi", text: "Hello" });
 
-    expect(result).toEqual({ dispatched: false, providerMessageId: null, deliveredMessageId: null });
+    expect(result).toEqual({ dispatched: false, driver: "log", providerMessageId: null, deliveredMessageId: null });
   });
 
   it("reports an undispatched message when the noop driver discards it", async () => {
@@ -156,7 +157,7 @@ describe("mail service", () => {
 
     const result = await service.send({ to: "ada@example.com", subject: "Hi", text: "Hello" });
 
-    expect(result).toEqual({ dispatched: false, providerMessageId: null, deliveredMessageId: null });
+    expect(result).toEqual({ dispatched: false, driver: "noop", providerMessageId: null, deliveredMessageId: null });
   });
 
   it("selects the log driver when no provider key is configured", async () => {
@@ -164,7 +165,7 @@ describe("mail service", () => {
     const service = createMailService({});
 
     expect(await service.send({ to: "ada@example.com", subject: "Hi", text: "Hello" }))
-      .toEqual({ dispatched: false, providerMessageId: null, deliveredMessageId: null });
+      .toEqual({ dispatched: false, driver: "log", providerMessageId: null, deliveredMessageId: null });
   });
 
   it("builds a Resend-backed service from environment configuration", () => {
@@ -330,7 +331,7 @@ describe("mail service", () => {
 
     const result = await driver.send(channelReply());
 
-    expect(result).toEqual({ dispatched: false, providerMessageId: null, deliveredMessageId: null });
+    expect(result).toEqual({ dispatched: false, driver: "log", providerMessageId: null, deliveredMessageId: null });
     const info = spies[0];
     expect(info).toHaveBeenCalledTimes(1);
     expect(info.mock.calls[0]).toEqual([
@@ -369,7 +370,7 @@ describe("mail service", () => {
 
     const result = await driver.send(channelReply());
 
-    expect(result).toEqual({ dispatched: false, providerMessageId: null, deliveredMessageId: null });
+    expect(result).toEqual({ dispatched: false, driver: "noop", providerMessageId: null, deliveredMessageId: null });
     for (const secret of Object.values(CHANNEL_REPLY_SECRETS)) {
       expect(everythingLogged(spies)).not.toContain(secret);
     }

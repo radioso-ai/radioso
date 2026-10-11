@@ -70,6 +70,13 @@ class InMemoryActionOutbox {
     return true;
   }
 
+  async markSkipped(id: string): Promise<boolean> {
+    const row = this.rows.get(id);
+    if (!row) return false;
+    row.status = "skipped";
+    return true;
+  }
+
   async recordFailure(id: string): Promise<ActionFailureOutcome> {
     const row = this.rows.get(id);
     if (row) {

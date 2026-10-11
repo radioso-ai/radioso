@@ -59,6 +59,8 @@ export interface EmailSendResult {
    * that rewrites the supplied id reports it only later, through `EmailDriver.lookup`.
    */
   deliveredMessageId: RfcMessageId | null;
+  /** The configured driver that produced this result, when the driver identifies itself. */
+  driver?: string;
 }
 
 /** A provider's latest delivery event for a sent message; `unknown` covers any it does not name. */
@@ -121,7 +123,7 @@ const undispatched = (): EmailSendResult => ({
 
 class NoopEmailDriver implements EmailDriver {
   async send(_message: EmailMessage): Promise<EmailSendResult> {
-    return undispatched();
+    return { ...undispatched(), driver: "noop" };
   }
 
   async lookup(_providerMessageId: string): Promise<SentEmailStatus | null> {
@@ -164,7 +166,7 @@ class LogEmailDriver implements EmailDriver {
   async send(message: EmailMessage): Promise<EmailSendResult> {
     if (message.kind === "channel_reply") {
       console.info("email.send", redactedChannelReply(message));
-      return undispatched();
+      return { ...undispatched(), driver: "log" };
     }
     console.info("email.send", {
       to: message.to,
@@ -175,7 +177,7 @@ class LogEmailDriver implements EmailDriver {
       metadata: redactSensitiveEmailMetadata(message.metadata),
       idempotencyKey: message.idempotencyKey ?? null,
     });
-    return undispatched();
+    return { ...undispatched(), driver: "log" };
   }
 
   async lookup(_providerMessageId: string): Promise<SentEmailStatus | null> {

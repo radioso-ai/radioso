@@ -13,7 +13,7 @@ const MCP_SESSION_HEADER = "mcp-session-id";
 
 interface WalkInRouteDependencies {
   authService: Pick<AuthService, "resolveWalkInSession" | "recordSuccessfulUse">;
-  config: Pick<RadiosoMcpConfig, "bindHost" | "bindPort" | "trustedProxyHops">;
+  config: Pick<RadiosoMcpConfig, "bindHost" | "bindPort" | "signingSecret" | "trustedProxyHops">;
   readiness?: RuntimeStoreReadiness;
   serverManager: SessionMcpServerManager;
 }
@@ -48,7 +48,7 @@ export const createWalkInRouteHandler = ({
       return;
     }
 
-    const sourceDigest = digestPeerSource(req, config.trustedProxyHops);
+    const sourceDigest = digestPeerSource(req, config.signingSecret, config.trustedProxyHops);
     const resolved = await authService.resolveWalkInSession({
       publicId,
       walkInKey: request.headers.get(MCP_SESSION_HEADER),

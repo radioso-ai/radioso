@@ -7,6 +7,7 @@ import type { Env } from "../../src/app/config/env.js";
 import { createTestApp } from "../support/testApp.js";
 
 const SECRET = "f".repeat(32);
+const SESSION_COOKIE_SECRET = "0123456789abcdef0123456789abcdef";
 const CLIENT_A = "203.0.113.10";
 const CLIENT_B = "203.0.113.11";
 const FORGED = "198.51.100.99";
@@ -74,8 +75,8 @@ describe("request-source keyed rate limits on hosted Cloud Run", () => {
 
     const subjectKeys = subjectKeysFor(enforce, "public.chat.session.exchange");
     expect(new Set(subjectKeys).size).toBe(2);
-    expect(subjectKeys.every((key) => key.endsWith(`:website_embed:source:${digestSourceAddress(CLIENT_A)}`)
-      || key.endsWith(`:website_embed:source:${digestSourceAddress(CLIENT_B)}`))).toBe(true);
+    expect(subjectKeys.every((key) => key.endsWith(`:website_embed:source:${digestSourceAddress(CLIENT_A, SESSION_COOKIE_SECRET)}`)
+      || key.endsWith(`:website_embed:source:${digestSourceAddress(CLIENT_B, SESSION_COOKIE_SECRET)}`))).toBe(true);
     expect(subjectKeys.join(" ")).not.toContain(CLIENT_A);
     expect(subjectKeys.join(" ")).not.toContain(CLIENT_B);
   });
@@ -94,7 +95,7 @@ describe("request-source keyed rate limits on hosted Cloud Run", () => {
 
     const subjectKeys = subjectKeysFor(enforce, "public.chat.session.exchange");
     expect(new Set(subjectKeys).size).toBe(2);
-    expect(subjectKeys.some((key) => key.endsWith(`:source:${digestSourceAddress(FRONTEND_EGRESS)}`))).toBe(false);
+    expect(subjectKeys.some((key) => key.endsWith(`:source:${digestSourceAddress(FRONTEND_EGRESS, SESSION_COOKIE_SECRET)}`))).toBe(false);
   });
 
   it("gives each caller its own source-keyed auth budget", async () => {
@@ -110,7 +111,7 @@ describe("request-source keyed rate limits on hosted Cloud Run", () => {
     expect((await confirmReset(CLIENT_B)).status).not.toBe(429);
 
     expect(new Set(subjectKeysFor(enforce, "auth.password_reset.confirm"))).toEqual(
-      new Set([digestSourceAddress(CLIENT_A), digestSourceAddress(CLIENT_B)]),
+      new Set([digestSourceAddress(CLIENT_A, SESSION_COOKIE_SECRET), digestSourceAddress(CLIENT_B, SESSION_COOKIE_SECRET)]),
     );
   });
 
@@ -128,10 +129,10 @@ describe("request-source keyed rate limits on hosted Cloud Run", () => {
     expect((await confirmReset(CLIENT_B)).status).not.toBe(429);
 
     expect(subjectKeysFor(enforce, "auth.password_reset.confirm")).toEqual([
-      digestSourceAddress(CLIENT_A),
-      digestSourceAddress(CLIENT_A),
-      digestSourceAddress(CLIENT_A),
-      digestSourceAddress(CLIENT_B),
+      digestSourceAddress(CLIENT_A, SESSION_COOKIE_SECRET),
+      digestSourceAddress(CLIENT_A, SESSION_COOKIE_SECRET),
+      digestSourceAddress(CLIENT_A, SESSION_COOKIE_SECRET),
+      digestSourceAddress(CLIENT_B, SESSION_COOKIE_SECRET),
     ]);
   });
 
@@ -161,10 +162,10 @@ describe("request-source keyed rate limits on hosted Cloud Run", () => {
       expect((await authorize(CLIENT_B)).status).not.toBe(429);
 
       expect(subjectKeysFor(enforce, "api.operator_mcp_oauth_authorize")).toEqual([
-        `source:${digestSourceAddress(CLIENT_A)}`,
-        `source:${digestSourceAddress(CLIENT_A)}`,
-        `source:${digestSourceAddress(CLIENT_A)}`,
-        `source:${digestSourceAddress(CLIENT_B)}`,
+        `source:${digestSourceAddress(CLIENT_A, SESSION_COOKIE_SECRET)}`,
+        `source:${digestSourceAddress(CLIENT_A, SESSION_COOKIE_SECRET)}`,
+        `source:${digestSourceAddress(CLIENT_A, SESSION_COOKIE_SECRET)}`,
+        `source:${digestSourceAddress(CLIENT_B, SESSION_COOKIE_SECRET)}`,
       ]);
     });
 
@@ -179,7 +180,7 @@ describe("request-source keyed rate limits on hosted Cloud Run", () => {
       expect((await authorize("198.51.100.2")).status).toBe(429);
 
       expect(new Set(subjectKeysFor(enforce, "api.operator_mcp_oauth_authorize"))).toEqual(
-        new Set([`source:${digestSourceAddress(CLIENT_A)}`]),
+        new Set([`source:${digestSourceAddress(CLIENT_A, SESSION_COOKIE_SECRET)}`]),
       );
     });
 
@@ -189,7 +190,7 @@ describe("request-source keyed rate limits on hosted Cloud Run", () => {
       await request(app).get(OPERATOR_MCP_AUTHORIZE_PATH).set("X-Forwarded-For", direct(CLIENT_A));
 
       expect(subjectKeysFor(enforce, "api.operator_mcp_oauth_authorize")).toEqual([
-        `source:${digestSourceAddress(CLIENT_A)}`,
+        `source:${digestSourceAddress(CLIENT_A, SESSION_COOKIE_SECRET)}`,
       ]);
     });
 
@@ -205,8 +206,8 @@ describe("request-source keyed rate limits on hosted Cloud Run", () => {
       expect((await readCard(CLIENT_B)).status).not.toBe(429);
 
       expect(new Set(subjectKeysFor(enforce, "api.agent_discovery_document"))).toEqual(new Set([
-        `source:${digestSourceAddress(CLIENT_A)}`,
-        `source:${digestSourceAddress(CLIENT_B)}`,
+        `source:${digestSourceAddress(CLIENT_A, SESSION_COOKIE_SECRET)}`,
+        `source:${digestSourceAddress(CLIENT_B, SESSION_COOKIE_SECRET)}`,
       ]));
     });
   });

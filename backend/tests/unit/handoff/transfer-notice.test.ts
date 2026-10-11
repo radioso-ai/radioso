@@ -274,7 +274,7 @@ describe("ConversationTransferNoticeActionHandler", () => {
 });
 
 describe("transfer notice through the action worker", () => {
-  it("delivers the notice a transfer queued", async () => {
+  it("marks the notice skipped when its configured mail driver does not dispatch", async () => {
     const queued: ActionRequestRecord[] = [];
     const outbox = {
       enqueue: vi.fn(async (input: NonNullable<ReturnType<typeof transferNoticeRequest>>) => {
@@ -294,9 +294,10 @@ describe("transfer notice through the action worker", () => {
       }),
       claimPending: vi.fn(async () => queued.splice(0)),
       markDispatched: vi.fn(async () => true),
+      markSkipped: vi.fn(async () => true),
       recordFailure: vi.fn(async () => "failed" as const),
     };
-    const mail = { send: vi.fn<SendMail>(async () => ({ dispatched: true })) };
+    const mail = { send: vi.fn<SendMail>(async () => ({ dispatched: false, driver: "log" })) };
     const handler = new ConversationTransferNoticeActionHandler({
       users: { findById: async (userId: string) => (userId === "user-fox" ? { email: "fox@example.com" } : { email: "dana@example.com" }) },
       workspaces: { findById: async () => ({ name: "Support", accountId: "account-1" }) },
@@ -318,8 +319,9 @@ describe("transfer notice through the action worker", () => {
     await outbox.enqueue(transferNoticeRequest(transfer)!);
     const outcome = await worker.dispatchPending();
 
-    expect(outcome).toEqual({ dispatched: 1, retried: 0, failed: 0 });
+    expect(outcome).toEqual({ dispatched: 0, retried: 0, failed: 0, skipped: 1 });
     expect(mail.send).toHaveBeenCalledWith(expect.objectContaining({ to: "fox@example.com", kind: "conversation_transfer" }));
-    expect(outbox.markDispatched).toHaveBeenCalledWith("request-1", 1);
+    expect(outbox.markSkipped).toHaveBeenCalledWith("request-1", "mail_not_dispatched:driver=log", 1);
+    expect(outbox.markDispatched).not.toHaveBeenCalled();
   });
 });

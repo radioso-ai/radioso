@@ -97,13 +97,13 @@ export class ResendEmailDriver implements EmailDriver {
       });
     } catch (error) {
       if (isUnreadableAcceptance(error)) {
-        return { dispatched: true, providerMessageId: null, deliveredMessageId: null };
+        return { dispatched: true, driver: "resend", providerMessageId: null, deliveredMessageId: null };
       }
       throw error instanceof ResendApiError ? new ResendEmailDeliveryError(error) : error;
     }
     // Resend replaces the supplied Message-ID (research A7), so the delivered id is only known
     // once the message is handed on, through `lookup`.
-    return { dispatched: true, providerMessageId: emailIdOf(payload), deliveredMessageId: null };
+    return { dispatched: true, driver: "resend", providerMessageId: emailIdOf(payload), deliveredMessageId: null };
   }
 
   async lookup(providerMessageId: string): Promise<SentEmailStatus | null> {

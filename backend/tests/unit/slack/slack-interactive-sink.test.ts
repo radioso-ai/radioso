@@ -204,6 +204,27 @@ describe("SlackOperatorNotificationSink", () => {
     expect(enqueued).toHaveLength(0);
   });
 
+  it("marks the notification skipped when log mail and an unconfigured Slack sink deliver nothing", async () => {
+    const mailer: ContactNotificationMailer = {
+      send: vi.fn(async () => ({ dispatched: false, driver: "log" })),
+    };
+    const email = new EmailWebhookOperatorNotificationSink(mailer, {
+      resolve: async () => ({
+        emails: ["operator@example.com"],
+        webhook: null,
+        via: "agent_setting",
+        recipientsFromWorkspaceOwner: false,
+      }),
+    });
+    const { sink: slack, enqueued } = createSink({ installation: null });
+    const dispatcher = new OperatorNotificationDispatcher([email, slack]);
+
+    await expect(dispatcher.dispatch(notification, { requestId: "request_1" }))
+      .rejects.toThrow("mail_not_dispatched:driver=log");
+
+    expect(enqueued).toHaveLength(0);
+  });
+
   it("skips Slack when the pending decision is missing or no longer pending", async () => {
     const missing = createSink({ decision: null });
     await missing.sink.deliver(notification, { requestId: "request_1" });

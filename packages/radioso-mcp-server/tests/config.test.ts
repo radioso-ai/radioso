@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { loadConfig, type RadiosoMcpConfig } from "../src/config.js";
+import { loadConfig as loadConfigFromEnv, type RadiosoMcpConfig } from "../src/config.js";
+
+const SIGNING_SECRET = "0123456789abcdef0123456789abcdef";
+const loadConfig = (env: Record<string, string | undefined>) =>
+  loadConfigFromEnv({ RADIOSO_MCP_SIGNING_SECRET: SIGNING_SECRET, ...env });
 
 describe("loadConfig", () => {
   it("keeps operatorMcp optional for programmatic legacy configurations", () => {
@@ -11,6 +15,7 @@ describe("loadConfig", () => {
       redisKeyPrefix: "radioso-mcp",
       requestTimeoutMs: 30_000,
       serverName: "radioso-context",
+      signingSecret: SIGNING_SECRET,
       trustedProxyHops: 0,
     };
 
@@ -36,7 +41,7 @@ describe("loadConfig", () => {
       redisUrl: undefined,
       requestTimeoutMs: 15000,
       serverName: "radioso-test",
-      signingSecret: undefined,
+      signingSecret: SIGNING_SECRET,
       operatorMcp: { enabled: false },
       trustedProxyHops: 0,
     });
@@ -112,12 +117,12 @@ describe("loadConfig", () => {
     }).operatorMcp).toMatchObject({ internalSecret });
   });
 
-  it("does not require a signing secret for one standalone process with in-memory sessions", () => {
-    expect(() => loadConfig({ RADIOSO_BASE_URL: "http://localhost:8080" })).not.toThrow();
+  it("allows a missing signing secret for one standalone process with in-memory sessions", () => {
+    expect(loadConfigFromEnv({ RADIOSO_BASE_URL: "http://localhost:8080" }).signingSecret).toBeUndefined();
   });
 
   it("requires a signing secret when Redis persists encrypted backend sessions", () => {
-    expect(() => loadConfig({
+    expect(() => loadConfigFromEnv({
       RADIOSO_BASE_URL: "http://localhost:8080",
       RADIOSO_MCP_REDIS_URL: "redis://localhost:6379",
     })).toThrow(/RADIOSO_MCP_SIGNING_SECRET/i);

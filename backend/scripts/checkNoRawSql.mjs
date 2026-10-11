@@ -14,6 +14,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 export const ALLOWLIST = new Set([
   "db/runMigrations.ts", // migration runner: migrations stay raw .sql by design
@@ -31,10 +32,37 @@ export const ALLOWLIST = new Set([
   "modules/connectors/plugins/whatsapp/whatsappPlugin.ts",
 ]);
 
+// pgvector syntax in a Kysely `sql` template is a storage-adapter concern, just as a
+// raw pg `.query()` is. Keep it in these adapter homes rather than allowing a
+// repository or service to make a database-specific vector assumption.
+export const PGVECTOR_SQL_ALLOWLIST = new Set([
+  "db/repositories/chunkEmbeddingRepository.ts", // canonical pgvector batch writer; vector write lifecycle stays with canonical storage
+  "db/repositories/vectorIndexWorkRepository.ts", // canonical pgvector projection payload reader; hydration stays with canonical storage
+  "modules/retrieval/infra/chunkEmbeddingVectorIndex.ts", // pgvector HNSW DDL and matching distance expression
+  "modules/retrieval/infra/hnswIterativeScan.ts", // pgvector HNSW session settings
+  "modules/retrieval/infra/pgVectorAdapter.ts", // canonical pgvector candidate-search adapter
+  "shared/infra/kysely/pgVectorSql.ts", // shared Kysely pgvector cast and distance adapter
+]);
+
 // `.query(`, `.queryOne(`, `.queryOptional(` — incl. a `<T>` type arg. Kysely builders expose none.
 const RAW_SQL_MARKER = /\.(query|queryOne|queryOptional)\s*(<[^>]*>)?\s*\(/;
 
 export const lineHasRawSql = (line) => RAW_SQL_MARKER.test(line);
+
+const PGVECTOR_SQL_SYNTAX = /::\s*(?:vector|halfvec)\b|\b[\w.]*embedding[\w.]*\s*::\s*text\b|<=>|<->|<#>|\bvector_dims\s*\(|\b(?:hnsw|ivfflat)\b/i;
+
+const literalText = (node) => {
+  if (
+    ts.isStringLiteral(node)
+    || ts.isNoSubstitutionTemplateLiteral(node)
+    || ts.isTemplateHead(node)
+    || ts.isTemplateMiddle(node)
+    || ts.isTemplateTail(node)
+  ) {
+    return node.text;
+  }
+  return null;
+};
 
 export const findRawSqlViolations = (srcDir) => {
   const offenders = [];
@@ -59,15 +87,51 @@ export const findRawSqlViolations = (srcDir) => {
   return offenders;
 };
 
+export const findPgVectorSqlViolations = (srcDir) => {
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.endsWith(".ts")) continue;
+      const rel = relative(srcDir, full).split("\\").join("/");
+      if (PGVECTOR_SQL_ALLOWLIST.has(rel)) continue;
+      const source = readFileSync(full, "utf8");
+      const sourceFile = ts.createSourceFile(full, source, ts.ScriptTarget.Latest, true);
+      const visit = (node) => {
+        const text = literalText(node);
+        if (text !== null && PGVECTOR_SQL_SYNTAX.test(text)) {
+          const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+          offenders.push(`${rel}:${line + 1}: ${text.replace(/\s+/g, " ").trim()}`);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sourceFile);
+    }
+  };
+  walk(srcDir);
+  return offenders;
+};
+
 // CLI entry (skipped when imported by the fixture test).
 if (import.meta.url === `file://${process.argv[1]}`) {
   const srcDir = fileURLToPath(new URL("../src", import.meta.url));
   const offenders = findRawSqlViolations(srcDir);
-  if (offenders.length > 0) {
-    console.error("✖ Raw SQL execution found outside the Kysely allowlist (spec 093):");
+  const pgvectorOffenders = findPgVectorSqlViolations(srcDir);
+  if (offenders.length > 0 || pgvectorOffenders.length > 0) {
+    if (offenders.length > 0) {
+      console.error("✖ Raw SQL execution found outside the Kysely allowlist (spec 093):");
+    }
     for (const o of offenders) console.error("  " + o);
+    if (pgvectorOffenders.length > 0) {
+      console.error("✖ pgvector SQL found outside the vector-adapter allowlist:");
+    }
+    for (const o of pgvectorOffenders) console.error("  " + o);
     console.error(
-      `\n${offenders.length} violation(s). Migrate to Kysely, or — if genuinely raw (pgvector/FTS/migration/published connector contract) — add the file to ALLOWLIST in scripts/checkNoRawSql.mjs with a justifying comment.`,
+      `\n${offenders.length + pgvectorOffenders.length} violation(s). Migrate raw execution to Kysely and pgvector fragments to shared/infra/kysely/pgVectorSql.ts, or add a genuine vector storage adapter file to its allowlist with a justifying comment.`,
     );
     process.exit(1);
   }

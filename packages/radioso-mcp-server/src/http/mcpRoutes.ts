@@ -8,7 +8,7 @@ import { createMcpRequestHandler } from "./requestHandler.js";
 import type { RuntimeStoreReadiness } from "../state/runtimeStores.js";
 import { digestPeerSource } from "./preAuthSourceBudget.js";
 
-export interface McpRouteDependencies extends SessionServerManagerDependencies {
+interface McpRouteDependencies extends SessionServerManagerDependencies {
   authService: AuthService;
   readiness?: RuntimeStoreReadiness;
   serverManager: SessionMcpServerManager;
@@ -29,7 +29,7 @@ export const createMcpRouteHandler = ({
   const middleware = createExpressMcpMiddleware(handler, {
     fallbackHost: `${config.bindHost}:${config.bindPort}`,
     onSuccessfulResponse: (session, sourceDigest) => authService.recordSuccessfulUse(session, sourceDigest),
-    sourceDigest: (req) => digestPeerSource(req, config.trustedProxyHops),
+    sourceDigest: (req) => digestPeerSource(req, config.signingSecret, config.trustedProxyHops),
   });
 
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { digestSourceAddress } from "@radioso/mcp-source-proof";
 
 import { createAuthService } from "../src/auth/authService.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
@@ -13,6 +14,7 @@ const config = {
   redisKeyPrefix: "radioso-mcp",
   requestTimeoutMs: 1_000,
   serverName: "radioso-test",
+  signingSecret: "0123456789abcdef0123456789abcdef",
   trustedProxyHops: 0,
 };
 
@@ -86,7 +88,10 @@ describe("standalone MCP pre-authentication controls", () => {
     await call("198.51.100.99, 203.0.113.8");
 
     const sourceDigests = consume.mock.calls.map(([input]) => (input as { sourceDigest: string }).sourceDigest);
-    expect(new Set(sourceDigests).size).toBe(2);
+    expect(sourceDigests).toEqual([
+      digestSourceAddress("203.0.113.7", config.signingSecret),
+      digestSourceAddress("203.0.113.8", config.signingSecret),
+    ]);
     expect(sourceDigests.join(" ")).not.toContain("203.0.113.7");
   });
 

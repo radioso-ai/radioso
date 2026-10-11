@@ -17,6 +17,7 @@ import { createRequestSourceMiddleware } from "../../src/app/http/middleware/req
 
 const EDGE_SECRET = "e".repeat(32);
 const MCP_SECRET = "m".repeat(32);
+const SESSION_COOKIE_SECRET = "s".repeat(32);
 const PATH = "/limited";
 const CLIENT = "203.0.113.10";
 const FORGED = "198.51.100.99";
@@ -40,6 +41,8 @@ const createLimitedApp = (options: {
       env: {
         RADIOSO_TRUSTED_PROXY_HOPS: options.requestSource.trustedProxyHops,
         RADIOSO_EDGE_PROOF_SECRET: options.requestSource.edgeProofSecret,
+        RADIOSO_MCP_SIGNING_SECRET: options.mcpSigningSecret,
+        SESSION_COOKIE_SECRET,
       },
       metricsRegistry: null,
     }));
@@ -77,7 +80,7 @@ const mcpSourceProofFor = (address: string): Record<string, string> => {
     method: "GET",
     path: PATH,
     secret: MCP_SECRET,
-    sourceDigest: digestSourceAddress(address),
+    sourceDigest: digestSourceAddress(address, MCP_SECRET),
   });
   return {
     [MCP_SOURCE_PROOF_HEADERS.digest]: proof.sourceDigest,
@@ -101,8 +104,8 @@ describe("pre-auth source rate limiter", () => {
       .set("X-Forwarded-For", `${CLIENT}, ${FRONTEND_EGRESS}`)
       .expect(200) as { body: Observed };
 
-    expect(subjectKeys(enforce)).toEqual([`source:${digestSourceAddress(CLIENT)}`]);
-    expect(body.sourceDigest).toBe(digestSourceAddress(CLIENT));
+    expect(subjectKeys(enforce)).toEqual([`source:${digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET)}`]);
+    expect(body.sourceDigest).toBe(digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET));
   });
 
   it("prefers a verified MCP source proof over a verified edge envelope", async () => {
@@ -118,7 +121,7 @@ describe("pre-auth source rate limiter", () => {
       .set("X-Forwarded-For", `${CLIENT}, ${FRONTEND_EGRESS}`)
       .expect(200);
 
-    expect(subjectKeys(enforce)).toEqual([`source:${digestSourceAddress(MCP_CALLER)}`]);
+    expect(subjectKeys(enforce)).toEqual([`source:${digestSourceAddress(MCP_CALLER, MCP_SECRET)}`]);
   });
 
   it("ignores an MCP source proof when no signing secret is configured", async () => {
@@ -132,7 +135,7 @@ describe("pre-auth source rate limiter", () => {
       .set("X-Forwarded-For", `${FORGED}, ${CLIENT}`)
       .expect(200);
 
-    expect(subjectKeys(enforce)).toEqual([`source:${digestSourceAddress(CLIENT)}`]);
+    expect(subjectKeys(enforce)).toEqual([`source:${digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET)}`]);
   });
 
   // A deploy must not reset a direct caller's budget: with no envelope in play, the key is
@@ -159,6 +162,7 @@ describe("pre-auth source rate limiter", () => {
 
     const previousDigest = resolveSourceDigest({
       forwardedFor: body.forwardedFor ?? undefined,
+      secret: SESSION_COOKIE_SECRET,
       socketAddress: body.socketAddress,
       trustedProxyHops: testCase.hops,
     });
@@ -174,6 +178,7 @@ describe("pre-auth source rate limiter", () => {
       .expect(200) as { body: Observed };
 
     expect(body.socketAddress).toBeTruthy();
-    expect(subjectKeys(enforce)).toEqual([`source:${digestSourceAddress(body.socketAddress ?? "")}`]);
+    expect(subjectKeys(enforce)).toHaveLength(1);
+    expect(subjectKeys(enforce)[0]).toMatch(/^source:[A-Za-z0-9_-]{43}$/u);
   });
 });

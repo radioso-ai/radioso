@@ -14,6 +14,8 @@ import { resolveRequestSourceAddress } from "../../src/shared/domain/requestSour
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 
 const SECRET = "a".repeat(32);
+const MCP_SIGNING_SECRET = "m".repeat(32);
+const SESSION_COOKIE_SECRET = "s".repeat(32);
 const METHOD = "POST";
 const PATH = "/api/v1/public/chat/token123/sessions";
 const NOW = new Date("2026-09-28T00:00:00.000Z");
@@ -187,16 +189,24 @@ describe("readRequestSource", () => {
     } as unknown as Request;
     const res = { locals: {} } as unknown as Response;
 
-    expect(readRequestSource(req, res)).toEqual({ address: SOCKET, digest: digestSourceAddress(SOCKET) });
+    expect(readRequestSource(req, res, SESSION_COOKIE_SECRET)).toEqual({ address: SOCKET, digest: digestSourceAddress(SOCKET, SESSION_COOKIE_SECRET) });
     expect(readPublishedEdgeFactsEnvelope(res)).toBeUndefined();
   });
 });
 
 describe("createRequestSourceMiddleware", () => {
-  const createEchoApp = (metricsRegistry: MetricsRegistry, options: { secret: string | undefined } = { secret: SECRET }) => {
+  const createEchoApp = (
+    metricsRegistry: MetricsRegistry,
+    options: { secret: string | undefined; signingSecret?: string } = { secret: SECRET },
+  ) => {
     const app = express();
     app.use(createRequestSourceMiddleware({
-      env: { RADIOSO_TRUSTED_PROXY_HOPS: HOSTED_HOPS, RADIOSO_EDGE_PROOF_SECRET: options.secret },
+      env: {
+        RADIOSO_TRUSTED_PROXY_HOPS: HOSTED_HOPS,
+        RADIOSO_EDGE_PROOF_SECRET: options.secret,
+        RADIOSO_MCP_SIGNING_SECRET: options.signingSecret,
+        SESSION_COOKIE_SECRET,
+      },
       metricsRegistry,
     }));
     app.post(PATH, (req, res) => {
@@ -228,7 +238,7 @@ describe("createRequestSourceMiddleware", () => {
       .expect(200);
 
     expect(tamperedResponse.body).toEqual({
-      source: { address: CLIENT, digest: digestSourceAddress(CLIENT) },
+      source: { address: CLIENT, digest: digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET) },
       envelopeStatus: "rejected",
     });
     const rendered = metricsRegistry.renderPrometheus();
@@ -236,6 +246,19 @@ describe("createRequestSourceMiddleware", () => {
     expect(rendered).toContain('radioso_edge_facts_proof_rejected_total{reason="missing"} 1');
     expect(rendered).not.toContain(CLIENT);
     expect(rendered).not.toContain(FORGED);
+  });
+
+  it("keys persisted source subjects with the configured MCP signing secret", async () => {
+    const metricsRegistry = new MetricsRegistry();
+    const app = createEchoApp(metricsRegistry, { secret: SECRET, signingSecret: MCP_SIGNING_SECRET });
+
+    const response = await request(app)
+      .post(PATH)
+      .set("X-Forwarded-For", CLIENT)
+      .expect(200);
+
+    expect(response.body.source.digest).toBe(digestSourceAddress(CLIENT, MCP_SIGNING_SECRET));
+    expect(response.body.source.digest).not.toBe(digestSourceAddress(CLIENT, SECRET));
   });
 
   it("leaves the rejection counter alone for a verified envelope and for a request with no edge marker", async () => {
@@ -253,11 +276,11 @@ describe("createRequestSourceMiddleware", () => {
       .expect(200);
 
     expect(verifiedResponse.body).toEqual({
-      source: { address: CLIENT, digest: digestSourceAddress(CLIENT) },
+      source: { address: CLIENT, digest: digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET) },
       envelopeStatus: "verified",
     });
     expect(directResponse.body).toEqual({
-      source: { address: CLIENT, digest: digestSourceAddress(CLIENT) },
+      source: { address: CLIENT, digest: digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET) },
       envelopeStatus: "absent",
     });
     expect(metricsRegistry.renderPrometheus()).not.toContain("edge_facts_proof_rejected_total");
@@ -274,7 +297,7 @@ describe("createRequestSourceMiddleware", () => {
       .expect(200);
 
     expect(response.body).toEqual({
-      source: { address: FRONTEND_EGRESS, digest: digestSourceAddress(FRONTEND_EGRESS) },
+      source: { address: FRONTEND_EGRESS, digest: digestSourceAddress(FRONTEND_EGRESS, SESSION_COOKIE_SECRET) },
       envelopeStatus: "rejected",
     });
     expect(metricsRegistry.renderPrometheus()).not.toContain("edge_facts_proof_rejected_total");
@@ -290,7 +313,7 @@ describe("createRequestSourceMiddleware", () => {
       .expect(200) as { body: { source: { address: string; digest: string } } };
 
     expect(body.source.address).toBe(client);
-    expect(body.source.digest).toBe(digestSourceAddress("2001:db8:1:2::1"));
-    expect(body.source.digest).not.toBe(digestSourceAddress("2001:db8:1:3::1"));
+    expect(body.source.digest).toBe(digestSourceAddress("2001:db8:1:2::1", SESSION_COOKIE_SECRET));
+    expect(body.source.digest).not.toBe(digestSourceAddress("2001:db8:1:3::1", SESSION_COOKIE_SECRET));
   });
 });

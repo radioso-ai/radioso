@@ -658,7 +658,6 @@
   "types|packages/radioso-docs-importer/src/readme/buildReadmeDocuments.ts|BuildReadmeDocumentsOptions",
   "types|packages/radioso-mcp-server/src/audit/auditLogger.ts|AuditOutcome",
   "types|packages/radioso-mcp-server/src/http/expressAdapter.ts|ExpressLikeMcpMiddleware",
-  "types|packages/radioso-mcp-server/src/http/mcpRoutes.ts|McpRouteDependencies",
   "types|packages/radioso-mcp-server/src/tools/common.ts|MetadataRecord",
   "types|typescript-sdk/src/core/errors.ts|RadiosoErrorShape",
   "types|typescript-sdk/src/resources/bundle.ts|AgentBundleResource",

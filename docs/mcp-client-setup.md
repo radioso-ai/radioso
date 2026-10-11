@@ -1,7 +1,7 @@
 ---
 title: "MCP Client Setup"
 description: "Connect an MCP client either to one Radioso agent or to Ray's governed operator tools."
-last_updated: 2026-09-28
+last_updated: 2026-10-11
 ---
 
 # MCP Client Setup
@@ -310,7 +310,7 @@ The exchange is rate limited before credential lookup. A source bucket runs firs
 
 Run `packages/radioso-mcp-server` as a separate HTTP process. Give its `/mcp` endpoint the original MCP credential; it performs the exchange internally. Each process may cache short-lived backend session tokens in memory. Redis is optional when you want that cache shared across standalone instances.
 
-For a Terraform-managed Cloud Run deployment, set `radioso_mcp_enabled = true`. Terraform starts a separate public MCP service from the production backend image and publishes its `/mcp` endpoint as the `mcp_url` output; the dashboard reads that address at runtime. Terraform also shares a generated `RADIOSO_MCP_SIGNING_SECRET` between MCP and the backend and sets `RADIOSO_TRUSTED_PROXY_HOPS=1`, matching the single address Cloud Run appends for the connecting client. Earlier caller-supplied forwarding values cannot choose the source budget. For manual deployments, keep the hop count at `0` unless you control the exact rightmost proxy chain.
+For a Terraform-managed Cloud Run deployment, set `radioso_mcp_enabled = true`. Terraform starts a separate public MCP service from the production backend image and publishes its `/mcp` endpoint as the `mcp_url` output; the dashboard reads that address at runtime. Terraform also shares a generated `RADIOSO_MCP_SIGNING_SECRET` between MCP and the backend and sets `RADIOSO_TRUSTED_PROXY_HOPS=1`, matching the single address Cloud Run appends for the connecting client. Earlier caller-supplied forwarding values cannot choose the source budget. For a manual deployment, set the same at-least-32-character random secret on MCP and the backend; it is required whenever standalone MCP runs. Keep the hop count at `0` unless you control the exact rightmost proxy chain. Deploying a new secret changes every persisted source-budget digest, so each source starts a new budget window.
 
 The service shares the deployment's `backend_max_instances` cap, so malformed public requests cannot pin the only MCP process. Cloud Run may scale the MCP process to zero. On its next request, the client presents the original credential again, the process exchanges it again, and the backend resumes the conversation mapped to that credential's current version in PostgreSQL. Rotating the credential starts a separate conversation. A Redis-backed cache uses the signing secret to encrypt stored backend session tokens.
 
@@ -375,7 +375,7 @@ Point an MCP client at that URL and send no `Authorization` header. The server e
 }
 ```
 
-Each connection gets its own conversation. The server names it in the `Mcp-Session-Id` response header on the first reply; a client that echoes that header on later requests continues the same conversation, and one that drops it starts a new one each call. Most MCP clients handle this for you. The handle is signed and bound to the agent and to the calling source, so one a client invents, or one replayed from somewhere else, names nothing and opens a fresh conversation instead. Self-hosted deployments set `RADIOSO_MCP_SIGNING_SECRET` for this; without it every walk-in call gets a new conversation.
+Each connection gets its own conversation. The server names it in the `Mcp-Session-Id` response header on the first reply; a client that echoes that header on later requests continues the same conversation, and one that drops it starts a new one each call. Most MCP clients handle this for you. The handle is signed and bound to the agent and to the calling source, so one a client invents, or one replayed from somewhere else, names nothing and opens a fresh conversation instead. Standalone MCP requires `RADIOSO_MCP_SIGNING_SECRET` to keep these bindings and source budgets consistent with the backend.
 
 The public id is a routing key, not a secret — it appears in the agent card, in the embed's page markup, and in whatever config the caller saves. It grants exactly what the operator has published: a conversation with that one agent. Rotating it from the dashboard, or turning walk-in access off, refuses the next request on every connection opened against it.
 

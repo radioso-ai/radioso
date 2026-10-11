@@ -14,6 +14,74 @@ const pendingDecisions = [
   { agentId: defaultAgentId, handle: "decision-3", conversationId: "conv-3", reason: "Policy exception", createdAt: nowIso },
 ] as never;
 
+test("Settings leads to Members and the labeled navigation controls remain discoverable", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/account/users", async (route) => {
+    await route.fulfill({
+      json: {
+        accountId: "account-1",
+        currentUserId: "user-1",
+        users: [{
+          membershipId: "membership-1",
+          userId: "user-1",
+          email: "operator@example.com",
+          displayName: null,
+          role: "admin",
+          status: "active",
+          createdAt: nowIso,
+        }],
+        invitations: [],
+        workspaceGrants: [],
+      },
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/knowledge`);
+
+  const sidebar = page.locator('[data-slot="sidebar-container"]');
+  await expect(sidebar.getByRole("link", { name: "Agents", exact: true })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Knowledge Base", exact: true })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+
+  const workspaceSwitcher = sidebar.getByRole("button", { name: /Radioso Test/ });
+  await expect(workspaceSwitcher).toBeVisible();
+  await workspaceSwitcher.click();
+  await expect(page.getByRole("menuitem", { name: "Default", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await expect(sidebar.getByRole("button", { name: /operator@example\.com/ })).toBeVisible();
+
+  await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Manage members", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Manage members", exact: true }).click();
+  await expect(page).toHaveURL(/\/account(?:$|\?)/);
+  await expect(page.getByRole("heading", { name: "Members", level: 1 })).toBeVisible();
+  await expect(page.getByRole("table").getByText("operator@example.com", { exact: true })).toBeVisible();
+});
+
+test("Settings hides member management from organization members", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/account/accounts", async (route) => {
+    await route.fulfill({
+      json: {
+        accounts: [{
+          accountId: "account-1",
+          organizationName: "Radioso Test",
+          role: "member",
+          status: "active",
+        }],
+      },
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/settings`);
+
+  await expect(page.getByText("Only owners and admins can rename the organization.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Manage members", exact: true })).toHaveCount(0);
+});
+
 test("active section's sub-nav nests inline in the rail; other sections stay collapsed", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);

@@ -381,7 +381,7 @@ export interface ApprovalResumeEffectDecisions {
 export interface ApprovalResumeEffects {
   completed_at: Timestamp | null;
   created_at: Generated<Timestamp>;
-  input_digest: Generated<string>;
+  input_digest: string;
   occurrence_ordinal: number;
   pending_decision_id: string;
   result: Json | null;

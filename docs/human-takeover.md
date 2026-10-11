@@ -461,6 +461,8 @@ honors the key can collapse the retry; Radioso does not fail closed for an inter
 because its outcome is unknowable. Once an external effect has started, the pending
 decision is bound to its chosen option and payload; a different option or payload returns
 `409` rather than changing the decision after an effect may have happened.
+Journal rows that survive an unsuccessful resume are retained for 30 days, then the worker's
+periodic retention sweep removes them.
 The same transaction records the teammate who decided and the option they chose
 as an `approval_decided` [activity](#conversation-activity) event.
 

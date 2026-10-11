@@ -9,6 +9,14 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.17.1] - 2026-10-11
+
+### Fixed
+
+- **email-channel:** start with the channel off when its settings are incomplete ([`32f35a6`](https://github.com/radioso-ai/radioso/commit/32f35a66953993da7f4991078120a88bcfc4b6da))
+
+[1.17.1]: https://github.com/radioso-ai/radioso/compare/v1.17.0...v1.17.1
+
 ## [1.17.0] - 2026-10-11
 
 ### Added

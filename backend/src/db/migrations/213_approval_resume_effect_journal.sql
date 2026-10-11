@@ -13,12 +13,13 @@ CREATE TABLE approval_resume_effects (
   routine_id TEXT NOT NULL,
   step_id TEXT NOT NULL,
   occurrence_ordinal INTEGER NOT NULL CHECK (occurrence_ordinal > 0),
+  input_digest TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('started', 'completed')),
   result JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at TIMESTAMPTZ,
-  PRIMARY KEY (pending_decision_id, routine_id, step_id, occurrence_ordinal),
+  PRIMARY KEY (pending_decision_id, routine_id, step_id, occurrence_ordinal, input_digest),
   CHECK ((status = 'started' AND result IS NULL AND completed_at IS NULL)
     OR (status = 'completed' AND result IS NOT NULL AND completed_at IS NOT NULL))
 );

@@ -97,6 +97,7 @@ import {
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
+import { ApprovalResumeEffectJournalRepository } from "../../db/repositories/approvalResumeEffectJournalRepository.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
@@ -1101,6 +1102,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     retentionDays: env.AGENT_TEST_EXECUTION_RETENTION_DAYS,
   });
+  const approvalResumeEffectJournalRetentionWorker = new TtlRetentionWorker({
+    subject: "approval_resume_effect_journal",
+    sweep: new ApprovalResumeEffectJournalRepository(infrastructure.database.kysely),
+    audit: infrastructure.auditService,
+    logger,
+    retentionDays: 30,
+  });
   // Slack event ids exist only to deduplicate redelivery; channel subscriptions write one per
   // message in every joined channel, so the ledger is swept on the same timer machinery.
   const slackInboundEventRetentionWorker = new TtlRetentionWorker({
@@ -1327,6 +1335,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     operatorCopilotService,
     copilotRetentionWorker,
     testExecutionRetentionWorker,
+    approvalResumeEffectJournalRetentionWorker,
     revisionEvalRunRetentionWorker,
     slackInboundEventRetentionWorker,
     copilotToolCatalog,

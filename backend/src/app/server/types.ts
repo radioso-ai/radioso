@@ -301,6 +301,7 @@ export interface AppDependencies {
   copilotRetentionWorker: CopilotRetentionWorker;
   /** Purges old private test-execution/revision-eval-run evidence (JSONB transcripts, frozen snapshots). */
   testExecutionRetentionWorker: TtlRetentionWorker;
+  approvalResumeEffectJournalRetentionWorker: TtlRetentionWorker;
   revisionEvalRunRetentionWorker: TtlRetentionWorker;
   slackInboundEventRetentionWorker: TtlRetentionWorker;
   chatBootstrapService: ChatBootstrapService;

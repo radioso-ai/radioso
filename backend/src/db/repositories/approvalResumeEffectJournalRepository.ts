@@ -101,4 +101,15 @@ export class ApprovalResumeEffectJournalRepository implements ApprovalResumeEffe
       .where("pending_decision_id", "=", input.pendingDecisionId)
       .execute();
   }
+
+  async deleteBefore(input: { cutoff: Date; limit: number }): Promise<number> {
+    const result = await this.database.deleteFrom("approval_resume_effect_decisions")
+      .where("pending_decision_id", "in", (expression) => expression.selectFrom("approval_resume_effect_decisions")
+        .select("pending_decision_id")
+        .where("created_at", "<", input.cutoff)
+        .orderBy("created_at", "asc")
+        .limit(input.limit))
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
+  }
 }

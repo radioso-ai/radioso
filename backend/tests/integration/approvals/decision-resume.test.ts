@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import type { PoolClient, QueryResultRow } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type {
   Routine,
@@ -23,8 +22,7 @@ import {
 } from "../../../src/modules/approvals/public.js";
 import type { ConversationActivityRecorder } from "../../../src/modules/conversationActivity/contracts/index.js";
 import { Database } from "../../../src/shared/infra/database.js";
-import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
-import { applyTestMigration } from "../../support/databaseMigrations.js";
+import { applyTestMigration, runAllTestMigrations } from "../../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -46,60 +44,10 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
-const createClientBackedDatabase = (client: PoolClient): Database => {
-  // A one-connection pool that always hands back the same open client so Kysely's
-  // `resolveInTransaction` BEGIN/COMMIT runs on the same per-test schema + client as the
-  // raw helper queries; `release` is neutered so Kysely can't return it to a real pool.
-  const pool = {
-    async connect() {
-      return new Proxy(client, {
-        get(target, property, receiver) {
-          if (property === "release") {
-            return () => undefined;
-          }
-          const value = Reflect.get(target, property, receiver);
-          return typeof value === "function" ? value.bind(target) : value;
-        },
-      });
-    },
-  } as Database["pool"];
-
-  return {
-  pool,
-  kysely: createKyselyDatabase(pool),
-  async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
-    const result = await client.query<T>(text, params);
-    return result.rows;
-  },
-  async queryOptional<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T | null> {
-    const result = await client.query<T>(text, params);
-    return result.rows[0] ?? null;
-  },
-  async queryOne<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T> {
-    const result = await client.query<T>(text, params);
-    const row = result.rows[0];
-    if (!row) {
-      throw new Error("Expected query to return one row");
-    }
-    return row;
-  },
-  async execute(text: string, params: unknown[] = []): Promise<number> {
-    const result = await client.query(text, params);
-    return result.rowCount ?? 0;
-  },
-  async withTransaction<T>(callback: (transactionClient: PoolClient) => Promise<T>): Promise<T> {
-    await client.query("BEGIN");
-    try {
-      const value = await callback(client);
-      await client.query("COMMIT");
-      return value;
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    }
-  },
-  async close(): Promise<void> {},
-};
+const databaseUrlForSchema = (databaseUrl: string, schema: string): string => {
+  const scoped = new URL(databaseUrl);
+  scoped.searchParams.set("options", `-c search_path=${schema},public`);
+  return scoped.toString();
 };
 
 const operatorId = randomUUID();
@@ -130,9 +78,8 @@ const decisionInput = (overrides: Partial<PendingDecisionCreateInput> = {}): Pen
 
 describeIfDatabase("ApprovalDecisionService resolve + resume integration", () => {
   let database: Database;
-  let backingDatabase: Database;
-  let client: PoolClient;
   let journalDatabase: Database;
+  let adminDatabase: Database;
   let schema: string;
   let repository: PendingDecisionRepository;
 
@@ -145,17 +92,18 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
   };
 
   beforeAll(async () => {
-    backingDatabase = new Database(integrationDatabaseUrl!);
-    client = await backingDatabase.pool.connect();
+    adminDatabase = new Database(integrationDatabaseUrl!);
+    await runAllTestMigrations(adminDatabase);
     schema = `decision_resume_${randomUUID().replaceAll("-", "_")}`;
-    await client.query(`CREATE SCHEMA ${schema}`);
-    await client.query(`SET search_path TO ${schema}, public`);
-    database = createClientBackedDatabase(client);
+    await adminDatabase.execute(`CREATE SCHEMA ${schema}`);
+    const schemaDatabaseUrl = databaseUrlForSchema(integrationDatabaseUrl!, schema);
+    // This intentionally reproduces the constrained deployment that used to deadlock: the
+    // decision transaction consumes the main pool's only connection while the skill journals.
+    database = new Database(schemaDatabaseUrl, { poolMax: 1, connectionTimeoutMs: 1_000 });
     await applyTestMigration(database, "104_pending_decisions.sql");
     await applyTestMigration(database, "205_conversation_activity.sql");
-    await applyTestMigration(database, "212_approval_resume_effect_journal.sql");
-    await applyTestMigration(database, "213_approval_resume_effect_input_digest.sql");
-    journalDatabase = new Database(`${integrationDatabaseUrl!}?options=-c%20search_path%3D${schema}%2Cpublic`);
+    await applyTestMigration(database, "213_approval_resume_effect_journal.sql");
+    journalDatabase = new Database(schemaDatabaseUrl, { poolMax: 2, connectionTimeoutMs: 1_000 });
     await database.execute(
       `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')`,
       [deciderUserId, `decider-${deciderUserId}@example.com`],
@@ -173,15 +121,11 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
   });
 
   afterAll(async () => {
-    if (client) {
-      await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => undefined);
-      await client.query(`DELETE FROM public.users WHERE id = $1`, [deciderUserId]).catch(() => undefined);
-      client.release();
-    }
     await journalDatabase?.close();
-    if (backingDatabase) {
-      await backingDatabase.close();
-    }
+    await database?.close();
+    await adminDatabase?.execute(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => undefined);
+    await adminDatabase?.execute(`DELETE FROM public.users WHERE id = $1`, [deciderUserId]).catch(() => undefined);
+    await adminDatabase?.close();
   });
 
   const okRunner = (): ResumeRunner => ({
@@ -267,7 +211,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     expect(runner.resume).toHaveBeenCalledTimes(1);
   });
 
-  it("does not repeat a post-gate external effect when the resumed turn rolls back and the decision is retried", async () => {
+  it("completes an effectful resume with a one-connection main pool and does not repeat it after rollback", async () => {
     const input = decisionInput({ routineId: "refund_flow", stepId: "gate" });
     const decision = await repository.create(input);
     const routine: Routine = {
@@ -403,6 +347,28 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
       `approval-decision:${decision.id}:routine:refund_flow:step:issue_refund:occurrence:1`,
     ]);
     expect(await journalDatabase.query<{ count: string }>("SELECT count(*) FROM approval_resume_effect_decisions")).toEqual([{ count: "0" }]);
+  });
+
+  it("removes rollback journals older than the retention bound", async () => {
+    const input = decisionInput();
+    const decision = await repository.create(input);
+    const journal = new ApprovalResumeEffectJournalRepository(journalDatabase.kysely);
+    await journal.begin({
+      pendingDecisionId: decision.id,
+      optionId: "approve",
+      payloadDigest: createHash("sha256").update('{"present":false}').digest("hex"),
+      routineId: input.routineId,
+      stepId: "external_step",
+      occurrenceOrdinal: 1,
+      inputDigest: "input",
+    });
+    await journalDatabase.execute(
+      "UPDATE approval_resume_effect_decisions SET created_at = NOW() - INTERVAL '31 days'",
+    );
+
+    await expect(journal.deleteBefore({ cutoff: new Date(), limit: 10 })).resolves.toBe(1);
+    expect(await journalDatabase.query<{ count: string }>("SELECT count(*) FROM approval_resume_effect_decisions"))
+      .toEqual([{ count: "0" }]);
   });
 
   it("re-parks at the same gate: the decision resolves and the gate's next decision opens in one transaction (#1460)", async () => {

@@ -15,6 +15,17 @@ BEGIN
       USING ERRCODE = '23505',
             CONSTRAINT = 'agent_skills_retrieve_answer_name_reserved';
   END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM agent_skills
+    WHERE invocation_mode = 'default_answer'
+      AND skill_name <> 'answer'
+  ) THEN
+    RAISE EXCEPTION 'Cannot migrate retrieval settings: one or more agents already have a default-answer skill named other than "answer". Rename or remove the conflicting default-answer skill before applying migration 110.'
+      USING ERRCODE = '23505',
+            CONSTRAINT = 'agent_skills_default_answer_name_reserved';
+  END IF;
 END $$;
 
 WITH agent_retrieval AS (
@@ -59,11 +70,21 @@ projected AS (
       END
       || jsonb_build_object(
         'sourceScope', source_scope,
-        'suggestedQuestionsEnabled', COALESCE((behavior_settings ->> 'suggestedQuestionsEnabled')::boolean, TRUE),
+        'suggestedQuestionsEnabled', COALESCE(
+          CASE
+            WHEN jsonb_typeof(behavior_settings -> 'suggestedQuestionsEnabled') = 'boolean'
+            THEN (behavior_settings ->> 'suggestedQuestionsEnabled')::boolean
+          END,
+          TRUE
+        ),
         'exposedInputs', jsonb_build_object('query', TRUE)
       )
       || CASE
-        WHEN behavior_settings ? 'suggestedQuestionsCount'
+        WHEN jsonb_typeof(behavior_settings -> 'suggestedQuestionsCount') = 'number'
+          AND (behavior_settings ->> 'suggestedQuestionsCount')::numeric
+            = trunc((behavior_settings ->> 'suggestedQuestionsCount')::numeric)
+          AND (behavior_settings ->> 'suggestedQuestionsCount')::numeric
+            BETWEEN -2147483648 AND 2147483647
         THEN jsonb_build_object('suggestedQuestionsCount', (behavior_settings ->> 'suggestedQuestionsCount')::integer)
         ELSE '{}'::jsonb
       END

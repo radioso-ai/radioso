@@ -8,6 +8,7 @@ import {
   metadataValueTypes,
   defaultRetrievalSettings,
   normalizeMetadataRules,
+  type RetrievalSettingsRecord,
   validateRetrievalSettings,
   retrievalStrategyPreferences,
 } from "../../settings/contracts/retrieval.js";
@@ -136,6 +137,28 @@ export const parsePersistedRetrievalSkillSettingsOverride = (input: unknown): Re
   }
 
   return parsed;
+};
+
+/**
+ * Applies a retrieve skill's persisted overrides to the workspace-level settings used by
+ * retrieval at runtime. Keep capability presentation on this same projection so authoring an
+ * override preserves the behavior the skill inherited before the operator edited it.
+ */
+export const resolveRetrievalSkillSettings = (
+  defaults: RetrievalSettingsRecord,
+  agentOverride: unknown,
+): RetrievalSettingsRecord => {
+  if (agentOverride === undefined || agentOverride === null) {
+    return defaults;
+  }
+  const override = parsePersistedRetrievalSkillSettingsOverride(agentOverride);
+  const { metadataRules, ...rest } = override;
+  return {
+    ...defaults,
+    ...rest,
+    ...(metadataRules !== undefined ? { metadataRules: normalizeMetadataRules(metadataRules) } : {}),
+    workspaceId: defaults.workspaceId,
+  };
 };
 
 export const parseRetrieveSkillConfig = (input: unknown): RetrieveSkillConfig =>

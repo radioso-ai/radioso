@@ -236,11 +236,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
       .selectFrom("ee_usage_limit_credit_grants")
       .select(sql<number>`coalesce(sum(conversations), 0)`.as("valid_conversations"))
       .where("account_id", "=", accountId)
-      .where(
-        "created_at",
-        ">",
-        sql<Date>`${now}::timestamptz - ${CREDIT_GRANT_LIFETIME_MONTHS} * interval '1 month'`,
-      )
+      .where(sql<boolean>`created_at + ${CREDIT_GRANT_LIFETIME_MONTHS} * interval '1 month' > ${now}`)
       .executeTakeFirstOrThrow();
     const validGrantTenths = Number(grants.valid_conversations) * TENTHS_PER_CONVERSATION;
     const balanceTenths = Math.min(credits.balance_tenths, validGrantTenths);

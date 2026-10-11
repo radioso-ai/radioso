@@ -822,6 +822,20 @@ describeIfDatabase("EE usage limit service integration", () => {
     expect((await service.getAccountUsage(accountId, "2031-01-01")).monthlyConversations?.credits).toBe(0);
   });
 
+  it("expires a leap-day credit grant on its February anniversary", async () => {
+    const { accountId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const clock = mutableClock("2028-02-29T12:00:00.000Z");
+    const service = createServiceWithClock(database, clock.now);
+    await service.addCredits({ accountId, conversations: 2, reference: "leap-day-boundary" });
+
+    clock.set("2029-02-28T11:59:59.999Z");
+    expect((await service.getAccountUsage(accountId, "2029-02-01")).monthlyConversations?.credits).toBe(2);
+
+    clock.set("2029-02-28T12:00:00.000Z");
+    expect((await service.getAccountUsage(accountId, "2029-02-01")).monthlyConversations?.credits).toBe(0);
+  });
+
   // ── Metering math: overdraw check and release-time refund ──────────────
 
   it("reviewer scenario: limit 100, buy 50 credits, spend all 150, buy 50 more so the next reply succeeds", async () => {

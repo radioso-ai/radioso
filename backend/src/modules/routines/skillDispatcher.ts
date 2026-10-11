@@ -94,6 +94,7 @@ export interface RoutineExternalEffectInterceptor {
     state: Parameters<ConversationRoutineSkillDispatcher["dispatch"]>[0]["state"];
     stepId: string;
     occurrenceOrdinal: number;
+    resolvedInput: Record<string, unknown>;
     idempotencyKey?: string;
     execute(): Promise<RoutineSkillResult>;
   }): Promise<RoutineSkillResult>;
@@ -277,6 +278,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
         state,
         stepId: input.stepId,
         occurrenceOrdinal: input.occurrenceOrdinal,
+        resolvedInput: collected,
         ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
         execute,
       });

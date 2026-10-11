@@ -1,4 +1,5 @@
 import type { ConversationRoutineSkillDispatcher, RoutineSkillResult } from "@radioso/conversation-contract";
+import { createHash } from "node:crypto";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
@@ -12,6 +13,7 @@ export interface ApprovalResumeEffectIdentity {
   routineId: string;
   stepId: string;
   occurrenceOrdinal: number;
+  inputDigest: string;
 }
 
 export interface ApprovalResumeEffectDecision {
@@ -38,6 +40,31 @@ export class ApprovalResumeEffectJournalConflictError extends Error {
   }
 }
 
+const canonicalJson = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalJson(nested)}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+};
+
+const inputDigest = (value: Record<string, unknown>): string =>
+  createHash("sha256").update(canonicalJson(value)).digest("hex");
+
+const stripNullCharacters = (value: unknown): unknown => {
+  if (typeof value === "string") return value.replaceAll("\u0000", "");
+  if (Array.isArray(value)) return value.map(stripNullCharacters);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .map(([key, nested]) => [stripNullCharacters(key), stripNullCharacters(nested)]));
+  }
+  return value;
+};
+
+export const sanitizeJournaledSkillResult = (result: RoutineSkillResult): RoutineSkillResult =>
+  stripNullCharacters(result) as RoutineSkillResult;
+
 /** Adds durable replay semantics only to skill calls made while resolving an approval. */
 export class ApprovalResumeEffectJournalDispatcher implements ConversationRoutineSkillDispatcher {
   constructor(
@@ -59,6 +86,7 @@ export class ApprovalResumeEffectJournalDispatcher implements ConversationRoutin
           routineId: input.state.routineId,
           stepId: input.stepId,
           occurrenceOrdinal: input.occurrenceOrdinal,
+          inputDigest: inputDigest(input.resolvedInput),
         };
         const begun = await this.journal.begin({ ...identity, ...this.decision });
         if (begun.kind === "completed") {
@@ -70,7 +98,7 @@ export class ApprovalResumeEffectJournalDispatcher implements ConversationRoutin
           });
         }
         const result = await input.execute();
-        await this.journal.complete({ ...identity, result });
+        await this.journal.complete({ ...identity, result: sanitizeJournaledSkillResult(result) });
         return result;
       },
     };

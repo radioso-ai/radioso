@@ -154,6 +154,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     await applyTestMigration(database, "104_pending_decisions.sql");
     await applyTestMigration(database, "205_conversation_activity.sql");
     await applyTestMigration(database, "212_approval_resume_effect_journal.sql");
+    await applyTestMigration(database, "213_approval_resume_effect_input_digest.sql");
     journalDatabase = new Database(`${integrationDatabaseUrl!}?options=-c%20search_path%3D${schema}%2Cpublic`);
     await database.execute(
       `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')`,
@@ -322,20 +323,20 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
       { resolve: () => ({ dispatch: receiver }) } as never,
     );
     const journal = new ApprovalResumeEffectJournalRepository(journalDatabase.kysely);
+    const changedInputEffect = {
+      pendingDecisionId: decision.id,
+      optionId: "approve",
+      payloadDigest: createHash("sha256").update('{"present":false}').digest("hex"),
+      routineId: "refund_flow",
+      stepId: "changed_input",
+      occurrenceOrdinal: 1,
+    };
+    await expect(journal.begin({ ...changedInputEffect, inputDigest: "first-input" })).resolves.toMatchObject({ kind: "started" });
+    await expect(journal.begin({ ...changedInputEffect, inputDigest: "changed-input" })).resolves.toMatchObject({ kind: "started" });
     const dispatch = new ApprovalResumeEffectJournalDispatcher(baseDispatcher, journal, {
       pendingDecisionId: decision.id,
       optionId: "approve",
-      payloadDigest: createHash("sha256").update("null").digest("hex"),
-    });
-    // A process may die after the receiver accepts the call but before the result is committed.
-    // The retry must make its at-least-once fallback call with the same generated key.
-    await journal.begin({
-      pendingDecisionId: decision.id,
-      optionId: "approve",
-      payloadDigest: createHash("sha256").update("null").digest("hex"),
-      routineId: "refund_flow",
-      stepId: "issue_refund",
-      occurrenceOrdinal: 1,
+      payloadDigest: createHash("sha256").update('{"present":false}').digest("hex"),
     });
     const routineRunner = new DefaultRoutineRunner(
       [routine],

@@ -29,6 +29,7 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { RoutineInvocableSkillNames, SkillExecutorRegistry } from "../skills/public.js";
 import { RoutineSkillExecutorDispatcher } from "./skillDispatcher.js";
+import { ApprovalResumeEffectJournalDispatcher, type ApprovalResumeEffectJournal } from "./approvalResumeEffectJournal.js";
 import type { ConversationDurability, SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
 import { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js";
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
@@ -75,6 +76,7 @@ interface RoutineTurnProviderDependencies {
   routineRegistrations: readonly RoutineRegistration[];
   routineTriggerEmbeddingService: Pick<RoutineTriggerEmbeddingService, "persistPublished">;
   skillExecutorRegistry: SkillExecutorRegistry;
+  approvalResumeEffectJournal?: ApprovalResumeEffectJournal;
   turnPlanAdapters: RoutineTurnPlanAdapters;
 }
 
@@ -114,6 +116,7 @@ interface RoutineTurnProvider {
     turnPlan?: unknown;
     skillEffects?: SkillEffectPolicy;
     conversationDurability?: ConversationDurability;
+    approvalResume?: { pendingDecisionId: string; optionId: string; payloadDigest: string };
     /**
      * Includes each filled slot's value on the routine sub-trace this turn's runner
      * produces. Absent/false for every live conversation; only a private replay (Test
@@ -287,6 +290,7 @@ export const createRoutineTurnProvider = (
     turnPlan,
     skillEffects,
     conversationDurability,
+    approvalResume,
     includeSlotValues,
   }) {
     const effectiveRegistrations = await loadEffectiveRegistrations(dependencies, {
@@ -441,25 +445,35 @@ export const createRoutineTurnProvider = (
         groundedAnswerRenderer,
         steeringPromptTemplate: loadPromptTemplate("chat/routine-step-steering.md"),
       }),
-      new RoutineSkillExecutorDispatcher(
-        createRoutineSkillResolverChain({
-          webhookSkillNames,
-          emailSkillNames,
-          slackSkillNames,
-          retrieveSkills,
-          notifySkills,
-        }),
-        dependencies.skillExecutorRegistry,
-        {
-          workspaceId,
-          ...(accountId ? { accountId } : {}),
-          capabilityGate: (capability) => dependencies.capabilityPolicy.can({ capability, workspaceId }),
-          metricsRegistry: dependencies.metricsRegistry ?? null,
-          throwIfCancelled,
-          skillEffects,
-          conversationDurability,
-        },
-      ),
+      (() => {
+        const dispatcher = new RoutineSkillExecutorDispatcher(
+          createRoutineSkillResolverChain({
+            webhookSkillNames,
+            emailSkillNames,
+            slackSkillNames,
+            retrieveSkills,
+            notifySkills,
+          }),
+          dependencies.skillExecutorRegistry,
+          {
+            workspaceId,
+            ...(accountId ? { accountId } : {}),
+            capabilityGate: (capability) => dependencies.capabilityPolicy.can({ capability, workspaceId }),
+            metricsRegistry: dependencies.metricsRegistry ?? null,
+            throwIfCancelled,
+            skillEffects,
+            conversationDurability,
+          },
+        );
+        return approvalResume && dependencies.approvalResumeEffectJournal
+          ? new ApprovalResumeEffectJournalDispatcher(
+            dispatcher,
+            dependencies.approvalResumeEffectJournal,
+            approvalResume,
+            dependencies.metricsRegistry ?? null,
+          )
+          : dispatcher;
+      })(),
       // `{{context.<name>}}` in a step instruction reads staged visitor context through
       // the context-variables module, which owns what each variable may show.
       { contextRenderer: routineContextRenderer, includeSlotValues },

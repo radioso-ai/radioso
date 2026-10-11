@@ -285,14 +285,17 @@ export class OpenApiToolService implements ToolService {
     appendQuery(url, normalized.query);
     validateOperationUrl(url, this.options.allowedHosts);
     const idempotencyKey = input.context?.idempotencyKey;
+    const headers = new Headers({
+      ...(this.options.headers ?? {}),
+      ...(normalized.headers ?? {}),
+      ...(normalized.body !== undefined ? { "content-type": "application/json" } : {}),
+    });
+    if (idempotencyKey) {
+      headers.set("Idempotency-Key", idempotencyKey);
+    }
     const response = await this.fetchImpl(url, {
       method: binding.method.toUpperCase(),
-      headers: {
-        ...(this.options.headers ?? {}),
-        ...(normalized.headers ?? {}),
-        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
-        ...(normalized.body !== undefined ? { "content-type": "application/json" } : {}),
-      },
+      headers,
       body: normalized.body !== undefined ? JSON.stringify(normalized.body) : undefined,
       signal: input.context?.signal,
     });

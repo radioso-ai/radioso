@@ -1305,6 +1305,10 @@ export interface ConversationRoutineSkillDispatcher {
     state: RoutineState;
     turn: TurnContext;
     inputBindings?: Record<string, RoutineInputBinding>;
+    /** Authored step identity; supplied by the runner for host-owned effect journals. */
+    stepId?: string;
+    /** One-based visit count for this step in the current runner traversal. */
+    occurrenceOrdinal?: number;
     /** Stable identity for this skill step when its enclosing operation is retried. */
     idempotencyKey?: string;
     // Output→variable assignment is applied by the runner after dispatch (see

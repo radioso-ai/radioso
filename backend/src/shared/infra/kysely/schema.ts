@@ -370,6 +370,26 @@ export interface ApiCredentials {
   workspace_id: string;
 }
 
+export interface ApprovalResumeEffectDecisions {
+  created_at: Generated<Timestamp>;
+  option_id: string;
+  payload_digest: string;
+  pending_decision_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface ApprovalResumeEffects {
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  occurrence_ordinal: number;
+  pending_decision_id: string;
+  result: Json | null;
+  routine_id: string;
+  status: string;
+  step_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface AssistantAnswerFeedback {
   account_id: string | null;
   actor_id: string;
@@ -2007,6 +2027,8 @@ export interface DB {
   answer_coverage_reaction_traces: AnswerCoverageReactionTraces;
   api_credential_expiry_warnings: ApiCredentialExpiryWarnings;
   api_credentials: ApiCredentials;
+  approval_resume_effect_decisions: ApprovalResumeEffectDecisions;
+  approval_resume_effects: ApprovalResumeEffects;
   assistant_answer_feedback: AssistantAnswerFeedback;
   assistant_answer_triage: AssistantAnswerTriage;
   assistant_answer_triage_transitions: AssistantAnswerTriageTransitions;

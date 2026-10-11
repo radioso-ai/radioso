@@ -714,6 +714,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     };
 
     const attempts: Record<string, number> = { ...(state.attempts ?? {}) };
+    // This is deliberately local to a runner traversal. A retry resumes the same saved
+    // state and rebuilds the same sequence, while a bounded back edge receives a distinct
+    // occurrence for each visit.
+    const skillOccurrences = new Map<string, number>();
     if (state.path.length === 0) {
       attempts[currentStepId] = (attempts[currentStepId] ?? 0) + 1;
     }
@@ -1253,14 +1257,18 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         throw new Error(`routine_skill_step_missing_skill:${routine.id}:${step.id}`);
       }
       const skillStateAtStep: RoutineState = { ...state, path, variables, attempts, status: "active" };
+      const occurrenceOrdinal = (skillOccurrences.get(step.id) ?? 0) + 1;
+      skillOccurrences.set(step.id, occurrenceOrdinal);
       const skillResult: RoutineSkillResult = await this.skillDispatcher.dispatch({
         skillName: step.skillName,
         state: skillStateAtStep,
         turn: stagedContext === turn.stagedContext ? turn : { ...turn, stagedContext },
         ...(step.inputBindings ? { inputBindings: step.inputBindings } : {}),
+        stepId: step.id,
+        occurrenceOrdinal,
         ...(input.skillDispatchIdempotencyScope
           ? {
-              idempotencyKey: `${input.skillDispatchIdempotencyScope}:routine:${encodeURIComponent(routine.id)}:step:${encodeURIComponent(step.id)}`,
+              idempotencyKey: `${input.skillDispatchIdempotencyScope}:routine:${encodeURIComponent(routine.id)}:step:${encodeURIComponent(step.id)}:occurrence:${occurrenceOrdinal}`,
             }
           : {}),
       });

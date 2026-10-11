@@ -9,6 +9,39 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.17.0] - 2026-10-11
+
+### Added
+
+- **email-channel:** add email as a conversation channel ([`3253231`](https://github.com/radioso-ai/radioso/commit/3253231221b049253db8bcafb80d44f53cc52563))
+
+### Fixed
+
+- **approvals:** journal resumed skill effects ([#1474](https://github.com/radioso-ai/radioso/pull/1474))
+- **settings:** polish agent configuration ([#1476](https://github.com/radioso-ai/radioso/pull/1476))
+- **notifications:** cap outbound email delivery ([#1479](https://github.com/radioso-ai/radioso/pull/1479))
+- **ci:** run validation after main merges ([#1468](https://github.com/radioso-ai/radioso/pull/1468))
+- **mcp:** key source digests with deployment secrets ([#1470](https://github.com/radioso-ai/radioso/pull/1470))
+- **notifications:** persist skipped mail delivery ([#1473](https://github.com/radioso-ai/radioso/pull/1473))
+- **billing:** enforce top-up credit expiry ([#1475](https://github.com/radioso-ai/radioso/pull/1475))
+- **billing:** prevent overlapping auto top-up charges ([#1478](https://github.com/radioso-ai/radioso/pull/1478))
+- **retrieval:** guard pgvector SQL templates ([#1472](https://github.com/radioso-ai/radioso/pull/1472))
+- **migrations:** tolerate malformed skill settings ([#1471](https://github.com/radioso-ai/radioso/pull/1471))
+- **navigation:** surface members from settings ([#1469](https://github.com/radioso-ai/radioso/pull/1469))
+
+### Database migrations
+
+This release adds 6 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `210_email_channel.sql`
+- `211_conversation_activity_kind_v2_add.sql`
+- `212_conversation_activity_kind_v2_validate.sql`
+- `212_notification_delivery_outcomes.sql`
+- `213_approval_resume_effect_journal.sql`
+- `213_conversation_activity_kind_v2_finish.sql`
+
+[1.17.0]: https://github.com/radioso-ai/radioso/compare/v1.16.1...v1.17.0
+
 ## [1.16.1] - 2026-10-11
 
 ### Fixed

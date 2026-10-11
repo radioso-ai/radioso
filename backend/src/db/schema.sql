@@ -993,6 +993,7 @@ CREATE TABLE public.approval_resume_effects (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
+    input_digest text DEFAULT ''::text NOT NULL,
     CONSTRAINT approval_resume_effects_check CHECK ((((status = 'started'::text) AND (result IS NULL) AND (completed_at IS NULL)) OR ((status = 'completed'::text) AND (result IS NOT NULL) AND (completed_at IS NOT NULL)))),
     CONSTRAINT approval_resume_effects_occurrence_ordinal_check CHECK ((occurrence_ordinal > 0)),
     CONSTRAINT approval_resume_effects_status_check CHECK ((status = ANY (ARRAY['started'::text, 'completed'::text])))
@@ -4699,7 +4700,7 @@ ALTER TABLE ONLY public.approval_resume_effect_decisions
 --
 
 ALTER TABLE ONLY public.approval_resume_effects
-    ADD CONSTRAINT approval_resume_effects_pkey PRIMARY KEY (pending_decision_id, routine_id, step_id, occurrence_ordinal);
+    ADD CONSTRAINT approval_resume_effects_pkey PRIMARY KEY (pending_decision_id, routine_id, step_id, occurrence_ordinal, input_digest);
 
 
 --

@@ -98,7 +98,7 @@ describe("resumeAwaitingDecision", () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
       skillName: "refund.issue",
-      idempotencyKey: "approval-decision:decision_1:routine:refund_flow:step:issue_refund",
+      idempotencyKey: "approval-decision:decision_1:routine:refund_flow:step:issue_refund:occurrence:1",
     }));
     expect(result.trace?.startStepId).toBe("gate");
     expect(result.trace?.steps.map((step) => step.stepId)).not.toContain("ask_reason");

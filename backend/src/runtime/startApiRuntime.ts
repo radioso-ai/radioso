@@ -121,7 +121,8 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
               await dependencies.realtimePublisherLifecycle.shutdown();
             } finally {
               try {
-                await dependencies.applicationModules.shutdownAll();
+              await dependencies.applicationModules.shutdownAll();
+              await dependencies.closeApprovalResumeEffectJournal();
               } finally {
                 try {
                   await dependencies.connectorRegistry.shutdownAll();

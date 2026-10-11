@@ -456,8 +456,9 @@ in a decision-scoped effect journal before the resume can commit. If a later par
 resume rolls back, a retry reuses that result instead of calling the skill again, so the
 effect runs once for that decision across transaction rollbacks. A process can stop while
 the provider call is in flight; Radioso then retries with the same decision, routine,
-step, and occurrence idempotency key. That case is at-least-once, so a provider that
-honors the key can collapse the retry. Once an external effect has started, the pending
+step, occurrence, and resolved-input idempotency key. That case is at-least-once, so a provider that
+honors the key can collapse the retry; Radioso does not fail closed for an interrupted call
+because its outcome is unknowable. Once an external effect has started, the pending
 decision is bound to its chosen option and payload; a different option or payload returns
 `409` rather than changing the decision after an effect may have happened.
 The same transaction records the teammate who decided and the option they chose

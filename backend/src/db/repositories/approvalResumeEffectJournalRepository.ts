@@ -36,6 +36,7 @@ export class ApprovalResumeEffectJournalRepository implements ApprovalResumeEffe
         .where("routine_id", "=", input.routineId)
         .where("step_id", "=", input.stepId)
         .where("occurrence_ordinal", "=", input.occurrenceOrdinal)
+        .where("input_digest", "=", input.inputDigest)
         .executeTakeFirst();
       if (existingEffect?.status === "completed" && existingEffect.result) {
         return { kind: "completed", result: asRoutineSkillResult(existingEffect.result) };
@@ -48,9 +49,10 @@ export class ApprovalResumeEffectJournalRepository implements ApprovalResumeEffe
         routine_id: input.routineId,
         step_id: input.stepId,
         occurrence_ordinal: input.occurrenceOrdinal,
+        input_digest: input.inputDigest,
         status: "started",
       }).onConflict((conflict) => conflict.columns([
-        "pending_decision_id", "routine_id", "step_id", "occurrence_ordinal",
+        "pending_decision_id", "routine_id", "step_id", "occurrence_ordinal", "input_digest",
       ]).doNothing()).returning("pending_decision_id").executeTakeFirst();
       if (inserted) {
         return { kind: "started", recovered: false };
@@ -61,6 +63,7 @@ export class ApprovalResumeEffectJournalRepository implements ApprovalResumeEffe
         .where("routine_id", "=", input.routineId)
         .where("step_id", "=", input.stepId)
         .where("occurrence_ordinal", "=", input.occurrenceOrdinal)
+        .where("input_digest", "=", input.inputDigest)
         .executeTakeFirstOrThrow();
       if (racedEffect.status === "completed" && racedEffect.result) {
         return { kind: "completed", result: asRoutineSkillResult(racedEffect.result) };
@@ -79,6 +82,7 @@ export class ApprovalResumeEffectJournalRepository implements ApprovalResumeEffe
       .where("routine_id", "=", input.routineId)
       .where("step_id", "=", input.stepId)
       .where("occurrence_ordinal", "=", input.occurrenceOrdinal)
+      .where("input_digest", "=", input.inputDigest)
       .execute();
   }
 

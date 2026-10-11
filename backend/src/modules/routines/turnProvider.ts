@@ -76,7 +76,7 @@ interface RoutineTurnProviderDependencies {
   routineRegistrations: readonly RoutineRegistration[];
   routineTriggerEmbeddingService: Pick<RoutineTriggerEmbeddingService, "persistPublished">;
   skillExecutorRegistry: SkillExecutorRegistry;
-  approvalResumeEffectJournal?: ApprovalResumeEffectJournal;
+  approvalResumeEffectJournal: ApprovalResumeEffectJournal;
   turnPlanAdapters: RoutineTurnPlanAdapters;
 }
 
@@ -465,7 +465,7 @@ export const createRoutineTurnProvider = (
             conversationDurability,
           },
         );
-        return approvalResume && dependencies.approvalResumeEffectJournal
+        return approvalResume
           ? new ApprovalResumeEffectJournalDispatcher(
             dispatcher,
             dependencies.approvalResumeEffectJournal,

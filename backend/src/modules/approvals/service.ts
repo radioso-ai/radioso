@@ -105,8 +105,8 @@ const canonicalPayload = (value: unknown): string => {
   return JSON.stringify(value) ?? "null";
 };
 
-const payloadDigest = (value: unknown): string =>
-  createHash("sha256").update(canonicalPayload(value)).digest("hex");
+const payloadDigest = (payload: { present: boolean; value?: unknown }): string =>
+  createHash("sha256").update(canonicalPayload(payload)).digest("hex");
 
 const mapDomainError = (error: ApprovalDecisionDomainError): ApprovalDecisionServiceError =>
   new ApprovalDecisionServiceError(error.reason);
@@ -164,7 +164,11 @@ export class ApprovalDecisionService {
     const journalDecision = {
       pendingDecisionId: record.id,
       optionId: resolved.decision.optionId,
-      payloadDigest: payloadDigest(resolved.decision.payload),
+      payloadDigest: payloadDigest(
+        resolved.decision.payload === undefined
+          ? { present: false }
+          : { present: true, value: resolved.decision.payload },
+      ),
     };
     try {
       await this.effectJournal?.assertDecision(journalDecision);

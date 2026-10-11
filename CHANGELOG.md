@@ -9,6 +9,14 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.16.1] - 2026-10-11
+
+### Fixed
+
+- **operator-mcp:** keep propose_routine_edit within the catalog's description cap ([#1467](https://github.com/radioso-ai/radioso/pull/1467))
+
+[1.16.1]: https://github.com/radioso-ai/radioso/compare/v1.16.0...v1.16.1
+
 ## [1.16.0] - 2026-10-10
 
 ### Added

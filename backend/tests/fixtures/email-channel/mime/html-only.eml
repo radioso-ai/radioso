@@ -1,0 +1,23 @@
+Return-Path: <erin@example.test>
+Received: from mx.in.relay.test (mx.in.relay.test [192.0.2.50])
+	by inbound.in.relay.test with ESMTPS id 3c4d5e6f70
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 15:00:10 +0000 (UTC)
+Message-ID: <msg-0030@example.test>
+From: Erin Shaw <erin@example.test>
+To: support@customer.test
+Subject: Can't open the invoice
+Date: Sat, 03 Oct 2026 15:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b0030html"
+
+--b0030html
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<html><body>
+<p>Hi, the invoice link in my last email just shows a blank page. Could
+you resend it as a PDF attachment instead?</p>
+<p>Thanks,<br>Erin</p>
+</body></html>
+--b0030html--

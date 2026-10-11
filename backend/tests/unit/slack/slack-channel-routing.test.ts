@@ -50,7 +50,7 @@ const seededBindings = async () => {
 const makeHandler = (bindings: InMemorySlackBindingRepository) => {
   const answeredWith: string[] = [];
   const answeredWorkspaces: string[] = [];
-  const chat: ConnectorChatPort = {
+  const chat: Pick<ConnectorChatPort, "answer"> = {
     answer: vi.fn(async (req) => {
       answeredWith.push(req.agentId);
       answeredWorkspaces.push(req.workspaceId);

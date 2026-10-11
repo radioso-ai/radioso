@@ -12,7 +12,7 @@ import { PostgresWhatsAppPersistence, type WhatsAppPersistencePort } from "./wha
 interface WhatsAppMessageHandlerOptions {
   db: ConnectorDatabasePort;
   logger: ConnectorLogger;
-  chat: ConnectorChatPort;
+  chat: Pick<ConnectorChatPort, "answer">;
   state: Pick<ConnectorStatePort, "getConfig" | "setErrorStatus">;
   client: Pick<WhatsAppClient, "sendTextMessage">;
   persistence?: WhatsAppPersistencePort;

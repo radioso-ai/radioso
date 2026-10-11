@@ -23,6 +23,7 @@ import type { AppLogger } from "../logger.js";
 import type { RuntimeRole } from "../runtimeRole.js";
 import { safeTraceAttributes } from "./attributePolicy.js";
 import { type ActiveTraceCorrelation, correlationAttributes } from "./correlation.js";
+import { describeException, exceptionEventAttributes } from "./exceptionPolicy.js";
 
 export { correlationAttributes, safeTraceAttributes };
 export type { ActiveTraceCorrelation } from "./correlation.js";
@@ -208,14 +209,13 @@ export const initializeTracing = (config: TracingConfig): void => {
   }
 };
 
+// Never `span.recordException`: it exports the message and stack, which can
+// carry provider-echoed customer content. See exceptionPolicy.ts.
 const recordSpanError = (span: Span, error: unknown): void => {
-  if (error instanceof Error) {
-    span.recordException(error);
-    span.setStatus({ code: SpanStatusCode.ERROR, message: error.name });
-    return;
-  }
-
-  span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
+  const exception = describeException(error);
+  span.addEvent("exception", exceptionEventAttributes(exception));
+  span.setAttribute("error.type", exception.type);
+  span.setStatus({ code: SpanStatusCode.ERROR, message: exception.type });
 };
 
 const finishSpanResult = <T>(span: Span, value: T | Promise<T>): T | Promise<T> => {

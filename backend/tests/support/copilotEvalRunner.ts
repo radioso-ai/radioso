@@ -470,6 +470,7 @@ callerKind: "human" as const,
     operatorNoticeDestinations: { read: unusedPort("operatorNoticeDestinations.read") },
     contextVariables: { listByWorkspace: async () => [], listByAgent: async () => [] },
     productDocs: new ProductDocsService(),
+    emailChannel: null,
     workspaceSettings: {
       getRetrievalDefaults: async () => ({}),
       getIngestionSettings: async () => ({}),

@@ -5,11 +5,12 @@ import { AppError } from "../../src/shared/domain/errors.js";
 import { LLM_DEFAULTS } from "../../src/shared/domain/behaviorConfig.js";
 import { AGENT_STEP_MAX_INPUT_TOKENS } from "../../src/shared/agent-runtime/index.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import { ProviderHttpError } from "../../src/shared/infra/llm/providerErrors.js";
 import { captureModelCallTrace } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { streamWithUsage } from "../../src/shared/infra/llm/providerStreaming.js";
 import type { TextGenerationClient, TextGenerationRequest } from "../../src/shared/infra/llm/providerTypes.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
-import { initializeTracing, shutdownTracing } from "../../src/shared/observability/tracing/index.js";
+import { initializeTracing, shutdownTracing, startActiveSpan } from "../../src/shared/observability/tracing/index.js";
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
 
@@ -105,6 +106,105 @@ describe("ModelInferencePipelineService", () => {
       "radioso.workspace_id": "workspace-1",
     });
     expect(JSON.stringify(exporter.spans[0]?.attributes)).not.toContain("private prompt");
+  });
+
+  describe("provider failures with customer content in the error", () => {
+    const SENTINEL = "visitor jane.sentinel@example.org wrote SENTINEL-4412";
+
+    const sentinelProviderError = (): ProviderHttpError => {
+      const error = new ProviderHttpError({
+        provider: "Claude",
+        operation: "messages",
+        status: 400,
+        bodyText: JSON.stringify({ error: { type: "invalid_request_error", message: SENTINEL } }),
+        bodyJson: { error: { type: "invalid_request_error", message: SENTINEL } },
+      });
+      expect(error.message).toContain(SENTINEL);
+      expect(error.stack).toContain(SENTINEL);
+      return error;
+    };
+
+    const exportedText = (spans: readonly ReadableSpan[]): string =>
+      JSON.stringify(spans.map((span) => ({
+        name: span.name,
+        attributes: span.attributes,
+        events: span.events,
+        status: span.status,
+      })));
+
+    const tracingExporter = (): RecordingExporter => {
+      const exporter = new RecordingExporter();
+      initializeTracing({
+        enabled: true,
+        environment: "test",
+        otlpEndpoint: "http://localhost:4318/v1/traces",
+        runtimeRole: "api",
+        serviceName: "radioso-api",
+        spanExporter: exporter,
+      });
+      return exporter;
+    };
+
+    const expectContentFreeFailure = (exporter: RecordingExporter, spanName: string): void => {
+      expect(exportedText(exporter.spans)).not.toContain("SENTINEL-4412");
+      expect(exportedText(exporter.spans)).not.toContain("jane.sentinel");
+      const providerSpan = exporter.spans.find((span) => span.name === spanName);
+      expect(providerSpan?.attributes).toMatchObject({
+        "error.type": "ProviderHttpError",
+        "llm.provider.outcome": "failed",
+        "radioso.request_id": "request-1",
+        "radioso.workspace_id": "workspace-1",
+      });
+      expect(providerSpan?.events.map((event) => event.attributes)).toEqual([{
+        "exception.type": "ProviderHttpError",
+        "exception.code": "invalid_request_error",
+        "http.response.status_code": 400,
+      }]);
+      const parentSpan = exporter.spans.find((span) => span.name === "chat.turn");
+      expect(parentSpan?.status.message).toBe("ProviderHttpError");
+    };
+
+    it("exports completion spans without the provider's message or stack", async () => {
+      const exporter = tracingExporter();
+      const client: TextGenerationClient = {
+        metadata: { capability: "chat", provider: "claude", model: "claude-test" },
+        complete: vi.fn(async () => {
+          throw sentinelProviderError();
+        }),
+        stream: vi.fn(() => streamResult([])),
+      };
+      const pipeline = new ModelInferencePipelineService(client);
+
+      await expect(startActiveSpan("chat.turn", {}, () =>
+        pipeline.complete({ operation: usageContext, prompt: "private prompt" }),
+      )).rejects.toBeInstanceOf(ProviderHttpError);
+
+      expectContentFreeFailure(exporter, "llm.provider.complete");
+    });
+
+    it("exports streaming spans without the provider's message or stack", async () => {
+      const exporter = tracingExporter();
+      const client: TextGenerationClient = {
+        metadata: { capability: "chat", provider: "claude", model: "claude-test" },
+        complete: vi.fn(async () => textResult("unused")),
+        stream: vi.fn(() => ({
+          textStream: (async function* () {
+            yield "partial";
+            throw sentinelProviderError();
+          })(),
+          usage: Promise.resolve(undefined),
+        })),
+      };
+      const pipeline = new ModelInferencePipelineService(client);
+
+      await expect(startActiveSpan("chat.turn", {}, async () => {
+        for await (const _chunk of pipeline.stream({ operation: usageContext, prompt: "private prompt" }).textStream) {
+          // drain
+        }
+      })).rejects.toBeInstanceOf(ProviderHttpError);
+
+      expectContentFreeFailure(exporter, "llm.provider.stream");
+    });
   });
 
   it("forwards the dispatch record to the provider completion boundary", async () => {

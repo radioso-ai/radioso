@@ -244,6 +244,52 @@ jobs:
             fi
           fi
 
+      - name: Export email channel Terraform variables
+        env:
+          EMAIL_CHANNEL_PROVIDER: ${{ vars.EMAIL_CHANNEL_PROVIDER }}
+          EMAIL_CHANNEL_INBOUND_DOMAIN: ${{ vars.EMAIL_CHANNEL_INBOUND_DOMAIN }}
+          EMAIL_CHANNEL_WORKERS_ENABLED: ${{ vars.EMAIL_CHANNEL_WORKERS_ENABLED }}
+          EMAIL_CHANNEL_TASK_MAX_DISPATCHES_PER_SECOND: ${{ vars.EMAIL_CHANNEL_TASK_MAX_DISPATCHES_PER_SECOND }}
+          EMAIL_CHANNEL_TASK_MAX_CONCURRENT_DISPATCHES: ${{ vars.EMAIL_CHANNEL_TASK_MAX_CONCURRENT_DISPATCHES }}
+          EMAIL_CHANNEL_SWEEP_SCHEDULE: ${{ vars.EMAIL_CHANNEL_SWEEP_SCHEDULE }}
+          EMAIL_CHANNEL_SWEEP_MAX_JOBS: ${{ vars.EMAIL_CHANNEL_SWEEP_MAX_JOBS }}
+          EMAIL_CHANNEL_WEBHOOK_SECRET: ${{ secrets.EMAIL_CHANNEL_WEBHOOK_SECRET }}
+          EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS: ${{ secrets.EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS }}
+          RESEND_CHANNEL_API_KEY: ${{ secrets.RESEND_CHANNEL_API_KEY }}
+        run: |
+          # The module tests these inputs against null, and TF_VAR_x="" reaches Terraform as
+          # an empty string rather than null (and fails outright for the bool and number
+          # inputs). Export a variable only when its GitHub value is set, so an unset value
+          # keeps the root default and an unset EMAIL_CHANNEL_PROVIDER leaves the channel off.
+          # Whitespace-only counts as unset, matching the Google login pair above.
+          for key in \
+            EMAIL_CHANNEL_PROVIDER \
+            EMAIL_CHANNEL_INBOUND_DOMAIN \
+            EMAIL_CHANNEL_WORKERS_ENABLED \
+            EMAIL_CHANNEL_TASK_MAX_DISPATCHES_PER_SECOND \
+            EMAIL_CHANNEL_TASK_MAX_CONCURRENT_DISPATCHES \
+            EMAIL_CHANNEL_SWEEP_SCHEDULE \
+            EMAIL_CHANNEL_SWEEP_MAX_JOBS \
+            EMAIL_CHANNEL_WEBHOOK_SECRET \
+            EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS \
+            RESEND_CHANNEL_API_KEY
+          do
+            if [ -n "${!key//[[:space:]]/}" ]; then
+              echo "TF_VAR_$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')=${!key}" >> "$GITHUB_ENV"
+            fi
+          done
+
+          # The backend refuses to boot with a provider but no inbound domain or webhook
+          # secret, so stop the deploy rather than roll out a revision that crash-loops.
+          if [ -n "${EMAIL_CHANNEL_PROVIDER//[[:space:]]/}" ]; then
+            for key in EMAIL_CHANNEL_INBOUND_DOMAIN EMAIL_CHANNEL_WEBHOOK_SECRET; do
+              if [ -z "${!key//[[:space:]]/}" ]; then
+                echo "Missing required GitHub environment value: $key because EMAIL_CHANNEL_PROVIDER is set" >&2
+                exit 1
+              fi
+            done
+          fi
+
       - name: Resolve Terraform deployment values
         env:
           ENVIRONMENT_NAME: ${{ inputs.environment }}

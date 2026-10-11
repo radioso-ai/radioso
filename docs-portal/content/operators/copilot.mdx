@@ -1,7 +1,7 @@
 ---
 title: "Ray"
-description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, edit routines, test a routine change before it ships, and review linked activity and proposals."
-last_updated: 2026-09-26
+description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, check the email channel and its held replies, edit routines, test a routine change before it ships, and review linked activity and proposals."
+last_updated: 2026-10-04
 ---
 
 # Ray
@@ -197,6 +197,49 @@ it back, transferring it to a colleague, and approving or refusing a pending
 decision are yours as well — ask for any of them and Ray says so and gives you
 the link. Deciding who is answerable to a waiting
 customer is a person's call, and that is the point of the line.
+
+## Check the email channel
+
+When an agent answers a support mailbox, Ray can tell you whether the mailbox is
+healthy before you open its settings. Ask "how is our email set up?" and Ray
+reads each mailbox's address, the agent behind it, its mode, whether mail is
+arriving (waiting for the first message, receiving, or silent), whether its
+domain can send, and its per-thread and hourly budgets, along with each sending
+domain's DNS record status. Ask "is mail actually reaching the support mailbox?"
+and Ray counts the last day's mail by what happened to it — filed into a
+conversation without an agent turn, given a review turn, or dropped — and how
+many failed, with the time the last message landed. A quiet mailbox and a broken
+forward read differently that way. Name a longer window, up to 30 days, when one
+day is too little to go on.
+
+On an email conversation, Ray reads the facts around the messages: the mailbox
+it came to, the customer's display name, the latest subject and CC count,
+whether the mailbox can send, how much of the thread's send budget is used, and
+each message's attachments by name, type, and size. For a reply the agent held
+for review, Ray reads the draft as the agent wrote it, any edit a teammate made,
+the hold reason, the review turn's outcome and grounding, and the skills whose
+effects were held back. Ask "what did the agent draft here, and why was it
+held?" on the conversation, or "which replies are waiting for review?" for the
+whole workspace. Held replies also sit in the queue beside approvals, so
+"everything waiting on a person" includes them.
+
+Ray reads the channel through a view built for it. Relay addresses, setup-check
+addresses, DNS record values, customer addresses other than the mailbox's own,
+and the raw email with its headers stay in the dashboard; the conversation's
+text reaches Ray through its transcript, as on any channel. The mailbox and
+event-log reads need `workspace.settings.read`; the conversation facts and held
+replies need `workspace.conversation.takeover`, the permission that lets you
+reply to a customer.
+
+**Where Ray stops.** Sending a held reply answers a live customer, so it stays
+with you: ask Ray to send one and it says so and gives you the link. Discarding
+one is your call too, because the customer then hears nothing from the agent on
+that message, so it stays in the Inbox. Ray reads mailboxes without changing
+them. Adding or removing a mailbox, switching its agent or mode, adding or
+verifying a sending domain, running the forwarding check, and retrying inbound
+mail all decide which customer mail reaches which agent, so you make those
+changes in the agent's **Channels**. Acknowledging or resending a failed
+delivery stays with a person as well.
 
 ## Ask about what you see
 
@@ -652,6 +695,11 @@ the change should have moved, read the result, then ask for the next batch.
 - **Document maintenance is unavailable** — your session can read documents
   but does not hold `workspace.documents.manage`. Chunk inspection remains
   available; reprocess and recrawl do not appear in Ray's tool set.
+- **Held replies or email facts are unavailable** — your session can read
+  workspace settings but does not hold `workspace.conversation.takeover`. The
+  mailbox and event-log reads remain available.
+- **Ray says the email channel is not configured** — this deployment has no
+  email provider, so there is no mailbox to read.
 - **Retrieval probing is unavailable** — your session holds
   `workspace.retrieval.query` but not `workspace.agents.read`, which the probe
   needs in order to run as an agent.
@@ -696,6 +744,8 @@ the change should have moved, read the result, then ask for the next batch.
 
 - [Human takeover](/operators/human-takeover) — investigate a customer
   conversation and take ownership when a person needs to reply.
+- [Email channel](/operators/email-channel) — connect a mailbox, review the
+  agent's drafts, and read the mailbox event log.
 - [Test your agent in the workbench](/guides/workbench) — run an agent turn
   directly and inspect its customer-facing trace.
 - [Evaluate answer quality](/guides/evals) — turn a known behavior into a

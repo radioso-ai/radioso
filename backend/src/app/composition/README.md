@@ -24,6 +24,10 @@ composition calls them and assembles the result.
   with the default app.
 - `workspaceLlmCapabilityResolver.ts`: workspace-scoped LLM capability wiring. Precedence is agent override → workspace preference → env default, then a registered `ManagedModelPolicy` (`shared/domain/managedModelPolicy.ts`, `registerManagedModelPolicy`) may replace the candidate for a workspace that holds no key of its own for the candidate provider; `resolvedBy` on the result names the winning step.
 - `backend/src/modules/*/composition.ts`: module-owned construction helpers.
+- `conversationLockOrder.ts`: the conversation lock protocol every unit of work
+  touching a conversation's ownership, held replies or mailbox policy follows,
+  and the bounded deadlock retry for the units that can still meet one. Read it
+  before adding a unit of work that locks any of those rows.
 
 ## Common Change Paths
 

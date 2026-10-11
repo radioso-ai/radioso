@@ -14,6 +14,7 @@ import {
   ApprovalDecisionPanel,
   OperatorComposer,
   useOperatorActionRunner,
+  type ChannelSendReadiness,
   type OperatorActionResult,
 } from '@/components/dashboard/operator-composer'
 import { Button } from '@/components/ui/button'
@@ -25,6 +26,7 @@ import { hitlApi } from '@/lib/api-hitl'
 import { useOptionalAuth } from '@/lib/auth-context'
 import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
+import { conversationSendUnavailableReason, type ConversationChannelRead } from '@/lib/email-send-readiness'
 import {
   doneControlTooltip,
   findFirstVisitorMessage,
@@ -45,6 +47,9 @@ import {
 } from '@/lib/needs-attention'
 import { useSkillCatalog } from '@/lib/skill-catalog'
 import { cn } from '@/lib/utils'
+import { DeliveryFailurePanel } from './delivery-failure-panel'
+import { EmailConversationHeader, useConversationEmailFacts } from './email-conversation-header'
+import { HeldReplyPanel } from './held-reply-panel'
 import { InboxReadOnlyFooter } from './inbox-readonly-footer'
 import { InboxSituationCard } from './inbox-situation-card'
 import { useConversationOperators } from './use-conversation-operators'
@@ -224,10 +229,20 @@ export function InboxResponseView({
   } = useHistoryDocumentDialogState()
 
   const skillCatalog = useSkillCatalog(conversationId)
+  // The channel comes with the conversation's detail; until that is read, nothing is known of it.
+  const channelRead: ConversationChannelRead = conversationDetail
+    ? { state: 'known', provider: conversationDetail.channelContext?.provider ?? null }
+    : detailError ? { state: 'failed' } : { state: 'pending' }
+  const isEmailConversation = channelRead.state === 'known' && channelRead.provider === 'email'
+  const emailFacts = useConversationEmailFacts(workspaceId, conversationId, isEmailConversation)
+  const refreshEmailFacts = emailFacts.refresh
 
+  // Every operator action can change what the email header shows: a reply starts a delivery, an
+  // acknowledgement clears a failure.
   const handleChanged = useCallback(async (result: OperatorActionResult) => {
+    refreshEmailFacts()
     await Promise.all([refetchDetail(), onOperatorChanged(result)])
-  }, [onOperatorChanged, refetchDetail])
+  }, [onOperatorChanged, refetchDetail, refreshEmailFacts])
 
   const handBackRunner = useOperatorActionRunner(conversationId ?? '', handleChanged)
 
@@ -279,6 +294,17 @@ export function InboxResponseView({
 
   const renderedMessages = effectiveConversationMessages.map((message) =>
     message.role === 'assistant' ? { ...message, persistedAssistantMessageId: message.id } : message)
+  // A reply, a released draft and a resend all wait until the conversation's channel is known, and
+  // an email one until a successful read of its mailbox says it can send: unknown or stale facts
+  // never offer Send. A refused send reads the mailbox again.
+  const sendUnavailableReason = conversationSendUnavailableReason(channelRead, emailFacts)
+  const sendReadiness: ChannelSendReadiness | undefined = channelRead.state === 'known' && !isEmailConversation
+    ? undefined
+    : { unavailableReason: sendUnavailableReason, readAt: emailFacts.readAt, reread: refreshEmailFacts }
+  const replyPreviews = useMemo(
+    () => new Map(isEmailConversation ? effectiveConversationMessages.map((message) => [message.id, message.content]) : []),
+    [effectiveConversationMessages, isEmailConversation],
+  )
 
   if (!selection) {
     return (
@@ -302,8 +328,14 @@ export function InboxResponseView({
   // with the agent (no ownership record, or an AI-owned one) has no "waiting
   // since" or "with them since" to show.
   const waiting = effectiveItem?.escalatedAt ? inboxWaitingPresentation(effectiveItem, now) : null
+  // Who wrote in depends on the channel: until the conversation (or its row) says which, the
+  // session reading claims nothing.
+  const channelSource = conversationDetail ?? readOnlySelection?.conversation
   const identity = visitorIdentityLabel({
-    anonymousSessionId: effectiveItem ? effectiveItem.anonymousSessionId : readOnlySource?.anonymousSessionId,
+    channel: channelSource?.channelContext?.provider ?? null,
+    anonymousSessionId: !channelSource
+      ? undefined
+      : effectiveItem ? effectiveItem.anonymousSessionId : readOnlySource?.anonymousSessionId,
   })
 
   return (
@@ -354,6 +386,29 @@ export function InboxResponseView({
         </button>
       </header>
 
+      {/* Outside the detail branch: an action re-reads the detail, and the panel must keep its
+          outcome and focus through that reload. */}
+      {effectiveItem?.type === 'delivery_failed' && effectiveItem.deliveryFailure ? (
+        <div className="shrink-0 px-6 pt-4">
+          <DeliveryFailurePanel
+            failure={effectiveItem.deliveryFailure}
+            resendUnavailableReason={sendUnavailableReason}
+            onChanged={handleChanged}
+          />
+        </div>
+      ) : null}
+      {effectiveItem?.type === 'approval' && effectiveItem.heldReplyId ? (
+        <div className="shrink-0 px-6 pt-4">
+          <HeldReplyPanel
+            key={effectiveItem.conversationId}
+            workspaceId={workspaceId}
+            conversationId={effectiveItem.conversationId}
+            sendUnavailableReason={sendUnavailableReason}
+            onChanged={handleChanged}
+          />
+        </div>
+      ) : null}
+
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {isDetailLoading && !conversationDetail ? (
           <div className="flex h-full items-center justify-center">
@@ -365,13 +420,21 @@ export function InboxResponseView({
           </div>
         ) : (
           <div className="space-y-4">
+            {isEmailConversation ? (
+              <EmailConversationHeader
+                facts={emailFacts.facts}
+                error={emailFacts.error}
+                isLoading={emailFacts.isLoading}
+                replyPreviews={replyPreviews}
+              />
+            ) : null}
             {effectiveItem ? (
               <InboxSituationCard
                 handoffReason={effectiveOwnership?.reason ?? null}
                 firstVisitorMessage={findFirstVisitorMessage(effectiveConversationMessages)}
               />
             ) : null}
-            {effectiveItem?.type === 'approval' ? (
+            {effectiveItem?.type === 'approval' && !effectiveItem.heldReplyId ? (
               approvalDecision ? (
                 <ApprovalDecisionPanel
                   conversationId={effectiveItem.conversationId}
@@ -409,6 +472,7 @@ export function InboxResponseView({
           onTeammatesStale={teammates.refresh}
           onChanged={handleChanged}
           externalError={handBackRunner.error}
+          sendReadiness={sendReadiness}
           trailingActions={showDoneControl ? (
             <Tooltip>
               <TooltipTrigger asChild>

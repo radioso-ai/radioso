@@ -57,7 +57,7 @@ const makeHandler = (options: {
   const warn = vi.fn();
   const logger: ConnectorLogger = { info, warn, error: vi.fn() };
   const bindings = new InMemorySlackBindingRepository();
-  const chat: ConnectorChatPort = {
+  const chat: Pick<ConnectorChatPort, "answer"> = {
     answer: options.answerImpl ?? vi.fn(async () => ({
       conversationId: CONVERSATION_ID,
       answer: "**bold** answer",

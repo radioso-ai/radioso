@@ -85,6 +85,16 @@ describe('visitorIdentityLabel', () => {
   it('labels an unknown session state generically rather than guessing', () => {
     expect(visitorIdentityLabel({ anonymousSessionId: undefined })).toBe('Visitor')
   })
+
+  it('never calls an email sender verified: a session does not apply to email, so none proves nothing', () => {
+    expect(visitorIdentityLabel({ anonymousSessionId: null, channel: 'email' })).toBe('Email sender')
+    expect(visitorIdentityLabel({ anonymousSessionId: undefined, channel: 'email' })).toBe('Email sender')
+  })
+
+  it('keeps the session reading for a web visitor', () => {
+    expect(visitorIdentityLabel({ anonymousSessionId: null, channel: 'web' })).toBe('Verified visitor')
+    expect(visitorIdentityLabel({ anonymousSessionId: null, channel: null })).toBe('Verified visitor')
+  })
 })
 
 describe('stripTrackingParams', () => {
@@ -121,6 +131,15 @@ describe('informativeChannelLabel', () => {
       channel: { id: 'C1', type: 'channel' },
       user: { id: 'U1' },
     })).toBe('Slack')
+  })
+
+  it('labels an email channel', () => {
+    expect(informativeChannelLabel({
+      provider: 'email',
+      mailbox: { id: 'mailbox-1', address: 'support@customer.test' },
+      threadKey: '8b3c1f4e-1d2a-4c5b-9e7f-0a1b2c3d4e5f',
+      participant: { address: 'ana@example.test' },
+    })).toBe('Email')
   })
 
   it('does not label the default web embed', () => {

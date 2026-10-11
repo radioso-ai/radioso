@@ -1,9 +1,8 @@
 import type { EvalLlmJudgePort } from "../services/evalJudge.js";
-import type { EvalRunObservedOutput } from "../domain/types.js";
 import type { CaseOutcome } from "./baseline.js";
 import { conversationQualityCaseTurnText, type ConversationQualityCase } from "./caseSchema.js";
 import type { CaseReport } from "./report.js";
-import type { ConversationQualityRunnerPort } from "./runnerPort.js";
+import { observeCase, type ConversationQualityRunnerPort } from "./runnerPort.js";
 import { scoreObservedOutput } from "./scoring.js";
 
 interface RunSuiteOptions {
@@ -22,7 +21,8 @@ interface SuiteRunResult {
  * Drives every case through the runner and scores it. Cases run sequentially — like the
  * product suite runner — so a live run does not fan out concurrent provider calls and
  * trip rate limits. A runner that throws degrades that single case to an `error` result
- * rather than aborting the whole suite.
+ * rather than aborting the whole suite. A `review` case runs through the runner's review
+ * port (see {@link observeCase}).
  */
 export const runConversationQualitySuite = async (
   cases: ConversationQualityCase[],
@@ -32,16 +32,7 @@ export const runConversationQualitySuite = async (
   const reports: CaseReport[] = [];
 
   for (const evalCase of cases) {
-    let output: EvalRunObservedOutput;
-    try {
-      output = await runner.run(evalCase);
-    } catch (err) {
-      output = {
-        retrievedChunks: [],
-        error: { message: err instanceof Error ? err.message : "Runner threw a non-Error value." },
-      };
-    }
-
+    const output = await observeCase(runner, evalCase);
     const score = await scoreObservedOutput(evalCase.assertions, output, {
       workspaceId: options.workspaceId,
       question: conversationQualityCaseTurnText(evalCase),

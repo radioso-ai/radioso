@@ -55,6 +55,48 @@ describe("CustomerReplyDeliveryDispatcher", () => {
     expect(slackDeliverer.route).toHaveBeenCalledTimes(1);
     expect(web).toBeNull();
   });
+
+  it("routes email conversations to the deliverer registered under email, and leaves web replies alone", async () => {
+    const route: CustomerReplyRoute = { enqueue: vi.fn(async () => undefined) };
+    const emailDeliverer: CustomerChannelReplyDeliverer = { route: vi.fn(async () => route) };
+    const slackDeliverer: CustomerChannelReplyDeliverer = { route: vi.fn(async () => null) };
+    const dispatcher = new CustomerReplyDeliveryDispatcher({ slack: slackDeliverer, email: emailDeliverer });
+    const emailConversation = {
+      id: "conversation-email",
+      workspaceId: "workspace-1",
+      sourceChannel: "email",
+      channelContext: {
+        provider: "email" as const,
+        mailbox: { id: "mailbox-1", address: "support@customer.test" },
+        threadKey: "thread-1",
+        participant: { address: "pat@example.org" },
+      },
+    };
+
+    await expect(dispatcher.route(emailConversation)).resolves.toBe(route);
+    const web = await dispatcher.route({
+      id: "web-conversation",
+      workspaceId: "workspace-1",
+      sourceChannel: "embed",
+      channelContext: { provider: "web" },
+    });
+
+    expect(emailDeliverer.route).toHaveBeenCalledOnce();
+    expect(emailDeliverer.route).toHaveBeenCalledWith(emailConversation);
+    expect(slackDeliverer.route).not.toHaveBeenCalled();
+    expect(web).toBeNull();
+  });
+
+  it("routes an email conversation nowhere when no email deliverer is registered", async () => {
+    const dispatcher = new CustomerReplyDeliveryDispatcher({});
+
+    await expect(dispatcher.route({
+      id: "conversation-email",
+      workspaceId: "workspace-1",
+      sourceChannel: "email",
+      channelContext: { provider: "email", mailbox: { id: "mailbox-1", address: "support@customer.test" }, threadKey: "thread-1", participant: { address: "pat@example.org" } },
+    })).resolves.toBeNull();
+  });
 });
 
 describe("SlackCustomerReplyDeliverer", () => {

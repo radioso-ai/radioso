@@ -101,11 +101,29 @@ export const dashboardQueryKeys = {
       workspaceKey(workspaceId, 'attention', 'human-owned', input.pageSize),
     recentlyClosed: (workspaceId: string, input: { limit: number }) =>
       workspaceKey(workspaceId, 'attention', 'recently-closed', input.limit),
+    // No workspace event reports a delivery failure yet, so it polls, and an operator's own
+    // acknowledgement re-reads it by invalidating this key.
+    deliveryFailures: (workspaceId: string, input: { limit: number }) =>
+      workspaceKey(workspaceId, 'attention', 'delivery-failures', input.limit),
+    // Held replies poll for the same reason, and an operator's own release, discard or reply
+    // re-reads them by invalidating this key.
+    heldReplies: (workspaceId: string, input: { limit: number }) =>
+      workspaceKey(workspaceId, 'attention', 'held-replies', input.limit),
+    // A conversation an attention row names but no attention list carries: its agent and title.
+    // Not a live-invalidation family; neither changes while the row waits.
+    conversationSource: (workspaceId: string, conversationId: string) =>
+      workspaceKey(workspaceId, 'attention', 'conversation-source', conversationId),
   },
   conversations: {
     // Not a live-invalidation family: no workspace event reports a teammate change, so
     // callers re-read it by invalidating this key.
     operators: (workspaceId: string) => workspaceKey(workspaceId, 'conversations', 'operators'),
+    // Polled while the conversation is open, and re-read after an operator's own action on it.
+    emailFacts: (workspaceId: string, conversationId: string) =>
+      workspaceKey(workspaceId, 'conversations', 'email-facts', conversationId),
+    // Polled while the conversation is open, so a newer draft or a teammate's release shows.
+    heldReply: (workspaceId: string, conversationId: string) =>
+      workspaceKey(workspaceId, 'conversations', 'held-reply', conversationId),
   },
 } as const
 
@@ -120,6 +138,8 @@ type DashboardQueryFamily =
   | 'attention/decisions'
   | 'attention/human-owned'
   | 'attention/recently-closed'
+  | 'attention/delivery-failures'
+  | 'attention/held-replies'
 
 const knownFamilies = new Set<DashboardQueryFamily>([
   'documents/list',
@@ -132,6 +152,8 @@ const knownFamilies = new Set<DashboardQueryFamily>([
   'attention/decisions',
   'attention/human-owned',
   'attention/recently-closed',
+  'attention/delivery-failures',
+  'attention/held-replies',
 ])
 
 export const isDashboardQueryFamily = (

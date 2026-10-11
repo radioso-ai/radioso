@@ -15,9 +15,10 @@ import type { AuditService } from "../audit/contracts/index.js";
 import type { ConversationActivityEvent, ConversationActivityWriter } from "../conversationActivity/contracts/index.js";
 import { notifyAfterCommit, recordCommittedOwnershipAudit, type CommittedAuditReporting } from "./committedOwnershipAudit.js";
 import type { ConversationOperatorDirectory } from "./conversationOperatorDirectory.js";
+import type { HeldReplySupersedeScope } from "./heldReplies/heldReplyService.js";
 import type { OperatorIdentity, OperatorIdentityResolver } from "./operatorIdentity.js";
 import type { OperatorReplyService, OperatorReplyWriteScope } from "./operatorReplyService.js";
-import type { ConversationOwnershipRecord } from "./ownershipState.js";
+import type { ConversationOwnershipReason, ConversationOwnershipRecord } from "./ownershipState.js";
 import { transferNoticeRequest, type TransferNoticeOutboxPort } from "./transferNotice.js";
 
 /** The signed-in teammate acting on a conversation, in the workspace they act from. */
@@ -44,23 +45,32 @@ type OwnershipReplyResult =
   | OwnershipRefused;
 
 /**
- * Writes an ownership change — a claim, a transfer, a hand-back — with the activity it records and
- * the notice a transfer owes, as one unit: all commit, or none does.
+ * The conversation's held replies a teammate's claim or reply replaces: a live draft is superseded,
+ * and a discarded one stops waiting for a teammate.
+ */
+type ConversationHeldReplies = Pick<HeldReplySupersedeScope, "supersedePendingForConversation" | "clearDiscardedAttention">;
+
+/**
+ * Writes an ownership change — a claim, a transfer, a hand-back — with the activity it records,
+ * the notice a transfer owes, and the held replies a claim replaces, as one unit: all commit, or
+ * none does.
  */
 export interface OwnershipChangeUnitOfWork {
   run<T>(work: (scope: {
+    conversations: Pick<ConversationRepository, "lockForUpdate">;
     ownership: Pick<ConversationOwnershipRepository, "loadForUpdate" | "takeOver" | "transfer" | "handBack">;
     outbox: TransferNoticeOutboxPort;
     activity: ConversationActivityWriter;
+    heldReplies: ConversationHeldReplies;
   }) => Promise<T>): Promise<T>;
 }
 
 /**
  * Writes a reply, its channel delivery, and the ownership it stands on — with the activity of a
- * claim the reply makes — as one unit: the conversation and ownership rows stay locked from the
- * moment they are read until the message is written, so a transfer or hand-back either commits
- * before the reply looks (and refuses it) or waits until the reply has committed. A delivery queued
- * in it is pushed to the action worker once it commits.
+ * claim the reply makes and the held replies the reply replaces — as one unit: the conversation
+ * and ownership rows stay locked from the moment they are read until the message is written, so a
+ * transfer or hand-back either commits before the reply looks (and refuses it) or waits until the
+ * reply has committed. A delivery queued in it is pushed to the action worker once it commits.
  */
 export interface OwnershipReplyUnitOfWork {
   run<T>(work: (scope: {
@@ -68,7 +78,17 @@ export interface OwnershipReplyUnitOfWork {
     ownership: Pick<ConversationOwnershipRepository, "loadForUpdate" | "takeOver">;
     reply: OperatorReplyWriteScope;
     activity: ConversationActivityWriter;
+    heldReplies: ConversationHeldReplies;
   }) => Promise<T>): Promise<T>;
+}
+
+/**
+ * The writes a request for human ownership makes, bound to the transaction of the unit of work that
+ * asks for it — so the handoff commits with whatever that unit of work records, or not at all.
+ */
+export interface HumanOwnershipRequestScope {
+  ownership: Pick<ConversationOwnershipRepository, "requestHandoff">;
+  activity: ConversationActivityWriter;
 }
 
 /** Audit metadata a surface adds to the records its commands cause, e.g. the Slack user who clicked. */
@@ -99,6 +119,20 @@ const claimedActivity = (actor: OwnershipActor, conversationId: string): Convers
 });
 
 /**
+ * A teammate who took the conversation or replied on it dealt with it: the draft waiting for them
+ * is replaced, whether it waits for a release or to go out on its own, and a draft they set aside
+ * stops asking for them.
+ */
+const replaceHeldReplies = async (
+  heldReplies: ConversationHeldReplies,
+  conversationId: string,
+  reason: "takeover" | "operator_reply",
+): Promise<void> => {
+  await heldReplies.supersedePendingForConversation(conversationId, reason);
+  await heldReplies.clearDiscardedAttention(conversationId, reason);
+};
+
+/**
  * The rules for who handles a human-owned conversation, keyed on the teammate acting. Every
  * surface — the dashboard's REST routes, Slack's buttons — goes through here, so none restates
  * them:
@@ -108,6 +142,8 @@ const claimedActivity = (actor: OwnershipActor, conversationId: string): Convers
  *   claims it for the replier first, and a reply commits with the ownership it was checked against
  *   and with its delivery to the customer's channel;
  * - taking a conversation a teammate holds is an explicit transfer to yourself;
+ * - a claim — a takeover, a transfer to yourself, the claim a reply makes — and every reply replace
+ *   the conversation's held replies in the same unit of work;
  * - every change commits with the activity that records it, and a transfer with the notice it owes
  *   the recipient;
  * - a committed change stands even when what follows it — telling the visitor and the dashboard,
@@ -141,11 +177,19 @@ export class ConversationOwnershipService {
     reason?: string;
     auditContext?: OwnershipAuditContext;
   }): Promise<OwnershipCommandResult> {
-    const [, operator] = await this.readConversationAndOperator(actor, input.conversationId);
-    const result = await this.dependencies.changes.run(async ({ ownership, activity }) => {
+    const [conversation, operator] = await this.readConversationAndOperator(actor, input.conversationId);
+    const result = await this.dependencies.changes.run(async ({ conversations, ownership, activity, heldReplies }) => {
+      // A claim may create the ownership row, and an absent row locks nothing, so the conversation
+      // row stands in for it: locked first, as every unit that may create one does, the claim
+      // queues behind a change already holding the conversation instead of inserting a row that
+      // change will wait on while this claim waits on its drafts (`conversationLockOrder.ts`).
+      if (!(await conversations.lockForUpdate(conversation.id, conversation.workspaceId))) {
+        throw notFound("Conversation not found");
+      }
       const claimed = await ownership.takeOver(this.claimInput(actor, operator, input));
       if (claimed.ok && claimed.changed) {
         await activity.record(claimedActivity(actor, input.conversationId));
+        await replaceHeldReplies(heldReplies, input.conversationId, "takeover");
       }
       return claimed;
     });
@@ -175,7 +219,7 @@ export class ConversationOwnershipService {
     if (!target) {
       throw transferTargetUnavailable();
     }
-    const result = await this.dependencies.changes.run(async ({ ownership, outbox, activity }) => {
+    const result = await this.dependencies.changes.run(async ({ ownership, outbox, activity, heldReplies }) => {
       // Locked until the transfer commits, so the teammate it names as the previous owner is the
       // one the transfer took it from.
       const previous = await ownership.loadForUpdate(input.conversationId);
@@ -205,6 +249,9 @@ export class ConversationOwnershipService {
           subjectUserId: target.userId,
           detail: { fromUserId: previous?.ownerUserId ?? null },
         });
+        if (target.userId === actor.userId) {
+          await replaceHeldReplies(heldReplies, input.conversationId, "takeover");
+        }
       }
       if (notice) {
         await outbox.enqueue(notice);
@@ -257,6 +304,30 @@ export class ConversationOwnershipService {
     return result;
   }
 
+  /**
+   * Hands a conversation to a person, unclaimed, inside the caller's unit of work: one the AI owns
+   * (or nobody has ever owned) becomes human-owned with the reason and records `handoff_requested`;
+   * one a person already owns is left exactly as it is. Nothing is announced here — the caller tells
+   * the dashboard once its transaction has committed.
+   */
+  async requestHumanOwnership(scope: HumanOwnershipRequestScope, input: {
+    conversationId: string;
+    workspaceId: string;
+    reason: ConversationOwnershipReason;
+  }): Promise<{ changed: boolean; record: ConversationOwnershipRecord }> {
+    const requested = await scope.ownership.requestHandoff(input);
+    if (requested.changed) {
+      await scope.activity.record({
+        kind: "handoff_requested",
+        conversationId: input.conversationId,
+        workspaceId: input.workspaceId,
+        actorUserId: null,
+        detail: { reason: input.reason },
+      });
+    }
+    return requested;
+  }
+
   /** The teammate holding the conversation when it is not the caller, so the caller may not reply. */
   async replyRefusal(actor: OwnershipActor, conversationId: string): Promise<{
     refusal: "held_by_teammate";
@@ -291,10 +362,12 @@ export class ConversationOwnershipService {
     const outcome = await this.dependencies.replyWrites.run(async (scope): Promise<
       { ok: true; message: MessageRecord; record: ConversationOwnershipRecord; claim: SettledChange | null } | OwnershipRefused
     > => {
-      // Lock order: the conversation row, then its ownership row — the order a conversation or
-      // workspace delete takes them (it deletes the conversation, then the ownership row cascades),
-      // so the two never deadlock. Holding the conversation first also queues this message behind
-      // any writer already holding it, so the message dates after theirs and no cursor tail skips it.
+      // Lock order: the conversation row, then its ownership row, then the held replies it
+      // replaces — the conversation lock protocol every writer of the conversation follows, and the
+      // order a conversation or workspace delete takes the first two (it deletes the conversation,
+      // then the ownership row cascades), so none of them deadlock. Holding the conversation first
+      // also queues this message behind any writer already holding it, so the message dates after
+      // theirs and no cursor tail skips it.
       if (!(await scope.conversations.lockForUpdate(conversation.id, conversation.workspaceId))) {
         throw notFound("Conversation not found");
       }
@@ -320,6 +393,7 @@ export class ConversationOwnershipService {
         record = claimed.record;
         claim = claimed;
       }
+      await replaceHeldReplies(scope.heldReplies, input.conversationId, "operator_reply");
       const message = await this.dependencies.replies.write(scope.reply, reply);
       return { ok: true, message, record, claim };
     });

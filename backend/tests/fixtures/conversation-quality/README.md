@@ -16,7 +16,7 @@ repo-committed regression suite you run from the CLI.
 | `routines.ts` | 2 seed `RoutineDefinition`s: `contact-support`, `book-demo` |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 20 seed cases |
+| `cases.ts` | the 29 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary
@@ -25,10 +25,32 @@ Two layers (see `src/modules/eval/suite/`):
 
 - **Deterministic (no LLM, gate every run):** `turn_route`, `turn_uses_skill`,
   `turn_activates_routine`, `routine_step_reached`, `routine_yielded`, `turn_asks_clarification`,
-  `turn_grounding_verdict`, `turn_answer_coverage`, plus the product `retrieval_*`,
-  `answer_cites_document`, `answer_contains` / `answer_does_not_contain`.
+  `turn_grounding_verdict`, `turn_answer_coverage`, `turn_persists_no_reply`, plus the product
+  `retrieval_*`, `answer_cites_document`, `answer_contains` / `answer_does_not_contain`.
 - **Semantic (LLM judge, paid/non-deterministic):** `llm_judge` — reserved for empathy,
   refusal, precision. Run these on-demand/nightly, not on every PR.
+
+## Review cases
+
+A case with `executionMode: "review"` runs as the email channel runs a turn: its `history` and
+`query` are recorded as the conversation, and the runner's `review` port answers the recorded
+customer message as a draft. No reply is persisted and no routine runs, so a review case takes
+only `query` and `history`. Its coverage verdict comes from the review facts rather than the
+turn trace, and `turn_persists_no_reply` checks that the conversation gained no assistant
+message. A runner without a `review` port scores review cases as errors instead of running
+them live. The `email`-tagged cases are review cases.
+
+The live runner publishes the seeded agent before it runs review cases, so a review turn runs
+the published revision, as the email channel does. Publishing refuses a routine whose tool step
+names a skill the agent lacks, so the runner adds every skill the seeded routines dispatch as a
+webhook skill on a loopback destination, publishes, and removes them before any case runs. A live
+case that reaches one of those steps therefore finds no such skill, whichever cases the run
+selects. When a routine starts dispatching a new skill, add it to `seededRoutineSkillNames` in
+`scripts/runEvals.ts`; a unit test fails until you do.
+
+A live review turn can ask the customer which sense they mean instead of answering. That ask is a
+non-retrieval reply, so its facts carry no grounding or coverage verdict, and the `email` cases
+assert only `turn_persists_no_reply`.
 
 ## Running it
 

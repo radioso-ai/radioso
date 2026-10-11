@@ -1,0 +1,16 @@
+Return-Path: <list-bounce@example.test>
+Received: from mx.in.relay.test (mx.in.relay.test [192.0.2.50])
+	by inbound.in.relay.test with ESMTPS id b7c8d9e0f1
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 18:30:10 +0000 (UTC)
+Message-ID: <msg-0207@example.test>
+List-Id: Product Updates <updates.example.test>
+From: Product Updates <updates@example.test>
+To: support@customer.test
+Subject: What's new this month
+Date: Sat, 03 Oct 2026 18:30:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Here's what shipped this month.

@@ -114,7 +114,7 @@ const readSupersededTurn = (error: unknown): { conversationId?: string; stage?: 
 
 interface SlackMessageHandlerOptions {
   logger: ConnectorLogger;
-  chat: ConnectorChatPort;
+  chat: Pick<ConnectorChatPort, "answer">;
   installations: SlackInstallationRepositoryPort;
   bindings: Pick<SlackBindingRepositoryPort, "findAnswerer">;
   installationService: Pick<SlackInstallationService, "markNeedsReauthForInstallation" | "resolveBotTokenForInstallation">;

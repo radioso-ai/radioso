@@ -339,6 +339,18 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         provider: z.literal("web"),
         origin: z.string().optional(),
       }),
+      // Stable identity only (FR-012): the thread's reply token never rides the context.
+      z.object({
+        provider: z.literal("email"),
+        mailbox: z.object({
+          id: z.string().uuid(),
+          address: z.string(),
+        }),
+        threadKey: z.string().uuid(),
+        participant: z.object({
+          address: z.string(),
+        }),
+      }),
     ]),
   );
 

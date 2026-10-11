@@ -13,16 +13,27 @@ export const CONVERSATION_ACTIVITY_KINDS = [
   "approval_decided",
   "feedback_resolved",
   "feedback_dismissed",
+  "channel_exception",
+  "delivery_failed",
+  "delivery_failure_cleared",
+  "held_reply_released",
+  "held_reply_discarded",
 ] as const;
 
 export type ConversationActivityKind = typeof CONVERSATION_ACTIVITY_KINDS[number];
 
-/** The kinds that close an Inbox item: a handoff, an approval, or negative feedback. */
+/**
+ * The kinds that close an Inbox item: a handoff, an approval (a routine's decision, or a held reply
+ * released), negative feedback, or a delivery failure. Held to the predicate of the recently-closed
+ * index, `conversation_activity_workspace_closed_v2_idx`.
+ */
 export const CLOSING_ACTIVITY_KINDS = [
   "handed_back",
   "approval_decided",
   "feedback_resolved",
   "feedback_dismissed",
+  "held_reply_released",
+  "delivery_failure_cleared",
 ] as const satisfies readonly ConversationActivityKind[];
 
 export type ClosingActivityKind = typeof CLOSING_ACTIVITY_KINDS[number];
@@ -112,6 +123,46 @@ export type ConversationActivityEvent = ConversationActivityScope & (
        */
       detail: { assistantMessageId: string; triageTransitionId: string; resolution: string | null };
     }
+  | {
+      kind: "channel_exception";
+      actorUserId: null;
+      /**
+       * A customer's message the channel set aside on this conversation: why, as the channel's
+       * enum code (`participant_mismatch`, `automated_sender`, `thread_conflict`, ...), and the
+       * channel delivery it concerns.
+       */
+      detail: { code: string; deliveryId: string };
+    }
+  | {
+      kind: "delivery_failed";
+      actorUserId: null;
+      /**
+       * A reply the customer may not have received: the delivery failure raised on it, or the kind
+       * an open one settled to, as the delivering channel's enum code (`bounced`, `uncertain`, ...).
+       * `messageId` is null for a failure that names no message.
+       */
+      detail: { failureId: string; messageId: string | null; failureKind: string };
+    }
+  | {
+      kind: "delivery_failure_cleared";
+      /** The teammate who resolved the failure; null when the channel cleared it. */
+      actorUserId: string | null;
+      /** The failure cleared, and why, as an enum code (`later_delivery`, `operator_resolved`, ...). */
+      detail: { failureId: string; messageId: string | null; reason: string };
+    }
+  | {
+      kind: "held_reply_released";
+      /** The teammate who released the draft. */
+      actorUserId: string;
+      /** The held reply, the message it became, and whether the teammate edited it first. */
+      detail: { heldReplyId: string; messageId: string; edited: boolean };
+    }
+  | {
+      kind: "held_reply_discarded";
+      /** The teammate who discarded the draft; the conversation waits for them until someone replies or takes over. */
+      actorUserId: string;
+      detail: { heldReplyId: string };
+    }
 );
 
 /**
@@ -177,7 +228,7 @@ export interface ConversationActivityEntry {
 }
 
 /** The Inbox item a closing event closed. */
-export const CLOSED_INBOX_ITEM_KINDS = ["handoff", "approval", "negative_feedback"] as const;
+export const CLOSED_INBOX_ITEM_KINDS = ["handoff", "approval", "negative_feedback", "delivery_failed"] as const;
 
 export type ClosedInboxItemKind = typeof CLOSED_INBOX_ITEM_KINDS[number];
 

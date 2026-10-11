@@ -523,12 +523,13 @@ describe("SlackInteractivityHandler ownership rules through the ownership servic
     };
     const replyScope = { messages: { create: vi.fn() }, conversations: { touch: vi.fn() }, outbox: { enqueue: vi.fn() } };
     const activity = { record: vi.fn(async () => undefined) };
+    const heldReplies = { supersedePendingForConversation: vi.fn(async () => 0), clearDiscardedAttention: vi.fn(async () => 0) };
     const service = new ConversationOwnershipService({
       conversations: { findByIdAndWorkspaceId: async (id: string) => ({ id }) as ConversationRecord },
       ownership,
-      changes: { run: (work) => work({ ownership, outbox, activity }) },
+      changes: { run: (work) => work({ conversations: { lockForUpdate: async () => true }, ownership, outbox, activity, heldReplies }) },
       replyWrites: {
-        run: (work) => work({ conversations: { lockForUpdate: async () => true }, ownership, reply: replyScope, activity }),
+        run: (work) => work({ conversations: { lockForUpdate: async () => true }, ownership, reply: replyScope, activity, heldReplies }),
       },
       operators: { find: async ({ userId }: { userId: string }) => operators[userId] ?? null },
       operatorIdentities: {

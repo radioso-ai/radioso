@@ -107,16 +107,32 @@ describeIntegration("handoff notify delivery through the action outbox (Postgres
     last_error: string | null;
   }>(`SELECT status, last_error FROM routine_action_requests WHERE id = $1`, [actionId]);
 
+  /**
+   * Drains the outbox until this action leaves the claim queue. The outbox is shared with every
+   * other suite in the run, and earlier suites leave their own pending rows behind, so a single
+   * batch can fill up before it reaches the row this test enqueued.
+   */
+  const dispatchUntilSettled = async (dispatcher: ActionDispatcher, actionId: string): Promise<void> => {
+    for (let round = 0; round < 50; round += 1) {
+      await dispatcher.dispatchPending();
+      const outcome = await actionOutcome(actionId);
+      if (outcome && outcome.status !== "pending" && outcome.status !== "in_progress") {
+        return;
+      }
+    }
+    throw new Error(`action ${actionId} never left the outbox queue`);
+  };
+
   it("delivers a contact_human hand-off to its configured recipient and records the action as dispatched", async () => {
     const sent: Array<{ to: string; subject: string }> = [];
     const { actionId } = await enqueueHandoff();
 
-    await dispatcherFor({
+    await dispatchUntilSettled(dispatcherFor({
       send: async (message) => {
         sent.push({ to: message.to, subject: message.subject });
         return { dispatched: true, driver: "capturing" };
       },
-    }).dispatchPending();
+    }), actionId);
 
     expect(sent).toEqual([{ to: "handoff-team@example.com", subject: "Conversation needs a human" }]);
     await expect(actionOutcome(actionId)).resolves.toEqual({ status: "dispatched", last_error: null });
@@ -125,11 +141,11 @@ describeIntegration("handoff notify delivery through the action outbox (Postgres
   it("records a mail-driver failure on the action instead of losing it", async () => {
     const { actionId } = await enqueueHandoff();
 
-    await dispatcherFor({
+    await dispatchUntilSettled(dispatcherFor({
       send: async () => {
         throw new Error("capturing mail driver rejected delivery");
       },
-    }, 1).dispatchPending();
+    }, 1), actionId);
 
     await expect(actionOutcome(actionId)).resolves.toEqual({
       status: "failed",
@@ -140,9 +156,9 @@ describeIntegration("handoff notify delivery through the action outbox (Postgres
   it("records the log driver as a skipped action rather than a delivered hand-off", async () => {
     const { actionId } = await enqueueHandoff();
 
-    await dispatcherFor({
+    await dispatchUntilSettled(dispatcherFor({
       send: async () => ({ dispatched: false, driver: "log" }),
-    }).dispatchPending();
+    }), actionId);
 
     await expect(actionOutcome(actionId)).resolves.toEqual({
       status: "skipped",

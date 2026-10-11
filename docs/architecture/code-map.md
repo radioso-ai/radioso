@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-07
+last_updated: 2026-10-08
 ---
 
 # Code Map
@@ -131,6 +131,9 @@ Primary paths:
 - `backend/src/app/composition/applicationModule.ts`
 - `backend/src/app/composition/builtIn/`
 - `backend/src/modules/*/composition.ts`
+- `backend/src/modules/connectors/services/public.ts` — the connector host
+  services application wiring builds: the chat and ingestion ports, the
+  registry, the management service, and the chunk ids a review draft drew on
 
 Useful searches:
 
@@ -257,6 +260,123 @@ Related docs:
 - [Slack Channel](../slack-channel.md)
 - [Slack Skills](../slack-skills.md)
 - `specs/092-slack-channel/`
+
+## Email Channel
+
+Owns sending and receiving domains, mailboxes and their relay tokens,
+engagement modes and budgets, inbound event classification and thread
+resolution, the mailbox event log, and raw-message access for a
+customer-owned mailbox forwarded to a Radioso-operated relay address. A
+mailbox's engagement mode gates whether an agent ever runs a turn on its
+mail, and whether that turn's reply is held for an operator or sent on its
+own. `operator_only`, `draft` and `auto` all run: `draft` is the default
+for a new mailbox, and `auto` sends on its own only on a mailbox an operator
+opted in, when the publication decision allows. The deployment's
+`supportedModes` (`backend/src/app/composition/emailChannel/index.ts`) also
+decides whether automatic sending is granted to the held-reply scope.
+
+A `draft` mailbox's inbound stage 2 (`emailReviewRunner.ts`) runs one
+coalesced turn per thread revision through `ConnectorChatPort.respond`
+(`connectorChatPort.ts`, which calls `ChatService.review` in `review`
+execution mode — see [Assistant Turn Spine](assistant-turn-spine.md#execution-modes)),
+asks the pure `emailPublicationDecision.ts` what to do with the result, and
+hands it to the channel-neutral held-reply module below. Every automatic
+step is bounded: the mailbox generation budget (`generationBudget.ts`, a
+fixed one-hour window reserved once per review revision), the thread send
+budget, the coalescing window (`EMAIL_COALESCE_SECONDS`, 60s,
+`emailInboundProcessor.ts`), the review's thread-context limit
+(`EMAIL_REVIEW_HISTORY_MESSAGES`, 10 messages, `emailReviewRunner.ts`), and
+`effectiveMode.ts`, which runs accepted mail under the lower-autonomy of
+its accepted and current policy. Tests and the behaviour harness override
+the coalescing window, the raw-MIME cap, event retention, the review retry
+limit and the local spool directory through `EmailChannelOptions`
+(`backend/src/app/composition/emailChannel/index.ts`), not env.
+
+Should not own conversation or routine behavior, and does not reuse
+`backend/src/modules/customerEmail/` — that module sends through a
+workspace's own OAuth-connected mailbox as an agent skill, a different
+product surface documented separately.
+
+Public surfaces and key files:
+
+- `backend/src/modules/mail/public.ts` — provider-neutral ports:
+  `EmailDriver`, `InboundEmailReceiver`, `EmailDomainProvisioner`, and the
+  Resend and `local` adapters composition selects between (their code lives
+  in `backend/src/modules/mail/adapters/`).
+- `backend/src/app/composition/emailChannel/` — the channel's wiring, one
+  file per concern: `index.ts` (`createEmailChannelComposition`, the
+  `email.send` application module, the deployment's `supportedModes`),
+  `adapters.ts` (provider selection), `inbound.ts` (the thread-protocol unit
+  of work and the sweep), `outbound.ts` (the send path, the worker's
+  `email.send` handler, delivery-failure resolution), `review.ts` (the
+  review checks and ports over Postgres, and email's held-reply
+  registration, `createEmailHeldReplyChannelRegistration`) and `operator.ts`
+  (the settings, event log and inbox-facts services). The channel-neutral
+  delivery-failure store is wired in `backend/src/app/composition/deliveryFailures.ts`.
+- `backend/src/modules/emailChannel/public.ts` — `MailboxService`,
+  `SendingDomainService`, `EventLogReader`, `ConversationEmailFactsReader`,
+  `EmailChannelCopilotView`, and the `email_domains` / `email_mailboxes` /
+  inbound / thread repositories.
+- `backend/src/modules/emailChannel/mailboxes/` — `mailboxService.ts`
+  (settings, defaults, and bounds), `generationBudget.ts`,
+  `effectiveMode.ts`, `mailboxPolicyChangeUnitOfWork.ts`, routing, relay
+  tokens, and receiving state.
+- `backend/src/modules/emailChannel/outbound/` — the `email.send` outbox
+  handler, send intents, authority checks, outbound headers, and
+  reconciliation.
+- `backend/src/modules/emailChannel/persistence/` — the channel's
+  repositories, including `emailBacklogRepository.ts`, which counts overdue
+  inbound events, thread reviews and queued sends across workspaces for the
+  `email_backlog` gauge. The API samples it when `/metrics` is scraped, at
+  most every 30 seconds (`backend/src/app/composition/emailChannel/backlogSampler.ts`).
+- `backend/src/app/composition/conversationLockOrder.ts` — the conversation
+  lock protocol every held-reply, ingest, ownership and mailbox-policy unit
+  of work follows (conversation, ownership, channel policy, held reply,
+  message, delivery), with the bounded deadlock-victim retry those units
+  run under.
+- `backend/src/modules/connectors/plugins/email/` — the pure decisions
+  `emailInboundClassification.ts` (RFC 3834 and delivery-status headers),
+  `emailEngagementDisposition.ts`, `emailThreadResolution.ts`, and
+  `emailPublicationDecision.ts` (FR-020: what a review's typed result does
+  next — publish, hold with a reason, check completeness, or no draft);
+  the two review model checks, `emailReplyTriage.ts` (FR-017a, prompt
+  `backend/prompts/email-reply-needed.md`) and `emailReplyCompleteness.ts`
+  (prompt `backend/prompts/email-reply-completeness.md`), built on the
+  shared `emailReviewChecks.ts`, which also owns the transcript the checks
+  read (the customer's and the business's messages over the host's message
+  store, system rows left out); and the orchestration around them:
+  `emailWebhook.ts` (verify and persist), `emailInboundProcessor.ts`
+  (stage 1), `emailReviewRunner.ts` (stage 2: claims a due thread revision
+  under a lease, reserves a generation, runs the reply triage, the
+  review, and the completeness check before an automatic send, decides
+  publication, schedules retries and wakeups), `emailChannelWorker.ts`,
+  and `emailPlugin.ts`.
+- `backend/src/modules/handoff/heldReplies/` — `heldReplyService.ts` and
+  `heldReplyState.ts`: the channel-neutral held reply, its release,
+  discard, and supersede rules. The machine's events and refusals stay
+  inside handoff; `handoff/public.ts` exports the service, its ports and
+  views, `HELD_REPLY_STATES`, and the ownership readers the channel's
+  composition binds (`ownershipVersionOf`, `readConversationOwnershipState`).
+- `backend/src/modules/emailChannel/README.md`
+
+Useful searches:
+
+- `rg "EmailChannel|email-channel|EMAIL_CHANNEL" backend/src backend/tests`
+- `rg "emailEngagementDisposition|emailInboundClassification|emailThreadResolution|emailPublicationDecision|emailReviewRunner" backend/src backend/tests`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/email-channel tests/unit/mail`
+- `cd backend && pnpm exec vitest run tests/integration/email-channel-persistence.integration.test.ts tests/integration/email-channel-schema-migrations.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/email-channel/review-runner.test.ts tests/integration/email-review-revision.integration.test.ts tests/unit/eval-suite/email-outcome-table.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/email-channel/protocol-corpus.test.ts tests/integration/email-channel-budgets.integration.test.ts tests/integration/email-channel-flood.integration.test.ts tests/integration/email-policy-acceptance.integration.test.ts`
+
+Related docs:
+
+- [Email Channel](../email-channel.md)
+- [Human Takeover](../human-takeover.md#held-replies)
+- [Customer Email Connections](../customer-email-skills.md)
+- `specs/1403-email-channel/`
 
 ## Agent Skill Definitions (shared spine)
 
@@ -788,7 +908,12 @@ Related docs:
 Owns product-independent conversation runtime contracts: agents, input events,
 directives, steering, skills, staged context, selection decisions, turn outcomes,
 trace events, renderer outputs, streaming deltas/finals, clarification contracts,
-and the `ConversationEngine` port.
+and the `ConversationEngine` port. It also owns what a review turn hands its
+host's channels: the unpublished `ReplyDraft` and the `ReviewTurnFacts` a
+publication decision reads and a held reply keeps, whose code lists
+(`REPLY_OUTCOMES`, `REPLY_GROUNDINGS`, `REPLY_COVERAGES`) are the package's
+only runtime values, in `index.js`. Chat, `@radioso/connector-api`, handoff,
+the held-reply OpenAPI schema and Ray's `held_replies` tool all type against them.
 
 Should not own Radioso product behavior. It must not import backend modules,
 database repositories, HTTP types, retrieval internals, workspace/auth modules,
@@ -798,6 +923,7 @@ and dashboard settings adapt into these contracts at composition time.
 Public surfaces and contracts:
 
 - `packages/conversation-contract/index.d.ts`
+- `packages/conversation-contract/index.js` (runtime values of the `declare const` code lists; change the two together)
 
 Useful searches:
 
@@ -1319,12 +1445,13 @@ Related docs:
 ## Conversation Activity
 
 Owns the vocabulary and operator reads of a conversation's activity: handoffs
-requested, claims, reassignments, hand-backs, approvals decided, and negative
-feedback resolved or dismissed. Each event is written by the module that makes the
-change, in that change's transaction, through one narrow port,
-`ConversationActivityRecorder.record(db, event)`: handoff (claim, transfer,
-hand-back, and a reply's claim, through its units of work), chat turn persistence
-(`handoff_requested`), approvals (`resolve`), and quality (`QualityTriageStore`).
+requested, claims, reassignments, hand-backs, approvals decided, held replies
+released or discarded, and negative feedback resolved or dismissed. Each event is
+written by the module that makes the change, in that change's transaction, through
+one narrow port, `ConversationActivityRecorder.record(db, event)`: handoff (claim,
+transfer, hand-back, and a reply's claim, through its units of work), chat turn
+persistence (`handoff_requested`), approvals (`resolve`), held replies
+(`held_reply_released`, `held_reply_discarded`), and quality (`QualityTriageStore`).
 Reads label every teammate live (display name, else email) through the auth
 module's `TeammateLabelReaderPort`, so activity is operator-only; the public chat
 presenters strip it. Every read takes a `ConversationActivityReadScope` that each
@@ -1338,7 +1465,16 @@ passes an `activityCursor` to re-read a five-minute window behind the previous
 tail, which takes in an event whose transaction committed after a newer one's.
 
 Should not own the changes it records, audit events, or message content — events
-carry ids and codes only.
+carry ids and codes only. It also does not own the held-reply record itself or
+its release transaction: `backend/src/modules/handoff/heldReplies/` owns the
+pending/released/edited/discarded/superseded state machine
+(`heldReplyService.ts`, `heldReplyState.ts`, repository
+`backend/src/db/repositories/heldReplyRepository.ts`, routes
+`backend/src/app/http/routes/heldReplyRoutes.ts`) and writes the two activity
+kinds above when a release or discard commits. A channel supplies a held
+reply's content and binds it to its own authority (policy ref and version);
+handoff interprets neither. The email channel's `emailReviewRunner.ts` is its
+first producer — see [Email Channel](#email-channel).
 
 Public surfaces and contracts:
 
@@ -1348,16 +1484,27 @@ Public surfaces and contracts:
 - `backend/src/app/composition/conversationActivity.ts` (default wiring)
 - `GET /api/v1/conversations/recently-closed` (`backend/src/app/http/routes/conversationActivityRoutes.ts`); `activity` on the operator history detail and tail
 - `frontend/lib/conversation-activity.ts` (thread lines, placement, day breaks, the recently-closed strip's labels)
+- `backend/src/app/composition/heldReplyUnitOfWork.ts` (release's one
+  transaction: lock conversation and ownership, lock the producer's policy,
+  the conditional pending→released/edited update, the delivered message,
+  the outbox enqueue; channel-neutral, finding each producer's
+  `HeldReplyChannelRegistration` by policy-ref prefix — email's comes from
+  `createEmailHeldReplyChannelRegistration` in
+  `backend/src/app/composition/emailChannel/review.ts`) and
+  `backend/src/modules/handoff/public.ts` (`HeldReplyService`,
+  `HeldReplySupersedeScope`, `HeldReplyView`)
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/handoff tests/unit/approval-decision-service.test.ts tests/unit/quality-triage-service.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/handoff tests/integration/approvals tests/integration/quality-triage.integration.test.ts tests/integration/conversation-activity-backfill-migration.integration.test.ts`
-- `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/handoff/held-reply-service.test.ts tests/unit/handoff/held-reply-state.test.ts tests/unit/app-composition/held-reply-unit-of-work.test.ts tests/integration/held-reply-repository.integration.test.ts tests/contract/held-replies.contract.test.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts tests/unit/needs-attention.test.ts tests/unit/needs-attention-query-state.test.tsx`
 
 Related docs:
 
 - `docs/human-takeover.md#conversation-activity`
+- `docs/human-takeover.md#held-replies`
 
 ## Audience Pulse
 

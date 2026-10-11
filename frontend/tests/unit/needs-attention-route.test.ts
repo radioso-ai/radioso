@@ -105,6 +105,42 @@ describe('resolveNeedsAttentionRouteSelection', () => {
     })).toEqual({ kind: 'missing' })
   })
 
+  it('keeps the open row when it leaves the queue, and calls only an unopened permalink missing', () => {
+    const target = needsAttentionRouteTargetForItem(secondApproval)
+
+    expect(resolveNeedsAttentionRouteSelection({
+      target,
+      items: [openItem],
+      recentlyClosed: [],
+      open: secondApproval,
+      isReady: true,
+    })).toEqual({ kind: 'item', item: secondApproval })
+
+    expect(resolveNeedsAttentionRouteSelection({
+      target: needsAttentionRouteTargetForItem(closedItem),
+      items: [],
+      recentlyClosed: [],
+      open: closedItem,
+      isReady: true,
+    })).toEqual({ kind: 'recently-closed', item: closedItem })
+
+    expect(resolveNeedsAttentionRouteSelection({
+      target,
+      items: [openItem],
+      recentlyClosed: [],
+      open: openItem,
+      isReady: true,
+    })).toEqual({ kind: 'missing' })
+
+    expect(resolveNeedsAttentionRouteSelection({
+      target,
+      items: [],
+      recentlyClosed: [],
+      open: null,
+      isReady: true,
+    })).toEqual({ kind: 'missing' })
+  })
+
   it('clears a stale permalink notice when a later route resolves', () => {
     const missing = resolveNeedsAttentionRouteSelection({
       target: { itemKind: 'inbox', itemId: 'inbox:approval:conversation-open:approval:agent-1:missing' },

@@ -58,8 +58,9 @@ import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
-import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
-import type { ConnectorManagementPort } from "../../modules/connectors/services/connectorManagementService.js";
+import type { ConnectorManagementPort, ConnectorRegistry } from "../../modules/connectors/services/public.js";
+import type { EmailChannelWorker } from "../../modules/connectors/plugins/index.js";
+import type { EmailChannelOperatorServices, EmailReviewChecks } from "../composition/emailChannel/index.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { VisitorGeoResolver } from "../../shared/domain/visitorGeoResolver.js";
@@ -82,7 +83,12 @@ import type {
   ApplicationNoticeMailPort,
   ApplicationRouteMount,
 } from "../composition/applicationModule.js";
-import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
+import type {
+  ContactHistoryProviderPort,
+  ConversationIngestPort,
+  PublicChatActionAdvertiserPort,
+  ReviewTurnAuditReader,
+} from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillAuthoringCatalog, SkillCatalogService } from "../../modules/skills/public.js";
 import type { AgentSkillsService } from "../../modules/agentSkills/public.js";
@@ -115,9 +121,11 @@ import type {
 } from "../../modules/eval/composition.js";
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
 import type { ConversationActivityReadService } from "../../modules/conversationActivity/public.js";
+import type { DeliveryFailureDecisions } from "../../modules/customerReplyDelivery/public.js";
 import type {
   ConversationOperatorDirectory,
   ConversationOwnershipService,
+  HeldReplyService,
 } from "../../modules/handoff/public.js";
 import type { VectorIndexReconciler } from "../../modules/retrieval/composition.js";
 import type {
@@ -259,16 +267,36 @@ export interface AppDependencies {
   approvalDecisionService: ApprovalDecisionService;
   /** Who handles a human-owned conversation: take over, reply, transfer, hand back. */
   conversationOwnershipService: ConversationOwnershipService;
+  /** Records a customer message without running a turn; connectors reach it through their chat port. */
+  conversationIngestService: ConversationIngestPort;
   /** The teammates a conversation can be handed to in a workspace. */
   conversationOperatorDirectory: ConversationOperatorDirectory;
   /** Operator reads of conversation activity: a conversation's timeline, the Inbox's recently closed items. */
   conversationActivityReads: ConversationActivityReadService;
+  /** Replies that may not have reached the customer: the Inbox lists them, and a teammate acknowledges or resolves one. */
+  deliveryFailures: DeliveryFailureDecisions;
+  /** Replies an agent wrote in review that wait for a teammate: the Inbox lists them, and a teammate releases or discards one. */
+  heldReplies: Pick<HeldReplyService, "list" | "current" | "release" | "discard">;
+  /** A review turn's audit record, read back as a held reply's reasoning: ids and codes, never text. */
+  reviewTurnAudits: Pick<ReviewTurnAuditReader, "find">;
   workbenchReplayRunner: WorkbenchReplayRunner;
   /** Operator-only immutable candidate test executions; never mounted on public chat. */
   testExecutionService: TestExecutionService;
   // Worker-process drain loop for the async conversation-action outbox (spec 070).
   // Present in every dependency build; only the worker runtime calls start/stop.
   actionDispatchWorker: ActionDispatchWorker;
+  /**
+   * The email channel's inbound drain and sweep: an interval loop in the worker runtime, push and
+   * schedule routes in the worker-task runtime. Undefined when no email provider is configured.
+   */
+  emailChannelWorker?: EmailChannelWorker;
+  /** The email channel's operator services; undefined when no email provider is configured. */
+  emailChannel?: EmailChannelOperatorServices;
+  /**
+   * The email review's model checks, the same object its review runner reads on each call; a
+   * harness that scripts the review turn scripts these with it. Undefined without an email provider.
+   */
+  emailReviewChecks?: EmailReviewChecks;
   copilotRetentionWorker: CopilotRetentionWorker;
   /** Purges old private test-execution/revision-eval-run evidence (JSONB transcripts, frozen snapshots). */
   testExecutionRetentionWorker: TtlRetentionWorker;

@@ -87,25 +87,35 @@ export const resolveNeedsAttentionRouteSelection = ({
   target,
   items,
   recentlyClosed,
+  open = null,
   isReady,
 }: {
   target?: NeedsAttentionRouteTarget
   items: readonly InboxItem[]
   recentlyClosed: readonly RecentlyClosedInboxItem[]
+  /** The row the reading pane shows now, if any. */
+  open?: InboxItem | RecentlyClosedInboxItem | null
   isReady: boolean
 }):
   NeedsAttentionRouteSelection => {
   if (!target) return { kind: 'none' }
 
-  const item = items.find((candidate) => target.itemKind === 'inbox'
+  const matchesTarget = (candidate: InboxItem | RecentlyClosedInboxItem) => target.itemKind === 'inbox'
     ? needsAttentionRouteItemIdForItem(candidate) === target.itemId
-    : candidate.conversationId === target.itemId)
+    : candidate.conversationId === target.itemId
+
+  const item = items.find(matchesTarget)
   if (item) return { kind: 'item', item }
 
-  const recentlyClosedItem = recentlyClosed.find((candidate) => target.itemKind === 'inbox'
-    ? needsAttentionRouteItemIdForItem(candidate) === target.itemId
-    : candidate.conversationId === target.itemId)
+  const recentlyClosedItem = recentlyClosed.find(matchesTarget)
   if (recentlyClosedItem) return { kind: 'recently-closed', item: recentlyClosedItem }
+
+  // A row leaves the queue while it is open when the operator sends, resolves, or is beaten to it,
+  // and the pane stays on it to say what happened. Only the conversation itself being gone, which
+  // the pane's own read reports, closes it.
+  if (open && matchesTarget(open)) {
+    return 'itemKind' in open ? { kind: 'recently-closed', item: open } : { kind: 'item', item: open }
+  }
 
   return isReady ? { kind: 'missing' } : { kind: 'pending' }
 }

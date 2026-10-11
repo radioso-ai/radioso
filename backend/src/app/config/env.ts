@@ -52,6 +52,81 @@ const httpWebhookUrl = z.string().url().refine((value) => {
   }
 }, { message: "must be an HTTP(S) URL" });
 
+const RESEND_CHANNEL_REGIONS = ["us-east-1", "eu-west-1", "sa-east-1", "ap-northeast-1"] as const;
+// Structural DNS hostname: two or more letter-digit-hyphen labels, checked after lower-casing.
+const DNS_HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+
+type EmailChannelProviderConfig =
+  | { kind: "local" }
+  | { kind: "resend"; apiKey: string; region: (typeof RESEND_CHANNEL_REGIONS)[number] };
+
+type EmailChannelConfig = {
+  provider: EmailChannelProviderConfig;
+  inboundDomain: string;
+  webhookSecret: string;
+  /** Still accepted while the provider rotates its signing key. */
+  previousWebhookSecret?: string;
+  workersEnabled: boolean;
+  /** Cloud Tasks queue for drain pushes; unset leaves draining to the interval worker. */
+  taskQueueName?: string;
+};
+
+const emailChannelEnvShape = {
+  EMAIL_CHANNEL_PROVIDER: emptyStringToUndefined(z.enum(["resend", "local"])),
+  EMAIL_CHANNEL_INBOUND_DOMAIN: emptyStringToUndefined(
+    z.string().trim().toLowerCase().regex(DNS_HOSTNAME, "EMAIL_CHANNEL_INBOUND_DOMAIN must be a DNS hostname"),
+  ),
+  EMAIL_CHANNEL_WEBHOOK_SECRET: emptyStringToUndefined(z.string().min(1)),
+  EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS: emptyStringToUndefined(z.string().min(1)),
+  EMAIL_CHANNEL_WORKERS_ENABLED: booleanish(false),
+  EMAIL_CHANNEL_TASK_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
+  RESEND_CHANNEL_API_KEY: emptyStringToUndefined(z.string().min(1)),
+  /** Transactional mail's key, which the channel uses when it has none of its own. */
+  RESEND_MAIL_API_KEY: emptyStringToUndefined(z.string().min(1)),
+  RESEND_CHANNEL_REGION: emptyStringToDefault(z.enum(RESEND_CHANNEL_REGIONS), "us-east-1"),
+} as const;
+
+/**
+ * `EMAIL_CHANNEL_PROVIDER` is the only switch. The other settings may be provisioned ahead of it
+ * (secrets, the queue) without turning the channel on, but once a provider is chosen every setting
+ * it needs must be present. The channel's timings and limits are not deployment settings: each is
+ * a constant of the module that owns it.
+ */
+const emailChannelConfigSchema = z.object(emailChannelEnvShape).transform((value, ctx): EmailChannelConfig | undefined => {
+  const providerName = value.EMAIL_CHANNEL_PROVIDER;
+  if (!providerName) {
+    return undefined;
+  }
+
+  const missing = (field: string, requirement: string = field): never => {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [field],
+      message: `${requirement} is required when EMAIL_CHANNEL_PROVIDER is ${providerName}`,
+    });
+    return z.NEVER;
+  };
+
+  const provider: EmailChannelProviderConfig = providerName === "resend"
+    ? {
+      kind: "resend",
+      apiKey: value.RESEND_CHANNEL_API_KEY
+        ?? value.RESEND_MAIL_API_KEY
+        ?? missing("RESEND_CHANNEL_API_KEY", "RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY"),
+      region: value.RESEND_CHANNEL_REGION,
+    }
+    : { kind: "local" };
+
+  return {
+    provider,
+    inboundDomain: value.EMAIL_CHANNEL_INBOUND_DOMAIN ?? missing("EMAIL_CHANNEL_INBOUND_DOMAIN"),
+    webhookSecret: value.EMAIL_CHANNEL_WEBHOOK_SECRET ?? missing("EMAIL_CHANNEL_WEBHOOK_SECRET"),
+    previousWebhookSecret: value.EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS,
+    workersEnabled: value.EMAIL_CHANNEL_WORKERS_ENABLED,
+    taskQueueName: value.EMAIL_CHANNEL_TASK_QUEUE_NAME,
+  };
+});
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8080),
@@ -83,6 +158,7 @@ const envSchema = z.object({
   OPS_EVENT_WEBHOOK_QUEUE_LIMIT: emptyStringToDefault(z.coerce.number().int().positive(), 500),
   RADIOSO_EDITION: z.enum(["oss", "enterprise"]).default("oss"),
   ...realtimeEnvShape,
+  ...emailChannelEnvShape,
   GOOGLE_CLOUD_PROJECT: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_CDN_URL_MAP: emptyStringToUndefined(z.string().min(1)),
   DATABASE_URL: z.string().min(1),
@@ -455,13 +531,23 @@ type ParsedEnv = z.infer<typeof envSchema>;
 
 type RealtimeEnvInputKey = Extract<keyof ParsedEnv, `REALTIME_${string}`>;
 type OperatorMcpEnvInputKey = Extract<keyof ParsedEnv, `OPERATOR_MCP_${string}`>;
+type EmailChannelEnvInputKey = Extract<keyof ParsedEnv, keyof typeof emailChannelEnvShape>;
+type OptionalEnvInputKey = RealtimeEnvInputKey | OperatorMcpEnvInputKey | EmailChannelEnvInputKey;
 
-// Realtime is an opt-in runtime: existing API/worker test compositions may omit
-// its inputs and the realtime parser supplies the disabled defaults.
-export type Env = Omit<ParsedEnv, "OBSERVABILITY_ENVIRONMENT" | RealtimeEnvInputKey | OperatorMcpEnvInputKey>
-  & Partial<Pick<ParsedEnv, RealtimeEnvInputKey | OperatorMcpEnvInputKey>> & {
+// Realtime and the email channel are opt-in runtimes: existing API/worker test compositions may
+// omit their inputs, and each one's parser supplies the defaults.
+export type Env = Omit<ParsedEnv, "OBSERVABILITY_ENVIRONMENT" | OptionalEnvInputKey>
+  & Partial<Pick<ParsedEnv, OptionalEnvInputKey>> & {
   OBSERVABILITY_ENVIRONMENT: string;
 };
+
+/**
+ * The email channel as one typed object, or `undefined` when `EMAIL_CHANNEL_PROVIDER` is unset
+ * (no email plugin, routes or workers). Read this rather than the raw `EMAIL_CHANNEL_*` fields.
+ */
+export const parseEmailChannelConfig = (
+  env: Partial<Pick<ParsedEnv, EmailChannelEnvInputKey>>,
+): EmailChannelConfig | undefined => emailChannelConfigSchema.parse(env);
 
 let cachedEnv: Env | null = null;
 
@@ -486,6 +572,7 @@ export const getEnv = (source: NodeJS.ProcessEnv = process.env): Env => {
     rejectRetiredProxyHopSetting(source);
     const parsed = envSchema.parse(source);
     parseRealtimeConfig(parsed);
+    parseEmailChannelConfig(parsed);
     cachedEnv = {
       ...parsed,
       OBSERVABILITY_ENVIRONMENT: parsed.OBSERVABILITY_ENVIRONMENT ?? parsed.NODE_ENV,

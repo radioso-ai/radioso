@@ -1,9 +1,9 @@
 import type { EvalLlmJudgePort } from "../services/evalJudge.js";
-import type { EvalRunObservedOutput, EvalRunStatus } from "../domain/types.js";
+import type { EvalRunStatus } from "../domain/types.js";
 import type { CaseOutcome } from "./baseline.js";
 import { conversationQualityCaseTurnText, type ConversationQualityCase } from "./caseSchema.js";
 import type { CaseReport } from "./report.js";
-import type { ConversationQualityRunnerPort } from "./runnerPort.js";
+import { observeCase, type ConversationQualityRunnerPort } from "./runnerPort.js";
 import { scoreObservedOutput, type SuiteAssertionVerdict } from "./scoring.js";
 
 interface RunSampledOptions {
@@ -122,15 +122,7 @@ export const runConversationQualitySuiteSampled = async (
   for (const evalCase of cases) {
     const sampleScores: SampleScore[] = [];
     for (let index = 0; index < samples; index += 1) {
-      let output: EvalRunObservedOutput;
-      try {
-        output = await runner.run(evalCase);
-      } catch (err) {
-        output = {
-          retrievedChunks: [],
-          error: { message: err instanceof Error ? err.message : "Runner threw a non-Error value." },
-        };
-      }
+      const output = await observeCase(runner, evalCase);
       const score = await scoreObservedOutput(evalCase.assertions, output, {
         workspaceId: options.workspaceId,
         question: conversationQualityCaseTurnText(evalCase),

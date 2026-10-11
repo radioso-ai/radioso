@@ -7,6 +7,18 @@ export type ConversationOwnershipReason =
   | "routine_stuck"
   | "retrieval_miss"
   | "operator_takeover"
+  /** The conversation arrived at a mailbox that only operators answer. */
+  | "operator_only_mailbox"
+  /** The channel's budget for generated replies ran out. */
+  | "generation_budget"
+  /** A reviewed turn could not produce a reply to review. */
+  | "review_unavailable"
+  /**
+   * A channel's policy change (an upgrade, another agent) superseded the draft the customer was
+   * waiting on and runs no review for that message again. Its own reason rather than
+   * `review_unavailable`, because no review failed: the operator changed the rules under it.
+   */
+  | "policy_changed"
   | (string & {});
 
 /** The owning teammate's profile as it is now. */
@@ -98,6 +110,27 @@ type CanResumeResult =
 
 export const isHumanOwned = (record: ConversationOwnershipRecord | null): boolean =>
   record?.state === "human_owned";
+
+/** The ownership version work on a conversation is bound to: 0 while it has no ownership row. */
+export const ownershipVersionOf = (record: ConversationOwnershipRecord | null): number => record?.version ?? 0;
+
+/**
+ * Who owns a conversation, read through the caller's stores so a transaction can bind them: null
+ * while the conversation does not exist yet, and the AI while it has no ownership row.
+ */
+export const readConversationOwnershipState = async (
+  stores: {
+    conversations: { findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<object | null> };
+    ownership: { load(conversationId: string): Promise<ConversationOwnershipRecord | null> };
+  },
+  input: { conversationId: string; workspaceId: string },
+): Promise<ConversationOwnershipState | null> => {
+  const conversation = await stores.conversations.findByIdAndWorkspaceId(input.conversationId, input.workspaceId);
+  if (!conversation) {
+    return null;
+  }
+  return (await stores.ownership.load(input.conversationId))?.state ?? "ai_owned";
+};
 
 // FR-022 compatibility stub: resume work is message-emitting unless the host marks it
 // side-effect-only/safe. Message-emitting resumes must park while a human owns the

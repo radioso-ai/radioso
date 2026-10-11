@@ -13,6 +13,14 @@ export { ChatBootstrapService } from "./services/chatBootstrapService.js";
 export { RevisionGreetingStarterPromptReader } from "./services/agentStarterPromptReader.js";
 export type { AgentStarterPromptReader } from "./contracts/index.js";
 export { ChatService } from "./services/chatService.js";
+// Recording a customer message without a turn; app composition binds its unit of work.
+export {
+  ConversationIngestService,
+  type ConversationIngestUnitOfWork,
+} from "./services/conversationIngestService.js";
+// Writes a reviewed draft published unchanged as the agent's message, and applies the directive
+// firing memory advance the review deferred; app composition binds it to the publishing transaction.
+export { reviewedDraftWriter } from "./services/reviewDraft.js";
 export type { ChatRoutineProvider } from "./contracts/routineProvider.js";
 export { ChatTurnAssemblyFactory } from "./services/chatTurnAssembly.js";
 export type { PreparedSession } from "./services/chatSessionPreparer.js";

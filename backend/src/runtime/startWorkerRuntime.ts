@@ -36,6 +36,9 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
   dependencies.facetExtractionWorker?.start();
   // Drain the async conversation-action outbox (spec 070) out of band from the turn.
   dependencies.actionDispatchWorker.start();
+  // Drain the email channel's inbound work and run its sweep; present only when a provider is
+  // configured, and idle unless EMAIL_CHANNEL_WORKERS_ENABLED.
+  dependencies.emailChannelWorker?.start();
   // Enforce the copilot conversation retention window. Started last and stopped first: it owns no
   // queue, so a shutdown that skips a sweep loses nothing but a few hours of lateness.
   dependencies.copilotRetentionWorker.start();
@@ -61,6 +64,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
         await dependencies.revisionEvalRunRetentionWorker.stop();
         await dependencies.slackInboundEventRetentionWorker.stop();
         await dependencies.agentBundleImportCleanupWorker.stop();
+        await dependencies.emailChannelWorker?.stop();
         await dependencies.actionDispatchWorker.stop();
         await dependencies.facetExtractionWorker?.stop();
         await dependencies.documentJobConsumer?.stop();

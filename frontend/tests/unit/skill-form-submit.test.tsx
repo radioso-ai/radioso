@@ -66,8 +66,18 @@ const retrievalCapability = (): SkillCapabilityDescriptor => ({
       label: 'Semantic rewrite instructions',
       type: 'textarea',
       help: 'Instructions used for the semantic rewrite.',
-      defaultValue: 'Rewrite with the same meaning.',
+      defaultValue: 'Preserve product identifiers.',
       group: 'Query rewrite',
+    },
+    {
+      key: 'suggestedQuestionsCount',
+      label: 'Suggested questions count',
+      type: 'number',
+      help: 'How many follow-up questions to show.',
+      defaultValue: 4,
+      min: 1,
+      max: 4,
+      group: 'Suggested questions',
     },
   ],
   outcomeVocabulary: ['found'],
@@ -222,7 +232,7 @@ describe('SkillForm submit', () => {
     expect(onSubmit.mock.calls[0]?.[0].config).not.toHaveProperty('rerankEnabled')
   })
 
-  it('submits an explicit value after toggling an unset boolean', async () => {
+  it('copies the effective boolean default into an override and can reset it', async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined)
 
     await act(async () => {
@@ -242,43 +252,21 @@ describe('SkillForm submit', () => {
 
     const rerankSwitch = document.body.querySelector<HTMLElement>('#skill-setting-rerankEnabled')
     expect(rerankSwitch).toBeTruthy()
+    expect(rerankSwitch?.getAttribute('data-disabled')).not.toBeNull()
+
+    const overrideButton = [...document.body.querySelectorAll('button')]
+      .find((button) => button.getAttribute('aria-label') === 'Override Rerank results')
+    expect(overrideButton).toBeTruthy()
 
     await act(async () => {
-      rerankSwitch?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      overrideButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+
     await submitForm()
-
-    expect(onSubmit).toHaveBeenCalledOnce()
-    expect(onSubmit.mock.calls[0]?.[0].config).toMatchObject({ rerankEnabled: false })
-  })
-
-  it('clears a boolean override when reset to default is clicked', async () => {
-    const onSubmit = vi.fn().mockResolvedValue(undefined)
-
-    await act(async () => {
-      root.render(
-        <SkillForm
-          agentId="agent-1"
-          open
-          capabilities={[retrievalCapability()]}
-          skills={[]}
-          isSaving={false}
-          error={null}
-          onOpenChange={() => undefined}
-          onSubmit={onSubmit}
-        />,
-      )
-    })
-
-    const rerankSwitch = document.body.querySelector<HTMLElement>('#skill-setting-rerankEnabled')
-    expect(rerankSwitch).toBeTruthy()
-
-    await act(async () => {
-      rerankSwitch?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    expect(onSubmit.mock.calls[0]?.[0].config).toMatchObject({ rerankEnabled: true })
 
     const resetButton = [...document.body.querySelectorAll('button')]
-      .find((button) => button.textContent?.includes('Reset to default'))
+      .find((button) => button.getAttribute('aria-label') === 'Reset Rerank results to workspace default')
     expect(resetButton).toBeTruthy()
 
     await act(async () => {
@@ -286,8 +274,58 @@ describe('SkillForm submit', () => {
     })
     await submitForm()
 
-    expect(onSubmit).toHaveBeenCalledOnce()
-    expect(onSubmit.mock.calls[0]?.[0].config).not.toHaveProperty('rerankEnabled')
+    expect(onSubmit).toHaveBeenCalledTimes(2)
+    expect(onSubmit.mock.calls[1]?.[0].config).not.toHaveProperty('rerankEnabled')
+  })
+
+  it('copies the effective number default into an override and can reset it', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+
+    await act(async () => {
+      root.render(
+        <SkillForm
+          agentId="agent-1"
+          open
+          capabilities={[retrievalCapability()]}
+          skills={[]}
+          isSaving={false}
+          error={null}
+          onOpenChange={() => undefined}
+          onSubmit={onSubmit}
+        />,
+      )
+    })
+
+    const countInput = document.body.querySelector<HTMLInputElement>('#skill-setting-suggestedQuestionsCount')
+    expect(countInput).toBeTruthy()
+    expect(countInput?.disabled).toBe(true)
+    expect(countInput?.value).toBe('4')
+
+    const overrideButton = [...document.body.querySelectorAll('button')]
+      .find((button) => button.getAttribute('aria-label') === 'Override Suggested questions count')
+    expect(overrideButton).toBeTruthy()
+
+    await act(async () => {
+      overrideButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const editableCount = document.body.querySelector<HTMLInputElement>('#skill-setting-suggestedQuestionsCount')
+    expect(editableCount?.disabled).toBe(false)
+    expect(editableCount?.value).toBe('4')
+
+    await submitForm()
+    expect(onSubmit.mock.calls[0]?.[0].config).toMatchObject({ suggestedQuestionsCount: 4 })
+
+    const resetButton = [...document.body.querySelectorAll('button')]
+      .find((button) => button.getAttribute('aria-label') === 'Reset Suggested questions count to workspace default')
+    expect(resetButton).toBeTruthy()
+    await act(async () => {
+      resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await submitForm()
+
+    expect(onSubmit).toHaveBeenCalledTimes(2)
+    expect(onSubmit.mock.calls[1]?.[0].config).not.toHaveProperty('suggestedQuestionsCount')
   })
 
   it('keeps a defaulted textarea read-only until overridden and submits the edited override', async () => {
@@ -311,10 +349,10 @@ describe('SkillForm submit', () => {
     const textarea = document.body.querySelector<HTMLTextAreaElement>('#skill-setting-semanticRewriteInstructions')
     expect(textarea).toBeTruthy()
     expect(textarea?.disabled).toBe(true)
-    expect(textarea?.value).toBe('Rewrite with the same meaning.')
+    expect(textarea?.value).toBe('Preserve product identifiers.')
 
     const overrideButton = [...document.body.querySelectorAll('button')]
-      .find((button) => button.textContent === 'Override')
+      .find((button) => button.getAttribute('aria-label') === 'Override Semantic rewrite instructions')
     expect(overrideButton).toBeTruthy()
 
     await act(async () => {
@@ -323,18 +361,18 @@ describe('SkillForm submit', () => {
 
     const editable = document.body.querySelector<HTMLTextAreaElement>('#skill-setting-semanticRewriteInstructions')
     expect(editable?.disabled).toBe(false)
-    expect(editable?.value).toBe('Rewrite with the same meaning.')
+    expect(editable?.value).toBe('Preserve product identifiers.')
 
     const setTextareaValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
     await act(async () => {
-      setTextareaValue?.call(editable, 'Rewrite with the same meaning. Prefer event names.')
+      setTextareaValue?.call(editable, 'Preserve product identifiers. Prefer event names.')
       editable?.dispatchEvent(new Event('input', { bubbles: true }))
     })
     await submitForm()
 
     expect(onSubmit).toHaveBeenCalledOnce()
     expect(onSubmit.mock.calls[0]?.[0].config).toMatchObject({
-      semanticRewriteInstructions: 'Rewrite with the same meaning. Prefer event names.',
+      semanticRewriteInstructions: 'Preserve product identifiers. Prefer event names.',
     })
   })
 

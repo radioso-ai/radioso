@@ -43,6 +43,7 @@ export {
   normalizeRetrievalSkillSettingsOverride,
   parseRetrieveSkillConfig,
   parsePersistedRetrievalSkillSettingsOverride,
+  resolveRetrievalSkillSettings,
   retrieveSkillConfigSchema,
   retrieveSkillConfigToSettingsOverride,
   type RetrieveSkillConfig,

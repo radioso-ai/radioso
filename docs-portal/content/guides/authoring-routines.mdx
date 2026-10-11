@@ -50,18 +50,21 @@ whose value type needs adjustment.
 
 The routine's name is the page title — click it and type a new one. A pill
 beside it reads **Draft** or **Live**, and the round button next to the pill
-switches between them. **Test** opens the draft in Test Chat, and the overflow
-menu holds **Draft with AI** and **Delete routine**.
+switches between them. On a blank routine, **Draft from procedure** is a visible
+starting option; it is also in the overflow menu with **Delete routine**.
+**Test** opens the draft in Test Chat.
 
 Open **When to trigger**, then **Starts when**, to set:
 
-- **Priority** — the tie-breaker when several routines could start at once.
+- **Priority** — higher whole numbers win when several routines could start at
+  once. Use 0 for the standard priority.
 - **Reentry** — what happens after the routine finishes in a conversation.
 - **Activation trigger** — a plain-language description of when the routine
   should start.
 
 The trigger is judged by meaning, so write it the way an operator would describe
-the task: “customer reports coffee that arrived damaged, stale, or wrong.”
+the task: “customer reports coffee that arrived damaged, stale, or wrong.” The
+field shows this kind of example while it is empty.
 
 You can also select an **Answer coverage signal** in the activation header.
 For example, a routine can be eligible when a request is **Unanswered** because

@@ -33,6 +33,38 @@ describe("unified agent skills contract", () => {
     ]));
   });
 
+  it("projects the agent's effective retrieval settings as retrieve capability defaults", async () => {
+    const { app, dependencies } = createTestApp();
+    const session = await issueTestSession(app, "agent-skill-capability-defaults@example.com");
+    const headers = adminSessionHeaders(session);
+    const agentList = await request(app).get("/api/v1/agents").set(headers);
+    expect(agentList.status).toBe(200);
+    const agentId = agentList.body.agents[0].id as string;
+
+    await dependencies.agentRepository.update(agentId, session.workspaceId, {
+      skillSettings: {
+        "retrieval.answer": {
+          rerankEnabled: true,
+          vectorTopK: 28,
+          semanticRewriteInstructions: "Preserve product identifiers.",
+        },
+      },
+    });
+
+    const capabilities = await request(app).get(`/api/v1/agents/${agentId}/skill-capabilities`).set(headers);
+    expect(capabilities.status).toBe(200);
+    const retrieve = capabilities.body.capabilities.find((capability: { id: string }) => capability.id === "retrieve") as {
+      settingsFields: Array<{ key: string; defaultValue?: unknown }>;
+    };
+    const defaults = Object.fromEntries(retrieve.settingsFields.map((field) => [field.key, field.defaultValue]));
+
+    expect(defaults).toMatchObject({
+      rerankEnabled: true,
+      vectorTopK: 28,
+      semanticRewriteInstructions: "Preserve product identifiers.",
+    });
+  });
+
   it("creates, lists, updates, and deletes skills through the uniform envelope", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "agent-skills@example.com");

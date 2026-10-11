@@ -124,7 +124,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await page.getByRole("button", { name: /Knowledge Retrieval/i }).click();
   await expect(page.getByRole("dialog", { name: "Configure Knowledge Retrieval" })).toBeVisible();
   await expect(page.getByLabel("Skill name")).toHaveValue("retrieve_course_guide");
-  await expect(page.getByLabel("Vector top K")).toHaveCount(0);
+  await expect(page.getByLabel("Vector top K", { exact: true })).toHaveCount(0);
   await page.getByLabel("Skill name").fill("retrieve_events");
   await page.getByRole("button", { name: "Selected sources" }).click();
   await page.getByLabel(/Course guide/).check();
@@ -135,17 +135,22 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await page.getByRole("option", { name: "Only when a routine step calls it" }).click();
   await page.locator("#skill-setting-retrievalStrategy").click();
   await page.getByRole("option", { name: "Reasoning" }).click();
-  await page.getByLabel("Vector top K").fill("12");
-  await expect(page.getByLabel("Rerank top K")).toHaveCount(0);
+  await page.getByRole("button", { name: "Override Vector top K" }).click();
+  await page.getByLabel("Vector top K", { exact: true }).fill("12");
+  await expect(page.getByLabel("Rerank top K", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Override Rerank results" }).click();
   await page.getByRole("switch", { name: "Rerank results" }).click();
-  await page.getByLabel("Rerank top K").fill("6");
+  await page.getByRole("button", { name: "Override Rerank top K" }).click();
+  await page.getByLabel("Rerank top K", { exact: true }).fill("6");
+  await page.getByRole("button", { name: "Override Hold the answer until it cites a source" }).click();
   await page.getByRole("switch", { name: "Hold the answer until it cites a source" }).click();
   await expect(page.getByLabel("Semantic rewrite instructions", { exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Override Semantic rewrite instructions" }).click();
   await page.getByLabel("Semantic rewrite instructions", { exact: true }).fill("Prefer event names and dates.");
   await page.getByRole("button", { name: "Override Lexical rewrite instructions" }).click();
   await page.getByLabel("Lexical rewrite instructions", { exact: true }).fill("Include exact venue terms.");
-  await page.getByLabel("Suggested questions count").fill("3");
+  await page.getByRole("button", { name: "Override Suggested questions count" }).click();
+  await page.getByLabel("Suggested questions count", { exact: true }).fill("3");
   await page.getByRole("button", { name: "Create skill" }).click();
 
   await expect(page.getByText("@retrieve_events", { exact: true })).toBeVisible();
@@ -267,13 +272,16 @@ test("Vector top K names the answer candidate pool once it is set past it", asyn
   const unusedCandidatesNotice = page.getByText(/The answer draws on the top \d+ candidates/);
   await expect(unusedCandidatesNotice).toHaveCount(0);
 
-  await page.getByLabel("Vector top K").fill("30");
+  await page.getByRole("button", { name: "Override Vector top K" }).click();
+  await page.getByLabel("Vector top K", { exact: true }).fill("30");
   await expect(unusedCandidatesNotice).toHaveText(/top 12 candidates/);
 
+  await page.getByRole("button", { name: "Override Rerank results" }).click();
   await page.getByRole("switch", { name: "Rerank results" }).click();
-  await page.getByLabel("Rerank top K").fill("20");
+  await page.getByRole("button", { name: "Override Rerank top K" }).click();
+  await page.getByLabel("Rerank top K", { exact: true }).fill("20");
   await expect(unusedCandidatesNotice).toHaveText(/top 20 candidates/);
 
-  await page.getByLabel("Rerank top K").fill("30");
+  await page.getByLabel("Rerank top K", { exact: true }).fill("30");
   await expect(unusedCandidatesNotice).toHaveCount(0);
 });

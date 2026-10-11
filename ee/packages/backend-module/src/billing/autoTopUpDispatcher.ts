@@ -73,8 +73,8 @@ interface AutoTopUpDispatcherInput {
  *    so a charge Stripe already completed is recognized rather than repeated.
  * 2. Pages through every enabled account (not just the same oldest batch every tick) and, for one
  *    whose conversation usage has reached `limit_reached` or `grace_exhausted`, claims one pack
- *    this period (subject to the pending guard, the monthly cap, and the failure cooldown -- all
- *    enforced by `AutoTopUpRepository.claimPending`) and starts charging it.
+ *    this period (subject to the paid-pack revision, pending guard, monthly cap, and failure
+ *    cooldown -- all enforced by `AutoTopUpRepository.claimPending`) and starts charging it.
  *
  * A charge is only ever marked `failed` on a definitive outcome -- a card decline or an invalid
  * request (`StripeDefinitiveChargeError`) -- never on an ambiguous one, since Stripe may have
@@ -209,6 +209,7 @@ export class AutoTopUpDispatcher {
       return;
     }
 
+    const paidPackRevision = await this.autoTopUps.getPaidPackRevision(accountId);
     const usage = await this.usage.getAccountUsage(accountId);
     const level = usage.monthlyConversations?.level;
     if (level !== "limit_reached" && level !== "grace_exhausted") {
@@ -232,6 +233,7 @@ export class AutoTopUpDispatcher {
       periodStart,
       maxPacksPerMonth: settings.maxPacksPerMonth,
       cooldownMs: FAILURE_COOLDOWN_MS,
+      paidPackRevision,
     });
     if (!claimedId) {
       return;

@@ -103,6 +103,10 @@ class FakeAutoTopUpRepository implements AutoTopUpRepository {
     return this.counts.get(accountId) ?? 0;
   }
 
+  async getPaidPackRevision(): Promise<number> {
+    return 0;
+  }
+
   async claimPending(): Promise<string | null> {
     return null;
   }

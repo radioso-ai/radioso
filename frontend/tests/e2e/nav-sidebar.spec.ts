@@ -14,6 +14,32 @@ const pendingDecisions = [
   { agentId: defaultAgentId, handle: "decision-3", conversationId: "conv-3", reason: "Policy exception", createdAt: nowIso },
 ] as never;
 
+test("Settings leads to Members and the labeled navigation controls remain discoverable", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+
+  await page.goto(`/w/${workspaceKey}/knowledge`);
+
+  const sidebar = page.locator('[data-slot="sidebar-container"]');
+  await expect(sidebar.getByRole("link", { name: "Agents", exact: true })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Knowledge Base", exact: true })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+
+  const workspaceSwitcher = sidebar.getByRole("button", { name: /Radioso Test/ });
+  await expect(workspaceSwitcher).toBeVisible();
+  await workspaceSwitcher.click();
+  await expect(page.getByRole("menuitem", { name: "Default", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await expect(sidebar.getByRole("button", { name: /operator@example\.com/ })).toBeVisible();
+
+  await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Manage members", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Manage members", exact: true }).click();
+  await expect(page).toHaveURL(/\/account(?:$|\?)/);
+  await expect(page.getByRole("heading", { name: "Members", level: 1 })).toBeVisible();
+});
+
 test("active section's sub-nav nests inline in the rail; other sections stay collapsed", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);

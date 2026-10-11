@@ -927,6 +927,7 @@ function RoutineEditorScreen({
                 key={`${agentId}:${routineRouteId}:${documentSessionNonce}`}
                 draft={activeRoutineDraft}
                 diagnostics={validationDiagnostics}
+                onOpenDraftAssist={onOpenDraftAssist}
                 onDraftChange={(nextDraft) => {
                   // Completion export is edited in the panel below, not in the document, so
                   // a document emission must not revert a panel change it never saw.

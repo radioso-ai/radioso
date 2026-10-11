@@ -767,8 +767,9 @@ export interface AccountUsageSummary {
     resetAt: string
     used: number
     limit: number
-    /** Remaining prepaid top-up conversations. Never expire. `max(balance, 0)`: a negative
-     *  balance (borrowed grace) reports 0 here rather than a negative credit figure. */
+    /** Remaining prepaid top-up conversations from grants made in the last 12 months.
+     *  `max(balance, 0)`: a negative balance (borrowed grace) reports 0 here rather
+     *  than a negative credit figure. */
     credits: number
     /** Conversations spendable before borrowing: max(used, limit) + max(balance, 0). The bar
      *  denominator — `limit + credits` drifts wrong once credits are partly spent. */

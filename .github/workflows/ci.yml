@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       base_ref:
@@ -15,8 +18,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # PR updates supersede their prior validation run. Main commits each retain their
+  # own result, so a later merge cannot hide a failing earlier main run.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -42,14 +47,12 @@ jobs:
       - id: filter
         name: Detect CI-relevant changes
         env:
-          BASE_REF: ${{ github.event.pull_request.base.ref || inputs.base_ref || github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_SHA: ${{ github.sha }}
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || inputs.base_ref || github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-
-          # Fetch full history (not --depth=1) so a merge base with HEAD exists;
-          # otherwise the diff below finds no common ancestor and silently reports
-          # zero changed files, skipping every CI job.
-          git fetch --no-tags --prune origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
 
           backend=false
           frontend=false
@@ -75,12 +78,31 @@ jobs:
             wordpress_companion=true
           }
 
-          # Fail safe: if the diff cannot be computed (e.g. no merge base), run
-          # every bucket rather than silently skipping all of them.
-          if ! changed_files="$(git diff --name-only "origin/${BASE_REF}...HEAD" 2>/dev/null)"; then
-            echo "Could not diff against origin/${BASE_REF}; running all CI buckets."
-            mark_all
-            changed_files=""
+          if [ "$EVENT_NAME" = "push" ]; then
+            # A new branch or an unavailable predecessor has no reliable range. Run every
+            # bucket rather than allowing an empty diff to skip validation on main.
+            if [ -z "$PUSH_BEFORE" ] || [[ "$PUSH_BEFORE" =~ ^0+$ ]]; then
+              echo "Push has no prior commit; running all CI buckets."
+              mark_all
+              changed_files=""
+            elif ! changed_files="$(git diff --name-only "${PUSH_BEFORE}..${PUSH_SHA}" 2>/dev/null)"; then
+              echo "Could not diff push range ${PUSH_BEFORE}..${PUSH_SHA}; running all CI buckets."
+              mark_all
+              changed_files=""
+            fi
+          else
+            # Fetch full history (not --depth=1) so a merge base with HEAD exists;
+            # otherwise the diff below finds no common ancestor and silently reports
+            # zero changed files, skipping every CI job.
+            git fetch --no-tags --prune origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+
+            # Fail safe: if the diff cannot be computed (e.g. no merge base), run
+            # every bucket rather than silently skipping all of them.
+            if ! changed_files="$(git diff --name-only "origin/${BASE_REF}...HEAD" 2>/dev/null)"; then
+              echo "Could not diff against origin/${BASE_REF}; running all CI buckets."
+              mark_all
+              changed_files=""
+            fi
           fi
 
           while IFS= read -r path; do
@@ -196,14 +218,25 @@ jobs:
         # no test runner checks.
         run: pnpm --filter @radioso/conversation-engine --filter @radioso/conversation-defaults run typecheck
 
-      - name: Fetch base branch for the dead-code ratchet
-        run: git fetch --no-tags origin main:refs/remotes/origin/main
+      - name: Select base for the dead-code ratchet
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "push" ] && [ -n "$PUSH_BEFORE" ] && ! [[ "$PUSH_BEFORE" =~ ^0+$ ]] && git cat-file -e "${PUSH_BEFORE}^{commit}"; then
+            echo "KNIP_BASE_REF=${PUSH_BEFORE}" >> "$GITHUB_ENV"
+          else
+            git fetch --no-tags origin main:refs/remotes/origin/main
+            echo "KNIP_BASE_REF=origin/main" >> "$GITHUB_ENV"
+          fi
 
       - name: Lint
         run: pnpm run lint
 
       - name: Check for dead code
-        run: pnpm run lint:dead-code:ci
+        run: pnpm run lint:dead-code:ci -- --base="$KNIP_BASE_REF"
 
   release-tooling:
     name: Release Tooling

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { scopeTag } from "@radioso/conversation-defaults";
-import { getEnv, parseEmailChannelConfig, type Env } from "../config/env.js";
+import { emailChannelConfigGaps, getEnv, parseEmailChannelConfig, type Env } from "../config/env.js";
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
@@ -403,6 +403,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
   });
   const emailChannelConfig = parseEmailChannelConfig(env);
+  const emailChannelGap = emailChannelConfigGaps(env);
+  if (emailChannelGap) {
+    logger.error(
+      { provider: emailChannelGap.provider, unmet: emailChannelGap.unmet },
+      "Email channel is off: EMAIL_CHANNEL_PROVIDER names a provider but not every setting it needs is present",
+    );
+  }
   const emailChannel = createEmailChannelComposition({
     config: emailChannelConfig,
     options: options.emailChannel,

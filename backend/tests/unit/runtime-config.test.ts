@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
-import { getEnv, parseEmailChannelConfig } from "../../src/app/config/env.js";
+import { emailChannelConfigGaps, getEnv, parseEmailChannelConfig } from "../../src/app/config/env.js";
 
 const baseEnv = {
   NODE_ENV: "test",
@@ -962,18 +962,18 @@ describe("runtime configuration", () => {
       expect(blankProvider).toBeUndefined();
     });
 
-    it("refuses to start the resend provider without a Resend key of its own or transactional mail's", () => {
-      expect(() => getEnv({
-        ...localChannelEnv,
-        EMAIL_CHANNEL_PROVIDER: "resend",
-      })).toThrow(/RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY/);
+    it("keeps the channel off and names the gap when the resend provider has no key", () => {
+      const noKey = { ...localChannelEnv, EMAIL_CHANNEL_PROVIDER: "resend" } as const;
+      expect(() => getEnv(noKey)).not.toThrow();
+      expect(emailChannelOf(noKey)).toBeUndefined();
+      expect(emailChannelConfigGaps(getEnv(noKey))).toEqual({
+        provider: "resend",
+        unmet: ["RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY"],
+      });
 
-      expect(() => getEnv({
-        ...localChannelEnv,
-        EMAIL_CHANNEL_PROVIDER: "resend",
-        RESEND_CHANNEL_API_KEY: "",
-        RESEND_MAIL_API_KEY: "",
-      })).toThrow(/RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY/);
+      const blankKeys = { ...noKey, RESEND_CHANNEL_API_KEY: "", RESEND_MAIL_API_KEY: "" } as const;
+      expect(emailChannelOf(blankKeys)).toBeUndefined();
+      expect(emailChannelConfigGaps(getEnv(blankKeys))?.unmet).toEqual(["RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY"]);
 
       const env = emailChannelOf({
         ...localChannelEnv,
@@ -1001,21 +1001,33 @@ describe("runtime configuration", () => {
       expect(own?.provider).toEqual({ kind: "resend", apiKey: "re_channel", region: "us-east-1" });
     });
 
-    it("requires the inbound domain and webhook secret once a provider is chosen", () => {
-      expect(() => getEnv({
-        ...localChannelEnv,
-        EMAIL_CHANNEL_INBOUND_DOMAIN: "",
-      })).toThrow(/EMAIL_CHANNEL_INBOUND_DOMAIN/);
+    it("keeps the channel off and names every unmet setting once a provider is chosen", () => {
+      const noDomain = { ...localChannelEnv, EMAIL_CHANNEL_INBOUND_DOMAIN: "" } as const;
+      expect(() => getEnv(noDomain)).not.toThrow();
+      expect(emailChannelOf(noDomain)).toBeUndefined();
+      expect(emailChannelConfigGaps(getEnv(noDomain))).toEqual({ provider: "local", unmet: ["EMAIL_CHANNEL_INBOUND_DOMAIN"] });
 
-      expect(() => getEnv({
-        ...localChannelEnv,
-        EMAIL_CHANNEL_WEBHOOK_SECRET: "",
-      })).toThrow(/EMAIL_CHANNEL_WEBHOOK_SECRET/);
+      const noSecret = { ...localChannelEnv, EMAIL_CHANNEL_WEBHOOK_SECRET: "" } as const;
+      expect(emailChannelOf(noSecret)).toBeUndefined();
+      expect(emailChannelConfigGaps(getEnv(noSecret))?.unmet).toEqual(["EMAIL_CHANNEL_WEBHOOK_SECRET"]);
 
-      expect(() => getEnv({
-        ...localChannelEnv,
-        EMAIL_CHANNEL_INBOUND_DOMAIN: "not a domain",
-      })).toThrow(/EMAIL_CHANNEL_INBOUND_DOMAIN/);
+      const badDomain = { ...localChannelEnv, EMAIL_CHANNEL_INBOUND_DOMAIN: "not a domain" } as const;
+      expect(() => getEnv(badDomain)).not.toThrow();
+      expect(emailChannelOf(badDomain)).toBeUndefined();
+      expect(emailChannelConfigGaps(getEnv(badDomain))?.unmet).toEqual(["EMAIL_CHANNEL_INBOUND_DOMAIN must be a DNS hostname"]);
+
+      const nothing = { ...baseEnv, EMAIL_CHANNEL_PROVIDER: "resend" } as const;
+      expect(emailChannelConfigGaps(getEnv(nothing))?.unmet).toEqual([
+        "RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY",
+        "EMAIL_CHANNEL_INBOUND_DOMAIN",
+        "EMAIL_CHANNEL_WEBHOOK_SECRET",
+      ]);
+    });
+
+    it("reports no gap when the provider is unset or the channel is complete", () => {
+      expect(emailChannelConfigGaps(getEnv({ ...baseEnv }))).toBeNull();
+      expect(emailChannelConfigGaps(getEnv({ ...baseEnv, EMAIL_CHANNEL_PROVIDER: "" }))).toBeNull();
+      expect(emailChannelConfigGaps(getEnv(localChannelEnv))).toBeNull();
     });
 
     it("lower-cases the inbound domain", () => {

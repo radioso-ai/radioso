@@ -73,9 +73,7 @@ type EmailChannelConfig = {
 
 const emailChannelEnvShape = {
   EMAIL_CHANNEL_PROVIDER: emptyStringToUndefined(z.enum(["resend", "local"])),
-  EMAIL_CHANNEL_INBOUND_DOMAIN: emptyStringToUndefined(
-    z.string().trim().toLowerCase().regex(DNS_HOSTNAME, "EMAIL_CHANNEL_INBOUND_DOMAIN must be a DNS hostname"),
-  ),
+  EMAIL_CHANNEL_INBOUND_DOMAIN: emptyStringToUndefined(z.string().trim().toLowerCase()),
   EMAIL_CHANNEL_WEBHOOK_SECRET: emptyStringToUndefined(z.string().min(1)),
   EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS: emptyStringToUndefined(z.string().min(1)),
   EMAIL_CHANNEL_WORKERS_ENABLED: booleanish(false),
@@ -86,46 +84,66 @@ const emailChannelEnvShape = {
   RESEND_CHANNEL_REGION: emptyStringToDefault(z.enum(RESEND_CHANNEL_REGIONS), "us-east-1"),
 } as const;
 
+const emailChannelEnvSchema = z.object(emailChannelEnvShape);
+
+/** A named provider whose required settings are not all present. Setting names only, never values. */
+type EmailChannelConfigGap = {
+  provider: "resend" | "local";
+  /** Each unmet requirement, in the order the channel needs it. */
+  unmet: readonly string[];
+};
+
 /**
  * `EMAIL_CHANNEL_PROVIDER` is the only switch. The other settings may be provisioned ahead of it
- * (secrets, the queue) without turning the channel on, but once a provider is chosen every setting
- * it needs must be present. The channel's timings and limits are not deployment settings: each is
- * a constant of the module that owns it.
+ * (secrets, the queue) without turning the channel on. Once a provider is named, every setting it
+ * needs must be present; a gap keeps the channel off and is reported at startup rather than
+ * stopping the process, so a half-provisioned deployment still serves everything else. The
+ * channel's timings and limits are not deployment settings: each is a constant of the module that
+ * owns it.
  */
-const emailChannelConfigSchema = z.object(emailChannelEnvShape).transform((value, ctx): EmailChannelConfig | undefined => {
+const emailChannelOf = (
+  value: z.infer<typeof emailChannelEnvSchema>,
+): { config: EmailChannelConfig | undefined; gap: EmailChannelConfigGap | null } => {
   const providerName = value.EMAIL_CHANNEL_PROVIDER;
   if (!providerName) {
-    return undefined;
+    return { config: undefined, gap: null };
   }
 
-  const missing = (field: string, requirement: string = field): never => {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: [field],
-      message: `${requirement} is required when EMAIL_CHANNEL_PROVIDER is ${providerName}`,
-    });
-    return z.NEVER;
-  };
+  const unmet: string[] = [];
+  const apiKey = value.RESEND_CHANNEL_API_KEY ?? value.RESEND_MAIL_API_KEY;
+  if (providerName === "resend" && apiKey === undefined) {
+    unmet.push("RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY");
+  }
+  const inboundDomain = value.EMAIL_CHANNEL_INBOUND_DOMAIN;
+  if (inboundDomain === undefined) {
+    unmet.push("EMAIL_CHANNEL_INBOUND_DOMAIN");
+  } else if (!DNS_HOSTNAME.test(inboundDomain)) {
+    unmet.push("EMAIL_CHANNEL_INBOUND_DOMAIN must be a DNS hostname");
+  }
+  const webhookSecret = value.EMAIL_CHANNEL_WEBHOOK_SECRET;
+  if (webhookSecret === undefined) {
+    unmet.push("EMAIL_CHANNEL_WEBHOOK_SECRET");
+  }
+  if (unmet.length > 0 || inboundDomain === undefined || webhookSecret === undefined) {
+    return { config: undefined, gap: { provider: providerName, unmet } };
+  }
 
-  const provider: EmailChannelProviderConfig = providerName === "resend"
-    ? {
-      kind: "resend",
-      apiKey: value.RESEND_CHANNEL_API_KEY
-        ?? value.RESEND_MAIL_API_KEY
-        ?? missing("RESEND_CHANNEL_API_KEY", "RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY"),
-      region: value.RESEND_CHANNEL_REGION,
-    }
+  const provider: EmailChannelProviderConfig = providerName === "resend" && apiKey !== undefined
+    ? { kind: "resend", apiKey, region: value.RESEND_CHANNEL_REGION }
     : { kind: "local" };
 
   return {
-    provider,
-    inboundDomain: value.EMAIL_CHANNEL_INBOUND_DOMAIN ?? missing("EMAIL_CHANNEL_INBOUND_DOMAIN"),
-    webhookSecret: value.EMAIL_CHANNEL_WEBHOOK_SECRET ?? missing("EMAIL_CHANNEL_WEBHOOK_SECRET"),
-    previousWebhookSecret: value.EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS,
-    workersEnabled: value.EMAIL_CHANNEL_WORKERS_ENABLED,
-    taskQueueName: value.EMAIL_CHANNEL_TASK_QUEUE_NAME,
+    config: {
+      provider,
+      inboundDomain,
+      webhookSecret,
+      previousWebhookSecret: value.EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS,
+      workersEnabled: value.EMAIL_CHANNEL_WORKERS_ENABLED,
+      taskQueueName: value.EMAIL_CHANNEL_TASK_QUEUE_NAME,
+    },
+    gap: null,
   };
-});
+};
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -547,7 +565,15 @@ export type Env = Omit<ParsedEnv, "OBSERVABILITY_ENVIRONMENT" | OptionalEnvInput
  */
 export const parseEmailChannelConfig = (
   env: Partial<Pick<ParsedEnv, EmailChannelEnvInputKey>>,
-): EmailChannelConfig | undefined => emailChannelConfigSchema.parse(env);
+): EmailChannelConfig | undefined => emailChannelOf(emailChannelEnvSchema.parse(env)).config;
+
+/**
+ * Why the email channel is off although `EMAIL_CHANNEL_PROVIDER` names a provider, or null when
+ * the provider is unset or the channel is complete. Startup logs it; nothing else decides on it.
+ */
+export const emailChannelConfigGaps = (
+  env: Partial<Pick<ParsedEnv, EmailChannelEnvInputKey>>,
+): EmailChannelConfigGap | null => emailChannelOf(emailChannelEnvSchema.parse(env)).gap;
 
 let cachedEnv: Env | null = null;
 
@@ -572,7 +598,6 @@ export const getEnv = (source: NodeJS.ProcessEnv = process.env): Env => {
     rejectRetiredProxyHopSetting(source);
     const parsed = envSchema.parse(source);
     parseRealtimeConfig(parsed);
-    parseEmailChannelConfig(parsed);
     cachedEnv = {
       ...parsed,
       OBSERVABILITY_ENVIRONMENT: parsed.OBSERVABILITY_ENVIRONMENT ?? parsed.NODE_ENV,

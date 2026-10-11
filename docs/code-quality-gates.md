@@ -1,12 +1,12 @@
 ---
 title: "Lint and Dead-Code Gates"
 description: "How the workspace lint run and the dead-code ratchet work, what each one catches, and what to do when they fail."
-last_updated: 2026-09-05
+last_updated: 2026-10-11
 ---
 
 # Lint and Dead-Code Gates
 
-Two checks run across the whole pnpm workspace and gate every pull request. Between them they catch the things a typechecker and a test suite let through: imports nobody uses, promises nobody awaits, and exports nobody imports.
+Two checks run across the whole pnpm workspace and gate every pull request and every push to `main`. Between them they catch the things a typechecker and a test suite let through: imports nobody uses, promises nobody awaits, and exports nobody imports.
 
 Run both from the repo root:
 

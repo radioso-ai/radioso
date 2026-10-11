@@ -24,7 +24,7 @@ export type ToolFetch = (
   url: string | URL,
   init?: {
     method?: string;
-    headers?: Record<string, string>;
+    headers?: HeadersInit;
     body?: string;
     signal?: AbortSignal;
   },

@@ -88,6 +88,17 @@ export interface RoutineSkillResolver {
   resolve(skillName: string): SkillDefinition | null;
 }
 
+export interface RoutineExternalEffectInterceptor {
+  dispatch(input: {
+    skillName: string;
+    state: Parameters<ConversationRoutineSkillDispatcher["dispatch"]>[0]["state"];
+    stepId: string;
+    occurrenceOrdinal: number;
+    idempotencyKey?: string;
+    execute(): Promise<RoutineSkillResult>;
+  }): Promise<RoutineSkillResult>;
+}
+
 /** Resolves routine skill references against a fixed set of skill definitions. */
 export class StaticRoutineSkillResolver implements RoutineSkillResolver {
   private readonly byName: Map<string, SkillDefinition>;
@@ -139,13 +150,20 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
   async dispatch(
     input: Parameters<ConversationRoutineSkillDispatcher["dispatch"]>[0],
   ): Promise<RoutineSkillResult> {
+    return this.dispatchWithExternalEffectInterceptor(input);
+  }
+
+  async dispatchWithExternalEffectInterceptor(
+    input: Parameters<ConversationRoutineSkillDispatcher["dispatch"]>[0],
+    externalEffectInterceptor?: RoutineExternalEffectInterceptor,
+  ): Promise<RoutineSkillResult> {
     const { skillName, state } = input;
 
     return traceOperation({
       name: "routine.skill.dispatch",
       attributes: routineDispatchTraceAttributes(skillName, state),
       run: async () => {
-        const result = await this.dispatchInner(input);
+        const result = await this.dispatchInner(input, externalEffectInterceptor);
         this.recordDispatchMetric(result);
         return result;
       },
@@ -155,6 +173,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
 
   private async dispatchInner(
     input: Parameters<ConversationRoutineSkillDispatcher["dispatch"]>[0],
+    externalEffectInterceptor?: RoutineExternalEffectInterceptor,
   ): Promise<RoutineSkillResult> {
     const { skillName, state, turn, inputBindings } = input;
     const stepId = state.path.at(-1);
@@ -195,60 +214,74 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
 
     // From here the executor runs, so the skill may act before the turn is saved: the result
     // reports whether that can reach outside the conversation, even when the executor fails.
-    let result: SkillDispatchResult;
     // Typed steps resolve authored input bindings first. During the FR-019
     // compatibility window, untyped/legacy steps still pass captured variables
     // through so external-skill slotBinding routing keeps working.
     const { values: collected, origins: collectedOrigins } = inputBindings && Object.keys(inputBindings).length > 0
       ? resolveSkillArguments(inputBindings, state.variables ?? {}, contextValuesFromStagedContext(turn.stagedContext))
       : resolveUntypedSkillArguments(state.variables ?? {});
-    this.throwIfCancelled?.();
-    try {
-      result = await executor.dispatch({
-        skill,
-        collected,
-        collectedOrigins,
-        context: {
-          turn,
-          agentId: turn.agent.id,
-          sessionId: turn.sessionId,
-          ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
-          // In the chat subsystem the routine state machine is keyed by the
-          // conversation id, which TurnContext carries as `sessionId`. Surface it
-          // under the name the action outbox + contact-delivery resolver expect so a
-          // notify skill can scope its enqueue (recipients + dedup) to the conversation.
-          conversationId: turn.sessionId,
-          routineId: state.routineId,
-          ...(stepId ? { stepId } : {}),
-          ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),
-          ...(this.accountId ? { accountId: this.accountId } : {}),
-        },
-        emit: noopSkillEmitPort,
-      });
-    } catch {
-      return unavailable(skillName, "executor_error", actsOutsideConversation);
-    }
+    const execute = async (): Promise<RoutineSkillResult> => {
+      let result: SkillDispatchResult;
+      this.throwIfCancelled?.();
+      try {
+        result = await executor.dispatch({
+          skill,
+          collected,
+          collectedOrigins,
+          context: {
+            turn,
+            agentId: turn.agent.id,
+            sessionId: turn.sessionId,
+            ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+            // In the chat subsystem the routine state machine is keyed by the
+            // conversation id, which TurnContext carries as `sessionId`. Surface it
+            // under the name the action outbox + contact-delivery resolver expect so a
+            // notify skill can scope its enqueue (recipients + dedup) to the conversation.
+            conversationId: turn.sessionId,
+            routineId: state.routineId,
+            ...(stepId ? { stepId } : {}),
+            ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),
+            ...(this.accountId ? { accountId: this.accountId } : {}),
+          },
+          emit: noopSkillEmitPort,
+        });
+      } catch {
+        return unavailable(skillName, "executor_error", actsOutsideConversation);
+      }
 
-    if (result.disposition !== "settled") {
-      // No v1 executor defers; the async-weave (reconcile a deferred result in a
-      // later turn) isn't wired for routines, so degrade rather than wedge.
-      return unavailable(skillName, "deferred", actsOutsideConversation);
-    }
+      if (result.disposition !== "settled") {
+        // No v1 executor defers; the async-weave (reconcile a deferred result in a
+        // later turn) isn't wired for routines, so degrade rather than wedge.
+        return unavailable(skillName, "deferred", actsOutsideConversation);
+      }
 
-    const failureReason = result.outcome.status === "failed"
-      ? result.outcome.error?.code
-        ?? (typeof result.outcome.outputs?.reason === "string" ? result.outcome.outputs.reason : undefined)
-      : undefined;
-    const metadata = failureReason
-      ? { ...result.outcome.metadata, failureReason }
-      : result.outcome.metadata;
-    return {
-      status: result.outcome.status,
-      outputs: result.outcome.outputs,
-      answer: result.outcome.answer,
-      ...(metadata ? { metadata } : {}),
-      actsOutsideConversation,
+      const failureReason = result.outcome.status === "failed"
+        ? result.outcome.error?.code
+          ?? (typeof result.outcome.outputs?.reason === "string" ? result.outcome.outputs.reason : undefined)
+        : undefined;
+      const metadata = failureReason
+        ? { ...result.outcome.metadata, failureReason }
+        : result.outcome.metadata;
+      return {
+        status: result.outcome.status,
+        outputs: result.outcome.outputs,
+        answer: result.outcome.answer,
+        ...(metadata ? { metadata } : {}),
+        actsOutsideConversation,
+      };
     };
+
+    if (actsOutsideConversation && externalEffectInterceptor && input.stepId && input.occurrenceOrdinal) {
+      return externalEffectInterceptor.dispatch({
+        skillName,
+        state,
+        stepId: input.stepId,
+        occurrenceOrdinal: input.occurrenceOrdinal,
+        ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+        execute,
+      });
+    }
+    return execute();
   }
 
   private async firstDeniedCapability(skill: SkillDefinition): Promise<string | null> {

@@ -6,6 +6,7 @@ import { DirectiveStateRepository } from "../../../db/repositories/directiveStat
 import { ConversationSummaryRepository } from "../../../db/repositories/conversationSummaryRepository.js";
 import { ConversationSummaryService, ModelConversationSummaryGenerator, ModelConversationEarlyTitleGenerator } from "../../../modules/chat/composition.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
+import { ApprovalResumeEffectJournalRepository } from "../../../db/repositories/approvalResumeEffectJournalRepository.js";
 import { ClarificationStateRepository } from "../../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
@@ -614,6 +615,7 @@ export const buildChatServices = (input: {
         };
       },
     });
+  const approvalResumeEffectJournal = new ApprovalResumeEffectJournalRepository(input.database.kysely);
   const routineProvider: ChatRoutineProvider = createRoutineTurnProvider({
     agentSkillRepository: input.agentSkillRepository,
     capabilityPolicy: input.composition.capabilityPolicy,
@@ -628,6 +630,7 @@ export const buildChatServices = (input: {
     routineRegistrations: input.composition.routineRegistrations,
     routineTriggerEmbeddingService: input.routineTriggerEmbeddingService,
     skillExecutorRegistry: input.composition.skillExecutorRegistry,
+    approvalResumeEffectJournal,
     turnPlanAdapters: {
       activator: ({ handle, registry, fallback }) =>
         planAwareRoutineActivator({
@@ -972,6 +975,7 @@ export const buildChatServices = (input: {
       }),
     },
     input.workspaceInvalidationPublisher,
+    approvalResumeEffectJournal,
   );
   return {
     abuseControlService,

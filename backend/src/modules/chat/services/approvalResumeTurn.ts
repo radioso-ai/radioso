@@ -170,6 +170,7 @@ export class ApprovalResumeTurn {
       workspaceId: session.conversation.workspaceId,
       accountId: input.decidedBy,
       pinnedRoutineIds: [input.record.routineId],
+      approvalResume: input.approvalResume,
       responseLanguage: session.responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
         session,

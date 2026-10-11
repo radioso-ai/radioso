@@ -153,6 +153,7 @@ const decisionErrorOutcome = (error: ApprovalDecisionServiceError): "stale" | "f
     case "stale_proposal":
     case "already_resolved":
     case "concurrent_resolution":
+    case "effect_journal_conflict":
       return "stale";
     case "forbidden_decider":
       return "forbidden";

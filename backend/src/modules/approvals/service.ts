@@ -2,7 +2,12 @@ import type {
   PendingDecisionRecord,
   PendingDecisionRepository,
 } from "../../db/repositories/pendingDecisionRepository.js";
+import { createHash } from "node:crypto";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import {
+  ApprovalResumeEffectJournalConflictError,
+  type ApprovalResumeEffectJournal,
+} from "../routines/public.js";
 import {
   createNoopWorkspaceInvalidationPublisher,
   createPostCommitInvalidationReceipt,
@@ -26,7 +31,8 @@ type ApprovalDecisionServiceFailureReason =
   | "forbidden_decider"
   | "invalid_option"
   | "stale_proposal"
-  | "concurrent_resolution";
+  | "concurrent_resolution"
+  | "effect_journal_conflict";
 
 export class ApprovalDecisionServiceError extends Error {
   constructor(readonly reason: ApprovalDecisionServiceFailureReason) {
@@ -46,6 +52,7 @@ export interface ResumeRunner {
     transaction: Db;
     /** Stable, non-secret identity for deduping skill effects across a rolled-back resume. */
     skillDispatchIdempotencyKey?: string;
+    approvalResume?: { pendingDecisionId: string; optionId: string; payloadDigest: string };
   }): Promise<ApprovalResumeResult>;
 }
 
@@ -89,6 +96,18 @@ interface ResolveApprovalDecisionResult {
 
 type PendingDecisionReader = Pick<PendingDecisionRepository, "loadByHandle" | "resolveInTransaction" | "listPending">;
 
+const canonicalPayload = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(canonicalPayload).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalPayload(nested)}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+};
+
+const payloadDigest = (value: unknown): string =>
+  createHash("sha256").update(canonicalPayload(value)).digest("hex");
+
 const mapDomainError = (error: ApprovalDecisionDomainError): ApprovalDecisionServiceError =>
   new ApprovalDecisionServiceError(error.reason);
 
@@ -102,6 +121,7 @@ export class ApprovalDecisionService {
     private readonly conversationEvents?: ApprovalDecisionConversationEventPublisher,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
+    private readonly effectJournal?: ApprovalResumeEffectJournal,
   ) {}
 
   async listPending(workspaceId: string): Promise<PendingDecisionRecord[]> {
@@ -141,6 +161,19 @@ export class ApprovalDecisionService {
     }
 
     const decidedByUserId = input.caller.userId ?? null;
+    const journalDecision = {
+      pendingDecisionId: record.id,
+      optionId: resolved.decision.optionId,
+      payloadDigest: payloadDigest(resolved.decision.payload),
+    };
+    try {
+      await this.effectJournal?.assertDecision(journalDecision);
+    } catch (error) {
+      if (error instanceof ApprovalResumeEffectJournalConflictError) {
+        throw new ApprovalDecisionServiceError("effect_journal_conflict");
+      }
+      throw error;
+    }
     const resume = await this.pendingDecisions.resolveInTransaction({
       handle: input.handle,
       status: "resolved",
@@ -160,14 +193,24 @@ export class ApprovalDecisionService {
           decision: { optionId: resolved.decision.optionId, label: resolved.decision.label },
         },
       });
-      return this.resumeRunner.resume({
-        record: resolvedRecord,
-        optionId: resolved.decision.optionId,
-        payload: resolved.decision.payload,
-        decidedBy: input.caller.accountId,
-        transaction,
-        skillDispatchIdempotencyKey: `approval-decision:${resolvedRecord.id}`,
-      });
+      try {
+        const result = await this.resumeRunner.resume({
+          record: resolvedRecord,
+          optionId: resolved.decision.optionId,
+          payload: resolved.decision.payload,
+          decidedBy: input.caller.accountId,
+          transaction,
+          skillDispatchIdempotencyKey: `approval-decision:${resolvedRecord.id}`,
+          approvalResume: { ...journalDecision, pendingDecisionId: resolvedRecord.id },
+        });
+        await this.effectJournal?.clearDecision({ pendingDecisionId: resolvedRecord.id, transaction });
+        return result;
+      } catch (error) {
+        if (error instanceof ApprovalResumeEffectJournalConflictError) {
+          throw new ApprovalDecisionServiceError("effect_journal_conflict");
+        }
+        throw error;
+      }
     });
 
     if (!resume) {

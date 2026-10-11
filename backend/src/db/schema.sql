@@ -967,6 +967,39 @@ CREATE TABLE public.api_credentials (
 
 
 --
+-- Name: approval_resume_effect_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.approval_resume_effect_decisions (
+    pending_decision_id uuid NOT NULL,
+    option_id text NOT NULL,
+    payload_digest text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: approval_resume_effects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.approval_resume_effects (
+    pending_decision_id uuid NOT NULL,
+    routine_id text NOT NULL,
+    step_id text NOT NULL,
+    occurrence_ordinal integer NOT NULL,
+    status text NOT NULL,
+    result jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    CONSTRAINT approval_resume_effects_check CHECK ((((status = 'started'::text) AND (result IS NULL) AND (completed_at IS NULL)) OR ((status = 'completed'::text) AND (result IS NOT NULL) AND (completed_at IS NOT NULL)))),
+    CONSTRAINT approval_resume_effects_occurrence_ordinal_check CHECK ((occurrence_ordinal > 0)),
+    CONSTRAINT approval_resume_effects_status_check CHECK ((status = ANY (ARRAY['started'::text, 'completed'::text])))
+);
+
+
+--
 -- Name: assistant_answer_feedback; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4654,6 +4687,22 @@ ALTER TABLE ONLY public.api_credentials
 
 
 --
+-- Name: approval_resume_effect_decisions approval_resume_effect_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approval_resume_effect_decisions
+    ADD CONSTRAINT approval_resume_effect_decisions_pkey PRIMARY KEY (pending_decision_id);
+
+
+--
+-- Name: approval_resume_effects approval_resume_effects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approval_resume_effects
+    ADD CONSTRAINT approval_resume_effects_pkey PRIMARY KEY (pending_decision_id, routine_id, step_id, occurrence_ordinal);
+
+
+--
 -- Name: assistant_answer_feedback assistant_answer_feedback_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6275,6 +6324,13 @@ CREATE INDEX answer_coverage_assessments_workspace_conversation_idx ON public.an
 --
 
 CREATE INDEX answer_coverage_reaction_traces_assessment_idx ON public.answer_coverage_reaction_traces USING btree (assessment_id, created_at);
+
+
+--
+-- Name: approval_resume_effect_decisions_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX approval_resume_effect_decisions_created_at_idx ON public.approval_resume_effect_decisions USING btree (created_at);
 
 
 --
@@ -10401,6 +10457,22 @@ ALTER TABLE ONLY public.api_credentials
 
 ALTER TABLE ONLY public.api_credentials
     ADD CONSTRAINT api_credentials_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: approval_resume_effect_decisions approval_resume_effect_decisions_pending_decision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approval_resume_effect_decisions
+    ADD CONSTRAINT approval_resume_effect_decisions_pending_decision_id_fkey FOREIGN KEY (pending_decision_id) REFERENCES public.pending_decisions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: approval_resume_effects approval_resume_effects_pending_decision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approval_resume_effects
+    ADD CONSTRAINT approval_resume_effects_pending_decision_id_fkey FOREIGN KEY (pending_decision_id) REFERENCES public.approval_resume_effect_decisions(pending_decision_id) ON DELETE CASCADE;
 
 
 --

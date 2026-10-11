@@ -1,9 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { PoolClient, QueryResultRow } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type {
-  ConversationRoutineSkillDispatcher,
   Routine,
   RoutineState,
   TurnContext,
@@ -14,6 +13,9 @@ import {
   PendingDecisionRepository,
   type PendingDecisionCreateInput,
 } from "../../../src/db/repositories/pendingDecisionRepository.js";
+import { ApprovalResumeEffectJournalRepository } from "../../../src/db/repositories/approvalResumeEffectJournalRepository.js";
+import { ApprovalResumeEffectJournalDispatcher } from "../../../src/modules/routines/approvalResumeEffectJournal.js";
+import { RoutineSkillExecutorDispatcher } from "../../../src/modules/routines/skillDispatcher.js";
 import {
   ApprovalDecisionService,
   ApprovalDecisionServiceError,
@@ -130,6 +132,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
   let database: Database;
   let backingDatabase: Database;
   let client: PoolClient;
+  let journalDatabase: Database;
   let schema: string;
   let repository: PendingDecisionRepository;
 
@@ -150,6 +153,8 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "104_pending_decisions.sql");
     await applyTestMigration(database, "205_conversation_activity.sql");
+    await applyTestMigration(database, "212_approval_resume_effect_journal.sql");
+    journalDatabase = new Database(`${integrationDatabaseUrl!}?options=-c%20search_path%3D${schema}%2Cpublic`);
     await database.execute(
       `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')`,
       [deciderUserId, `decider-${deciderUserId}@example.com`],
@@ -162,7 +167,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
   let activity: { record: Mock<ConversationActivityRecorder["record"]> };
 
   beforeEach(async () => {
-    await database.execute("TRUNCATE pending_decisions");
+    await database.execute("TRUNCATE approval_resume_effect_decisions, pending_decisions CASCADE");
     activity = { record: vi.fn<ConversationActivityRecorder["record"]>(async () => undefined) };
   });
 
@@ -172,6 +177,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
       await client.query(`DELETE FROM public.users WHERE id = $1`, [deciderUserId]).catch(() => undefined);
       client.release();
     }
+    await journalDatabase?.close();
     if (backingDatabase) {
       await backingDatabase.close();
     }
@@ -285,7 +291,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
           condition: "approved",
           guard: { kind: "field", ref: "approval_decision.id", op: "equals", value: "approve" },
         },
-        { from: "issue_refund", to: "confirmed", condition: "issued" },
+        { from: "issue_refund", to: "confirmed", condition: "issued", guard: { kind: "default" } },
       ],
     };
     const state: RoutineState = {
@@ -304,24 +310,42 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
       steering: [],
     };
     const visibleEffects: string[] = [];
-    const dispatchedKeys = new Set<string>();
-    const dispatch = vi.fn<ConversationRoutineSkillDispatcher["dispatch"]>(async (dispatchInput) => {
-      const key = dispatchInput.idempotencyKey;
-      if (!key || !dispatchedKeys.has(key)) {
-        visibleEffects.push(dispatchInput.skillName);
-        if (key) dispatchedKeys.add(key);
-      }
-      return { status: "completed", actsOutsideConversation: true };
+    const receiverKeys: string[] = [];
+    const receiver = vi.fn(async (invocation: { context: Record<string, unknown> }) => {
+      // Deliberately non-idempotent: this represents a receiver that ignores our header.
+      visibleEffects.push("refund.issue");
+      receiverKeys.push(String(invocation.context.idempotencyKey));
+      return { disposition: "settled", outcome: { status: "completed" } };
+    });
+    const baseDispatcher = new RoutineSkillExecutorDispatcher(
+      { resolve: () => ({ name: "refund.issue", owner: "webhook", execution: { kind: "webhook" } } as never) },
+      { resolve: () => ({ dispatch: receiver }) } as never,
+    );
+    const journal = new ApprovalResumeEffectJournalRepository(journalDatabase.kysely);
+    const dispatch = new ApprovalResumeEffectJournalDispatcher(baseDispatcher, journal, {
+      pendingDecisionId: decision.id,
+      optionId: "approve",
+      payloadDigest: createHash("sha256").update("null").digest("hex"),
+    });
+    // A process may die after the receiver accepts the call but before the result is committed.
+    // The retry must make its at-least-once fallback call with the same generated key.
+    await journal.begin({
+      pendingDecisionId: decision.id,
+      optionId: "approve",
+      payloadDigest: createHash("sha256").update("null").digest("hex"),
+      routineId: "refund_flow",
+      stepId: "issue_refund",
+      occurrenceOrdinal: 1,
     });
     const routineRunner = new DefaultRoutineRunner(
       [routine],
       { select: vi.fn(async () => { throw new Error("selector_not_expected"); }) },
       { render: vi.fn(async () => ({ answer: "Refund issued." })) },
-      { dispatch },
+      dispatch,
     );
     let attempts = 0;
     const runner: ResumeRunner = {
-      resume: vi.fn(async ({ record, optionId, payload, skillDispatchIdempotencyKey }) => {
+      resume: vi.fn(async ({ record, optionId, payload, skillDispatchIdempotencyKey, approvalResume }) => {
         const result = await resumeAwaitingDecision({
           suspendedReader: { loadSuspended: vi.fn(async () => state) },
           routineRunner,
@@ -333,6 +357,11 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
             ...(payload !== undefined ? { payload } : {}),
             ...(skillDispatchIdempotencyKey ? { idempotencyKey: skillDispatchIdempotencyKey } : {}),
           },
+        });
+        expect(approvalResume).toEqual({
+          pendingDecisionId: decision.id,
+          optionId: "approve",
+          payloadDigest: expect.any(String),
         });
         attempts += 1;
         if (attempts === 1) {
@@ -347,7 +376,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
         };
       }),
     };
-    const service = new ApprovalDecisionService(repository, runner, activity);
+    const service = new ApprovalDecisionService(repository, runner, activity, undefined, undefined, undefined, journal);
     const resolve = () => service.resolve({
       agentId: input.agentId,
       handle: input.handle,
@@ -358,14 +387,21 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
 
     await expect(resolve()).rejects.toThrow("assistant_turn_persist_failed");
     expect(await statusOf(input.handle)).toBe("pending");
+    await expect(service.resolve({
+      agentId: input.agentId,
+      handle: input.handle,
+      optionId: "reject",
+      contentHash: input.contentHash,
+      caller: { accountId: operatorId, workspaceId },
+    })).rejects.toMatchObject({ reason: "effect_journal_conflict" });
 
     await expect(resolve()).resolves.toMatchObject({ status: "resolved", resumed: true });
     expect(visibleEffects).toEqual(["refund.issue"]);
-    expect(dispatch).toHaveBeenCalledTimes(2);
-    expect(dispatch.mock.calls.map(([dispatchInput]) => dispatchInput.idempotencyKey)).toEqual([
-      `approval-decision:${decision.id}:routine:refund_flow:step:issue_refund`,
-      `approval-decision:${decision.id}:routine:refund_flow:step:issue_refund`,
+    expect(receiver).toHaveBeenCalledTimes(1);
+    expect(receiverKeys).toEqual([
+      `approval-decision:${decision.id}:routine:refund_flow:step:issue_refund:occurrence:1`,
     ]);
+    expect(await journalDatabase.query<{ count: string }>("SELECT count(*) FROM approval_resume_effect_decisions")).toEqual([{ count: "0" }]);
   });
 
   it("re-parks at the same gate: the decision resolves and the gate's next decision opens in one transaction (#1460)", async () => {

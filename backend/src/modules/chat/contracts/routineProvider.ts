@@ -60,6 +60,7 @@ export interface ChatRoutineProvider {
     executionMode?: TurnExecutionMode;
     skillEffects?: SkillEffectPolicy;
     conversationDurability?: ConversationDurability;
+    approvalResume?: { pendingDecisionId: string; optionId: string; payloadDigest: string };
     responseLanguage?: string | Promise<string | undefined>;
     groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
     throwIfCancelled?: () => void;

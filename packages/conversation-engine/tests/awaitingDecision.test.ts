@@ -76,7 +76,7 @@ const readerFor = (state: RoutineState | null) => ({
 describe("resumeAwaitingDecision", () => {
   it("APPROVE branches via the field guard, dispatches the gated skill exactly once, and never calls the selector", async () => {
     const selector = throwingSelector();
-    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const dispatch = vi.fn<ConversationRoutineSkillDispatcher["dispatch"]>(async () => ({ status: "completed" as const }));
     const skillDispatcher: ConversationRoutineSkillDispatcher = { dispatch };
     const runner = new DefaultRoutineRunner([refundRoutine], selector, { render: vi.fn(renderer.render) }, skillDispatcher);
 
@@ -85,18 +85,64 @@ describe("resumeAwaitingDecision", () => {
       routineRunner: runner,
       turn,
       sessionId: "session_1",
-      decision: { handle: "decision_1", optionId: "approve", payload: { reviewedBy: "operator_1" } },
+      decision: {
+        handle: "decision_1",
+        optionId: "approve",
+        payload: { reviewedBy: "operator_1" },
+        idempotencyKey: "approval-decision:decision_1",
+      },
     });
 
     expect(result.resumed).toBe(true);
     expect(selector.select).not.toHaveBeenCalled();
     expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ skillName: "refund.issue" }));
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      skillName: "refund.issue",
+      idempotencyKey: "approval-decision:decision_1:routine:refund_flow:step:issue_refund:occurrence:1",
+    }));
     expect(result.trace?.startStepId).toBe("gate");
     expect(result.trace?.steps.map((step) => step.stepId)).not.toContain("ask_reason");
     expect(result.terminal).toEqual({ kind: "complete", stepId: "confirmed", collected: {} });
     expect(result.nextState).toBeNull();
     expect(result.response.answer).toContain("confirmed");
+  });
+
+  it("gives repeated skill visits distinct occurrence keys that replay identically", async () => {
+    const loopRoutine: Routine = {
+      ...refundRoutine,
+      transitions: [
+        { from: "ask_reason", to: "gate", condition: "a reason was provided", guard: { kind: "default" } },
+        { from: "gate", to: "issue_refund", condition: "the request was approved", guard: { kind: "field", ref: "approval_decision.id", op: "equals", value: "approve" } },
+        { from: "gate", to: "declined", condition: "the request was rejected", guard: { kind: "field", ref: "approval_decision.id", op: "equals", value: "reject" } },
+        { from: "issue_refund", to: "retry", condition: "one bounded retry", guard: { kind: "counter", limit: 2 } },
+        { from: "issue_refund", to: "confirmed", condition: "done", guard: { kind: "default" } },
+        { from: "retry", to: "issue_refund", condition: "retry the skill", guard: { kind: "default" } },
+      ],
+      steps: [
+        ...refundRoutine.steps.filter((step) => step.id !== "confirmed"),
+        { id: "retry", kind: "action", actionType: "retry" },
+        refundRoutine.steps.find((step) => step.id === "confirmed")!,
+      ],
+    };
+    const dispatch = vi.fn<ConversationRoutineSkillDispatcher["dispatch"]>(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([loopRoutine], throwingSelector(), { render: vi.fn(renderer.render) }, { dispatch });
+    const resume = () => resumeAwaitingDecision({
+      suspendedReader: readerFor(suspendedAtGate),
+      routineRunner: runner,
+      turn,
+      sessionId: "session_1",
+      decision: { handle: "decision_1", optionId: "approve", idempotencyKey: "approval-decision:decision_1" },
+    });
+
+    await resume();
+    await resume();
+
+    expect(dispatch.mock.calls.map(([input]) => input.idempotencyKey)).toEqual([
+      "approval-decision:decision_1:routine:refund_flow:step:issue_refund:occurrence:1",
+      "approval-decision:decision_1:routine:refund_flow:step:issue_refund:occurrence:2",
+      "approval-decision:decision_1:routine:refund_flow:step:issue_refund:occurrence:1",
+      "approval-decision:decision_1:routine:refund_flow:step:issue_refund:occurrence:2",
+    ]);
   });
 
   it("REJECT takes the rejection edge, never dispatches the gated skill, and never calls the selector", async () => {

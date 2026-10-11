@@ -24,7 +24,11 @@ describe("MCP adapter", () => {
           } as never;
         }
         expect(method).toBe("tools/call");
-        expect(params).toEqual({ name: "lookup", arguments: { id: "1" } });
+        expect(params).toEqual({
+          name: "lookup",
+          arguments: { id: "1" },
+          _meta: { "io.radioso/idempotencyKey": "approval-decision:decision-1:step:lookup" },
+        });
         return {
           content: [{ type: "text", text: "Found it" }],
           structuredContent: { id: "1" },
@@ -37,7 +41,11 @@ describe("MCP adapter", () => {
       name: "lookup",
       metadata: { transport: "mcp" },
     })]);
-    await expect(service.callTool({ toolName: "lookup", input: { id: "1" } })).resolves.toMatchObject({
+    await expect(service.callTool({
+      toolName: "lookup",
+      input: { id: "1" },
+      context: { idempotencyKey: "approval-decision:decision-1:step:lookup" },
+    })).resolves.toMatchObject({
       status: "completed",
       answer: "Found it",
       outputs: { id: "1" },

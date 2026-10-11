@@ -14,11 +14,11 @@ import type {
 } from "../providers/customerEmailProvider.js";
 import { CustomerEmailProviderRejectedError } from "../providers/customerEmailProvider.js";
 
-export interface CustomerEmailOauthCredentialLookupPort {
+interface CustomerEmailOauthCredentialLookupPort {
   findCredentialById(workspaceId: string, id: string): Promise<ResolveFreshAccessTokenInput["record"] | null>;
 }
 
-export interface CustomerEmailDeliveryServiceOptions {
+interface CustomerEmailDeliveryServiceOptions {
   connections: CustomerEmailConnectionRepositoryPort;
   oauthCredentials: CustomerEmailOauthCredentialLookupPort;
   oauthTokenRepository: ResolveFreshAccessTokenInput["repository"];
@@ -31,11 +31,13 @@ export interface CustomerEmailDeliveryServiceOptions {
   logger?: ResolveFreshAccessTokenInput["logger"];
 }
 
-export interface CustomerEmailDeliveryInput {
+interface CustomerEmailDeliveryInput {
   workspaceId: string;
   connectionId: string;
   mode: CustomerEmailSkillMode;
-  message: Omit<CustomerEmailMessageInput, "accessToken" | "workspaceId" | "connectionId" | "senderEmail" | "senderName" | "replyToEmail">;
+  /** Stable identity the provider must use to make a repeated send or draft a no-op. */
+  idempotencyKey?: string;
+  message: Omit<CustomerEmailMessageInput, "accessToken" | "workspaceId" | "connectionId" | "senderEmail" | "senderName" | "replyToEmail" | "idempotencyKey">;
 }
 
 export interface CustomerEmailDeliveryResult {
@@ -98,6 +100,7 @@ export class CustomerEmailDeliveryService {
           senderEmail: connection.senderEmail,
           senderName: connection.senderName,
           replyToEmail: connection.replyToEmail,
+          ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
           ...input.message,
         }),
         this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS,

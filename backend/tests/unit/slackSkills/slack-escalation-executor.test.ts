@@ -35,6 +35,7 @@ describe("SlackEscalationExecutor", () => {
         sessionId: "session-1",
         routineId: "routine-1",
         stepId: "step-1",
+        idempotencyKey: "approval-decision:decision-1:step:step-1",
       },
       emit: noopSkillEmitPort,
     });
@@ -43,7 +44,7 @@ describe("SlackEscalationExecutor", () => {
     expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       type: "slack.post",
       accountId: "account-1",
-      idempotencyKey: "slack:routine_post:session-1:routine-1:step-1:post_to_support",
+      idempotencyKey: "slack:routine_post:approval-decision:decision-1:step:step-1",
       payload: expect.objectContaining({
         kind: "routine_post",
         channelId: "CSUPPORT",

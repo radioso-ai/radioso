@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations, suppressing AI while handling manual responses, and reading who did what to a conversation."
-last_updated: 2026-10-05
+last_updated: 2026-10-11
 ---
 
 # Human Takeover
@@ -451,7 +451,18 @@ pending decision, and operators get an `approval.request` for it, as they do whe
 turn reaches a gate. The decision is what the resumed turn answers, so the visitor's last
 message never makes the routine step aside; if the routine can neither carry on, park, nor
 end, the decision fails and stays pending. A gated side effect runs as an idempotent
-outbox action, never inline.
+outbox action. For an external skill after the gate, Radioso records its completed result
+in a decision-scoped effect journal before the resume can commit. If a later part of the
+resume rolls back, a retry reuses that result instead of calling the skill again, so the
+effect runs once for that decision across transaction rollbacks. A process can stop while
+the provider call is in flight; Radioso then retries with the same decision, routine,
+step, occurrence, and resolved-input idempotency key. That case is at-least-once, so a provider that
+honors the key can collapse the retry; Radioso does not fail closed for an interrupted call
+because its outcome is unknowable. Once an external effect has started, the pending
+decision is bound to its chosen option and payload; a different option or payload returns
+`409` rather than changing the decision after an effect may have happened.
+Journal rows that survive an unsuccessful resume are retained for 30 days, then the worker's
+periodic retention sweep removes them.
 The same transaction records the teammate who decided and the option they chose
 as an `approval_decided` [activity](#conversation-activity) event.
 

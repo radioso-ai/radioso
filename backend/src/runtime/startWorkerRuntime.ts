@@ -43,6 +43,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
   // queue, so a shutdown that skips a sweep loses nothing but a few hours of lateness.
   dependencies.copilotRetentionWorker.start();
   dependencies.testExecutionRetentionWorker.start();
+  dependencies.approvalResumeEffectJournalRetentionWorker.start();
   dependencies.revisionEvalRunRetentionWorker.start();
   dependencies.slackInboundEventRetentionWorker.start();
   dependencies.agentBundleImportCleanupWorker.start();
@@ -61,6 +62,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
       try {
         await dependencies.copilotRetentionWorker.stop();
         await dependencies.testExecutionRetentionWorker.stop();
+        await dependencies.approvalResumeEffectJournalRetentionWorker.stop();
         await dependencies.revisionEvalRunRetentionWorker.stop();
         await dependencies.slackInboundEventRetentionWorker.stop();
         await dependencies.agentBundleImportCleanupWorker.stop();
@@ -76,6 +78,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
         } finally {
           try {
             await dependencies.applicationModules.shutdownAll();
+            await dependencies.closeApprovalResumeEffectJournal();
           } finally {
             await stopRuntimeTracing();
           }

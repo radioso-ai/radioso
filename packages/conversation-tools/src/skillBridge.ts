@@ -234,6 +234,9 @@ export class ToolSkillBridge {
 
   async dispatchOutcome(input: ToolSkillInvocation): Promise<SkillOutcome> {
     const toolName = getToolNameForSkill(input.skill);
+    const idempotencyKey = typeof input.context?.idempotencyKey === "string"
+      ? input.context.idempotencyKey
+      : undefined;
     try {
       return normalizeToolResult(await this.service.callTool({
         toolName,
@@ -241,6 +244,7 @@ export class ToolSkillBridge {
         context: {
           skill: input.skill,
           signal: input.signal,
+          ...(idempotencyKey ? { idempotencyKey } : {}),
           metadata: input.context,
         },
       }));

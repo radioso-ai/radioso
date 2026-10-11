@@ -170,6 +170,7 @@ export class ApprovalResumeTurn {
       workspaceId: session.conversation.workspaceId,
       accountId: input.decidedBy,
       pinnedRoutineIds: [input.record.routineId],
+      approvalResume: input.approvalResume,
       responseLanguage: session.responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
         session,
@@ -195,6 +196,9 @@ export class ApprovalResumeTurn {
         handle: input.record.handle,
         optionId: input.optionId,
         ...(input.payload !== undefined ? { payload: input.payload } : {}),
+        ...(input.skillDispatchIdempotencyKey
+          ? { idempotencyKey: input.skillDispatchIdempotencyKey }
+          : {}),
       },
       suspendedReader: {
         loadSuspended: (query) => this.options.suspendedRoutineReader!.loadSuspended(query),

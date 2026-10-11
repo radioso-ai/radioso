@@ -19,7 +19,10 @@ export interface MockTool {
   name: string;
   description?: string;
   inputSchema?: unknown;
-  respond: (args: Record<string, unknown>) => MockToolResult | Promise<MockToolResult>;
+  respond: (
+    args: Record<string, unknown>,
+    metadata?: Record<string, unknown>,
+  ) => MockToolResult | Promise<MockToolResult>;
 }
 
 export const createMockMcpServer = (tools: MockTool[]): Server => {
@@ -41,7 +44,7 @@ export const createMockMcpServer = (tools: MockTool[]): Server => {
     if (!tool) {
       return { content: [{ type: "text", text: `unknown tool: ${request.params.name}` }], isError: true };
     }
-    const result = await tool.respond((request.params.arguments ?? {}));
+    const result = await tool.respond((request.params.arguments ?? {}), request.params._meta);
     return {
       content: result.content ?? [],
       ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}),

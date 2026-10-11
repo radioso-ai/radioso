@@ -149,6 +149,25 @@ describe("EmailSkillExecutor", () => {
     expect(JSON.stringify(activityInputs[0])).not.toContain("This full body must not be retained");
   });
 
+  it("passes an approval resume's idempotency key to delivery", async () => {
+    const { executor, deliveryInputs } = buildExecutor({ outcome: "sent" }, definition({ mode: "send" }));
+
+    await executor.dispatch({
+      skill: { name: "support_email_customer" },
+      collected: { customerEmail: "customer@example.com", messageBody: "Hello" },
+      context: {
+        agentId: "agent-1",
+        workspaceId: "workspace-1",
+        idempotencyKey: "approval-decision:decision-1:step:send_email",
+      },
+      emit: noopEmit,
+    });
+
+    expect(deliveryInputs[0]).toMatchObject({
+      idempotencyKey: "approval-decision:decision-1:step:send_email",
+    });
+  });
+
   it("fails closed for undefined or disabled skill names", async () => {
     const { executor } = buildExecutor({ outcome: "drafted" }, definition({ enabled: false }));
 

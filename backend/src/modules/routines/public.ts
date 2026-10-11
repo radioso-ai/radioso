@@ -44,6 +44,10 @@ export {
   RoutineSkillExecutorDispatcher,
   type RoutineSkillResolver,
 } from "./skillDispatcher.js";
+export {
+  ApprovalResumeEffectJournalConflictError,
+  type ApprovalResumeEffectJournal,
+} from "./approvalResumeEffectJournal.js";
 export { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js";
 export { validateExposureAcrossSnapshot } from "./exposure/exposureSnapshotRules.js";
 export { type AgentToolDescriptor } from "./exposure/agentToolDescriptor.js";

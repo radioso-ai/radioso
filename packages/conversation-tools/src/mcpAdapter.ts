@@ -24,7 +24,7 @@ export type ToolFetch = (
   url: string | URL,
   init?: {
     method?: string;
-    headers?: Record<string, string>;
+    headers?: HeadersInit;
     body?: string;
     signal?: AbortSignal;
   },
@@ -197,9 +197,11 @@ export class McpToolService implements ToolService {
   }
 
   async callTool(input: ToolCallInput): Promise<ToolCallResult> {
+    const idempotencyKey = input.context?.idempotencyKey;
     const result = await this.transport.request<McpCallToolResult>("tools/call", {
       name: input.toolName,
       arguments: mcpArguments(input.input),
+      ...(idempotencyKey ? { _meta: { "io.radioso/idempotencyKey": idempotencyKey } } : {}),
     });
     const answer = textFromContent(result.content);
     if (result.isError) {

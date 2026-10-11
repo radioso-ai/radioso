@@ -29,7 +29,7 @@ const FACET_TASK_DRAIN_MAX_JOBS = 100;
 
 type DocumentWorkerTaskRouteDependencies = Pick<
   AppDependencies,
-  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain" | "copilotRetentionWorker" | "testExecutionRetentionWorker" | "revisionEvalRunRetentionWorker" | "slackInboundEventRetentionWorker" | "agentBundleImportCleanupWorker"
+  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain" | "copilotRetentionWorker" | "testExecutionRetentionWorker" | "approvalResumeEffectJournalRetentionWorker" | "revisionEvalRunRetentionWorker" | "slackInboundEventRetentionWorker" | "agentBundleImportCleanupWorker"
 >;
 
 // Compatibility tombstone for Cloud Tasks pushes enqueued before the crawler
@@ -158,6 +158,19 @@ export const createDocumentWorkerTaskRoutes = (
       const result = await dependencies.testExecutionRetentionWorker.sweep();
       if (result.status === "failed") {
         next(serviceUnavailable("Agent test execution retention sweep failed", { reason: result.error }));
+        return;
+      }
+      res.status(200).json({ deleted: result.status === "swept" ? result.deleted : 0, status: result.status });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/internal/tasks/approval-resume-effect-journal-retention/sweep", async (_req, res, next) => {
+    try {
+      const result = await dependencies.approvalResumeEffectJournalRetentionWorker.sweep();
+      if (result.status === "failed") {
+        next(serviceUnavailable("Approval resume effect journal retention sweep failed", { reason: result.error }));
         return;
       }
       res.status(200).json({ deleted: result.status === "swept" ? result.deleted : 0, status: result.status });

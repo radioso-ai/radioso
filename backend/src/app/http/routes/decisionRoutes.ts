@@ -46,6 +46,8 @@ const toHttpError = (error: ApprovalDecisionServiceError): AppError => {
       return new AppError(422, "invalid_option", "Decision option is invalid");
     case "concurrent_resolution":
       return new AppError(409, "concurrent_resolution", "Decision was resolved concurrently");
+    case "effect_journal_conflict":
+      return new AppError(409, "effect_journal_conflict", "An external effect already started for a different decision");
   }
 };
 

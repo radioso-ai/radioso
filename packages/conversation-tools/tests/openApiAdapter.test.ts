@@ -45,6 +45,7 @@ describe("OpenAPI adapter", () => {
     const fetchMock = vi.fn<ToolFetch>(async (url, init): Promise<ToolFetchResponse> => {
       expect(String(url)).toBe("http://api.test/records/rec_1?expand=owner");
       expect(init?.method).toBe("GET");
+      expect(new Headers(init?.headers).get("Idempotency-Key")).toBe("approval-decision:decision-1:step:getRecord");
       return {
         ok: true,
         status: 200,
@@ -62,6 +63,7 @@ describe("OpenAPI adapter", () => {
     await expect(service.callTool({
       toolName: "getRecord",
       input: { path: { id: "rec_1" }, query: { expand: "owner" } },
+      context: { idempotencyKey: "approval-decision:decision-1:step:getRecord" },
     })).resolves.toMatchObject({
       status: "completed",
       outputs: {
@@ -74,7 +76,7 @@ describe("OpenAPI adapter", () => {
   it("maps flat OpenAPI parameters by location", async () => {
     const fetchMock = vi.fn<ToolFetch>(async (url, init): Promise<ToolFetchResponse> => {
       expect(String(url)).toBe("http://api.test/records/rec_1?expand=owner");
-      expect(init?.headers).toMatchObject({ "x-request-id": "req_1" });
+      expect(new Headers(init?.headers).get("x-request-id")).toBe("req_1");
       return {
         ok: true,
         status: 200,
@@ -111,6 +113,27 @@ describe("OpenAPI adapter", () => {
       toolName: "getRecord",
       input: { id: "rec_1", expand: "owner", "x-request-id": "req_1" },
     })).resolves.toMatchObject({ status: "completed" });
+  });
+
+  it("replaces a caller idempotency header without combining values", async () => {
+    const fetchMock = vi.fn<ToolFetch>(async (_url, init): Promise<ToolFetchResponse> => {
+      const headers = new Headers(init?.headers);
+      expect(headers.get("idempotency-key")).toBe("generated-key");
+      expect([...headers.keys()].filter((key) => key === "idempotency-key")).toHaveLength(1);
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
+        async json() { return {}; },
+        async text() { return ""; },
+      };
+    });
+    const service = createOpenApiToolService({ spec, headers: { "idempotency-key": "caller-key" }, fetch: fetchMock });
+    await service.callTool({
+      toolName: "getRecord",
+      input: { path: { id: "rec_1" }, headers: { "IDEMPOTENCY-KEY": "operation-key" } },
+      context: { idempotencyKey: "generated-key" },
+    });
   });
 
   it("blocks non-http OpenAPI operation URLs before fetch", async () => {

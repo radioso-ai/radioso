@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Building2, ChevronLeft, FolderOpen, Globe, KeyRound, MessageCircle, ShieldAlert, Trash2, Wrench } from 'lucide-react'
+import { Building2, ChevronLeft, FolderOpen, Globe, KeyRound, MessageCircle, ShieldAlert, Trash2, Users, Wrench } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantContextVariablesSection } from '@/components/dashboard/settings/assistant-context-variables-section'
@@ -16,7 +17,7 @@ import { SlackChannelCard } from '@/components/dashboard/settings/slack-channel-
 import { SkillList } from '@/components/dashboard/settings/skills/SkillList'
 import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
-import { type DashboardRouteState } from '@/lib/dashboard-routes'
+import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import { mergeGeneralSettingsSnapshot } from '@/lib/general-settings-snapshot'
 import {
@@ -853,6 +854,24 @@ export function WorkspaceAssistantChannelsTab({
                 {organizationError ? <p className="text-sm text-destructive">{organizationError}</p> : null}
               </div>
             </SettingsCard>
+
+            <SettingsCard
+              icon={<Users className="h-5 w-5 text-primary" />}
+              title="Members"
+              description="Invite people and manage their organization and workspace access."
+              headerEnd={
+                <Button asChild variant="outline" size="sm">
+                  <Link href={buildDashboardHref(accountId, {
+                    section: 'account',
+                    accountTab: 'members',
+                    workspaceId: activeWorkspaceId ?? undefined,
+                    workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                  })}>
+                    Manage members
+                  </Link>
+                </Button>
+              }
+            />
 
             <SettingsCard
               icon={<FolderOpen className="h-5 w-5 text-primary" />}

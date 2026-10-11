@@ -24,8 +24,8 @@ const context: OperatorNotificationContext = {
 
 describe("OperatorNotificationDispatcher", () => {
   it("fans out to every sink", async () => {
-    const first: OperatorNotificationSink = { deliver: vi.fn(async () => {}) };
-    const second: OperatorNotificationSink = { deliver: vi.fn(async () => {}) };
+    const first: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "delivered" } as const)) };
+    const second: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "delivered" } as const)) };
     const dispatcher = new OperatorNotificationDispatcher([first, second]);
 
     await dispatcher.dispatch(notification, context);
@@ -41,7 +41,7 @@ describe("OperatorNotificationDispatcher", () => {
         throw new Error("sink_down");
       }),
     };
-    const succeeding: OperatorNotificationSink = { deliver: vi.fn(async () => {}) };
+    const succeeding: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "delivered" } as const)) };
     const dispatcher = new OperatorNotificationDispatcher([failing, succeeding], { warn });
 
     // The other sink is still attempted (no short-circuit), but the failure is surfaced so the
@@ -57,5 +57,24 @@ describe("OperatorNotificationDispatcher", () => {
       }),
       "Operator notification sink failed",
     );
+  });
+
+  it("keeps a skipped sink terminal when no sink delivered", async () => {
+    const skipped: OperatorNotificationSink = {
+      deliver: vi.fn(async () => ({ disposition: "skipped", reason: "mail_not_dispatched:driver=log" } as const)),
+    };
+    const dispatcher = new OperatorNotificationDispatcher([skipped]);
+
+    await expect(dispatcher.dispatch(notification, context)).rejects.toThrow("mail_not_dispatched:driver=log");
+  });
+
+  it("does not turn a delivered notification into a retry when another sink skips", async () => {
+    const skipped: OperatorNotificationSink = {
+      deliver: vi.fn(async () => ({ disposition: "skipped", reason: "mail_not_dispatched:driver=log" } as const)),
+    };
+    const delivered: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "delivered" } as const)) };
+    const dispatcher = new OperatorNotificationDispatcher([skipped, delivered]);
+
+    await expect(dispatcher.dispatch(notification, context)).resolves.toBeUndefined();
   });
 });

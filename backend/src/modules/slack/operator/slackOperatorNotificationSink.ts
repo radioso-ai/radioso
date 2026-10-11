@@ -7,6 +7,7 @@ import {
   type OperatorNotification,
   type OperatorNotificationContext,
   type OperatorNotificationSink,
+  type OperatorNotificationSinkOutcome,
 } from "../../operatorNotifications/public.js";
 import {
   resolveConversationLink,
@@ -42,18 +43,18 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
     logger?: { warn(payload: Record<string, unknown>, message: string): void };
   }) {}
 
-  async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<void> {
+  async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome> {
     const accountId = await this.options.workspaceAccounts.getAccountId(notification.workspaceId);
     if (!accountId) {
-      return;
+      return { disposition: "skipped", reason: "slack_workspace_not_linked" };
     }
     const installation = await this.options.installations.findByAccountId(accountId);
     if (!installation) {
-      return;
+      return { disposition: "skipped", reason: "slack_not_installed" };
     }
     const binding = await this.options.bindings.findByInstallationId(installation.id);
     if (!binding?.escalationChannelId) {
-      return;
+      return { disposition: "skipped", reason: "slack_escalation_channel_not_configured" };
     }
     if (notification.kind !== "approval") {
       // Slack has no separate subject field, so the post's text leads with the formatter's
@@ -93,12 +94,12 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
           blocks: message.blocks,
         },
       });
-      return;
+      return { disposition: "delivered" };
     }
 
     const decision = await this.options.pendingDecisions.loadByHandle(notification.handle);
     if (!decision || !isPendingApproval(decision, notification)) {
-      return;
+      return { disposition: "skipped", reason: "slack_approval_not_pending" };
     }
 
     const message = buildDecisionMessage({
@@ -127,6 +128,7 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
         blocks: message.blocks,
       },
     });
+    return { disposition: "delivered" };
   }
 
   private resolveDashboardUrl(notification: OperatorNotification): Promise<string | null> {

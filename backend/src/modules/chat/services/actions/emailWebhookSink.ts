@@ -4,12 +4,14 @@ import {
   type OperatorNotification,
   type OperatorNotificationContext,
   type OperatorNotificationSink,
+  type OperatorNotificationSinkOutcome,
   type RoutineEndingOperatorNotification,
 } from "../../../operatorNotifications/public.js";
 import {
   resolveConversationLink,
   type ConversationLinkResolver,
 } from "../../../../shared/domain/conversationLinkResolver.js";
+import { mailDeliverySkipReason } from "../../../../shared/domain/mailDeliveryOutcome.js";
 import type {
   ContactNotificationMailer,
   ContactWebhookHttpClient,
@@ -65,7 +67,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     private readonly conversationLinks?: ConversationLinkResolver,
   ) {}
 
-  async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<void> {
+  async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome> {
     const recipientContext = {
       requestId: context.requestId,
       workspaceId: context.workspaceId ?? notification.workspaceId,
@@ -97,7 +99,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         { workspaceId: context.workspaceId ?? notification.workspaceId, conversationId: context.conversationId ?? notification.conversationId, via: target.via },
         `${actionType}: no recipient configured for workspace; skipping`,
       );
-      return;
+      return { disposition: "skipped", reason: "contact_destination_not_configured" };
     }
     this.logger?.info(
       { kind: notification.kind, via: target.via, emailCount: target.emails.length, webhook: target.webhook !== null },
@@ -137,8 +139,8 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         }
       : this.routineEndingDelivery(notification, context, openLine, links);
 
-    await Promise.all([
-      ...target.emails.map((to) =>
+    const [emailResults] = await Promise.all([
+      Promise.all(target.emails.map((to) =>
         this.mailer.send({
           to,
           ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),
@@ -146,6 +148,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
           text: delivery.text,
           idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(to)}`,
         })),
+      ),
       target.webhook ? this.postWebhook({
         webhook: target.webhook,
         payload: delivery.webhookPayload,
@@ -153,6 +156,13 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         missingClientMessage: TRANSPORT_TEXT_BY_KIND[notification.kind].missingWebhookClientMessage,
       }) : Promise.resolve(),
     ]);
+    if (!target.webhook) {
+      const skipReason = mailDeliverySkipReason(emailResults);
+      if (skipReason) {
+        return { disposition: "skipped", reason: skipReason };
+      }
+    }
+    return { disposition: "delivered" };
   }
 
   /**

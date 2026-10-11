@@ -1,7 +1,7 @@
 import { currentTimestamp, nowMinusSeconds, nowPlusSeconds, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
-export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "failed";
+export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "failed" | "skipped";
 
 /**
  * The outcome of recording a dispatch failure. `superseded` means this worker's claim
@@ -9,7 +9,7 @@ export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "fa
  */
 export type ActionFailureOutcome = "retry" | "failed" | "superseded";
 
-export interface ActionOutboxDepthSnapshot {
+interface ActionOutboxDepthSnapshot {
   pendingCount: number;
   inProgressCount: number;
   oldestPendingCreatedAt: Date | null;
@@ -75,7 +75,7 @@ const mapRecord = (row: ActionRequestRow): ActionRequestRecord => ({
  * The action outbox: routines enqueue fire-and-forget requests here (transactionally
  * with the turn) and a worker drains them. Enqueue is **idempotent** on
  * `idempotencyKey` so a retried turn does not double-emit. The repository owns the
- * row lifecycle (pending → dispatched/failed); routing to handlers is the dispatcher.
+ * row lifecycle (pending → dispatched/failed/skipped); routing to handlers is the dispatcher.
  */
 export class ActionRequestRepository {
   constructor(private readonly db: Db) {}
@@ -154,6 +154,22 @@ export class ActionRequestRepository {
     const result = await this.db
       .updateTable("routine_action_requests")
       .set({ status: "dispatched", updated_at: currentTimestamp() })
+      .where("id", "=", id)
+      .where("attempts", "=", attempt)
+      .where("status", "=", "in_progress")
+      .execute();
+    return result.some((entry) => Number(entry.numUpdatedRows) > 0);
+  }
+
+  /**
+   * Mark a claimed request intentionally skipped. Unlike a failed delivery this is
+   * terminal and never consumes retries: the handler completed, but its configured
+   * transport deliberately did not deliver (for example, the local log mail driver).
+   */
+  async markSkipped(id: string, reason: string, attempt: number): Promise<boolean> {
+    const result = await this.db
+      .updateTable("routine_action_requests")
+      .set({ status: "skipped", last_error: reason, updated_at: currentTimestamp() })
       .where("id", "=", id)
       .where("attempts", "=", attempt)
       .where("status", "=", "in_progress")

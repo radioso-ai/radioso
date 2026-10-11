@@ -141,16 +141,20 @@ test("retrieval skill settings expose individual temporal event toggles", async 
   await page.getByLabel("Skill name").fill("retrieve_events");
   await page.getByRole("button", { name: "Advanced" }).click();
 
-  // Unset fields inherit the system default (ON for the temporal behaviors),
-  // and the switches render that effective state; toggling stores an explicit
-  // per-agent value.
-  await expect(page.getByRole("switch", { name: "Temporal structured lookup" })).toBeChecked();
-  await expect(page.getByRole("switch", { name: "Upcoming event boost" })).toBeChecked();
-  await expect(page.getByRole("switch", { name: "Deterministic temporal sort" })).toBeChecked();
-
-  await page.getByRole("switch", { name: "Temporal structured lookup" }).click();
-  await page.getByRole("switch", { name: "Upcoming event boost" }).click();
-  await page.getByRole("switch", { name: "Deterministic temporal sort" }).click();
+  // Unset fields inherit the effective workspace defaults (ON for these temporal
+  // behaviors). An operator first makes each inherited value local, then can edit it.
+  for (const label of [
+    "Temporal structured lookup",
+    "Upcoming event boost",
+    "Deterministic temporal sort",
+  ]) {
+    const toggle = page.getByRole("switch", { name: label });
+    await expect(toggle).toBeChecked();
+    await expect(toggle).toBeDisabled();
+    await page.getByRole("button", { name: `Override ${label}` }).click();
+    await expect(toggle).toBeEnabled();
+    await toggle.click();
+  }
   await expect(page.getByRole("switch", { name: "Temporal structured lookup" })).not.toBeChecked();
   await page.getByRole("button", { name: "Create skill" }).click();
 

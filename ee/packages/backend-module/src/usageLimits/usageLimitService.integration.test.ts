@@ -17,6 +17,21 @@ import type { UsageLimitDatabasePort, UsageLimitReservation } from "../radiosoMo
 
 const tenths = (conversations: number): number => conversations * TENTHS_PER_CONVERSATION;
 
+const mutableClock = (initial: string): { now: () => Date; set: (next: string) => void } => {
+  let current = new Date(initial);
+  return {
+    now: () => new Date(current),
+    set: (next) => {
+      current = new Date(next);
+    },
+  };
+};
+
+const createServiceWithClock = (
+  database: UsageLimitDatabasePort,
+  now: () => Date,
+): EnterpriseUsageLimitService => new EnterpriseUsageLimitService(database, now);
+
 // `reserveTenths` is private: the public surface always resolves its own period from the
 // system clock, so the only way to exercise two period starts in the same test -- the
 // concurrency race across a UTC month rollover, and "next period" carried-debt scenarios --
@@ -719,6 +734,106 @@ describeIfDatabase("EE usage limit service integration", () => {
 
     await expect(service.addCredits({ accountId: randomUUID(), conversations: 5, reference: "unknown-account" }))
       .rejects.toBeInstanceOf(UsageLimitAccountNotFoundError);
+  });
+
+  it("expires an unused credit grant after 12 months", async () => {
+    const { accountId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const clock = mutableClock("2030-01-15T12:00:00.000Z");
+    const service = createServiceWithClock(database, clock.now);
+    await service.addCredits({ accountId, conversations: 5, reference: "expires-unused" });
+
+    clock.set("2031-01-15T12:00:00.001Z");
+
+    const usage = await service.getAccountUsage(accountId, "2031-01-01");
+    expect(usage.monthlyConversations?.credits).toBe(0);
+  });
+
+  it("expires only the older of two credit grants", async () => {
+    const { accountId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const clock = mutableClock("2030-01-15T12:00:00.000Z");
+    const service = createServiceWithClock(database, clock.now);
+    await service.addCredits({ accountId, conversations: 5, reference: "older-grant" });
+    clock.set("2030-07-15T12:00:00.000Z");
+    await service.addCredits({ accountId, conversations: 3, reference: "newer-grant" });
+
+    clock.set("2031-01-15T12:00:00.001Z");
+
+    const usage = await service.getAccountUsage(accountId, "2031-01-01");
+    expect(usage.monthlyConversations?.credits).toBe(3);
+  });
+
+  it("consumes the oldest grant first before its remaining credit expires", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 0 });
+    const clock = mutableClock("2030-01-15T12:00:00.000Z");
+    const service = createServiceWithClock(database, clock.now);
+    await service.addCredits({ accountId, conversations: 5, reference: "partly-consumed-older" });
+    clock.set("2030-07-15T12:00:00.000Z");
+    await service.addCredits({ accountId, conversations: 5, reference: "untouched-newer" });
+
+    for (let index = 0; index < 3; index += 1) {
+      await service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", usage: "standalone_answer" });
+    }
+    expect((await service.getAccountUsage(accountId, "2030-07-01")).monthlyConversations?.credits).toBe(7);
+
+    clock.set("2031-01-15T12:00:00.001Z");
+    await service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", usage: "standalone_answer" });
+
+    const usage = await service.getAccountUsage(accountId, "2031-01-01");
+    expect(usage.monthlyConversations?.credits).toBe(4);
+  });
+
+  it("does not revive debt after the grant that repaid it expires", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const clock = mutableClock("2030-01-15T12:00:00.000Z");
+    const service = createServiceWithClock(database, clock.now);
+
+    for (let index = 0; index < 11; index += 1) {
+      await service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", usage: "standalone_answer" });
+    }
+    expect((await service.getAccountUsage(accountId, "2030-01-01")).monthlyConversations?.grace.borrowed).toBe(1);
+
+    await expect(service.addCredits({ accountId, conversations: 2, reference: "repays-debt" }))
+      .resolves.toEqual({ credits: 1, applied: true });
+
+    clock.set("2031-01-15T12:00:00.001Z");
+    await expect(service.addCredits({ accountId, conversations: 1, reference: "after-expiry" }))
+      .resolves.toEqual({ credits: 1, applied: true });
+    expect((await service.getAccountUsage(accountId, "2031-01-01")).monthlyConversations).toMatchObject({
+      credits: 1,
+      grace: { borrowed: 0 },
+    });
+  });
+
+  it("expires a credit grant on the exact 12-month boundary", async () => {
+    const { accountId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const clock = mutableClock("2030-01-15T12:00:00.000Z");
+    const service = createServiceWithClock(database, clock.now);
+    await service.addCredits({ accountId, conversations: 2, reference: "exact-boundary" });
+
+    clock.set("2031-01-15T11:59:59.999Z");
+    expect((await service.getAccountUsage(accountId, "2031-01-01")).monthlyConversations?.credits).toBe(2);
+
+    clock.set("2031-01-15T12:00:00.000Z");
+    expect((await service.getAccountUsage(accountId, "2031-01-01")).monthlyConversations?.credits).toBe(0);
+  });
+
+  it("expires a leap-day credit grant on its February anniversary", async () => {
+    const { accountId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const clock = mutableClock("2028-02-29T12:00:00.000Z");
+    const service = createServiceWithClock(database, clock.now);
+    await service.addCredits({ accountId, conversations: 2, reference: "leap-day-boundary" });
+
+    clock.set("2029-02-28T11:59:59.999Z");
+    expect((await service.getAccountUsage(accountId, "2029-02-01")).monthlyConversations?.credits).toBe(2);
+
+    clock.set("2029-02-28T12:00:00.000Z");
+    expect((await service.getAccountUsage(accountId, "2029-02-01")).monthlyConversations?.credits).toBe(0);
   });
 
   // ── Metering math: overdraw check and release-time refund ──────────────

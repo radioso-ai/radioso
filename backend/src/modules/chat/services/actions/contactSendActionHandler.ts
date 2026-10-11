@@ -2,6 +2,8 @@ import { hasConfiguredContactDestination, readNotifyContactDelivery } from "../.
 import type { AgentContactRequestDelivery, AgentContactWebhook } from "../../../agents/public.js";
 import type { ActionFailureOutcome } from "../../../../db/repositories/actionRequestRepository.js";
 import type { ContactDeliveryRoute } from "../../../../shared/domain/contactDeliveryRoute.js";
+import { ActionDispatchSkippedError } from "../../../../shared/domain/actionDispatchOutcome.js";
+import { mailDeliverySkipReason } from "../../../../shared/domain/mailDeliveryOutcome.js";
 import type { ErrorReporter } from "../../../../shared/errors/errorReporter.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
@@ -272,8 +274,8 @@ export class ContactSendActionHandler implements ActionHandler {
     ].filter((line): line is string => line !== null);
 
     const baseIdempotencyKey = input.context.idempotencyKey ?? input.context.requestId;
-    await Promise.all([
-      ...target.emails.map((to) =>
+    const [emailResults] = await Promise.all([
+      Promise.all(target.emails.map((to) =>
         this.mailer.send({
           to,
           replyTo: email,
@@ -281,6 +283,7 @@ export class ContactSendActionHandler implements ActionHandler {
           text: lines.join("\n"),
           idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(to)}`,
         })),
+      ),
       target.webhook ? this.postWebhook({
         webhook: target.webhook,
         payload: {
@@ -294,6 +297,12 @@ export class ContactSendActionHandler implements ActionHandler {
         idempotencyKey: `${baseIdempotencyKey}:webhook`,
       }) : Promise.resolve(),
     ]);
+    if (!target.webhook) {
+      const skipReason = mailDeliverySkipReason(emailResults);
+      if (skipReason) {
+        throw new ActionDispatchSkippedError(skipReason);
+      }
+    }
   }
 
   private async postWebhook(input: {

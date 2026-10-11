@@ -8,6 +8,7 @@ import {
 } from "@radioso/edge-proof";
 
 const PROOF_CONTEXT = "radioso:mcp-source-proof:v1";
+const SOURCE_DIGEST_CONTEXT = "radioso:source-address:v1";
 const SHA256_BASE64URL = /^[A-Za-z0-9_-]{43}$/u;
 
 export const MCP_SOURCE_PROOF_HEADERS = {
@@ -68,8 +69,16 @@ const sourceBudgetKey = (address: string): string => {
   return `${hextets.slice(0, IPV6_NETWORK_HEXTETS).map((hextet) => hextet.toString(16)).join(":")}::/64`;
 };
 
-export const digestSourceAddress = (address: string): string =>
-  createHmac("sha256", "radioso:source-address:v1").update(sourceBudgetKey(address)).digest("base64url");
+const sourceDigestKey = (secret: string): Buffer =>
+  createHmac("sha256", secret).update(SOURCE_DIGEST_CONTEXT).digest();
+
+/**
+ * Returns the opaque persistent key for a source budget. Callers supply a
+ * deployment secret; the derived HMAC key keeps this use separate from every
+ * other use of that secret.
+ */
+export const digestSourceAddress = (address: string, secret: string): string =>
+  createHmac("sha256", sourceDigestKey(secret)).update(sourceBudgetKey(address)).digest("base64url");
 
 /**
  * Resolves only the configured suffix of a proxy-appended X-Forwarded-For
@@ -79,9 +88,10 @@ export const digestSourceAddress = (address: string): string =>
  */
 export const resolveSourceDigest = (input: {
   forwardedFor?: string | readonly string[];
+  secret: string;
   socketAddress?: string | null;
   trustedProxyHops?: number;
-}): string => digestSourceAddress(resolveTrustedForwardedAddress(input) ?? "unknown");
+}): string => digestSourceAddress(resolveTrustedForwardedAddress(input) ?? "unknown", input.secret);
 
 export const createMcpSourceProof = (input: {
   method: string;

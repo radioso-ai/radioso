@@ -3,6 +3,7 @@ import { sql } from "kysely";
 
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
+import { pgVectorText } from "../../../shared/infra/kysely/pgVectorSql.js";
 import { anyOf } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type { RetrievedCandidate } from "../domain/retrievalPipelineTypes.js";
@@ -133,7 +134,7 @@ export class PostgresSenseEmbeddingReader implements SenseEmbeddingReader {
           .onRef("d.id", "=", "c.document_id"))
       .select([
         "ce.chunk_id as id",
-        sql<string | null>`ce.embedding::text`.as("embedding_text"),
+        pgVectorText(sql.ref("ce.embedding")).as("embedding_text"),
       ])
       .where("ce.workspace_id", "=", input.workspaceId)
       .whereRef("ce.document_revision", "=", "d.revision")

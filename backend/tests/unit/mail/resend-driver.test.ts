@@ -104,6 +104,7 @@ describe("ResendEmailDriver.send", () => {
 
     expect(result).toEqual({
       dispatched: true,
+      driver: "resend",
       providerMessageId: PROVIDER_MESSAGE_ID,
       deliveredMessageId: null,
     });
@@ -186,6 +187,7 @@ describe("ResendEmailDriver.send", () => {
 
     expect(await driver.send(channelReply())).toEqual({
       dispatched: true,
+      driver: "resend",
       providerMessageId: null,
       deliveredMessageId: null,
     });
@@ -263,6 +265,7 @@ describe("ResendEmailDriver.send", () => {
       expect(await sendFailure(driver)).toMatchObject({ outcome: "unknown", code: "unrecognized_conflict" });
       expect(await driver.send(channelReply())).toEqual({
         dispatched: true,
+        driver: "resend",
         providerMessageId: PROVIDER_MESSAGE_ID,
         deliveredMessageId: null,
       });

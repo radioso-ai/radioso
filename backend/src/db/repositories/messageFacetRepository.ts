@@ -1,11 +1,10 @@
-import { sql } from "kysely";
-
 import type {
   AttachFacetEmbeddingInput,
   MessageFacetRecord,
   MessageFacetRepositoryPort,
   UpsertFacetInput,
 } from "../../modules/facets/contracts.js";
+import { toPgVector } from "../../shared/infra/kysely/pgVectorSql.js";
 import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
@@ -67,7 +66,7 @@ export class MessageFacetRepository implements MessageFacetRepositoryPort {
     await this.db
       .updateTable("message_facets")
       .set({
-        embedding: sql<string>`${vector}::vector`,
+        embedding: toPgVector(vector),
         dimensions: input.embedding.length,
         embedding_profile_id: input.embeddingProfileId,
         updated_at: currentTimestamp(),

@@ -38,7 +38,7 @@ describe("LocalEmailDriver", () => {
     const first = await driver.send(message());
     const again = await driver.send(message());
 
-    expect(first).toEqual({ dispatched: true, providerMessageId: expect.stringMatching(/^local-[0-9a-f]{32}$/), deliveredMessageId: `<${INTENT_ID}@customer.test>` });
+    expect(first).toEqual({ dispatched: true, driver: "local", providerMessageId: expect.stringMatching(/^local-[0-9a-f]{32}$/), deliveredMessageId: `<${INTENT_ID}@customer.test>` });
     expect(again).toEqual(first);
   });
 

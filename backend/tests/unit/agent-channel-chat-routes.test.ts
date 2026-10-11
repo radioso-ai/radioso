@@ -1,4 +1,5 @@
 import { EDGE_FACTS_HEADERS } from "@radioso/edge-proof";
+import { digestSourceAddress } from "@radioso/mcp-source-proof";
 import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
@@ -13,6 +14,7 @@ import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsR
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
 const otherAgentId = "33333333-3333-4333-8333-333333333333";
+const SESSION_COOKIE_SECRET = "s".repeat(32);
 
 const grant = (overrides: Partial<AccessGrant> = {}): AccessGrant => ({
   id: "44444444-4444-4444-8444-444444444444",
@@ -47,6 +49,7 @@ const answer = {
 
 const createDependencies = (overrides: Partial<AppDependencies> = {}): AppDependencies => ({
   env: {
+    SESSION_COOKIE_SECRET,
     SESSION_COOKIE_NAME: "radioso_session",
     AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
     AGENT_CHANNEL_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 12,
@@ -174,7 +177,10 @@ describe("REST agent channel chat", () => {
 
     const sourceKeys = (dependencies.abuseControlService.enforce as ReturnType<typeof vi.fn>).mock.calls
       .map(([input]) => (input as { subjectKey: string }).subjectKey);
-    expect(new Set(sourceKeys).size).toBe(2);
+    expect(sourceKeys).toEqual([
+      `source:${digestSourceAddress("203.0.113.10", SESSION_COOKIE_SECRET)}`,
+      `source:${digestSourceAddress("203.0.113.11", SESSION_COOKIE_SECRET)}`,
+    ]);
     expect(sourceKeys.join(" ")).not.toContain("198.51.100.99");
     expect(sourceKeys.join(" ")).not.toContain("203.0.113.10");
   });

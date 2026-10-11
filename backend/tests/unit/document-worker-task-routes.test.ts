@@ -13,6 +13,7 @@ const buildApp = (input: {
   facetExtractionWorker?: { runOnce: ReturnType<typeof vi.fn>; drainWorkspace: ReturnType<typeof vi.fn> };
   facetExtractionWorkspaceDrain?: { requestWorkspaceDrain: ReturnType<typeof vi.fn> };
   copilotRetentionWorker?: { sweep: ReturnType<typeof vi.fn> };
+  approvalResumeEffectJournalRetentionWorker?: { sweep: ReturnType<typeof vi.fn> };
   slackInboundEventRetentionWorker?: { sweep: ReturnType<typeof vi.fn> };
   agentBundleImportCleanupWorker?: { sweep: ReturnType<typeof vi.fn> };
 }) => {
@@ -23,6 +24,7 @@ const buildApp = (input: {
     facetExtractionWorker: input.facetExtractionWorker as never,
     facetExtractionWorkspaceDrain: input.facetExtractionWorkspaceDrain as never,
     copilotRetentionWorker: input.copilotRetentionWorker as never,
+    approvalResumeEffectJournalRetentionWorker: input.approvalResumeEffectJournalRetentionWorker as never,
     slackInboundEventRetentionWorker: input.slackInboundEventRetentionWorker as never,
     agentBundleImportCleanupWorker: input.agentBundleImportCleanupWorker as never,
   }));
@@ -176,6 +178,29 @@ describe("POST /internal/tasks/slack-inbound-event-retention/sweep", () => {
     });
 
     const response = await request(app).post("/internal/tasks/slack-inbound-event-retention/sweep").send({});
+
+    expect(response.status).toBeGreaterThanOrEqual(500);
+  });
+});
+
+describe("POST /internal/tasks/approval-resume-effect-journal-retention/sweep", () => {
+  it("reports the journal rows removed by the retention sweep", async () => {
+    const sweep = vi.fn().mockResolvedValue({ status: "swept", deleted: 3 });
+    const app = buildApp({ approvalResumeEffectJournalRetentionWorker: { sweep } });
+
+    const response = await request(app).post("/internal/tasks/approval-resume-effect-journal-retention/sweep").send({});
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ deleted: 3, status: "swept" });
+    expect(sweep).toHaveBeenCalledOnce();
+  });
+
+  it("asks the scheduler to retry a failed journal retention sweep", async () => {
+    const app = buildApp({
+      approvalResumeEffectJournalRetentionWorker: { sweep: vi.fn().mockResolvedValue({ status: "failed", error: "deadlock detected" }) },
+    });
+
+    const response = await request(app).post("/internal/tasks/approval-resume-effect-journal-retention/sweep").send({});
 
     expect(response.status).toBeGreaterThanOrEqual(500);
   });

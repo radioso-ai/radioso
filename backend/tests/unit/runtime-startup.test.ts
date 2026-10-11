@@ -163,11 +163,16 @@ const createDependencies = () =>
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
     },
+    closeApprovalResumeEffectJournal: vi.fn().mockResolvedValue(undefined),
     copilotRetentionWorker: {
       start: vi.fn(),
       stop: vi.fn(async () => {}),
     },
     testExecutionRetentionWorker: {
+      start: vi.fn(),
+      stop: vi.fn(async () => {}),
+    },
+    approvalResumeEffectJournalRetentionWorker: {
       start: vi.fn(),
       stop: vi.fn(async () => {}),
     },
@@ -300,6 +305,7 @@ describe("runtime startup", () => {
     expect(dependencies.actionDispatchWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.copilotRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.testExecutionRetentionWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.approvalResumeEffectJournalRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.revisionEvalRunRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.slackInboundEventRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
@@ -312,6 +318,7 @@ describe("runtime startup", () => {
     expect(dependencies.actionDispatchWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.copilotRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.testExecutionRetentionWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.approvalResumeEffectJournalRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.revisionEvalRunRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.slackInboundEventRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
@@ -667,6 +674,9 @@ describe("runtime startup", () => {
       },
       testExecutionRetentionWorker: {
         route: "POST /internal/tasks/agent-test-execution-retention/sweep",
+      },
+      approvalResumeEffectJournalRetentionWorker: {
+        route: "POST /internal/tasks/approval-resume-effect-journal-retention/sweep",
       },
       revisionEvalRunRetentionWorker: {
         route: "POST /internal/tasks/agent-revision-eval-run-retention/sweep",

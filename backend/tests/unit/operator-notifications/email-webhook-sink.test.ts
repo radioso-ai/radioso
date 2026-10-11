@@ -233,6 +233,24 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(requests).toHaveLength(1);
   });
 
+  it("reports the bounded email-cap reason when email is the only delivery route", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => routedTo(["owner@business.example"]) },
+      undefined,
+      undefined,
+      undefined,
+      { admit: async () => ({ dispatchAllowed: true, emailAllowed: false, reason: "workspace_daily_email_cap" }) },
+    );
+
+    await expect(sink.deliver(notification, context)).resolves.toEqual({
+      disposition: "skipped",
+      reason: "workspace_daily_email_cap",
+    });
+    expect(sent).toHaveLength(0);
+  });
+
   it("preserves handoff email delivery", async () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(mailer, {

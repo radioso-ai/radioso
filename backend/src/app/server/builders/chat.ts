@@ -6,6 +6,7 @@ import { DirectiveStateRepository } from "../../../db/repositories/directiveStat
 import { ConversationSummaryRepository } from "../../../db/repositories/conversationSummaryRepository.js";
 import { ConversationSummaryService, ModelConversationSummaryGenerator, ModelConversationEarlyTitleGenerator } from "../../../modules/chat/composition.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
+import { ApprovalResumeEffectJournalRepository } from "../../../db/repositories/approvalResumeEffectJournalRepository.js";
 import { ClarificationStateRepository } from "../../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
@@ -614,6 +615,18 @@ export const buildChatServices = (input: {
         };
       },
     });
+  // Approval resumes hold a main-pool connection for their decision transaction while an
+  // external skill is journaled. A separate, bounded pool prevents a max-one main pool (or
+  // saturated main pool) from self-deadlocking on that autonomous write.
+  const approvalResumeEffectJournalDatabase = new Database(input.env.DATABASE_URL, {
+    poolMax: 2,
+    idleTimeoutMs: input.env.DB_POOL_IDLE_TIMEOUT_MS,
+    connectionTimeoutMs: input.env.DB_POOL_CONNECTION_TIMEOUT_MS,
+    statementTimeoutMs: input.env.DB_STATEMENT_TIMEOUT_MS,
+    queryTimeoutMs: input.env.DB_QUERY_TIMEOUT_MS,
+    applicationName: `radioso-${input.env.NODE_ENV}-approval-effect-journal`,
+  });
+  const approvalResumeEffectJournal = new ApprovalResumeEffectJournalRepository(approvalResumeEffectJournalDatabase.kysely);
   const routineProvider: ChatRoutineProvider = createRoutineTurnProvider({
     agentSkillRepository: input.agentSkillRepository,
     capabilityPolicy: input.composition.capabilityPolicy,
@@ -628,6 +641,7 @@ export const buildChatServices = (input: {
     routineRegistrations: input.composition.routineRegistrations,
     routineTriggerEmbeddingService: input.routineTriggerEmbeddingService,
     skillExecutorRegistry: input.composition.skillExecutorRegistry,
+    approvalResumeEffectJournal,
     turnPlanAdapters: {
       activator: ({ handle, registry, fallback }) =>
         planAwareRoutineActivator({
@@ -972,6 +986,7 @@ export const buildChatServices = (input: {
       }),
     },
     input.workspaceInvalidationPublisher,
+    approvalResumeEffectJournal,
   );
   return {
     abuseControlService,
@@ -994,5 +1009,6 @@ export const buildChatServices = (input: {
     // conversation transfer and its notice) and push a drain once it commits.
     actionDrainDispatcher,
     approvalDecisionService,
+    closeApprovalResumeEffectJournal: () => approvalResumeEffectJournalDatabase.close(),
   };
 };

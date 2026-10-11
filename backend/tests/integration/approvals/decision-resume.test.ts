@@ -1,12 +1,20 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
-import type { PoolClient, QueryResultRow } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import type {
+  Routine,
+  RoutineState,
+  TurnContext,
+} from "@radioso/conversation-contract";
+import { DefaultRoutineRunner, resumeAwaitingDecision } from "@radioso/conversation-engine";
 
 import {
   PendingDecisionRepository,
   type PendingDecisionCreateInput,
 } from "../../../src/db/repositories/pendingDecisionRepository.js";
+import { ApprovalResumeEffectJournalRepository } from "../../../src/db/repositories/approvalResumeEffectJournalRepository.js";
+import { ApprovalResumeEffectJournalDispatcher } from "../../../src/modules/routines/approvalResumeEffectJournal.js";
+import { RoutineSkillExecutorDispatcher } from "../../../src/modules/routines/skillDispatcher.js";
 import {
   ApprovalDecisionService,
   ApprovalDecisionServiceError,
@@ -14,8 +22,7 @@ import {
 } from "../../../src/modules/approvals/public.js";
 import type { ConversationActivityRecorder } from "../../../src/modules/conversationActivity/contracts/index.js";
 import { Database } from "../../../src/shared/infra/database.js";
-import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
-import { applyTestMigration } from "../../support/databaseMigrations.js";
+import { applyTestMigration, runAllTestMigrations } from "../../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -37,60 +44,10 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
-const createClientBackedDatabase = (client: PoolClient): Database => {
-  // A one-connection pool that always hands back the same open client so Kysely's
-  // `resolveInTransaction` BEGIN/COMMIT runs on the same per-test schema + client as the
-  // raw helper queries; `release` is neutered so Kysely can't return it to a real pool.
-  const pool = {
-    async connect() {
-      return new Proxy(client, {
-        get(target, property, receiver) {
-          if (property === "release") {
-            return () => undefined;
-          }
-          const value = Reflect.get(target, property, receiver);
-          return typeof value === "function" ? value.bind(target) : value;
-        },
-      });
-    },
-  } as Database["pool"];
-
-  return {
-  pool,
-  kysely: createKyselyDatabase(pool),
-  async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
-    const result = await client.query<T>(text, params);
-    return result.rows;
-  },
-  async queryOptional<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T | null> {
-    const result = await client.query<T>(text, params);
-    return result.rows[0] ?? null;
-  },
-  async queryOne<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T> {
-    const result = await client.query<T>(text, params);
-    const row = result.rows[0];
-    if (!row) {
-      throw new Error("Expected query to return one row");
-    }
-    return row;
-  },
-  async execute(text: string, params: unknown[] = []): Promise<number> {
-    const result = await client.query(text, params);
-    return result.rowCount ?? 0;
-  },
-  async withTransaction<T>(callback: (transactionClient: PoolClient) => Promise<T>): Promise<T> {
-    await client.query("BEGIN");
-    try {
-      const value = await callback(client);
-      await client.query("COMMIT");
-      return value;
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    }
-  },
-  async close(): Promise<void> {},
-};
+const databaseUrlForSchema = (databaseUrl: string, schema: string): string => {
+  const scoped = new URL(databaseUrl);
+  scoped.searchParams.set("options", `-c search_path=${schema},public`);
+  return scoped.toString();
 };
 
 const operatorId = randomUUID();
@@ -121,8 +78,8 @@ const decisionInput = (overrides: Partial<PendingDecisionCreateInput> = {}): Pen
 
 describeIfDatabase("ApprovalDecisionService resolve + resume integration", () => {
   let database: Database;
-  let backingDatabase: Database;
-  let client: PoolClient;
+  let journalDatabase: Database;
+  let adminDatabase: Database;
   let schema: string;
   let repository: PendingDecisionRepository;
 
@@ -135,14 +92,18 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
   };
 
   beforeAll(async () => {
-    backingDatabase = new Database(integrationDatabaseUrl!);
-    client = await backingDatabase.pool.connect();
+    adminDatabase = new Database(integrationDatabaseUrl!);
+    await runAllTestMigrations(adminDatabase);
     schema = `decision_resume_${randomUUID().replaceAll("-", "_")}`;
-    await client.query(`CREATE SCHEMA ${schema}`);
-    await client.query(`SET search_path TO ${schema}, public`);
-    database = createClientBackedDatabase(client);
+    await adminDatabase.execute(`CREATE SCHEMA ${schema}`);
+    const schemaDatabaseUrl = databaseUrlForSchema(integrationDatabaseUrl!, schema);
+    // This intentionally reproduces the constrained deployment that used to deadlock: the
+    // decision transaction consumes the main pool's only connection while the skill journals.
+    database = new Database(schemaDatabaseUrl, { poolMax: 1, connectionTimeoutMs: 1_000 });
     await applyTestMigration(database, "104_pending_decisions.sql");
     await applyTestMigration(database, "205_conversation_activity.sql");
+    await applyTestMigration(database, "213_approval_resume_effect_journal.sql");
+    journalDatabase = new Database(schemaDatabaseUrl, { poolMax: 2, connectionTimeoutMs: 1_000 });
     await database.execute(
       `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')`,
       [deciderUserId, `decider-${deciderUserId}@example.com`],
@@ -155,19 +116,16 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
   let activity: { record: Mock<ConversationActivityRecorder["record"]> };
 
   beforeEach(async () => {
-    await database.execute("TRUNCATE pending_decisions");
+    await database.execute("TRUNCATE approval_resume_effect_decisions, pending_decisions CASCADE");
     activity = { record: vi.fn<ConversationActivityRecorder["record"]>(async () => undefined) };
   });
 
   afterAll(async () => {
-    if (client) {
-      await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => undefined);
-      await client.query(`DELETE FROM public.users WHERE id = $1`, [deciderUserId]).catch(() => undefined);
-      client.release();
-    }
-    if (backingDatabase) {
-      await backingDatabase.close();
-    }
+    await journalDatabase?.close();
+    await database?.close();
+    await adminDatabase?.execute(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => undefined);
+    await adminDatabase?.execute(`DELETE FROM public.users WHERE id = $1`, [deciderUserId]).catch(() => undefined);
+    await adminDatabase?.close();
   });
 
   const okRunner = (): ResumeRunner => ({
@@ -251,6 +209,166 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
       caller: { accountId: operatorId, workspaceId },
     })).rejects.toMatchObject({ reason: "already_resolved" });
     expect(runner.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it("completes an effectful resume with a one-connection main pool and does not repeat it after rollback", async () => {
+    const input = decisionInput({ routineId: "refund_flow", stepId: "gate" });
+    const decision = await repository.create(input);
+    const routine: Routine = {
+      id: input.routineId,
+      rootStepId: "gate",
+      steps: [
+        {
+          id: "gate",
+          kind: "await",
+          decision: {
+            captureKey: "approval_decision",
+            options: [{ id: "approve", label: "Approve" }],
+          },
+        },
+        { id: "issue_refund", kind: "skill", skillName: "refund.issue" },
+        { id: "confirmed", kind: "terminal", action: "Confirm the refund." },
+      ],
+      transitions: [
+        {
+          from: "gate",
+          to: "issue_refund",
+          condition: "approved",
+          guard: { kind: "field", ref: "approval_decision.id", op: "equals", value: "approve" },
+        },
+        { from: "issue_refund", to: "confirmed", condition: "issued", guard: { kind: "default" } },
+      ],
+    };
+    const state: RoutineState = {
+      sessionId: input.sessionId,
+      routineId: input.routineId,
+      path: ["gate"],
+      variables: {},
+      status: "suspended",
+    };
+    const turn: TurnContext = {
+      agent: { id: input.agentId, name: "Support" },
+      sessionId: input.sessionId,
+      inputEvent: { id: "message-before-approval", kind: "message", content: "Please refund this." },
+      history: [],
+      stagedContext: [],
+      steering: [],
+    };
+    const visibleEffects: string[] = [];
+    const receiverKeys: string[] = [];
+    const receiver = vi.fn(async (invocation: { context: Record<string, unknown> }) => {
+      // Deliberately non-idempotent: this represents a receiver that ignores our header.
+      visibleEffects.push("refund.issue");
+      receiverKeys.push(String(invocation.context.idempotencyKey));
+      return { disposition: "settled", outcome: { status: "completed" } };
+    });
+    const baseDispatcher = new RoutineSkillExecutorDispatcher(
+      { resolve: () => ({ name: "refund.issue", owner: "webhook", execution: { kind: "webhook" } } as never) },
+      { resolve: () => ({ dispatch: receiver }) } as never,
+    );
+    const journal = new ApprovalResumeEffectJournalRepository(journalDatabase.kysely);
+    const changedInputEffect = {
+      pendingDecisionId: decision.id,
+      optionId: "approve",
+      payloadDigest: createHash("sha256").update('{"present":false}').digest("hex"),
+      routineId: "refund_flow",
+      stepId: "changed_input",
+      occurrenceOrdinal: 1,
+    };
+    await expect(journal.begin({ ...changedInputEffect, inputDigest: "first-input" })).resolves.toMatchObject({ kind: "started" });
+    await expect(journal.begin({ ...changedInputEffect, inputDigest: "changed-input" })).resolves.toMatchObject({ kind: "started" });
+    const dispatch = new ApprovalResumeEffectJournalDispatcher(baseDispatcher, journal, {
+      pendingDecisionId: decision.id,
+      optionId: "approve",
+      payloadDigest: createHash("sha256").update('{"present":false}').digest("hex"),
+    });
+    const routineRunner = new DefaultRoutineRunner(
+      [routine],
+      { select: vi.fn(async () => { throw new Error("selector_not_expected"); }) },
+      { render: vi.fn(async () => ({ answer: "Refund issued." })) },
+      dispatch,
+    );
+    let attempts = 0;
+    const runner: ResumeRunner = {
+      resume: vi.fn(async ({ record, optionId, payload, skillDispatchIdempotencyKey, approvalResume }) => {
+        const result = await resumeAwaitingDecision({
+          suspendedReader: { loadSuspended: vi.fn(async () => state) },
+          routineRunner,
+          turn,
+          sessionId: record.sessionId,
+          decision: {
+            handle: record.handle,
+            optionId,
+            ...(payload !== undefined ? { payload } : {}),
+            ...(skillDispatchIdempotencyKey ? { idempotencyKey: skillDispatchIdempotencyKey } : {}),
+          },
+        });
+        expect(approvalResume).toEqual({
+          pendingDecisionId: decision.id,
+          optionId: "approve",
+          payloadDigest: expect.any(String),
+        });
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("assistant_turn_persist_failed");
+        }
+        expect(result.resumed).toBe(true);
+        return {
+          conversationId: record.conversationId,
+          resumed: true as const,
+          assistantMessageId: randomUUID(),
+          postCommitReceipt: { workspaceId, changeKinds: ["conversation.turn_committed"] as const },
+        };
+      }),
+    };
+    const service = new ApprovalDecisionService(repository, runner, activity, undefined, undefined, undefined, journal);
+    const resolve = () => service.resolve({
+      agentId: input.agentId,
+      handle: input.handle,
+      optionId: "approve",
+      contentHash: input.contentHash,
+      caller: { accountId: operatorId, workspaceId },
+    });
+
+    await expect(resolve()).rejects.toThrow("assistant_turn_persist_failed");
+    expect(await statusOf(input.handle)).toBe("pending");
+    await expect(service.resolve({
+      agentId: input.agentId,
+      handle: input.handle,
+      optionId: "reject",
+      contentHash: input.contentHash,
+      caller: { accountId: operatorId, workspaceId },
+    })).rejects.toMatchObject({ reason: "effect_journal_conflict" });
+
+    await expect(resolve()).resolves.toMatchObject({ status: "resolved", resumed: true });
+    expect(visibleEffects).toEqual(["refund.issue"]);
+    expect(receiver).toHaveBeenCalledTimes(1);
+    expect(receiverKeys).toEqual([
+      `approval-decision:${decision.id}:routine:refund_flow:step:issue_refund:occurrence:1`,
+    ]);
+    expect(await journalDatabase.query<{ count: string }>("SELECT count(*) FROM approval_resume_effect_decisions")).toEqual([{ count: "0" }]);
+  });
+
+  it("removes rollback journals older than the retention bound", async () => {
+    const input = decisionInput();
+    const decision = await repository.create(input);
+    const journal = new ApprovalResumeEffectJournalRepository(journalDatabase.kysely);
+    await journal.begin({
+      pendingDecisionId: decision.id,
+      optionId: "approve",
+      payloadDigest: createHash("sha256").update('{"present":false}').digest("hex"),
+      routineId: input.routineId,
+      stepId: "external_step",
+      occurrenceOrdinal: 1,
+      inputDigest: "input",
+    });
+    await journalDatabase.execute(
+      "UPDATE approval_resume_effect_decisions SET created_at = NOW() - INTERVAL '31 days'",
+    );
+
+    await expect(journal.deleteBefore({ cutoff: new Date(), limit: 10 })).resolves.toBe(1);
+    expect(await journalDatabase.query<{ count: string }>("SELECT count(*) FROM approval_resume_effect_decisions"))
+      .toEqual([{ count: "0" }]);
   });
 
   it("re-parks at the same gate: the decision resolves and the gate's next decision opens in one transaction (#1460)", async () => {

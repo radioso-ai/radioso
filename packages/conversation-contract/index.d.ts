@@ -1305,6 +1305,12 @@ export interface ConversationRoutineSkillDispatcher {
     state: RoutineState;
     turn: TurnContext;
     inputBindings?: Record<string, RoutineInputBinding>;
+    /** Authored step identity; supplied by the runner for host-owned effect journals. */
+    stepId?: string;
+    /** One-based visit count for this step in the current runner traversal. */
+    occurrenceOrdinal?: number;
+    /** Stable identity for this skill step when its enclosing operation is retried. */
+    idempotencyKey?: string;
     // Output→variable assignment is applied by the runner after dispatch (see
     // DefaultRoutineRunner), not by the dispatcher — so it is intentionally not
     // part of the dispatch input.
@@ -1486,6 +1492,11 @@ export interface RoutineDecisionInput {
   handle: string;
   optionId: string;
   payload?: unknown;
+  /**
+   * Stable, non-secret identity for effects caused by this decision. A retry after the host
+   * rolls its transaction back carries the same value, so an effect-owning skill can dedupe.
+   */
+  idempotencyKey?: string;
 }
 
 /**
@@ -1743,6 +1754,11 @@ export interface ConversationRoutineResumeInput {
    * a new decision (#1460).
    */
   decisionTurn?: boolean;
+  /**
+   * Stable identity shared by every retry of one enclosing operation. The runner adds the
+   * skill-step id before dispatch, so distinct skill steps never collapse into one effect.
+   */
+  skillDispatchIdempotencyScope?: string;
 }
 
 /** Everything a resumed routine turn decided except its reply. */
@@ -2190,6 +2206,8 @@ export interface ToolCallContext {
   skill?: SkillDefinition;
   selected?: SelectedSkill;
   signal?: AbortSignal;
+  /** Stable identity an effect-owning tool can use to dedupe a retried call. */
+  idempotencyKey?: string;
   metadata?: Record<string, unknown>;
 }
 

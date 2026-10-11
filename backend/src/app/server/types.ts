@@ -265,6 +265,7 @@ export interface AppDependencies {
   documentStorage: DocumentStoragePort;
   chatService: ChatService;
   approvalDecisionService: ApprovalDecisionService;
+  closeApprovalResumeEffectJournal(): Promise<void>;
   /** Who handles a human-owned conversation: take over, reply, transfer, hand back. */
   conversationOwnershipService: ConversationOwnershipService;
   /** Records a customer message without running a turn; connectors reach it through their chat port. */
@@ -300,6 +301,7 @@ export interface AppDependencies {
   copilotRetentionWorker: CopilotRetentionWorker;
   /** Purges old private test-execution/revision-eval-run evidence (JSONB transcripts, frozen snapshots). */
   testExecutionRetentionWorker: TtlRetentionWorker;
+  approvalResumeEffectJournalRetentionWorker: TtlRetentionWorker;
   revisionEvalRunRetentionWorker: TtlRetentionWorker;
   slackInboundEventRetentionWorker: TtlRetentionWorker;
   chatBootstrapService: ChatBootstrapService;

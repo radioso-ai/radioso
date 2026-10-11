@@ -2703,6 +2703,7 @@ export const createTestDependencies = (overrides: {
     documentStorage,
     chatService,
     approvalDecisionService,
+    closeApprovalResumeEffectJournal: async () => undefined,
     conversationOwnershipService,
     conversationIngestService,
     conversationOperatorDirectory,
@@ -2731,6 +2732,13 @@ export const createTestDependencies = (overrides: {
       audit: auditService,
       logger,
       retentionDays: env.AGENT_TEST_EXECUTION_RETENTION_DAYS,
+    }),
+    approvalResumeEffectJournalRetentionWorker: new TtlRetentionWorker({
+      subject: "approval_resume_effect_journal",
+      sweep: { deleteBefore: async () => 0 },
+      audit: auditService,
+      logger,
+      retentionDays: 30,
     }),
     revisionEvalRunRetentionWorker: new TtlRetentionWorker({
       subject: "agent_revision_eval_run",

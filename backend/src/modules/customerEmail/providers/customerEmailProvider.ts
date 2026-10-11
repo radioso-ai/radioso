@@ -13,6 +13,8 @@ export interface CustomerEmailMessageInput {
   bodyText?: string | null;
   bodyHtml?: string | null;
   replyTo?: string | null;
+  /** Stable identity for provider-side deduplication of a retried delivery. */
+  idempotencyKey?: string;
 }
 
 export interface CustomerEmailProviderDeliveryResult {

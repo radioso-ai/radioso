@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ToolCallInput, ToolService } from "../src/index.js";
 import {
   createToolSkillDispatcher,
+  createToolSkillExecutor,
   toolToSkillDefinition,
   ToolSkillBridge,
 } from "../src/index.js";
@@ -86,6 +87,29 @@ describe("tool skill bridge", () => {
       status: "applied",
       outputs: { skillName: "lookup", toolName: "lookup", outcomeStatus: "completed" },
     });
+  });
+
+  it("passes an effect idempotency key through the typed tool-call context", async () => {
+    const calls: ToolCallInput[] = [];
+    const executor = createToolSkillExecutor({
+      async listTools() {
+        return [];
+      },
+      async callTool(input) {
+        calls.push(input);
+        return { status: "completed" };
+      },
+    });
+
+    await executor.dispatch({
+      skill: { name: "lookup" },
+      collected: {},
+      context: { idempotencyKey: "approval-decision:decision-1:routine:flow:step:lookup" },
+      emit: { emitStatus: async () => undefined, emitCustom: async () => undefined },
+    });
+
+    expect(calls[0]?.context?.idempotencyKey)
+      .toBe("approval-decision:decision-1:routine:flow:step:lookup");
   });
 
   it("converts thrown tool errors into failed outcomes", async () => {

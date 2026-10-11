@@ -44,6 +44,8 @@ export interface ResumeRunner {
     payload?: unknown;
     decidedBy: string;
     transaction: Db;
+    /** Stable, non-secret identity for deduping skill effects across a rolled-back resume. */
+    skillDispatchIdempotencyKey?: string;
   }): Promise<ApprovalResumeResult>;
 }
 
@@ -164,6 +166,7 @@ export class ApprovalDecisionService {
         payload: resolved.decision.payload,
         decidedBy: input.caller.accountId,
         transaction,
+        skillDispatchIdempotencyKey: `approval-decision:${resolvedRecord.id}`,
       });
     });
 

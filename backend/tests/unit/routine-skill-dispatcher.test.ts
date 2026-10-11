@@ -245,6 +245,26 @@ describe("RoutineSkillExecutorDispatcher", () => {
     expect(result.status).toBe("completed");
   });
 
+  it("passes an enclosing operation's idempotency key to the effect-owning executor", async () => {
+    let invocation: SkillInvocation | undefined;
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("book_meeting")]),
+      registryWith(settledExecutor(
+        { status: "completed" } as unknown as SkillOutcome,
+        (captured) => { invocation = captured; },
+      )),
+    );
+
+    await dispatcher.dispatch({
+      skillName: "book_meeting",
+      state: routineState({}),
+      turn,
+      idempotencyKey: "approval-decision:decision-1:step:invoke_skill",
+    });
+
+    expect(invocation?.context?.idempotencyKey).toBe("approval-decision:decision-1:step:invoke_skill");
+  });
+
   it("keeps the activated routine and step observable when a probe suppresses its skill", async () => {
     const exporter = enableTracing();
     const metricsRegistry = new MetricsRegistry();

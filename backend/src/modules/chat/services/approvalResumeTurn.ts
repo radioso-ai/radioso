@@ -195,6 +195,9 @@ export class ApprovalResumeTurn {
         handle: input.record.handle,
         optionId: input.optionId,
         ...(input.payload !== undefined ? { payload: input.payload } : {}),
+        ...(input.skillDispatchIdempotencyKey
+          ? { idempotencyKey: input.skillDispatchIdempotencyKey }
+          : {}),
       },
       suspendedReader: {
         loadSuspended: (query) => this.options.suspendedRoutineReader!.loadSuspended(query),

@@ -35,6 +35,7 @@ const dispatch = (
       sessionId: "session-1",
       routineId: "routine-1",
       stepId: "webhook_step",
+      idempotencyKey: "approval-decision:decision-1:step:webhook_step",
     },
     emit: noopEmit,
   });
@@ -74,6 +75,7 @@ describe("WebhookSkillExecutor", () => {
     expect(requests[0]).toMatchObject({
       url: "https://hooks.example.com/leads",
       headers: {
+        "Idempotency-Key": "approval-decision:decision-1:step:webhook_step",
         "X-Radioso-Timestamp": expect.any(String),
         "X-Radioso-Signature": expect.stringMatching(/^sha256=[a-f0-9]{64}$/),
       },

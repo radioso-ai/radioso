@@ -2365,8 +2365,12 @@ describe("chat service streaming", () => {
       optionId: "approve",
       decidedBy: "account-1",
       transaction: {} as never,
+      skillDispatchIdempotencyKey: "approval-decision:decision-1",
     });
 
+    expect(conversationEngine.resumeAwaitingDecision).toHaveBeenCalledWith(expect.objectContaining({
+      decision: expect.objectContaining({ idempotencyKey: "approval-decision:decision-1" }),
+    }));
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
     const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     const turnTrace = persisted.auditEvent.metadata?.turnTrace as {

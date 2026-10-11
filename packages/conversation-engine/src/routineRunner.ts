@@ -1258,6 +1258,11 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         state: skillStateAtStep,
         turn: stagedContext === turn.stagedContext ? turn : { ...turn, stagedContext },
         ...(step.inputBindings ? { inputBindings: step.inputBindings } : {}),
+        ...(input.skillDispatchIdempotencyScope
+          ? {
+              idempotencyKey: `${input.skillDispatchIdempotencyScope}:routine:${encodeURIComponent(routine.id)}:step:${encodeURIComponent(step.id)}`,
+            }
+          : {}),
       });
       if (skillResult.actsOutsideConversation !== false) {
         skillsWithExternalEffects.push(step.skillName);

@@ -76,13 +76,20 @@ describe("CustomerEmailDeliveryService", () => {
       createDraft: async (input) => {
         expect(input.accessToken).toBe("secret-token");
         expect(input.bodyText).toBe("Hello");
+        expect(input.idempotencyKey).toBe("approval-decision:decision-1:step:send_email");
         return { providerMessageId: "draft-1" };
       },
       sendMessage: async () => ({ providerMessageId: "sent-1" }),
     };
     const { service } = buildService(provider);
 
-    await expect(service.deliver({ workspaceId: "workspace-1", connectionId: "connection-1", mode: "draft", message }))
+    await expect(service.deliver({
+      workspaceId: "workspace-1",
+      connectionId: "connection-1",
+      mode: "draft",
+      idempotencyKey: "approval-decision:decision-1:step:send_email",
+      message,
+    }))
       .resolves.toEqual({ outcome: "drafted", providerMessageId: "draft-1" });
     await expect(service.deliver({ workspaceId: "workspace-1", connectionId: "connection-1", mode: "send", message }))
       .resolves.toEqual({ outcome: "sent", providerMessageId: "sent-1" });

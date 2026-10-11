@@ -85,13 +85,21 @@ describe("resumeAwaitingDecision", () => {
       routineRunner: runner,
       turn,
       sessionId: "session_1",
-      decision: { handle: "decision_1", optionId: "approve", payload: { reviewedBy: "operator_1" } },
+      decision: {
+        handle: "decision_1",
+        optionId: "approve",
+        payload: { reviewedBy: "operator_1" },
+        idempotencyKey: "approval-decision:decision_1",
+      },
     });
 
     expect(result.resumed).toBe(true);
     expect(selector.select).not.toHaveBeenCalled();
     expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ skillName: "refund.issue" }));
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      skillName: "refund.issue",
+      idempotencyKey: "approval-decision:decision_1:routine:refund_flow:step:issue_refund",
+    }));
     expect(result.trace?.startStepId).toBe("gate");
     expect(result.trace?.steps.map((step) => step.stepId)).not.toContain("ask_reason");
     expect(result.terminal).toEqual({ kind: "complete", stepId: "confirmed", collected: {} });

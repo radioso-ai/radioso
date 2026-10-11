@@ -45,6 +45,7 @@ describe("OpenAPI adapter", () => {
     const fetchMock = vi.fn<ToolFetch>(async (url, init): Promise<ToolFetchResponse> => {
       expect(String(url)).toBe("http://api.test/records/rec_1?expand=owner");
       expect(init?.method).toBe("GET");
+      expect(init?.headers).toMatchObject({ "Idempotency-Key": "approval-decision:decision-1:step:getRecord" });
       return {
         ok: true,
         status: 200,
@@ -62,6 +63,7 @@ describe("OpenAPI adapter", () => {
     await expect(service.callTool({
       toolName: "getRecord",
       input: { path: { id: "rec_1" }, query: { expand: "owner" } },
+      context: { idempotencyKey: "approval-decision:decision-1:step:getRecord" },
     })).resolves.toMatchObject({
       status: "completed",
       outputs: {

@@ -2,6 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import type { PoolClient, QueryResultRow } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import type {
+  ConversationRoutineSkillDispatcher,
+  Routine,
+  RoutineState,
+  TurnContext,
+} from "@radioso/conversation-contract";
+import { DefaultRoutineRunner, resumeAwaitingDecision } from "@radioso/conversation-engine";
 
 import {
   PendingDecisionRepository,
@@ -251,6 +258,114 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
       caller: { accountId: operatorId, workspaceId },
     })).rejects.toMatchObject({ reason: "already_resolved" });
     expect(runner.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not repeat a post-gate external effect when the resumed turn rolls back and the decision is retried", async () => {
+    const input = decisionInput({ routineId: "refund_flow", stepId: "gate" });
+    const decision = await repository.create(input);
+    const routine: Routine = {
+      id: input.routineId,
+      rootStepId: "gate",
+      steps: [
+        {
+          id: "gate",
+          kind: "await",
+          decision: {
+            captureKey: "approval_decision",
+            options: [{ id: "approve", label: "Approve" }],
+          },
+        },
+        { id: "issue_refund", kind: "skill", skillName: "refund.issue" },
+        { id: "confirmed", kind: "terminal", action: "Confirm the refund." },
+      ],
+      transitions: [
+        {
+          from: "gate",
+          to: "issue_refund",
+          condition: "approved",
+          guard: { kind: "field", ref: "approval_decision.id", op: "equals", value: "approve" },
+        },
+        { from: "issue_refund", to: "confirmed", condition: "issued" },
+      ],
+    };
+    const state: RoutineState = {
+      sessionId: input.sessionId,
+      routineId: input.routineId,
+      path: ["gate"],
+      variables: {},
+      status: "suspended",
+    };
+    const turn: TurnContext = {
+      agent: { id: input.agentId, name: "Support" },
+      sessionId: input.sessionId,
+      inputEvent: { id: "message-before-approval", kind: "message", content: "Please refund this." },
+      history: [],
+      stagedContext: [],
+      steering: [],
+    };
+    const visibleEffects: string[] = [];
+    const dispatchedKeys = new Set<string>();
+    const dispatch = vi.fn<ConversationRoutineSkillDispatcher["dispatch"]>(async (dispatchInput) => {
+      const key = dispatchInput.idempotencyKey;
+      if (!key || !dispatchedKeys.has(key)) {
+        visibleEffects.push(dispatchInput.skillName);
+        if (key) dispatchedKeys.add(key);
+      }
+      return { status: "completed", actsOutsideConversation: true };
+    });
+    const routineRunner = new DefaultRoutineRunner(
+      [routine],
+      { select: vi.fn(async () => { throw new Error("selector_not_expected"); }) },
+      { render: vi.fn(async () => ({ answer: "Refund issued." })) },
+      { dispatch },
+    );
+    let attempts = 0;
+    const runner: ResumeRunner = {
+      resume: vi.fn(async ({ record, optionId, payload, skillDispatchIdempotencyKey }) => {
+        const result = await resumeAwaitingDecision({
+          suspendedReader: { loadSuspended: vi.fn(async () => state) },
+          routineRunner,
+          turn,
+          sessionId: record.sessionId,
+          decision: {
+            handle: record.handle,
+            optionId,
+            ...(payload !== undefined ? { payload } : {}),
+            ...(skillDispatchIdempotencyKey ? { idempotencyKey: skillDispatchIdempotencyKey } : {}),
+          },
+        });
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("assistant_turn_persist_failed");
+        }
+        expect(result.resumed).toBe(true);
+        return {
+          conversationId: record.conversationId,
+          resumed: true as const,
+          assistantMessageId: randomUUID(),
+          postCommitReceipt: { workspaceId, changeKinds: ["conversation.turn_committed"] as const },
+        };
+      }),
+    };
+    const service = new ApprovalDecisionService(repository, runner, activity);
+    const resolve = () => service.resolve({
+      agentId: input.agentId,
+      handle: input.handle,
+      optionId: "approve",
+      contentHash: input.contentHash,
+      caller: { accountId: operatorId, workspaceId },
+    });
+
+    await expect(resolve()).rejects.toThrow("assistant_turn_persist_failed");
+    expect(await statusOf(input.handle)).toBe("pending");
+
+    await expect(resolve()).resolves.toMatchObject({ status: "resolved", resumed: true });
+    expect(visibleEffects).toEqual(["refund.issue"]);
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(dispatch.mock.calls.map(([dispatchInput]) => dispatchInput.idempotencyKey)).toEqual([
+      `approval-decision:${decision.id}:routine:refund_flow:step:issue_refund`,
+      `approval-decision:${decision.id}:routine:refund_flow:step:issue_refund`,
+    ]);
   });
 
   it("re-parks at the same gate: the decision resolves and the gate's next decision opens in one transaction (#1460)", async () => {

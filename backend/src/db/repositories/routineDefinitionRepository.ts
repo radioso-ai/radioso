@@ -17,6 +17,10 @@ import {
   type RoutineStepKind,
   type RoutineTerminalKind,
 } from "../../modules/routines/public.js";
+import {
+  pgVectorCosineDistance,
+  toPgVector,
+} from "../../shared/infra/kysely/pgVectorSql.js";
 import { toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import { withAgentDraftMutation } from "./agentDraftMutation.js";
@@ -583,12 +587,12 @@ export class RoutineDefinitionRepository {
     hash: string;
   }): Promise<void> {
     const vector = `[${input.embedding.join(",")}]`;
-    // Typeless ::vector on purpose: workspace embedding models differ in width
+    // The pgvector cast is intentionally typeless: workspace embedding models differ in width
     // and this column carries no fixed-dimension index (see migration 128).
     await this.db
       .updateTable("routine_definition")
       .set({
-        trigger_embedding: sql<string>`${vector}::vector`,
+        trigger_embedding: toPgVector(vector),
         trigger_embedding_model: input.model,
         trigger_embedding_hash: input.hash,
       })
@@ -626,15 +630,15 @@ export class RoutineDefinitionRepository {
         FROM routine_definition
         WHERE id = ANY(${input.candidateRoutineIds}::uuid[])
       ), nearest AS (
-        -- The model-equality predicate also guarantees dimension compatibility
-        -- for <=>: stored vectors under the query's model share its width.
+        -- The model-equality predicate also guarantees dimension compatibility:
+        -- stored vectors under the query's model share its width.
         SELECT id::text AS routine_id,
-               trigger_embedding <=> ${queryVector}::vector AS distance,
+               ${pgVectorCosineDistance(sql.ref("trigger_embedding"), toPgVector(queryVector))} AS distance,
                false AS no_vector
         FROM candidates
         WHERE trigger_embedding IS NOT NULL
           AND trigger_embedding_model = ${input.embeddingModel}
-        ORDER BY trigger_embedding <=> ${queryVector}::vector ASC
+        ORDER BY ${pgVectorCosineDistance(sql.ref("trigger_embedding"), toPgVector(queryVector))} ASC
         LIMIT ${input.topK}
       ), no_vector AS (
         SELECT id::text AS routine_id,

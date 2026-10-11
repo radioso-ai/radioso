@@ -469,6 +469,64 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
     expect(await readRows(accountId)).toHaveLength(1);
   });
 
+  it("rejects a claim when a recently failed pack settles after its claim-state snapshot", async () => {
+    const accountId = await seedEligibleAccount();
+    const repository = new PostgresAutoTopUpRepository(createEeKysely(pool));
+    const paidPackRevision = await repository.getPaidPackRevision(accountId);
+    const failedId = await repository.claimPending({
+      accountId,
+      periodStart: currentPeriodStart(),
+      maxPacksPerMonth: 3,
+      cooldownMs: 0,
+      paidPackRevision,
+    });
+    await repository.markFailed({ id: failedId!, failureCode: "card_declined" });
+
+    let notifyClaimStateRead!: () => void;
+    const claimStateRead = new Promise<void>((resolve) => {
+      notifyClaimStateRead = resolve;
+    });
+    let allowClaimToContinue!: () => void;
+    const claimMayContinue = new Promise<void>((resolve) => {
+      allowClaimToContinue = resolve;
+    });
+    const originalReadClaimState = PostgresAutoTopUpRepository.prototype.readClaimState;
+    const readClaimStateSpy = vi
+      .spyOn(PostgresAutoTopUpRepository.prototype, "readClaimState")
+      .mockImplementation(async function (this: PostgresAutoTopUpRepository, trx, input) {
+        const state = await originalReadClaimState.call(this, trx, input);
+        if (input.accountId === accountId) {
+          notifyClaimStateRead();
+          await claimMayContinue;
+        }
+        return state;
+      });
+
+    try {
+      const staleClaim = repository.claimPending({
+        accountId,
+        periodStart: currentPeriodStart(),
+        maxPacksPerMonth: 3,
+        cooldownMs: 60 * 60_000,
+        paidPackRevision,
+      });
+      await claimStateRead;
+
+      const creditResult = await new EnterpriseUsageLimitService(database).addCredits({
+        accountId,
+        conversations: PLAN_CATALOG.topUp.conversations,
+        reference: "auto_top_up:in_late_paid",
+      });
+      await repository.markPaid(failedId!);
+      allowClaimToContinue();
+
+      expect(creditResult.applied).toBe(true);
+      expect(await staleClaim).toBeNull();
+    } finally {
+      readClaimStateSpy.mockRestore();
+    }
+  });
+
   it("respects the 1-hour failure cooldown", async () => {
     const accountId = await seedAccount();
     await assignCatalogProfile(accountId, "satellite");

@@ -20,7 +20,11 @@ class RecordingDriver implements EmailDriver {
       throw this.failure;
     }
     this.sent.push(message);
-    return { dispatched: true };
+    return { dispatched: true, providerMessageId: `provider-${this.sent.length}`, deliveredMessageId: null };
+  }
+
+  async lookup(): Promise<null> {
+    return null;
   }
 }
 
@@ -79,7 +83,11 @@ describe("createMailAccountInvitationNotifier", () => {
   });
 
   it("reports undelivered and logs provider detail when the driver fails", async () => {
-    const driver = new RecordingDriver(new ResendEmailDeliveryError(422, "validation_error"));
+    const driver = new RecordingDriver(new ResendEmailDeliveryError({
+      kind: "rejected",
+      statusCode: 422,
+      providerErrorName: "validation_error",
+    }));
     const warn = vi.fn();
     const notifier = createMailAccountInvitationNotifier({
       env: { APP_BASE_URL: "https://app.radioso.ai" },

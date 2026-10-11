@@ -348,7 +348,28 @@ interface PrepareChatSessionOptions {
    * consulted exactly as the live turn does (unchanged behavior).
    */
   preResolvedConversationSummary?: string;
+  /**
+   * Internal-only, for a review turn: the turn answers this recorded customer message
+   * (from {@link ChatSessionPreparer.loadExistingUserMessage}) instead of recording one,
+   * and reads at most `historyWindow.maxMessages` messages from before it.
+   */
+  existingUserMessage?: ExistingUserMessage;
 }
+
+interface ExistingUserMessage {
+  message: MessageRecord;
+  historyWindow: { maxMessages: number };
+}
+
+const isMessageOf = (
+  message: MessageRecord,
+  workspaceId: string,
+  conversation: ConversationRecord | null,
+): boolean =>
+  conversation !== null
+  && message.workspaceId === workspaceId
+  && message.conversationId === conversation.id
+  && message.role === "user";
 
 const historicalWorkbenchReplayBaselineBrand: unique symbol = Symbol("historicalWorkbenchReplayBaseline");
 
@@ -424,6 +445,10 @@ export class ChatSessionPreparer {
     if (conversation?.purpose === "operator_test" && !trustedTestRunner) {
       throw notFound("Conversation not found");
     }
+    const existingUserMessage = options.existingUserMessage;
+    if (existingUserMessage && !isMessageOf(existingUserMessage.message, input.workspaceId, conversation)) {
+      throw notFound("Message not found");
+    }
     const resolvedLiveAgent = options.preResolvedAgent ?? (this.agentService
       ? await timed("agent", () =>
           this.agentService!.resolve(input.workspaceId, input.agentId ?? conversation?.agentId ?? null))
@@ -432,11 +457,13 @@ export class ChatSessionPreparer {
       throw notFound("Conversation not found");
     }
     const history = options.preResolvedHistory ?? (conversation
-      ? await timed("history", () => this.messageRepository.listRecentByConversationId(
-          input.workspaceId,
-          conversation.id,
-          RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
-        ))
+      ? await timed("history", () => existingUserMessage
+          ? this.historyBefore(existingUserMessage)
+          : this.messageRepository.listRecentByConversationId(
+              input.workspaceId,
+              conversation.id,
+              RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
+            ))
       : []);
     const revisionResolved = await timed("agentRevision", () =>
       this.resolveRuntimeRevision({
@@ -537,7 +564,8 @@ export class ChatSessionPreparer {
       ? [...history, promotedBootstrapGreeting]
       : history;
 
-    const userMessage = await timed("userMessage", () => this.messageRepository.create({
+    // An existing message's recorder owns its follow-up work (facet extraction included).
+    const userMessage = existingUserMessage?.message ?? await timed("userMessage", () => this.messageRepository.create({
       conversationId: persistedConversation.id,
       workspaceId: input.workspaceId,
       role: "user",
@@ -546,7 +574,9 @@ export class ChatSessionPreparer {
         ? routineInvocationInputMetadata(input.routineInvocation)
         : input.inputMetadata,
     }));
-    this.enqueueFacetExtraction(userMessage, persistedConversation);
+    if (!existingUserMessage) {
+      this.enqueueFacetExtraction(userMessage, persistedConversation);
+    }
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
     // skipped, otherwise as the throwaway base `prepareRetrieval` recomputes from.
     const hostVariables = options.preResolvedHostVariables ?? await timed("hostVariables", () =>
@@ -612,6 +642,35 @@ export class ChatSessionPreparer {
       routineInvocation: input.routineInvocation,
       ...this.stagedSpineFor(retrieval, null, hostVariables, requestFacts),
     };
+  }
+
+  /**
+   * Loads the recorded customer message a review turn answers, scoped to its workspace and
+   * conversation. A message from anywhere else, or one the customer did not write, is not found.
+   */
+  async loadExistingUserMessage(input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+  }): Promise<MessageRecord> {
+    const message = await this.messageRepository.findByIdAndWorkspaceId(input.workspaceId, input.messageId);
+    if (!message || message.conversationId !== input.conversationId || message.role !== "user") {
+      throw notFound("Message not found");
+    }
+    return message;
+  }
+
+  /**
+   * The messages before the answered one, oldest first, at most the window's size. Messages
+   * recorded after it, such as a newer inbound that arrived while the turn was scheduled, never
+   * take a place in the window.
+   */
+  private async historyBefore(existing: ExistingUserMessage): Promise<MessageRecord[]> {
+    const { message, historyWindow } = existing;
+    return this.messageRepository.listBeforeByConversationId(message.workspaceId, message.conversationId, {
+      beforeMessageId: message.id,
+      limit: historyWindow.maxMessages,
+    });
   }
 
   private async resolveRuntimeRevision(input: {

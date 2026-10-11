@@ -68,7 +68,7 @@ const makeHandler = (
   const order: string[] = [];
   const info = vi.fn();
   const logger: ConnectorLogger = { info, warn: vi.fn(), error: vi.fn() };
-  const chat: ConnectorChatPort = {
+  const chat: Pick<ConnectorChatPort, "answer"> = {
     answer: vi.fn(async (req) => {
       answered.push({ agentId: req.agentId, query: req.query });
       return { conversationId: CONVERSATION_ID, answer: options.answerText ?? "**bold** answer", outcome: "answered" as const };

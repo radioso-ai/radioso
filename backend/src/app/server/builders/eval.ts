@@ -16,6 +16,7 @@ import { createLiveAgentConfigReader } from "../../composition/liveAgentConfigRe
 import { TtlRetentionWorker } from "../../../shared/domain/ttlRetentionWorker.js";
 import {
   CustomerReplyDeliveryDispatcher,
+  type CustomerChannelReplyDeliverer,
 } from "../../../modules/customerReplyDelivery/public.js";
 import { OperatorReplyService } from "../../../modules/handoff/public.js";
 import {
@@ -46,6 +47,8 @@ export const buildEvalServices = (input: {
   skillSettingsResolver: NonNullable<ConstructorParameters<typeof RetrievalPipelineEvalRunner>[5]>;
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
   revisionEvalRunRetentionDays: number;
+  /** The email channel's deliverer; absent when no email provider is configured. */
+  emailCustomerReplyDeliverer?: CustomerChannelReplyDeliverer | null;
 }) => {
   const evalRepository = new EvalRepository(input.infrastructure.database.kysely);
   const evalSnapshotService = new EvalSnapshotService(
@@ -121,6 +124,7 @@ export const buildEvalServices = (input: {
       },
       logger: input.logger,
     }),
+    ...(input.emailCustomerReplyDeliverer ? { email: input.emailCustomerReplyDeliverer } : {}),
   });
   const operatorReplyService = new OperatorReplyService({
     auditService: input.infrastructure.auditService,
@@ -139,5 +143,7 @@ export const buildEvalServices = (input: {
     evalSnapshotService,
     evalSuiteService,
     operatorReplyService,
+    /** Where a reply on a conversation goes outside the web; a held reply's release routes through it too. */
+    customerReplyDelivery,
   };
 };

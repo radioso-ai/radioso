@@ -21,7 +21,7 @@ const hasValidBearerToken = (authorizationHeader: string | undefined, expectedTo
 export const createMetricsRoutes = (metricsRegistry: MetricsRegistry, metricsAuthToken: string): Router => {
   const router = Router();
 
-  router.get("/", (req, res) => {
+  router.get("/", async (req, res, next) => {
     if (!hasValidBearerToken(req.header("authorization"), metricsAuthToken)) {
       res
         .set("WWW-Authenticate", 'Bearer realm="metrics"')
@@ -35,10 +35,15 @@ export const createMetricsRoutes = (metricsRegistry: MetricsRegistry, metricsAut
       return;
     }
 
-    res
-      .status(200)
-      .type("text/plain; version=0.0.4; charset=utf-8")
-      .send(metricsRegistry.renderPrometheus());
+    try {
+      await metricsRegistry.collect();
+      res
+        .status(200)
+        .type("text/plain; version=0.0.4; charset=utf-8")
+        .send(metricsRegistry.renderPrometheus());
+    } catch (error) {
+      next(error);
+    }
   });
 
   return router;

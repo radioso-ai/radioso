@@ -1,0 +1,22 @@
+{
+  "object": "list",
+  "has_more": false,
+  "data": [
+    {
+      "id": "f837952f-d01c-429e-83a5-25c554ec5b18",
+      "to": [
+        "87164684@rexuatrena.resend.app"
+      ],
+      "from": "s0-probe@radioso.ai",
+      "created_at": "2026-10-03T13:32:29.870Z",
+      "subject": "S0 Auto-Submitted passthrough probe",
+      "bcc": [],
+      "cc": [],
+      "reply_to": [
+        "s0-probe+tok456@radioso.ai"
+      ],
+      "message_id": "<010201a101f751fd-922fcadb-c495-4e2e-87a7-d9cc8946271f-000000@eu-west-1.amazonses.com>",
+      "attachments": []
+    }
+  ]
+}

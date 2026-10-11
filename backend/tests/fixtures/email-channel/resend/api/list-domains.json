@@ -1,0 +1,17 @@
+{
+  "object": "list",
+  "has_more": false,
+  "data": [
+    {
+      "id": "9c539a5d-e048-4fb5-8490-d2a02dbe2850",
+      "name": "s0-email-channel.radioso.ai",
+      "status": "not_started",
+      "created_at": "2026-10-03 13:29:18.978423+00",
+      "region": "eu-west-1",
+      "capabilities": {
+        "sending": "disabled",
+        "receiving": "enabled"
+      }
+    }
+  ]
+}

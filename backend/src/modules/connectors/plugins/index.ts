@@ -1,14 +1,24 @@
+import type { ConnectorPlugin } from "@radioso/connector-api";
+
 import type { ConnectorRegistry } from "../services/connectorRegistry.js";
 import { getSlackReadiness, type RequiredSlackEnvVar } from "../../slack/public.js";
 import { SlackPlugin } from "./slack/slackPlugin.js";
 import { WordpressConnector } from "./wordpress/wordpressConnector.js";
 import { WhatsAppPlugin } from "./whatsapp/whatsappPlugin.js";
 
+export { createEmailChannelConnector, createEmailReviewChecks } from "./email/emailPlugin.js";
+export type { EmailChannelWorker } from "./email/emailChannelWorker.js";
+export { EMAIL_COALESCE_SECONDS, EMAIL_RAW_MAX_BYTES, type EmailThreadProtocolUnitOfWork } from "./email/emailInboundProcessor.js";
+export { EMAIL_REVIEW_MAX_ATTEMPTS, type EmailReviewChecks } from "./email/emailReviewRunner.js";
+export type { EmailReviewInferenceFactory } from "./email/emailReviewChecks.js";
+
 interface BuiltInConnectorOptions {
   slack?: Partial<Record<RequiredSlackEnvVar, string | undefined>> & {
     signingSecret?: string;
     encryptionKey?: string;
   };
+  /** The email channel's plugin, built by its composition only when an email provider is configured. */
+  email?: ConnectorPlugin | null;
 }
 
 /**
@@ -27,5 +37,8 @@ export const registerBuiltInConnectors = (registry: ConnectorRegistry, options: 
       signingSecret: options.slack!.SLACK_SIGNING_SECRET ?? options.slack!.signingSecret!,
       encryptionKey: options.slack!.encryptionKey,
     }));
+  }
+  if (options.email) {
+    registry.register(options.email);
   }
 };

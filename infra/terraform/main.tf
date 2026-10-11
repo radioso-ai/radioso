@@ -8,6 +8,10 @@ locals {
   # the wrapper supplies the public app URL or discovered frontend run.app URL.
   app_base_url            = coalesce(var.app_base_url_override, "https://example.invalid")
   operator_mcp_configured = var.radioso_mcp_enabled && var.mcp_public_origin != null
+  # The region the email channel's Resend sending domain is created in follows the stack's.
+  # That only places the sending and receiving infrastructure: Resend stores account data,
+  # email metadata, logs and received message content in the United States regardless of region.
+  resend_channel_region = startswith(var.region, "europe-") ? "eu-west-1" : "us-east-1"
   # The document worker self-references its own public URL for Cloud Tasks
   # retry dispatch, so Terraform cannot use a direct reference and we keep the
   # placeholder + override pattern. The crawler worker URL has no such cycle:
@@ -47,6 +51,12 @@ locals {
   slack_inbound_event_retention_schedule = coalesce(
     var.slack_inbound_event_retention_schedule,
     "45 4 * * *",
+  )
+  # Recovery only (lease recovery, domain refresh, send reconciliation claims, event-log
+  # retention) — scheduled drains carry the normal-path work (research B7, B12).
+  email_channel_sweep_schedule = coalesce(
+    var.email_channel_sweep_schedule,
+    "*/5 * * * *",
   )
   public_chat_base_url = (
     var.public_chat_base_url_override != null

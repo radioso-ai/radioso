@@ -268,6 +268,19 @@ module "radioso" {
   ops_event_webhook_events                  = var.ops_event_webhook_events
   ops_event_webhook_min_error_severity      = var.ops_event_webhook_min_error_severity
   ops_event_webhook_queue_limit             = var.ops_event_webhook_queue_limit
+
+  # Email channel. The queue name follows the per-environment worker queues.
+  email_channel_provider                       = var.email_channel_provider
+  email_channel_inbound_domain                 = var.email_channel_inbound_domain
+  email_channel_webhook_secret                 = var.email_channel_webhook_secret
+  email_channel_webhook_secret_previous        = var.email_channel_webhook_secret_previous
+  resend_channel_api_key                       = var.resend_channel_api_key
+  email_channel_workers_enabled                = var.email_channel_workers_enabled
+  email_channel_task_queue_name                = "radioso-${var.environment}-email-channel"
+  email_channel_task_max_dispatches_per_second = var.email_channel_task_max_dispatches_per_second
+  email_channel_task_max_concurrent_dispatches = var.email_channel_task_max_concurrent_dispatches
+  email_channel_sweep_schedule                 = var.email_channel_sweep_schedule
+  email_channel_sweep_max_jobs                 = var.email_channel_sweep_max_jobs
 }
 
 output "frontend_url" {

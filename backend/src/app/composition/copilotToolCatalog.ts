@@ -24,9 +24,11 @@ import {
   type CopilotContextVariablesPort,
   type CopilotWorkspaceSettingsPort,
   type CopilotProductDocsPort,
+  type CopilotEmailChannelPort,
 } from "../../modules/operatorCopilot/tools/index.js";
 import type { DocumentInventoryPort } from "../../modules/documents/contracts/index.js";
 import type { CopilotWebsiteAnalysisProbePort } from "../../modules/operatorCopilot/contracts/agentAuthoring.js";
+import type { CopilotDeliveryFailuresPort, CopilotHeldRepliesPort } from "../../modules/operatorCopilot/tools/escalationSources.js";
 import type { RoutineStructuralPreparationDependencies } from "../../modules/operatorCopilot/tools/routineStructuralPreparation.js";
 import type { ReviewedProposalExecutionPort } from "../../modules/operatorCopilot/tools/reviewedProposalExecution.js";
 import type { ReviewedProposalOutcomePort } from "../../modules/operatorCopilot/tools/reviewedProposalOutcome.js";
@@ -175,6 +177,12 @@ export const createCopilotToolCatalog = (deps: {
   readonly operatorNoticeDestinations: CopilotOperatorNoticeDestinationsPort;
   readonly contextVariables: CopilotContextVariablesPort;
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
+  /** Null when the deployment has no email provider. */
+  readonly emailChannel: CopilotEmailChannelPort | null;
+  /** Open delivery failures, for `needs_attention` and `workspace_triage`. */
+  readonly deliveryFailures: CopilotDeliveryFailuresPort;
+  /** Replies held for review, for `held_replies` and the approvals of `needs_attention` and `workspace_triage`. */
+  readonly heldReplies: CopilotHeldRepliesPort;
   readonly productDocs: CopilotProductDocsPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
   readonly proposalRecovery: CopilotMcpProposalRecoveryPort;

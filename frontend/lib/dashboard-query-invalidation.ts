@@ -49,15 +49,21 @@ export const matchesWorkspaceInvalidation = (
         || isDashboardQueryFamily(queryKey, workspaceId, 'sources/list')
     case 'crawl.progress':
       return isDashboardQueryFamily(queryKey, workspaceId, 'documents/crawl-activity')
+    // Held replies are approvals: the server reports holding, sending and discarding one with the
+    // decision events.
     case 'hitl.decision_created':
       return isDashboardQueryFamily(queryKey, workspaceId, 'attention/decisions')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'attention/held-replies')
     // Each change that closes an Inbox item — a decision resolved, a hand-back, feedback closed —
     // also refreshes the recently-closed strip.
     case 'hitl.decision_resolved':
       return isDashboardQueryFamily(queryKey, workspaceId, 'attention/decisions')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'attention/held-replies')
         || isDashboardQueryFamily(queryKey, workspaceId, 'attention/recently-closed')
+    // A takeover supersedes the conversation's pending held reply and closes its attention.
     case 'conversation.ownership_changed':
       return isDashboardQueryFamily(queryKey, workspaceId, 'attention/human-owned')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'attention/held-replies')
         || isDashboardQueryFamily(queryKey, workspaceId, 'attention/recently-closed')
         || matchesHistory(queryKey, workspaceId, ['all', 'chat'])
     case 'conversation.created':

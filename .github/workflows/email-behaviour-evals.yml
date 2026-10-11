@@ -1,0 +1,139 @@
+name: Email Behaviour Evals
+
+# Runs the live email channel behaviour suite (spec 1403) against a throwaway workspace: raw mail in
+# through the signed webhook, the coalesced review turn on a real model, the publication decision,
+# the `email.send` outbox, and the local provider's outbound spool. This is NOT a per-PR gate: it
+# needs provider credentials, spends tokens, and is nondeterministic, so it runs nightly (and on
+# demand). The deterministic halves run in normal CI: the outcome mapping over the spec's
+# Engagement Outcome Table in backend/tests/unit/eval-suite/, and the harness end to end over
+# Postgres with a scripted review turn in
+# backend/tests/integration/email-mailbox-harness.integration.test.ts.
+#
+# The suite has no baseline. An `assert` case that fails fails the job; `record` cases never gate.
+# Each case runs once on a mini-class model, and the runner refuses a larger model. The suite
+# processes its corpus in-process, so unlike the conversation-quality suite it needs no document
+# worker. See backend/tests/fixtures/email-behaviour/README.md.
+#
+# Requires the OPENAI_API_KEY secret on the `staging` environment, which the job names below.
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC daily, alongside the conversation-quality suite
+  workflow_dispatch:
+    inputs:
+      case:
+        description: Only run the case with this id (blank = all)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: email-behaviour-evals
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    name: Email behaviour suite
+    # `OPENAI_API_KEY` is an environment secret, not a repository one, so the job has to name
+    # the environment to see it. Without this `secrets.OPENAI_API_KEY` resolves empty and the
+    # guard below fails the run. `staging` carries no protection rules or branch policy, so a
+    # scheduled run never waits on an approval.
+    environment: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.5-pg16
+        env:
+          POSTGRES_DB: radioso_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d radioso_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install backend dependencies
+        run: pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler...
+
+      - name: Build workspace packages
+        working-directory: backend
+        run: pnpm run build:workspace-deps
+
+      - name: Prepare eval environment file
+        working-directory: backend
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "::error::OPENAI_API_KEY secret is not set; the live email behaviour suite cannot run." >&2
+            exit 1
+          fi
+          cp ../.env.example ./.env.evals
+          # The database name ends in `_test`, which the runner accepts as disposable.
+          sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/radioso_test|" ./.env.evals
+          sed -i "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=${OPENAI_API_KEY}|" ./.env.evals
+          # Mini-class chat model, and no separate rerank model so reranking runs on it too.
+          sed -i "s|^OPENAI_CHAT_MODEL=.*|OPENAI_CHAT_MODEL=gpt-5.4-mini|" ./.env.evals
+          sed -i "s|^OPENAI_RERANK_MODEL=.*|OPENAI_RERANK_MODEL=|" ./.env.evals
+          sed -i "s|^DOCUMENT_STORAGE_LOCAL_PATH=.*|DOCUMENT_STORAGE_LOCAL_PATH=${RUNNER_TEMP}/email-behaviour-documents|" ./.env.evals
+          # Deterministic dummy signing secrets — the workspace is throwaway and never exposed.
+          # The connector key and the webhook secret after `whsec_` must be base64 of exactly 32
+          # bytes or getEnv() and the webhook verifier reject them.
+          sed -i "s|^SESSION_COOKIE_SECRET=.*|SESSION_COOKIE_SECRET=ci-session-secret-000000000000000000000000000000|" ./.env.evals
+          sed -i "s|^WORKSPACE_TOKEN_SECRET=.*|WORKSPACE_TOKEN_SECRET=ci-workspace-token-secret-0000000000000000000000|" ./.env.evals
+          sed -i "s|^PUBLIC_CHAT_SESSION_SECRET=.*|PUBLIC_CHAT_SESSION_SECRET=ci-public-chat-secret-00000000000000000000000000|" ./.env.evals
+          sed -i "s|^CONNECTOR_ENCRYPTION_KEY=.*|CONNECTOR_ENCRYPTION_KEY=cmFkaW9zby1jaS1ldmFsLWtleS0wMDAwMDAwMDAwMDA=|" ./.env.evals
+          # The email channel on the local provider, with its workers on so the harness can drain
+          # each stage.
+          sed -i "s|^EMAIL_CHANNEL_PROVIDER=.*|EMAIL_CHANNEL_PROVIDER=local|" ./.env.evals
+          sed -i "s|^EMAIL_CHANNEL_INBOUND_DOMAIN=.*|EMAIL_CHANNEL_INBOUND_DOMAIN=in.local.test|" ./.env.evals
+          sed -i "s|^EMAIL_CHANNEL_WEBHOOK_SECRET=.*|EMAIL_CHANNEL_WEBHOOK_SECRET=whsec_cmFkaW9zby1jaS1lbWFpbC13ZWJob29rLTAwMDAwMDA=|" ./.env.evals
+          sed -i "s|^EMAIL_CHANNEL_WORKERS_ENABLED=.*|EMAIL_CHANNEL_WORKERS_ENABLED=true|" ./.env.evals
+
+      - name: Apply migrations
+        working-directory: backend
+        run: node --env-file=./.env.evals --import tsx ./scripts/migrate.ts
+
+      - name: Run email behaviour suite
+        working-directory: backend
+        env:
+          CASE_ID: ${{ github.event.inputs.case }}
+        run: |
+          set -euo pipefail
+          results_dir="${RUNNER_TEMP}/email-behaviour"
+          mkdir -p "$results_dir"
+          args=(./scripts/runEmailBehaviourEvals.ts --samples 1 --out "$results_dir")
+          if [ -n "${CASE_ID:-}" ]; then
+            args+=(--case "$CASE_ID")
+          fi
+          # The results table goes to stderr and stays in the job log; application logs go to
+          # stdout, which is debug-level outside production, so they go to the artifact instead.
+          node --env-file=./.env.evals --import tsx "${args[@]}" > "$results_dir/app.log"
+
+      # The runner writes the results before it exits non-zero on a failed assert, so a red run
+      # still uploads the evidence: the JSON results, the table, the outbound spool, and the log.
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: email-behaviour-results
+          path: ${{ runner.temp }}/email-behaviour/
+          if-no-files-found: warn

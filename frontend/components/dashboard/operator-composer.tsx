@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, Send } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Textarea } from '@/components/ui/textarea'
-import { hitlApi, isHitlApiStatusError, transferFailureCause } from '@/lib/api-hitl'
+import { hitlApi, isHitlApiStatusError, replyRefusalReason, transferFailureCause } from '@/lib/api-hitl'
 import type { ConversationOperator, ConversationOwnership, PendingApprovalDecision } from '@/lib/api-types'
 import { deriveOperatorActions, ownershipMenu } from '@/lib/operator-actions'
 import { cn } from '@/lib/utils'
@@ -27,16 +27,58 @@ export type OperatorActionResult =
   | { kind: 'ownership'; conversationId: string; ownershipState: ConversationOwnership['state'] }
   | { kind: 'reply'; conversationId: string }
   | { kind: 'decision_resolved'; agentId: string; handle: string }
+  | {
+    kind: 'delivery_failure_cleared'
+    conversationId: string
+    failureId: string
+    resolution: 'acknowledged' | 'marked_sent' | 'resend'
+  }
+  | {
+    kind: 'held_reply_settled'
+    conversationId: string
+    heldReplyId: string
+    /** `stale` when the server refused because the reply was already settled or replaced. */
+    outcome: 'released' | 'edited' | 'discarded' | 'stale'
+  }
   | { kind: 'refresh'; conversationId: string; reason: 'conflict' | 'invalid_option' }
 
 const genericError = 'Something went wrong. Try again.'
 
-/** A failure the caller can explain: its message, and what to re-read because of it. */
+/**
+ * A failure the caller can explain: its message (null when the caller shows the
+ * failure itself), and what to do because of it.
+ */
 interface ExplainedFailure {
-  message: string
+  message: string | null
   followUp?: () => void
 }
 const NO_TEAMMATES: readonly ConversationOperator[] = []
+
+/**
+ * What the conversation's channel last said about taking a reply (an email mailbox's sending
+ * state, say), from a read the composer can ask to repeat.
+ */
+export interface ChannelSendReadiness {
+  /** Why a reply cannot be sent now; null when the channel is ready. */
+  unavailableReason: string | null
+  /** Changes with every completed read, so a later read can be told from the one a refusal saw. */
+  readAt: number
+  /** Reads the channel again. */
+  reread: () => void
+}
+
+/** A send the server refused for its channel, and the channel read it was refused against. */
+interface SendRefusal {
+  conversationId: string
+  reason: string
+  readAt: number | null
+}
+
+/**
+ * The version a reply is sent at. A conversation with no ownership record has never been claimed;
+ * 0 matches no record, so one written meanwhile refuses the reply instead of being overwritten.
+ */
+const replyVersion = (version: number | null): number => version ?? 0
 
 /**
  * Shared busy/single-flight/conflict handling for the three operator mutations
@@ -78,14 +120,16 @@ export function useOperatorActionRunner(
     try {
       await onChanged(await callback())
     } catch (caught) {
-      if (isHitlApiStatusError(caught, 409) || isHitlApiStatusError(caught, 422)) {
+      const explained = explainFailure?.(caught) ?? null
+      if (explained) {
+        setError(explained.message)
+        explained.followUp?.()
+      } else if (isHitlApiStatusError(caught, 409) || isHitlApiStatusError(caught, 422)) {
         const invalidOption = isHitlApiStatusError(caught, 422)
         setError(invalidOption ? 'That option is no longer valid - refreshing.' : 'This conversation changed - refreshing.')
         await onChanged({ kind: 'refresh', conversationId, reason: invalidOption ? 'invalid_option' : 'conflict' })
       } else {
-        const explained = explainFailure?.(caught) ?? null
-        setError(explained?.message ?? genericError)
-        explained?.followUp?.()
+        setError(genericError)
       }
     } finally {
       inFlightRef.current = false
@@ -130,16 +174,26 @@ interface OperatorComposerProps {
    * send error when both are set.
    */
   externalError?: string | null
+  /**
+   * The conversation's channel, while it is not yet known or when it can refuse a reply. While it
+   * is unknown or not ready, Send stays disabled and the reason shows in its place; the draft is
+   * kept. A send the server refuses for its channel holds Send with the server's reason and asks
+   * for a fresh read; that read then speaks for the channel, and once it finds sending ready Send
+   * is enabled again, with the refusal still said until the next attempt. Without a channel to
+   * read again, a refusal is said and Send stays enabled.
+   */
+  sendReadiness?: ChannelSendReadiness
 }
 
 /**
  * The reply composer (FR-009). Sending implicitly claims a conversation that
- * is AI-owned or waiting unclaimed: it is taken over first, then the reply is
- * sent against the fresh ownership version. A conversation a teammate holds
- * shows who is handling it and Reassign instead of the composer, so two people
- * never reply blind; Reassign → Me brings the composer back. Assign (nobody
- * holds it) and Reassign (I or a teammate hold it) both transfer the
- * conversation to the chosen teammate. Until the signed-in teammate is known,
+ * is AI-owned or waiting unclaimed: the reply itself claims it at the version
+ * this view read, so a reply the server refuses (its channel cannot send, or
+ * the conversation changed) claims nothing and supersedes nothing. A
+ * conversation a teammate holds shows who is handling it and Reassign instead
+ * of the composer, so two people never reply blind; Reassign → Me brings the
+ * composer back. Assign (nobody holds it) and Reassign (I or a teammate hold
+ * it) both transfer the conversation to the chosen teammate. Until the signed-in teammate is known,
  * nothing that depends on who holds the conversation shows: no handling line,
  * no Assign/Reassign, and no composer on a held conversation; one nobody holds
  * keeps its claim-on-send composer, since the server claims it for whoever is
@@ -158,8 +212,13 @@ export function OperatorComposer({
   disabled,
   trailingActions,
   externalError,
+  sendReadiness,
 }: OperatorComposerProps) {
   const [message, setMessage] = useState('')
+  const [refusal, setRefusal] = useState<SendRefusal | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const focusDraftRef = useRef(false)
+  const unavailableReasonId = useId()
   const actions = useMemo(() => deriveOperatorActions(ownership, currentUserId), [ownership, currentUserId])
   const menu = useMemo(
     () => ownershipMenu(actions, teammates, currentUserId),
@@ -168,7 +227,21 @@ export function OperatorComposer({
   const runner = useOperatorActionRunner(conversationId, onChanged)
   const trimmedMessage = message.trim()
   const isDisabled = disabled || runner.isBusy
-  const visibleError = runner.error ?? externalError ?? null
+  const currentRefusal = refusal?.conversationId === conversationId ? refusal : null
+  // A refusal holds Send until the channel is read again after it.
+  const refusalHolds = currentRefusal !== null && sendReadiness !== undefined && currentRefusal.readAt === sendReadiness.readAt
+  const unavailableReason = (refusalHolds ? currentRefusal.reason : null) ?? sendReadiness?.unavailableReason ?? null
+  const settledRefusalReason = currentRefusal && !refusalHolds && unavailableReason === null ? currentRefusal.reason : null
+  const visibleError = runner.error ?? externalError ?? settledRefusalReason
+  const rereadChannel = sendReadiness?.reread
+  const channelReadAt = sendReadiness?.readAt ?? null
+
+  // A refused send disables Send, which would drop focus; it returns to the draft once the composer settles.
+  useEffect(() => {
+    if (!focusDraftRef.current || isDisabled) return
+    focusDraftRef.current = false
+    textareaRef.current?.focus()
+  })
 
   const transferTo = useCallback((target: { kind: 'me' | 'teammate'; userId: string }) => {
     const toUserId = target.userId
@@ -197,23 +270,28 @@ export function OperatorComposer({
     if (trimmedMessage.length === 0) {
       return
     }
+    setRefusal(null)
     void runner.run('send', async () => {
-      let version = actions.version
-      // Claims the conversation as part of sending whenever nobody holds it -
-      // both AI-owned and an unclaimed handoff ("awaiting a human") are still
-      // take-over-able (FR-009).
-      if (actions.claimsOnSend) {
-        const takeover = await hitlApi.takeOverConversation(conversationId, {})
-        version = takeover.ownership.version
-      }
-      if (version === null) {
-        throw new Error('Missing conversation ownership version.')
-      }
-      await hitlApi.replyAsHuman(conversationId, { message: trimmedMessage, expectedVersion: version })
+      // The reply claims a conversation nobody holds - AI-owned or an unclaimed handoff - in the
+      // same write that sends it (FR-009), so a refused reply leaves ownership and drafts alone.
+      await hitlApi.replyAsHuman(conversationId, { message: trimmedMessage, expectedVersion: replyVersion(actions.version) })
       setMessage('')
       return { kind: 'reply', conversationId }
+    }, (caught) => {
+      const reason = replyRefusalReason(caught)
+      if (!reason) {
+        return null
+      }
+      return {
+        message: null,
+        followUp: () => {
+          setRefusal({ conversationId, reason, readAt: channelReadAt })
+          rereadChannel?.()
+          focusDraftRef.current = true
+        },
+      }
     })
-  }, [actions.claimsOnSend, actions.version, conversationId, runner, trimmedMessage])
+  }, [actions.version, channelReadAt, conversationId, rereadChannel, runner, trimmedMessage])
 
   // The global "Ask Ray" tag is fixed to the bottom-right viewport corner
   // (see AskRayTag in copilot-panel.tsx) and must stay exactly there. When
@@ -284,7 +362,9 @@ export function OperatorComposer({
   return (
     <div className={containerClassName}>
       <Textarea
+        ref={textareaRef}
         aria-label="Reply to the visitor"
+        aria-describedby={unavailableReason ? unavailableReasonId : undefined}
         placeholder="Reply to the visitor - sending takes over the conversation"
         value={message}
         disabled={isDisabled}
@@ -296,12 +376,18 @@ export function OperatorComposer({
           {visibleError}
         </p>
       ) : null}
+      {unavailableReason ? (
+        <p id={unavailableReasonId} className="text-xs text-muted-foreground" role="status" aria-live="polite">
+          {unavailableReason}
+        </p>
+      ) : null}
       <div className="flex items-center gap-2">
         <Button
           type="button"
           size="sm"
           className="gap-1.5"
-          disabled={isDisabled || trimmedMessage.length === 0}
+          disabled={isDisabled || trimmedMessage.length === 0 || unavailableReason !== null}
+          aria-describedby={unavailableReason ? unavailableReasonId : undefined}
           onClick={handleSend}
         >
           <Send className="h-3.5 w-3.5" aria-hidden />

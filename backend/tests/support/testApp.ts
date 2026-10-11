@@ -26,6 +26,7 @@ import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
+import { ReviewTurnAuditReader } from "../../src/modules/chat/contracts/index.js";
 import { RevisionGreetingStarterPromptReader } from "../../src/modules/chat/services/agentStarterPromptReader.js";
 import {
   createRouteScopedDirectiveSteering,
@@ -190,6 +191,8 @@ import { ProductAnalyticsService } from "../../src/shared/analytics/productAnaly
 import { buildErrorSinks } from "../../src/shared/errors/buildErrorSinks.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
+import { DeliveryFailureDecisions } from "../../src/modules/customerReplyDelivery/public.js";
+import { createInMemoryDeliveryFailures } from "./inMemoryDeliveryFailures.js";
 import { TtlRetentionWorker } from "../../src/shared/domain/ttlRetentionWorker.js";
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import {
@@ -215,6 +218,7 @@ import { createDocumentCopilotProposalAdapter } from "../../src/modules/operator
 import { createIngestionSettingsCopilotProposalAdapter } from "../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/workspaceSettingProposalAdapter.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
+import type { CopilotHeldReplyQueuePort } from "../../src/modules/operatorCopilot/tools/escalationSources.js";
 import { assertPublicWebsiteUrl, normalizeBaseUrl } from "../../src/modules/websiteCrawler/public.js";
 import { createAgentCopilotProposalAdapter } from "../../src/modules/operatorCopilot/agentProposalAdapter.js";
 import { WebsiteAnalysisProbeService } from "../../src/modules/operatorCopilot/services/websiteAnalysisProbeService.js";
@@ -275,6 +279,7 @@ import {
 } from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
 import {
   ConfiguredContactDeliveryResolver,
+  ConversationIngestService,
   InMemoryPublicConversationEventBus,
   OperatorNoticeDestinationsReader,
   ProbeConversationReader,
@@ -827,6 +832,12 @@ export const createTestDependencies = (overrides: {
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   realtimeRolloutPolicy?: RealtimeRolloutPolicy;
   testExecutionService?: TestExecutionService;
+  /** The email channel's operator services; omitted means the deployment has no email provider. */
+  emailChannel?: AppDependencies["emailChannel"];
+  /** Delivery failures and the decisions on them; omitted means an empty in-memory store no channel resolves. */
+  deliveryFailures?: AppDependencies["deliveryFailures"];
+  /** Held replies and the decisions on them; omitted means a workspace with none. */
+  heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
   agentToolCatalog?: (readers: {
     agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
@@ -2055,22 +2066,36 @@ export const createTestDependencies = (overrides: {
   const workspaceInvalidationPublisher: WorkspaceInvalidationPublisher = {
     enqueue: () => ({ accepted: false, reason: "disabled" }),
   };
+  // No review runs against the in-memory app, so it holds no drafts for a claim, reply or ingest to supersede.
+  const noHeldReplies = {
+    supersedePendingForConversation: async () => 0,
+    clearDiscardedAttention: async () => 0,
+  };
+  // Without row locks, "locking" a conversation is finding it in its workspace.
+  const lockableConversations = {
+    lockForUpdate: async (conversationId: string, workspaceId: string) =>
+      (await conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId)) !== null,
+  };
   const conversationOwnershipService = new ConversationOwnershipService({
     conversations: conversationRepository,
     ownership: conversationOwnershipRepository,
     // The in-memory stores have no transactions; atomicity is covered against Postgres.
     changes: {
-      run: (work) => work({ ownership: conversationOwnershipRepository, outbox: actionOutbox, activity: conversationActivity.writer() }),
+      run: (work) => work({
+        conversations: lockableConversations,
+        ownership: conversationOwnershipRepository,
+        outbox: actionOutbox,
+        activity: conversationActivity.writer(),
+        heldReplies: noHeldReplies,
+      }),
     },
     replyWrites: {
       run: (work) => work({
-        conversations: {
-          lockForUpdate: async (conversationId, workspaceId) =>
-            (await conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId)) !== null,
-        },
+        conversations: lockableConversations,
         ownership: conversationOwnershipRepository,
         reply: { messages: messageRepository, conversations: conversationRepository, outbox: actionOutbox },
         activity: conversationActivity.writer(),
+        heldReplies: noHeldReplies,
       }),
     },
     operators: conversationOperatorDirectory,
@@ -2079,6 +2104,25 @@ export const createTestDependencies = (overrides: {
     audit: auditService,
     publisher: workspaceInvalidationPublisher,
     logger,
+  });
+  const conversationIngestService = new ConversationIngestService({
+    // The in-memory stores have no transactions; atomicity is covered against Postgres.
+    unitOfWork: {
+      run: (work) => work({
+        conversations: {
+          createIfAbsent: (input) => conversationRepository.createIfAbsent(input),
+          lockForUpdate: async (conversationId, workspaceId) =>
+            (await conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId)) !== null,
+          touch: (conversationId, workspaceId) => conversationRepository.touch(conversationId, workspaceId),
+        },
+        messages: messageRepository,
+        ownership: conversationOwnershipRepository,
+        activity: conversationActivity.writer(),
+        heldReplies: noHeldReplies,
+      }),
+    },
+    ownership: conversationOwnershipService,
+    publisher: workspaceInvalidationPublisher,
   });
   const agentRetrievalScope = createAgentRetrievalScopeResolver({ agentRepository });
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, agentRetrievalScope);
@@ -2262,7 +2306,18 @@ export const createTestDependencies = (overrides: {
     defaults: retrievalDefaultsProvider,
     documentSources: documentSourceRepository,
   });
+  const deliveryFailureRecords = createInMemoryDeliveryFailures().failures;
+  const heldReplies: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort = overrides.heldReplies ?? {
+    list: async () => ({ items: [], nextCursor: null }),
+    current: async () => ({ heldReply: null }),
+    longestWaiting: async () => ({ total: 0, items: [] }),
+    release: async () => { throw notFound("Held reply not found"); },
+    discard: async () => { throw notFound("Held reply not found"); },
+  };
   const copilotToolCatalog = createCopilotToolCatalog({
+    emailChannel: null,
+    deliveryFailures: deliveryFailureRecords,
+    heldReplies,
     agentService: {
       get: agentService.get.bind(agentService),
       listExisting: agentService.listExisting.bind(agentService),
@@ -2546,6 +2601,7 @@ export const createTestDependencies = (overrides: {
     publicConversationEventBus,
     contactHistoryProvider: overrides.contactHistoryProvider ?? new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
+    emailChannel: overrides.emailChannel,
     applicationModules: new ApplicationModuleCoordinator({
       logger,
       registry: createApplicationExtensionRegistry(),
@@ -2648,8 +2704,17 @@ export const createTestDependencies = (overrides: {
     chatService,
     approvalDecisionService,
     conversationOwnershipService,
+    conversationIngestService,
     conversationOperatorDirectory,
     conversationActivityReads,
+    deliveryFailures: overrides.deliveryFailures ?? new DeliveryFailureDecisions({
+      failures: deliveryFailureRecords,
+      resolver: null,
+      audit: auditService,
+      logger,
+    }),
+    heldReplies,
+    reviewTurnAudits: new ReviewTurnAuditReader(auditEventRepository),
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
     revisionEvalRunService,
@@ -2744,7 +2809,7 @@ export const createTestDependencies = (overrides: {
   void connectorRegistry.initializeAll({
     db: connectorDb,
     logger: dependencies.logger,
-    chat: createConnectorChatPort(dependencies.chatService),
+    chat: createConnectorChatPort(dependencies.chatService, dependencies.conversationIngestService),
     ingestion: dependencies.connectorIngestionPort,
     agentStarterPrompts: dependencies.agentStarterPromptReader,
     conversationLinks: dependencies.conversationLinks,
@@ -2806,6 +2871,9 @@ export const createTestApp = (overrides: {
   realtimeRolloutPolicy?: RealtimeRolloutPolicy;
   testExecutionService?: TestExecutionService;
   agentToolCatalog?: NonNullable<Parameters<typeof createTestDependencies>[0]>["agentToolCatalog"];
+  emailChannel?: AppDependencies["emailChannel"];
+  deliveryFailures?: AppDependencies["deliveryFailures"];
+  heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
 } = {}) => {
   const {
     dependencies,

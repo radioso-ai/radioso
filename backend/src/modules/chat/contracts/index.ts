@@ -1,4 +1,5 @@
 import type { ChatResponse } from "../types/chatResponses.js";
+import type { ChatReviewInput, ChatReviewResult } from "../types/chatReview.js";
 import type { AssistantClientContextCapabilities } from "../types/assistantApi.js";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
@@ -14,6 +15,8 @@ export type {
   PublicChatActionAdvertiserPort,
 } from "../services/publicChatActionAdvertiser.js";
 export type { ChatGateway } from "./chatGateway.js";
+// Recording a customer message without a turn, for channels that decide later whether one runs.
+export type { ConversationIngestInput, ConversationIngestPort } from "./conversationIngest.js";
 // Read-only conversation starters (greeting chips) for channels that show them outside a
 // conversation, such as Slack's agent pane; the connector registry carries this port.
 export type { AgentStarterPromptReader } from "./agentStarterPrompts.js";
@@ -34,6 +37,8 @@ export { CONTACT_SEND_ACTION_TYPE } from "../services/routines/contactRoutine.js
 export { appendDirectiveSteeringStage } from "../services/directiveTracePresenter.js";
 export { appendConversationSummaryStage } from "../services/conversationSummaryTracePresenter.js";
 export type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
+// A held reply's reasoning: a review turn writes no message row, so its audit record is read back.
+export { ReviewTurnAuditReader, type ReviewTurnAuditRecord } from "../services/reviewTurnAuditReader.js";
 export type { GroundingSummary } from "../services/groundingAssertions.js";
 export type { ChatConversationDetail, ChatConversationTail } from "../services/chatHistoryService.js";
 export type { ProbeConversationReadPort } from "../services/probeConversationReader.js";
@@ -71,6 +76,12 @@ export type {
   ChatAnswerCoverageAssessment,
   ChatAnswerCoverageInteractionTrace,
 } from "./answerCoverage.js";
+export type {
+  ChatReviewInput,
+  ChatReviewResult,
+  ReviewTurnFactsSource,
+} from "../types/chatReview.js";
+/** The chat turns a connector host runs: a live answer, and a review turn that returns a draft. */
 export interface ChatAnswerPort {
   answer(input: {
     workspaceId: string;
@@ -91,4 +102,5 @@ export interface ChatAnswerPort {
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
   }): Promise<ChatResponse>;
+  review(input: ChatReviewInput): Promise<ChatReviewResult>;
 }

@@ -11,6 +11,7 @@ export type CopilotTriageUrgency = "blocking" | "attention" | "backlog";
 export type CopilotTriageItemKind =
   | "approval"
   | "handoff"
+  | "delivery_failed"
   | "negative_feedback"
   | "failed_document"
   | "failed_source_sync"
@@ -40,7 +41,14 @@ export interface CopilotTriageItem {
  * is the cause of the failed documents under it and there are far fewer of them, so sharing a cap
  * would let a run of recent document failures bury the handful of syncs that explain them.
  */
-export type CopilotTriageSourceId = "approvals" | "handoffs" | "quality" | "documents" | "document_sources" | "evals";
+export type CopilotTriageSourceId =
+  | "approvals"
+  | "handoffs"
+  | "quality"
+  | "documents"
+  | "document_sources"
+  | "evals"
+  | "delivery_failures";
 
 /**
  * A source that could not be read reports why. Absence and emptiness are different answers, and
@@ -64,6 +72,7 @@ export interface CopilotTriageSourceReport {
 const sourceByKind: Record<CopilotTriageItemKind, CopilotTriageSourceId> = {
   approval: "approvals",
   handoff: "handoffs",
+  delivery_failed: "delivery_failures",
   negative_feedback: "quality",
   untriaged_quality_turns: "quality",
   failed_document: "documents",

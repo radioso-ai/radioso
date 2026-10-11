@@ -1,6 +1,7 @@
 import type { RoutineRunTrace } from "@radioso/conversation-contract";
 
 import type { AssertionVerdictStatus, EvalRunObservedOutput } from "../domain/types.js";
+import type { ConversationQualityObservedOutput } from "./observedOutput.js";
 
 /**
  * Trace assertions read structured signal out of a turn's {@link EvalRunObservedOutput}
@@ -8,8 +9,9 @@ import type { AssertionVerdictStatus, EvalRunObservedOutput } from "../domain/ty
  * the deterministic, LLM-free half of the conversation-quality suite: which route was
  * classified, which skill produced the answer, whether a routine claimed the turn and
  * how far it advanced, whether the turn asked a clarifying question, and the grounding
- * verdict. Because they never call a model they are cheap and stable enough to gate on
- * every run.
+ * verdict. A review turn carries no trace, so its coverage verdict and the replies it
+ * persisted are read from its review observation instead. Because they never call a model
+ * they are cheap and stable enough to gate on every run.
  *
  * They live in the suite's own union — NOT the shipped product `EvalAssertion` union —
  * so the dashboard/API contract for operator-authored eval cases stays unchanged.
@@ -27,7 +29,9 @@ export type SuiteTraceAssertion =
   | { type: "routine_yielded"; routineId: string; stepId: string }
   | { type: "turn_asks_clarification" }
   | { type: "turn_grounding_verdict"; verdict: "grounded" | "degraded" | "no_support" }
-  | { type: "turn_answer_coverage"; coverage: "answered" | "partial" | "unanswered" | "unclear" };
+  | { type: "turn_answer_coverage"; coverage: "answered" | "partial" | "unanswered" | "unclear" }
+  /** A review turn wrote no assistant message: its reply stayed a draft. */
+  | { type: "turn_persists_no_reply" };
 
 const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_route",
@@ -40,6 +44,7 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_asks_clarification",
   "turn_grounding_verdict",
   "turn_answer_coverage",
+  "turn_persists_no_reply",
 ]);
 
 export const isTraceAssertion = (assertion: { type: string }): assertion is SuiteTraceAssertion =>
@@ -103,6 +108,31 @@ const answerCoverageHeadStage = (output: EvalRunObservedOutput): TraceStage | un
     (stage) => stage.kind === "answer_coverage_head" && typeof readString(stage.outputs, "availability") === "string",
   );
 
+/**
+ * The coverage verdict the turn recorded, and where it was read: a review turn's own facts,
+ * or a live turn's `answer_coverage_head` stage. `undefined` when a live turn captured no trace.
+ */
+const observedCoverage = (
+  output: ConversationQualityObservedOutput,
+): { source: string; availability?: string; coverage?: string } | undefined => {
+  if (output.reviewTurn) {
+    return {
+      source: "Review turn facts",
+      availability: output.reviewTurn.answerCoverage?.availability,
+      coverage: output.reviewTurn.answerCoverage?.coverage,
+    };
+  }
+  if (!output.turnTrace) {
+    return undefined;
+  }
+  const stage = answerCoverageHeadStage(output);
+  return {
+    source: "Turn trace",
+    availability: stage ? readString(stage.outputs, "availability") : undefined,
+    coverage: stage ? readString(stage.outputs, "coverage") : undefined,
+  };
+};
+
 const routineTrace = (stage: TraceStage): RoutineRunTrace | undefined => {
   const sub = stage.subTrace;
   if (!sub || sub.namespace !== "routine") {
@@ -129,7 +159,7 @@ const dispatchedSkillNames = (output: EvalRunObservedOutput): string[] => {
 
 export const evaluateTraceAssertion = (
   assertion: SuiteTraceAssertion,
-  output: EvalRunObservedOutput,
+  output: ConversationQualityObservedOutput,
 ): SuiteTraceAssertionVerdict => {
   if (output.error) {
     return { assertion, status: "error", reason: output.error.message };
@@ -286,24 +316,37 @@ export const evaluateTraceAssertion = (
       return fail(assertion, `Grounding verdict was "${verdict}"; expected "${assertion.verdict}".`);
     }
     case "turn_answer_coverage": {
-      if (!output.turnTrace) {
+      const observed = observedCoverage(output);
+      if (!observed) {
         return missingTrace(assertion);
       }
-      const stage = answerCoverageHeadStage(output);
-      const availability = stage ? readString(stage.outputs, "availability") : undefined;
-      const coverage = stage ? readString(stage.outputs, "coverage") : undefined;
+      const { source, availability, coverage } = observed;
       if (availability !== "assessed" || !coverage) {
         return fail(
           assertion,
           availability
             ? `Coverage verdict availability was "${availability}"; expected an assessed "${assertion.coverage}" verdict.`
-            : `Turn trace recorded no coverage verdict; expected "${assertion.coverage}".`,
+            : `${source} recorded no coverage verdict; expected "${assertion.coverage}".`,
         );
       }
       if (coverage === assertion.coverage) {
         return pass(assertion, `Coverage verdict was "${coverage}".`);
       }
       return fail(assertion, `Coverage verdict was "${coverage}"; expected "${assertion.coverage}".`);
+    }
+    case "turn_persists_no_reply": {
+      if (!output.reviewTurn) {
+        return {
+          assertion,
+          status: "error",
+          reason: "Persisted replies are observed only for a review turn; run the case in review mode.",
+        };
+      }
+      const persisted = output.reviewTurn.persistedAssistantMessageCount;
+      if (persisted === 0) {
+        return pass(assertion, "The turn persisted no assistant message.");
+      }
+      return fail(assertion, `The turn persisted ${persisted} assistant message(s); expected none.`);
     }
   }
 };

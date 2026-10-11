@@ -535,6 +535,8 @@ export const buildChatServices = (input: {
               usageLimitPolicy: input.usageLimitPolicy,
               assertPublicWebsiteUrl: input.assertPublicWebsiteUrl,
               errorReporter: input.errorReporter,
+              metrics: input.metricsRegistry ?? null,
+              publisher: input.workspaceInvalidationPublisher,
             })
           : registration.handler,
     })),

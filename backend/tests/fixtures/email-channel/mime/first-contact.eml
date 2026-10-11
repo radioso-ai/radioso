@@ -1,0 +1,29 @@
+Return-Path: <alice@example.test>
+Delivered-To: QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+Received: from mx.in.relay.test (mx.in.relay.test [192.0.2.50])
+	by inbound.in.relay.test with ESMTPS id 3b7e1f9a2c
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 13:32:30 +0000 (UTC)
+X-Forwarded-To: QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+X-Forwarded-For: alice@example.test QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+Delivered-To: support@customer.test
+Received: from mail-sor-f41.example.test (mail-sor-f41.example.test [203.0.113.41])
+	by mx.google-workspace.example.test with SMTP id d9f2a7c1e5
+	for <support@customer.test>;
+	Sat, 03 Oct 2026 13:32:25 +0000 (UTC)
+Message-ID: <msg-0001@example.test>
+From: Alice Carter <alice@example.test>
+To: support@customer.test
+Subject: Question about my account
+Date: Sat, 03 Oct 2026 13:32:20 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hi there,
+
+I signed up last week and I can't find where to update my billing address.
+Could you point me in the right direction?
+
+Thanks,
+Alice

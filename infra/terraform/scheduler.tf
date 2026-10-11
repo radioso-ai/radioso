@@ -11,6 +11,10 @@ locals {
   copilot_retention_url             = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/copilot-retention/sweep" : null
   agent_bundle_import_cleanup_url   = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/agent-bundle-imports/sweep" : null
   slack_inbound_event_retention_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/slack-inbound-event-retention/sweep" : null
+  # Same worker task Cloud Run service as the other sweeps above — the email-channel
+  # drain and sweep routes are additional routes on that service.
+  email_channel_sweep_url  = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/email-channel/sweep" : null
+  email_channel_sweep_body = base64encode(jsonencode({ maxJobs = var.email_channel_sweep_max_jobs }))
 }
 
 resource "google_cloud_scheduler_job" "document_worker_recovery" {
@@ -145,6 +149,31 @@ resource "google_cloud_scheduler_job" "slack_inbound_event_retention" {
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.slack_inbound_event_retention_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# The sweep route is mounted only when the channel has a provider, so the job exists only then;
+# a deployment with the channel off schedules nothing against an unmounted endpoint.
+resource "google_cloud_scheduler_job" "email_channel_sweep" {
+  count    = var.deploy_services && var.email_channel_provider != null ? 1 : 0
+  name     = "${local.resource_name_prefix}-email-channel-sweep"
+  region   = var.region
+  schedule = local.email_channel_sweep_schedule
+
+  http_target {
+    http_method = "POST"
+    uri         = local.email_channel_sweep_url
+    body        = local.email_channel_sweep_body
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.email_channel_sweep_url
     }
   }
 

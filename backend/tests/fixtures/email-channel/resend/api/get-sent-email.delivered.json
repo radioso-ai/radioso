@@ -1,0 +1,20 @@
+{
+  "object": "email",
+  "id": "01a101f5-b214-78b7-9004-18f685cb0238",
+  "to": [
+    "delivered@resend.dev"
+  ],
+  "from": "S0 probe <s0-probe@radioso.ai>",
+  "created_at": "2026-10-03 13:30:41.707000+00",
+  "subject": "S0 header passthrough probe",
+  "bcc": null,
+  "cc": null,
+  "reply_to": [
+    "s0-probe+tok123@radioso.ai"
+  ],
+  "last_event": "delivered",
+  "scheduled_at": null,
+  "message_id": "<010201a101f5b3d6-fca7c043-1689-4354-b92a-84f4c0f66a1f-000000@eu-west-1.amazonses.com>",
+  "html": null,
+  "text": "probe"
+}

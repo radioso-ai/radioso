@@ -459,6 +459,68 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
+        for_each = var.email_channel_provider != null ? [var.email_channel_provider] : []
+        content {
+          name  = "EMAIL_CHANNEL_PROVIDER"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.email_channel_inbound_domain != null ? [var.email_channel_inbound_domain] : []
+        content {
+          name  = "EMAIL_CHANNEL_INBOUND_DOMAIN"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.email_channel_webhook_secret != null ? [google_secret_manager_secret.secrets["email-channel-webhook-secret"].secret_id] : []
+        content {
+          name = "EMAIL_CHANNEL_WEBHOOK_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.email_channel_webhook_secret_previous != null ? [google_secret_manager_secret.secrets["email-channel-webhook-secret-previous"].secret_id] : []
+        content {
+          name = "EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.resend_channel_api_key != null ? [google_secret_manager_secret.secrets["resend-channel-api-key"].secret_id] : []
+        content {
+          name = "RESEND_CHANNEL_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      env {
+        name  = "RESEND_CHANNEL_REGION"
+        value = local.resend_channel_region
+      }
+      env {
+        name  = "EMAIL_CHANNEL_WORKERS_ENABLED"
+        value = tostring(var.email_channel_workers_enabled)
+      }
+      env {
+        name  = "EMAIL_CHANNEL_TASK_QUEUE_NAME"
+        value = google_cloud_tasks_queue.email_channel[0].name
+      }
+      dynamic "env" {
         for_each = var.mail_from_email != null ? [var.mail_from_email] : []
         content {
           name  = "MAIL_FROM_EMAIL"
@@ -1169,6 +1231,68 @@ resource "google_cloud_run_v2_service" "document_worker" {
             }
           }
         }
+      }
+      dynamic "env" {
+        for_each = var.email_channel_provider != null ? [var.email_channel_provider] : []
+        content {
+          name  = "EMAIL_CHANNEL_PROVIDER"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.email_channel_inbound_domain != null ? [var.email_channel_inbound_domain] : []
+        content {
+          name  = "EMAIL_CHANNEL_INBOUND_DOMAIN"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.email_channel_webhook_secret != null ? [google_secret_manager_secret.secrets["email-channel-webhook-secret"].secret_id] : []
+        content {
+          name = "EMAIL_CHANNEL_WEBHOOK_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.email_channel_webhook_secret_previous != null ? [google_secret_manager_secret.secrets["email-channel-webhook-secret-previous"].secret_id] : []
+        content {
+          name = "EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.resend_channel_api_key != null ? [google_secret_manager_secret.secrets["resend-channel-api-key"].secret_id] : []
+        content {
+          name = "RESEND_CHANNEL_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      env {
+        name  = "RESEND_CHANNEL_REGION"
+        value = local.resend_channel_region
+      }
+      env {
+        name  = "EMAIL_CHANNEL_WORKERS_ENABLED"
+        value = tostring(var.email_channel_workers_enabled)
+      }
+      env {
+        name  = "EMAIL_CHANNEL_TASK_QUEUE_NAME"
+        value = google_cloud_tasks_queue.email_channel[0].name
       }
       dynamic "env" {
         for_each = local.posthog_api_key_configured ? [google_secret_manager_secret.secrets["posthog-api-key"].secret_id] : []

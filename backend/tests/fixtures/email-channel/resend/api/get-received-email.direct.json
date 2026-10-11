@@ -1,0 +1,58 @@
+{
+  "object": "email",
+  "id": "f837952f-d01c-429e-83a5-25c554ec5b18",
+  "to": [
+    "87164684@rexuatrena.resend.app"
+  ],
+  "from": "s0-probe@radioso.ai",
+  "created_at": "2026-10-03T13:32:29.870Z",
+  "subject": "S0 Auto-Submitted passthrough probe",
+  "message_id": "<010201a101f751fd-922fcadb-c495-4e2e-87a7-d9cc8946271f-000000@eu-west-1.amazonses.com>",
+  "bcc": [],
+  "cc": [],
+  "reply_to": [
+    "s0-probe+tok456@radioso.ai"
+  ],
+  "html": null,
+  "html_format": "data_uri",
+  "text": "probe body\n",
+  "headers": {
+    "return-path": "010201a101f751fd-922fcadb-c495-4e2e-87a7-d9cc8946271f-000000@send.radioso.ai",
+    "received": "from a3-13.smtp-out.eu-west-1.amazonses.com (a3-13.smtp-out.eu-west-1.amazonses.com [54.240.3.13]) by inbound-smtp.us-east-1.amazonaws.com with SMTP id a63iug3sd3046j0umc8uoa60aqril94orosal501 for 87164684@rexuatrena.resend.app; Sat, 03 Oct 2026 13:32:29 +0000 (UTC)",
+    "x-ses-spam-verdict": "PASS",
+    "x-ses-virus-verdict": "PASS",
+    "received-spf": "pass (spfCheck: domain of send.radioso.ai designates 54.240.3.13 as permitted sender) client-ip=54.240.3.13; envelope-from=010201a101f751fd-922fcadb-c495-4e2e-87a7-d9cc8946271f-000000@send.radioso.ai; helo=a3-13.smtp-out.eu-west-1.amazonses.com;",
+    "authentication-results": "amazonses.com; spf=pass (spfCheck: domain of send.radioso.ai designates 54.240.3.13 as permitted sender) client-ip=54.240.3.13; envelope-from=010201a101f751fd-922fcadb-c495-4e2e-87a7-d9cc8946271f-000000@send.radioso.ai; helo=a3-13.smtp-out.eu-west-1.amazonses.com; dkim=pass header.i=@amazonses.com; dkim=pass header.i=@radioso.ai; dmarc=pass header.from=radioso.ai;",
+    "x-ses-receipt": "AEFBQUFBQUFBQUFGTW40bWxpSW9UOWJRSDZMazFReDRyZTFrSHlWZFJvSW1ocFdYWVJzUHVwZDR4TUFQS1JtUER4Rk1Ub3ZTQVhtbTQ0SjRxakNUTytnbUZjMklJN0haSkRhditsSkNRZGExUDBIcm5nZ1JqNThzR0ErVXQ1dEs5ZU1xQWZES3RCOXRoUmprWmx1VlZ5ODJCb3IvWVAyakR2N216WDJudi9YbjcrcjVpTmNNbE1YUWlCb1BlTWJTdWxqWG1hdG1MYmJSdjBxRGNoWEN5Mm1BSGIrUkQyaHR3UVJmakRmWGtmdmhQMzJ4WnpWbFZ4c0xocnZzRFM4b1ZvUTQxTUl3aFQrOFZZeDBGWWpuNkJmTktnZ1ZsWHNmblZtVnJwbURJWkNFVFZxaFpERW81NFVNeENML2V4WlEyN2c1dUhGcC9uUTR3NmF6TFN1MmJJWmxuZWdSYk5SQzlyQytveXVURnFWbXpiUSttRFFoRFpBPT0=",
+    "x-ses-dkim-signature": "a=rsa-sha256; q=dns/txt; b=sCAdHlqw7zo8k3Ul4C1L4xRmL9QVgfYYr+1NTeeT8Mt/bB4/EObQNVHqqUHGKib6qIqu2IzAQJh+WC6agJluxEPNShOHstUoMJ1u1jDzTsrEceA+lMjzUIa5Ld1jljW/2r2yhP3wF3XcRxDF6NEotCWZL1+87oVlDF6j4NKebxs=; c=relaxed/simple; s=224i4yxa5dv7c2xz3womw6peuasteono; d=amazonses.com; t=1791034349; v=1; bh=WqGlMun3xZZcCs+Jcs+hsj+yxPhl/XRGHV5nLOeneN8=; h=From:To:Cc:Bcc:Subject:Date:Message-ID:MIME-Version:Content-Type:X-SES-RECEIPT;",
+    "dkim-signature": "[{\"value\":\"v=1\",\"params\":{\"a\":\"rsa-sha256\",\"q\":\"dns/txt\",\"c\":\"relaxed/simple\",\"s\":\"resend\",\"d\":\"radioso.ai\",\"t\":\"1791034348\",\"h\":\"In-Reply-To:Message-ID:References:From:To:Reply-To:Subject:Content-Transfer-Encoding:Date:MIME-Version:Content-Type\",\"bh\":\"WqGlMun3xZZcCs+Jcs+hsj+yxPhl/XRGHV5nLOeneN8=\",\"b\":\"rVOMToMaB2WbZK4Rk2fDfKeGTdf1bBBFmapEdp1UNm/1LpmURC9UbemRIIOBVWGC PG1tTocg+pV/xWLmblWIObcoYJyPzr7QfuF4Pg8+vLv3871Zb88vuwDXrkd5Iqb6lnV DxpD/S1Y+3f5gr6KHggXGs+U9Ml1jk5m3iimeBNE=\"}},{\"value\":\"v=1\",\"params\":{\"a\":\"rsa-sha256\",\"q\":\"dns/txt\",\"c\":\"relaxed/simple\",\"s\":\"shh3fegwg5fppqsuzphvschd53n6ihuv\",\"d\":\"amazonses.com\",\"t\":\"1791034348\",\"h\":\"In-Reply-To:Message-ID:References:From:To:Reply-To:Subject:Content-Transfer-Encoding:Date:MIME-Version:Content-Type:Feedback-ID\",\"bh\":\"WqGlMun3xZZcCs+Jcs+hsj+yxPhl/XRGHV5nLOeneN8=\",\"b\":\"aK0T4FEWWs1+HyEL9xhavwnsig0dwGVc5hLaSJlGt4inKolMQ5gaBCfzPpj+snX7 GJ923RTVlXGfVyf/DOAKrkHi97STmx3PrPdci62yAtYBph/wF0InjLAwdcXVcs7kT0f Okc1c/vVcraT6Oq/P/fn4NOhQ+xDA/4g95ej/k6E=\"}}]",
+    "auto-submitted": "auto-generated",
+    "in-reply-to": "<parent-1@example.com>",
+    "message-id": "<010201a101f751fd-922fcadb-c495-4e2e-87a7-d9cc8946271f-000000@eu-west-1.amazonses.com>",
+    "references": "[\"<root-0@example.com>\",\"<parent-1@example.com>\"]",
+    "x-s0-probe": "1",
+    "from": "\"S0 probe\" <s0-probe@radioso.ai>",
+    "to": "87164684@rexuatrena.resend.app",
+    "reply-to": "s0-probe+tok456@radioso.ai",
+    "subject": "S0 Auto-Submitted passthrough probe",
+    "content-transfer-encoding": "7bit",
+    "date": "\"2026-10-03T13:32:28.000Z\"",
+    "mime-version": "1.0",
+    "content-type": "text/plain",
+    "feedback-id": ":1.eu-west-1.Jh9zWZY1OmM+qkGIeSPWt/cbqMB4WIGUvKoNhnM76JoottTQ7NCGUPXiFloYR4zYUMygMRhaGjs5EIrypKZE6blKYij85nF88cGprEMN258b2z/PbDrsHGauTdwalW7+MXhBf3vrrufFsFH2WT6/WAVOyDcOStsnZduEYQvuMjw=:1.eu-west-1.duyiEkLYPi4nGdRFd7LaGmAjRWieZlOvGu1wIBVR/Ks=:AmazonSES",
+    "x-ses-outgoing": "2026.10.03-54.240.3.13"
+  },
+  "received_for": [
+    "87164684@rexuatrena.resend.app"
+  ],
+  "authentication": {
+    "spf": "pass",
+    "dkim": "pass",
+    "dmarc": "pass"
+  },
+  "raw": {
+    "download_url": "https://cdn.resend.app/receiving/raw/<signed>",
+    "expires_at": "2026-10-03T14:32:48.358Z"
+  },
+  "attachments": []
+}

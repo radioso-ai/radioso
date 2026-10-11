@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ChatConversationSummary, ConversationOwnership, LowQualityTurn, PendingApprovalDecision } from '@/lib/api'
+import type { DeliveryFailure, HeldReply } from '@/lib/api-reply-review'
 import {
   buildInboxModel,
   buildInboxItems,
@@ -31,6 +32,7 @@ import {
   type HumanOwnedConversationSummary,
   type InboxItem,
 } from '@/lib/needs-attention'
+import { heldReplyHoldLine, heldReplyReasoningLines } from '@/lib/needs-attention-reply-review'
 
 const ownership = (overrides: Partial<ConversationOwnership> = {}): ConversationOwnership => ({
   conversationId: 'conversation-1',
@@ -1120,11 +1122,12 @@ describe('countInboxItemsByType', () => {
       approval: 1,
       handoff: 1,
       negative_feedback: 1,
+      delivery_failed: 0,
     })
   })
 
   it('returns all zeros for an empty queue', () => {
-    expect(countInboxItemsByType([])).toEqual({ all: 0, approval: 0, handoff: 0, negative_feedback: 0 })
+    expect(countInboxItemsByType([])).toEqual({ all: 0, approval: 0, handoff: 0, negative_feedback: 0, delivery_failed: 0 })
   })
 })
 
@@ -1318,5 +1321,329 @@ describe('summarizeAiHandledConversations', () => {
 
   it('returns zero counts for an empty or fully-escalated window', () => {
     expect(summarizeAiHandledConversations([])).toEqual({ totalCount: 0, agentCount: 0 })
+  })
+})
+
+describe('delivery failures in the inbox model', () => {
+  const deliveryFailure = (overrides: Partial<DeliveryFailure> = {}): DeliveryFailure => ({
+    id: 'failure-1',
+    conversationId: 'c-email',
+    messageId: 'message-reply-1',
+    provider: 'email',
+    kind: 'bounced',
+    detailCode: 'mailbox_full',
+    openedAt: '2026-06-19T10:02:00.000Z',
+    clearedAt: null,
+    clearReason: null,
+    ...overrides,
+  })
+
+  it('makes each open failure a critical row, waiting since the failure opened', () => {
+    const failure = deliveryFailure()
+    const items = buildInboxItems({ decisions: [], conversations: [], qualityTurns: [], deliveryFailures: [failure] })
+
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      key: 'delivery_failed:failure-1',
+      conversationId: 'c-email',
+      type: 'delivery_failed',
+      severity: 'critical',
+      escalatedAt: '2026-06-19T10:02:00.000Z',
+      deliveryFailure: failure,
+    })
+    expect(items[0].title).toBeTruthy()
+  })
+
+  it('titles the row after its conversation, and carries its agent, when the conversation is loaded', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({ id: 'c-email', title: 'Where is my order?', agentId: 'agent-2', agentName: 'Gioia' })],
+      qualityTurns: [],
+      deliveryFailures: [deliveryFailure()],
+    })
+
+    expect(items.find((item) => item.type === 'delivery_failed')).toMatchObject({
+      title: 'Where is my order?',
+      agentId: 'agent-2',
+      agentName: 'Gioia',
+    })
+  })
+
+  it('attributes a failed automatic reply on an AI-owned conversation to its agent, so the agent filter keeps it', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [],
+      deliveryFailures: [deliveryFailure()],
+      failureConversations: [{ id: 'c-email', title: 'Where is my order?', updatedAt: '2026-06-19T10:00:00.000Z', agentId: 'agent-3', agentName: 'Gioia' }],
+    })
+
+    expect(items[0]).toMatchObject({ type: 'delivery_failed', title: 'Where is my order?', agentId: 'agent-3', agentName: 'Gioia' })
+    expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, agentId: 'agent-3' }, { currentUserId: null })
+      .map((item) => item.key)).toEqual(['delivery_failed:failure-1'])
+    expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, agentId: 'agent-other' }, { currentUserId: null })).toEqual([])
+  })
+
+  it('sorts with the other critical rows, oldest first, above feedback', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ handle: 'd1', conversationId: 'c-approval', createdAt: '2026-06-19T10:03:00.000Z' })],
+      conversations: [],
+      qualityTurns: [commentedQualityTurn({ conversationId: 'c-feedback' })],
+      deliveryFailures: [deliveryFailure({ openedAt: '2026-06-19T10:01:00.000Z' })],
+    })
+
+    expect(items.map((item) => item.type)).toEqual(['delivery_failed', 'approval', 'negative_feedback'])
+  })
+
+  it('drops feedback on a conversation whose reply failed: critical wins', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [commentedQualityTurn({ conversationId: 'c-email' })],
+      deliveryFailures: [deliveryFailure()],
+    })
+
+    expect(items.map((item) => item.type)).toEqual(['delivery_failed'])
+  })
+
+  it('keeps one row per failed message on the same conversation', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [],
+      deliveryFailures: [
+        deliveryFailure({ id: 'failure-1', messageId: 'message-reply-1' }),
+        deliveryFailure({ id: 'failure-2', messageId: 'message-reply-2', kind: 'uncertain', detailCode: null }),
+      ],
+    })
+
+    expect(items.map((item) => item.key)).toEqual(['delivery_failed:failure-1', 'delivery_failed:failure-2'])
+  })
+
+  it('counts delivery failures in the type counts and the type filter', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({ id: 'c-handoff' })],
+      qualityTurns: [],
+      deliveryFailures: [deliveryFailure()],
+    })
+
+    expect(countInboxItemsByType(items)).toMatchObject({ all: 2, handoff: 1, delivery_failed: 1 })
+    expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, type: 'delivery_failed' }, { currentUserId: null })
+      .map((item) => item.key)).toEqual(['delivery_failed:failure-1'])
+  })
+
+  it('finds a selected failure again by its own id after a refetch', () => {
+    const [first, second] = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [],
+      deliveryFailures: [deliveryFailure({ id: 'failure-1' }), deliveryFailure({ id: 'failure-2', messageId: 'message-reply-2' })],
+    })
+    const refetched = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [],
+      deliveryFailures: [deliveryFailure({ id: 'failure-2', messageId: 'message-reply-2', kind: 'failed' })],
+    })
+
+    expect(findRefreshedInboxItem(refetched, second)?.deliveryFailure?.kind).toBe('failed')
+    expect(findRefreshedInboxItem(refetched, first)).toBeUndefined()
+  })
+})
+
+describe('held replies in the inbox model', () => {
+  const heldReply = (overrides: Partial<HeldReply> = {}): HeldReply => ({
+    id: 'held-1',
+    conversationId: 'c-email',
+    agentId: 'agent-1',
+    state: 'pending',
+    holdReason: 'draft_mode',
+    facts: {
+      grounding: 'grounded',
+      coverage: 'answered',
+      handoff: { requested: false, reason: null },
+      outcome: 'answered',
+    },
+    dependsOnSuppressedAction: false,
+    suppressedEffects: [],
+    draftText: 'Your order 4417 shipped on Monday.',
+    editedText: null,
+    createdAt: '2026-06-19T10:02:00.000Z',
+    decidedAt: null,
+    releaserUserId: null,
+    editorUserId: null,
+    attentionOpen: true,
+    trace: null,
+    ...overrides,
+  })
+
+  it('makes each held reply a critical approval row that carries its heldReplyId', () => {
+    const items = buildInboxItems({ decisions: [], conversations: [], qualityTurns: [], heldReplies: [heldReply()] })
+
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      key: 'approval:held:held-1',
+      conversationId: 'c-email',
+      type: 'approval',
+      severity: 'critical',
+      heldReplyId: 'held-1',
+      escalatedAt: '2026-06-19T10:02:00.000Z',
+      agentId: 'agent-1',
+    })
+    expect(items[0].handle).toBeUndefined()
+    expect(items[0].title).toBeTruthy()
+  })
+
+  it('titles the row after its conversation, and carries its agent, when the conversation is loaded', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({ id: 'c-email', title: 'Where is my order?', agentId: 'agent-2', agentName: 'Gioia' })],
+      qualityTurns: [],
+      heldReplies: [heldReply()],
+    })
+
+    expect(items.find((item) => item.heldReplyId)).toMatchObject({ title: 'Where is my order?', agentName: 'Gioia' })
+  })
+
+  it('leaves routine approvals exactly as they were, sorted with held replies oldest first', () => {
+    const routineApproval = decision({ handle: 'd1', conversationId: 'c-approval', createdAt: '2026-06-19T10:03:00.000Z' })
+    const withoutHeld = buildInboxItems({ decisions: [routineApproval], conversations: [], qualityTurns: [] })
+    const withHeld = buildInboxItems({
+      decisions: [routineApproval],
+      conversations: [],
+      qualityTurns: [],
+      heldReplies: [heldReply({ createdAt: '2026-06-19T10:01:00.000Z' })],
+    })
+
+    expect(withHeld.map((item) => item.key)).toEqual(['approval:held:held-1', 'approval:agent-1:d1'])
+    expect(withHeld[1]).toEqual(withoutHeld[0])
+    expect(withHeld[1].heldReplyId).toBeUndefined()
+  })
+
+  it('keeps a discarded reply whose attention is still open, and drops one whose attention closed', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [],
+      heldReplies: [
+        heldReply({ id: 'held-discarded', conversationId: 'c-1', state: 'discarded', attentionOpen: true }),
+        heldReply({ id: 'held-released', conversationId: 'c-2', state: 'released', attentionOpen: false }),
+      ],
+    })
+
+    expect(items.map((item) => item.heldReplyId)).toEqual(['held-discarded'])
+  })
+
+  it('drops feedback on a conversation with a held reply: critical wins', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [commentedQualityTurn({ conversationId: 'c-email' })],
+      heldReplies: [heldReply()],
+    })
+
+    expect(items.map((item) => item.type)).toEqual(['approval'])
+  })
+
+  it('counts held replies as approvals and filters them with the approval type', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ handle: 'd1', conversationId: 'c-approval' })],
+      conversations: [humanOwned({ id: 'c-handoff' })],
+      qualityTurns: [],
+      heldReplies: [heldReply()],
+    })
+
+    expect(countInboxItemsByType(items)).toMatchObject({ all: 3, approval: 2, handoff: 1 })
+    expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, type: 'approval' }, { currentUserId: null })
+      .map((item) => item.key)).toEqual(['approval:agent-1:d1', 'approval:held:held-1'])
+  })
+
+  it('never resolves a held reply as a routine decision, even on the same conversation and agent', () => {
+    const [item] = buildInboxItems({ decisions: [], conversations: [], qualityTurns: [], heldReplies: [heldReply()] })
+
+    expect(findPendingApprovalDecision(item, [decision({ conversationId: 'c-email', agentId: 'agent-1' })])).toBeNull()
+  })
+
+  it('follows the selected held reply to the newer draft that replaced it on its conversation', () => {
+    const [selected] = buildInboxItems({ decisions: [], conversations: [], qualityTurns: [], heldReplies: [heldReply()] })
+    const refetched = buildInboxItems({
+      decisions: [decision({ handle: 'd1', conversationId: 'c-email', agentId: 'agent-1' })],
+      conversations: [],
+      qualityTurns: [],
+      heldReplies: [
+        heldReply({ id: 'held-other', conversationId: 'c-other' }),
+        heldReply({ id: 'held-2', draftText: 'It arrives tomorrow.' }),
+      ],
+    })
+
+    expect(findRefreshedInboxItem(refetched, selected)?.heldReplyId).toBe('held-2')
+  })
+
+  it('never swaps a selected routine approval for a held reply, or a held reply for another conversation\'s', () => {
+    const [selectedApproval] = buildInboxItems({ decisions: [decision({ handle: 'd1' })], conversations: [], qualityTurns: [] })
+    const [selectedHeld] = buildInboxItems({ decisions: [], conversations: [], qualityTurns: [], heldReplies: [heldReply()] })
+    const refetched = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [],
+      heldReplies: [heldReply({ id: 'held-other', conversationId: 'c-other' })],
+    })
+
+    expect(findRefreshedInboxItem(refetched, selectedApproval)).toBeUndefined()
+    expect(findRefreshedInboxItem(refetched, selectedHeld)).toBeUndefined()
+  })
+})
+
+describe('heldReplyReasoningLines', () => {
+  const trace = {
+    turnId: 'turn-1',
+    outcome: 'coverage_partial',
+    groundingVerdict: 'degraded' as const,
+    coverage: 'partial',
+    handoffReason: 'billing_dispute',
+    suppressedEffects: [{ skillName: 'refund_order' }, { skillName: 'cancel_order' }],
+  }
+
+  it('reads each recorded fact as a short line and closes with the turn id', () => {
+    expect(heldReplyReasoningLines(trace)).toEqual([
+      { label: 'Outcome', value: 'Coverage partial' },
+      { label: 'Grounding', value: 'Partly grounded' },
+      { label: 'Coverage', value: 'Partly answered' },
+      { label: 'Hand-off', value: 'Billing dispute' },
+      { label: 'Not run', value: 'refund_order, cancel_order' },
+      { label: 'Turn', value: 'turn-1' },
+    ])
+  })
+
+  it('leaves out the facts the turn did not record', () => {
+    expect(heldReplyReasoningLines({
+      ...trace,
+      outcome: null,
+      groundingVerdict: null,
+      coverage: 'not_assessed',
+      handoffReason: null,
+      suppressedEffects: [],
+    })).toEqual([{ label: 'Turn', value: 'turn-1' }])
+  })
+})
+
+describe('heldReplyHoldLine', () => {
+  it('says why the channel held the reply, from its code alone', () => {
+    expect(heldReplyHoldLine('send_budget')).toBe('Held: this thread’s automatic replies are used up')
+    expect(heldReplyHoldLine('sending_not_verified')).toBe('Held: sending is not verified for this mailbox')
+    expect(heldReplyHoldLine('incomplete_answer')).toBe('Held: it may not answer everything asked')
+    expect(heldReplyHoldLine('draft_mode')).toBe('Held: this mailbox drafts every reply for review')
+    expect(heldReplyHoldLine('outcome_not_publishable')).toBe('Held: the answer can’t go out on its own')
+    expect(heldReplyHoldLine('authority_changed')).toBe('Held: ownership or mailbox settings changed meanwhile')
+  })
+
+  it('reads a code it does not know as words, never raw', () => {
+    expect(heldReplyHoldLine('dispatch_abandoned')).toBe('Held: dispatch abandoned')
+  })
+
+  it('says nothing for a reply that was queued to send rather than held, or no code at all', () => {
+    expect(heldReplyHoldLine('queued_auto')).toBeNull()
+    expect(heldReplyHoldLine('')).toBeNull()
   })
 })

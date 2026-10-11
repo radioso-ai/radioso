@@ -2279,6 +2279,305 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/email-channel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the email channel's settings
+         * @description The deployment's engagement modes and inbound domain, with the workspace's sending domains and mailboxes. A deployment with no email provider answers `configured: false`.
+         */
+        get: operations["getEmailChannel"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/mailboxes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a mailbox
+         * @description Registers the address's domain as a sending domain when it is new to the workspace and issues the mailbox's relay address.
+         */
+        post: operations["createEmailMailbox"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a mailbox */
+        get: operations["getEmailMailbox"];
+        put?: never;
+        post?: never;
+        /** Remove a mailbox */
+        delete: operations["removeEmailMailbox"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a mailbox's settings and engagement policy
+         * @description A change of engagement mode, enabled flag or agent writes the next `policyVersion`. With `expectedPolicyVersion`, the change applies only to that version. Switching to `auto` needs `autoOptIn: true`.
+         */
+        patch: operations["updateEmailMailbox"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}/relay-token/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue a new relay address for a mailbox
+         * @description The previous relay address keeps working for a seven-day grace period.
+         */
+        post: operations["rotateEmailMailboxRelayToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}/setup-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a forwarding setup check
+         * @description `base` passes on the next message the mailbox receives; `plus_address` passes when a message written to the check's plus address arrives with its tag intact.
+         */
+        post: operations["startEmailMailboxSetupCheck"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a mailbox's event log
+         * @description Every accepted delivery to the mailbox, newest first, with its disposition, sender, subject and time.
+         */
+        get: operations["listEmailMailboxEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the workspace's email event log
+         * @description Every delivery attributed to the workspace, newest first: its mailboxes' events, a removed mailbox's retained events, and mail a verified receiving domain accepted for an address no mailbox has (`mailboxId: null`, reason `no_mailbox`). `mailboxId` narrows the log to one mailbox, removed or not.
+         */
+        get: operations["listEmailChannelEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/events/{deliveryId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry a failed inbound event
+         * @description Returns the failed delivery to the inbound pipeline, resuming at the step where it stopped.
+         */
+        post: operations["retryEmailInboundEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/events/{deliveryId}/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read an inbound event's raw message
+         * @description Display-safe headers, the plain text and server-sanitized HTML. Requires `workspace.conversation.takeover` as well as settings read permission, and every view is audited.
+         */
+        get: operations["getEmailInboundRawMessage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a sending domain
+         * @description Claims the domain for the workspace and registers it with the email provider. When the provider already holds the domain, it is added with `registration.status: needs_reconciliation` and adopted only by `reconcileEmailDomain`.
+         */
+        post: operations["addEmailSendingDomain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/domains/{domainId}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check a domain's DNS records now */
+        post: operations["verifyEmailDomain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/domains/{domainId}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adopt the provider's existing registration of a domain
+         * @description For a domain in `registration.status: needs_reconciliation`: finds the email provider's registration of the domain by name and records it for this workspace, or registers the domain afresh when the provider no longer holds it. Audited. A registered domain is returned unchanged.
+         */
+        post: operations["reconcileEmailDomain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/domains/{domainId}/receiving": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable direct receiving on a domain
+         * @description Routes all of the domain's mail to Radioso. `confirmation` must equal the domain name.
+         */
+        post: operations["enableEmailDirectReceiving"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-channel/domains/{domainId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a sending domain
+         * @description Revokes the domain's authority at once; the provider is cleaned up afterwards.
+         */
+        delete: operations["removeEmailDomain"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read an email conversation's facts
+         * @description The mailbox, the participant, the latest subject and CC, sending readiness, the send budget and per-message facts.
+         */
+        get: operations["getConversationEmailFacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/webhook-skills": {
         parameters: {
             query?: never;
@@ -3050,6 +3349,146 @@ export interface paths {
          * @description Only the teammate who owns the conversation hands it back; anyone may while it waits unclaimed. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
          */
         post: operations["handBackConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delivery-failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List delivery failures
+         * @description Replies that may not have reached the customer, newest first: the open ones, or with `state=all` the cleared ones too.
+         */
+        get: operations["listDeliveryFailures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delivery-failures/{failureId}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acknowledge a delivery failure
+         * @description Clears the failure as seen by the signed-in teammate. Sends nothing.
+         */
+        post: operations["acknowledgeDeliveryFailure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delivery-failures/{failureId}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve a delivery failure
+         * @description An audited decision on a reply whose delivery failed. `marked_sent` settles an `uncertain` send as sent. `resend` sends an `uncertain` or `halted` reply once more, once its channel can send; it is the only way a reply goes out twice.
+         */
+        post: operations["resolveDeliveryFailure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/held-replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List held replies
+         * @description Replies an agent wrote in review that wait for a teammate, newest first. With `attention=all`, the decided, replaced and automatically queued ones too.
+         */
+        get: operations["listHeldReplies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/held-reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a conversation's current held reply
+         * @description The conversation's newest held reply, whatever its state, under a `heldReply` root; null when it has none.
+         */
+        get: operations["getCurrentHeldReply"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Release a held reply
+         * @description Sends a pending draft to the customer. Without `editedText` it goes out as the agent wrote it, as the agent's message; with `editedText` the teammate's edit goes out as their own message and the draft is kept. Who owns the conversation does not change. Each refusal carries the held reply as it is now in `details.heldReply`.
+         */
+        post: operations["releaseHeldReply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard a held reply
+         * @description Sets a pending draft aside. The customer hears nothing, and the conversation keeps waiting for a teammate until one replies or takes it over.
+         */
+        post: operations["discardHeldReply"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7551,6 +7990,19 @@ export interface components {
             /** @enum {string} */
             provider: "web";
             origin?: string;
+        } | {
+            /** @enum {string} */
+            provider: "email";
+            mailbox: {
+                /** Format: uuid */
+                id: string;
+                address: string;
+            };
+            /** Format: uuid */
+            threadKey: string;
+            participant: {
+                address: string;
+            };
         };
         ConversationRequestContext: {
             clientIp: string | null;
@@ -7847,7 +8299,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "handoff_requested" | "claimed" | "reassigned" | "handed_back" | "approval_decided" | "feedback_resolved" | "feedback_dismissed";
+            kind: "handoff_requested" | "claimed" | "reassigned" | "handed_back" | "approval_decided" | "feedback_resolved" | "feedback_dismissed" | "channel_exception" | "delivery_failed" | "delivery_failure_cleared" | "held_reply_released" | "held_reply_discarded";
             /** Format: date-time */
             createdAt: string;
             /** @description The teammate who acted. Null when the agent acted, or the change came from a caller that is no teammate. */
@@ -7896,9 +8348,9 @@ export interface components {
             /** Format: uuid */
             conversationId: string;
             /** @enum {string} */
-            itemKind: "handoff" | "approval" | "negative_feedback";
+            itemKind: "handoff" | "approval" | "negative_feedback" | "delivery_failed";
             /** @enum {string} */
-            outcome: "handed_back" | "approval_decided" | "feedback_resolved" | "feedback_dismissed";
+            outcome: "handed_back" | "approval_decided" | "feedback_resolved" | "feedback_dismissed" | "held_reply_released" | "delivery_failure_cleared";
             /** Format: date-time */
             closedAt: string;
             /** @description The teammate who closed it. Null for a caller that is no teammate, or a user since deleted. */
@@ -9063,6 +9515,381 @@ export interface components {
          *     data: {"protocolVersion":1}
          */
         WorkspaceEventStream: string;
+        EmailDnsRecord: {
+            /** @enum {string} */
+            purpose: "dkim" | "spf" | "return_path" | "receiving_mx" | "dmarc";
+            /** @enum {string} */
+            type: "TXT" | "MX" | "CNAME";
+            name: string;
+            value: string;
+            priority?: number;
+            /** @enum {string} */
+            status: "pending" | "verified" | "failed" | "advisory";
+        };
+        EmailDomain: {
+            /** Format: uuid */
+            id: string;
+            domain: string;
+            registration: {
+                /**
+                 * @description `registering`: the provider has not answered yet; checking the domain finishes it. `needs_reconciliation`: the email provider already holds this domain, and only `reconcileEmailDomain` adopts that registration. `registered`: the provider holds the workspace's registration.
+                 * @enum {string}
+                 */
+                status: "registering" | "needs_reconciliation" | "registered";
+            };
+            sending: {
+                /** @enum {string} */
+                status: "pending" | "verified" | "failed";
+                /** Format: date-time */
+                checkedAt: string | null;
+            };
+            receiving: {
+                /** @enum {string} */
+                status: "not_requested" | "pending" | "verified" | "failed";
+                /** Format: date-time */
+                checkedAt: string | null;
+            };
+            records: components["schemas"]["EmailDnsRecord"][];
+        };
+        EmailMailboxSetupCheck: {
+            /** @enum {string} */
+            step: "base" | "plus_address";
+            /** Format: date-time */
+            startedAt: string;
+            /** @enum {string} */
+            status: "waiting" | "passed";
+            /** Format: date-time */
+            passedAt: string | null;
+            instructions: {
+                /** @description The mailbox's real address, or for `plus_address` a plus-addressed variant of it. */
+                sendTo: string;
+            };
+        };
+        EmailMailbox: {
+            /** Format: uuid */
+            id: string;
+            address: string;
+            displayName: string;
+            /** Format: uuid */
+            agentId: string | null;
+            /** Format: uuid */
+            domainId: string;
+            /** @description `<relay token>@<inbound domain>`, where the operator forwards the mailbox's mail. Returned only to settings readers of the owning workspace. */
+            relayAddress: string;
+            /** @enum {string} */
+            engagementMode: "operator_only" | "draft" | "auto";
+            enabled: boolean;
+            policyVersion: number;
+            threadSendBudget: number;
+            hourlyGenerationBudget: number;
+            silenceThresholdHours: number;
+            receiving: {
+                /** @enum {string} */
+                state: "waiting_for_first_message" | "ok" | "silent";
+                /** Format: date-time */
+                lastReceivedAt: string | null;
+            };
+            sending: {
+                /** @enum {string} */
+                state: "ok" | "not_verified" | "domain_removed";
+            };
+            plusAddressVerified: boolean;
+            setupCheck: components["schemas"]["EmailMailboxSetupCheck"] | null;
+        };
+        EmailChannelOverview: {
+            /** @description Whether this deployment has an email provider and an inbound domain. */
+            configured: boolean;
+            inboundDomain: string | null;
+            /** @description The engagement modes this deployment runs; empty when the channel is not configured. */
+            supportedModes: ("operator_only" | "draft" | "auto")[];
+            /**
+             * @description The mode a new mailbox gets when none is named; null when the channel is not configured.
+             * @enum {string|null}
+             */
+            defaultMode: "operator_only" | "draft" | "auto" | null;
+            domains: components["schemas"]["EmailDomain"][];
+            mailboxes: components["schemas"]["EmailMailbox"][];
+        };
+        EmailEvent: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** @enum {string} */
+            state: "pending" | "fetched" | "ingested" | "done" | "failed";
+            classification: string | null;
+            /** @enum {string|null} */
+            disposition: "ingest_only" | "run_review_turn" | "drop" | null;
+            reason: string | null;
+            sender: {
+                address: string | null;
+                displayName: string | null;
+            };
+            subject: string | null;
+            auth: {
+                spf: string;
+                dkim: string;
+                dmarc: string;
+            };
+            /** @enum {string} */
+            spamVerdict: "spam" | "not_spam" | "unknown";
+            /** Format: uuid */
+            conversationId: string | null;
+            threadConflict: boolean;
+            hasRaw: boolean;
+            retryable: boolean;
+            /**
+             * Format: uuid
+             * @description The mailbox that received it; null for mail a verified receiving domain accepted for an address no mailbox has.
+             */
+            mailboxId: string | null;
+        };
+        EmailEventPage: {
+            items: components["schemas"]["EmailEvent"][];
+            nextCursor: string | null;
+        };
+        EmailRawMessageView: {
+            /** @description A display-safe subset of the headers; relay and thread tokens never appear. */
+            headers: {
+                name: string;
+                value: string;
+            }[];
+            text: string | null;
+            /** @description Server-sanitized HTML for a sandboxed frame. */
+            sanitizedHtml: string | null;
+            truncated: boolean;
+            attachments: {
+                name: string;
+                contentType: string;
+                sizeBytes: number;
+            }[];
+        };
+        ConversationEmailFacts: {
+            mailbox: {
+                /** Format: uuid */
+                id: string;
+                address: string;
+                displayName: string;
+                /** @enum {string} */
+                engagementMode: "operator_only" | "draft" | "auto";
+            };
+            participant: {
+                address: string;
+                displayName: string | null;
+            };
+            latest: {
+                subject: string | null;
+                cc: string[];
+                /** Format: date-time */
+                inboundAt: string | null;
+            };
+            sending: {
+                /** @enum {string} */
+                state: "ok" | "not_verified" | "domain_removed";
+            };
+            sendBudget: {
+                used: number;
+                limit: number;
+                /** Format: date-time */
+                renewedAt: string | null;
+            };
+            messages: {
+                messageId: string;
+                /** @enum {string} */
+                direction: "inbound" | "outbound";
+                subject: string | null;
+                cc: string[];
+                attachments: {
+                    name: string;
+                    contentType: string;
+                    sizeBytes: number;
+                }[];
+                delivery: {
+                    /** @enum {string} */
+                    state: "queued" | "accepted" | "delivered" | "bounced" | "failed" | "uncertain" | "halted";
+                    failureCode: string | null;
+                } | null;
+                /**
+                 * Format: uuid
+                 * @description The event whose raw message an inbound message came from.
+                 */
+                rawDeliveryId: string | null;
+            }[];
+        };
+        CreateEmailMailboxRequest: {
+            address: string;
+            displayName: string;
+            /** Format: uuid */
+            agentId?: string | null;
+            /** @enum {string} */
+            engagementMode?: "operator_only" | "draft" | "auto";
+            threadSendBudget?: number;
+            hourlyGenerationBudget?: number;
+            silenceThresholdHours?: number;
+            autoOptIn?: boolean;
+        };
+        UpdateEmailMailboxRequest: {
+            displayName?: string;
+            /** Format: uuid */
+            agentId?: string | null;
+            /** @enum {string} */
+            engagementMode?: "operator_only" | "draft" | "auto";
+            threadSendBudget?: number;
+            hourlyGenerationBudget?: number;
+            silenceThresholdHours?: number;
+            autoOptIn?: boolean;
+            enabled?: boolean;
+            expectedPolicyVersion?: number;
+        };
+        StartEmailMailboxSetupCheckRequest: {
+            /** @enum {string} */
+            step: "base" | "plus_address";
+        };
+        AddEmailSendingDomainRequest: {
+            domain: string;
+        };
+        EnableEmailDirectReceivingRequest: {
+            confirmation: string;
+        };
+        DeliveryFailure: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            conversationId: string;
+            /**
+             * Format: uuid
+             * @description Null for a failure that names no message.
+             */
+            messageId: string | null;
+            /** @description The delivering channel's provider. */
+            provider: string;
+            /**
+             * @description `bounced`: bounced or suppressed. `failed`: refused or failed. `uncertain`: the outcome is unknown and nothing will send it again on its own. `halted`: it never went out, because the authority to send it was gone.
+             * @enum {string}
+             */
+            kind: "bounced" | "failed" | "uncertain" | "halted";
+            /** @description The provider's code, sanitized; never its bounce message. */
+            detailCode: string | null;
+            /** Format: date-time */
+            openedAt: string;
+            /** Format: date-time */
+            clearedAt: string | null;
+            /** @enum {string|null} */
+            clearReason: "acknowledged" | "later_delivery" | "provider_evidence" | "operator_resolved" | null;
+        };
+        DeliveryFailurePage: {
+            items: components["schemas"]["DeliveryFailure"][];
+            /** @description Pass back as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
+        };
+        ResolveDeliveryFailureRequest: {
+            /** @enum {string} */
+            decision: "marked_sent" | "resend";
+        };
+        /** @description The review turn's reasoning, as identifiers and codes; never prompt, completion or customer text. */
+        HeldReplyTrace: {
+            /**
+             * Format: uuid
+             * @description The review turn that wrote the draft.
+             */
+            turnId: string;
+            /** @description How the turn answered, as its answer-outcome code (for example `grounded_success`, `coverage_partial`, `no_context_refusal`); null when its record names none. */
+            outcome: string | null;
+            /**
+             * @description Whether the draft's claims are supported by the sources it cites; null when the turn did not check.
+             * @enum {string|null}
+             */
+            groundingVerdict: "grounded" | "degraded" | "no_support" | null;
+            /** @description How completely the turn covered the customer's question, as the producing channel's code. */
+            coverage: string;
+            /** @description Why the turn asked for a person; null when it did not. */
+            handoffReason: string | null;
+            /** @description The skills whose effects the turn was not allowed to run. */
+            suppressedEffects: {
+                skillName: string;
+            }[];
+        };
+        HeldReply: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            conversationId: string;
+            /**
+             * Format: uuid
+             * @description The agent whose review wrote the draft.
+             */
+            agentId: string | null;
+            /**
+             * @description `pending`: waiting for a teammate. `queued_auto`: queued to send automatically. `released`: sent as the agent wrote it. `edited`: sent as a teammate edited it. `discarded`: set aside by a teammate. `superseded`: replaced by a newer message, a takeover, an operator reply or a policy change.
+             * @enum {string}
+             */
+            state: "pending" | "queued_auto" | "released" | "edited" | "discarded" | "superseded";
+            /** @description The producing channel's code for why the reply was held. */
+            holdReason: string;
+            /** @description What the review turn found, as the producing channel's codes. */
+            facts: {
+                /**
+                 * @description Whether the draft rests on the workspace's documents; `unknown` when the turn could not tell.
+                 * @enum {string}
+                 */
+                grounding: "grounded" | "ungrounded" | "not_applicable" | "unknown";
+                /**
+                 * @description How completely the draft covers what the customer asked; `unavailable` and `not_assessed` when the turn could not tell.
+                 * @enum {string}
+                 */
+                coverage: "answered" | "partial" | "unanswered" | "unclear" | "unavailable" | "not_assessed";
+                handoff: {
+                    requested: boolean;
+                    reason: string | null;
+                };
+                /**
+                 * @description How the turn answered.
+                 * @enum {string}
+                 */
+                outcome: "answered" | "no_context" | "out_of_scope" | "unavailable";
+            };
+            /** @description The draft relies on an action the review turn was not allowed to run. */
+            dependsOnSuppressedAction: boolean;
+            suppressedEffects: {
+                skillName: string;
+            }[];
+            /** @description The agent's draft, kept as written after an edited release. */
+            draftText: string;
+            /** @description The teammate's text an edited release sent; null otherwise. */
+            editedText: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            decidedAt: string | null;
+            releaserUserId: string | null;
+            editorUserId: string | null;
+            /** @description Whether the conversation still waits for a teammate because of this reply. A discarded draft keeps it open until a teammate replies or takes over. */
+            attentionOpen: boolean;
+            /** @description The review turn's reasoning; null when its record is not readable. */
+            trace: components["schemas"]["HeldReplyTrace"] | null;
+        };
+        HeldReplyPage: {
+            items: components["schemas"]["HeldReply"][];
+            /** @description Pass back as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
+        };
+        CurrentHeldReplyResponse: {
+            /** @description The conversation's newest held reply, whatever its state; null when it has none. */
+            heldReply: components["schemas"]["HeldReply"] | null;
+        };
+        HeldReplyReleaseResult: {
+            heldReply: components["schemas"]["HeldReply"];
+            /**
+             * Format: uuid
+             * @description The message the release wrote: the agent's draft, or the teammate's edit.
+             */
+            messageId: string;
+            /** @enum {string} */
+            delivery: "queued";
+        };
+        ReleaseHeldReplyRequest: {
+            editedText?: string;
+        };
         PendingApprovalDecisionOption: {
             id: string;
             label: string;
@@ -19634,6 +20461,1184 @@ export interface operations {
             };
         };
     };
+    getEmailChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Email channel settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailChannelOverview"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createEmailMailbox: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEmailMailboxRequest"];
+            };
+        };
+        responses: {
+            /** @description Mailbox created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailMailbox"];
+                };
+            };
+            /** @description `invalid_address`, `auto_opt_in_required`, or a setting outside its bounds */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `mailbox_exists`, `domain_claimed_elsewhere` (names no other workspace), `domain_needs_reconciliation` (reconcile the domain first), `domain_removal_pending` or `engagement_mode_unavailable` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `provider_unavailable`: the email provider could not register the address's domain */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getEmailMailbox: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                mailboxId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mailbox */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailMailbox"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Mailbox not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    removeEmailMailbox: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                mailboxId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mailbox removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Mailbox not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateEmailMailbox: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                mailboxId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEmailMailboxRequest"];
+            };
+        };
+        responses: {
+            /** @description Mailbox updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailMailbox"];
+                };
+            };
+            /** @description `auto_opt_in_required`, or a setting outside its bounds */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Mailbox not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `stale_policy_version` or `engagement_mode_unavailable` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateEmailMailboxRelayToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                mailboxId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mailbox with its new relay address */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailMailbox"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Mailbox not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    startEmailMailboxSetupCheck: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                mailboxId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartEmailMailboxSetupCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Setup check started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailMailboxSetupCheck"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Mailbox not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listEmailMailboxEvents: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                disposition?: "ingest_only" | "run_review_turn" | "drop";
+                state?: "pending" | "fetched" | "ingested" | "done" | "failed";
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+                mailboxId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the event log */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailEventPage"];
+                };
+            };
+            /** @description `invalid_cursor`, or an invalid query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Mailbox not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listEmailChannelEvents: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                disposition?: "ingest_only" | "run_review_turn" | "drop";
+                state?: "pending" | "fetched" | "ingested" | "done" | "failed";
+                mailboxId?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the event log */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailEventPage"];
+                };
+            };
+            /** @description `invalid_cursor`, or an invalid query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    retryEmailInboundEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                deliveryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Retry accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailEvent"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Event not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `event_not_failed` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getEmailInboundRawMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                deliveryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sanitized raw message */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailRawMessageView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings read and conversation takeover permissions required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Event not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `raw_purged`: the raw message is no longer stored */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    addEmailSendingDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddEmailSendingDomainRequest"];
+            };
+        };
+        responses: {
+            /** @description Sending domain added, with the DNS records to publish */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailDomain"];
+                };
+            };
+            /** @description `invalid_domain` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `domain_claimed_elsewhere` (names no other workspace) or `domain_removal_pending`: the domain's removal is still being cleaned up at the provider */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `provider_unavailable` */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    verifyEmailDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                domainId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Domain with refreshed readiness */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailDomain"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Domain not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `domain_needs_reconciliation`: reconcile the domain first */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `provider_unavailable` */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reconcileEmailDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                domainId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Domain with its provider registration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailDomain"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Domain not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `domain_not_awaiting_reconciliation` (the provider has not reported the domain as already registered) or `domain_removal_pending`: a removal of the domain is still being cleaned up at the provider */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `provider_unavailable` */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    enableEmailDirectReceiving: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                domainId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnableEmailDirectReceivingRequest"];
+            };
+        };
+        responses: {
+            /** @description Domain with receiving requested */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailDomain"];
+                };
+            };
+            /** @description `confirmation_mismatch` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Domain not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `domain_needs_reconciliation`: reconcile the domain first */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `provider_unavailable` */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    removeEmailDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                domainId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Domain removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Domain not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `domain_has_mailboxes`: remove the domain's mailboxes first */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `email_channel_not_configured`: this deployment has no email provider */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getConversationEmailFacts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Email conversation facts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationEmailFacts"];
+                };
+            };
+            /** @description Invalid conversation id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not an email conversation of this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listAgentWebhookSkills: {
         parameters: {
             query?: never;
@@ -23231,6 +25236,446 @@ export interface operations {
                 };
             };
             /** @description Conversation ownership changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDeliveryFailures: {
+        parameters: {
+            query?: {
+                state?: "open" | "all";
+                agentId?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Delivery failures */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryFailurePage"];
+                };
+            };
+            /** @description An invalid query or cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    acknowledgeDeliveryFailure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                failureId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Failure acknowledged */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryFailure"];
+                };
+            };
+            /** @description Invalid failure id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not a delivery failure of this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `already_cleared` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resolveDeliveryFailure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                failureId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveDeliveryFailureRequest"];
+            };
+        };
+        responses: {
+            /** @description Failure resolved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryFailure"];
+                };
+            };
+            /** @description Invalid failure id or decision */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not a delivery failure of this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `not_resolvable`: the failure is cleared or its kind does not admit the decision; `email_sending_not_verified`: the channel cannot send yet */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listHeldReplies: {
+        parameters: {
+            query?: {
+                attention?: "open" | "all";
+                agentId?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Held replies */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeldReplyPage"];
+                };
+            };
+            /** @description An invalid query or cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getCurrentHeldReply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current held reply */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentHeldReplyResponse"];
+                };
+            };
+            /** @description Invalid conversation id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not a conversation of this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    releaseHeldReply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                heldReplyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ReleaseHeldReplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Held reply released and its delivery queued */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeldReplyReleaseResult"];
+                };
+            };
+            /** @description Invalid ids or edit */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not a conversation or held reply of this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `held_reply_not_pending`: the held reply was already decided or replaced; `details.heldReply` carries it as it is now; `ownership_changed`: the conversation changed hands since the draft was held; `policy_changed`: the channel's settings changed since the draft was held; `channel_not_ready`: the conversation's channel cannot send it; `email_sending_not_verified`: the sending domain is not verified */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    discardHeldReply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                heldReplyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Held reply discarded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeldReply"];
+                };
+            };
+            /** @description Invalid ids */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not a conversation or held reply of this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `held_reply_not_pending`: the held reply was already decided or replaced; `details.heldReply` carries it as it is now */
             409: {
                 headers: {
                     [name: string]: unknown;

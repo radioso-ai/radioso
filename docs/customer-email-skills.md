@@ -14,6 +14,11 @@ through `backend/src/modules/mail/`. Customer email
 connections are for customer-authorized outbound email that can later be exposed
 as constrained agent skills.
 
+This is a different surface from the [email channel](email-channel.md),
+where a customer forwards their own mailbox to Radioso and an agent answers
+them there; a customer email skill sends *from* a mailbox your workspace
+connected, as an action inside a routine.
+
 ## Setup
 
 Customer email starts with OAuth. Set the shared OAuth encryption and app URL

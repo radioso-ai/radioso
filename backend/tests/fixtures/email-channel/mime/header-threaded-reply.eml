@@ -1,0 +1,32 @@
+Return-Path: <alice@example.test>
+Delivered-To: QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+Received: from mx.in.relay.test (mx.in.relay.test [192.0.2.50])
+	by inbound.in.relay.test with ESMTPS id 5d9a3f1c4e
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 14:05:12 +0000 (UTC)
+X-Forwarded-To: QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+X-Forwarded-For: alice@example.test QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+Delivered-To: support@customer.test
+Received: from mail-sor-f41.example.test (mail-sor-f41.example.test [203.0.113.41])
+	by mx.google-workspace.example.test with SMTP id f2b4c0d8a1
+	for <support@customer.test>;
+	Sat, 03 Oct 2026 14:05:07 +0000 (UTC)
+Message-ID: <msg-0003@example.test>
+In-Reply-To: <out-0001@in.relay.test>
+References: <msg-0001@example.test> <out-0001@in.relay.test>
+From: Alice Carter <alice@example.test>
+To: support@customer.test
+Subject: Re: Question about my account
+Date: Sat, 03 Oct 2026 14:05:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+That worked, thank you! The billing address field was hiding under the
+"Advanced" tab.
+
+On Sat, Oct 3, 2026 at 1:50 PM, Support <support@customer.test> wrote:
+> Hi Alice, you can update your billing address from Settings > Billing >
+> Advanced. Let us know if you still can't find it.
+
+Alice

@@ -108,6 +108,20 @@ export class ActionRequestRepository {
     return { id: existing.id, duplicate: true };
   }
 
+  /** The idempotency keys among `keys` whose request is still due or being dispatched. */
+  async liveIdempotencyKeys(keys: readonly string[]): Promise<ReadonlySet<string>> {
+    if (keys.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom("routine_action_requests")
+      .select("idempotency_key")
+      .where("idempotency_key", "in", keys)
+      .where("status", "in", ["pending", "in_progress"])
+      .execute();
+    return new Set(rows.flatMap((row) => (row.idempotency_key === null ? [] : [row.idempotency_key])));
+  }
+
   /**
    * Atomically claim up to `limit` due requests for dispatch: each is moved
    * `pending` → `in_progress` (incrementing `attempts`) in a single `UPDATE … WHERE id

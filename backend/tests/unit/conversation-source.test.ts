@@ -64,6 +64,14 @@ describe("conversationSource", () => {
     }
   });
 
+  it("reads the email channel as a human caller without making it an agent channel", () => {
+    // An email sender is a person writing from a mail client; automated mail is dropped by the
+    // inbound classification before any turn, so it never needs an agent caller kind.
+    expect(callerKindForSourceChannel("email")).toBe("human");
+    expect(AGENT_SOURCE_CHANNELS).toEqual(["mcp", "agent_api"]);
+    expect(AGENT_SOURCE_CHANNELS).not.toContain("email");
+  });
+
   it("calls an unclassified, absent, or empty channel a human", () => {
     // The column is untyped `TEXT` with no constraint, so this default is reached by any channel
     // added without a decision here. `callerKind` scopes agent-only behaviour, and a person

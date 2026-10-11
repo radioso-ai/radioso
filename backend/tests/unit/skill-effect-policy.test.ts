@@ -26,4 +26,10 @@ describe("resolveSkillEffectPolicy", () => {
   it("honors an explicit suppressed request in safe-test mode", () => {
     expect(resolveSkillEffectPolicy("safe_test", "suppressed")).toBe("suppressed");
   });
+
+  it("is always suppressed for a review turn, even when allowed is requested", () => {
+    expect(resolveSkillEffectPolicy("review")).toBe("suppressed");
+    expect(resolveSkillEffectPolicy("review", "suppressed")).toBe("suppressed");
+    expect(resolveSkillEffectPolicy("review", "allowed")).toBe("suppressed");
+  });
 });

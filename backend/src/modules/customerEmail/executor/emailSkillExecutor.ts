@@ -97,6 +97,9 @@ export class EmailSkillExecutor implements SkillExecutorPort {
       connectionId: definition.connectionId,
       mode: definition.mode,
       message,
+      ...(typeof invocation.context?.idempotencyKey === "string"
+        ? { idempotencyKey: invocation.context.idempotencyKey }
+        : {}),
     });
     await this.recordActivity(invocation, definition, result.outcome, message, {
       providerMessageId: result.providerMessageId,

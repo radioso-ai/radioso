@@ -212,6 +212,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
           turn,
           agentId: turn.agent.id,
           sessionId: turn.sessionId,
+          ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
           // In the chat subsystem the routine state machine is keyed by the
           // conversation id, which TurnContext carries as `sessionId`. Surface it
           // under the name the action outbox + contact-delivery resolver expect so a

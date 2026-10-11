@@ -14,7 +14,7 @@ import type {
 
 export const NOTIFY_SKILLS_ADAPTER = "notify";
 
-export interface NotifyOutboxPort {
+interface NotifyOutboxPort {
   enqueue(input: EnqueueActionRequestInput): Promise<{ id: string; duplicate: boolean }>;
 }
 
@@ -79,6 +79,10 @@ export class NotifyExecutor implements SkillExecutorPort {
       message: message.trim(),
       ...(isNonEmptyString(email) ? { email: email.trim() } : {}),
     };
+    // An approval resume supplies the decision-scoped key because its database transaction may
+    // roll back after this enqueue; prefer that stable identity so the retry is a no-op. Every
+    // other routine turn uses the message/payload fallback below.
+    //
     // Dedupe a re-enqueue of the *same* contact request (e.g. a retried turn)
     // without collapsing distinct submissions. The routine dispatch path — the
     // only production caller, see RoutineSkillExecutorDispatcher — always threads
@@ -109,6 +113,7 @@ export class NotifyExecutor implements SkillExecutorPort {
     // made every contact request after the first for an agent collide and
     // silently drop.
     const idempotencyScope = conversationId ?? agentId;
+    const explicitIdempotencyKey = stringContext(invocation, "idempotencyKey");
     const messageId = invocationMessageId(invocation);
     const idempotencyDiscriminator = messageId
       ? `${messageId}:${payloadHash(payload)}`
@@ -118,7 +123,9 @@ export class NotifyExecutor implements SkillExecutorPort {
       payload,
       workspaceId,
       conversationId,
-      idempotencyKey: `notify:${idempotencyScope}:${invocation.skill.name}:${idempotencyDiscriminator}`,
+      idempotencyKey: explicitIdempotencyKey
+        ? `notify:${explicitIdempotencyKey}`
+        : `notify:${idempotencyScope}:${invocation.skill.name}:${idempotencyDiscriminator}`,
       // Routing provenance, not domain data — kept off the payload so the drain-time
       // delivery resolver can prefer this named skill's own config (see
       // ConfiguredContactDeliveryResolver) without inferring it from an idempotency key.

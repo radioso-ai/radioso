@@ -12,6 +12,11 @@ import type {
 } from "@radioso/conversation-contract";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 
+const idempotencyKeyFrom = (input: ToolCallInput): string | undefined => {
+  const value = input.context?.idempotencyKey;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+};
+
 /**
  * Resolves the auth a connection presents to its MCP server. Pluggable so the
  * spine stays auth-method-agnostic: static bearer token (P1, header-based) and
@@ -202,10 +207,12 @@ export class SdkMcpToolService implements ToolService {
     let result: McpCallToolResult;
     try {
       const client = await this.getClient();
+      const idempotencyKey = idempotencyKeyFrom(input);
       result = (await client.callTool(
         {
           name: input.toolName,
           arguments: (input.input ?? {}) as Record<string, unknown>,
+          ...(idempotencyKey ? { _meta: { "io.radioso/idempotencyKey": idempotencyKey } } : {}),
         },
         undefined,
         { timeout: this.callTimeoutMs, signal: input.context?.signal },

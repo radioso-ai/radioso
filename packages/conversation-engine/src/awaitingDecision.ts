@@ -61,6 +61,9 @@ export const resumeAwaitingDecision = async (input: {
     turn: input.turn,
     state: resumedState,
     decisionTurn: true,
+    ...(input.decision.idempotencyKey
+      ? { skillDispatchIdempotencyScope: input.decision.idempotencyKey }
+      : {}),
     ...(input.steeringResolver ? { steeringResolver: input.steeringResolver } : {}),
   });
   return {

@@ -22,10 +22,9 @@ const skill = {
 const hash = (payload: Record<string, unknown>): string =>
   createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 
-// The real routine dispatcher only supplies workspaceId/agentId/sessionId →
-// conversationId in the invocation context (see RoutineSkillExecutorDispatcher).
-// It never injects a requestId, so the idempotency key must be derived from the
-// conversation + payload, not a caller-supplied request id.
+// Ordinary routine dispatch supplies workspaceId/agentId/sessionId → conversationId in the
+// invocation context. Approval resumes additionally supply a decision-scoped idempotency key;
+// this helper covers the ordinary-turn fallback.
 const dispatcherContext = (conversationId: string) => ({
   workspaceId: "ws_1",
   agentId: "agent_1",
@@ -103,6 +102,28 @@ describe("NotifyExecutor", () => {
     expect(enqueued.skillName).toBe("contact_sales");
     // Routing provenance, not domain data — the payload stays message/email-shaped.
     expect(enqueued.payload).not.toHaveProperty("skillName");
+  });
+
+  it("prefers the approval decision key when a resume supplies one", async () => {
+    const enqueue = vi.fn(async () => ({ id: "action_1", duplicate: false }));
+    const executor = new NotifyExecutor({
+      skills: { findByName: async () => skill },
+      outbox: { enqueue },
+    });
+
+    await executor.dispatch({
+      skill: { name: "contact_human" },
+      collected: { message: "Please call me" },
+      context: {
+        ...dispatcherContextWithTurn("conv_1", "msg_1"),
+        idempotencyKey: "approval-decision:decision-1:step:notify",
+      },
+      emit: { emitStatus: async () => undefined, emitCustom: async () => undefined },
+    });
+
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      idempotencyKey: "notify:approval-decision:decision-1:step:notify",
+    }));
   });
 
   it("does not collapse distinct contact requests across conversations or messages", async () => {

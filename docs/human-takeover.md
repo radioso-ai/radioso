@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations, suppressing AI while handling manual responses, and reading who did what to a conversation."
-last_updated: 2026-10-05
+last_updated: 2026-10-11
 ---
 
 # Human Takeover
@@ -451,7 +451,9 @@ pending decision, and operators get an `approval.request` for it, as they do whe
 turn reaches a gate. The decision is what the resumed turn answers, so the visitor's last
 message never makes the routine step aside; if the routine can neither carry on, park, nor
 end, the decision fails and stays pending. A gated side effect runs as an idempotent
-outbox action, never inline.
+outbox action. Skills after the gate receive a stable key for the decision and routine
+step. An effect-owning adapter uses that key when it queues an outbox action or calls a
+provider, so retrying a resume after a transaction rollback does not repeat the effect.
 The same transaction records the teammate who decided and the option they chose
 as an `approval_decided` [activity](#conversation-activity) event.
 

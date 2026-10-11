@@ -57,6 +57,30 @@ describe("SdkMcpToolService", () => {
     await service.close();
   });
 
+  it("sends an invocation idempotency key as MCP request metadata", async () => {
+    let receivedMetadata: Record<string, unknown> | undefined;
+    const service = await serviceFor([
+      {
+        name: "book",
+        respond: (_args, metadata) => {
+          receivedMetadata = metadata;
+          return { content: [{ type: "text", text: "booked" }] };
+        },
+      },
+    ]);
+
+    await service.callTool({
+      toolName: "book",
+      input: { when: "tue" },
+      context: { idempotencyKey: "approval-decision:decision-1:step:book" },
+    });
+
+    expect(receivedMetadata).toEqual({
+      "io.radioso/idempotencyKey": "approval-decision:decision-1:step:book",
+    });
+    await service.close();
+  });
+
   it("maps an isError result to a failed outcome", async () => {
     const service = await serviceFor([
       { name: "book", respond: () => ({ content: [{ type: "text", text: "slot taken" }], isError: true }) },

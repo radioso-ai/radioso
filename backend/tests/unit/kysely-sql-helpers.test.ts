@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
+import { pgVectorCosineDistance, pgVectorText, serializePgVector, toPgVector } from "../../src/shared/infra/kysely/pgVectorSql.js";
 import { anyOf, castText, clockTimestamp, consumeAbuseControlEntry, jsonbConcat, jsonbKeyText, jsonbSet, optionalTimestampMatch, setLocal, timestampMatchOrAbsent, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
 
 // Compilation is synchronous and never touches the pool, so a Kysely bound to a dummy pool
@@ -10,6 +11,19 @@ import { anyOf, castText, clockTimestamp, consumeAbuseControlEntry, jsonbConcat,
 const db = new Kysely<DB>({ dialect: new PostgresDialect({ pool: {} as Pool }) });
 
 describe("kysely sqlHelpers", () => {
+  it("emits parameterized pgvector casts and cosine distance", () => {
+    const vector = serializePgVector([1, 0, -0.5]);
+    expect(vector).toBe("[1,0,-0.5]");
+    expect(toPgVector(vector).compile(db)).toMatchObject({
+      sql: "$1::vector",
+      parameters: [vector],
+    });
+    expect(pgVectorText(sql.ref("embedding")).compile(db).sql).toBe('"embedding"::text');
+    const distance = pgVectorCosineDistance(sql.ref("stored"), toPgVector(vector)).compile(db);
+    expect(distance.sql).toBe('"stored" <=> $1::vector');
+    expect(distance.parameters).toEqual([vector]);
+  });
+
   it("setLocal emits a transaction-scoped SET LOCAL with no parameters", () => {
     const compiled = setLocal("statement_timeout", "0").compile(db);
 

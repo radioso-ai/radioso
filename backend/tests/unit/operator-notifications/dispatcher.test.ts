@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { ActionDispatchSkippedError } from "../../../src/shared/domain/actionDispatchOutcome.js";
 import {
   OperatorNotificationDispatcher,
   type OperatorNotification,
@@ -57,5 +58,24 @@ describe("OperatorNotificationDispatcher", () => {
       }),
       "Operator notification sink failed",
     );
+  });
+
+  it("keeps a skipped sink terminal when no sink delivered", async () => {
+    const skipped: OperatorNotificationSink = {
+      deliver: vi.fn(async () => { throw new ActionDispatchSkippedError("mail_not_dispatched:driver=log"); }),
+    };
+    const dispatcher = new OperatorNotificationDispatcher([skipped]);
+
+    await expect(dispatcher.dispatch(notification, context)).rejects.toThrow("mail_not_dispatched:driver=log");
+  });
+
+  it("does not turn a delivered notification into a retry when another sink skips", async () => {
+    const skipped: OperatorNotificationSink = {
+      deliver: vi.fn(async () => { throw new ActionDispatchSkippedError("mail_not_dispatched:driver=log"); }),
+    };
+    const delivered: OperatorNotificationSink = { deliver: vi.fn(async () => {}) };
+    const dispatcher = new OperatorNotificationDispatcher([skipped, delivered]);
+
+    await expect(dispatcher.dispatch(notification, context)).resolves.toBeUndefined();
   });
 });

@@ -10,11 +10,13 @@ import {
   resolveConversationLink,
   type ConversationLinkResolver,
 } from "../../../../shared/domain/conversationLinkResolver.js";
+import { ActionDispatchSkippedError } from "../../../../shared/domain/actionDispatchOutcome.js";
 import type {
   ContactNotificationMailer,
   ContactWebhookHttpClient,
   RoutedContactRecipientResolver,
 } from "./contactSendActionHandler.js";
+import { mailDeliverySkipReason } from "./contactSendActionHandler.js";
 
 /** What this sink logs. Lines name the route and counts, never an address or a webhook URL. */
 interface OperatorNotificationSinkLogger {
@@ -137,8 +139,8 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         }
       : this.routineEndingDelivery(notification, context, openLine, links);
 
-    await Promise.all([
-      ...target.emails.map((to) =>
+    const [emailResults] = await Promise.all([
+      Promise.all(target.emails.map((to) =>
         this.mailer.send({
           to,
           ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),
@@ -146,6 +148,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
           text: delivery.text,
           idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(to)}`,
         })),
+      ),
       target.webhook ? this.postWebhook({
         webhook: target.webhook,
         payload: delivery.webhookPayload,
@@ -153,6 +156,12 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         missingClientMessage: TRANSPORT_TEXT_BY_KIND[notification.kind].missingWebhookClientMessage,
       }) : Promise.resolve(),
     ]);
+    if (!target.webhook) {
+      const skipReason = mailDeliverySkipReason(emailResults);
+      if (skipReason) {
+        throw new ActionDispatchSkippedError(skipReason);
+      }
+    }
   }
 
   /**

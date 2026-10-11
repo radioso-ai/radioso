@@ -1,3 +1,4 @@
+import { ActionDispatchSkippedError } from "../../shared/domain/actionDispatchOutcome.js";
 import type {
   OperatorNotification,
   OperatorNotificationContext,
@@ -18,8 +19,15 @@ export class OperatorNotificationDispatcher {
       this.sinks.map((sink) => sink.deliver(notification, context)),
     );
     const failures: unknown[] = [];
+    const skips: ActionDispatchSkippedError[] = [];
+    let delivered = false;
     for (const result of results) {
       if (result.status === "fulfilled") {
+        delivered = true;
+        continue;
+      }
+      if (result.reason instanceof ActionDispatchSkippedError) {
+        skips.push(result.reason);
         continue;
       }
       failures.push(result.reason);
@@ -36,6 +44,9 @@ export class OperatorNotificationDispatcher {
         failures.map((reason) => (reason instanceof Error ? reason : new Error(String(reason)))),
         "Operator notification delivery failed",
       );
+    }
+    if (!delivered && skips.length > 0) {
+      throw skips[0];
     }
   }
 }

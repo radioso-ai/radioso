@@ -35,6 +35,8 @@ export interface EmailSendResult {
    * report false, so no caller can claim an unsent message reached its recipient.
    */
   dispatched: boolean;
+  /** The configured driver that produced this result, when the driver identifies itself. */
+  driver?: string;
 }
 
 export interface EmailDriver {
@@ -66,7 +68,7 @@ export class EmailService {
 
 class NoopEmailDriver implements EmailDriver {
   async send(_message: EmailMessage): Promise<EmailSendResult> {
-    return { dispatched: false };
+    return { dispatched: false, driver: "noop" };
   }
 }
 
@@ -97,7 +99,7 @@ class LogEmailDriver implements EmailDriver {
       metadata: redactSensitiveEmailMetadata(message.metadata),
       idempotencyKey: message.idempotencyKey ?? null,
     });
-    return { dispatched: false };
+    return { dispatched: false, driver: "log" };
   }
 }
 

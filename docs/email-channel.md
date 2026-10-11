@@ -1,7 +1,7 @@
 ---
 title: "Email Channel"
 description: "Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies or let grounded ones send themselves, bound what runs without a person, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
-last_updated: 2026-10-07
+last_updated: 2026-10-11
 ---
 
 # Email Channel
@@ -55,7 +55,8 @@ anything else on your domain.
 The channel reaches Resend with `RESEND_CHANNEL_API_KEY`, or with
 `RESEND_MAIL_API_KEY`, the key transactional mail uses, when the channel has
 none of its own. With `EMAIL_CHANNEL_PROVIDER=resend` and neither key set,
-the backend refuses to start.
+the backend starts with the channel off and logs the missing setting at
+error level; the same holds for a missing inbound domain or webhook secret.
 
 **Direct receiving** is an advanced option for a customer-owned domain or
 subdomain: you point its MX record at Radioso instead of forwarding. Typing
@@ -660,7 +661,8 @@ reads the channel's inputs from the target GitHub environment and hands each
 one to Terraform only when it's set, so an environment that sets none of them
 keeps the channel off. Setting `EMAIL_CHANNEL_PROVIDER` without
 `EMAIL_CHANNEL_INBOUND_DOMAIN` and `EMAIL_CHANNEL_WEBHOOK_SECRET` stops the
-run before the plan, since the backend won't boot with that combination.
+run before the plan, so a deploy never ships a channel that would come up
+switched off for want of a setting.
 
 - Variables: `EMAIL_CHANNEL_PROVIDER`, `EMAIL_CHANNEL_INBOUND_DOMAIN`,
   `EMAIL_CHANNEL_WORKERS_ENABLED`,

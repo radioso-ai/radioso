@@ -59,18 +59,23 @@ export interface AutoTopUpRepository {
   /** `pending` + `paid` rows for this account/period -- the sweep's monthly-cap count, and the
    *  same figure `/me` reports back as `packsThisPeriod`. */
   countForPeriod(accountId: string, periodStart: string): Promise<number>;
+  /** Monotonic count of settled packs for the account. The dispatcher snapshots this before
+   *  evaluating usage, then gives it back to `claimPending` so a claim based on usage from before
+   *  another pack settled can be rejected under the per-account lock. */
+  getPaidPackRevision(accountId: string): Promise<number>;
   /**
    * Atomically claims a pending slot for one pack this period, honoring the pending guard (at
-   * most one in-flight row per account), the monthly cap, and the failure cooldown. Returns the
-   * new row's id, or `null` when none of the conditions hold -- including when a concurrent
-   * caller already claimed one, which is exactly how two sweeps racing the same account produce
-   * only one invoice.
+   * most one in-flight row per account), the monthly cap, the failure cooldown, and the paid-pack
+   * revision captured before the caller evaluated usage. Returns the new row's id, or `null` when
+   * none of the conditions hold -- including when another pack settled after the caller's usage
+   * snapshot.
    */
   claimPending(input: {
     accountId: string;
     periodStart: string;
     maxPacksPerMonth: number;
     cooldownMs: number;
+    paidPackRevision: number;
   }): Promise<string | null>;
   findById(id: string): Promise<AutoTopUpRow | null>;
   markInvoiceCreated(input: { id: string; stripeInvoiceId: string }): Promise<void>;
@@ -115,6 +120,14 @@ export interface AutoTopUpRepository {
   /** Called only from the webhook, on a failed charge. Never called for an operator's own
    *  opt-out. */
   disable(input: { accountId: string; reason: "payment_failed" }): Promise<void>;
+}
+
+interface ClaimPendingInput {
+  accountId: string;
+  periodStart: string;
+  maxPacksPerMonth: number;
+  cooldownMs: number;
+  paidPackRevision: number;
 }
 
 const mapSettingsRow = (row: {
@@ -235,12 +248,17 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
     return Number(row?.count ?? 0);
   }
 
-  async claimPending(input: {
-    accountId: string;
-    periodStart: string;
-    maxPacksPerMonth: number;
-    cooldownMs: number;
-  }): Promise<string | null> {
+  async getPaidPackRevision(accountId: string): Promise<number> {
+    const row = await this.db
+      .selectFrom("ee_billing_auto_top_ups")
+      .select(sql<string>`count(*)`.as("count"))
+      .where("account_id", "=", accountId)
+      .where("status", "=", "paid")
+      .executeTakeFirst();
+    return Number(row?.count ?? 0);
+  }
+
+  async claimPending(input: ClaimPendingInput): Promise<string | null> {
     const root = this.db;
     return root.transaction().execute(async (trx) => {
       // Scoped to this account only (a distinct salt from `usageLimitService`'s own
@@ -251,38 +269,13 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
       // inserted and returns null instead of racing it.
       await sql`select pg_advisory_xact_lock(hashtextextended(${input.accountId}, 1))`.execute(trx);
 
-      const pending = await trx
-        .selectFrom("ee_billing_auto_top_ups")
-        .select("id")
-        .where("account_id", "=", input.accountId)
-        .where("status", "=", "pending")
-        .executeTakeFirst();
-      if (pending) {
-        return null;
-      }
-
-      const countRow = await trx
-        .selectFrom("ee_billing_auto_top_ups")
-        .select(sql<string>`count(*)`.as("count"))
-        .where("account_id", "=", input.accountId)
-        .where("period_start", "=", sql<string>`${input.periodStart}::date`)
-        .where("status", "in", ["pending", "paid"])
-        .executeTakeFirst();
-      if (Number(countRow?.count ?? 0) >= input.maxPacksPerMonth) {
-        return null;
-      }
-
-      const recentFailure = await trx
-        .selectFrom("ee_billing_auto_top_ups")
-        .select("id")
-        // `updated_at`, not `created_at`: a row can sit `pending` for hours (re-driven, or
-        // waiting out the window) before it resolves to `failed`, and the cooldown must count
-        // from when it actually failed, not from a claim that may be a day old by then.
-        .where("account_id", "=", input.accountId)
-        .where("status", "=", "failed")
-        .where("updated_at", ">", sql<Date>`now() - (${input.cooldownMs} * interval '1 millisecond')`)
-        .executeTakeFirst();
-      if (recentFailure) {
+      const claimState = await this.readClaimState(trx, input);
+      if (
+        claimState.hasPending ||
+        claimState.paidPackRevision !== input.paidPackRevision ||
+        claimState.packsThisPeriod >= input.maxPacksPerMonth ||
+        claimState.hasRecentFailure
+      ) {
         return null;
       }
 
@@ -298,6 +291,47 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
         .execute();
       return id;
     });
+  }
+
+  /**
+   * Reads every claim guard from one PostgreSQL statement. At READ COMMITTED, individual
+   * statements can each observe a different committed state; one snapshot guarantees a row that
+   * becomes paid during a claim is seen either as its earlier pending/recently-failed state or as
+   * the advanced paid-pack revision.
+   */
+  async readClaimState(
+    trx: EeDb,
+    input: ClaimPendingInput,
+  ): Promise<{ hasPending: boolean; paidPackRevision: number; packsThisPeriod: number; hasRecentFailure: boolean }> {
+    const result = await sql<{
+      has_pending: boolean;
+      paid_pack_revision: string;
+      packs_this_period: string;
+      has_recent_failure: boolean;
+    }>`
+      SELECT
+        COALESCE(bool_or(status = 'pending'), false) AS has_pending,
+        count(*) FILTER (WHERE status = 'paid') AS paid_pack_revision,
+        count(*) FILTER (
+          WHERE period_start = ${input.periodStart}::date AND status IN ('pending', 'paid')
+        ) AS packs_this_period,
+        COALESCE(
+          bool_or(status = 'failed' AND updated_at > now() - (${input.cooldownMs} * interval '1 millisecond')),
+          false
+        ) AS has_recent_failure
+      FROM ee_billing_auto_top_ups
+      WHERE account_id = ${input.accountId}
+    `.execute(trx);
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error("claimPending: aggregate guard query returned no row");
+    }
+    return {
+      hasPending: row.has_pending,
+      paidPackRevision: Number(row.paid_pack_revision),
+      packsThisPeriod: Number(row.packs_this_period),
+      hasRecentFailure: row.has_recent_failure,
+    };
   }
 
   async findById(id: string): Promise<AutoTopUpRow | null> {
@@ -398,4 +432,3 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
       .execute();
   }
 }
-

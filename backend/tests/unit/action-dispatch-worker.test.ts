@@ -14,7 +14,7 @@ const createEmitSpy = () => vi.fn(async (_event: QueueStateTelemetryEvent) => un
 
 describe("ActionDispatchWorker queue-depth observability", () => {
   it("emits a pending-depth telemetry event on every successful drain, even when idle", async () => {
-    const dispatchPending = vi.fn(async () => ({ dispatched: 0, retried: 0, failed: 0 }));
+    const dispatchPending = vi.fn(async () => ({ dispatched: 0, retried: 0, failed: 0, skipped: 0 }));
     const oldestPendingCreatedAt = new Date(Date.now() - 90_000);
     const depthSnapshot = {
       getPendingDepthSnapshot: vi.fn(async () => ({
@@ -42,7 +42,7 @@ describe("ActionDispatchWorker queue-depth observability", () => {
   });
 
   it("reports zero age when nothing is pending", async () => {
-    const dispatchPending = vi.fn(async () => ({ dispatched: 1, retried: 0, failed: 0 }));
+    const dispatchPending = vi.fn(async () => ({ dispatched: 1, retried: 0, failed: 0, skipped: 0 }));
     const depthSnapshot = {
       getPendingDepthSnapshot: vi.fn(async () => ({
         pendingCount: 0,
@@ -63,7 +63,7 @@ describe("ActionDispatchWorker queue-depth observability", () => {
   });
 
   it("still returns the dispatch result when the depth snapshot query fails", async () => {
-    const dispatchPending = vi.fn(async () => ({ dispatched: 2, retried: 0, failed: 0 }));
+    const dispatchPending = vi.fn(async () => ({ dispatched: 2, retried: 0, failed: 0, skipped: 0 }));
     const depthSnapshot = {
       getPendingDepthSnapshot: vi.fn(async () => {
         throw new Error("db unreachable");
@@ -77,27 +77,27 @@ describe("ActionDispatchWorker queue-depth observability", () => {
 
     const result = await worker.drain();
 
-    expect(result).toEqual({ dispatched: 2, retried: 0, failed: 0 });
+    expect(result).toEqual({ dispatched: 2, retried: 0, failed: 0, skipped: 0 });
     expect(emit).not.toHaveBeenCalled();
   });
 
   it("does nothing extra when no depth snapshot port is configured", async () => {
-    const dispatchPending = vi.fn(async () => ({ dispatched: 0, retried: 0, failed: 0 }));
+    const dispatchPending = vi.fn(async () => ({ dispatched: 0, retried: 0, failed: 0, skipped: 0 }));
     const worker = new ActionDispatchWorker({ dispatchPending }, { logger: silentLogger });
 
-    await expect(worker.drain()).resolves.toEqual({ dispatched: 0, retried: 0, failed: 0 });
+    await expect(worker.drain()).resolves.toEqual({ dispatched: 0, retried: 0, failed: 0, skipped: 0 });
   });
 });
 
 describe("ActionDispatchWorker", () => {
   it("drains by delegating to the dispatcher and returns the batch result", async () => {
-    const dispatchPending = vi.fn(async () => ({ dispatched: 2, retried: 0, failed: 1 }));
+    const dispatchPending = vi.fn(async () => ({ dispatched: 2, retried: 0, failed: 1, skipped: 0 }));
     const worker = new ActionDispatchWorker({ dispatchPending }, { logger: silentLogger, batchSize: 7 });
 
     const result = await worker.drain();
 
     expect(dispatchPending).toHaveBeenCalledWith(7);
-    expect(result).toEqual({ dispatched: 2, retried: 0, failed: 1 });
+    expect(result).toEqual({ dispatched: 2, retried: 0, failed: 1, skipped: 0 });
   });
 
   it("skips an overlapping drain while one is already in flight", async () => {
@@ -107,7 +107,7 @@ describe("ActionDispatchWorker", () => {
     });
     const dispatchPending = vi.fn(async () => {
       await gate;
-      return { dispatched: 1, retried: 0, failed: 0 };
+      return { dispatched: 1, retried: 0, failed: 0, skipped: 0 };
     });
     const worker = new ActionDispatchWorker({ dispatchPending }, { logger: silentLogger });
 
@@ -117,7 +117,7 @@ describe("ActionDispatchWorker", () => {
     expect(second).toBeNull();
     expect(dispatchPending).toHaveBeenCalledTimes(1);
     release();
-    expect(await first).toEqual({ dispatched: 1, retried: 0, failed: 0 });
+    expect(await first).toEqual({ dispatched: 1, retried: 0, failed: 0, skipped: 0 });
   });
 
   it("swallows a drain error (logs it) so the poll loop survives", async () => {

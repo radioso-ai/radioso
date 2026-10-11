@@ -79,7 +79,7 @@ describe("mail service", () => {
 
     const result = await service.send({ to: "ada@example.com", subject: "Hi", text: "Hello" });
 
-    expect(result).toEqual({ dispatched: true });
+    expect(result).toEqual({ dispatched: true, driver: "resend" });
   });
 
   it("reports an undispatched message when the log driver only records it", async () => {
@@ -88,7 +88,7 @@ describe("mail service", () => {
 
     const result = await service.send({ to: "ada@example.com", subject: "Hi", text: "Hello" });
 
-    expect(result).toEqual({ dispatched: false });
+    expect(result).toEqual({ dispatched: false, driver: "log" });
   });
 
   it("reports an undispatched message when the noop driver discards it", async () => {
@@ -96,7 +96,7 @@ describe("mail service", () => {
 
     const result = await service.send({ to: "ada@example.com", subject: "Hi", text: "Hello" });
 
-    expect(result).toEqual({ dispatched: false });
+    expect(result).toEqual({ dispatched: false, driver: "noop" });
   });
 
   it("selects the log driver when no provider key is configured", async () => {
@@ -104,7 +104,7 @@ describe("mail service", () => {
     const service = createMailService({});
 
     expect(await service.send({ to: "ada@example.com", subject: "Hi", text: "Hello" }))
-      .toEqual({ dispatched: false });
+      .toEqual({ dispatched: false, driver: "log" });
   });
 
   it("builds a Resend-backed service from environment configuration", () => {

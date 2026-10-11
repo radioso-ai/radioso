@@ -2,6 +2,9 @@ import type {
   ActionFailureOutcome,
   ActionRequestRecord,
 } from "../../../../db/repositories/actionRequestRepository.js";
+import { ActionDispatchSkippedError } from "../../../../shared/domain/actionDispatchOutcome.js";
+
+export { ActionDispatchSkippedError } from "../../../../shared/domain/actionDispatchOutcome.js";
 
 /** The context a handler receives alongside the action payload. */
 export interface ActionHandlerContext {
@@ -33,6 +36,7 @@ export interface ActionHandler {
 export interface ActionOutboxConsumerPort {
   claimPending(limit: number, leaseSeconds: number): Promise<ActionRequestRecord[]>;
   markDispatched(id: string, attempt: number): Promise<boolean>;
+  markSkipped(id: string, reason: string, attempt: number): Promise<boolean>;
   recordFailure(
     id: string,
     error: string,
@@ -42,7 +46,7 @@ export interface ActionOutboxConsumerPort {
   ): Promise<ActionFailureOutcome>;
 }
 
-export interface ActionDispatchOptions {
+interface ActionDispatchOptions {
   /** A claimed row is reclaimable after this long without progress (crashed worker). */
   leaseSeconds: number;
   /** Total dispatch attempts before a failing request becomes terminal `failed`. */
@@ -51,12 +55,12 @@ export interface ActionDispatchOptions {
   retryBackoffSeconds: number;
 }
 
-export interface PersistedActionOutcome {
+interface PersistedActionOutcome {
   request: ActionRequestRecord;
-  outcome: "claimed" | "dispatched" | "retry" | "failed";
+  outcome: "claimed" | "dispatched" | "skipped" | "retry" | "failed";
 }
 
-export type PersistedActionOutcomeObserver = (outcome: PersistedActionOutcome) => void;
+type PersistedActionOutcomeObserver = (outcome: PersistedActionOutcome) => void;
 
 const DEFAULT_DISPATCH_OPTIONS: ActionDispatchOptions = {
   leaseSeconds: 300,
@@ -117,11 +121,12 @@ export class ActionDispatcher {
     }
   }
 
-  async dispatchPending(limit = 20): Promise<{ dispatched: number; retried: number; failed: number }> {
+  async dispatchPending(limit = 20): Promise<{ dispatched: number; retried: number; failed: number; skipped: number }> {
     const claimed = await this.outbox.claimPending(limit, this.options.leaseSeconds);
     let dispatched = 0;
     let retried = 0;
     let failed = 0;
+    let skipped = 0;
 
     for (const request of claimed) {
       this.observePersistedOutcome({ request, outcome: "claimed" });
@@ -171,6 +176,14 @@ export class ActionDispatcher {
           this.observePersistedOutcome({ request, outcome: "dispatched" });
         }
       } catch (error) {
+        if (error instanceof ActionDispatchSkippedError) {
+          const changed = await this.outbox.markSkipped(request.id, error.reason, request.attempts);
+          if (changed) {
+            skipped += 1;
+            this.observePersistedOutcome({ request, outcome: "skipped" });
+          }
+          continue;
+        }
         const errorMessage = error instanceof Error ? error.message : String(error);
         const outcome = await this.outbox.recordFailure(
           request.id,
@@ -202,6 +215,6 @@ export class ActionDispatcher {
       }
     }
 
-    return { dispatched, retried, failed };
+    return { dispatched, retried, failed, skipped };
   }
 }

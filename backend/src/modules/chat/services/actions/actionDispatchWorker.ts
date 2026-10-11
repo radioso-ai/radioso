@@ -2,12 +2,12 @@ import type { ErrorReporter } from "../../../../shared/errors/errorReporter.js";
 import type { AppLogger } from "../../../../shared/observability/logger.js";
 
 /** The drain surface the worker polls — satisfied by {@link ActionDispatcher}. */
-export interface ActionDispatchPort {
-  dispatchPending(limit?: number): Promise<{ dispatched: number; retried: number; failed: number }>;
+interface ActionDispatchPort {
+  dispatchPending(limit?: number): Promise<{ dispatched: number; retried: number; failed: number; skipped?: number }>;
 }
 
 /** A point-in-time read of outbox backlog — satisfied by `ActionRequestRepository`. */
-export interface ActionOutboxDepthPort {
+interface ActionOutboxDepthPort {
   getPendingDepthSnapshot(): Promise<{
     pendingCount: number;
     inProgressCount: number;
@@ -16,14 +16,14 @@ export interface ActionOutboxDepthPort {
 }
 
 /** Narrow telemetry sink; `TelemetryService` satisfies this structurally. */
-export interface ActionDispatchTelemetryService {
+interface ActionDispatchTelemetryService {
   emit(input: {
     eventType: string;
     metrics: Record<string, number>;
   }): Promise<unknown>;
 }
 
-export interface ActionDispatchWorkerOptions {
+interface ActionDispatchWorkerOptions {
   logger: Pick<AppLogger, "error" | "debug">;
   intervalMs?: number;
   batchSize?: number;
@@ -78,14 +78,15 @@ export class ActionDispatchWorker {
    * flight or the drain threw (the error is logged; the loop continues on the next tick).
    * Public so the poll loop, a worker task handler, or a test can trigger one drain.
    */
-  async drain(): Promise<{ dispatched: number; retried: number; failed: number } | null> {
+  async drain(): Promise<{ dispatched: number; retried: number; failed: number; skipped: number } | null> {
     if (this.draining) {
       return null;
     }
     this.draining = true;
     try {
-      const result = await this.dispatcher.dispatchPending(this.options.batchSize ?? 20);
-      if (result.dispatched > 0 || result.retried > 0 || result.failed > 0) {
+      const dispatched = await this.dispatcher.dispatchPending(this.options.batchSize ?? 20);
+      const result = { ...dispatched, skipped: dispatched.skipped ?? 0 };
+      if (result.dispatched > 0 || result.retried > 0 || result.failed > 0 || result.skipped > 0) {
         this.options.logger.debug({ ...result }, "Action dispatch drain completed");
       }
       await this.reportQueueDepth();

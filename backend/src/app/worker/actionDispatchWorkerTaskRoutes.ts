@@ -45,7 +45,7 @@ export const createActionDispatchWorkerTaskRoutes = (
       let processedBatchCount = 0;
       for (let index = 0; index < parsed.data.maxJobs; index += 1) {
         const result = await dependencies.actionDispatchWorker.drain();
-        if (!result || (result.dispatched === 0 && result.retried === 0 && result.failed === 0)) {
+        if (!result || (result.dispatched === 0 && result.retried === 0 && result.failed === 0 && result.skipped === 0)) {
           break;
         }
         processedBatchCount += 1;

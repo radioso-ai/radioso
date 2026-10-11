@@ -17,7 +17,7 @@ const buildApp = (actionDispatchWorker: { drain: ReturnType<typeof vi.fn> }) => 
 describe("createActionDispatchWorkerTaskRoutes", () => {
   describe("POST /internal/tasks/actions/drain", () => {
     it("triggers exactly one drain and responds 204", async () => {
-      const drain = vi.fn().mockResolvedValue({ dispatched: 1, retried: 0, failed: 0 });
+      const drain = vi.fn().mockResolvedValue({ dispatched: 1, retried: 0, failed: 0, skipped: 0 });
       const app = buildApp({ drain });
 
       const response = await request(app).post("/internal/tasks/actions/drain").send({});
@@ -49,9 +49,24 @@ describe("createActionDispatchWorkerTaskRoutes", () => {
     it("drains repeatedly until a batch does no work, bounded by maxJobs", async () => {
       const drain = vi
         .fn()
-        .mockResolvedValueOnce({ dispatched: 5, retried: 0, failed: 0 })
-        .mockResolvedValueOnce({ dispatched: 3, retried: 0, failed: 0 })
-        .mockResolvedValueOnce({ dispatched: 0, retried: 0, failed: 0 });
+        .mockResolvedValueOnce({ dispatched: 5, retried: 0, failed: 0, skipped: 0 })
+        .mockResolvedValueOnce({ dispatched: 3, retried: 0, failed: 0, skipped: 0 })
+        .mockResolvedValueOnce({ dispatched: 0, retried: 0, failed: 0, skipped: 0 });
+      const app = buildApp({ drain });
+
+      const response = await request(app).post("/internal/tasks/actions/recover").send({ maxJobs: 10 });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ processedBatchCount: 2 });
+      expect(drain).toHaveBeenCalledTimes(3);
+    });
+
+    it("continues after a batch that only skipped terminal actions", async () => {
+      const drain = vi
+        .fn()
+        .mockResolvedValueOnce({ dispatched: 0, retried: 0, failed: 0, skipped: 5 })
+        .mockResolvedValueOnce({ dispatched: 1, retried: 0, failed: 0, skipped: 0 })
+        .mockResolvedValueOnce({ dispatched: 0, retried: 0, failed: 0, skipped: 0 });
       const app = buildApp({ drain });
 
       const response = await request(app).post("/internal/tasks/actions/recover").send({ maxJobs: 10 });
@@ -62,7 +77,7 @@ describe("createActionDispatchWorkerTaskRoutes", () => {
     });
 
     it("stops after maxJobs batches even if every batch found work", async () => {
-      const drain = vi.fn().mockResolvedValue({ dispatched: 1, retried: 0, failed: 0 });
+      const drain = vi.fn().mockResolvedValue({ dispatched: 1, retried: 0, failed: 0, skipped: 0 });
       const app = buildApp({ drain });
 
       const response = await request(app).post("/internal/tasks/actions/recover").send({ maxJobs: 3 });

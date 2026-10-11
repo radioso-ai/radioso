@@ -855,23 +855,25 @@ export function WorkspaceAssistantChannelsTab({
               </div>
             </SettingsCard>
 
-            <SettingsCard
-              icon={<Users className="h-5 w-5 text-primary" />}
-              title="Members"
-              description="Invite people and manage their organization and workspace access."
-              headerEnd={
-                <Button asChild variant="outline" size="sm">
-                  <Link href={buildDashboardHref(accountId, {
-                    section: 'account',
-                    accountTab: 'members',
-                    workspaceId: activeWorkspaceId ?? undefined,
-                    workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                  })}>
-                    Manage members
-                  </Link>
-                </Button>
-              }
-            />
+            {canManageOrganization ? (
+              <SettingsCard
+                icon={<Users className="h-5 w-5 text-primary" />}
+                title="Members"
+                description="Invite people and manage their organization and workspace access."
+                headerEnd={
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={buildDashboardHref(accountId, {
+                      section: 'account',
+                      accountTab: 'members',
+                      workspaceId: activeWorkspaceId ?? undefined,
+                      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                    })}>
+                      Manage members
+                    </Link>
+                  </Button>
+                }
+              />
+            ) : null}
 
             <SettingsCard
               icon={<FolderOpen className="h-5 w-5 text-primary" />}

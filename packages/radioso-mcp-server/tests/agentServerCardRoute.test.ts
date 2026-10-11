@@ -11,6 +11,7 @@ const config: RadiosoMcpConfig = {
   redisKeyPrefix: "test",
   requestTimeoutMs: 1000,
   serverName: "test",
+  signingSecret: "0123456789abcdef0123456789abcdef",
   trustedProxyHops: 0,
 };
 

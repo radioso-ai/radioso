@@ -5,7 +5,7 @@ describe("operator route isolation", () => {
   it("returns 404 when disabled and does not require or alter the agent route", async () => {
     const server = createHttpServer({
       authService: { getRequestAuthInfo: vi.fn(), getSession: vi.fn(), resolveBearerSession: vi.fn(), recordSuccessfulUse: vi.fn() },
-      config: { baseUrl: "http://app.example", bindHost: "127.0.0.1", bindPort: 0, redisKeyPrefix: "test", requestTimeoutMs: 1000, serverName: "test", trustedProxyHops: 0 },
+      config: { baseUrl: "http://app.example", bindHost: "127.0.0.1", bindPort: 0, redisKeyPrefix: "test", requestTimeoutMs: 1000, serverName: "test", signingSecret: "0123456789abcdef0123456789abcdef", trustedProxyHops: 0 },
     });
     await server.listen();
     const address = server.server.address();
@@ -19,7 +19,7 @@ describe("operator route isolation", () => {
     const server = createHttpServer({
       auditLogger: { emit: vi.fn(async () => undefined) },
       authService: { getRequestAuthInfo: vi.fn(), getSession: vi.fn(), resolveBearerSession: vi.fn(), recordSuccessfulUse: vi.fn() },
-      config: { baseUrl: "http://app.example", bindHost: "127.0.0.1", bindPort: 0, redisKeyPrefix: "test", requestTimeoutMs: 1000, serverName: "test", trustedProxyHops: 0 },
+      config: { baseUrl: "http://app.example", bindHost: "127.0.0.1", bindPort: 0, redisKeyPrefix: "test", requestTimeoutMs: 1000, serverName: "test", signingSecret: "0123456789abcdef0123456789abcdef", trustedProxyHops: 0 },
       operatorMcp: {
         adapter: { admit: vi.fn(), catalog: vi.fn(), invoke: vi.fn() },
         readiness,
@@ -44,7 +44,7 @@ describe("operator route isolation", () => {
   it("fails operator requests closed when its readiness is degraded", async () => {
     const server = createHttpServer({
       authService: { getRequestAuthInfo: vi.fn(), getSession: vi.fn(), resolveBearerSession: vi.fn(), recordSuccessfulUse: vi.fn() },
-      config: { baseUrl: "http://app.example", bindHost: "127.0.0.1", bindPort: 0, redisKeyPrefix: "test", requestTimeoutMs: 1000, serverName: "test", trustedProxyHops: 0 },
+      config: { baseUrl: "http://app.example", bindHost: "127.0.0.1", bindPort: 0, redisKeyPrefix: "test", requestTimeoutMs: 1000, serverName: "test", signingSecret: "0123456789abcdef0123456789abcdef", trustedProxyHops: 0 },
       operatorMcp: {
         adapter: { admit: vi.fn(), catalog: vi.fn(), invoke: vi.fn() },
         readiness: { isReady: () => false },
@@ -64,7 +64,7 @@ describe("operator route isolation", () => {
     const emit = vi.fn(async () => undefined);
     const server = createHttpServer({
       authService: { getRequestAuthInfo: vi.fn(), getSession: vi.fn(), resolveBearerSession: vi.fn(), recordSuccessfulUse: vi.fn() },
-      config: { baseUrl: "http://app.example", bindHost: "127.0.0.1", bindPort: 0, redisKeyPrefix: "test", requestTimeoutMs: 1000, serverName: "test", trustedProxyHops: 0 },
+      config: { baseUrl: "http://app.example", bindHost: "127.0.0.1", bindPort: 0, redisKeyPrefix: "test", requestTimeoutMs: 1000, serverName: "test", signingSecret: "0123456789abcdef0123456789abcdef", trustedProxyHops: 0 },
       operatorMcp: {
         adapter: { admit: vi.fn(async () => ({ proof: {} })), catalog: vi.fn(), invoke: vi.fn() } as never,
         auditLogger: { emit },

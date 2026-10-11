@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { Request, RequestHandler, Response } from "express";
 import { digestSourceAddress } from "@radioso/mcp-source-proof";
 
@@ -11,9 +12,8 @@ import type { Env } from "../../config/env.js";
  * audit records whose job is to keep it; `digest` stands in for it in
  * rate-limit subject keys, which persist and are echoed into audit metadata.
  * The digest keys an IPv6 caller on its /64, so rotating through one
- * allocation cannot mint fresh budgets. It is opaque, not anonymous: its key
- * is a public constant, so an IPv4 digest can be reversed by enumerating the
- * address space.
+ * allocation cannot mint fresh budgets. It is keyed with a deployment secret
+ * and is opaque rather than anonymous.
  */
 interface RequestSource {
   address: string | null;
@@ -26,13 +26,22 @@ interface RequestSourceLocals {
 }
 
 interface RequestSourceMiddlewareDependencies {
-  env: Pick<Env, "RADIOSO_TRUSTED_PROXY_HOPS" | "RADIOSO_EDGE_PROOF_SECRET">;
+  env: Pick<Env,
+    "RADIOSO_TRUSTED_PROXY_HOPS" | "RADIOSO_EDGE_PROOF_SECRET" | "RADIOSO_MCP_SIGNING_SECRET" | "SESSION_COOKIE_SECRET"
+  >;
   metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null;
 }
 
-const requestSourceFor = (address: string | null): RequestSource => ({
+const sourceDigestSecret = (env: RequestSourceMiddlewareDependencies["env"]): string =>
+  env.RADIOSO_MCP_SIGNING_SECRET ?? env.SESSION_COOKIE_SECRET;
+
+// App composition always installs this middleware. Keep an accidental direct
+// middleware use non-reversible rather than restoring a public digest key.
+const unconfiguredRequestSourceSecret = randomBytes(32).toString("base64url");
+
+const requestSourceFor = (address: string | null, secret: string): RequestSource => ({
   address,
-  digest: digestSourceAddress(address ?? "unknown"),
+  digest: digestSourceAddress(address ?? "unknown", secret),
 });
 
 /**
@@ -71,7 +80,7 @@ export const createRequestSourceMiddleware = (
     socketAddress: req.socket.remoteAddress ?? null,
     trustedProxyHops: env.RADIOSO_TRUSTED_PROXY_HOPS,
     envelope,
-  }));
+  }), sourceDigestSecret(env));
   next();
 };
 
@@ -83,9 +92,10 @@ export const createRequestSourceMiddleware = (
 export const readRequestSource = (
   req: Pick<Request, "socket">,
   res: Pick<Response, "locals">,
+  fallbackDigestSecret?: string,
 ): RequestSource =>
   (res.locals as Partial<RequestSourceLocals>).requestSource
-    ?? requestSourceFor(req.socket?.remoteAddress ?? null);
+    ?? requestSourceFor(req.socket?.remoteAddress ?? null, fallbackDigestSecret ?? unconfiguredRequestSourceSecret);
 
 /**
  * The envelope reading the middleware took, so conversation request context

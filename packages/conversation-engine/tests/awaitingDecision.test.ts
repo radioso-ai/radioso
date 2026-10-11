@@ -76,7 +76,7 @@ const readerFor = (state: RoutineState | null) => ({
 describe("resumeAwaitingDecision", () => {
   it("APPROVE branches via the field guard, dispatches the gated skill exactly once, and never calls the selector", async () => {
     const selector = throwingSelector();
-    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const dispatch = vi.fn<ConversationRoutineSkillDispatcher["dispatch"]>(async () => ({ status: "completed" as const }));
     const skillDispatcher: ConversationRoutineSkillDispatcher = { dispatch };
     const runner = new DefaultRoutineRunner([refundRoutine], selector, { render: vi.fn(renderer.render) }, skillDispatcher);
 
@@ -124,7 +124,7 @@ describe("resumeAwaitingDecision", () => {
         refundRoutine.steps.find((step) => step.id === "confirmed")!,
       ],
     };
-    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const dispatch = vi.fn<ConversationRoutineSkillDispatcher["dispatch"]>(async () => ({ status: "completed" as const }));
     const runner = new DefaultRoutineRunner([loopRoutine], throwingSelector(), { render: vi.fn(renderer.render) }, { dispatch });
     const resume = () => resumeAwaitingDecision({
       suspendedReader: readerFor(suspendedAtGate),

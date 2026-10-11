@@ -135,6 +135,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0].to).toBe("owner@business.example");
+    expect(sent[0].kind).toBe("operator_notice");
     expect(sent[0].subject).toBe("Conversation needs an approval");
     expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:approval.request:email:owner%40business.example");
     expect(sent[0].text).toContain("Conversation: conv_1");
@@ -163,6 +164,8 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0].url).toBe("https://hooks.example.com/approval");
     expect(requests[0].headers["Idempotency-Key"]).toBe("routine-action:conv_1:approval.request:webhook");
+    expect(requests[0].headers["X-Radioso-Signature"]).toMatch(/^sha256=[a-f0-9]{64}$/u);
+    expect(requests[0].headers["X-Radioso-Timestamp"]).toMatch(/^\d+$/u);
     expect(JSON.parse(requests[0].rawBody)).toEqual({
       conversationId: "conv_1",
       workspaceId: "ws_1",
@@ -210,6 +213,42 @@ describe("EmailWebhookOperatorNotificationSink", () => {
 
     expect(requests).toHaveLength(1);
     expect(JSON.parse(requests[0].rawBody)).toMatchObject({ dashboardUrl: null, dashboardPath: null });
+  });
+
+  it("keeps webhooks but skips email when the workspace email cap is reached", async () => {
+    const { mailer, sent } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => routedTo(["owner@business.example"], { url: "https://hooks.example.com/approval" }) },
+      undefined,
+      httpClient,
+      undefined,
+      { admit: async () => ({ dispatchAllowed: true, emailAllowed: false, reason: "workspace_daily_email_cap" }) },
+    );
+
+    await sink.deliver(notification, context);
+
+    expect(sent).toHaveLength(0);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("reports the bounded email-cap reason when email is the only delivery route", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => routedTo(["owner@business.example"]) },
+      undefined,
+      undefined,
+      undefined,
+      { admit: async () => ({ dispatchAllowed: true, emailAllowed: false, reason: "workspace_daily_email_cap" }) },
+    );
+
+    await expect(sink.deliver(notification, context)).resolves.toEqual({
+      disposition: "skipped",
+      reason: "workspace_daily_email_cap",
+    });
+    expect(sent).toHaveLength(0);
   });
 
   it("preserves handoff email delivery", async () => {

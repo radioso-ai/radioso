@@ -244,6 +244,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
     access.accessGrantService,
     agentSkillRepository,
+    infrastructure.auditService,
   );
   // Shared by routine publishing (write-time trigger embedding) and the chat
   // activation prefilter (lazy self-heal of unembedded/stale rows) so both

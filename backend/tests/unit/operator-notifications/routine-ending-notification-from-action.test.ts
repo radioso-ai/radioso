@@ -172,6 +172,17 @@ describe("routineEndingNotificationFromAction", () => {
       }
     });
 
+    it("sets no reply-to when a forged queued value is not a valid email address", () => {
+      const notification = routineEndingNotificationFromAction({
+        kind: "completion",
+        payload: giftPayload({ recipient_email: "header injection\r\nBcc: target@example.com" }),
+        ids,
+        fallback: { reason: "routine_completed" },
+      });
+
+      expect(notification).not.toHaveProperty("replyTo");
+    });
+
     it("never guesses a reply-to when the notice names no field, whatever addresses were collected", () => {
       const notification = routineEndingNotificationFromAction({
         kind: "handoff",
@@ -194,6 +205,17 @@ describe("routineEndingNotificationFromAction", () => {
 
       expect(notification).not.toHaveProperty("replyTo");
     });
+  });
+
+  it("bounds visitor-supplied slot text before notification formatting", () => {
+    const notification = routineEndingNotificationFromAction({
+      kind: "completion",
+      payload: { collected: { notes: "x".repeat(1_500) } },
+      ids,
+      fallback: { reason: "routine_completed" },
+    });
+
+    expect(notification.collected?.notes).toBe("x".repeat(1_000));
   });
 
   it("builds a completion notification from a completion.notify payload, with its notice and conversation facts", () => {

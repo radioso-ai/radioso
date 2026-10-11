@@ -28,6 +28,8 @@ export interface Plan {
   readonly annualPriceCents: number | null;
   readonly interval: "month";
   readonly monthlyConversations: number;
+  /** Contact and operator-notification recipient emails allowed per workspace per UTC day. */
+  readonly dailyNotificationEmails: number;
   readonly storedBytes: number;
   readonly monthlyIndexedBytes: number;
   readonly documents: number;

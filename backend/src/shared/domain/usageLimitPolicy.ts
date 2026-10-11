@@ -51,6 +51,15 @@ export interface MonthlyIndexedContentReservationInput {
 }
 
 export interface UsageLimitPolicy {
+  /**
+   * Resolves the workspace's plan-owned daily allowance for contact and operator-notification
+   * recipient emails. Optional so host modules compiled against the older reservation-only port
+   * keep working; {@link resolveNotificationEmailDailyLimit} supplies the finite OSS default.
+   */
+  getNotificationEmailDailyLimit?(input: {
+    accountId?: string | null;
+    workspaceId: string;
+  }): Promise<number | null>;
   reserveAnswer(input: {
     accountId?: string | null;
     workspaceId: string;
@@ -70,6 +79,18 @@ export interface UsageLimitPolicy {
   reserveIndexedStorage(input: IndexedStorageReservationInput): Promise<UsageLimitReservation>;
   reserveMonthlyIndexedContent(input: MonthlyIndexedContentReservationInput): Promise<UsageLimitReservation>;
 }
+
+export const DEFAULT_NOTIFICATION_EMAIL_DAILY_LIMIT = 100;
+
+export const resolveNotificationEmailDailyLimit = async (
+  policy: Pick<UsageLimitPolicy, "getNotificationEmailDailyLimit">,
+  input: { accountId?: string | null; workspaceId: string },
+): Promise<number> => {
+  const resolved = await policy.getNotificationEmailDailyLimit?.(input);
+  return typeof resolved === "number" && Number.isInteger(resolved) && resolved >= 0
+    ? resolved
+    : DEFAULT_NOTIFICATION_EMAIL_DAILY_LIMIT;
+};
 
 /**
  * Stable error code emitted by usage-limit enforcement (EE) when a tier cap is
@@ -94,6 +115,10 @@ const noopReservation: UsageLimitReservation = {
 };
 
 export class NoopUsageLimitPolicy implements UsageLimitPolicy {
+  async getNotificationEmailDailyLimit(): Promise<number> {
+    return DEFAULT_NOTIFICATION_EMAIL_DAILY_LIMIT;
+  }
+
   async reserveAnswer(): Promise<UsageLimitReservation> {
     return noopReservation;
   }

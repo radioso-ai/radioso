@@ -1015,6 +1015,20 @@ export interface Messages {
   workspace_id: string;
 }
 
+export interface NotificationDeliveryOutcomes {
+  conversation_dispatch_limit: number;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  daily_email_limit: number;
+  outcome: string;
+  recipient_digest: string;
+  request_id: string;
+  requested_email_count: number;
+  reserved_email_count: number;
+  usage_date: Timestamp;
+  workspace_id: string;
+}
+
 export interface OperatorMcpAccessCredentials {
   created_at: Generated<Timestamp>;
   expires_at: Timestamp;
@@ -1803,6 +1817,7 @@ export interface DB {
   mcp_connections: McpConnections;
   message_facets: MessageFacets;
   messages: Messages;
+  notification_delivery_outcomes: NotificationDeliveryOutcomes;
   operator_mcp_access_credentials: OperatorMcpAccessCredentials;
   operator_mcp_authorization_transactions: OperatorMcpAuthorizationTransactions;
   operator_mcp_client_metadata_snapshots: OperatorMcpClientMetadataSnapshots;

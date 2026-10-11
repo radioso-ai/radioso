@@ -296,6 +296,62 @@ describe("AgentSkillsService", () => {
     });
   });
 
+  it("audits notify recipient changes with hashes and counts only", async () => {
+    const repository = new InMemoryAgentSkillRepository();
+    const record = vi.fn().mockResolvedValue(undefined);
+    const service = new AgentSkillsService({
+      repository,
+      capabilities: createDefaultSkillCapabilityRegistry(),
+      audit: { record },
+    });
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    await service.create(workspaceId, agentId, {
+      name: "notify_ops",
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: { delivery: { recipientEmails: ["ops@example.com"], webhook: null } },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "agent_skill.notification_recipients.changed",
+      metadata: expect.objectContaining({ previousRecipientCount: 0, recipientCount: 1 }),
+    }));
+    expect(JSON.stringify(record.mock.calls)).not.toContain("ops@example.com");
+  });
+
+  it("audits removal of a notify skill that carried recipients", async () => {
+    const repository = new InMemoryAgentSkillRepository();
+    const record = vi.fn().mockResolvedValue(undefined);
+    const service = new AgentSkillsService({
+      repository,
+      capabilities: createDefaultSkillCapabilityRegistry(),
+      audit: { record },
+    });
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const created = await service.create(workspaceId, agentId, {
+      name: "notify_ops",
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: { delivery: { recipientEmails: ["ops@example.com"], webhook: null } },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+    record.mockClear();
+
+    await service.remove(workspaceId, agentId, created.id);
+
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "agent_skill.notification_recipients.changed",
+      metadata: expect.objectContaining({ previousRecipientCount: 1, recipientCount: 0 }),
+    }));
+    expect(JSON.stringify(record.mock.calls)).not.toContain("ops@example.com");
+  });
+
   it("replaces skill config when a full form save clears prior overrides", async () => {
     const { service } = makeService();
     const workspaceId = randomUUID();

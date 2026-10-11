@@ -1,6 +1,7 @@
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { OperatorCatalogResponseSchema, OperatorToolDescriptorSchema } from "@radioso/operator-mcp-contract";
 
 import { operatorMcpToolSchemas } from "../../../src/modules/operatorCopilot/mcpToolSchema.js";
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/contracts.js";
@@ -31,6 +32,32 @@ describe("operator MCP tool schema dialect", () => {
       }
     },
   );
+});
+
+/**
+ * The MCP edge parses the backend's catalog against the shared contract before it answers
+ * `tools/list`, so one descriptor over a contract bound (a description past its length cap, say)
+ * fails the parse and every client gets no tools at all.
+ */
+describe("operator MCP catalog contract", () => {
+  const advertised = eligible.map((descriptor) => ({
+    name: descriptor.name,
+    description: descriptor.description,
+    ...operatorMcpToolSchemas(descriptor),
+    shape: descriptor.shape,
+    requiredScope: descriptor.mcpDisposition!.scope,
+  }));
+
+  it.each(advertised.map((tool) => [tool.name, tool] as const))(
+    "advertises %s within the edge's descriptor contract",
+    (_name, tool) => {
+      expect(OperatorToolDescriptorSchema.safeParse(tool).error?.issues).toBeUndefined();
+    },
+  );
+
+  it("advertises the whole catalog as one response the edge accepts", () => {
+    expect(OperatorCatalogResponseSchema.safeParse({ tools: advertised }).success).toBe(true);
+  });
 });
 
 describe("operator MCP tool schema assembly", () => {

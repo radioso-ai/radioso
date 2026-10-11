@@ -3,18 +3,25 @@ import type { LegacySessionPurgeReadinessEvent, LegacySessionPurgeReadinessObser
 
 const wildcardBindHosts = new Set(["0.0.0.0", "::", "0:0:0:0:0:0:0:0"]);
 
-export const getHttpStartupWarnings = (config: Pick<RadiosoMcpConfig, "bindHost">): string[] => {
-  if (!wildcardBindHosts.has(config.bindHost)) {
-    return [];
+export const getHttpStartupWarnings = (
+  config: Pick<RadiosoMcpConfig, "bindHost" | "signingSecret">,
+): string[] => {
+  const warnings: string[] = [];
+
+  if (wildcardBindHosts.has(config.bindHost)) {
+    warnings.push(
+      "Radioso MCP HTTP server is bound to all network interfaces. Expose it only behind trusted network controls and TLS termination.",
+    );
+  }
+  if (!config.signingSecret) {
+    warnings.push("RADIOSO_MCP_SIGNING_SECRET is not set; source budgets reset when this MCP process restarts.");
   }
 
-  return [
-    "Radioso MCP HTTP server is bound to all network interfaces. Expose it only behind trusted network controls and TLS termination.",
-  ];
+  return warnings;
 };
 
 export const emitHttpStartupWarnings = (
-  config: Pick<RadiosoMcpConfig, "bindHost">,
+  config: Pick<RadiosoMcpConfig, "bindHost" | "signingSecret">,
   warn: (message: string) => void = console.warn,
 ) => {
   for (const warning of getHttpStartupWarnings(config)) {

@@ -1,14 +1,17 @@
+import { randomBytes } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { resolveSourceDigest } from "@radioso/mcp-source-proof";
+
+const processSourceDigestSecret = randomBytes(32).toString("base64url");
 
 export interface PreAuthSourceBudget {
   consume(input: { sourceDigest: string }): boolean | Promise<boolean>;
 }
 
-export const digestPeerSource = (req: IncomingMessage, secret: string, trustedProxyHops = 0): string =>
+export const digestPeerSource = (req: IncomingMessage, secret?: string, trustedProxyHops = 0): string =>
   resolveSourceDigest({
     forwardedFor: req.headers["x-forwarded-for"],
-    secret,
+    secret: secret ?? processSourceDigestSecret,
     socketAddress: req.socket.remoteAddress,
     trustedProxyHops,
   });

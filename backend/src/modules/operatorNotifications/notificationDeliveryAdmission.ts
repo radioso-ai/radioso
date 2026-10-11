@@ -3,6 +3,7 @@ import {
   resolveNotificationEmailDailyLimit,
   type UsageLimitPolicy,
 } from "../../shared/domain/usageLimitPolicy.js";
+import { recipientEmailDeliveryDigest } from "../../shared/domain/recipientEmailAudit.js";
 
 const NOTIFICATION_DISPATCHES_PER_CONVERSATION = 5;
 
@@ -19,6 +20,7 @@ export interface NotificationDeliveryAdmission {
 export interface NotificationDeliveryOutcomeRepositoryPort {
   reserve(input: {
     requestId: string;
+    recipientDigest: string;
     workspaceId: string;
     conversationId: string;
     usageDate: Date;
@@ -34,6 +36,7 @@ export interface NotificationDeliveryAdmissionPort {
     workspaceId: string | null;
     accountId: string | null;
     conversationId: string | null;
+    recipientEmails: readonly string[];
     requestedEmailCount: number;
   }): Promise<NotificationDeliveryAdmission>;
 }
@@ -58,6 +61,7 @@ export class NotificationDeliveryAdmissionService implements NotificationDeliver
     workspaceId: string | null;
     accountId: string | null;
     conversationId: string | null;
+    recipientEmails: readonly string[];
     requestedEmailCount: number;
   }): Promise<NotificationDeliveryAdmission> {
     if (!input.workspaceId || !input.conversationId) {
@@ -74,6 +78,7 @@ export class NotificationDeliveryAdmissionService implements NotificationDeliver
     });
     const outcome = await this.outcomes.reserve({
       requestId: input.requestId,
+      recipientDigest: recipientEmailDeliveryDigest(input.recipientEmails, input.requestedEmailCount),
       workspaceId: input.workspaceId,
       conversationId: input.conversationId,
       usageDate: utcDate(this.now()),

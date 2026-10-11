@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { recipientEmailChangeMetadata } from "../../src/shared/domain/recipientEmailAudit.js";
+import {
+  recipientEmailChangeMetadata,
+  recipientEmailDeliveryDigest,
+} from "../../src/shared/domain/recipientEmailAudit.js";
 
 describe("recipientEmailChangeMetadata", () => {
   it("records stable counts and hashes without raw addresses", () => {
@@ -23,5 +26,12 @@ describe("recipientEmailChangeMetadata", () => {
       [" one@example.com", "two@example.com"],
       ["TWO@example.com", "one@example.com"],
     )).toBeNull();
+  });
+
+  it("binds a delivery digest to the normalized set and recipient count", () => {
+    expect(recipientEmailDeliveryDigest([" One@example.com", "two@example.com"], 2))
+      .toBe(recipientEmailDeliveryDigest(["two@example.com", "one@example.com"], 2));
+    expect(recipientEmailDeliveryDigest(["one@example.com", "two@example.com"], 2))
+      .not.toBe(recipientEmailDeliveryDigest(["one@example.com", "two@example.com"], 3));
   });
 });

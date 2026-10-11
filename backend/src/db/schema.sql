@@ -2657,6 +2657,7 @@ CREATE TABLE public.messages (
 
 CREATE TABLE public.notification_delivery_outcomes (
     request_id uuid NOT NULL,
+    recipient_digest text NOT NULL,
     workspace_id uuid NOT NULL,
     conversation_id uuid NOT NULL,
     usage_date date NOT NULL,
@@ -5174,7 +5175,7 @@ ALTER TABLE ONLY public.messages
 --
 
 ALTER TABLE ONLY public.notification_delivery_outcomes
-    ADD CONSTRAINT notification_delivery_outcomes_pkey PRIMARY KEY (request_id);
+    ADD CONSTRAINT notification_delivery_outcomes_pkey PRIMARY KEY (request_id, recipient_digest);
 
 
 --

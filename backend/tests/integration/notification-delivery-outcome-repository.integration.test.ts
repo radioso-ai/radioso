@@ -47,6 +47,7 @@ describeIntegration("NotificationDeliveryOutcomeRepository (Postgres)", () => {
       workspaceId: randomUUID(),
       conversationId: randomUUID(),
       usageDate: new Date("2026-10-11T00:00:00.000Z"),
+      recipientDigest: "recipient-set-default",
       requestedEmailCount: 1,
       dailyEmailLimit: 100,
       conversationDispatchLimit: 5,
@@ -92,6 +93,37 @@ describeIntegration("NotificationDeliveryOutcomeRepository (Postgres)", () => {
     expect(first).toMatchObject({ dispatchAllowed: true, emailAllowed: true, reason: null, newlyRecorded: true });
     expect(replay).toMatchObject({ dispatchAllowed: true, emailAllowed: true, reason: null, newlyRecorded: false });
     expect(capped).toMatchObject({
+      dispatchAllowed: true,
+      emailAllowed: false,
+      reason: "workspace_daily_email_cap",
+      newlyRecorded: true,
+    });
+  });
+
+  it("counts a recipient-set change on a replay as a new admission", async () => {
+    const workspaceId = randomUUID();
+    const conversationId = randomUUID();
+    const requestId = randomUUID();
+
+    const first = await reserve({
+      requestId,
+      workspaceId,
+      conversationId,
+      recipientDigest: "recipient-set-before-change",
+      requestedEmailCount: 2,
+      dailyEmailLimit: 3,
+    });
+    const rotatedRecipientReplay = await reserve({
+      requestId,
+      workspaceId,
+      conversationId,
+      recipientDigest: "recipient-set-after-change",
+      requestedEmailCount: 2,
+      dailyEmailLimit: 3,
+    });
+
+    expect(first).toMatchObject({ dispatchAllowed: true, emailAllowed: true, reason: null, newlyRecorded: true });
+    expect(rotatedRecipientReplay).toMatchObject({
       dispatchAllowed: true,
       emailAllowed: false,
       reason: "workspace_daily_email_cap",

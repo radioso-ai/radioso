@@ -20,6 +20,7 @@ export class NotificationDeliveryOutcomeRepository implements NotificationDelive
 
   async reserve(input: {
     requestId: string;
+    recipientDigest: string;
     workspaceId: string;
     conversationId: string;
     usageDate: Date;
@@ -36,6 +37,7 @@ export class NotificationDeliveryOutcomeRepository implements NotificationDelive
         .selectFrom("notification_delivery_outcomes")
         .select("outcome")
         .where("request_id", "=", input.requestId)
+        .where("recipient_digest", "=", input.recipientDigest)
         .executeTakeFirst();
       if (existing) {
         return mapOutcome(existing.outcome as Outcome, false);
@@ -70,6 +72,7 @@ export class NotificationDeliveryOutcomeRepository implements NotificationDelive
 
       await transaction.insertInto("notification_delivery_outcomes").values({
         request_id: input.requestId,
+        recipient_digest: input.recipientDigest,
         workspace_id: input.workspaceId,
         conversation_id: input.conversationId,
         usage_date: input.usageDate,

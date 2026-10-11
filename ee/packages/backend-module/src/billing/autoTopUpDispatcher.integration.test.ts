@@ -406,6 +406,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
       periodStart: currentPeriodStart(),
       maxPacksPerMonth: 5,
       cooldownMs: 0,
+      paidPackRevision: await repository.getPaidPackRevision(accountId),
     });
     await repository.markPaid(existing!);
     const gateway = createFakeGateway();
@@ -418,11 +419,51 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
 
   it("respects the pending guard: two concurrent sweeps create only one invoice", async () => {
     const accountId = await seedEligibleAccount();
-    const gateway = createFakeGateway();
+    let notifySecondClaimStarted!: () => void;
+    const secondClaimStarted = new Promise<void>((resolve) => {
+      notifySecondClaimStarted = resolve;
+    });
+    let allowSecondClaim!: () => void;
+    const secondClaimAllowed = new Promise<void>((resolve) => {
+      allowSecondClaim = resolve;
+    });
+
+    const originalClaimPending = PostgresAutoTopUpRepository.prototype.claimPending;
+    let claimCalls = 0;
+    const claimPendingSpy = vi
+      .spyOn(PostgresAutoTopUpRepository.prototype, "claimPending")
+      .mockImplementation(async function (this: PostgresAutoTopUpRepository, input) {
+        claimCalls += 1;
+        if (claimCalls === 2) {
+          notifySecondClaimStarted();
+          await secondClaimAllowed;
+        }
+        return originalClaimPending.call(this, input);
+      });
+
+    const originalMarkPaid = PostgresAutoTopUpRepository.prototype.markPaid;
+    const markPaidSpy = vi
+      .spyOn(PostgresAutoTopUpRepository.prototype, "markPaid")
+      .mockImplementation(async function (this: PostgresAutoTopUpRepository, id) {
+        await originalMarkPaid.call(this, id);
+        allowSecondClaim();
+      });
+
+    const gateway = createFakeGateway({
+      chargeTopUpInvoice: vi.fn(async () => {
+        await secondClaimStarted;
+        return { status: "paid" as const };
+      }),
+    });
     const first = createDispatcher(gateway);
     const second = createDispatcher(gateway);
 
-    await Promise.all([first.dispatcher.run(), second.dispatcher.run()]);
+    try {
+      await Promise.all([first.dispatcher.run(), second.dispatcher.run()]);
+    } finally {
+      claimPendingSpy.mockRestore();
+      markPaidSpy.mockRestore();
+    }
 
     expect(gateway.createTopUpInvoiceDraft).toHaveBeenCalledTimes(1);
     expect(await readRows(accountId)).toHaveLength(1);
@@ -556,6 +597,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
         periodStart: currentPeriodStart(),
         maxPacksPerMonth: 3,
         cooldownMs: 0,
+        paidPackRevision: await repository.getPaidPackRevision(accountId),
       });
       await repository.markInvoiceCreated({ id: id!, stripeInvoiceId: "in_already_paid" });
       await ageRow(id!, "10 minutes");
@@ -582,6 +624,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
         periodStart: currentPeriodStart(),
         maxPacksPerMonth: 3,
         cooldownMs: 0,
+        paidPackRevision: await repository.getPaidPackRevision(accountId),
       });
       expect(id).not.toBeNull();
       await ageRow(id!, "10 minutes");
@@ -727,6 +770,7 @@ describeIfDatabase("AutoTopUpDispatcher integration", () => {
         periodStart: currentPeriodStart(),
         maxPacksPerMonth: 3,
         cooldownMs: 0,
+        paidPackRevision: await repository.getPaidPackRevision(accountId),
       });
       await repository.markInvoiceCreated({ id: id!, stripeInvoiceId: "in_expired_but_paid" });
       await database.query(

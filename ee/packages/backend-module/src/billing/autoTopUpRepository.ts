@@ -59,18 +59,23 @@ export interface AutoTopUpRepository {
   /** `pending` + `paid` rows for this account/period -- the sweep's monthly-cap count, and the
    *  same figure `/me` reports back as `packsThisPeriod`. */
   countForPeriod(accountId: string, periodStart: string): Promise<number>;
+  /** Monotonic count of settled packs for the account. The dispatcher snapshots this before
+   *  evaluating usage, then gives it back to `claimPending` so a claim based on usage from before
+   *  another pack settled can be rejected under the per-account lock. */
+  getPaidPackRevision(accountId: string): Promise<number>;
   /**
    * Atomically claims a pending slot for one pack this period, honoring the pending guard (at
-   * most one in-flight row per account), the monthly cap, and the failure cooldown. Returns the
-   * new row's id, or `null` when none of the conditions hold -- including when a concurrent
-   * caller already claimed one, which is exactly how two sweeps racing the same account produce
-   * only one invoice.
+   * most one in-flight row per account), the monthly cap, the failure cooldown, and the paid-pack
+   * revision captured before the caller evaluated usage. Returns the new row's id, or `null` when
+   * none of the conditions hold -- including when another pack settled after the caller's usage
+   * snapshot.
    */
   claimPending(input: {
     accountId: string;
     periodStart: string;
     maxPacksPerMonth: number;
     cooldownMs: number;
+    paidPackRevision: number;
   }): Promise<string | null>;
   findById(id: string): Promise<AutoTopUpRow | null>;
   markInvoiceCreated(input: { id: string; stripeInvoiceId: string }): Promise<void>;
@@ -235,11 +240,22 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
     return Number(row?.count ?? 0);
   }
 
+  async getPaidPackRevision(accountId: string): Promise<number> {
+    const row = await this.db
+      .selectFrom("ee_billing_auto_top_ups")
+      .select(sql<string>`count(*)`.as("count"))
+      .where("account_id", "=", accountId)
+      .where("status", "=", "paid")
+      .executeTakeFirst();
+    return Number(row?.count ?? 0);
+  }
+
   async claimPending(input: {
     accountId: string;
     periodStart: string;
     maxPacksPerMonth: number;
     cooldownMs: number;
+    paidPackRevision: number;
   }): Promise<string | null> {
     const root = this.db;
     return root.transaction().execute(async (trx) => {
@@ -258,6 +274,20 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
         .where("status", "=", "pending")
         .executeTakeFirst();
       if (pending) {
+        return null;
+      }
+
+      // Keep this check after the pending read. `markPaid` does not take this advisory lock:
+      // settlement grants credits first and marks the ledger row paid second. If that transition
+      // races these reads, this ordering observes either the old `pending` row above or the
+      // advanced paid-pack revision here, so there is no gap in which both guards disappear.
+      const paidRevisionRow = await trx
+        .selectFrom("ee_billing_auto_top_ups")
+        .select(sql<string>`count(*)`.as("count"))
+        .where("account_id", "=", input.accountId)
+        .where("status", "=", "paid")
+        .executeTakeFirst();
+      if (Number(paidRevisionRow?.count ?? 0) !== input.paidPackRevision) {
         return null;
       }
 
@@ -398,4 +428,3 @@ export class PostgresAutoTopUpRepository implements AutoTopUpRepository {
       .execute();
   }
 }
-

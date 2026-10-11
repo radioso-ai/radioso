@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { digestSourceAddress } from "@radioso/mcp-source-proof";
 
 import { createAuthService } from "../src/auth/authService.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { createHttpServer } from "../src/http/createHttpServer.js";
-import { createFixedWindowPreAuthSourceBudget } from "../src/http/preAuthSourceBudget.js";
+import { createFixedWindowPreAuthSourceBudget, digestPeerSource } from "../src/http/preAuthSourceBudget.js";
 import { createMcpRequestHandler } from "../src/http/requestHandler.js";
 
 const config = {
@@ -13,6 +14,7 @@ const config = {
   redisKeyPrefix: "radioso-mcp",
   requestTimeoutMs: 1_000,
   serverName: "radioso-test",
+  signingSecret: "0123456789abcdef0123456789abcdef",
   trustedProxyHops: 0,
 };
 
@@ -30,6 +32,20 @@ describe("standalone MCP pre-authentication controls", () => {
     expect(budget.consume({ sourceDigest: "source-a" })).toBe(true);
     expect(budget.consume({ sourceDigest: "source-a" })).toBe(false);
     expect(budget.consume({ sourceDigest: "source-b" })).toBe(true);
+  });
+
+  it("uses one process-random, non-public digest key when a standalone server has no signing secret", () => {
+    const request = {
+      headers: {},
+      socket: { remoteAddress: "203.0.113.7" },
+    } as never;
+
+    const first = digestPeerSource(request);
+    const second = digestPeerSource(request);
+
+    expect(first).toBe(second);
+    expect(first).not.toBe(digestSourceAddress("203.0.113.7", "radioso:source-address:v1"));
+    expect(first).not.toContain("203.0.113.7");
   });
 
   it("does not exchange a bearer after the source budget caps the request", async () => {
@@ -86,7 +102,10 @@ describe("standalone MCP pre-authentication controls", () => {
     await call("198.51.100.99, 203.0.113.8");
 
     const sourceDigests = consume.mock.calls.map(([input]) => (input as { sourceDigest: string }).sourceDigest);
-    expect(new Set(sourceDigests).size).toBe(2);
+    expect(sourceDigests).toEqual([
+      digestSourceAddress("203.0.113.7", config.signingSecret),
+      digestSourceAddress("203.0.113.8", config.signingSecret),
+    ]);
     expect(sourceDigests.join(" ")).not.toContain("203.0.113.7");
   });
 

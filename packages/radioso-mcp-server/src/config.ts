@@ -85,7 +85,7 @@ export interface RadiosoMcpConfig {
   requestTimeoutMs: number;
   serverName: string;
   signingSecret?: string;
-  /** Optional for callers constructing configs programmatically; loadConfig always materializes it. */
+  /** Optional for callers constructing configs programmatically. */
   operatorMcp?: OperatorMcpConfig;
   trustedProxyHops: number;
 }

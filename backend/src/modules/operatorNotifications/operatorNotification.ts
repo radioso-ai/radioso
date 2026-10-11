@@ -70,6 +70,21 @@ export interface OperatorNotificationContext {
   skillName?: string | null;
 }
 
+/** A transport either sent/enqueued a notice or intentionally did not. */
+export type OperatorNotificationSinkOutcome =
+  | { disposition: "delivered" }
+  | {
+      disposition: "skipped";
+      reason:
+        | "contact_destination_not_configured"
+        | "slack_workspace_not_linked"
+        | "slack_not_installed"
+        | "slack_escalation_channel_not_configured"
+        | "slack_approval_not_pending"
+        | "operator_notification_no_sink"
+        | `mail_not_dispatched:driver=${string}`;
+    };
+
 export interface OperatorNotificationSink {
-  deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<void>;
+  deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome>;
 }

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { type AgenticCapabilityRunner, type AgentTool, type AgentTraceEvent } from "../../shared/agent-runtime/index.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
+import { recipientEmailChangeMetadata } from "../../shared/domain/recipientEmailAudit.js";
 import { AppError } from "../../shared/domain/errors.js";
 import { buildAbsoluteOperatorMcpProposalLink } from "./dashboardLinks.js";
 import {
@@ -257,6 +258,58 @@ interface OperatorCopilotServiceDeps {
   readonly sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const deliveryExplicitlyChangesRecipients = (value: unknown): boolean => {
+  if (!isRecord(value)) return false;
+  const delivery = value.delivery;
+  return isRecord(delivery) && Object.hasOwn(delivery, "recipientEmails");
+};
+
+const agentDeliveryRecipientEmails = (value: unknown): string[] => {
+  if (!isRecord(value)) return [];
+  const recipients = value.recipientEmails;
+  return Array.isArray(recipients)
+    ? recipients.filter((recipient): recipient is string => typeof recipient === "string")
+    : [];
+};
+
+const proposalChangesNotificationRecipients = (proposal: CopilotProposal): boolean => {
+  if (proposal.targetType === "agent") {
+    return isRecord(proposal.payload)
+      && typeof proposal.payload.contactEmail === "string"
+      && proposal.payload.contactEmail.length > 0;
+  }
+  if (proposal.targetType === "agent_setting") {
+    const targetRef = isRecord(proposal.targetRef) ? proposal.targetRef : {};
+    const payload = isRecord(proposal.payload) ? proposal.payload : {};
+    if (targetRef.settingKey === "contactRequestDelivery") {
+      if (!Object.hasOwn(targetRef, "expectedValue")) return true;
+      return Boolean(recipientEmailChangeMetadata(
+        agentDeliveryRecipientEmails(targetRef.expectedValue),
+        agentDeliveryRecipientEmails(payload.value),
+      ));
+    }
+    const patch = isRecord(payload.patch) ? payload.patch : {};
+    const contactDelivery = patch.contactRequestDelivery;
+    if (!isRecord(contactDelivery)) return false;
+    const expectedFields = Array.isArray(targetRef.expectedFields) ? targetRef.expectedFields : [];
+    const expectedDelivery = expectedFields.find((field) => isRecord(field)
+      && field.key === "contactRequestDelivery");
+    if (!expectedDelivery || !Object.hasOwn(expectedDelivery, "value")) return true;
+    return Boolean(recipientEmailChangeMetadata(
+      agentDeliveryRecipientEmails(expectedDelivery.value),
+      agentDeliveryRecipientEmails(contactDelivery),
+    ));
+  }
+  if (proposal.targetType === "agent_skill") {
+    const payload = isRecord(proposal.payload) ? proposal.payload : {};
+    return payload.capability === "notify" && deliveryExplicitlyChangesRecipients(payload.config);
+  }
+  return false;
+};
+
 export class OperatorCopilotService {
   constructor(private readonly deps: OperatorCopilotServiceDeps) {}
 
@@ -360,7 +413,7 @@ export class OperatorCopilotService {
       surface: "mcp",
       proposalId: input.proposalId,
       currentAuthorization: input.currentAuthorization,
-    }, proposal.targetType);
+    }, proposal.targetType, proposal);
     const adapter = this.adapterFor(proposal.targetType);
     const currentVersionMatches = await adapter.readVersionToken(input.workspaceId, proposal.targetRef, proposal.payload)
       .then((currentVersion) => currentVersion === proposal.versionToken)
@@ -415,7 +468,7 @@ export class OperatorCopilotService {
     // A reviewed MCP proposal is bound to its execution invocation. The dashboard may continue
     // applying legacy MCP-origin proposals, which have neither review envelope field.
     if (input.surface === "dashboard" && isMcpReviewedProposal(pending)) throw new CopilotConflictError();
-    await this.requireProposalAuthorization(input, pending.targetType);
+    await this.requireProposalAuthorization(input, pending.targetType, pending);
     const claim = await this.deps.repository.claimProposalApply({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, claimTtlSeconds: APPLY_CLAIM_TTL_SECONDS });
     if (!claim) {
       const existing = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
@@ -450,7 +503,7 @@ export class OperatorCopilotService {
       }
       let reconciliation;
       try {
-        await this.requireProposalAuthorization(input.input, proposal.targetType);
+        await this.requireProposalAuthorization(input.input, proposal.targetType, proposal);
         reconciliation = await adapter.reconcileMcpInterruptedApply({
           workspaceId: input.input.workspaceId,
           accountId: input.input.accountId,
@@ -489,7 +542,7 @@ export class OperatorCopilotService {
     try {
       // Claiming is Ray bookkeeping, not authority. Reauthorize immediately
       // before the owning service receives the domain mutation.
-      await this.requireProposalAuthorization(input.input, proposal.targetType);
+      await this.requireProposalAuthorization(input.input, proposal.targetType, proposal);
       result = await adapter.applyIfVersionMatches(input.input.workspaceId, proposal.targetRef, proposal.payload, proposal.versionToken, applyContext);
     } catch (error) {
       if (error instanceof CopilotAuthorizationError) {
@@ -559,7 +612,7 @@ export class OperatorCopilotService {
     // The catalog gate is intentionally empty: authorization belongs to the target owner. Check
     // before claiming so a settled replay cannot disclose an old target outcome after access is revoked.
     const existing = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
-    if (existing) await this.requireProposalAuthorization({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, surface: "mcp", proposalId: input.proposalId, currentAuthorization: input.currentAuthorization }, existing.targetType);
+    if (existing) await this.requireProposalAuthorization({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, surface: "mcp", proposalId: input.proposalId, currentAuthorization: input.currentAuthorization }, existing.targetType, existing);
     if (input.awaitApprovalMs && existing && reviewedApprovalOutstanding(existing, input.reviewDigest)) {
       const wait = await awaitReviewedApproval({
         checkApproval: async () => {
@@ -625,7 +678,7 @@ export class OperatorCopilotService {
   async approveReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string; reviewDigest: string }): Promise<{ status: "approved" | "expired" | "not_pending" | "digest_mismatch" | "not_found" }> {
     const proposal = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
     if (!proposal) return { status: "not_found" };
-    await this.requireProposalAuthorization({ ...input, surface: "dashboard" }, proposal.targetType);
+    await this.requireProposalAuthorization({ ...input, surface: "dashboard" }, proposal.targetType, proposal);
     if (!this.deps.repository.approveMcpReviewedProposal) throw new Error("Reviewed proposal approval is unavailable");
     const now = this.deps.now?.() ?? new Date();
     const result = await this.deps.repository.approveMcpReviewedProposal({ ...input, now });
@@ -666,7 +719,7 @@ export class OperatorCopilotService {
     // Authorize before reporting anything about the proposal's state: a caller whose target-type
     // permission was revoked must not learn whether an operation is cancellable, already
     // dismissed, or settled.
-    await this.requireProposalAuthorization({ ...input, surface: "mcp" }, proposal.targetType);
+    await this.requireProposalAuthorization({ ...input, surface: "mcp" }, proposal.targetType, proposal);
     if (proposal.status !== "pending" && proposal.status !== "dismissed") return { status: "not_cancellable" };
     // Cancelling an already-dismissed proposal reports the outcome it already reached.
     if (proposal.status === "dismissed") return { status: "dismissed" };
@@ -883,9 +936,15 @@ export class OperatorCopilotService {
     return adapter;
   }
 
-  private async canManageProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType): Promise<boolean> {
+  private async canManageProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType, proposal?: CopilotProposal): Promise<boolean> {
     const { currentAuthorization, ...principal } = input;
-    return (currentAuthorization ?? this.deps.currentAuthorization).hasAllPermissions({ ...principal, requiredPermissions: [...copilotProposalPermissions[targetType].manage] });
+    const requiredPermissions = [
+      ...copilotProposalPermissions[targetType].manage,
+      ...(proposal && proposalChangesNotificationRecipients(proposal)
+        ? ["workspace.notification_recipients.manage" as const]
+        : []),
+    ];
+    return (currentAuthorization ?? this.deps.currentAuthorization).hasAllPermissions({ ...principal, requiredPermissions });
   }
 
   private async canReadProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType): Promise<boolean> {
@@ -893,8 +952,8 @@ export class OperatorCopilotService {
     return (currentAuthorization ?? this.deps.currentAuthorization).hasAllPermissions({ ...principal, requiredPermissions: [...copilotProposalPermissions[targetType].read] });
   }
 
-  private async requireProposalAuthorization(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType): Promise<void> {
-    if (await this.canManageProposal(input, targetType)) return;
+  private async requireProposalAuthorization(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType, proposal?: CopilotProposal): Promise<void> {
+    if (await this.canManageProposal(input, targetType, proposal)) return;
     await this.audit(input, {
       accountId: input.accountId,
       workspaceId: input.workspaceId,

@@ -629,6 +629,81 @@ describe("US3 copilot proposals", () => {
     }));
   });
 
+  it("requires notification-recipient authority before applying a recipient proposal", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({
+      workspaceId,
+      operatorUserId,
+      conversationId: "conversation-1",
+      targetType: "agent_setting",
+      targetRef: { agentId, settingKey: "contactRequestDelivery" },
+      payload: { value: { recipientEmails: ["private@example.com"], webhook: null } },
+      versionToken: "current",
+      evidence: null,
+    });
+    const authorization = vi.fn(async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) =>
+      requiredPermissions.every((permission) => permission === "workspace.agents.manage"));
+    const applyIfVersionMatches = vi.fn();
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming: vi.fn() },
+      usageLimitPolicy: noLimitPolicy(),
+      auditService: auditService(),
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      tools: [],
+      currentAuthorization: { hasAllPermissions: authorization },
+      proposalAdapters: [{ targetType: "agent_setting", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
+    });
+
+    await expect(service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
+      .rejects.toBeInstanceOf(CopilotAuthorizationError);
+    expect(authorization).toHaveBeenCalledWith(expect.objectContaining({
+      requiredPermissions: ["workspace.agents.manage", "workspace.notification_recipients.manage"],
+    }));
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+  });
+
+  it("does not elevate an agent delivery proposal whose recipient list is unchanged", async () => {
+    const repository = new MemoryProposalRepository();
+    const delivery = { recipientEmails: [], webhook: { url: "https://hooks.example.com/contact" } };
+    const proposal = await repository.createProposal({
+      workspaceId,
+      operatorUserId,
+      conversationId: "conversation-1",
+      targetType: "agent_setting",
+      targetRef: {
+        agentId,
+        settingKey: "contactRequestDelivery",
+        expectedValue: { recipientEmails: [], webhook: null },
+      },
+      payload: { value: delivery },
+      versionToken: "current",
+      evidence: null,
+    });
+    const authorization = vi.fn(async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) =>
+      requiredPermissions.every((permission) => permission === "workspace.agents.manage"));
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { agentId } }));
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming: vi.fn() },
+      usageLimitPolicy: noLimitPolicy(),
+      auditService: auditService(),
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      tools: [],
+      currentAuthorization: { hasAllPermissions: authorization },
+      proposalAdapters: [{ targetType: "agent_setting", readVersionToken: vi.fn(async () => "current"), preview: vi.fn(), applyIfVersionMatches }],
+    });
+
+    await expect(service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
+      .resolves.toMatchObject({ status: "applied" });
+    expect(authorization).toHaveBeenCalledWith(expect.objectContaining({
+      requiredPermissions: ["workspace.agents.manage"],
+    }));
+    expect(applyIfVersionMatches).toHaveBeenCalledOnce();
+  });
+
   it("releases the apply claim when authority is revoked after it is claimed", async () => {
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });

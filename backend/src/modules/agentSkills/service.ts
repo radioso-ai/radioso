@@ -11,6 +11,11 @@ import {
 import { mergeSkillConfig } from "./configMerge.js";
 import { agentSkillInvocationModes, type AgentSkillInvocationMode, type AgentSkillSpine } from "./domain.js";
 import type { AgentSkillRepositoryPort } from "./repository.js";
+import type { AuditService } from "../audit/contracts/index.js";
+import {
+  recipientEmailChangeMetadata,
+  recipientEmailsFromDeliveryConfig,
+} from "../../shared/domain/recipientEmailAudit.js";
 
 const skillNamePattern = /^[a-z][a-z0-9_]*$/u;
 const skillNamePatternMessage = "must start with a lowercase letter and contain only lowercase letters, numbers, and underscores";
@@ -98,6 +103,7 @@ interface AgentSkillsServiceOptions {
   repository: AgentSkillRepositoryPort;
   capabilities: SkillCapabilityRegistry;
   logger?: AppLogger;
+  audit?: Pick<AuditService, "record">;
 }
 
 const pgErrorMeta = (error: unknown): { code?: string; constraint?: string } => {
@@ -191,6 +197,7 @@ export class AgentSkillsService {
         capability: descriptor.id,
         invocationMode: input.invocationMode,
       });
+      await this.auditRecipientChange(workspaceId, agentId, record.id, descriptor.id, {}, record.config ?? {});
       return this.toView(record);
     } catch (error) {
       throw this.translatePersistenceError(error, input.name, input.target);
@@ -266,10 +273,33 @@ export class AgentSkillsService {
         capability: descriptor.id,
         invocationMode: updated.invocationMode,
       });
+      await this.auditRecipientChange(workspaceId, agentId, updated.id, descriptor.id, existing.config ?? {}, updated.config ?? {});
       return this.toView(updated);
     } catch (error) {
       throw this.translatePersistenceError(error, existing.skillName, target);
     }
+  }
+
+  private async auditRecipientChange(
+    workspaceId: string,
+    agentId: string,
+    skillId: string,
+    capability: SkillCapabilityId,
+    previousConfig: Record<string, unknown>,
+    config: Record<string, unknown>,
+  ): Promise<void> {
+    if (capability !== "notify") return;
+    const metadata = recipientEmailChangeMetadata(
+      recipientEmailsFromDeliveryConfig(previousConfig),
+      recipientEmailsFromDeliveryConfig(config),
+    );
+    if (!metadata) return;
+    await this.options.audit?.record({
+      workspaceId,
+      eventType: "agent_skill.notification_recipients.changed",
+      eventStatus: "success",
+      metadata: { agentId, skillId, ...metadata },
+    });
   }
 
   /**
@@ -299,6 +329,10 @@ export class AgentSkillsService {
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<void> {
+    const existing = await this.options.repository.findById(workspaceId, agentId, id);
+    if (!existing) {
+      throw notFound("Skill not found");
+    }
     const removed = await this.options.repository.remove(workspaceId, agentId, id);
     if (!removed) {
       throw notFound("Skill not found");
@@ -309,6 +343,10 @@ export class AgentSkillsService {
       agentId,
       skillId: id,
     });
+    const capability = this.options.capabilities.getByStoredKind(existing.kind)?.id;
+    if (capability) {
+      await this.auditRecipientChange(workspaceId, agentId, id, capability, existing.config ?? {}, {});
+    }
   }
 
   private requireCapability(capability: SkillCapabilityId): SkillCapabilityDescriptor {

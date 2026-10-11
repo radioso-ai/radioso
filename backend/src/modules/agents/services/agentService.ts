@@ -34,6 +34,8 @@ import {
 import { DEFAULT_AGENT_LOCALE_FALLBACK, type AgentGreetingSnapshot } from "../agentRevision.js";
 import { ensurePublicIdMintedForInput } from "./agentPublicIdentity.js";
 import type { OwnerCommitHook } from "../../../shared/infra/kysely/types.js";
+import type { AuditService } from "../../audit/contracts/index.js";
+import { recipientEmailChangeMetadata } from "../../../shared/domain/recipientEmailAudit.js";
 
 export type AgentSettingsResource = Omit<AgentRecord, "authoredDirectives"> & {
   isDefault: boolean;
@@ -112,6 +114,7 @@ export class AgentService {
     private readonly embedConfigCacheInvalidator?: EmbedConfigCacheInvalidator,
     private readonly accessGrantService?: AccessGrantService,
     private readonly agentSkills?: Pick<AgentSkillRepositoryPort, "findByName">,
+    private readonly audit?: Pick<AuditService, "record">,
   ) {}
 
   async list(workspaceId: string): Promise<AgentSettingsResource[]> {
@@ -177,6 +180,7 @@ export class AgentService {
       : await this.agentRepository.findDefaultByWorkspaceId(workspaceId);
     const agent = await this.agentRepository.create(workspaceId, input, options);
     await this.syncPublicLaunchGrants(null, agent);
+    await this.auditRecipientChange(workspace, null, agent);
     if (!existingDefault) {
       await this.agentRepository.setDefault(workspaceId, agent.id);
     }
@@ -536,6 +540,7 @@ export class AgentService {
     updated: AgentRecord,
   ): Promise<void> {
     await this.syncPublicLaunchGrants(previous, updated);
+    await this.auditRecipientChange(workspace, previous, updated);
     if (workspace.defaultAgentId === updated.id) {
       await this.syncLegacyWorkspaceDefaults(workspace, updated);
     }
@@ -546,6 +551,25 @@ export class AgentService {
     if (embedToken && this.embedConfigCacheInvalidator) {
       await this.embedConfigCacheInvalidator.invalidateForToken(embedToken);
     }
+  }
+
+  private async auditRecipientChange(
+    workspace: WorkspaceRecord,
+    previous: AgentRecord | null,
+    updated: AgentRecord,
+  ): Promise<void> {
+    const metadata = recipientEmailChangeMetadata(
+      previous?.contactRequestDelivery.recipientEmails ?? [],
+      updated.contactRequestDelivery.recipientEmails,
+    );
+    if (!metadata) return;
+    await this.audit?.record({
+      accountId: workspace.accountId,
+      workspaceId: workspace.id,
+      eventType: "agent.contact_recipients.changed",
+      eventStatus: "success",
+      metadata: { agentId: updated.id, ...metadata },
+    });
   }
 
   private async validateSourceScope(workspaceId: string, input: AgentInput): Promise<void> {

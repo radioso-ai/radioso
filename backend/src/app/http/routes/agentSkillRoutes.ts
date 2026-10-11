@@ -4,8 +4,12 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { agentSkillCreateSchema, agentSkillUpdateSchema } from "../../../modules/agentSkills/public.js";
 import { builtInAnswerSkillDefinitions } from "../../../modules/chat/public.js";
-import { badRequest } from "../../../shared/domain/errors.js";
-import { requireWorkspacePermission } from "../middleware/requirePermission.js";
+import { badRequest, forbidden } from "../../../shared/domain/errors.js";
+import {
+  recipientEmailChangeMetadata,
+  recipientEmailsFromDeliveryConfig,
+} from "../../../shared/domain/recipientEmailAudit.js";
+import { holdsWorkspacePermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 
@@ -30,6 +34,22 @@ const parseUuid = (raw: unknown, field: string): string => {
     throw badRequest(`Invalid ${field}`);
   }
   return parsed.data;
+};
+
+const explicitlyChangesRecipients = (config: unknown): boolean => {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return false;
+  const delivery = (config as Record<string, unknown>).delivery;
+  return Boolean(delivery && typeof delivery === "object" && !Array.isArray(delivery)
+    && Object.hasOwn(delivery, "recipientEmails"));
+};
+
+const requireRecipientManagement = async (
+  dependencies: AgentSkillRouteDependencies,
+  res: Response,
+): Promise<void> => {
+  if (!await holdsWorkspacePermission(dependencies, res, "workspace.notification_recipients.manage")) {
+    throw forbidden("Only workspace owners and admins can change notification recipients");
+  }
 };
 
 export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies): Router => {
@@ -115,6 +135,11 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
     async (req, res, next) => {
       try {
         const { workspaceId, agentId } = await resolveAgent(req, res);
+        if (req.body.capability === "notify"
+          && explicitlyChangesRecipients(req.body.config)
+          && recipientEmailsFromDeliveryConfig(req.body.config).length > 0) {
+          await requireRecipientManagement(dependencies, res);
+        }
         const skill = await dependencies.agentSkillsService.create(workspaceId, agentId, req.body);
         res.status(201).json({ skill });
       } catch (error) {
@@ -131,10 +156,26 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
     async (req, res, next) => {
       try {
         const { workspaceId, agentId } = await resolveAgent(req, res);
+        const skillId = parseUuid(req.params.skillId, "skillId");
+        const existing = (await dependencies.agentSkillsService.list(workspaceId, agentId))
+          .find((skill) => skill.id === skillId);
+        const proposedRecipients = explicitlyChangesRecipients(req.body.config)
+          ? recipientEmailsFromDeliveryConfig(req.body.config)
+          : req.body.replaceConfig !== undefined
+            ? recipientEmailsFromDeliveryConfig(req.body.replaceConfig)
+            : null;
+        if (existing?.capability === "notify"
+          && proposedRecipients
+          && recipientEmailChangeMetadata(
+            recipientEmailsFromDeliveryConfig(existing.config),
+            proposedRecipients,
+          )) {
+          await requireRecipientManagement(dependencies, res);
+        }
         const skill = await dependencies.agentSkillsService.update(
           workspaceId,
           agentId,
-          parseUuid(req.params.skillId, "skillId"),
+          skillId,
           req.body,
         );
         res.status(200).json({ skill });
@@ -147,7 +188,14 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
   router.delete("/:agentId/skills/:skillId", workspaceSession, agentManage, async (req, res, next) => {
     try {
       const { workspaceId, agentId } = await resolveAgent(req, res);
-      await dependencies.agentSkillsService.remove(workspaceId, agentId, parseUuid(req.params.skillId, "skillId"));
+      const skillId = parseUuid(req.params.skillId, "skillId");
+      if ((await dependencies.agentSkillsService.list(workspaceId, agentId))
+        .some((skill) => skill.id === skillId
+          && skill.capability === "notify"
+          && recipientEmailsFromDeliveryConfig(skill.config).length > 0)) {
+        await requireRecipientManagement(dependencies, res);
+      }
+      await dependencies.agentSkillsService.remove(workspaceId, agentId, skillId);
       res.status(204).send();
     } catch (error) {
       next(error);

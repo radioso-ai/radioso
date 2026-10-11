@@ -761,18 +761,30 @@ describe("createAgentSkillCopilotProposalAdapter", () => {
     expect(apply).not.toHaveBeenCalled();
   });
 
-  it("keeps an unclassifiable atomic skill write failure uncertain by rethrowing it on an MCP apply", async () => {
-    const apply = vi.fn(async () => { throw new Error("connection reset"); });
+  it("routes an MCP notify update through the skill service so recipient auditing is preserved", async () => {
+    const apply = vi.fn();
+    const update = vi.fn(async () => ({ id: "skill-1" }));
+    const targetRef = { agentId: randomUUID(), skillId: randomUUID() };
     const adapter = createAgentSkillCopilotProposalAdapter({
       agentService: { get: vi.fn() },
-      agentSkillsService: { dryRunValidate: vi.fn(async () => ({})) } as never,
+      agentSkillsService: {
+        dryRunValidate: vi.fn(async () => ({ delivery: { recipientEmails: ["ops@example.com"] } })),
+        list: vi.fn(async () => [{
+          id: targetRef.skillId,
+          capability: "notify",
+          config: { delivery: { recipientEmails: ["old@example.com"] } },
+        }]),
+        update,
+      } as never,
       skillCapabilityRegistry: createDefaultSkillCapabilityRegistry(),
       atomicMcpApply: { apply },
     });
-    const targetRef = { agentId: randomUUID(), skillId: randomUUID() };
-    const payload = { name: "notify_ops", capability: "notify", target: { kind: "notify_delivery", id: null }, config: {}, invocationMode: "routine_named", enabled: true };
+    const payload = { name: "notify_ops", capability: "notify", target: { kind: "notify_delivery", id: null }, config: { delivery: { recipientEmails: ["ops@example.com"] } }, invocationMode: "routine_named", enabled: true };
 
-    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, payload, new Date().toISOString(), mcpAtomicContext)).rejects.toThrow("connection reset");
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, payload, new Date().toISOString(), mcpAtomicContext))
+      .resolves.toEqual({ outcome: "applied", appliedRef: { agentId: targetRef.agentId, skillId: "skill-1" } });
+    expect(update).toHaveBeenCalledOnce();
+    expect(apply).not.toHaveBeenCalled();
   });
 
   it("keeps a rate-limited pre-write validation uncertain instead of certifying a refusal", async () => {

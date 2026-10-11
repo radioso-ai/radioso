@@ -532,6 +532,7 @@ export const buildChatServices = (input: {
               telemetryService: input.telemetryService,
               webhookDestinations: input.webhookDestinations,
               mailService: input.mailService,
+              usageLimitPolicy: input.usageLimitPolicy,
               assertPublicWebsiteUrl: input.assertPublicWebsiteUrl,
               errorReporter: input.errorReporter,
             })

@@ -10,7 +10,7 @@ import {
 import { presentRevisionState } from "./agentRevisionPresenters.js";
 import { registerAgentChannelChatRoute } from "./agentChannelChatRoute.js";
 import { requireWorkspaceSession, WORKSPACE_HEADER } from "../middleware/requireWorkspaceSession.js";
-import { requireWorkspacePermission } from "../middleware/requirePermission.js";
+import { holdsWorkspacePermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
 import { requireApiAccessCsrf } from "../middleware/requireApiAccessCsrf.js";
@@ -19,7 +19,8 @@ import {
   agentChannelCredentialListQuerySchema,
   agentChannelCredentialParamsSchema,
 } from "../schemas/agentChannelSchemas.js";
-import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
+import { recipientEmailChangeMetadata } from "../../../shared/domain/recipientEmailAudit.js";
 import {
   isMachinePrincipal,
   rejectMachineLaunchSurfaceInput,
@@ -107,7 +108,18 @@ export const agentBodySchema = z.object({
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
 
-type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService">;
+type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService">;
+
+const proposedAgentRecipientEmails = (body: unknown): string[] | null => {
+  if (!body || typeof body !== "object" || Array.isArray(body)
+    || !Object.hasOwn(body, "contactRequestDelivery")) return null;
+  const delivery = (body as { contactRequestDelivery?: unknown }).contactRequestDelivery;
+  if (!delivery || typeof delivery !== "object" || Array.isArray(delivery)) return [];
+  const recipients = (delivery as { recipientEmails?: unknown }).recipientEmails;
+  return Array.isArray(recipients)
+    ? recipients.filter((recipient): recipient is string => typeof recipient === "string")
+    : [];
+};
 
 const channelForAudience = (audience: "mcp" | "rest") =>
   audience === "mcp" ? "mcp-converse" as const : "agent-api" as const;
@@ -265,6 +277,11 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       const { workspaceId } = res.locals as { workspaceId: string };
       const { authPrincipal } = res.locals as { authPrincipal?: AgentRoutePrincipal };
       rejectMachineLaunchSurfaceInput(authPrincipal, req.body);
+      const recipientEmails = proposedAgentRecipientEmails(req.body);
+      if (recipientEmails && recipientEmails.length > 0
+        && !await holdsWorkspacePermission(dependencies, res, "workspace.notification_recipients.manage")) {
+        throw forbidden("Only workspace owners and admins can change notification recipients");
+      }
       const agent = await dependencies.agentService.create(workspaceId, req.body);
       res.status(201).json(presentAgentForPrincipal(agent, authPrincipal));
     } catch (error) {
@@ -612,6 +629,12 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       const parsed = agentParamsSchema.parse(req.params);
       const current = await dependencies.agentService.resolve(workspaceId, parsed.agentId);
       rejectMachineLaunchSurfaceInput(authPrincipal, req.body);
+      const recipientEmails = proposedAgentRecipientEmails(req.body);
+      if (recipientEmails
+        && recipientEmailChangeMetadata(current.contactRequestDelivery.recipientEmails, recipientEmails)
+        && !await holdsWorkspacePermission(dependencies, res, "workspace.notification_recipients.manage")) {
+        throw forbidden("Only workspace owners and admins can change notification recipients");
+      }
       const { customInstruction, ...liveChanges } = req.body;
       let agent = await dependencies.agentService.get(workspaceId, parsed.agentId);
       if (Object.keys(liveChanges).length > 0) {

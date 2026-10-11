@@ -1,7 +1,7 @@
 ---
 title: "Operator MCP OAuth Access"
 description: "Connect an OAuth-capable MCP client to Ray's governed workspace tools and manage its access."
-last_updated: 2026-10-10
+last_updated: 2026-10-11
 ---
 
 # Operator MCP OAuth Access
@@ -33,6 +33,13 @@ The catalog is rebuilt from the caller's current permissions for every list or c
 - **Acts** (`operator:act`) — `set_triage_state`, admitted because it is fenced by an expected version rather than appended: every call, including a repeat with the same operation id, re-runs against the current row, so a lost-response retry either lands the transition once or comes back a conflict against whatever won, never a duplicate effect.
 
 Recrawling, eval-suite runs, customer replies, credential administration, and provider authorization stay outside this catalog — each either depends on dashboard/Ray-conversation context or has a distinct owner contract.
+
+Changing an agent's `contactRequestDelivery.recipientEmails` or a notify
+skill's `delivery.recipientEmails` requires owner or admin authority. Ray and
+Operator MCP may draft the same reviewed change as other agent settings, but
+the apply or reviewed-execution boundary rechecks
+`workspace.notification_recipients.manage`; a member cannot use a pending
+proposal to bypass the dashboard and API restriction.
 
 A call whose earlier attempt is still running answers with a tool error, not an empty result, so a client can tell "still running" apart from "finished, with nothing to show." Retry the same call again shortly. A call that already ran and left nothing this catalog can reconstruct — a domain refusal, or a completed probe — answers the same way and names a fresh operation id as the way to run it again.
 

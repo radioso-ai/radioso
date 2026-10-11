@@ -305,6 +305,7 @@ export const buildIntegrationServices = (input: {
     repository: agentSkillRepository,
     capabilities: skillCapabilityRegistry,
     logger: input.logger,
+    audit: input.infrastructure.auditService,
   });
   return {
     agentSkillRepository,

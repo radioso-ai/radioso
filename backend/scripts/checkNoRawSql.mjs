@@ -14,6 +14,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 export const ALLOWLIST = new Set([
   "db/runMigrations.ts", // migration runner: migrations stay raw .sql by design
@@ -49,10 +50,19 @@ const RAW_SQL_MARKER = /\.(query|queryOne|queryOptional)\s*(<[^>]*>)?\s*\(/;
 export const lineHasRawSql = (line) => RAW_SQL_MARKER.test(line);
 
 const PGVECTOR_SQL_SYNTAX = /::\s*(?:vector|halfvec)\b|\b[\w.]*embedding[\w.]*\s*::\s*text\b|<=>|<->|<#>|\bvector_dims\s*\(|\b(?:hnsw|ivfflat)\b/i;
-const KYSELY_SQL_TEMPLATE = /\bsql(?:<[^>`]*>)?\s*`/;
 
-export const lineHasPgVectorSql = (line) =>
-  KYSELY_SQL_TEMPLATE.test(line) && PGVECTOR_SQL_SYNTAX.test(line);
+const literalText = (node) => {
+  if (
+    ts.isStringLiteral(node)
+    || ts.isNoSubstitutionTemplateLiteral(node)
+    || ts.isTemplateHead(node)
+    || ts.isTemplateMiddle(node)
+    || ts.isTemplateTail(node)
+  ) {
+    return node.text;
+  }
+  return null;
+};
 
 export const findRawSqlViolations = (srcDir) => {
   const offenders = [];
@@ -89,35 +99,17 @@ export const findPgVectorSqlViolations = (srcDir) => {
       if (!entry.endsWith(".ts")) continue;
       const rel = relative(srcDir, full).split("\\").join("/");
       if (PGVECTOR_SQL_ALLOWLIST.has(rel)) continue;
-      const lines = readFileSync(full, "utf8").split("\n");
-      let inSqlTemplate = false;
-      let waitingForRawSqlTemplate = false;
-      lines.forEach((line, i) => {
-        const opensKyselyTemplate = KYSELY_SQL_TEMPLATE.test(line);
-        const opensRawQuery = RAW_SQL_MARKER.test(line);
-        const opensReturnedSql = /\breturn\s+`/.test(line);
-        const hasTemplateDelimiter = line.includes("`");
-        const isSql = inSqlTemplate
-          || opensKyselyTemplate
-          || opensReturnedSql
-          || opensRawQuery
-          || (waitingForRawSqlTemplate && hasTemplateDelimiter);
-        if (isSql && PGVECTOR_SQL_SYNTAX.test(line)) {
-          offenders.push(`${rel}:${i + 1}: ${line.trim()}`);
+      const source = readFileSync(full, "utf8");
+      const sourceFile = ts.createSourceFile(full, source, ts.ScriptTarget.Latest, true);
+      const visit = (node) => {
+        const text = literalText(node);
+        if (text !== null && PGVECTOR_SQL_SYNTAX.test(text)) {
+          const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+          offenders.push(`${rel}:${line + 1}: ${text.replace(/\s+/g, " ").trim()}`);
         }
-        if (opensRawQuery && !hasTemplateDelimiter) {
-          waitingForRawSqlTemplate = true;
-        }
-        if (waitingForRawSqlTemplate && hasTemplateDelimiter) {
-          waitingForRawSqlTemplate = false;
-        }
-        if (isSql && hasTemplateDelimiter) {
-          const ticks = line.match(/`/g)?.length ?? 0;
-          if (ticks % 2 === 1) {
-            inSqlTemplate = !inSqlTemplate;
-          }
-        }
-      });
+        ts.forEachChild(node, visit);
+      };
+      visit(sourceFile);
     }
   };
   walk(srcDir);

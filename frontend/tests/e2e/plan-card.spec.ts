@@ -44,6 +44,7 @@ test('plan card under 80% usage shows the plan, actions, and no banner', async (
   await expect(planCard.getByText('Satellite')).toBeVisible()
   await expect(planCard.getByRole('button', { name: 'Upgrade' })).toBeVisible()
   await expect(planCard.getByRole('button', { name: /Buy 300 more/ })).toBeVisible()
+  await expect(planCard.getByText('Top-up conversations expire 12 months after purchase.')).toBeVisible()
   await expect(planCard.getByRole('button', { name: 'Manage billing' })).toBeVisible()
   await expect(planCard.getByRole('status')).toHaveCount(0)
   await expect

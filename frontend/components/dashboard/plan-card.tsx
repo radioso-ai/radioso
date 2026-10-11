@@ -252,6 +252,9 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
             {actions}
           </>
         )}
+        {billing.topUpAvailable ? (
+          <p className="text-xs text-muted-foreground">Top-up conversations expire 12 months after purchase.</p>
+        ) : null}
         {billing.autoTopUp.available ? (
           <div className="space-y-2 border-t pt-4">
             <div className="flex items-center gap-2">

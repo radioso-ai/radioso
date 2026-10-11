@@ -49,7 +49,7 @@ export interface AccountUsageSummary {
     resetAt: string;
     used: number;
     limit: number;
-    /** Remaining prepaid top-up conversations. Never expire. */
+    /** Remaining prepaid top-up conversations from grants made in the last 12 months. */
     credits: number;
     byKind: Record<"conversation" | "copilot" | "test_run" | "pulse_report", number>;
   } | null;

@@ -143,7 +143,8 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
       )
     `);
 
-    // Prepaid top-ups. Not period-scoped: they never expire. The balance may go negative
+    // Prepaid top-ups use one aggregate counter; dated grant rows let the service expire
+    // each grant after 12 months and consume oldest credit first. The balance may go negative
     // once a customer conversation borrows against its grace allowance (reserveTenths in
     // usageLimitService.ts), so a fresh install must not recreate the old nonnegative CHECK.
     await database.query(`

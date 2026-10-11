@@ -33,6 +33,7 @@ const createDependencies = (overrides: Partial<RouteDependencies> = {}): RouteDe
   accountAccessService: {
     requireActiveMembership: vi.fn().mockResolvedValue(undefined),
     requirePermission: vi.fn().mockResolvedValue(undefined),
+    hasPermission: vi.fn().mockResolvedValue(true),
   },
   workspaceSessionService: {
     resolve: vi.fn().mockResolvedValue({ accountId: "account-1", workspaceId: "workspace-1" }),
@@ -199,6 +200,29 @@ describe("agent wizard routes", () => {
         contactEmail: "support@example.com",
       }),
     }));
+  });
+
+  it("rejects a member-supplied contact recipient before creating the agent", async () => {
+    const service = createService();
+    const dependencies = createDependencies({
+      accountAccessService: {
+        requireActiveMembership: vi.fn().mockResolvedValue(undefined),
+        requirePermission: vi.fn().mockResolvedValue(undefined),
+        hasPermission: vi.fn().mockResolvedValue(false),
+      },
+    } as unknown as Partial<RouteDependencies>);
+
+    await request(createApp(service, dependencies))
+      .post("/api/v1/agent-wizard/create")
+      .set("Cookie", "radioso_session=valid-session")
+      .send({
+        websiteUrl: "https://example.com",
+        name: "Example Support",
+        contactEmail: "support@example.com",
+      })
+      .expect(403);
+
+    expect(service.createAgentFromWizard).not.toHaveBeenCalled();
   });
 
   it("returns 403 when the workspace principal lacks agent management permission", async () => {

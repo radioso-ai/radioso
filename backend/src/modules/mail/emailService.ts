@@ -10,6 +10,8 @@ export type EmailKind =
   | "password_reset"
   | "account_invitation"
   | "conversation_transfer"
+  | "contact_notification"
+  | "operator_notice"
   | "usage_alert"
   | "billing_notice";
 

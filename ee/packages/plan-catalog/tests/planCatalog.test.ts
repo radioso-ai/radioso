@@ -59,6 +59,18 @@ describe("catalog invariants", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("sets a positive daily notification email allowance on every plan", () => {
+    expect(PLAN_CATALOG.plans.map((plan) => [plan.id, plan.dailyNotificationEmails])).toEqual([
+      ["comet", 100],
+      ["satellite", 1000],
+      ["planet", 5000],
+    ]);
+    for (const plan of PLAN_CATALOG.plans) {
+      expect(Number.isInteger(plan.dailyNotificationEmails)).toBe(true);
+      expect(plan.dailyNotificationEmails).toBeGreaterThan(0);
+    }
+  });
+
   it("resolves defaultPlanId to a real plan", () => {
     expect(findPlan(PLAN_CATALOG.defaultPlanId)).toBeDefined();
   });

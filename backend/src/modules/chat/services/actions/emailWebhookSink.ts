@@ -3,6 +3,7 @@ import {
   formatRoutineEndingNotification,
   type OperatorNotification,
   type OperatorNotificationContext,
+  type NotificationDeliveryAdmissionPort,
   type OperatorNotificationSink,
   type OperatorNotificationSinkOutcome,
   type RoutineEndingOperatorNotification,
@@ -17,6 +18,7 @@ import type {
   ContactWebhookHttpClient,
   RoutedContactRecipientResolver,
 } from "./contactSendActionHandler.js";
+import { createSignedWebhookHeaders } from "./webhookDelivery.js";
 
 /** What this sink logs. Lines name the route and counts, never an address or a webhook URL. */
 interface OperatorNotificationSinkLogger {
@@ -65,6 +67,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     private readonly logger?: OperatorNotificationSinkLogger,
     private readonly webhookClient?: ContactWebhookHttpClient,
     private readonly conversationLinks?: ConversationLinkResolver,
+    private readonly admission?: NotificationDeliveryAdmissionPort,
   ) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome> {
@@ -100,6 +103,16 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         `${actionType}: no recipient configured for workspace; skipping`,
       );
       return { disposition: "skipped", reason: "contact_destination_not_configured" };
+    }
+    const admission = await this.admission?.admit({
+      requestId: context.requestId,
+      workspaceId: recipientContext.workspaceId,
+      accountId: recipientContext.accountId,
+      conversationId: recipientContext.conversationId,
+      requestedEmailCount: target.emails.length,
+    });
+    if (admission && !admission.dispatchAllowed) {
+      return { disposition: "skipped", reason: admission.reason ?? "conversation_dispatch_cap" };
     }
     this.logger?.info(
       { kind: notification.kind, via: target.via, emailCount: target.emails.length, webhook: target.webhook !== null },
@@ -140,9 +153,10 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       : this.routineEndingDelivery(notification, context, openLine, links);
 
     const [emailResults] = await Promise.all([
-      Promise.all(target.emails.map((to) =>
+      Promise.all((admission?.emailAllowed === false ? [] : target.emails).map((to) =>
         this.mailer.send({
           to,
+          kind: "operator_notice",
           ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),
           subject: delivery.subject,
           text: delivery.text,
@@ -157,7 +171,9 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       }) : Promise.resolve(),
     ]);
     if (!target.webhook) {
-      const skipReason = mailDeliverySkipReason(emailResults);
+      const skipReason = admission?.emailAllowed === false
+        ? admission.reason
+        : mailDeliverySkipReason(emailResults);
       if (skipReason) {
         return { disposition: "skipped", reason: skipReason };
       }
@@ -208,10 +224,11 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     if (!this.webhookClient) {
       throw new Error(input.missingClientMessage);
     }
+    const rawBody = JSON.stringify(input.payload);
     await this.webhookClient.post({
       url: input.webhook.url,
-      rawBody: JSON.stringify(input.payload),
-      headers: { "Idempotency-Key": input.idempotencyKey },
+      rawBody,
+      headers: createSignedWebhookHeaders({ rawBody, secret: input.webhook.url, idempotencyKey: input.idempotencyKey }),
     });
   }
 }

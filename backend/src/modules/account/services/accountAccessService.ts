@@ -36,6 +36,7 @@ export type AccountPermission =
   | "workspace.skills.read"
   | "workspace.agents.read"
   | "workspace.agents.manage"
+  | "workspace.notification_recipients.manage"
   | "workspace.settings.manage"
   | "workspace.settings.read"
   | "workspace.api_access.personal.manage"

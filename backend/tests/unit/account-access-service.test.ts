@@ -127,6 +127,12 @@ describe("AccountAccessService", () => {
     );
   });
 
+  it("limits notification-recipient management to owners and admins", () => {
+    expect(workspaceRoleAllows("owner", "workspace.notification_recipients.manage")).toBe(true);
+    expect(workspaceRoleAllows("admin", "workspace.notification_recipients.manage")).toBe(true);
+    expect(workspaceRoleAllows("member", "workspace.notification_recipients.manage")).toBe(false);
+  });
+
   it("returns the effective workspace role it authorized a teammate by, and none for a credential", async () => {
     const userRepository = new InMemoryUserRepository();
     const membershipRepository = new InMemoryAccountMembershipRepository();

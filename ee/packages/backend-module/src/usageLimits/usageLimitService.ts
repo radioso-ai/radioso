@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { sql } from "kysely";
 
-import { PLAN_CATALOG, type UsageCountKind } from "@radioso/plan-catalog";
+import { findPlan, PLAN_CATALOG, type UsageCountKind } from "@radioso/plan-catalog";
 
 import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type {
@@ -250,6 +250,16 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     }
 
     return balanceTenths;
+  }
+
+  async getNotificationEmailDailyLimit(input: {
+    accountId?: string | null;
+    workspaceId: string;
+  }): Promise<number | null> {
+    const accountId = await this.resolveAccountId(input);
+    if (!accountId) return null;
+    const profile = await this.findProfileForAccount(accountId);
+    return profile ? findPlan(profile.key)?.dailyNotificationEmails ?? null : null;
   }
 
   async listProfiles(): Promise<UsageLimitProfile[]> {

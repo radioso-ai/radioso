@@ -72,7 +72,9 @@ projected AS (
         'sourceScope', source_scope,
         'suggestedQuestionsEnabled', COALESCE(
           CASE
-            WHEN jsonb_typeof(behavior_settings -> 'suggestedQuestionsEnabled') = 'boolean'
+            WHEN behavior_settings ->> 'suggestedQuestionsEnabled' IS NULL
+            THEN (behavior_settings ->> 'suggestedQuestionsEnabled')::boolean
+            WHEN behavior_settings ->> 'suggestedQuestionsEnabled' ~* '^[[:space:]]*(t(r(u(e)?)?)?|f(a(l(s(e)?)?)?)?|y(e(s)?)?|n(o)?|on|of(f)?|1|0)[[:space:]]*$'
             THEN (behavior_settings ->> 'suggestedQuestionsEnabled')::boolean
           END,
           TRUE
@@ -80,12 +82,24 @@ projected AS (
         'exposedInputs', jsonb_build_object('query', TRUE)
       )
       || CASE
-        WHEN jsonb_typeof(behavior_settings -> 'suggestedQuestionsCount') = 'number'
-          AND (behavior_settings ->> 'suggestedQuestionsCount')::numeric
-            = trunc((behavior_settings ->> 'suggestedQuestionsCount')::numeric)
-          AND (behavior_settings ->> 'suggestedQuestionsCount')::numeric
-            BETWEEN -2147483648 AND 2147483647
+        WHEN NOT (behavior_settings ? 'suggestedQuestionsCount') THEN '{}'::jsonb
+        WHEN behavior_settings ->> 'suggestedQuestionsCount' IS NULL
         THEN jsonb_build_object('suggestedQuestionsCount', (behavior_settings ->> 'suggestedQuestionsCount')::integer)
+        WHEN behavior_settings ->> 'suggestedQuestionsCount' ~ '^[[:space:]]*[+-]?[0-9]+[[:space:]]*$' THEN
+          CASE
+            WHEN length(regexp_replace(
+              behavior_settings ->> 'suggestedQuestionsCount',
+              '(^[[:space:]]*[+-]?0*)|([[:space:]]*$)',
+              '',
+              'g'
+            )) <= 10 THEN
+              CASE
+                WHEN (behavior_settings ->> 'suggestedQuestionsCount')::numeric BETWEEN -2147483648 AND 2147483647
+                THEN jsonb_build_object('suggestedQuestionsCount', (behavior_settings ->> 'suggestedQuestionsCount')::integer)
+                ELSE '{}'::jsonb
+              END
+            ELSE '{}'::jsonb
+          END
         ELSE '{}'::jsonb
       END
     ) AS config

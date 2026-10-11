@@ -4,7 +4,7 @@ import { digestSourceAddress } from "@radioso/mcp-source-proof";
 import { createAuthService } from "../src/auth/authService.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { createHttpServer } from "../src/http/createHttpServer.js";
-import { createFixedWindowPreAuthSourceBudget } from "../src/http/preAuthSourceBudget.js";
+import { createFixedWindowPreAuthSourceBudget, digestPeerSource } from "../src/http/preAuthSourceBudget.js";
 import { createMcpRequestHandler } from "../src/http/requestHandler.js";
 
 const config = {
@@ -32,6 +32,20 @@ describe("standalone MCP pre-authentication controls", () => {
     expect(budget.consume({ sourceDigest: "source-a" })).toBe(true);
     expect(budget.consume({ sourceDigest: "source-a" })).toBe(false);
     expect(budget.consume({ sourceDigest: "source-b" })).toBe(true);
+  });
+
+  it("uses one process-random, non-public digest key when a standalone server has no signing secret", () => {
+    const request = {
+      headers: {},
+      socket: { remoteAddress: "203.0.113.7" },
+    } as never;
+
+    const first = digestPeerSource(request);
+    const second = digestPeerSource(request);
+
+    expect(first).toBe(second);
+    expect(first).not.toBe(digestSourceAddress("203.0.113.7", "radioso:source-address:v1"));
+    expect(first).not.toContain("203.0.113.7");
   });
 
   it("does not exchange a bearer after the source budget caps the request", async () => {

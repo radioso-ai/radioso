@@ -117,8 +117,8 @@ describe("loadConfig", () => {
     }).operatorMcp).toMatchObject({ internalSecret });
   });
 
-  it("requires a signing secret for every standalone MCP process", () => {
-    expect(() => loadConfigFromEnv({ RADIOSO_BASE_URL: "http://localhost:8080" })).toThrow(/RADIOSO_MCP_SIGNING_SECRET/i);
+  it("allows a missing signing secret for one standalone process with in-memory sessions", () => {
+    expect(loadConfigFromEnv({ RADIOSO_BASE_URL: "http://localhost:8080" }).signingSecret).toBeUndefined();
   });
 
   it("requires a signing secret when Redis persists encrypted backend sessions", () => {

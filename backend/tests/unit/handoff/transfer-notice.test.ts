@@ -294,6 +294,7 @@ describe("transfer notice through the action worker", () => {
       }),
       claimPending: vi.fn(async () => queued.splice(0)),
       markDispatched: vi.fn(async () => true),
+      markSkipped: vi.fn(async () => true),
       recordFailure: vi.fn(async () => "failed" as const),
     };
     const mail = { send: vi.fn<SendMail>(async () => ({ dispatched: true })) };

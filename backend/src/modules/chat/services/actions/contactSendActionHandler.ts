@@ -2,6 +2,7 @@ import { hasConfiguredContactDestination, readNotifyContactDelivery } from "../.
 import type { AgentContactRequestDelivery, AgentContactWebhook } from "../../../agents/public.js";
 import type { ActionFailureOutcome } from "../../../../db/repositories/actionRequestRepository.js";
 import type { ContactDeliveryRoute } from "../../../../shared/domain/contactDeliveryRoute.js";
+import { ActionDispatchSkippedError } from "../../../../shared/domain/actionDispatchOutcome.js";
 import type { ErrorReporter } from "../../../../shared/errors/errorReporter.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
@@ -24,6 +25,25 @@ export interface ContactNotificationMailer {
     // does not read what the transport reports back.
   }): Promise<unknown>;
 }
+
+const isUndispatchedMailResult = (value: unknown): value is { dispatched: false; driver?: string } =>
+  !!value && typeof value === "object" && "dispatched" in value && value.dispatched === false;
+
+/**
+ * A mailer that records rather than sends must be visible as a skipped action. Mail
+ * implementations predating the dispatched result are treated as successful for
+ * compatibility; only an explicit false changes the durable outbox outcome.
+ */
+export const mailDeliverySkipReason = (results: readonly unknown[]): string | null => {
+  if (results.length === 0 || !results.every(isUndispatchedMailResult)) {
+    return null;
+  }
+  const drivers = new Set(results.map((result) => result.driver));
+  const [driver] = drivers;
+  return drivers.size === 1 && typeof driver === "string" && /^[a-z0-9_-]{1,32}$/u.test(driver)
+    ? `mail_not_dispatched:driver=${driver}`
+    : "mail_not_dispatched:driver=unknown";
+};
 
 interface ContactDeliveryTarget {
   emails: string[];
@@ -272,8 +292,8 @@ export class ContactSendActionHandler implements ActionHandler {
     ].filter((line): line is string => line !== null);
 
     const baseIdempotencyKey = input.context.idempotencyKey ?? input.context.requestId;
-    await Promise.all([
-      ...target.emails.map((to) =>
+    const [emailResults] = await Promise.all([
+      Promise.all(target.emails.map((to) =>
         this.mailer.send({
           to,
           replyTo: email,
@@ -281,6 +301,7 @@ export class ContactSendActionHandler implements ActionHandler {
           text: lines.join("\n"),
           idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(to)}`,
         })),
+      ),
       target.webhook ? this.postWebhook({
         webhook: target.webhook,
         payload: {
@@ -294,6 +315,12 @@ export class ContactSendActionHandler implements ActionHandler {
         idempotencyKey: `${baseIdempotencyKey}:webhook`,
       }) : Promise.resolve(),
     ]);
+    if (!target.webhook) {
+      const skipReason = mailDeliverySkipReason(emailResults);
+      if (skipReason) {
+        throw new ActionDispatchSkippedError(skipReason);
+      }
+    }
   }
 
   private async postWebhook(input: {

@@ -40,7 +40,7 @@ export class ResendEmailDriver implements EmailDriver {
       throw new ResendEmailDeliveryError(response.status, providerErrorName);
     }
 
-    return { dispatched: true };
+    return { dispatched: true, driver: "resend" };
   }
 }
 

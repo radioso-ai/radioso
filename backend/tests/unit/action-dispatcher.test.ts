@@ -5,6 +5,7 @@ import type {
   ActionRequestRecord,
 } from "../../src/db/repositories/actionRequestRepository.js";
 import {
+  ActionDispatchSkippedError,
   ActionDispatcher,
   ActionHandlerRegistry,
   type ActionHandler,
@@ -32,10 +33,12 @@ const outbox = (
 ): ActionOutboxConsumerPort & {
   claimPending: ReturnType<typeof vi.fn>;
   markDispatched: ReturnType<typeof vi.fn>;
+  markSkipped: ReturnType<typeof vi.fn>;
   recordFailure: ReturnType<typeof vi.fn>;
 } => ({
   claimPending: vi.fn(async () => pending),
   markDispatched: vi.fn(async () => true),
+  markSkipped: vi.fn(async () => true),
   recordFailure: vi.fn(async () => failureOutcome),
 });
 
@@ -158,6 +161,22 @@ describe("ActionDispatcher", () => {
     expect(store.markDispatched).toHaveBeenCalledWith("r1", 1);
     expect(store.recordFailure).not.toHaveBeenCalled();
     expect(result).toEqual({ dispatched: 1, retried: 0, failed: 0 });
+  });
+
+  it("persists an explicit handler skip without retrying it", async () => {
+    const store = outbox([request()]);
+    const dispatcher = new ActionDispatcher(
+      store,
+      new ActionHandlerRegistry([{
+        type: "contact.send",
+        handler: { handle: vi.fn(async () => { throw new ActionDispatchSkippedError("mail_not_dispatched:driver=log"); }) },
+      }]),
+    );
+
+    await expect(dispatcher.dispatchPending()).resolves.toEqual({ dispatched: 0, retried: 0, failed: 0 });
+    expect(store.markSkipped).toHaveBeenCalledWith("r1", "mail_not_dispatched:driver=log", 1);
+    expect(store.markDispatched).not.toHaveBeenCalled();
+    expect(store.recordFailure).not.toHaveBeenCalled();
   });
 
   it("does not report delivery when a stale mark-dispatched claim is a no-op", async () => {

@@ -8,6 +8,14 @@ import { applyTestMigration, runTestMigrationsBefore } from "../support/database
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 const migration110 = "110_retrieve_skills_spine.sql";
 const migration111 = "111_notify_and_completion_export_skills.sql";
+const postgresBooleanInputPattern = "^[[:space:]]*(t(r(u(e)?)?)?|f(a(l(s(e)?)?)?)?|y(e(s)?)?|n(o)?|on|of(f)?|1|0)[[:space:]]*$";
+const postgresIntegerInputPattern = "^[[:space:]]*[+-]?[0-9]+[[:space:]]*$";
+const postgresIntegerLengthExpression = `length(regexp_replace(
+  $1::text,
+  '(^[[:space:]]*[+-]?0*)|([[:space:]]*$)',
+  '',
+  'g'
+)) <= 10`;
 
 const canReach = async (url?: string): Promise<boolean> => {
   if (!url) return false;
@@ -92,18 +100,114 @@ describeIfDatabase("retrieve and notify skill bad-data migrations", () => {
     );
   };
 
-  it("treats malformed boolean and integer settings as absent while preserving well-formed values", async () => {
+  it("matches PostgreSQL casts for every accepted legacy form and defaults only values that would raise", async () => {
+    const booleanCandidates: Array<[string | null, boolean]> = [
+      ["t", true], ["tr", true], ["tru", true], ["TRUE", true], [" yE ", true], ["yes", true], ["on", true], ["1", true], [null, true],
+      ["f", false], ["fa", false], ["fal", false], ["fals", false], ["FALSE", false], ["n", false], ["no", false], ["of", false], [" Off ", false], ["0", false],
+    ];
+    for (const [value, expected] of booleanCandidates) {
+      const [result] = await database.query<{
+        old_value: boolean;
+        new_value: boolean;
+        matches_guard: boolean;
+      }>(
+        `SELECT
+           COALESCE(($1::text)::boolean, TRUE) AS old_value,
+           COALESCE(
+             CASE
+               WHEN $1::text IS NULL THEN ($1::text)::boolean
+               WHEN $1::text ~* $2 THEN ($1::text)::boolean
+             END,
+             TRUE
+           ) AS new_value,
+           $1::text ~* $2 AS matches_guard`,
+        [value, postgresBooleanInputPattern],
+      );
+      expect(result).toEqual({ old_value: expected, new_value: expected, matches_guard: value === null ? null : true });
+    }
+
+    for (const value of ["maybe", "o", "truth", "", "{}"] as const) {
+      await expect(database.query("SELECT ($1::text)::boolean", [value])).rejects.toThrow();
+      const [result] = await database.query<{ new_value: boolean; matches_guard: boolean }>(
+        `SELECT
+           COALESCE(CASE WHEN $1::text ~* $2 THEN ($1::text)::boolean END, TRUE) AS new_value,
+           $1::text ~* $2 AS matches_guard`,
+        [value, postgresBooleanInputPattern],
+      );
+      expect(result).toEqual({ new_value: true, matches_guard: false });
+    }
+
+    const integerCandidates: Array<[string | null, number | null]> = [
+      ["5", 5], [" 5 ", 5], ["+5", 5], ["-5", -5], ["0005", 5],
+      ["+00000000005", 5], ["\t+00005\n", 5], ["2147483647", 2_147_483_647], ["-2147483648", -2_147_483_648], [null, null],
+    ];
+    for (const [value, expected] of integerCandidates) {
+      const [result] = await database.query<{
+        old_value: { value: number | null };
+        new_value: { value: number | null };
+        matches_guard: boolean | null;
+      }>(
+        `SELECT
+           jsonb_build_object('value', ($1::text)::integer) AS old_value,
+           CASE
+             WHEN $1::text IS NULL THEN jsonb_build_object('value', ($1::text)::integer)
+             WHEN $1::text ~ $2 THEN
+               CASE
+                 WHEN ${postgresIntegerLengthExpression} THEN
+                   CASE
+                     WHEN ($1::text)::numeric BETWEEN -2147483648 AND 2147483647
+                     THEN jsonb_build_object('value', ($1::text)::integer)
+                     ELSE '{}'::jsonb
+                   END
+                 ELSE '{}'::jsonb
+               END
+             ELSE '{}'::jsonb
+           END AS new_value,
+           $1::text ~ $2 AS matches_guard`,
+        [value, postgresIntegerInputPattern],
+      );
+      expect(result.old_value).toEqual({ value: expected });
+      expect(result.new_value).toEqual(result.old_value);
+      expect(result.matches_guard).toBe(value === null ? null : true);
+    }
+
+    for (const value of ["5.5", "99999999999", "maybe", "{}", ""] as const) {
+      await expect(database.query("SELECT ($1::text)::integer", [value])).rejects.toThrow();
+      const [result] = await database.query<{ new_value: Record<string, never>; matches_guard: boolean }>(
+        `SELECT
+           CASE
+             WHEN $1::text ~ $2 THEN
+               CASE
+                 WHEN ${postgresIntegerLengthExpression} THEN
+                   CASE
+                     WHEN ($1::text)::numeric BETWEEN -2147483648 AND 2147483647
+                     THEN jsonb_build_object('value', ($1::text)::integer)
+                     ELSE '{}'::jsonb
+                   END
+                 ELSE '{}'::jsonb
+               END
+             ELSE '{}'::jsonb
+           END AS new_value,
+           $1::text ~ $2 AS matches_guard`,
+        [value, postgresIntegerInputPattern],
+      );
+      expect(result.new_value).toEqual({});
+      expect(result.matches_guard).toBe(value === "99999999999");
+    }
+  });
+
+  it("treats previously failing settings as absent while preserving legacy cast-compatible values", async () => {
     const malformed = await seedAgent({
-      suggestedQuestionsEnabled: "yes",
-      suggestedQuestionsCount: 1.5,
-      contactRequestsEnabled: "true",
-      webhookExportsEnabled: "false",
+      suggestedQuestionsEnabled: "maybe",
+      suggestedQuestionsCount: "5.5",
+      contactRequestsEnabled: "maybe",
+      webhookExportsEnabled: "maybe",
     });
-    const stringNumber = await seedAgent({
-      suggestedQuestionsEnabled: true,
-      suggestedQuestionsCount: "3",
-      contactRequestsEnabled: false,
-      webhookExportsEnabled: false,
+    const legacyCompatible = await seedAgent({
+      suggestedQuestionsEnabled: "yes",
+      suggestedQuestionsCount: " 5 ",
+      contactRequestsEnabled: "yes",
+      webhookExportsEnabled: "on",
     });
     const wellFormed = await seedAgent({
       suggestedQuestionsEnabled: false,
@@ -112,6 +216,7 @@ describeIfDatabase("retrieve and notify skill bad-data migrations", () => {
       webhookExportsEnabled: false,
     });
     await seedPublishedCompletionExport(malformed.agentId, malformed.workspaceId);
+    await seedPublishedCompletionExport(legacyCompatible.agentId, legacyCompatible.workspaceId);
 
     await expect(applyTestMigration(database, migration110)).resolves.toBeUndefined();
     await expect(applyTestMigration(database, migration111)).resolves.toBeUndefined();
@@ -124,7 +229,7 @@ describeIfDatabase("retrieve and notify skill bad-data migrations", () => {
        FROM agent_skills
        WHERE agent_id = ANY($1::uuid[]) AND skill_name = 'answer'
        ORDER BY agent_id`,
-      [[malformed.agentId, stringNumber.agentId, wellFormed.agentId]],
+      [[malformed.agentId, legacyCompatible.agentId, wellFormed.agentId]],
     );
     const retrieveConfigByAgent = new Map(retrieveSkills.map((skill) => [skill.agent_id, skill.config]));
 
@@ -134,7 +239,12 @@ describeIfDatabase("retrieve and notify skill bad-data migrations", () => {
       exposedInputs: { query: true },
     });
     expect(retrieveConfigByAgent.get(malformed.agentId)).not.toHaveProperty("suggestedQuestionsCount");
-    expect(retrieveConfigByAgent.get(stringNumber.agentId)).not.toHaveProperty("suggestedQuestionsCount");
+    expect(retrieveConfigByAgent.get(legacyCompatible.agentId)).toEqual({
+      sourceScope: "all",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 5,
+      exposedInputs: { query: true },
+    });
     expect(retrieveConfigByAgent.get(wellFormed.agentId)).toEqual({
       sourceScope: "all",
       suggestedQuestionsEnabled: false,
@@ -147,17 +257,21 @@ describeIfDatabase("retrieve and notify skill bad-data migrations", () => {
        FROM agent_skills
        WHERE agent_id = ANY($1::uuid[]) AND skill_name = 'contact_human'
        ORDER BY agent_id`,
-      [[malformed.agentId, wellFormed.agentId]],
+      [[malformed.agentId, legacyCompatible.agentId, wellFormed.agentId]],
     );
-    expect(contactSkills).toEqual([{ agent_id: wellFormed.agentId, enabled: true }]);
+    expect(contactSkills).toHaveLength(2);
+    expect(contactSkills).toEqual(expect.arrayContaining([
+      { agent_id: legacyCompatible.agentId, enabled: true },
+      { agent_id: wellFormed.agentId, enabled: true },
+    ]));
 
     const completionExportSkills = await database.query<{ agent_id: string }>(
       `SELECT agent_id
        FROM agent_skills
-       WHERE agent_id = $1 AND skill_name = 'completion_export'`,
-      [malformed.agentId],
+       WHERE agent_id = ANY($1::uuid[]) AND skill_name = 'completion_export'`,
+      [[malformed.agentId, legacyCompatible.agentId]],
     );
-    expect(completionExportSkills).toEqual([]);
+    expect(completionExportSkills).toEqual([{ agent_id: legacyCompatible.agentId }]);
   });
 
   it("rejects a differently named default-answer skill before it hits the partial unique index", async () => {

@@ -51,7 +51,9 @@ SELECT
   'routine_named',
   COALESCE(
     CASE
-      WHEN jsonb_typeof(a.behavior_settings -> 'contactRequestsEnabled') = 'boolean'
+      WHEN a.behavior_settings ->> 'contactRequestsEnabled' IS NULL
+      THEN (a.behavior_settings ->> 'contactRequestsEnabled')::boolean
+      WHEN a.behavior_settings ->> 'contactRequestsEnabled' ~* '^[[:space:]]*(t(r(u(e)?)?)?|f(a(l(s(e)?)?)?)?|y(e(s)?)?|n(o)?|on|of(f)?|1|0)[[:space:]]*$'
       THEN (a.behavior_settings ->> 'contactRequestsEnabled')::boolean
     END,
     FALSE
@@ -59,7 +61,9 @@ SELECT
 FROM agents a
 WHERE COALESCE(
   CASE
-    WHEN jsonb_typeof(a.behavior_settings -> 'contactRequestsEnabled') = 'boolean'
+    WHEN a.behavior_settings ->> 'contactRequestsEnabled' IS NULL
+    THEN (a.behavior_settings ->> 'contactRequestsEnabled')::boolean
+    WHEN a.behavior_settings ->> 'contactRequestsEnabled' ~* '^[[:space:]]*(t(r(u(e)?)?)?|f(a(l(s(e)?)?)?)?|y(e(s)?)?|n(o)?|on|of(f)?|1|0)[[:space:]]*$'
     THEN (a.behavior_settings ->> 'contactRequestsEnabled')::boolean
   END,
   FALSE
@@ -89,7 +93,9 @@ WITH ranked_exports AS (
     AND ce.enabled = TRUE
     AND COALESCE(
       CASE
-        WHEN jsonb_typeof(a.behavior_settings -> 'webhookExportsEnabled') = 'boolean'
+        WHEN a.behavior_settings ->> 'webhookExportsEnabled' IS NULL
+        THEN (a.behavior_settings ->> 'webhookExportsEnabled')::boolean
+        WHEN a.behavior_settings ->> 'webhookExportsEnabled' ~* '^[[:space:]]*(t(r(u(e)?)?)?|f(a(l(s(e)?)?)?)?|y(e(s)?)?|n(o)?|on|of(f)?|1|0)[[:space:]]*$'
         THEN (a.behavior_settings ->> 'webhookExportsEnabled')::boolean
       END,
       FALSE

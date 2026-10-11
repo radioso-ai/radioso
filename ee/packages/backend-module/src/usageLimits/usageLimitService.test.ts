@@ -20,6 +20,7 @@ const countsAsFixture = {
 
 vi.mock("@radioso/plan-catalog", () => ({
   PLAN_CATALOG: { countsAs: countsAsFixture },
+  findPlan: () => undefined,
 }));
 
 const { PLAN_CATALOG } = await import("@radioso/plan-catalog");

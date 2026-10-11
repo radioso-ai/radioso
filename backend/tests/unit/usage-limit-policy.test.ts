@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { NoopUsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
+import {
+  DEFAULT_NOTIFICATION_EMAIL_DAILY_LIMIT,
+  NoopUsageLimitPolicy,
+  resolveNotificationEmailDailyLimit,
+} from "../../src/shared/domain/usageLimitPolicy.js";
 
 describe("NoopUsageLimitPolicy", () => {
   it("returns a noop reservation for indexed storage requests", async () => {
@@ -25,5 +29,20 @@ describe("NoopUsageLimitPolicy", () => {
     });
 
     await expect(reservation.commit()).resolves.toBeUndefined();
+  });
+
+  it("resolves a finite self-hosted notification email allowance through the policy", async () => {
+    const policy = new NoopUsageLimitPolicy();
+
+    await expect(resolveNotificationEmailDailyLimit(policy, {
+      workspaceId: "workspace-1",
+    })).resolves.toBe(DEFAULT_NOTIFICATION_EMAIL_DAILY_LIMIT);
+    expect(DEFAULT_NOTIFICATION_EMAIL_DAILY_LIMIT).toBe(100);
+  });
+
+  it("falls back safely when an older optional policy does not resolve notification limits", async () => {
+    await expect(resolveNotificationEmailDailyLimit({}, {
+      workspaceId: "workspace-1",
+    })).resolves.toBe(DEFAULT_NOTIFICATION_EMAIL_DAILY_LIMIT);
   });
 });

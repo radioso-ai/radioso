@@ -2652,6 +2652,30 @@ CREATE TABLE public.messages (
 
 
 --
+-- Name: notification_delivery_outcomes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_delivery_outcomes (
+    request_id uuid NOT NULL,
+    recipient_digest text NOT NULL,
+    workspace_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    usage_date date NOT NULL,
+    requested_email_count integer NOT NULL,
+    reserved_email_count integer NOT NULL,
+    outcome text NOT NULL,
+    daily_email_limit integer NOT NULL,
+    conversation_dispatch_limit integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_delivery_outcome_conversation_dispatch_limit_check CHECK ((conversation_dispatch_limit >= 0)),
+    CONSTRAINT notification_delivery_outcomes_daily_email_limit_check CHECK ((daily_email_limit >= 0)),
+    CONSTRAINT notification_delivery_outcomes_outcome_check CHECK ((outcome = ANY (ARRAY['allowed'::text, 'workspace_daily_email_cap'::text, 'conversation_dispatch_cap'::text]))),
+    CONSTRAINT notification_delivery_outcomes_requested_email_count_check CHECK ((requested_email_count >= 0)),
+    CONSTRAINT notification_delivery_outcomes_reserved_email_count_check CHECK ((reserved_email_count >= 0))
+);
+
+
+--
 -- Name: operator_mcp_access_credentials; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5144,6 +5168,14 @@ ALTER TABLE ONLY public.message_facets
 
 ALTER TABLE ONLY public.messages
     ADD CONSTRAINT messages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_delivery_outcomes notification_delivery_outcomes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_delivery_outcomes
+    ADD CONSTRAINT notification_delivery_outcomes_pkey PRIMARY KEY (request_id, recipient_digest);
 
 
 --
@@ -7861,6 +7893,20 @@ CREATE INDEX messages_workspace_role_created_id_idx ON public.messages USING btr
 --
 
 CREATE INDEX messages_workspace_skill_turn_idx ON public.messages USING btree (workspace_id, skill_name, skill_outcome, skill_status, created_at DESC);
+
+
+--
+-- Name: notification_delivery_outcomes_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_delivery_outcomes_conversation_idx ON public.notification_delivery_outcomes USING btree (workspace_id, conversation_id);
+
+
+--
+-- Name: notification_delivery_outcomes_workspace_day_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_delivery_outcomes_workspace_day_idx ON public.notification_delivery_outcomes USING btree (workspace_id, usage_date);
 
 
 --

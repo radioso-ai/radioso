@@ -5,8 +5,17 @@ import type { ContactDeliveryRoute } from "../../../../shared/domain/contactDeli
 import { ActionDispatchSkippedError } from "../../../../shared/domain/actionDispatchOutcome.js";
 import { mailDeliverySkipReason } from "../../../../shared/domain/mailDeliveryOutcome.js";
 import type { ErrorReporter } from "../../../../shared/errors/errorReporter.js";
+import {
+  boundedVisitorText,
+  CONTACT_MESSAGE_MAX_LENGTH,
+  CONTACT_NAME_MAX_LENGTH,
+  REPLY_TO_MAX_LENGTH,
+  validVisitorReplyTo,
+  type NotificationDeliveryAdmissionPort,
+} from "../../../operatorNotifications/public.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
+  createSignedWebhookHeaders,
   FetchWebhookHttpClient,
   type WebhookHttpClient,
 } from "./webhookDelivery.js";
@@ -18,6 +27,7 @@ import {
 export interface ContactNotificationMailer {
   send(message: {
     to: string;
+    kind: "contact_notification" | "operator_notice";
     replyTo?: string | null;
     subject: string;
     text: string;
@@ -208,9 +218,6 @@ export class ConfiguredContactDeliveryResolver implements RoutedContactRecipient
 
 export class FetchContactWebhookHttpClient extends FetchWebhookHttpClient {}
 
-const asString = (value: unknown): string | null =>
-  typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-
 /**
  * A caught delivery failure's HTTP status, if the (already-stringified, see
  * {@link ActionDispatcher}) error text ends in one — `ResendEmailDeliveryError`
@@ -250,6 +257,7 @@ export class ContactSendActionHandler implements ActionHandler {
     private readonly webhookClient?: ContactWebhookHttpClient,
     // Terminal (retry-budget-exhausted) failures are alertable — see recordFailureOutcome.
     private readonly errorReporter?: ErrorReporter,
+    private readonly admission?: NotificationDeliveryAdmissionPort,
   ) {}
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
@@ -262,9 +270,22 @@ export class ContactSendActionHandler implements ActionHandler {
       return;
     }
 
-    const email = asString(input.payload.email);
-    const message = asString(input.payload.message) ?? "";
-    const name = asString(input.payload.name);
+    const admission = await this.admission?.admit({
+      requestId: input.context.requestId,
+      workspaceId: input.context.workspaceId,
+      accountId: input.context.accountId,
+      conversationId: input.context.conversationId,
+      recipientEmails: target.emails,
+      requestedEmailCount: target.emails.length,
+    });
+    if (admission && !admission.dispatchAllowed) {
+      throw new ActionDispatchSkippedError(admission.reason ?? "conversation_dispatch_cap");
+    }
+
+    const email = boundedVisitorText(input.payload.email, REPLY_TO_MAX_LENGTH);
+    const replyTo = validVisitorReplyTo(input.payload.email);
+    const message = boundedVisitorText(input.payload.message, CONTACT_MESSAGE_MAX_LENGTH) ?? "";
+    const name = boundedVisitorText(input.payload.name, CONTACT_NAME_MAX_LENGTH);
 
     const lines = [
       name ? `Name: ${name}` : null,
@@ -275,10 +296,11 @@ export class ContactSendActionHandler implements ActionHandler {
 
     const baseIdempotencyKey = input.context.idempotencyKey ?? input.context.requestId;
     const [emailResults] = await Promise.all([
-      Promise.all(target.emails.map((to) =>
+      Promise.all((admission?.emailAllowed === false ? [] : target.emails).map((to) =>
         this.mailer.send({
           to,
-          replyTo: email,
+          kind: "contact_notification",
+          replyTo,
           subject: "New contact request",
           text: lines.join("\n"),
           idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(to)}`,
@@ -298,7 +320,9 @@ export class ContactSendActionHandler implements ActionHandler {
       }) : Promise.resolve(),
     ]);
     if (!target.webhook) {
-      const skipReason = mailDeliverySkipReason(emailResults);
+      const skipReason = admission?.emailAllowed === false
+        ? admission.reason
+        : mailDeliverySkipReason(emailResults);
       if (skipReason) {
         throw new ActionDispatchSkippedError(skipReason);
       }
@@ -313,13 +337,11 @@ export class ContactSendActionHandler implements ActionHandler {
     if (!this.webhookClient) {
       throw new Error("Contact webhook delivery is not configured");
     }
-    // No signature: receivers are expected to treat the URL itself as the shared
-    // secret (it is operator-configured and not exposed). The idempotency key lets a
-    // receiver de-duplicate at-least-once redeliveries.
+    const rawBody = JSON.stringify(input.payload);
     await this.webhookClient.post({
       url: input.webhook.url,
-      rawBody: JSON.stringify(input.payload),
-      headers: { "Idempotency-Key": input.idempotencyKey },
+      rawBody,
+      headers: createSignedWebhookHeaders({ rawBody, secret: input.webhook.url, idempotencyKey: input.idempotencyKey }),
     });
   }
 

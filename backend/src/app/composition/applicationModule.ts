@@ -56,6 +56,7 @@ import type { WebhookDestinationRuntimePort } from "../../modules/webhooks/publi
 import type { Env } from "../config/env.js";
 import type { OauthProviderDefinition } from "../../modules/integrationOauth/public.js";
 import type { CopilotToolContribution } from "../../modules/operatorCopilot/public.js";
+import type { EmailKind } from "../../modules/mail/emailService.js";
 
 type ApplicationChatActionSuggestionProviderRegistration =
   | ChatActionSuggestionProvider
@@ -127,6 +128,7 @@ interface WorkspaceContactInfoRepositoryPort {
 export interface MailTransportPort {
   send(message: {
     to: string;
+    kind?: EmailKind;
     replyTo?: string | null;
     subject: string;
     text: string;
@@ -218,6 +220,7 @@ interface ApplicationActionHandlerRegistration {
         telemetryService: TelemetryService;
         webhookDestinations: WebhookDestinationRuntimePort;
         mailService: MailTransportPort;
+        usageLimitPolicy: UsageLimitPolicy;
         assertPublicWebsiteUrl: (url: string) => Promise<void>;
         // Terminal (non-retryable) action-dispatch failures are alertable — a handler
         // that wants that signal (e.g. ContactSendActionHandler) reports through this.

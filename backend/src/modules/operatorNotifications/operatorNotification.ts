@@ -81,6 +81,9 @@ export type OperatorNotificationSinkOutcome =
         | "slack_not_installed"
         | "slack_escalation_channel_not_configured"
         | "slack_approval_not_pending"
+        | "workspace_daily_email_cap"
+        | "conversation_dispatch_cap"
+        | "missing_context"
         | "operator_notification_no_sink"
         | `mail_not_dispatched:driver=${string}`;
     };

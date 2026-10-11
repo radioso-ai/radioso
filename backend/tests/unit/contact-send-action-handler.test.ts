@@ -53,6 +53,7 @@ describe("ContactSendActionHandler", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0].to).toBe("owner@business.example");
+    expect(sent[0].kind).toBe("contact_notification");
     expect(sent[0].replyTo).toBe("alex@example.com");
     expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:contact.send:hash:email:owner%40business.example");
     expect(sent[0].text).toContain("Alex");
@@ -110,9 +111,8 @@ describe("ContactSendActionHandler", () => {
       conversationId: "conv_1",
       requestId: "request_1",
     });
-    // Signing was dropped: no signature/timestamp headers are sent.
-    expect(requests[0].headers["X-Radioso-Signature"]).toBeUndefined();
-    expect(requests[0].headers["X-Radioso-Timestamp"]).toBeUndefined();
+    expect(requests[0].headers["X-Radioso-Signature"]).toMatch(/^sha256=[a-f0-9]{64}$/u);
+    expect(requests[0].headers["X-Radioso-Timestamp"]).toMatch(/^\d+$/u);
   });
 
   it("delivers email and webhook together when both are configured", async () => {
@@ -164,6 +164,60 @@ describe("ContactSendActionHandler", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0].replyTo).toBeNull();
+  });
+
+  it("bounds visitor text and never uses an invalid visitor address as reply-to", async () => {
+    const { mailer, sent } = recordingMailer();
+    const handler = new ContactSendActionHandler(mailer, {
+      resolve: async () => ({ emails: ["owner@business.example"], webhook: null }),
+    });
+
+    await handler.handle({
+      payload: { name: "n".repeat(250), email: "not-an-address", message: "m".repeat(5_000) },
+      context,
+    });
+
+    expect(sent[0].replyTo).toBeNull();
+    expect(sent[0].text).toContain(`Name: ${"n".repeat(200)}`);
+    expect(sent[0].text).not.toContain("n".repeat(201));
+    expect(sent[0].text.endsWith("m".repeat(4_000))).toBe(true);
+  });
+
+  it("keeps webhook delivery when the workspace email cap is reached", async () => {
+    const { mailer, sent } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: { url: "https://hooks.example.com/contact" } }) },
+      undefined,
+      httpClient,
+      undefined,
+      { admit: async () => ({ dispatchAllowed: true, emailAllowed: false, reason: "workspace_daily_email_cap" }) },
+    );
+
+    await handler.handle({ payload: { message: "hi" }, context });
+
+    expect(sent).toHaveLength(0);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("skips email and webhook when the conversation dispatch cap is reached", async () => {
+    const { mailer, sent } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: { url: "https://hooks.example.com/contact" } }) },
+      undefined,
+      httpClient,
+      undefined,
+      { admit: async () => ({ dispatchAllowed: false, emailAllowed: false, reason: "conversation_dispatch_cap" }) },
+    );
+
+    await expect(handler.handle({ payload: { message: "hi" }, context }))
+      .rejects.toMatchObject({ name: "ActionDispatchSkippedError", reason: "conversation_dispatch_cap" });
+
+    expect(sent).toHaveLength(0);
+    expect(requests).toHaveLength(0);
   });
 });
 

@@ -50,6 +50,51 @@ const createApp = (dependencies = createDependencies()) => {
 };
 
 describe("agent directive draft route", () => {
+  it("rejects a member changing an agent recipient list", async () => {
+    const create = vi.fn();
+    const dependencies = createDependencies({
+      accountAccessService: {
+        requirePermission: vi.fn().mockResolvedValue("member"),
+      } as unknown as AppDependencies["accountAccessService"],
+      agentService: { create } as unknown as AppDependencies["agentService"],
+    });
+
+    await request(createApp(dependencies))
+      .post("/api/v1/agents")
+      .set("Authorization", "Bearer token")
+      .send({
+        name: "Support",
+        contactRequestDelivery: { recipientEmails: ["ops@example.com"], webhook: null },
+      })
+      .expect(403);
+
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a member clearing recipients through a webhook-only delivery replacement", async () => {
+    const update = vi.fn();
+    const dependencies = createDependencies({
+      accountAccessService: {
+        requirePermission: vi.fn().mockResolvedValue("member"),
+      } as unknown as AppDependencies["accountAccessService"],
+      agentService: {
+        resolve: vi.fn().mockResolvedValue({
+          id: agentId,
+          contactRequestDelivery: { recipientEmails: ["ops@example.com"], webhook: null },
+        }),
+        update,
+      } as unknown as AppDependencies["agentService"],
+    });
+
+    await request(createApp(dependencies))
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", "Bearer token")
+      .send({ contactRequestDelivery: { webhook: { url: "https://hooks.example.com/contact" } } })
+      .expect(403);
+
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("returns 403 when the workspace principal lacks agent management permission", async () => {
     const dependencies = createDependencies({
       accountAccessService: {

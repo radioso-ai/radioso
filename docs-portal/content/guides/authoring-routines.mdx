@@ -1,6 +1,7 @@
 ---
 title: "Author a routine"
 description: "Build a multi-step flow your agent runs across turns in the dashboard routine editor, then test it and ship it with the agent."
+last_updated: 2026-10-11
 ---
 
 # Author a routine
@@ -227,6 +228,15 @@ whichever one you chose. A notice you turn on, or a new **Hand off** ending,
 starts on the routine's only email field when there is exactly one, and on
 **No reply-to** when there are several. A guest who never gave that address
 gets a notice with no reply-to.
+
+The first five contact or team-notice dispatches in a conversation are
+eligible for delivery. After that, Radioso records a
+`conversation_dispatch_cap` outcome and skips the dispatch. Email recipient
+attempts also count against the workspace's daily plan allowance; reaching it
+records `workspace_daily_email_cap` and leaves a configured webhook active.
+Routine slot text is capped at 1,000 characters before it reaches either
+delivery, and a collected reply-to is used only when it is a valid email
+address.
 
 A step is asked the same way at most three times in a row when the visitor's
 replies give it nothing new. From then on it asks in different words, saying

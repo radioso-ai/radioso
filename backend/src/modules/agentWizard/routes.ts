@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 
-import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
+import { holdsWorkspacePermission, requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
-import { badRequest } from "../../shared/domain/errors.js";
+import { badRequest, forbidden } from "../../shared/domain/errors.js";
 import { agentWizardAnalyzeRequestSchema, agentWizardCreateRequestSchema } from "./contracts.js";
 import { AgentWizardError, type AgentWizardProgressEvent, type AgentWizardService } from "./service.js";
 
@@ -11,7 +11,15 @@ type RouteDependencies = WorkspaceSessionDependencies & {
   abuseControlService: {
     enforce(input: { scope: string; subjectKey: string; limit: number; windowMs: number; blockMs?: number }): Promise<unknown>;
   };
-  accountAccessService: WorkspaceSessionDependencies["accountAccessService"];
+  accountAccessService: WorkspaceSessionDependencies["accountAccessService"] & {
+    hasPermission(input: {
+      accountId?: string;
+      userId?: string | null;
+      principal?: Parameters<WorkspaceSessionDependencies["accountAccessService"]["requirePermission"]>[0]["principal"];
+      permission: "workspace.notification_recipients.manage";
+      workspaceId?: string | null;
+    }): Promise<boolean>;
+  };
 };
 
 const parseBody = <T>(schema: z.ZodType<T>, value: unknown): T => {
@@ -199,6 +207,10 @@ export const createAgentWizardRoutes = (
     try {
       const body = parseBody(agentWizardCreateRequestSchema, req.body);
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
+      if (body.contactEmail
+        && !await holdsWorkspacePermission(dependencies, res, "workspace.notification_recipients.manage")) {
+        throw forbidden("Only workspace owners and admins can change notification recipients");
+      }
       await enforceCreateRateLimit(dependencies, res.locals);
       const result = await service.createAgentFromWizard({
         workspaceId,

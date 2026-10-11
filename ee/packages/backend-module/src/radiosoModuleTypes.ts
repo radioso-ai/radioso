@@ -295,6 +295,10 @@ export interface DocumentCapacityReadPort {
 }
 
 export interface UsageLimitPolicy {
+  getNotificationEmailDailyLimit?(input: {
+    accountId?: string | null;
+    workspaceId: string;
+  }): Promise<number | null>;
   reserveAnswer(input: {
     accountId?: string | null;
     workspaceId: string;

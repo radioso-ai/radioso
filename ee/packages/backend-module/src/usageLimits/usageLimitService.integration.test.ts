@@ -626,6 +626,16 @@ describeIfDatabase("EE usage limit service integration", () => {
     }
   });
 
+  it("resolves the workspace notification email allowance from its assigned catalog plan", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    const service = new EnterpriseUsageLimitService(database);
+    const satellite = PLAN_CATALOG.plans.find((plan) => plan.id === "satellite")!;
+    await service.assignProfile(accountId, satellite.id);
+
+    await expect(service.getNotificationEmailDailyLimit({ workspaceId }))
+      .resolves.toBe(satellite.dailyNotificationEmails);
+  });
+
   it("keeps a console edit to a seeded profile when the migrator runs again", async () => {
     const service = new EnterpriseUsageLimitService(database);
     const satellite = PLAN_CATALOG.plans.find((plan) => plan.id === "satellite")!;

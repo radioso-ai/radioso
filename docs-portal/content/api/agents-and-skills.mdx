@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-10-10
+last_updated: 2026-10-11
 ---
 
 # Agents and skills
@@ -309,7 +309,7 @@ An agent can offer a "contact a human" option in chat. This is backed by a `noti
 
 Configure delivery in the notify skill config:
 
-- `recipientEmails`: up to 5 email addresses. Each is emailed a copy of the request. When the list is empty, Radioso falls back to the workspace owner.
+- `recipientEmails`: up to 25 email addresses. Each is emailed a copy of the request. When the list is empty, Radioso falls back to the workspace owner.
 - `webhook`: an optional `{ "url": "https://..." }`. When set, Radioso also POSTs the request to that URL. Email and webhook both fire when both are configured.
 
 An agent can have more than one `notify` skill — for example `contact_sales` and `contact_support`, each with its own `delivery` config. A routine step that calls a specific skill by name (`#contact_sales`) delivers through that skill's own recipients and webhook. A routine step that reaches the chat-only contact flow without naming a skill, or names a skill that turns out to be disabled or missing, delivers through the `contact_human` skill when one is configured, then through the agent's own delivery setting, then through the workspace owner.
@@ -341,11 +341,33 @@ The webhook receives a `POST` with a JSON body:
 }
 ```
 
-There is no request signature. Treat the webhook URL itself as a secret: keep it private and use a hard-to-guess path so only Radioso knows where to post.
-
-Each request carries an `Idempotency-Key` header. Delivery is at-least-once, so the same request may arrive more than once on retries. Use the key to de-duplicate.
+Each request carries `Idempotency-Key`, `X-Radioso-Timestamp`, and
+`X-Radioso-Signature` headers. The signature is
+`sha256=<hex HMAC-SHA256>` over `<timestamp>.<raw request body>`, keyed with
+the exact webhook URL. Keep that URL private, verify the signature against the
+unparsed body, reject stale timestamps, and use the idempotency key to
+de-duplicate at-least-once retries. Operator-notification webhooks use the same
+headers and signing scheme.
 
 Radioso sends the request with `POST`, follows redirects only to publicly routable hosts, and applies a short delivery timeout. Point the webhook at a stable public endpoint.
+
+Only workspace owners and admins can add, remove, or replace recipient email
+lists on an agent or notify skill. Recipient changes write an audit event with
+recipient counts and one-way hashes; the event does not contain the addresses.
+
+Outbound delivery is bounded twice. A conversation can dispatch at most five
+contact requests or operator notices. Recipient email attempts also share a
+per-workspace UTC-day allowance: 100 on Comet, 1,000 on Satellite, 5,000 on
+Planet, and 100 by default on self-hosted installations. When the daily email
+allowance is exhausted, Radioso skips email but still calls the configured
+webhook. When the conversation allowance is exhausted, it skips both. Each skip
+records `workspace_daily_email_cap` or `conversation_dispatch_cap` for the
+operator without recording an address.
+
+Visitor content is bounded before delivery: contact names use at most 200
+characters, contact messages 4,000, and each routine slot value in a notice
+1,000. A visitor-supplied address is used as `Reply-To` only when it is a valid
+email address of at most 320 characters.
 
 ### Operator notifications
 
@@ -377,11 +399,11 @@ Each notice is emailed to the resolved recipients as plain text and, when a webh
 }
 ```
 
-`reason` says what raised the notice: `routine_handoff` when a routine reached its hand-off ending, `routine_stuck` when a routine ended on a step its visitor stayed stuck on, or `retrieval_miss` — all three for a handoff — and `routine_completed` for a routine that finished and kept the conversation with the agent. `routine` names the routine whose ending raised the notice, with `name` set to `null` when the routine has since been deleted; it is `null` for a retrieval-miss handoff. `collected` holds the routine's declared values keyed by slot key, in the order the routine declares them (in storage order once the routine has been deleted), and is empty for a retrieval-miss handoff. Text, number, and boolean values are included; a slot holding a structured value is left out. The email version of the notice reads as plain prose: it lists the same values under a `Collected:` heading and, when the conversation has one, the page it started on. The JSON body carries `collected` as structured data instead of that heading, and has no field for the entry page.
+`reason` says what raised the notice: `routine_handoff` when a routine reached its hand-off ending, `routine_stuck` when a routine ended on a step its visitor stayed stuck on, or `retrieval_miss` — all three for a handoff — and `routine_completed` for a routine that finished and kept the conversation with the agent. `routine` names the routine whose ending raised the notice, with `name` set to `null` when the routine has since been deleted; it is `null` for a retrieval-miss handoff. `collected` holds the routine's declared values keyed by slot key, in the order the routine declares them (in storage order once the routine has been deleted), and is empty for a retrieval-miss handoff. Text, number, and boolean values are included; text is capped at 1,000 characters and a slot holding a structured value is left out. The email version of the notice reads as plain prose: it lists the same values under a `Collected:` heading and, when the conversation has one, the page it started on. The JSON body carries `collected` as structured data instead of that heading, and has no field for the entry page.
 
 `subject` and `intro` are the text the routine's author wrote for that ending, with each `{{slot.<key>}}` replaced by the collected value, or `—` when the routine did not collect it. Each is `null` when the author wrote none; the email then uses the default subject (`Book accommodation: completed`, or `Book accommodation: needs a human` for a handoff) and no intro.
 
-`replyTo` is the address a reply to the notice should go to: the value the visitor gave in the email field the ending's author chose under **Replies go to** (`operatorNotice.replyToSlot` on the routine), here `guest_email`. The email sets it as its reply-to header, so reception answers the guest by hitting Reply; a webhook receiver that writes back to the visitor uses the same address. It is `null` when the ending names no field, when the visitor never gave that field, and for a retrieval-miss handoff. Radioso never picks an address on its own, even when `collected` holds one.
+`replyTo` is the address a reply to the notice should go to: the value the visitor gave in the email field the ending's author chose under **Replies go to** (`operatorNotice.replyToSlot` on the routine), here `guest_email`. The email sets it as its reply-to header, so reception answers the guest by hitting Reply; a webhook receiver that writes back to the visitor uses the same address. It is `null` when the ending names no field, when the visitor never gave that field, when the collected value is not a valid address of at most 320 characters, and for a retrieval-miss handoff. Radioso never picks an address on its own, even when `collected` holds one.
 
 An approval carries `handle` instead — the value you pass to `POST /api/v1/agents/{agentId}/decisions/{handle}/resolve`, described in [Human takeover](/operators/human-takeover). That is how a receiver tells an approval from a routine or retrieval-miss notice. `dashboardUrl` opens the conversation in the dashboard; it is `null` when the link cannot be resolved, for example because the workspace has since been deleted, so a receiver that needs a link should fall back to `conversationId`. The same `Idempotency-Key` and delivery rules as contact requests apply.
 

@@ -60,6 +60,10 @@ import type { ContextVariableService } from "../context-variables/public.js";
 import { isOwnerRefusal, isStale, staleReason, versionDate, versionToken } from "./proposalVersioning.js";
 import { routineValidationRefusal } from "./routineValidationRefusal.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+import {
+  recipientEmailChangeMetadata,
+  recipientEmailsFromDeliveryConfig,
+} from "../../shared/domain/recipientEmailAudit.js";
 
 /** Composition-only atomic boundary for an existing agent-skill update and its MCP receipt. */
 export interface AgentSkillMcpApplyPort {
@@ -730,13 +734,32 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
       // transaction (dryRunValidate/validatePrepared runs first on that same branch, before any
       // write). It is the only write path here proven atomic enough for a refusal on it to prove
       // nothing was written; the plain update/create fallbacks are not.
-      const mcpAtomicApply = Boolean(targetRef.skillId && context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.atomicMcpApply);
+      const hasAtomicMcpContext = Boolean(targetRef.skillId
+        && context?.surface === "mcp"
+        && context.proposalId
+        && context.executionInvocationId
+        && context.operatorUserId
+        && context.applyClaimedAt
+        && deps.atomicMcpApply);
+      let mcpAtomicApply = hasAtomicMcpContext;
       try {
         if (targetRef.skillId) {
           const config = payload.capability === "retrieve" && payload.invocationMode === "default_answer" && deps.retrievalAuthoring
             ? await deps.retrievalAuthoring.validatePrepared({ workspaceId, agentId: targetRef.agentId, skillId: targetRef.skillId, config: payload.config, skill: { ...payload, capability: "retrieve", invocationMode: "default_answer" } })
             : await deps.agentSkillsService.dryRunValidate(workspaceId, targetRef.agentId, { name: payload.name, capability: payload.capability as SkillCapabilityId, target: payload.target, config: payload.config, invocationMode: payload.invocationMode, enabled: payload.enabled }, targetRef.skillId);
-          if (context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.atomicMcpApply) {
+          const existingNotifySkill = payload.capability === "notify"
+            ? await findExisting(workspaceId, targetRef.agentId, targetRef.skillId)
+            : null;
+          const changesNotifyRecipients = Boolean(existingNotifySkill
+            && recipientEmailChangeMetadata(
+              recipientEmailsFromDeliveryConfig(existingNotifySkill.config),
+              recipientEmailsFromDeliveryConfig(config),
+            ));
+          // Recipient changes pass through AgentSkillsService so its safe recipient-change audit
+          // is emitted. Other existing-skill writes keep the atomic MCP receipt path.
+          mcpAtomicApply = hasAtomicMcpContext && !changesNotifyRecipients;
+          if (!changesNotifyRecipients && context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.atomicMcpApply) {
+            mcpAtomicApply = true;
             const settled = await deps.atomicMcpApply.apply({
               workspaceId,
               agentId: targetRef.agentId,

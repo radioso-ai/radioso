@@ -4,12 +4,19 @@ import type {
   OperatorNoticeTemplate,
   RoutineEndingOperatorNotification,
 } from "./operatorNotification.js";
+import {
+  boundedVisitorText,
+  NOTICE_SLOT_VALUE_MAX_LENGTH,
+  validVisitorReplyTo,
+} from "./visitorNotificationInput.js";
 
 export const asString = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 
-const isCollectedValue = (value: unknown): value is HandoffCollectedValue =>
-  typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+const boundedCollectedValue = (value: unknown): HandoffCollectedValue | null => {
+  if (typeof value === "string") return boundedVisitorText(value, NOTICE_SLOT_VALUE_MAX_LENGTH);
+  return typeof value === "number" || typeof value === "boolean" ? value : null;
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -19,9 +26,10 @@ const collectedFromPayload = (value: unknown): Record<string, HandoffCollectedVa
   if (!isRecord(value)) {
     return null;
   }
-  return Object.fromEntries(
-    Object.entries(value).filter((entry): entry is [string, HandoffCollectedValue] => isCollectedValue(entry[1])),
-  );
+  return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => {
+    const bounded = boundedCollectedValue(entry);
+    return bounded === null ? [] : [[key, bounded]];
+  }));
 };
 
 /**
@@ -80,7 +88,7 @@ const replyToFrom = (
   notice: OperatorNoticeTemplate | null,
   collected: Record<string, HandoffCollectedValue> | null,
 ): string | null => notice?.replyToSlot && collected && Object.hasOwn(collected, notice.replyToSlot)
-  ? asString(collected[notice.replyToSlot])
+  ? validVisitorReplyTo(collected[notice.replyToSlot])
   : null;
 
 /**

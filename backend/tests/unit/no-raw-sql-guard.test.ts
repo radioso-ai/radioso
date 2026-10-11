@@ -8,7 +8,6 @@ import {
   PGVECTOR_SQL_ALLOWLIST,
   findPgVectorSqlViolations,
   findRawSqlViolations,
-  lineHasPgVectorSql,
   lineHasRawSql,
 } from "../../scripts/checkNoRawSql.mjs";
 
@@ -29,57 +28,23 @@ describe("no-raw-sql guard", () => {
     expect(lineHasRawSql("const x = req.query;")).toBe(false); // property access, not a call
   });
 
-  it("flags pgvector SQL syntax even when Kysely executes it", () => {
-    expect(lineHasPgVectorSql("const vector = sql<string>`${value}::vector`;"))
-      .toBe(true);
-    expect(lineHasPgVectorSql("sql`embedding::halfvec(3072) <=> ${query}`;"))
-      .toBe(true);
-    expect(lineHasPgVectorSql("sql`embedding::text`;"))
-      .toBe(true);
-    expect(lineHasPgVectorSql("sql`SELECT vector_dims(embedding)`;"))
-      .toBe(true);
-    expect(lineHasPgVectorSql("sql`CREATE INDEX ON chunks USING ivfflat (embedding)`;"))
-      .toBe(true);
-  });
-
-  it("does not mistake ordinary Kysely SQL for pgvector SQL", () => {
-    expect(lineHasPgVectorSql("const payload = sql`${value}::jsonb`;"))
-      .toBe(false);
-    expect(lineHasPgVectorSql("const text = sql`${value}::text`;"))
-      .toBe(false);
-    expect(lineHasPgVectorSql("const punctuation = /<=>/;"))
-      .toBe(false);
-  });
-
-  it("finds pgvector syntax inside a multiline Kysely template", () => {
+  it("finds pgvector syntax in every source literal while ignoring comments", () => {
     const fixtureDir = mkdtempSync(join(tmpdir(), "radioso-pgvector-guard-"));
     try {
       writeFileSync(join(fixtureDir, "leakedVectorSql.ts"), [
-        "const query = sql<{ id: string }>`",
-        "  SELECT embedding::text FROM chunk_embeddings",
-        "`;",
+        "// <=> belongs in this comment, not a SQL literal.",
+        "const compiled = CompiledQuery.raw(\"SELECT ce.embedding::text FROM chunk_embeddings ce\", []);",
+        "const rawFragment = sql.raw(\"SELECT embedding <=> $1\");",
+        "const tagged = sql",
+        "  `SELECT embedding::halfvec(3072) FROM chunk_embeddings`;",
+        "const separatelyBuilt = \"CREATE INDEX ON chunk_embeddings USING hnsw (embedding)\";",
       ].join("\n"));
 
       expect(findPgVectorSqlViolations(fixtureDir)).toEqual([
-        "leakedVectorSql.ts:2: SELECT embedding::text FROM chunk_embeddings",
-      ]);
-    } finally {
-      rmSync(fixtureDir, { recursive: true, force: true });
-    }
-  });
-
-  it("finds pgvector syntax inside a multiline raw adapter query", () => {
-    const fixtureDir = mkdtempSync(join(tmpdir(), "radioso-pgvector-guard-"));
-    try {
-      writeFileSync(join(fixtureDir, "leakedVectorSql.ts"), [
-        "await database.query(",
-        "  `SELECT ce.embedding::text FROM chunk_embeddings ce`,",
-        "  [],",
-        ");",
-      ].join("\n"));
-
-      expect(findPgVectorSqlViolations(fixtureDir)).toEqual([
-        "leakedVectorSql.ts:2: `SELECT ce.embedding::text FROM chunk_embeddings ce`,",
+        "leakedVectorSql.ts:2: SELECT ce.embedding::text FROM chunk_embeddings ce",
+        "leakedVectorSql.ts:3: SELECT embedding <=> $1",
+        "leakedVectorSql.ts:5: SELECT embedding::halfvec(3072) FROM chunk_embeddings",
+        "leakedVectorSql.ts:6: CREATE INDEX ON chunk_embeddings USING hnsw (embedding)",
       ]);
     } finally {
       rmSync(fixtureDir, { recursive: true, force: true });

@@ -13,6 +13,7 @@ import type {
   TopicTransitionKind,
   TopicTransitionInput,
 } from "../../modules/audiencePulse/contracts/topicCensus.js";
+import { toPgVector } from "../../shared/infra/kysely/pgVectorSql.js";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
@@ -241,7 +242,7 @@ export class TopicRepository implements TopicRepositoryPort {
             batch.map((topic) => ({
               id: topic.id,
               workspace_id: topic.workspaceId,
-              centroid: sql<string>`${serializeVector(topic.centroid)}::vector`,
+              centroid: toPgVector(serializeVector(topic.centroid)),
               dimensions: topic.centroid.length,
               radius: topic.radius,
               // Empty-string sentinel: NOT NULL columns, but "not supplied" must mean

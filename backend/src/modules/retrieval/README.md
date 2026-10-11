@@ -36,6 +36,12 @@ or profile activation rules. Pgvector exact search reads canonical
 `chunk_embeddings`, so its caught-up correctness state is `exact_fallback`;
 accelerated route qualification remains a separate performance gate.
 
+All Kysely pgvector casts, text reads, and distance expressions use
+`shared/infra/kysely/pgVectorSql.ts`. The raw-SQL lint checks pgvector syntax in
+Kysely templates and permits it only in that helper and the retrieval pgvector
+adapter files, plus the canonical vector storage adapters that write and hydrate
+projection records.
+
 Vector filters use the backend-neutral `VectorChunkFilter` shape. Metadata
 filters are containment filters over JSON-compatible metadata values; adapters
 may push them down for performance, but hydration remains the final enforcement

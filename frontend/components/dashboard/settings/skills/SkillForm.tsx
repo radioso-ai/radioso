@@ -186,28 +186,42 @@ function SkillSettingControl({
 
   if (field.type === 'boolean') {
     const hasOverride = typeof value === 'boolean'
+    const hasWorkspaceDefault = field.defaultValue !== undefined
     return (
       <div className="flex items-center justify-between gap-3 rounded-md bg-muted/20 px-3 py-2">
         <div className="space-y-1">
           <Label htmlFor={fieldId}>{field.label}</Label>
           {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
-          {!hasOverride && field.defaultValue !== undefined ? (
-            <p className="text-xs text-muted-foreground">Default: {defaultValue}</p>
+          {!hasOverride && hasWorkspaceDefault ? (
+            <p className="text-xs text-muted-foreground">Workspace default: {defaultValue}</p>
           ) : null}
-          {hasOverride && field.defaultValue !== undefined ? (
+          {!hasOverride && hasWorkspaceDefault ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={`Override ${field.label}`}
+              onClick={() => onChange(field.defaultValue === true)}
+            >
+              Override
+            </Button>
+          ) : null}
+          {hasOverride && hasWorkspaceDefault ? (
             <Button
               type="button"
               variant="link"
               className="h-auto p-0 text-xs text-muted-foreground"
+              aria-label={`Reset ${field.label} to workspace default`}
               onClick={() => onChange(undefined)}
             >
-              Reset to default
+              Reset to workspace default
             </Button>
           ) : null}
         </div>
         <Switch
           id={fieldId}
           checked={hasOverride ? value : field.defaultValue === true}
+          disabled={!hasOverride && hasWorkspaceDefault}
           onCheckedChange={onChange}
         />
       </div>
@@ -271,7 +285,7 @@ function SkillSettingControl({
             disabled
             className={cn('min-h-24', tallDefault ? 'min-h-56' : '')}
           />
-          <p className="text-xs text-muted-foreground">Default shown. Override to edit it for this skill.</p>
+          <p className="text-xs text-muted-foreground">Workspace default shown. Override to edit it for this skill.</p>
           {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
         </div>
       )
@@ -286,9 +300,10 @@ function SkillSettingControl({
               type="button"
               variant="link"
               className="h-auto p-0 text-xs text-muted-foreground"
+              aria-label={`Reset ${field.label} to workspace default`}
               onClick={() => onChange(undefined)}
             >
-              Reset to default
+              Reset to workspace default
             </Button>
           ) : null}
         </div>
@@ -354,15 +369,55 @@ function SkillSettingControl({
     )
   }
 
+  const defaultNumber = field.type === 'number' && typeof field.defaultValue === 'number'
+    ? field.defaultValue
+    : null
+  const hasNumberOverride = field.type === 'number' && typeof value === 'number'
+
+  if (defaultNumber !== null && !hasNumberOverride) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor={fieldId}>{field.label}</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label={`Override ${field.label}`}
+            onClick={() => onChange(defaultNumber)}
+          >
+            Override
+          </Button>
+        </div>
+        <Input id={fieldId} type="number" min={field.min} max={field.max} value={String(defaultNumber)} disabled />
+        <p className="text-xs text-muted-foreground">Workspace default shown. Override to edit it for this skill.</p>
+        {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-2">
-      <Label htmlFor={fieldId}>{field.label}</Label>
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor={fieldId}>{field.label}</Label>
+        {defaultNumber !== null ? (
+          <Button
+            type="button"
+            variant="link"
+            className="h-auto p-0 text-xs text-muted-foreground"
+            aria-label={`Reset ${field.label} to workspace default`}
+            onClick={() => onChange(undefined)}
+          >
+            Reset to workspace default
+          </Button>
+        ) : null}
+      </div>
       <Input
         id={fieldId}
         type={field.type === 'number' ? 'number' : 'text'}
         min={field.min}
         max={field.max}
-        placeholder={field.type === 'number' && field.defaultValue !== undefined ? `Default: ${field.defaultValue}` : undefined}
+        placeholder={field.type === 'number' && field.defaultValue !== undefined ? `Workspace default: ${field.defaultValue}` : undefined}
         value={field.type === 'number'
           ? typeof value === 'number' ? String(value) : ''
           : typeof value === 'string' ? value : ''}

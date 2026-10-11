@@ -265,7 +265,7 @@ test("agent routines settings create, validate, and persist", async ({ page }) =
   await expect(page.getByText("Collect pricing intake")).toBeVisible();
 });
 
-test("new routine can be authored from an AI procedure draft", async ({ page }) => {
+test("a blank routine can be drafted directly from a procedure", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 
   await seedDashboardStorage(page);
@@ -278,13 +278,12 @@ test("new routine can be authored from an AI procedure draft", async ({ page }) 
     page.getByRole("button", { name: "New routine" }).click(),
   ]);
 
-  await page.getByRole("button", { name: "More routine actions" }).click();
-  await page.getByRole("menuitem", { name: "Draft with AI" }).click();
-  await expect(page.getByRole("dialog", { name: "Draft with AI" })).toBeVisible();
+  await page.getByRole("button", { name: "Draft from procedure" }).click();
+  await expect(page.getByRole("dialog", { name: "Draft from procedure" })).toBeVisible();
   await page.getByLabel("Procedure text for routine drafting assist").fill("When the visitor asks for follow-up, collect @email and send the contact request.");
-  await page.getByRole("button", { name: "Load proposal" }).click();
+  await page.getByRole("button", { name: "Create draft" }).click();
 
-  await expect(page.getByRole("dialog", { name: "Draft with AI" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Draft from procedure" })).toHaveCount(0);
   await expect(page.getByLabel("Name")).toHaveValue("assisted-contact");
   // Document mode owns the trigger; the document shows it under Starts when.
   await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText("Visitor asks for a person to follow up.");

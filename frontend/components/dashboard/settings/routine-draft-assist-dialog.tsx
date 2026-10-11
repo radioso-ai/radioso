@@ -33,8 +33,8 @@ export function RoutineDraftAssistDialog({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Draft with AI</DialogTitle>
-          <DialogDescription>Paste the procedure or SOP. The proposal replaces the current editable draft.</DialogDescription>
+          <DialogTitle>Draft from procedure</DialogTitle>
+          <DialogDescription>Paste a procedure. The draft replaces the current editable routine.</DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
           <Label htmlFor="routineDraftAssistProse">Procedure text</Label>
@@ -62,7 +62,7 @@ export function RoutineDraftAssistDialog({
             disabled={!prose.trim()}
             loading={isDrafting} icon={<WandSparkles />}
           >
-            Load proposal
+            Create draft
           </Button>
         </DialogFooter>
       </DialogContent>

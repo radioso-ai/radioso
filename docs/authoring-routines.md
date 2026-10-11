@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-10-10
+last_updated: 2026-10-11
 ---
 
 # Authoring Routines
@@ -27,19 +27,20 @@ For the runtime model behind routines, see
 Open **Routines** and choose **New routine**. The routine's name is the page
 title — click it and type. A pill beside it reads **Draft** or **Live**,
 matching the round publish button at the top right: press it to take the
-routine live, press it again to pull it back to a draft. **Test** opens the
-draft in Test Chat, and the overflow menu holds **Draft with AI** and
-**Delete routine**.
+routine live, press it again to pull it back to a draft. On a blank routine,
+**Draft from procedure** is a visible starting option; it is also in the
+overflow menu with **Delete routine**. **Test** opens the draft in Test Chat.
 
 Open **When to trigger** in the Document editor, then **Starts when**, to set:
 
-- **Priority** — the tie-breaker when several routines match a turn.
+- **Priority** — higher whole numbers win when several routines match a turn.
+  Use 0 for the standard priority.
 - **Reentry** — how the routine behaves after it finishes in a conversation.
 - **Activation trigger** — a plain-language account of when the routine starts.
 
 Write the trigger as an operator would describe the task. Radioso judges its
 meaning, so “customer reports coffee that arrived damaged, stale, or wrong”
-gives the agent useful context.
+gives the agent useful context. The empty field shows this kind of example.
 
 ### Optional conditions
 

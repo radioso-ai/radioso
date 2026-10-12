@@ -549,8 +549,7 @@ imports from `services/`.
   `includeSlotValues` opt-in: eval replay, which persists its trace to append-only
   evidence, gets no preview.
 - Fused turn planning: `turnPlanService.ts` (one `turn_planning` call on the
-  agent's chat model + prompt `backend/prompts/chat/turn-planning.md`, strict
-  parse and semantic validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from
+  agent's chat model, strict parse and semantic validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from
   `behaviorConfig.turnPlanning`, the lazy memoized `session.turnPlan` handle,
   and the four plan-aware adapters). On eligible fresh turns the one plan
   replaces the staged routine-activation, turn-interpretation,
@@ -574,6 +573,17 @@ imports from `services/`.
   Pre-retrieval planning never receives response identity or answer instructions,
   and any model-proposed scope fields are ignored. Retrieved evidence decides
   whether the grounded answer has support.
+  The request has three parts so providers can reuse its stable prefix
+  (`docs/input-token-caching.md`): `prompts/chat/turn-planning.md` renders the
+  planning rules plus the agent's rewrite guidance, page-read capability, and
+  directive conditions (name order) as the reusable system prefix; decision
+  independence, this turn's routine candidates, and the output shape follow in the
+  system suffix; `prompts/chat/turn-planning-request.md` carries visitor context,
+  conversation, summary, and the latest question as the user request. Candidate ids
+  and names in the response schema are sorted, so one agent configuration yields one
+  schema. The grounded answer composer (`groundedAnswerPromptComposer.ts`) follows
+  the same rule: base instructions, coverage, and envelope blocks form its reusable
+  prefix, and turn steering, offers, follow-up rules, and the lead-back follow.
   `chat_turn_planning_outcomes_total` records fast-path, fallback, and every typed
   gate/state/candidate/prompt bypass without forcing lazy prompt construction. Tests:
   `tests/unit/turn-plan-service.test.ts`,

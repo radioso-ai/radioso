@@ -128,7 +128,7 @@ describe("RetrievalAnswerComposer coverage composition", () => {
     expect(call.systemPrompt).not.toContain("Only when your coverage verdict is one of");
   });
 
-  it("builds the directive-adherence schema enum from the same known-verdict-filtered rules as the prompt on the page-context fallback (round 3, Q4)", async () => {
+  it("resolves directive adherence against the same known-verdict-filtered rules as the prompt on the page-context fallback (round 3, Q4)", async () => {
     const gateway = {
       answer: vi.fn(async () => JSON.stringify({
         coverage: "unanswered_insufficient_evidence",
@@ -139,6 +139,10 @@ describe("RetrievalAnswerComposer coverage composition", () => {
         claims: [],
         suggestions: [],
         grounding: "degraded",
+        adherence: [
+          { rule: "d1", satisfied: true, applicable: true, note: "offered the form" },
+          { rule: "d2", satisfied: false, applicable: true, note: "no demo offered" },
+        ],
       })),
     } as unknown as ChatGateway;
     const zeroContextSession = {
@@ -182,19 +186,18 @@ describe("RetrievalAnswerComposer coverage composition", () => {
       { forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules) },
     );
 
-    await composer.composeAnswer(zeroContextSession, "When is the workshop?", undefined, undefined);
+    const result = await composer.composeAnswer(zeroContextSession, "When is the workshop?", undefined, undefined);
 
     const call = (gateway.answer as unknown as {
       mock: { calls: Array<[{ systemPrompt: string; generation: { responseFormat: { schema: { properties: Record<string, unknown> } } } }]> };
     }).mock.calls[0][0];
     expect(call.systemPrompt).toContain("Offer the contact form.");
     expect(call.systemPrompt).not.toContain("Offer to book a demo.");
-    // Q4: the side channel used to build its attestable rule enum from the
-    // unfiltered steering rules, so a rule the known-verdict filter dropped from
-    // the prompt still showed up as an id the model could (and had to) attest to.
-    const adherenceSchema = call.generation.responseFormat.schema.properties.adherence as {
-      items: { properties: { rule: { enum: string[] } } };
-    };
-    expect(adherenceSchema.items.properties.rule.enum).toEqual(["d1"]);
+    // Q4: the side channel is built from the known-verdict-filtered rules, so an
+    // attestation for a rule the filter dropped from the prompt never reaches the turn.
+    expect(call.generation.responseFormat.schema.properties).toHaveProperty("adherence");
+    expect((result as { metadata?: Record<string, unknown> }).metadata?.directiveAdherence).toEqual([
+      { directive: "offer-form", ruleId: "d1", satisfied: true, applicable: true, note: "offered the form" },
+    ]);
   });
 });

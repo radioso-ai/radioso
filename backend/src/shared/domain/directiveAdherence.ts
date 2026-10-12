@@ -45,6 +45,12 @@ const ADHERENCE_FIELD = "adherence";
 
 const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
 
+// The steering block renders each id as `[d1]`; a model may copy the brackets.
+const unbracketRuleId = (value: string): string => {
+  const trimmed = value.trim();
+  return trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1).trim() : trimmed;
+};
+
 interface RawAttestation {
   rule: string;
   satisfied: boolean;
@@ -57,7 +63,7 @@ const readAttestation = (entry: unknown): RawAttestation | null => {
     return null;
   }
   const record = entry as Record<string, unknown>;
-  const rule = typeof record.rule === "string" ? record.rule.trim() : "";
+  const rule = typeof record.rule === "string" ? unbracketRuleId(record.rule) : "";
   const note = typeof record.note === "string" ? normalizeWhitespace(record.note) : "";
   if (!rule || typeof record.satisfied !== "boolean" || typeof record.applicable !== "boolean" || !note) {
     return null;
@@ -81,6 +87,10 @@ export const createDirectiveAdherenceProbe = (
   );
 
   return {
+    // The fragment is the same for every non-empty rule set. Unconditional directives
+    // always render and have no count cap, so an id enum would change whenever the
+    // active rule set does, and a provider that caches the response schema with the
+    // prompt would miss on every such turn. `resolve` drops any id not rendered.
     responseSchemaFragment() {
       if (ruleIds.length === 0) {
         return null;
@@ -95,7 +105,10 @@ export const createDirectiveAdherenceProbe = (
               additionalProperties: false,
               required: ["rule", "satisfied", "applicable", "note"],
               properties: {
-                rule: { type: "string", enum: [...ruleIds] },
+                rule: {
+                  type: "string",
+                  description: "A rule id shown in brackets before a steering rule, written without the brackets, such as d1.",
+                },
                 satisfied: { type: "boolean" },
                 // A conditional rule (coverage-gated) whose criteria did not match
                 // this turn's verdict attests false here, not false `satisfied`.

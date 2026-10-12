@@ -144,6 +144,7 @@ export class ContextualTurnPlanGatewayFactory implements TurnPlanGatewayFactory 
   constructor(
     private readonly deps: ContextualGatewayDependencies,
     private readonly usageEventRecorder?: UsageEventRecorder,
+    private readonly metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null,
   ) {
     this.cache = deps.clientCache ?? new TextGenerationClientCache();
   }
@@ -153,7 +154,7 @@ export class ContextualTurnPlanGatewayFactory implements TurnPlanGatewayFactory 
     usageContext: ModelCallUsageContext;
   }): Promise<TurnPlanInferenceClient> {
     const client = await resolveClient(this.cache, this.deps.resolver, "chat", input.workspaceContext);
-    const inference = toInferencePipeline(client, this.usageEventRecorder);
+    const inference = toInferencePipeline(client, this.usageEventRecorder, this.metrics);
     return {
       complete(request) {
         return inference.complete({ ...request, operation: input.usageContext });

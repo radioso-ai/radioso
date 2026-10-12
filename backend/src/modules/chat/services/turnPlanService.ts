@@ -13,8 +13,10 @@ import { normalizeLlmClassifierLanguageLabel } from "../../../shared/domain/llmC
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type {
   JsonSchemaResponseFormat,
+  ReusableInputBoundary,
   TextGenerationRequest,
 } from "../../../shared/infra/llm/providerTypes.js";
+import { createReusableInputBoundary } from "../../../shared/infra/llm/inputTokenCaching.js";
 import type { TurnPlanGatewayFactory } from "../../../shared/infra/llm/turnPlanGateway.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { parseStructuredRewrite, type StructuredRewriteResult } from "../../retrieval/public.js";
@@ -111,9 +113,15 @@ const visitorContextBlock = (visitorContext: Record<string, unknown>): string =>
     visitor_context_section_values: JSON.stringify(visitorContext, null, 2),
   });
 
+// Code-unit order: locale-independent, so one agent configuration always renders the
+// same bytes whatever order the candidates were collected in.
+const byCodeUnit = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0);
+
 const directiveCandidatesBlock = (candidates: readonly TurnPlanDirectiveCandidate[]): string =>
   JSON.stringify(
-    candidates.map((candidate) => ({ name: candidate.name, condition: candidate.condition })),
+    [...candidates]
+      .sort((left, right) => byCodeUnit(left.name, right.name))
+      .map((candidate) => ({ name: candidate.name, condition: candidate.condition })),
     null,
     2,
   );
@@ -162,42 +170,30 @@ const turnPlanOutputShapeBlock = (input: {
     `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
 };
 
+/**
+ * The planner request in three parts. Standing rules and this agent's configuration
+ * (rewrite guidance, page-read capability, directive conditions) form a system prefix
+ * that reads the same on every turn, so providers can reuse it. Rules that depend on
+ * this turn's routine candidates follow in the system suffix. Visitor-supplied data
+ * (visitor context, conversation, latest question) is the user request.
+ */
+interface TurnPlanningPrompt {
+  systemPrompt: string;
+  reusableInputBoundary?: ReusableInputBoundary;
+  prompt: string;
+}
+
 /** Canonical prompt renderer shared by execution and the eligibility budget. */
-export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): string => {
+export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): TurnPlanningPrompt => {
   const hasRoutineCandidates = input.routineCandidates.length > 0;
   const hasDirectiveCandidates = input.directiveCandidates.length > 0;
   const hasVisitorContext = Object.keys(input.visitorContext ?? {}).length > 0;
   const pageReadCapability = input.pageReadCapability ?? null;
-  return renderPromptTemplate("chat/turn-planning.md", {
-    context_section: formatConversationContext(input.history) || "No prior context",
-    conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
+  const stableSystemPrefix = renderPromptTemplate("chat/turn-planning.md", {
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
     lexical_rewrite_instructions:
       input.lexicalRewriteInstructions ?? "Use the system default lexical rewrite behavior.",
-    // Decision independence only earns prompt space when there are candidates to
-    // firewall from the routing/rewrite/language decisions.
-    decision_independence_section:
-      hasRoutineCandidates || hasDirectiveCandidates
-        ? optionalSection(renderPromptTemplate("chat/turn-planning-decision-independence.md", {}))
-        : "",
-    routine_section: hasRoutineCandidates
-      ? optionalSection(
-          renderPromptTemplate("chat/turn-planning-routines.md", {
-            routine_candidates_section: routineCandidatesBlock(input.routineCandidates),
-          }),
-        )
-      : "",
-    directive_section: hasDirectiveCandidates
-      ? optionalSection(
-          renderPromptTemplate("chat/turn-planning-directives.md", {
-            directive_candidates_section: directiveCandidatesBlock(input.directiveCandidates),
-            visitor_context_section: hasVisitorContext
-              ? optionalSection(visitorContextBlock(input.visitorContext ?? {}))
-              : "",
-          }),
-        )
-      : "",
     page_read_section: pageReadCapability
       ? optionalSection(
           renderPromptTemplate("chat/turn-planning-page-read.md", {
@@ -209,17 +205,55 @@ export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): string 
           }),
         )
       : "",
-    output_shape_section: optionalSection(turnPlanOutputShapeBlock({
+    directive_section: hasDirectiveCandidates
+      ? optionalSection(
+          renderPromptTemplate("chat/turn-planning-directives.md", {
+            directive_candidates_section: directiveCandidatesBlock(input.directiveCandidates),
+          }),
+        )
+      : "",
+  });
+  const dynamicSystemSuffix = [
+    // Decision independence only earns prompt space when there are candidates to
+    // firewall from the routing/rewrite/language decisions.
+    hasRoutineCandidates || hasDirectiveCandidates
+      ? optionalSection(renderPromptTemplate("chat/turn-planning-decision-independence.md", {}))
+      : "",
+    hasRoutineCandidates
+      ? optionalSection(
+          renderPromptTemplate("chat/turn-planning-routines.md", {
+            routine_candidates_section: routineCandidatesBlock(input.routineCandidates),
+          }),
+        )
+      : "",
+    optionalSection(turnPlanOutputShapeBlock({
       hasRoutineCandidates,
       hasDirectiveCandidates,
       hasPageReadCapability: Boolean(pageReadCapability),
     })),
-    query: input.query,
-  });
+  ].join("");
+  const systemPrompt = `${stableSystemPrefix}${dynamicSystemSuffix}`;
+  const reusableInputBoundary = createReusableInputBoundary({ stableSystemPrefix, dynamicSystemSuffix });
+  return {
+    systemPrompt,
+    ...(reusableInputBoundary ? { reusableInputBoundary } : {}),
+    prompt: renderPromptTemplate("chat/turn-planning-request.md", {
+      // Directive conditions are the one planner decision that consumes visitor state;
+      // the block renders only alongside them.
+      visitor_context_section: hasDirectiveCandidates && hasVisitorContext
+        ? `${visitorContextBlock(input.visitorContext ?? {})}\n\n`
+        : "",
+      context_section: formatConversationContext(input.history) || "No prior context",
+      conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
+      query: input.query,
+    }),
+  };
 };
 
-export const estimateTurnPlanningPromptTokens = (input: TurnPlanningPromptInput): number =>
-  Math.ceil(buildTurnPlanningPrompt(input).length / 4);
+export const estimateTurnPlanningPromptTokens = (input: TurnPlanningPromptInput): number => {
+  const prompt = buildTurnPlanningPrompt(input);
+  return Math.ceil((prompt.systemPrompt.length + prompt.prompt.length) / 4);
+};
 
 const stripJsonFence = (raw: string): string =>
   raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
@@ -422,7 +456,7 @@ export const buildTurnPlanResponseFormat = (candidates: {
         additionalProperties: false,
         required: ["routineId", "confidence", "variables"],
         properties: {
-          routineId: { type: "string", enum: [...candidates.routineIds] },
+          routineId: { type: "string", enum: [...candidates.routineIds].sort(byCodeUnit) },
           confidence: confidenceJsonSchema,
           variables: {
             type: "array",
@@ -450,7 +484,7 @@ export const buildTurnPlanResponseFormat = (candidates: {
         additionalProperties: false,
         required: ["name", "matched", "confidence"],
         properties: {
-          name: { type: "string", enum: [...candidates.directiveNames] },
+          name: { type: "string", enum: [...candidates.directiveNames].sort(byCodeUnit) },
           matched: { type: "boolean" },
           confidence: confidenceJsonSchema,
         },
@@ -650,8 +684,11 @@ export class TurnPlanService {
       });
       const routineIds = request.routineCandidates.map((candidate) => candidate.routineId);
       const directiveNames = request.directiveCandidates.map((candidate) => candidate.name);
+      const { systemPrompt, reusableInputBoundary, prompt } = buildTurnPlanningPrompt(request);
       const { text } = await client.complete({
-        prompt: buildTurnPlanningPrompt(request),
+        systemPrompt,
+        ...(reusableInputBoundary ? { reusableInputBoundary } : {}),
+        prompt,
         responseFormat: buildTurnPlanResponseFormat({
           routineIds,
           directiveNames,

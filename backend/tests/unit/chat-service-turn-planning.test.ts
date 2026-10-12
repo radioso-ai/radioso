@@ -126,8 +126,9 @@ const plannerFactory = (input: {
 } => {
   const prompts: string[] = [];
   const workspaceContexts: LlmCapabilityResolveInput[] = [];
-  const complete = vi.fn(async (request: { prompt: string; signal?: AbortSignal }) => {
-    prompts.push(request.prompt);
+  const complete = vi.fn(async (request: { prompt: string; systemPrompt?: string; signal?: AbortSignal }) => {
+    // Everything the planner reads: standing rules (system) and the turn's request (user).
+    prompts.push(`${request.systemPrompt ?? ""}\n\n${request.prompt}`);
     if (input.neverComplete) {
       return new Promise<never>((_resolve, reject) => {
         if (request.signal?.aborted) {

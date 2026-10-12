@@ -11,7 +11,10 @@ vi.mock("openai", () => ({
 }));
 
 import { OpenAIEmbeddingClient, OpenAITextGenerationClient } from "../../src/shared/infra/llm/openaiProvider.js";
+import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 import type { LlmCapabilityConfig } from "../../src/shared/infra/llm/providerTypes.js";
+import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
+import { captureModelCallTrace } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 
 const chatConfig: LlmCapabilityConfig = {
   capability: "chat",
@@ -125,9 +128,56 @@ describe("OpenAITextGenerationClient.complete", () => {
       outputTokens: 5,
       totalTokens: 16,
       cachedInputTokens: 3,
+      cacheAccounting: { state: "reported", readInputTokens: 3 },
       reasoningTokens: 2,
       providerRequestId: "resp-1",
       quality: "actual",
+    });
+  });
+
+  it("keeps a reported zero cache read distinct from absent cache accounting", async () => {
+    createMock
+      .mockResolvedValueOnce({
+        id: "resp-zero",
+        choices: [{ message: { content: "Hello" } }],
+        usage: { prompt_tokens: 11, completion_tokens: 5, total_tokens: 16, prompt_tokens_details: { cached_tokens: 0 } },
+      })
+      .mockResolvedValueOnce({
+        id: "resp-absent",
+        choices: [{ message: { content: "Hello" } }],
+        usage: { prompt_tokens: 11, completion_tokens: 5, total_tokens: 16 },
+      });
+    const client = new OpenAITextGenerationClient(chatConfig);
+
+    const reportedZero = await client.complete({ prompt: "Hi" });
+    const absent = await client.complete({ prompt: "Hi" });
+
+    expect(reportedZero.usage?.cacheAccounting).toEqual({ state: "reported", readInputTokens: 0 });
+    expect(absent.usage?.cacheAccounting).toEqual({ state: "unknown" });
+  });
+
+  it("sums cache reads across the low-reasoning retry of an empty capped completion", async () => {
+    createMock
+      .mockResolvedValueOnce({
+        id: "resp-capped",
+        choices: [{ finish_reason: "length", message: { content: "" } }],
+        usage: { prompt_tokens: 2000, completion_tokens: 64, total_tokens: 2064, prompt_tokens_details: { cached_tokens: 1024 } },
+      })
+      .mockResolvedValueOnce({
+        id: "resp-retried",
+        choices: [{ finish_reason: "stop", message: { content: "Hello" } }],
+        usage: { prompt_tokens: 2000, completion_tokens: 10, total_tokens: 2010, prompt_tokens_details: { cached_tokens: 1920 } },
+      });
+
+    const result = await new OpenAITextGenerationClient(chatConfig).complete({
+      prompt: "Hi",
+      reasoningEffort: "medium",
+    });
+
+    expect(result.text).toBe("Hello");
+    expect(result.usage).toMatchObject({
+      cachedInputTokens: 2944,
+      cacheAccounting: { state: "reported", readInputTokens: 2944 },
     });
   });
 
@@ -220,6 +270,7 @@ describe("OpenAITextGenerationClient.stream", () => {
       outputTokens: 2,
       totalTokens: 9,
       cachedInputTokens: undefined,
+      cacheAccounting: { state: "unknown" },
       reasoningTokens: undefined,
       providerRequestId: "resp-3",
       quality: "actual",
@@ -281,6 +332,126 @@ describe("OpenAITextGenerationClient.stream", () => {
     })()).rejects.toThrow("stream blew up");
 
     await expect(usage).resolves.toBeUndefined();
+  });
+});
+
+describe("OpenAITextGenerationClient prompt cache routing", () => {
+  const stableSystemPrefix = "STANDING RULES workspace-7f3a conversation-91bd";
+  const boundaryRequest = (dynamicSystemSuffix: string, prompt: string, format = responseFormat) => ({
+    prompt,
+    systemPrompt: `${stableSystemPrefix}${dynamicSystemSuffix}`,
+    reusableInputBoundary: { stableSystemPrefix, dynamicSystemSuffix },
+    responseFormat: format,
+  });
+  const sentRequest = (call = 0): Record<string, unknown> =>
+    createMock.mock.calls[call]?.[0] as Record<string, unknown>;
+  const completeWith = async (config: LlmCapabilityConfig, request: Parameters<OpenAITextGenerationClient["complete"]>[0]) => {
+    createMock.mockResolvedValueOnce({ id: "resp-cache", choices: [{ message: { content: "ok" } }] });
+    await new OpenAITextGenerationClient(config).complete(request);
+  };
+
+  it("sends a content-derived prompt_cache_key when a first-party request declares a reusable prefix", async () => {
+    await completeWith(chatConfig, boundaryRequest("\n\nTurn steering", "Hi"));
+
+    expect(sentRequest().prompt_cache_key).toMatch(/^rpc1_[0-9a-f]{32}$/);
+  });
+
+  it("sends the same key on streaming requests", async () => {
+    await completeWith(chatConfig, boundaryRequest("", "Hi"));
+    createMock.mockResolvedValueOnce(asyncIterableOf([]));
+    const { textStream } = new OpenAITextGenerationClient(chatConfig).stream(boundaryRequest("", "Hi"));
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(sentRequest(1)).toMatchObject({ stream: true, prompt_cache_key: sentRequest(0).prompt_cache_key });
+  });
+
+  it("derives one key per stable prefix and response schema, whatever the turn adds", async () => {
+    await completeWith(chatConfig, boundaryRequest("\n\nSteering A", "First question"));
+    await completeWith(chatConfig, boundaryRequest("\n\nSteering B", "Second question"));
+    await completeWith(chatConfig, {
+      ...boundaryRequest("", "Hi"),
+      systemPrompt: "OTHER RULES",
+      reusableInputBoundary: { stableSystemPrefix: "OTHER RULES", dynamicSystemSuffix: "" },
+    });
+    await completeWith(chatConfig, boundaryRequest("", "Hi", { ...responseFormat, name: "other_schema" }));
+
+    const [first, second, otherPrefix, otherSchema] = [0, 1, 2, 3].map((call) => sentRequest(call).prompt_cache_key);
+    expect(second).toBe(first);
+    expect(otherPrefix).not.toBe(first);
+    expect(otherSchema).not.toBe(first);
+  });
+
+  it("keeps request content and identifiers out of the key", async () => {
+    await completeWith(chatConfig, boundaryRequest("\n\nTurn steering", "Hi"));
+
+    const key = String(sentRequest().prompt_cache_key);
+    for (const fragment of ["STANDING", "workspace-7f3a", "conversation-91bd", "answer_envelope", "steering"]) {
+      expect(key).not.toContain(fragment);
+    }
+  });
+
+  it("never sends the key to OpenAI-compatible endpoints", async () => {
+    await completeWith(compatibleChatConfig, boundaryRequest("", "Hi"));
+
+    expect(sentRequest()).not.toHaveProperty("prompt_cache_key");
+  });
+
+  it("never sends the key to an OpenAI configuration with a custom base URL", async () => {
+    await completeWith({ ...chatConfig, baseUrl: "https://proxy.example/v1" }, boundaryRequest("", "Hi"));
+
+    expect(sentRequest()).not.toHaveProperty("prompt_cache_key");
+  });
+
+  it("omits the key when the request declares no reusable prefix or a mismatched one", async () => {
+    await completeWith(chatConfig, { prompt: "Hi", systemPrompt: "RULES" });
+    await completeWith(chatConfig, {
+      prompt: "Hi",
+      systemPrompt: "RULES plus something else",
+      reusableInputBoundary: { stableSystemPrefix: "RULES", dynamicSystemSuffix: "" },
+    });
+
+    expect(sentRequest(0)).not.toHaveProperty("prompt_cache_key");
+    expect(sentRequest(1)).not.toHaveProperty("prompt_cache_key");
+  });
+
+  it("keeps the key out of usage events, the turn trace, and metrics", async () => {
+    createMock.mockResolvedValueOnce({
+      id: "resp-observed",
+      choices: [{ message: { content: "ok" } }],
+      usage: { prompt_tokens: 2000, completion_tokens: 5, total_tokens: 2005, prompt_tokens_details: { cached_tokens: 1920 } },
+    });
+    const events: unknown[] = [];
+    const metrics = new MetricsRegistry();
+    const pipeline = new ModelInferencePipelineService(
+      new OpenAITextGenerationClient(chatConfig),
+      { async recordEmbedding() {}, async recordModelCall(event) { events.push(event); } },
+      metrics,
+    );
+
+    const { calls } = await captureModelCallTrace(() => pipeline.complete({
+      ...boundaryRequest("", "Hi"),
+      operation: {
+        workspaceId: "workspace-7f3a",
+        conversationId: "conversation-91bd",
+        surface: "assistant",
+        operation: "answer",
+        attemptKey: "attempt-1",
+      },
+    }));
+
+    const key = String(sentRequest().prompt_cache_key);
+    expect(key).toMatch(/^rpc1_/);
+    expect(calls[0]).toMatchObject({ cacheAccounting: { state: "reported", readInputTokens: 1920 } });
+    for (const observed of [JSON.stringify(events), JSON.stringify(calls), metrics.renderPrometheus()]) {
+      expect(observed).not.toContain(key);
+    }
+  });
+
+  it("declares implicit cache capability only for first-party OpenAI", () => {
+    expect(new OpenAITextGenerationClient(chatConfig).metadata.cacheCapability).toBe("implicit");
+    expect(new OpenAITextGenerationClient(compatibleChatConfig).metadata.cacheCapability).toBe("unsupported");
   });
 });
 

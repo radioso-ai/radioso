@@ -47,6 +47,7 @@ import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRu
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
+import { VoiceTurnService } from "../../src/modules/voiceChannel/public.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import {
   AgentRevisionRuntimeResolver,
@@ -2765,6 +2766,22 @@ export const createTestDependencies = (overrides: {
     }),
     chatHistoryService,
     assistantChatService,
+    voiceTurns: new VoiceTurnService({
+      sessions: (() => {
+        const bound = new Map<string, string>();
+        const keyOf = (session: { agentId: string; vendor: string; sessionKey: string }) =>
+          JSON.stringify([session.agentId, session.vendor, session.sessionKey]);
+        return {
+          findConversationId: async (session) => bound.get(keyOf(session)) ?? null,
+          bind: async (session, conversationId) => {
+            if (!bound.has(keyOf(session))) bound.set(keyOf(session), conversationId);
+            return bound.get(keyOf(session)) ?? conversationId;
+          },
+        };
+      })(),
+      chat: { streamTurn: (request) => assistantChatService.streamAnswer({ ...request, stream: true }) },
+      logger,
+    }),
     assistantHistoryService,
     retrievalSearchService,
     retrievalAnswerService,

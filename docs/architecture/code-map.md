@@ -378,6 +378,42 @@ Related docs:
 - [Customer Email Connections](../customer-email-skills.md)
 - `specs/1403-email-channel/`
 
+## Voice Channel
+
+Owns voice sessions (a vendor's opaque session key mapped to one
+conversation), the vendor-neutral turn port that runs one caller utterance as
+a streaming chat turn and re-cuts the reply into sentence-sized speech, and
+the vendor adapters that bind that port to a wire. Voice enters the chat path
+as `sourceChannel: "voice"` with a `voice` channel context; the chat turn
+itself is unchanged.
+
+Should not own planning, retrieval, routines, or any vendor's field names
+outside `adapters/`. The domain names no vendor.
+
+Public surfaces and key files:
+
+- `backend/src/modules/voiceChannel/public.ts`
+- `backend/src/modules/voiceChannel/domain.ts` — `VoiceTurnPort`, `VoiceTurnInput`, `VoiceTurnEvent`, `VoiceTurnOutcome`
+- `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`
+- `backend/src/modules/voiceChannel/persistence/voiceSessionRepository.ts` (`voice_sessions`, migration `214_voice_sessions.sql`)
+- `backend/src/modules/voiceChannel/adapters/openaiCompletions/` — dialects as data, request schema, SSE presenter, route
+- `backend/src/app/composition/voiceChannel.ts` and `backend/src/app/http/routes/agentVoiceRoute.ts` (mounted beside the REST agent channel)
+- `backend/src/modules/voiceChannel/README.md`
+
+Useful searches:
+
+- `rg "voiceTurns|VoiceTurn|voice_sessions|VOICE_SOURCE_CHANNEL" backend/src backend/tests`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
+
+Related docs:
+
+- [Voice Channel](../voice-channel.md)
+- `specs/voice-channel/`
+
 ## Agent Skill Definitions (shared spine)
 
 External MCP skills (`externalSkills`), customer email skills (`customerEmail`),

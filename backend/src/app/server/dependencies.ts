@@ -4,6 +4,7 @@ import { emailChannelConfigGaps, getEnv, parseEmailChannelConfig, type Env } fro
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
+import { createVoiceChannelComposition } from "../composition/voiceChannel.js";
 import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
 import {
   createEmailChannelComposition,
@@ -1293,6 +1294,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
     chatHistoryService: chat.chatHistoryService,
     assistantChatService: chat.assistantChatService,
+    voiceTurns: createVoiceChannelComposition({
+      db: infrastructure.database.kysely,
+      assistantChatService: chat.assistantChatService,
+      logger,
+    }),
     assistantHistoryService: chat.assistantHistoryService,
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,

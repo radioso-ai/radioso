@@ -9924,6 +9924,28 @@ components:
             - mailbox
             - threadKey
             - participant
+        - type: object
+          properties:
+            provider:
+              type: string
+              enum:
+                - voice
+            vendor:
+              type: string
+            sessionKey:
+              type: string
+            transport:
+              type: string
+              enum:
+                - phone
+                - web
+            callerId:
+              type: string
+          required:
+            - provider
+            - vendor
+            - sessionKey
+            - transport
     ConversationRequestContext:
       type: object
       properties:

@@ -432,6 +432,13 @@ export type ConversationChannelContext =
       threadKey: string
       participant: { address: string }
     }
+  | {
+      provider: 'voice'
+      vendor: string
+      sessionKey: string
+      transport: 'phone' | 'web'
+      callerId?: string
+    }
 
 export type ChatConversationSummary = ApiSchemas['ChatConversationSummary'] & {
   channelContext?: ConversationChannelContext | null

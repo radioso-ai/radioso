@@ -379,6 +379,10 @@ test("a step instruction offers only the variable menu, never a skill or flow-ta
   await expect(documentEditor).toContainText("Ask via #ananda_edizioni_mcp then @order_total on Current page");
 });
 
+// Whether the page's selection covers the element whole, not just part of it.
+const isSelectedWhole = (element: Locator) =>
+  element.evaluate((node) => window.getSelection()?.containsNode(node, false) ?? false);
+
 test("a variable chip is clickable and selectable, and either selection path removes it as a whole", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 
@@ -426,15 +430,21 @@ test("a variable chip is clickable and selectable, and either selection path rem
   await documentEditor.getByRole("button", { name: "Chat", exact: true }).last().click();
   const secondInstruction = documentEditor.getByLabel("Step 2 instruction");
   await secondInstruction.click();
-  await secondInstruction.pressSequentially("@order_total");
+  await secondInstruction.pressSequentially("Then @order_total");
   await page.getByRole("option", { name: "@order_total" }).click();
 
   const secondChip = secondInstruction.locator('[data-routine-chip="variable"]');
   await expect(secondChip).toHaveCount(1);
+  // Picking the option leaves the caret past the space the insertion adds behind the chip, so
+  // the line's end is one character beyond the chip: ArrowLeft steps back over that space first.
+  // From the end itself, Shift+ArrowLeft selects the space, not the chip.
   await secondInstruction.press("End");
+  await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("Shift+ArrowLeft");
+  await expect.poll(() => isSelectedWhole(secondChip)).toBe(true);
   await page.keyboard.press("Backspace");
   await expect(secondChip).toHaveCount(0);
+  await expect(secondInstruction).toContainText("Then");
   await expect(secondInstruction).not.toContainText("order_total");
 });
 

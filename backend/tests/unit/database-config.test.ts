@@ -1,7 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { EventEmitter } from "node:events";
+import { Writable } from "node:stream";
+import { describe, expect, it, vi } from "vitest";
 
 import { getEnv } from "../../src/app/config/env.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { createLogger } from "../../src/shared/observability/logger.js";
+
+const captureLines = (): { stream: Writable; lines: string[] } => {
+  const lines: string[] = [];
+  const stream = new Writable({
+    write(chunk, _encoding, callback) {
+      lines.push(chunk.toString());
+      callback();
+    },
+  });
+
+  return { stream, lines };
+};
 
 const stubPoolQuery = (database: Database, rows: unknown[], rowCount: number): void => {
   database.pool.query = async () => ({
@@ -77,6 +92,130 @@ describe("database configuration", () => {
     expect(database.pool.options.application_name).toBe("radioso-test");
 
     return database.close();
+  });
+
+  it("reports a connection lost while idle in the pool instead of crashing the process", async () => {
+    const warn = vi.fn();
+    const database = new Database("postgres://radioso:s3cret-password@localhost:5432/test", {
+      applicationName: "radioso-test",
+      logger: { warn },
+    });
+    // pg-pool re-emits the client's error on the pool and attaches the client, which
+    // carries the connection parameters.
+    const lostClient = {
+      connectionParameters: {
+        password: "s3cret-password",
+        connectionString: "postgres://radioso:s3cret-password@localhost:5432/test",
+      },
+    };
+    const lost = Object.assign(new Error("terminating connection due to administrator command"), {
+      code: "57P01",
+      severity: "FATAL",
+      client: lostClient,
+    });
+
+    expect(() => database.pool.emit("error", lost, lostClient)).not.toThrow();
+    expect(warn).toHaveBeenCalledWith(
+      {
+        applicationName: "radioso-test",
+        code: "57P01",
+        postgresSeverity: "FATAL",
+        err: "terminating connection due to administrator command",
+      },
+      "database_idle_connection_lost",
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("s3cret-password");
+    await database.close();
+  });
+
+  it("absorbs a lost idle connection when no logger is wired", async () => {
+    const database = new Database("postgres://test:test@localhost:5432/test");
+
+    expect(() => database.pool.emit("error", new Error("Connection terminated unexpectedly"))).not.toThrow();
+    await database.close();
+  });
+
+  it("does not let Postgres's own severity collide with the logger's Cloud Logging severity", async () => {
+    const { stream, lines } = captureLines();
+    const logger = createLogger("debug", stream);
+    const database = new Database("postgres://radioso:s3cret-password@localhost:5432/test", {
+      applicationName: "radioso-test",
+      logger,
+    });
+
+    const lost = Object.assign(new Error("terminating connection due to administrator command"), {
+      code: "57P01",
+      severity: "FATAL",
+    });
+
+    database.pool.emit("error", lost, { connectionParameters: { password: "s3cret-password" } });
+
+    const [record] = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    // Pino's own Cloud Logging severity for a `warn` call must win: a JSON consumer reading
+    // `severity` must see "WARNING", not Postgres's "FATAL" for a disconnect we handled.
+    expect(record).toMatchObject({ severity: "WARNING", postgresSeverity: "FATAL" });
+
+    await database.close();
+  });
+
+  it("reports a connection lost while checked out instead of crashing the process", async () => {
+    const warn = vi.fn();
+    const database = new Database("postgres://radioso:s3cret-password@localhost:5432/test", {
+      applicationName: "radioso-test",
+      logger: { warn },
+    });
+
+    const client = Object.assign(new EventEmitter(), {
+      connectionParameters: {
+        password: "s3cret-password",
+        connectionString: "postgres://radioso:s3cret-password@localhost:5432/test",
+      },
+    });
+
+    database.pool.emit("acquire", client);
+
+    const lost = Object.assign(new Error("terminating connection due to administrator command"), {
+      code: "57P01",
+      severity: "FATAL",
+    });
+
+    expect(() => client.emit("error", lost)).not.toThrow();
+    expect(warn).toHaveBeenCalledWith(
+      {
+        applicationName: "radioso-test",
+        code: "57P01",
+        postgresSeverity: "FATAL",
+        err: "terminating connection due to administrator command",
+      },
+      "database_checked_out_connection_lost",
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("s3cret-password");
+    await database.close();
+  });
+
+  it("absorbs a connection lost while checked out when no logger is wired", async () => {
+    const database = new Database("postgres://test:test@localhost:5432/test");
+    const client = new EventEmitter();
+
+    database.pool.emit("acquire", client);
+
+    expect(() => client.emit("error", new Error("Connection terminated unexpectedly"))).not.toThrow();
+    await database.close();
+  });
+
+  it("stops watching a checked-out client's errors on release, so repeated checkouts do not accumulate listeners", async () => {
+    const warn = vi.fn();
+    const database = new Database("postgres://test:test@localhost:5432/test", { logger: { warn } });
+    const client = new EventEmitter();
+
+    for (let i = 0; i < 5; i += 1) {
+      database.pool.emit("acquire", client);
+      expect(client.listenerCount("error")).toBe(1);
+      database.pool.emit("release", undefined, client);
+      expect(client.listenerCount("error")).toBe(0);
+    }
+
+    await database.close();
   });
 
   it("returns null for optional single-row queries with no rows", async () => {

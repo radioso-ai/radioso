@@ -1,19 +1,5 @@
 Plan the assistant's next turn in a single pass. Produce independent decisions about how to route it, how to rewrite it for retrieval, and which language to answer in.
 
-Conversation context:
-{{context_section}}
-
-{{conversation_summary_section}}
-
-Semantic rewrite guidance:
-{{semantic_rewrite_instructions}}
-
-Lexical rewrite guidance:
-{{lexical_rewrite_instructions}}
-
-Latest user question:
-{{query}}{{decision_independence_section}}
-
 Routing Rules
 route: retrieval - any turn where the user wants information, an explanation, advice, comparison, calculation, drafting, transformation, troubleshooting, instructions, a continuation, a format/language transformation of a previous answer, or any other answer/action.
 route: direct - only turns where the user does not want an answer or action, such as appreciation, acknowledgement, cancellation, ending the conversation, or a greeting with no other request.
@@ -64,6 +50,12 @@ If the user has explicitly instructed the assistant to answer in a specific lang
 If there is no explicit language instruction, use the language of the latest user question.
 If the latest user message is short, neutral, or language-ambiguous, preserve the most recent explicit language instruction from the conversation when one exists.
 Return a concise human-readable language label such as "English", "Spanish", or "Estonian".
-If there is no user message or no reliable language can be determined, use null.{{page_read_section}}{{routine_section}}{{directive_section}}{{output_shape_section}}
+If there is no user message or no reliable language can be determined, use null.
+
+Semantic rewrite guidance:
+{{semantic_rewrite_instructions}}
+
+Lexical rewrite guidance:
+{{lexical_rewrite_instructions}}{{page_read_section}}{{directive_section}}
 
 The provider response schema, when available, fixes the field set and value sets. The output-shape rules remain the fallback contract for providers that cannot enforce that schema.

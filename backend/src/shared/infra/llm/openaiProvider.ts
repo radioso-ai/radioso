@@ -6,23 +6,30 @@ import {
   type EmbeddingClient,
   type EmbeddingClientOptions,
   type EmbeddingResult,
+  type JsonSchemaResponseFormat,
   type LlmCapabilityConfig,
   type LlmProviderName,
+  type ProviderCacheCapability,
   type ProviderUsage,
   type ReasoningEffort,
+  type ReusableInputBoundary,
   type TextGenerationClient,
   type TextGenerationRequest,
   type TextGenerationResult,
   type TextGenerationStreamResult,
 } from "./providerTypes.js";
+import { normalizeCacheAccounting, reusableInputBoundaryMatchesSystemPrompt } from "./inputTokenCaching.js";
 import { streamWithUsage } from "./providerStreaming.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
 import { normalizeOpenAIReasoningEffort } from "./knownModels.js";
 import {
+  isPromptCacheKeyKnownUnsupported,
   isReasoningEffortKnownUnsupported,
   isTemperatureKnownUnsupported,
+  isUnsupportedPromptCacheKeyError,
   isUnsupportedReasoningEffortError,
   isUnsupportedTemperatureError,
+  markPromptCacheKeyUnsupported,
   markReasoningEffortUnsupported,
   markTemperatureUnsupported,
 } from "./samplingParamSupport.js";
@@ -54,6 +61,17 @@ const toProviderUsage = (
   };
 };
 
+/** Chat usage plus the cache evidence OpenAI reports as `cached_tokens`. */
+const toTextProviderUsage = (
+  usage: OpenAIUsagePayload | null | undefined,
+  requestId: string | undefined,
+): ProviderUsage | undefined => {
+  const providerUsage = toProviderUsage(usage, requestId);
+  return providerUsage
+    ? { ...providerUsage, cacheAccounting: normalizeCacheAccounting({ readInputTokens: providerUsage.cachedInputTokens }) }
+    : undefined;
+};
+
 const sumOptionalUsage = (
   left: number | undefined,
   right: number | undefined,
@@ -72,11 +90,13 @@ const aggregateProviderUsage = (
   if (!second) {
     return first;
   }
+  const cachedInputTokens = sumOptionalUsage(first.cachedInputTokens, second.cachedInputTokens);
   return {
     inputTokens: sumOptionalUsage(first.inputTokens, second.inputTokens),
     outputTokens: sumOptionalUsage(first.outputTokens, second.outputTokens),
     totalTokens: sumOptionalUsage(first.totalTokens, second.totalTokens),
-    cachedInputTokens: sumOptionalUsage(first.cachedInputTokens, second.cachedInputTokens),
+    cachedInputTokens,
+    cacheAccounting: normalizeCacheAccounting({ readInputTokens: cachedInputTokens }),
     reasoningTokens: sumOptionalUsage(first.reasoningTokens, second.reasoningTokens),
     providerRequestId: second.providerRequestId ?? first.providerRequestId,
     quality: first.quality === "actual" && second.quality === "actual" ? "actual" : "estimated",
@@ -100,11 +120,17 @@ const buildTokenLimit = (
     ? { max_tokens: maxOutputTokens }
     : { max_completion_tokens: maxOutputTokens };
 
+/**
+ * The optional chat.completions params this adapter reconciles with what an endpoint
+ * accepts. `prompt_cache_key` is a cache-routing hint rather than a sampling knob; it
+ * lives here because a rejection is handled exactly like the sampling params'.
+ */
 export interface ChatSamplingParams {
   temperature?: number;
   max_completion_tokens?: number;
   max_tokens?: number;
   reasoning_effort?: ReasoningEffort;
+  prompt_cache_key?: string;
 }
 
 interface OpenAIChatCompletionChoice {
@@ -191,9 +217,47 @@ const buildResponseFormat = (
   };
 };
 
+/**
+ * First-party OpenAI only. An `openai-compatible` endpoint (Azure, OpenRouter, a local
+ * server) or an `openai` configuration pointed at another base URL may reject
+ * parameters it does not know, so it keeps the ordinary request.
+ */
+const isFirstPartyOpenAI = (config: LlmCapabilityConfig): boolean =>
+  config.provider === "openai" && !config.baseUrl;
+
+const openAICacheCapability = (config: LlmCapabilityConfig): ProviderCacheCapability =>
+  isFirstPartyOpenAI(config) ? "implicit" : "unsupported";
+
+/**
+ * OpenAI caches a request prefix automatically; `prompt_cache_key` only steers
+ * requests that can share a prefix onto the same cache. The key is a fingerprint of
+ * exactly what partitions that prefix: the response schema (rendered ahead of the
+ * messages) and the declared stable system prefix. It carries no identifier and
+ * nothing that is not already in the request body.
+ */
+const promptCacheKeyFor = (
+  boundary: ReusableInputBoundary,
+  responseFormat: JsonSchemaResponseFormat | undefined,
+): string =>
+  `rpc1_${createHash("sha256")
+    .update(JSON.stringify([responseFormat ?? null, boundary.stableSystemPrefix]))
+    .digest("hex")
+    .slice(0, 32)}`;
+
+const buildPromptCacheRouting = (
+  config: LlmCapabilityConfig,
+  input: TextGenerationRequest,
+): Pick<ChatSamplingParams, "prompt_cache_key"> =>
+  isFirstPartyOpenAI(config)
+  && reusableInputBoundaryMatchesSystemPrompt(input.reusableInputBoundary, input.systemPrompt)
+    ? { prompt_cache_key: promptCacheKeyFor(input.reusableInputBoundary, input.responseFormat) }
+    : {};
+
 const withoutReasoningEffort = ({ reasoning_effort: _omit, ...rest }: ChatSamplingParams): ChatSamplingParams => rest;
 
 const withoutTemperature = ({ temperature: _omit, ...rest }: ChatSamplingParams): ChatSamplingParams => rest;
+
+const withoutPromptCacheKey = ({ prompt_cache_key: _omit, ...rest }: ChatSamplingParams): ChatSamplingParams => rest;
 
 const hashSamplingApiKey = (apiKey: string): string =>
   createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
@@ -242,6 +306,15 @@ const STRIPPABLE_SAMPLING_PARAMS: readonly StrippableSamplingParam[] = [
     wasRejected: isUnsupportedTemperatureError,
     strip: withoutTemperature,
   },
+  // A cache-routing hint never changes the generation, so dropping it only costs
+  // cache locality. Silent for the same reason as temperature: nobody configures it.
+  {
+    isPresent: (sampling) => sampling.prompt_cache_key !== undefined,
+    isKnownUnsupported: (supportScope) => isPromptCacheKeyKnownUnsupported(supportScope),
+    remember: (supportScope) => markPromptCacheKeyUnsupported(supportScope),
+    wasRejected: isUnsupportedPromptCacheKeyError,
+    strip: withoutPromptCacheKey,
+  },
 ];
 
 const withLowReasoningEffort = (model: string, sampling: ChatSamplingParams): ChatSamplingParams => ({
@@ -282,7 +355,7 @@ const readCompletionStream = async function* (
       yield text;
     }
     if (chunk.usage) {
-      usage = toProviderUsage(chunk.usage, requestId);
+      usage = toTextProviderUsage(chunk.usage, requestId);
     }
   }
   return { usage, sawText, finishReason };
@@ -364,13 +437,17 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
       capability: config.capability,
       provider: config.provider,
       model: config.model,
+      cacheCapability: openAICacheCapability(config),
     };
   }
 
   async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
     const client = withDispatchRecording(this.client, input);
     const messages = buildMessages(input);
-    const sampling = buildChatSamplingParams(this.config.provider, input, this.config.model);
+    const sampling = {
+      ...buildChatSamplingParams(this.config.provider, input, this.config.model),
+      ...buildPromptCacheRouting(this.config, input),
+    };
     const createCompletion = (samplingParams: ChatSamplingParams) => {
       const request = {
         model: this.config.model,
@@ -387,7 +464,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
       sampling,
       createCompletion,
     );
-    let usage = toProviderUsage(response.usage, response.id);
+    let usage = toTextProviderUsage(response.usage, response.id);
     const retrySampling = isCapExhaustedEmptyCompletion(response)
       ? lowReasoningRetrySampling(this.config.model, sampling)
       : null;
@@ -397,7 +474,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
         retrySampling,
         createCompletion,
       );
-      usage = aggregateProviderUsage(usage, toProviderUsage(response.usage, response.id));
+      usage = aggregateProviderUsage(usage, toTextProviderUsage(response.usage, response.id));
     }
 
     return {
@@ -410,7 +487,10 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
     const client = withDispatchRecording(this.client, input);
     const config = this.config;
     const messages = buildMessages(input);
-    const sampling = buildChatSamplingParams(config.provider, input, config.model);
+    const sampling = {
+      ...buildChatSamplingParams(config.provider, input, config.model),
+      ...buildPromptCacheRouting(config, input),
+    };
     const createStream = (samplingParams: ChatSamplingParams) => {
       const request = {
         model: config.model,

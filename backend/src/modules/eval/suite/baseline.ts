@@ -64,6 +64,12 @@ export interface BaselineDiff {
    */
   rateRegressions: Array<{ caseId: string; name: string; from: number; to: number }>;
   /**
+   * Was `pass`, fell below the pass bar, but both sides were sampled and the rate moved less than the
+   * tolerance. At a unanimous bar one missed sample of five flips the status, so this is sampling
+   * noise, not a regression — reported, never gated.
+   */
+  withinTolerance: Array<{ caseId: string; name: string; from: number; to: number }>;
+  /**
    * Would have been a regression, except this run sampled less deeply than the baseline did, so it
    * is not evidence of one. It still fails the gate: the run is too shallow to make a reliable
    * comparison and must be re-run at the baseline's depth.
@@ -122,6 +128,7 @@ export const diffAgainstBaseline = (
         : null,
     regressions: [],
     rateRegressions: [],
+    withinTolerance: [],
     underSampled: [],
     fixes: [],
     newCases: [],
@@ -139,9 +146,14 @@ export const diffAgainstBaseline = (
     }
     const previous = baselineCaseStatus(entry);
     const previousRate = baselineCaseRate(entry);
-    const wouldRegress =
-      isRegression(previous, outcome.status) ||
-      (previousRate !== null && outcome.passRate !== undefined && outcome.passRate < previousRate - tolerance);
+    // With both sides sampled, the rate is the measurement and the status only its reduction at the
+    // pass bar, so a flip to `fail` counts only when the rate moved past the tolerance too. A flip to
+    // `error` always counts: every sample errored, so the rate measured nothing.
+    const rates =
+      previousRate !== null && outcome.passRate !== undefined ? { from: previousRate, to: outcome.passRate } : null;
+    const statusFell = isRegression(previous, outcome.status);
+    const rateDropped = rates !== null && rates.to < rates.from - tolerance;
+    const wouldRegress = rateDropped || (statusFell && (rates === null || outcome.status !== "fail"));
 
     // A run that sampled less deeply than the baseline cannot support ANY regression claim, whether
     // the status moved or only the rate did. The bare smoke run is one sample, and a case that
@@ -166,14 +178,16 @@ export const diffAgainstBaseline = (
       continue;
     }
 
-    if (isRegression(previous, outcome.status)) {
+    if (statusFell && wouldRegress) {
       diff.regressions.push({ caseId: outcome.caseId, name: outcome.name, from: previous, to: outcome.status });
+    } else if (statusFell && rates !== null) {
+      diff.withinTolerance.push({ caseId: outcome.caseId, name: outcome.name, ...rates });
     } else if (isFix(previous, outcome.status)) {
       diff.fixes.push({ caseId: outcome.caseId, name: outcome.name, from: previous, to: outcome.status });
     } else {
       diff.unchanged.push(outcome);
-      if (previousRate !== null && outcome.passRate !== undefined && outcome.passRate < previousRate - tolerance) {
-        diff.rateRegressions.push({ caseId: outcome.caseId, name: outcome.name, from: previousRate, to: outcome.passRate });
+      if (rateDropped) {
+        diff.rateRegressions.push({ caseId: outcome.caseId, name: outcome.name, ...rates });
       }
     }
   }

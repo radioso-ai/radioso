@@ -22,8 +22,9 @@ Dependency direction: `adapter → voice domain port → chat service`. Composit
 type VoiceTransport = "phone" | "web";
 
 interface VoiceSessionRef {
+  workspaceId: string;
   agentId: string;
-  vendor: string;        // adapter id, e.g. "openai-completions", "twilio-conversation-relay"
+  vendor: string;        // the namespace of the session key: a dialect id ("elevenlabs", "generic") or an adapter id ("twilio-conversation-relay")
   sessionKey: string;    // the vendor's call or session id, opaque to Radioso
 }
 
@@ -38,6 +39,7 @@ interface VoiceTurnInput {
 }
 
 type VoiceTurnEvent =
+  | { type: "conversation"; conversationId: string } // first, so adapters can name the conversation before any speech
   | { type: "bridge"; text: string }                 // authored line, emitted by policy while the brain works
   | { type: "speech"; text: string; last: boolean }  // speakable piece of the agent's reply, verbatim
   | { type: "outcome"; outcome: VoiceTurnOutcome }   // exactly one, always last

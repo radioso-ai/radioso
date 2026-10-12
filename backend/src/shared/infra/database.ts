@@ -1,17 +1,11 @@
 import type { Kysely } from "kysely";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
+import type { AppLogger } from "../observability/logger.js";
 import { createKyselyDatabase } from "./kysely/kyselyDatabase.js";
 import type { DB } from "./kysely/schema.js";
 
-export interface DatabaseExecutor {
-  query<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
-  queryOptional<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T | null>;
-  queryOne<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T>;
-  execute(text: string, params?: unknown[]): Promise<number>;
-}
-
-export interface DatabaseOptions {
+interface DatabaseOptions {
   poolMax?: number;
   idleTimeoutMs?: number;
   connectionTimeoutMs?: number;
@@ -19,7 +13,28 @@ export interface DatabaseOptions {
   statementTimeoutMs?: number;
   queryTimeoutMs?: number;
   applicationName?: string;
+  /** Receives a warning when the server ends a connection that is idle in the pool. */
+  logger?: Pick<AppLogger, "warn">;
 }
+
+interface IdleConnectionLoss {
+  applicationName?: string;
+  code?: string;
+  severity?: string;
+  err: string;
+}
+
+// Only named fields leave the error: pg-pool attaches the lost client, whose connection
+// parameters carry the password.
+const describeIdleConnectionLoss = (error: Error, applicationName?: string): IdleConnectionLoss => {
+  const { code, severity } = error as Error & { code?: unknown; severity?: unknown };
+  return {
+    applicationName,
+    code: typeof code === "string" ? code : undefined,
+    severity: typeof severity === "string" ? severity : undefined,
+    err: error.message,
+  };
+};
 
 export class Database {
   readonly pool: Pool;
@@ -36,6 +51,13 @@ export class Database {
       query_timeout: options.queryTimeoutMs,
       application_name: options.applicationName,
       keepAlive: true,
+    });
+    // A failover, restart, idle-session timeout, or pg_terminate_backend ends idle pooled
+    // connections. pg-pool has already discarded the client when it emits this, and the next
+    // query opens a fresh connection; an 'error' event with no listener would instead be
+    // thrown as an uncaught exception and take the process down.
+    this.pool.on("error", (error) => {
+      options.logger?.warn(describeIdleConnectionLoss(error, options.applicationName), "database_idle_connection_lost");
     });
   }
 
@@ -96,29 +118,3 @@ export class Database {
     await this.pool.end();
   }
 }
-
-export const databaseExecutorFromClient = (client: Pick<PoolClient, "query">): DatabaseExecutor => ({
-  async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
-    const result = await client.query<T>(text, params);
-    return result.rows;
-  },
-
-  async queryOptional<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T | null> {
-    const result = await client.query<T>(text, params);
-    return result.rows[0] ?? null;
-  },
-
-  async queryOne<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T> {
-    const result = await client.query<T>(text, params);
-    const row = result.rows[0];
-    if (!row) {
-      throw new Error("Expected query to return one row");
-    }
-    return row;
-  },
-
-  async execute(text: string, params: unknown[] = []): Promise<number> {
-    const result = await client.query(text, params);
-    return result.rowCount ?? 0;
-  },
-});

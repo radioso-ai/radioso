@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { getEnv } from "../../src/app/config/env.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -77,6 +77,47 @@ describe("database configuration", () => {
     expect(database.pool.options.application_name).toBe("radioso-test");
 
     return database.close();
+  });
+
+  it("reports a connection lost while idle in the pool instead of crashing the process", async () => {
+    const warn = vi.fn();
+    const database = new Database("postgres://radioso:s3cret-password@localhost:5432/test", {
+      applicationName: "radioso-test",
+      logger: { warn },
+    });
+    // pg-pool re-emits the client's error on the pool and attaches the client, which
+    // carries the connection parameters.
+    const lostClient = {
+      connectionParameters: {
+        password: "s3cret-password",
+        connectionString: "postgres://radioso:s3cret-password@localhost:5432/test",
+      },
+    };
+    const lost = Object.assign(new Error("terminating connection due to administrator command"), {
+      code: "57P01",
+      severity: "FATAL",
+      client: lostClient,
+    });
+
+    expect(() => database.pool.emit("error", lost, lostClient)).not.toThrow();
+    expect(warn).toHaveBeenCalledWith(
+      {
+        applicationName: "radioso-test",
+        code: "57P01",
+        severity: "FATAL",
+        err: "terminating connection due to administrator command",
+      },
+      "database_idle_connection_lost",
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("s3cret-password");
+    await database.close();
+  });
+
+  it("absorbs a lost idle connection when no logger is wired", async () => {
+    const database = new Database("postgres://test:test@localhost:5432/test");
+
+    expect(() => database.pool.emit("error", new Error("Connection terminated unexpectedly"))).not.toThrow();
+    await database.close();
   });
 
   it("returns null for optional single-row queries with no rows", async () => {

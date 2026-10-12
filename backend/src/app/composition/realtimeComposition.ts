@@ -27,7 +27,7 @@ import type {
   RealtimeRuntimeTelemetry,
 } from "../../runtime/startRealtimeRuntime.js";
 
-export type RealtimeComposition = {
+type RealtimeComposition = {
   dependencies: RealtimeRuntimeDependencies;
   setRuntime(runtime: RealtimeRuntimeHandle): void;
 };
@@ -117,7 +117,7 @@ export const createRealtimeComposition = (input: {
 
   const dependencies: RealtimeRuntimeDependencies = {
     authDatabaseFactory: (connectionString, options) => {
-      database = new Database(connectionString || input.databaseUrl, options);
+      database = new Database(connectionString || input.databaseUrl, { ...options, logger: input.logger });
       authenticator = new RealtimeSessionAuthenticator({
         store: new PostgresRealtimeSessionStore(database.kysely),
       });

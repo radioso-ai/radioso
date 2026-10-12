@@ -20,7 +20,11 @@ interface DatabaseOptions {
 interface IdleConnectionLoss {
   applicationName?: string;
   code?: string;
-  severity?: string;
+  // Named `postgresSeverity`, not `severity`: the Pino logger already writes a top-level
+  // `severity` for Cloud Logging (e.g. "WARNING"). A same-named field here would collide
+  // with it in the serialized JSON, and a consumer could read Postgres's "FATAL" where the
+  // logger meant a handled warning.
+  postgresSeverity?: string;
   err: string;
 }
 
@@ -31,7 +35,7 @@ const describeIdleConnectionLoss = (error: Error, applicationName?: string): Idl
   return {
     applicationName,
     code: typeof code === "string" ? code : undefined,
-    severity: typeof severity === "string" ? severity : undefined,
+    postgresSeverity: typeof severity === "string" ? severity : undefined,
     err: error.message,
   };
 };
@@ -58,6 +62,28 @@ export class Database {
     // thrown as an uncaught exception and take the process down.
     this.pool.on("error", (error) => {
       options.logger?.warn(describeIdleConnectionLoss(error, options.applicationName), "database_idle_connection_lost");
+    });
+
+    // pg-pool only guards *idle* clients: it detaches its own error listener the instant a
+    // client is checked out (the "acquire" event) and reattaches one on release. A
+    // server-side termination that lands while a client is checked out with no query in
+    // flight — withTransaction below, a Kysely transaction, or a lock client held across
+    // migrations — would otherwise emit 'error' on a listener-less client and crash the
+    // process the same way an unguarded idle client would. The checked-out owner still sees
+    // the failure on its next query (the client becomes unqueryable); this only stops the
+    // crash. One stable handler reference, attached on every acquire and removed on every
+    // release, so the listener count never grows across repeated checkouts of the same client.
+    const onCheckedOutClientError = (error: Error): void => {
+      options.logger?.warn(
+        describeIdleConnectionLoss(error, options.applicationName),
+        "database_checked_out_connection_lost",
+      );
+    };
+    this.pool.on("acquire", (client) => {
+      client.on("error", onCheckedOutClientError);
+    });
+    this.pool.on("release", (_error, client) => {
+      client.removeListener("error", onCheckedOutClientError);
     });
   }
 

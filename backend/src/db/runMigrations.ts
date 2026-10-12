@@ -38,8 +38,9 @@ const listMigrationFiles = async (): Promise<string[]> =>
 const listPendingMigrations = async (
   connectionString: string,
   options: MigrationTimeoutOptions = {},
+  logger?: AppLogger,
 ): Promise<string[]> => {
-  const database = createMigrationDatabase(connectionString, options);
+  const database = createMigrationDatabase(connectionString, options, logger);
 
   try {
     const migrationFiles = await listMigrationFiles();
@@ -65,8 +66,9 @@ const listPendingMigrations = async (
 export const ensureNoPendingMigrations = async (
   connectionString: string,
   options: MigrationTimeoutOptions = {},
+  logger?: AppLogger,
 ): Promise<void> => {
-  const pendingMigrations = await listPendingMigrations(connectionString, options);
+  const pendingMigrations = await listPendingMigrations(connectionString, options, logger);
 
   if (pendingMigrations.length > 0) {
     throw new Error(`Pending SQL migrations detected: ${pendingMigrations.join(", ")}`);

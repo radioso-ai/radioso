@@ -105,6 +105,15 @@ export const formatReport = (
     }
     lines.push("");
   }
+  if (diff.withinTolerance.length > 0) {
+    lines.push(`Below the pass bar within sampling noise (${diff.withinTolerance.length}) — these do not fail the run:`);
+    for (const entry of diff.withinTolerance) {
+      lines.push(
+        `  ~ ${entry.caseId} "${entry.name}": ${(entry.from * 100).toFixed(0)}% → ${(entry.to * 100).toFixed(0)}% pass rate`,
+      );
+    }
+    lines.push("");
+  }
   if (diff.fixes.length > 0) {
     lines.push(`Fixes (${diff.fixes.length}):`);
     for (const fix of diff.fixes) {

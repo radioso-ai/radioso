@@ -67,7 +67,10 @@ pnpm run evals -- --tag routine # only cases carrying a tag (repeatable)
 case is missing, rather than treating it as an informational addition, so add a case and
 record its observed outcome together. A case that was already failing does not fail merely
 because it remains failing, but sampled baselines also retain the observed pass rate: a
-case recorded at 4/5 and later falling to 0/5 is reported as a rate regression. A run that
+case recorded at 4/5 and later falling to 0/5 is reported as a rate regression. When the
+baseline and the run are both sampled, a case recorded `pass` regresses only when its pass
+rate falls by more than half; a smaller drop is reported as within sampling noise and does
+not fail the run. A run that
 samples less deeply than its baseline also fails, because it cannot make a reliable comparison.
 The current `--pass-threshold` must equal the recorded threshold; changing it requires a full
 baseline re-recording rather than comparing statuses reduced under different rules.
@@ -93,10 +96,11 @@ pnpm run evals:update-baseline                 # record a gate-worthy five-sampl
 
 Each case runs K times; its reduced status is `pass` only when the per-sample pass rate
 clears `--pass-threshold` (default `1.0`, unanimous). The recorded baseline keeps that
-status alongside the measured pass rate, sample count, and threshold. Because a flaky case
-can't clear the threshold, it's recorded as `fail` in the baseline and never gates until
-it's genuinely stable — so a `pass` baseline entry is one that reliably passes, and a real
-regression is unambiguous. The report marks cases whose samples disagreed as **flaky**.
+status alongside the measured pass rate, sample count, and threshold. A flaky case usually
+can't clear the threshold, so it's usually recorded as `fail` — but a case that passes four
+runs in five still records 5/5 often enough, so a `pass` entry's status alone is not
+evidence that it reliably passes. That's why the gate compares sampled pass rates rather
+than statuses. The report marks cases whose samples disagreed as **flaky**.
 Record the baseline and run CI with the same `--samples`/`--pass-threshold`. A tag-filtered
 `--update-baseline` updates only the selected entries and preserves all other committed entries;
 it cannot change the recorded threshold because the unselected entries were not re-observed.

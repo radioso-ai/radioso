@@ -38,8 +38,9 @@ const listMigrationFiles = async (): Promise<string[]> =>
 const listPendingMigrations = async (
   connectionString: string,
   options: MigrationTimeoutOptions = {},
+  logger?: AppLogger,
 ): Promise<string[]> => {
-  const database = createMigrationDatabase(connectionString, options);
+  const database = createMigrationDatabase(connectionString, options, logger);
 
   try {
     const migrationFiles = await listMigrationFiles();
@@ -65,17 +66,23 @@ const listPendingMigrations = async (
 export const ensureNoPendingMigrations = async (
   connectionString: string,
   options: MigrationTimeoutOptions = {},
+  logger?: AppLogger,
 ): Promise<void> => {
-  const pendingMigrations = await listPendingMigrations(connectionString, options);
+  const pendingMigrations = await listPendingMigrations(connectionString, options, logger);
 
   if (pendingMigrations.length > 0) {
     throw new Error(`Pending SQL migrations detected: ${pendingMigrations.join(", ")}`);
   }
 };
 
-const createMigrationDatabase = (connectionString: string, options: MigrationTimeoutOptions): Database =>
+const createMigrationDatabase = (
+  connectionString: string,
+  options: MigrationTimeoutOptions,
+  logger?: AppLogger,
+): Database =>
   new Database(connectionString, {
     applicationName: "radioso-migrations",
+    logger,
     lockTimeoutMs: options.lockTimeoutMs ?? DEFAULT_MIGRATION_LOCK_TIMEOUT_MS,
     statementTimeoutMs: options.statementTimeoutMs ?? DEFAULT_MIGRATION_STATEMENT_TIMEOUT_MS,
   });
@@ -185,7 +192,7 @@ export const runMigrations = async (
   logger: AppLogger,
   options: MigrationTimeoutOptions = {},
 ): Promise<void> => {
-  const database = createMigrationDatabase(connectionString, options);
+  const database = createMigrationDatabase(connectionString, options, logger);
 
   try {
     const lock = await acquireMigrationLock(database, logger);

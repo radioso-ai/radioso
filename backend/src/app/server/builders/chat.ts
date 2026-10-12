@@ -625,6 +625,7 @@ export const buildChatServices = (input: {
     statementTimeoutMs: input.env.DB_STATEMENT_TIMEOUT_MS,
     queryTimeoutMs: input.env.DB_QUERY_TIMEOUT_MS,
     applicationName: `radioso-${input.env.NODE_ENV}-approval-effect-journal`,
+    logger: input.logger,
   });
   const approvalResumeEffectJournal = new ApprovalResumeEffectJournalRepository(approvalResumeEffectJournalDatabase.kysely);
   const routineProvider: ChatRoutineProvider = createRoutineTurnProvider({

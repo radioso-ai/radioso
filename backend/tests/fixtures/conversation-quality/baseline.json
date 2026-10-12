@@ -98,8 +98,8 @@
       "samples": 5
     },
     "routine-return-invocation-partial": {
-      "status": "pass",
-      "passRate": 1,
+      "status": "fail",
+      "passRate": 0.6,
       "samples": 5
     },
     "routine-return-transcript": {

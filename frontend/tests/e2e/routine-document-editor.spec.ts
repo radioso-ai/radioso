@@ -430,7 +430,7 @@ test("a variable chip is clickable and selectable, and either selection path rem
   await documentEditor.getByRole("button", { name: "Chat", exact: true }).last().click();
   const secondInstruction = documentEditor.getByLabel("Step 2 instruction");
   await secondInstruction.click();
-  await secondInstruction.pressSequentially("@order_total");
+  await secondInstruction.pressSequentially("Then @order_total");
   await page.getByRole("option", { name: "@order_total" }).click();
 
   const secondChip = secondInstruction.locator('[data-routine-chip="variable"]');
@@ -444,6 +444,7 @@ test("a variable chip is clickable and selectable, and either selection path rem
   await expect.poll(() => isSelectedWhole(secondChip)).toBe(true);
   await page.keyboard.press("Backspace");
   await expect(secondChip).toHaveCount(0);
+  await expect(secondInstruction).toContainText("Then");
   await expect(secondInstruction).not.toContainText("order_total");
 });
 

@@ -13,8 +13,10 @@ import { normalizeLlmClassifierLanguageLabel } from "../../../shared/domain/llmC
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type {
   JsonSchemaResponseFormat,
+  ReusableInputBoundary,
   TextGenerationRequest,
 } from "../../../shared/infra/llm/providerTypes.js";
+import { createReusableInputBoundary } from "../../../shared/infra/llm/inputTokenCaching.js";
 import type { TurnPlanGatewayFactory } from "../../../shared/infra/llm/turnPlanGateway.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { parseStructuredRewrite, type StructuredRewriteResult } from "../../retrieval/public.js";
@@ -94,12 +96,30 @@ const formatConversationContext = (messages: MessageRecord[]): string =>
     )
     .join("\n");
 
+// Routine candidates are rendered and scored under a positional alias, never their
+// real id: the embedding prefilter returns a different subset and order from turn
+// to turn, so a raw-id enum in the response schema (below) would change on every
+// such turn and defeat a provider's prompt-schema cache. The alias is stable
+// across the bound on how many candidates one call accepts
+// (`CHAT_BEHAVIOR.turnPlanning.maxRoutineCandidates`), so the schema never varies;
+// `parseTurnPlan` maps an alias back to this turn's real id by position.
+const routineAlias = (index: number): string => `r${index + 1}`;
+const ROUTINE_ALIAS_PATTERN = /^r([1-9]\d*)$/;
+const routineAliasIndex = (alias: string): number | null => {
+  const match = ROUTINE_ALIAS_PATTERN.exec(alias);
+  return match ? Number(match[1]) - 1 : null;
+};
+const ROUTINE_ALIASES: readonly string[] = Array.from(
+  { length: CHAT_BEHAVIOR.turnPlanning.maxRoutineCandidates },
+  (_value, index) => routineAlias(index),
+);
+
 // Only rendered when the candidate list is non-empty; the empty case omits the
 // whole routine/directive sub-section rather than emitting a "none" stub.
 const routineCandidatesBlock = (candidates: readonly TurnPlanRoutineCandidate[]): string =>
   candidates
     .map((candidate, index) =>
-      `${index + 1}. id: ${candidate.routineId}\n` +
+      `${index + 1}. id: ${routineAlias(index)}\n` +
       `Title: ${candidate.title}\n` +
       `Priority: ${candidate.priority}\n` +
       `Trigger: ${candidate.triggerSummary}`,
@@ -111,9 +131,15 @@ const visitorContextBlock = (visitorContext: Record<string, unknown>): string =>
     visitor_context_section_values: JSON.stringify(visitorContext, null, 2),
   });
 
+// Code-unit order: locale-independent, so one agent configuration always renders the
+// same bytes whatever order the candidates were collected in.
+const byCodeUnit = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0);
+
 const directiveCandidatesBlock = (candidates: readonly TurnPlanDirectiveCandidate[]): string =>
   JSON.stringify(
-    candidates.map((candidate) => ({ name: candidate.name, condition: candidate.condition })),
+    [...candidates]
+      .sort((left, right) => byCodeUnit(left.name, right.name))
+      .map((candidate) => ({ name: candidate.name, condition: candidate.condition })),
     null,
     2,
   );
@@ -162,42 +188,30 @@ const turnPlanOutputShapeBlock = (input: {
     `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
 };
 
+/**
+ * The planner request in three parts. Standing rules and this agent's configuration
+ * (rewrite guidance, page-read capability, directive conditions) form a system prefix
+ * that reads the same on every turn, so providers can reuse it. Rules that depend on
+ * this turn's routine candidates follow in the system suffix. Visitor-supplied data
+ * (visitor context, conversation, latest question) is the user request.
+ */
+interface TurnPlanningPrompt {
+  systemPrompt: string;
+  reusableInputBoundary?: ReusableInputBoundary;
+  prompt: string;
+}
+
 /** Canonical prompt renderer shared by execution and the eligibility budget. */
-export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): string => {
+export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): TurnPlanningPrompt => {
   const hasRoutineCandidates = input.routineCandidates.length > 0;
   const hasDirectiveCandidates = input.directiveCandidates.length > 0;
   const hasVisitorContext = Object.keys(input.visitorContext ?? {}).length > 0;
   const pageReadCapability = input.pageReadCapability ?? null;
-  return renderPromptTemplate("chat/turn-planning.md", {
-    context_section: formatConversationContext(input.history) || "No prior context",
-    conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
+  const stableSystemPrefix = renderPromptTemplate("chat/turn-planning.md", {
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
     lexical_rewrite_instructions:
       input.lexicalRewriteInstructions ?? "Use the system default lexical rewrite behavior.",
-    // Decision independence only earns prompt space when there are candidates to
-    // firewall from the routing/rewrite/language decisions.
-    decision_independence_section:
-      hasRoutineCandidates || hasDirectiveCandidates
-        ? optionalSection(renderPromptTemplate("chat/turn-planning-decision-independence.md", {}))
-        : "",
-    routine_section: hasRoutineCandidates
-      ? optionalSection(
-          renderPromptTemplate("chat/turn-planning-routines.md", {
-            routine_candidates_section: routineCandidatesBlock(input.routineCandidates),
-          }),
-        )
-      : "",
-    directive_section: hasDirectiveCandidates
-      ? optionalSection(
-          renderPromptTemplate("chat/turn-planning-directives.md", {
-            directive_candidates_section: directiveCandidatesBlock(input.directiveCandidates),
-            visitor_context_section: hasVisitorContext
-              ? optionalSection(visitorContextBlock(input.visitorContext ?? {}))
-              : "",
-          }),
-        )
-      : "",
     page_read_section: pageReadCapability
       ? optionalSection(
           renderPromptTemplate("chat/turn-planning-page-read.md", {
@@ -209,17 +223,55 @@ export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): string 
           }),
         )
       : "",
-    output_shape_section: optionalSection(turnPlanOutputShapeBlock({
+    directive_section: hasDirectiveCandidates
+      ? optionalSection(
+          renderPromptTemplate("chat/turn-planning-directives.md", {
+            directive_candidates_section: directiveCandidatesBlock(input.directiveCandidates),
+          }),
+        )
+      : "",
+  });
+  const dynamicSystemSuffix = [
+    // Decision independence only earns prompt space when there are candidates to
+    // firewall from the routing/rewrite/language decisions.
+    hasRoutineCandidates || hasDirectiveCandidates
+      ? optionalSection(renderPromptTemplate("chat/turn-planning-decision-independence.md", {}))
+      : "",
+    hasRoutineCandidates
+      ? optionalSection(
+          renderPromptTemplate("chat/turn-planning-routines.md", {
+            routine_candidates_section: routineCandidatesBlock(input.routineCandidates),
+          }),
+        )
+      : "",
+    optionalSection(turnPlanOutputShapeBlock({
       hasRoutineCandidates,
       hasDirectiveCandidates,
       hasPageReadCapability: Boolean(pageReadCapability),
     })),
-    query: input.query,
-  });
+  ].join("");
+  const systemPrompt = `${stableSystemPrefix}${dynamicSystemSuffix}`;
+  const reusableInputBoundary = createReusableInputBoundary({ stableSystemPrefix, dynamicSystemSuffix });
+  return {
+    systemPrompt,
+    ...(reusableInputBoundary ? { reusableInputBoundary } : {}),
+    prompt: renderPromptTemplate("chat/turn-planning-request.md", {
+      // Directive conditions are the one planner decision that consumes visitor state;
+      // the block renders only alongside them.
+      visitor_context_section: hasDirectiveCandidates && hasVisitorContext
+        ? `${visitorContextBlock(input.visitorContext ?? {})}\n\n`
+        : "",
+      context_section: formatConversationContext(input.history) || "No prior context",
+      conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
+      query: input.query,
+    }),
+  };
 };
 
-export const estimateTurnPlanningPromptTokens = (input: TurnPlanningPromptInput): number =>
-  Math.ceil(buildTurnPlanningPrompt(input).length / 4);
+export const estimateTurnPlanningPromptTokens = (input: TurnPlanningPromptInput): number => {
+  const prompt = buildTurnPlanningPrompt(input);
+  return Math.ceil((prompt.systemPrompt.length + prompt.prompt.length) / 4);
+};
 
 const stripJsonFence = (raw: string): string =>
   raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
@@ -387,12 +439,17 @@ const rewriteJsonSchema = {
 } as const;
 
 /**
- * Builds the per-call provider response schema for the planner. Turning "never
- * invent an id/name" into structure, `routineId`/`name` are enums of exactly the
- * candidate ids/names, and each ranking/classification property is present only
- * when its candidate list is non-empty — strict mode plus `additionalProperties:
- * false` then forbids the model from emitting it at all. `variables` is a
- * field/value pair array because strict mode rejects free-form objects.
+ * Builds the per-call provider response schema for the planner. `routineId` is
+ * the fixed alias enum `r1..r<maxRoutineCandidates>` (see `routineAlias` above),
+ * not this turn's candidate ids, so the schema is byte-identical for every turn
+ * that has any routine candidates regardless of which ones or how many. `name` is
+ * still an enum of exactly this turn's candidate directive names: that candidate
+ * list comes from agent configuration, not the query, so it is already stable
+ * turn to turn for one agent. Each ranking/classification property is present
+ * only when its candidate list is non-empty — strict mode plus
+ * `additionalProperties: false` then forbids the model from emitting it at all.
+ * `variables` is a field/value pair array because strict mode rejects free-form
+ * objects.
  */
 export const buildTurnPlanResponseFormat = (candidates: {
   routineIds: readonly string[];
@@ -422,7 +479,7 @@ export const buildTurnPlanResponseFormat = (candidates: {
         additionalProperties: false,
         required: ["routineId", "confidence", "variables"],
         properties: {
-          routineId: { type: "string", enum: [...candidates.routineIds] },
+          routineId: { type: "string", enum: [...ROUTINE_ALIASES] },
           confidence: confidenceJsonSchema,
           variables: {
             type: "array",
@@ -450,7 +507,7 @@ export const buildTurnPlanResponseFormat = (candidates: {
         additionalProperties: false,
         required: ["name", "matched", "confidence"],
         properties: {
-          name: { type: "string", enum: [...candidates.directiveNames] },
+          name: { type: "string", enum: [...candidates.directiveNames].sort(byCodeUnit) },
           matched: { type: "boolean" },
           confidence: confidenceJsonSchema,
         },
@@ -502,13 +559,18 @@ const variablesFromPairs = (
 /**
  * Strict parse + semantic validation. Any structural or semantic problem returns
  * `null` (whole-plan rejection — never partial acceptance), so the caller falls
- * back to the staged path. An unknown routine id or directive name is a semantic
- * failure: the planner may only reference the candidates it was given.
+ * back to the staged path. `candidates.routineIds` is this turn's real routine ids
+ * in the same order rendered into the prompt (prefilter score order): a
+ * `routineRankings[].routineId` of `"r2"` resolves to `candidates.routineIds[1]`.
+ * An alias with no candidate at that position, or one that resolves to a
+ * duplicate id, is a semantic failure exactly like an unknown id was before
+ * aliasing — the planner may only reference the candidates it was given. An
+ * unknown directive name is rejected the same way.
  */
 export const parseTurnPlan = (
   raw: string,
   candidates: {
-    routineIds: ReadonlySet<string>;
+    routineIds: readonly string[];
     directiveNames: ReadonlySet<string>;
     pageReadCapability?: PageReadCapability | null;
   },
@@ -550,16 +612,18 @@ export const parseTurnPlan = (
   const routineRankings: TurnPlan["routineRankings"] = [];
   const seenRoutineIds = new Set<string>();
   for (const entry of parsed.routineRankings ?? []) {
-    if (!candidates.routineIds.has(entry.routineId) || seenRoutineIds.has(entry.routineId)) {
+    const aliasIndex = routineAliasIndex(entry.routineId);
+    const routineId = aliasIndex === null ? undefined : candidates.routineIds[aliasIndex];
+    if (!routineId || seenRoutineIds.has(routineId)) {
       return null;
     }
-    seenRoutineIds.add(entry.routineId);
+    seenRoutineIds.add(routineId);
     const variables = variablesFromPairs(entry.variables);
     if (variables === null) {
       return null;
     }
     routineRankings.push({
-      routineId: entry.routineId,
+      routineId,
       confidence: entry.confidence,
       ...(variables ? { variables } : {}),
     });
@@ -650,8 +714,11 @@ export class TurnPlanService {
       });
       const routineIds = request.routineCandidates.map((candidate) => candidate.routineId);
       const directiveNames = request.directiveCandidates.map((candidate) => candidate.name);
+      const { systemPrompt, reusableInputBoundary, prompt } = buildTurnPlanningPrompt(request);
       const { text } = await client.complete({
-        prompt: buildTurnPlanningPrompt(request),
+        systemPrompt,
+        ...(reusableInputBoundary ? { reusableInputBoundary } : {}),
+        prompt,
         responseFormat: buildTurnPlanResponseFormat({
           routineIds,
           directiveNames,
@@ -662,7 +729,7 @@ export class TurnPlanService {
         signal,
       });
       const plan = parseTurnPlan(text, {
-        routineIds: new Set(routineIds),
+        routineIds,
         directiveNames: new Set(directiveNames),
         pageReadCapability: request.pageReadCapability,
       });

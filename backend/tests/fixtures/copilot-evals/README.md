@@ -112,7 +112,10 @@ did not change. A bare status string is still read, so an older baseline keeps w
 silent half of a drift: a case recorded `fail` that used to pass two runs in three and now never
 passes holds its status forever. A drop beyond `rateDropTolerance` (0.5 by default — small K makes
 the rate coarse, so the tolerance has to be wider than the sampling noise it reads through) is
-reported as a rate regression and fails the run.
+reported as a rate regression and fails the run. The same tolerance governs a case recorded `pass`:
+a case that passes most of the time still records every sample passing often enough, so when both
+sides carry a rate, a `pass` → `fail` flip regresses only if the rate fell past the tolerance too.
+A smaller drop is reported as within sampling noise and does not fail the run.
 
 `pnpm run evals:copilot:ci` and `evals:copilot:update-baseline` both run at 3 samples, and the
 workflow takes a `samples` input. A case where every sample errored is `error`, decided before the

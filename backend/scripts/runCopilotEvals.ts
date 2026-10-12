@@ -577,6 +577,12 @@ const main = async (): Promise<void> => {
         diff.underSampled.map((entry) => entry.caseId).join(", "),
       );
     }
+    if (diff.withinTolerance.length > 0) {
+      console.warn(
+        `${diff.withinTolerance.length} case(s) fell below the pass bar within sampling noise: ` +
+        diff.withinTolerance.map((entry) => `${entry.caseId} ${entry.from} -> ${entry.to}`).join(", "),
+      );
+    }
     // The half a status comparison cannot see: a case recorded `fail` that used to pass some of the
     // time and now never does holds its status and is silently worse.
     if (diff.rateRegressions.length > 0) {

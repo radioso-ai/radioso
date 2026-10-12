@@ -442,6 +442,44 @@ describe("baseline diff", () => {
     ).toEqual(["a"]);
   });
 
+  it("does not call a sampled pass → fail flip a regression while the pass rate moved within the tolerance", () => {
+    // At the unanimous bar a case recorded passing five in five reads `fail` on any four-in-five run,
+    // so the nightly gate failed on sampling noise in whichever near-ceiling case missed one sample.
+    // With both sides sampled, the rate is the measurement and the status only its reduction.
+    const diff = diffAgainstBaseline(
+      [{ caseId: "a", name: "A", status: "fail", passRate: 0.6, samples: 5 }],
+      { passThreshold: 1, cases: { a: { status: "pass", passRate: 1, samples: 5 } } },
+      { passThreshold: 1 },
+    );
+
+    expect(diff.regressions).toEqual([]);
+    expect(diff.rateRegressions).toEqual([]);
+    expect(diff.withinTolerance).toEqual([{ caseId: "a", name: "A", from: 1, to: 0.6 }]);
+    expect(hasBaselineGateFailures(diff)).toBe(false);
+  });
+
+  it("still reports a sampled pass → fail flip whose pass rate fell past the tolerance", () => {
+    const diff = diffAgainstBaseline(
+      [{ caseId: "a", name: "A", status: "fail", passRate: 0.4, samples: 5 }],
+      { cases: { a: { status: "pass", passRate: 1, samples: 5 } } },
+    );
+
+    expect(diff.regressions.map((entry) => entry.caseId)).toEqual(["a"]);
+    expect(diff.withinTolerance).toEqual([]);
+    expect(hasBaselineGateFailures(diff)).toBe(true);
+  });
+
+  it("does not hold a shallower run's within-tolerance flip as under-sampled", () => {
+    const diff = diffAgainstBaseline(
+      [{ caseId: "a", name: "A", status: "fail", passRate: 0.67, samples: 3 }],
+      { cases: { a: { status: "pass", passRate: 1, samples: 5 } } },
+    );
+
+    expect(diff.underSampled).toEqual([]);
+    expect(diff.withinTolerance.map((entry) => entry.caseId)).toEqual(["a"]);
+    expect(hasBaselineGateFailures(diff)).toBe(false);
+  });
+
   it("records sampled status evidence and the pass threshold in a sorted baseline file", () => {
     const file = buildBaselineFile(
       [

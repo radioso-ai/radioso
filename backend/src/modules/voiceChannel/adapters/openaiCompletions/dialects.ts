@@ -16,9 +16,11 @@ export interface CompletionsDialect {
 }
 
 const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
+  // ElevenLabs sends no id of its own; the page that starts the session mints one and passes it as
+  // the custom LLM extra body, which arrives on every turn under `elevenlabs_extra_body`.
   ["elevenlabs", {
     id: "elevenlabs",
-    sessionKeyFrom: [{ bodyPath: ["elevenlabs_extra_body", "conversation_id"] }],
+    sessionKeyFrom: [{ bodyPath: ["elevenlabs_extra_body", "session_key"] }],
     transportDefault: "web",
   }],
   ["generic", {

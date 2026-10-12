@@ -20,18 +20,23 @@ describe("completions dialects", () => {
     expect(findCompletionsDialect("toString")).toBeNull();
   });
 
-  it("reads the elevenlabs session key from the extra body only", () => {
+  it("reads the elevenlabs session key the page put in the custom LLM extra body, and nothing else", () => {
     const elevenlabs = dialect("elevenlabs");
 
     expect(sessionKeyFor(elevenlabs, {
       headers: {},
-      body: { elevenlabs_extra_body: { conversation_id: " conv_123 " }, user_id: "user_9" },
-    })).toBe("conv_123");
-    // A user id spans calls, so it never stands in for the conversation id.
+      body: { elevenlabs_extra_body: { session_key: " 3f2b6c1e-session " }, user_id: "user_9" },
+    })).toBe("3f2b6c1e-session");
+    // ElevenLabs sends no conversation id of its own; neither a user id nor another extra-body
+    // field stands in for the key the page minted.
     expect(sessionKeyFor(elevenlabs, { headers: {}, body: { user_id: "user_9" } })).toBeNull();
     expect(sessionKeyFor(elevenlabs, {
       headers: {},
-      body: { elevenlabs_extra_body: { conversation_id: "  " }, user_id: "user_9" },
+      body: { elevenlabs_extra_body: { conversation_id: "conv_123" } },
+    })).toBeNull();
+    expect(sessionKeyFor(elevenlabs, {
+      headers: {},
+      body: { elevenlabs_extra_body: { session_key: "  " } },
     })).toBeNull();
   });
 
@@ -52,7 +57,7 @@ describe("completions dialects", () => {
   it("returns null when no source carries a usable session key", () => {
     expect(sessionKeyFor(dialect("generic"), { headers: {}, body: {} })).toBeNull();
     expect(sessionKeyFor(dialect("generic"), { headers: {}, body: { metadata: { session_key: 42 } } })).toBeNull();
-    expect(sessionKeyFor(dialect("elevenlabs"), { headers: {}, body: { elevenlabs_extra_body: "conv_123" } })).toBeNull();
+    expect(sessionKeyFor(dialect("elevenlabs"), { headers: {}, body: { elevenlabs_extra_body: "session-1" } })).toBeNull();
     expect(sessionKeyFor(dialect("elevenlabs"), { headers: {}, body: null })).toBeNull();
   });
 });

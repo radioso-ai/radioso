@@ -85,9 +85,17 @@ helpers and the shared chat message limit from `app/http`
   Inbox offers no Send on a voice conversation
   (`frontend/lib/email-send-readiness.ts`). Until an operator writes, each caller
   turn hears the chat service's waiting line; after that, silence.
-- **Barge-in.** The chat turn registry supersedes a running turn that has not
-  started speaking; once it has, the next utterance waits for it to finish and
-  the full reply is stored.
+- **Barge-in.** ElevenLabs does not abort the HTTP stream when the caller
+  interrupts: the previous reply streams to completion and the next utterance
+  arrives as a new request. The chat turn registry makes that turn wait for the
+  running reply (it supersedes only a turn that has not started speaking), and
+  the full reply is stored. The replayed history carries the interrupted reply
+  truncated to what was heard, but the adapter reads only the newest user
+  message.
+- **ElevenLabs session key.** ElevenLabs sends no conversation id; the page
+  that starts the session mints `session_key` and passes it as the custom LLM
+  extra body, which arrives as `elevenlabs_extra_body.session_key`. Dynamic
+  variables inside the extra body are not interpolated.
 - **Disconnects** follow the REST agent channel: the turn keeps running after
   the vendor hangs up, and is aborted only past the post-disconnect ceiling.
 

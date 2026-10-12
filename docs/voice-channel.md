@@ -108,6 +108,7 @@ on every turn of the session as `elevenlabs_extra_body`, and Radioso reads
 `elevenlabs_extra_body.session_key`. Mint the key in the page: a dynamic
 variable such as `{{system__conversation_id}}` inside the extra body arrives
 as that literal text, which would put every call in one conversation.
+Radioso answers a session key that is a whole `{{…}}` placeholder with `400`.
 
 ## Dialects
 

@@ -54,6 +54,26 @@ describe("completions dialects", () => {
     expect(sessionKeyFor(generic, { headers: {}, body: { metadata: { session_key: "body-key" } } })).toBe("body-key");
   });
 
+  it("treats an uninterpolated template placeholder as no session key, so calls never merge on it", () => {
+    expect(sessionKeyFor(dialect("elevenlabs"), {
+      headers: {},
+      body: { elevenlabs_extra_body: { session_key: "{{system__conversation_id}}" } },
+    })).toBeNull();
+    expect(sessionKeyFor(dialect("elevenlabs"), {
+      headers: {},
+      body: { elevenlabs_extra_body: { session_key: "  {{ session }}  " } },
+    })).toBeNull();
+    // Only a whole-value placeholder is rejected; braces inside a real key are the vendor's business.
+    expect(sessionKeyFor(dialect("elevenlabs"), {
+      headers: {},
+      body: { elevenlabs_extra_body: { session_key: "room-{{7}}" } },
+    })).toBe("room-{{7}}");
+    expect(sessionKeyFor(dialect("generic"), {
+      headers: { "x-radioso-voice-session": "{{call_id}}" },
+      body: { metadata: { session_key: "room-9" } },
+    })).toBe("room-9");
+  });
+
   it("returns null when no source carries a usable session key", () => {
     expect(sessionKeyFor(dialect("generic"), { headers: {}, body: {} })).toBeNull();
     expect(sessionKeyFor(dialect("generic"), { headers: {}, body: { metadata: { session_key: 42 } } })).toBeNull();

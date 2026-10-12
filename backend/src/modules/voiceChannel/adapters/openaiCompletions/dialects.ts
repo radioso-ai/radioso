@@ -51,14 +51,26 @@ const readSource = (source: CompletionsFieldSource, request: CompletionsRequestP
   return readBodyPath(request.body, source.bodyPath);
 };
 
+/**
+ * A whole-value `{{…}}` is a template variable the vendor never filled in. It is the same text on
+ * every call, so taking it as a key would merge every call into one conversation.
+ */
+const UNINTERPOLATED_PLACEHOLDER = /^\{\{.*\}\}$/u;
+
+const usableValue = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && !UNINTERPOLATED_PLACEHOLDER.test(trimmed) ? trimmed : undefined;
+};
+
 const firstValue = (
   sources: readonly CompletionsFieldSource[],
   request: CompletionsRequestParts,
 ): string | undefined => {
   for (const source of sources) {
-    const value = readSource(source, request);
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim();
+    const value = usableValue(readSource(source, request));
+    if (value) {
+      return value;
     }
   }
   return undefined;

@@ -18,7 +18,7 @@ import ts from "typescript";
 
 export const ALLOWLIST = new Set([
   "db/runMigrations.ts", // migration runner: migrations stay raw .sql by design
-  "shared/infra/database.ts", // the pg Pool wrapper + DatabaseExecutor the runner uses
+  "shared/infra/database.ts", // the pg Pool wrapper the runner uses
   "db/repositories/chunkEmbeddingRepository.ts", // canonical vector batch shares document publication's existing pg transaction
   "db/repositories/documentProcessingJobRepository.ts", // profile jobs are inserted inside canonical publication's existing pg transaction
   "db/repositories/vectorIndexWorkRepository.ts", // projection work/tombstones share canonical mutation transactions

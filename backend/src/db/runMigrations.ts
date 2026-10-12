@@ -73,9 +73,14 @@ export const ensureNoPendingMigrations = async (
   }
 };
 
-const createMigrationDatabase = (connectionString: string, options: MigrationTimeoutOptions): Database =>
+const createMigrationDatabase = (
+  connectionString: string,
+  options: MigrationTimeoutOptions,
+  logger?: AppLogger,
+): Database =>
   new Database(connectionString, {
     applicationName: "radioso-migrations",
+    logger,
     lockTimeoutMs: options.lockTimeoutMs ?? DEFAULT_MIGRATION_LOCK_TIMEOUT_MS,
     statementTimeoutMs: options.statementTimeoutMs ?? DEFAULT_MIGRATION_STATEMENT_TIMEOUT_MS,
   });
@@ -185,7 +190,7 @@ export const runMigrations = async (
   logger: AppLogger,
   options: MigrationTimeoutOptions = {},
 ): Promise<void> => {
-  const database = createMigrationDatabase(connectionString, options);
+  const database = createMigrationDatabase(connectionString, options, logger);
 
   try {
     const lock = await acquireMigrationLock(database, logger);

@@ -1252,8 +1252,10 @@ describe("chat service fused turn planning", () => {
       completions: [
         planJson({
           route: "direct",
+          // "r1": the planner sees candidates by position, never by real id — this
+          // turn has exactly one candidate ("contact.request", registered below).
           routineRankings: [{
-            routineId: "contact.request",
+            routineId: "r1",
             confidence: 0.95,
             variables: { company: "Acme", preferredDay: "tomorrow" },
           }],

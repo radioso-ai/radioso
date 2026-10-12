@@ -579,11 +579,16 @@ imports from `services/`.
   directive conditions (name order) as the reusable system prefix; decision
   independence, this turn's routine candidates, and the output shape follow in the
   system suffix; `prompts/chat/turn-planning-request.md` carries visitor context,
-  conversation, summary, and the latest question as the user request. Candidate ids
-  and names in the response schema are sorted, so one agent configuration yields one
-  schema. The grounded answer composer (`groundedAnswerPromptComposer.ts`) follows
-  the same rule: base instructions, coverage, and envelope blocks form its reusable
-  prefix, and turn steering, offers, follow-up rules, and the lead-back follow.
+  conversation, summary, and the latest question as the user request. In the
+  response schema, a routine candidate is a fixed positional alias (`r1`, `r2`, …
+  up to `maxRoutineCandidates`) rather than its real id, so the schema holds
+  whatever subset or order the embedding prefilter returns this turn;
+  `parseTurnPlan` maps an alias back to that turn's real id by position.
+  Directive names stay a sorted enum of this turn's candidate names, the same set
+  turn to turn for one agent configuration. The grounded answer composer
+  (`groundedAnswerPromptComposer.ts`) follows the same rule: base instructions,
+  coverage, and envelope blocks form its reusable prefix, and turn steering,
+  offers, follow-up rules, and the lead-back follow.
   `chat_turn_planning_outcomes_total` records fast-path, fallback, and every typed
   gate/state/candidate/prompt bypass without forcing lazy prompt construction. Tests:
   `tests/unit/turn-plan-service.test.ts`,

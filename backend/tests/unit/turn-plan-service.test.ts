@@ -12,6 +12,16 @@ import {
   type TurnPlanRequest,
 } from "../../src/modules/chat/services/turnPlanService.js";
 import type { PageReadCapability } from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
+import { CHAT_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
+
+// The fixed alias enum `buildTurnPlanResponseFormat` emits for `routineId`,
+// independent of this turn's actual candidate ids or count: it is bounded by
+// `maxRoutineCandidates`, the same cutoff `TurnPlanCoordinator` bypasses the
+// planner above, so it never varies between turns of one agent.
+const ROUTINE_ALIASES = Array.from(
+  { length: CHAT_BEHAVIOR.turnPlanning.maxRoutineCandidates },
+  (_value, index) => `r${index + 1}`,
+);
 
 const validPlanJson = (overrides: Record<string, unknown> = {}): string =>
   JSON.stringify({
@@ -32,8 +42,10 @@ const validPlanJson = (overrides: Record<string, unknown> = {}): string =>
       confidence: 0.9,
     },
     responseLanguage: "English",
+    // "r1" is the position-1 alias the model is shown for this turn's sole
+    // routine candidate ("book-call", see `candidates` below) — never the real id.
     routineRankings: [{
-      routineId: "book-call",
+      routineId: "r1",
       confidence: 0.2,
       variables: [
         { field: "company", value: "Acme" },
@@ -44,8 +56,10 @@ const validPlanJson = (overrides: Record<string, unknown> = {}): string =>
     ...overrides,
   });
 
+// Ordered: position 0 is alias "r1", position 1 is alias "r2", and so on —
+// the same order `buildTurnPlanningPrompt` renders candidates into the prompt.
 const candidates = {
-  routineIds: new Set(["book-call"]),
+  routineIds: ["book-call"],
   directiveNames: new Set(["refund-tone"]),
 };
 
@@ -185,7 +199,23 @@ describe("parseTurnPlan", () => {
 
   it("rejects an out-of-range confidence", () => {
     expect(
-      parseTurnPlan(validPlanJson({ routineRankings: [{ routineId: "book-call", confidence: 1.5 }] }), candidates),
+      parseTurnPlan(validPlanJson({ routineRankings: [{ routineId: "r1", confidence: 1.5 }] }), candidates),
+    ).toBeNull();
+  });
+
+  it("maps a positional alias to this turn's candidate at that position", () => {
+    const twoCandidates = { routineIds: ["alpha-id", "beta-id"], directiveNames: new Set(["refund-tone"]) };
+    const plan = parseTurnPlan(
+      validPlanJson({ routineRankings: [{ routineId: "r2", confidence: 0.6 }] }),
+      twoCandidates,
+    );
+    expect(plan?.routineRankings).toEqual([{ routineId: "beta-id", confidence: 0.6 }]);
+  });
+
+  it("rejects an alias beyond this turn's candidate count (whole-plan failure)", () => {
+    const oneCandidate = { routineIds: ["alpha-id"], directiveNames: new Set(["refund-tone"]) };
+    expect(
+      parseTurnPlan(validPlanJson({ routineRankings: [{ routineId: "r2", confidence: 0.6 }] }), oneCandidate),
     ).toBeNull();
   });
 
@@ -208,8 +238,8 @@ describe("parseTurnPlan", () => {
       parseTurnPlan(
         validPlanJson({
           routineRankings: [
-            { routineId: "book-call", confidence: 0.7 },
-            { routineId: "book-call", confidence: 0.6 },
+            { routineId: "r1", confidence: 0.7 },
+            { routineId: "r1", confidence: 0.6 },
           ],
         }),
         candidates,
@@ -221,7 +251,7 @@ describe("parseTurnPlan", () => {
     expect(
       parseTurnPlan(
         validPlanJson({
-          routineRankings: [{ routineId: "book-call", confidence: 0.7, variables: { company: "Acme" } }],
+          routineRankings: [{ routineId: "r1", confidence: 0.7, variables: { company: "Acme" } }],
         }),
         candidates,
       ),
@@ -232,7 +262,7 @@ describe("parseTurnPlan", () => {
     const withVars = parseTurnPlan(
       validPlanJson({
         routineRankings: [{
-          routineId: "book-call",
+          routineId: "r1",
           confidence: 0.7,
           variables: [{ field: "company", value: "Acme" }],
         }],
@@ -243,7 +273,7 @@ describe("parseTurnPlan", () => {
 
     const withoutVars = parseTurnPlan(
       validPlanJson({
-        routineRankings: [{ routineId: "book-call", confidence: 0.7, variables: [] }],
+        routineRankings: [{ routineId: "r1", confidence: 0.7, variables: [] }],
       }),
       candidates,
     );
@@ -255,7 +285,7 @@ describe("parseTurnPlan", () => {
       parseTurnPlan(
         validPlanJson({
           routineRankings: [{
-            routineId: "book-call",
+            routineId: "r1",
             confidence: 0.7,
             variables: [
               { field: "company", value: "Acme" },
@@ -269,7 +299,7 @@ describe("parseTurnPlan", () => {
   });
 
   it("accepts absent ranking/classification arrays when there are no candidates", () => {
-    const noCandidates = { routineIds: new Set<string>(), directiveNames: new Set<string>() };
+    const noCandidates = { routineIds: [], directiveNames: new Set<string>() };
     const plan = parseTurnPlan(
       JSON.stringify({
         route: "direct",
@@ -383,7 +413,7 @@ describe("turnPlanDirectiveClassifications", () => {
   });
 
   it("drops unmatched classifications", () => {
-    const candidates2 = { routineIds: new Set<string>(), directiveNames: new Set(["a", "b"]) };
+    const candidates2 = { routineIds: [], directiveNames: new Set(["a", "b"]) };
     const plan = parseTurnPlan(
       JSON.stringify({
         route: "direct",
@@ -418,13 +448,13 @@ describe("buildTurnPlanResponseFormat", () => {
     expect(format.schema.additionalProperties).toBe(false);
   });
 
-  it("constrains routineId and directive name to exactly the candidate values", () => {
+  it("constrains routineId to the fixed alias enum and directive name to exactly the candidate values", () => {
     const format = buildTurnPlanResponseFormat({
       routineIds: ["book-call", "cancel"],
       directiveNames: ["refund-tone"],
     });
     const rankingItems = (schemaProperty(format, "routineRankings")?.items ?? {}) as Record<string, Record<string, Record<string, unknown>>>;
-    expect(rankingItems.properties.routineId.enum).toEqual(["book-call", "cancel"]);
+    expect(rankingItems.properties.routineId.enum).toEqual(ROUTINE_ALIASES);
     const classificationItems = (schemaProperty(format, "directiveClassifications")?.items ?? {}) as Record<string, Record<string, Record<string, unknown>>>;
     expect(classificationItems.properties.name.enum).toEqual(["refund-tone"]);
   });
@@ -443,9 +473,28 @@ describe("buildTurnPlanResponseFormat", () => {
 
     expect(JSON.stringify(forward)).toBe(JSON.stringify(reversed));
     const rankingItems = (schemaProperty(forward, "routineRankings")?.items ?? {}) as Record<string, Record<string, Record<string, unknown>>>;
-    expect(rankingItems.properties.routineId.enum).toEqual(["book-call", "cancel"]);
+    expect(rankingItems.properties.routineId.enum).toEqual(ROUTINE_ALIASES);
     const classificationItems = (schemaProperty(forward, "directiveClassifications")?.items ?? {}) as Record<string, Record<string, Record<string, unknown>>>;
     expect(classificationItems.properties.name.enum).toEqual(["alpha", "zeta"]);
+  });
+
+  // The cache-defeating case #1282 found: the embedding prefilter returns a
+  // different subset, in a different score order, as the request changes. The
+  // planner's response schema must not follow it, or a provider that caches the
+  // schema with the prompt misses on every such turn.
+  it("emits a byte-identical schema whatever this turn's routine candidate subset or count", () => {
+    const twoCandidatesTurn = buildTurnPlanResponseFormat({
+      routineIds: ["book-call", "cancel-order"],
+      directiveNames: [],
+    });
+    const oneDifferentCandidateTurn = buildTurnPlanResponseFormat({
+      routineIds: ["refund-policy"],
+      directiveNames: [],
+    });
+
+    expect(JSON.stringify(oneDifferentCandidateTurn)).toBe(JSON.stringify(twoCandidatesTurn));
+    const rankingItems = (schemaProperty(twoCandidatesTurn, "routineRankings")?.items ?? {}) as Record<string, Record<string, Record<string, unknown>>>;
+    expect(rankingItems.properties.routineId.enum).toEqual(ROUTINE_ALIASES);
   });
 
   it("models routine variables as a required field/value pair array", () => {
@@ -678,6 +727,38 @@ describe("buildTurnPlanningPrompt", () => {
     }
   });
 
+  it("renders routine candidates with positional aliases, in prefilter score order, never the real id", () => {
+    const prompt = rendered(promptInput({
+      routineCandidates: [
+        { routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 },
+        { routineId: "cancel-order", title: "Cancel an order", triggerSummary: "wants to cancel", priority: 0 },
+      ],
+    }));
+
+    expect(prompt).toContain("1. id: r1");
+    expect(prompt).toContain("2. id: r2");
+    expect(prompt).not.toContain("book-call");
+    expect(prompt).not.toContain("cancel-order");
+    expect(prompt.indexOf("Book a call")).toBeLessThan(prompt.indexOf("Cancel an order"));
+  });
+
+  it("gives the same alias to the same candidate position whatever this turn's candidate subset", () => {
+    const first = buildTurnPlanningPrompt(promptInput({
+      routineCandidates: [
+        { routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 },
+        { routineId: "cancel-order", title: "Cancel an order", triggerSummary: "wants to cancel", priority: 0 },
+      ],
+    }));
+    const second = buildTurnPlanningPrompt(promptInput({
+      routineCandidates: [
+        { routineId: "refund-policy", title: "Refund policy", triggerSummary: "asks about refunds", priority: 0 },
+      ],
+    }));
+
+    expect(first.systemPrompt).toContain("id: r1");
+    expect(second.systemPrompt).toContain("id: r1");
+  });
+
   it("renders resolved visitor context after the directive conditions so they can reference it", () => {
     const prompt = buildTurnPlanningPrompt(promptInput({
       directiveCandidates: [{ name: "concierge", condition: "the visitor's cart is worth more than 100" }],
@@ -798,7 +879,7 @@ describe("TurnPlanService", () => {
     expect(call?.systemPrompt).not.toContain("How long is the refund window?");
   });
 
-  it("passes a per-call response format whose enums list this turn's candidates", async () => {
+  it("passes a per-call response format whose routineId enum is the fixed alias list and directive enum lists this turn's candidates", async () => {
     const client = {
       complete: vi.fn(
         async (_request: { prompt: string; responseFormat?: ReturnType<typeof buildTurnPlanResponseFormat> }) =>
@@ -810,7 +891,7 @@ describe("TurnPlanService", () => {
     expect(responseFormat).toMatchObject({ type: "json_schema", name: "turn_plan", strict: true });
     const properties = (responseFormat?.schema.properties ?? {}) as Record<string, Record<string, unknown>>;
     const rankingItems = properties.routineRankings.items as Record<string, Record<string, Record<string, unknown>>>;
-    expect(rankingItems.properties.routineId.enum).toEqual(["book-call"]);
+    expect(rankingItems.properties.routineId.enum).toEqual(ROUTINE_ALIASES);
     const classificationItems = properties.directiveClassifications.items as Record<string, Record<string, Record<string, unknown>>>;
     expect(classificationItems.properties.name.enum).toEqual(["refund-tone"]);
   });

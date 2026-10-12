@@ -461,7 +461,12 @@ describe("retrieval answer envelope v2", () => {
     expect(presented.suggestions).toMatchObject([
       { text: "How does registration work?", kind: "deeper" },
     ]);
-    expect(responseFormats()).toEqual([buildGroundedAnswerResponseFormat()]);
+    // No directive steering on this session, but the schema still carries the
+    // adherence fragment: a composer's answer schema never changes shape based on
+    // this turn's steering (fix #1282 follow-up).
+    expect(responseFormats()).toEqual([
+      buildGroundedAnswerResponseFormat(createDirectiveAdherenceSideChannel([]).schemaExtension()),
+    ]);
   });
 
   it("streams only a structured answer and returns its suggestions separately", async () => {
@@ -489,7 +494,12 @@ describe("retrieval answer envelope v2", () => {
       mode: "assistant",
       planned: [{ text: "How does registration work?", kind: "deeper", contextIndex: 1 }],
     });
-    expect(responseFormats()).toEqual([buildGroundedAnswerResponseFormat()]);
+    // No directive steering on this session, but the schema still carries the
+    // adherence fragment: a composer's answer schema never changes shape based on
+    // this turn's steering (fix #1282 follow-up).
+    expect(responseFormats()).toEqual([
+      buildGroundedAnswerResponseFormat(createDirectiveAdherenceSideChannel([]).schemaExtension()),
+    ]);
   });
 
   it("resolves rule-keyed adherence into directive trace metadata", async () => {

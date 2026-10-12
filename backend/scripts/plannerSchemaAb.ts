@@ -382,7 +382,7 @@ const main = async () => {
             // The production parser accepts `resolutionNote` natively (optional field), and
             // the legacy schema never emits it, so no per-arm stripping is needed here.
             const plan = parseTurnPlan(text, {
-              routineIds: new Set(),
+              routineIds: [],
               directiveNames: new Set(),
             });
             const verdict = score(plan, abCase.expect);

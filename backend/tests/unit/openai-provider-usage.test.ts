@@ -15,6 +15,10 @@ import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelI
 import type { LlmCapabilityConfig } from "../../src/shared/infra/llm/providerTypes.js";
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { captureModelCallTrace } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
+import {
+  buildTurnPlanResponseFormat,
+  buildTurnPlanningPrompt,
+} from "../../src/modules/chat/services/turnPlanService.js";
 
 const chatConfig: LlmCapabilityConfig = {
   capability: "chat",
@@ -381,6 +385,52 @@ describe("OpenAITextGenerationClient prompt cache routing", () => {
     expect(second).toBe(first);
     expect(otherPrefix).not.toBe(first);
     expect(otherSchema).not.toBe(first);
+  });
+
+  // The #1282 follow-up: on a real agent, the turn planner's embedding prefilter
+  // returns a different routine-candidate subset, in a different score order, as
+  // the conversation moves — this is the actual turn-to-turn shape the planner
+  // sends, built through the production prompt/schema builders, not a synthetic
+  // boundary. Two such turns must still land on the provider's same cache.
+  it("gives the turn planner the same prompt_cache_key across turns with different routine candidate subsets", async () => {
+    const turnOnePrompt = buildTurnPlanningPrompt({
+      query: "I'd like to book a call about pricing.",
+      history: [],
+      routineCandidates: [
+        { routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 },
+        { routineId: "cancel-order", title: "Cancel an order", triggerSummary: "wants to cancel", priority: 0 },
+      ],
+      directiveCandidates: [],
+    });
+    const turnOneFormat = buildTurnPlanResponseFormat({
+      routineIds: ["book-call", "cancel-order"],
+      directiveNames: [],
+    });
+    const turnTwoPrompt = buildTurnPlanningPrompt({
+      query: "Actually, never mind — what's your refund policy?",
+      history: [{ role: "user", content: "I'd like to book a call about pricing." } as never],
+      routineCandidates: [
+        { routineId: "refund-policy", title: "Refund policy", triggerSummary: "asks about refunds", priority: 0 },
+      ],
+      directiveCandidates: [],
+    });
+    const turnTwoFormat = buildTurnPlanResponseFormat({ routineIds: ["refund-policy"], directiveNames: [] });
+
+    await completeWith(chatConfig, {
+      systemPrompt: turnOnePrompt.systemPrompt,
+      reusableInputBoundary: turnOnePrompt.reusableInputBoundary,
+      prompt: turnOnePrompt.prompt,
+      responseFormat: turnOneFormat,
+    });
+    await completeWith(chatConfig, {
+      systemPrompt: turnTwoPrompt.systemPrompt,
+      reusableInputBoundary: turnTwoPrompt.reusableInputBoundary,
+      prompt: turnTwoPrompt.prompt,
+      responseFormat: turnTwoFormat,
+    });
+
+    expect(sentRequest(0).prompt_cache_key).toMatch(/^rpc1_[0-9a-f]{32}$/);
+    expect(sentRequest(1).prompt_cache_key).toBe(sentRequest(0).prompt_cache_key);
   });
 
   it("keeps request content and identifiers out of the key", async () => {

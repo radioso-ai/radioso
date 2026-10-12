@@ -16,7 +16,7 @@ The eligible prefix holds standing instructions and the agent's own configuratio
 - **Grounded answers.** The agent's base instructions come first, followed by the coverage verdict, coverage guidance, and output envelope rules. Turn steering, an alternative-interpretation offer, the follow-up question rules, and a routine lead-back follow. The base instructions include the response language and the current UTC date, so this prefix is shared by turns that answer in the same language on the same day.
 - **Agent tool steps.** The agent's instructions, protocol, and tool catalog form the prefix of every step. The transcript follows.
 
-Response schemas are part of what a provider compares, so they stay identical across turns of the same agent: candidate routine ids and directive names are listed in sorted order, and directive-adherence attestations accept any rendered rule id rather than enumerating this turn's ids.
+Response schemas are part of what a provider compares. The turn planner represents each routine candidate by a position (`r1`, `r2`, …) rather than its real id, up to the bound on routine candidates a single call accepts, so the schema is the same whatever candidates the embedding prefilter returned this turn or what order it returned them in. It still changes between a turn that has routine candidates and one that has none, between a turn that has directive candidates and one that has none, and between a channel that advertises page-read and one that doesn't. Directive names stay a sorted enum of this turn's candidate names — stable turn to turn because that candidate set comes from the agent's configuration, not the query. A grounded answer's directive-adherence attestation is a plain id string present on every turn, whether or not this turn renders any attestable rule; resolving it drops an id the model invented or one not actually rendered this turn.
 
 A change to the standing instructions, directive conditions, tool catalog, response schema, provider, model, or API mode produces a different prefix, and the next request starts a fresh cache entry.
 
@@ -60,7 +60,7 @@ Use the same resolved model, endpoint or API mode, region, stable instructions, 
 
 Run these conditions:
 
-1. Make a cold request, then repeated equivalent warm requests. For a chat agent, the simplest warm pair is two turns in one conversation sent within a minute: the second turn's planning and answer calls should report cached input.
+1. Make a cold request, then repeated equivalent warm requests. For a chat agent, the simplest warm pair is two turns in one conversation sent within a minute: the second turn's planning and answer calls should report cached input as long as both turns agree on whether they have routine candidates, directive candidates, and page-read capability — those presences, not the candidates themselves, are what the response schema partitions on.
 2. Wait for documented provider retention when you can control it, then record an expiry observation. If retention cannot be controlled, record `expiry-not-observed/unknown`.
 3. Change stable configuration such as instructions or tools, then make an otherwise comparable request.
 4. Run concurrent equivalent requests and keep each outcome separate. Concurrent calls do not promise shared cache locality.

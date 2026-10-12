@@ -96,12 +96,30 @@ const formatConversationContext = (messages: MessageRecord[]): string =>
     )
     .join("\n");
 
+// Routine candidates are rendered and scored under a positional alias, never their
+// real id: the embedding prefilter returns a different subset and order from turn
+// to turn, so a raw-id enum in the response schema (below) would change on every
+// such turn and defeat a provider's prompt-schema cache. The alias is stable
+// across the bound on how many candidates one call accepts
+// (`CHAT_BEHAVIOR.turnPlanning.maxRoutineCandidates`), so the schema never varies;
+// `parseTurnPlan` maps an alias back to this turn's real id by position.
+const routineAlias = (index: number): string => `r${index + 1}`;
+const ROUTINE_ALIAS_PATTERN = /^r([1-9]\d*)$/;
+const routineAliasIndex = (alias: string): number | null => {
+  const match = ROUTINE_ALIAS_PATTERN.exec(alias);
+  return match ? Number(match[1]) - 1 : null;
+};
+const ROUTINE_ALIASES: readonly string[] = Array.from(
+  { length: CHAT_BEHAVIOR.turnPlanning.maxRoutineCandidates },
+  (_value, index) => routineAlias(index),
+);
+
 // Only rendered when the candidate list is non-empty; the empty case omits the
 // whole routine/directive sub-section rather than emitting a "none" stub.
 const routineCandidatesBlock = (candidates: readonly TurnPlanRoutineCandidate[]): string =>
   candidates
     .map((candidate, index) =>
-      `${index + 1}. id: ${candidate.routineId}\n` +
+      `${index + 1}. id: ${routineAlias(index)}\n` +
       `Title: ${candidate.title}\n` +
       `Priority: ${candidate.priority}\n` +
       `Trigger: ${candidate.triggerSummary}`,
@@ -421,12 +439,17 @@ const rewriteJsonSchema = {
 } as const;
 
 /**
- * Builds the per-call provider response schema for the planner. Turning "never
- * invent an id/name" into structure, `routineId`/`name` are enums of exactly the
- * candidate ids/names, and each ranking/classification property is present only
- * when its candidate list is non-empty — strict mode plus `additionalProperties:
- * false` then forbids the model from emitting it at all. `variables` is a
- * field/value pair array because strict mode rejects free-form objects.
+ * Builds the per-call provider response schema for the planner. `routineId` is
+ * the fixed alias enum `r1..r<maxRoutineCandidates>` (see `routineAlias` above),
+ * not this turn's candidate ids, so the schema is byte-identical for every turn
+ * that has any routine candidates regardless of which ones or how many. `name` is
+ * still an enum of exactly this turn's candidate directive names: that candidate
+ * list comes from agent configuration, not the query, so it is already stable
+ * turn to turn for one agent. Each ranking/classification property is present
+ * only when its candidate list is non-empty — strict mode plus
+ * `additionalProperties: false` then forbids the model from emitting it at all.
+ * `variables` is a field/value pair array because strict mode rejects free-form
+ * objects.
  */
 export const buildTurnPlanResponseFormat = (candidates: {
   routineIds: readonly string[];
@@ -456,7 +479,7 @@ export const buildTurnPlanResponseFormat = (candidates: {
         additionalProperties: false,
         required: ["routineId", "confidence", "variables"],
         properties: {
-          routineId: { type: "string", enum: [...candidates.routineIds].sort(byCodeUnit) },
+          routineId: { type: "string", enum: [...ROUTINE_ALIASES] },
           confidence: confidenceJsonSchema,
           variables: {
             type: "array",
@@ -536,13 +559,18 @@ const variablesFromPairs = (
 /**
  * Strict parse + semantic validation. Any structural or semantic problem returns
  * `null` (whole-plan rejection — never partial acceptance), so the caller falls
- * back to the staged path. An unknown routine id or directive name is a semantic
- * failure: the planner may only reference the candidates it was given.
+ * back to the staged path. `candidates.routineIds` is this turn's real routine ids
+ * in the same order rendered into the prompt (prefilter score order): a
+ * `routineRankings[].routineId` of `"r2"` resolves to `candidates.routineIds[1]`.
+ * An alias with no candidate at that position, or one that resolves to a
+ * duplicate id, is a semantic failure exactly like an unknown id was before
+ * aliasing — the planner may only reference the candidates it was given. An
+ * unknown directive name is rejected the same way.
  */
 export const parseTurnPlan = (
   raw: string,
   candidates: {
-    routineIds: ReadonlySet<string>;
+    routineIds: readonly string[];
     directiveNames: ReadonlySet<string>;
     pageReadCapability?: PageReadCapability | null;
   },
@@ -584,16 +612,18 @@ export const parseTurnPlan = (
   const routineRankings: TurnPlan["routineRankings"] = [];
   const seenRoutineIds = new Set<string>();
   for (const entry of parsed.routineRankings ?? []) {
-    if (!candidates.routineIds.has(entry.routineId) || seenRoutineIds.has(entry.routineId)) {
+    const aliasIndex = routineAliasIndex(entry.routineId);
+    const routineId = aliasIndex === null ? undefined : candidates.routineIds[aliasIndex];
+    if (!routineId || seenRoutineIds.has(routineId)) {
       return null;
     }
-    seenRoutineIds.add(entry.routineId);
+    seenRoutineIds.add(routineId);
     const variables = variablesFromPairs(entry.variables);
     if (variables === null) {
       return null;
     }
     routineRankings.push({
-      routineId: entry.routineId,
+      routineId,
       confidence: entry.confidence,
       ...(variables ? { variables } : {}),
     });
@@ -699,7 +729,7 @@ export class TurnPlanService {
         signal,
       });
       const plan = parseTurnPlan(text, {
-        routineIds: new Set(routineIds),
+        routineIds,
         directiveNames: new Set(directiveNames),
         pageReadCapability: request.pageReadCapability,
       });

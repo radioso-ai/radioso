@@ -314,8 +314,15 @@ describe("voice completions route", () => {
       .send(elevenlabsBody({ elevenlabs_extra_body: { session_key: "k".repeat(300) } }))
       .expect(400);
 
+    // An uninterpolated placeholder is the same key on every call; taking it would merge them all.
+    await request(createApp(dependencies))
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({ elevenlabs_extra_body: { session_key: "{{system__conversation_id}}" } }))
+      .expect(400);
+
     expect(dependencies.voiceTurns.runTurn).not.toHaveBeenCalled();
-    expect(dependencies.logger.warn).toHaveBeenCalledTimes(3);
+    expect(dependencies.logger.warn).toHaveBeenCalledTimes(4);
     for (const [fields] of vi.mocked(dependencies.logger.warn).mock.calls) {
       expect(fields).toEqual({ dialect: "elevenlabs", agentId });
     }

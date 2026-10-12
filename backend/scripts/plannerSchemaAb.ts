@@ -344,7 +344,9 @@ const main = async () => {
     {
       const arm = `${order}/${effort}`;
       for (const abCase of cases) {
-        const prompt = buildTurnPlanningPrompt({
+        // The production request shape: standing rules as a reusable system prefix and
+        // the case's conversation as the request, so the `cached` column reflects it.
+        const plannerPrompt = buildTurnPlanningPrompt({
           query: abCase.query,
           history: toHistory(abCase.history),
           routineCandidates: [],
@@ -357,7 +359,7 @@ const main = async () => {
             let usage: Record<string, number | undefined> = {};
             try {
               const result = await client.complete({
-                prompt,
+                ...plannerPrompt,
                 responseFormat: formats[order],
                 reasoningEffort: effort,
                 maxOutputTokens: CHAT_BEHAVIOR.turnPlanning.maxOutputTokens,
@@ -380,7 +382,7 @@ const main = async () => {
             // The production parser accepts `resolutionNote` natively (optional field), and
             // the legacy schema never emits it, so no per-arm stripping is needed here.
             const plan = parseTurnPlan(text, {
-              routineIds: new Set(),
+              routineIds: [],
               directiveNames: new Set(),
             });
             const verdict = score(plan, abCase.expect);

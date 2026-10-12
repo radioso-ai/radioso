@@ -39,12 +39,13 @@ const usageContext = {
 describe("scope-neutral interpretation prompt contract", () => {
   it("leaves support decisions to retrieval in staged and fused interpretation", () => {
     const stagedPrompt = buildTurnInterpretationPrompt({ context: "", query: "sqrt(5)" });
-    const fusedPrompt = buildTurnPlanningPrompt({
+    const fusedRequest = buildTurnPlanningPrompt({
         query: "sqrt(5)",
         history: [],
         routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
         directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
     });
+    const fusedPrompt = `${fusedRequest.systemPrompt}\n\n${fusedRequest.prompt}`;
 
     // The staged path still carries the scope fields; the fused planner is no longer
     // asked for them at all, so only the shared scope-neutrality rule holds for both.

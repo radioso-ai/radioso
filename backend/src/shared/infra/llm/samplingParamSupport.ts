@@ -95,3 +95,36 @@ export const isUnsupportedTemperatureError = (error: unknown): boolean => {
     code === "unsupported_value" || code === "unsupported_parameter" || code === "unknown_parameter";
   return unsupportedCode && (param === "temperature" || mentionsTemperature);
 };
+
+/**
+ * `prompt_cache_key` is a cache-routing hint, not a sampling param, but an endpoint
+ * that rejects it degrades the same way: drop it and send the request without it.
+ * Keyed by support scope only, like temperature: the key's value never decides
+ * whether an endpoint accepts the parameter.
+ */
+const unsupportedPromptCacheKeyScopes = new Set<string>();
+
+export const isPromptCacheKeyKnownUnsupported = (supportScope: string): boolean =>
+  unsupportedPromptCacheKeyScopes.has(supportScope);
+
+export const markPromptCacheKeyUnsupported = (supportScope: string): void => {
+  unsupportedPromptCacheKeyScopes.add(supportScope);
+};
+
+/**
+ * True when an OpenAI error rejects `prompt_cache_key` itself. Reads the structured
+ * `param` first and falls back to an unsupported-* code whose message names the
+ * parameter, mirroring the temperature check.
+ */
+export const isUnsupportedPromptCacheKeyError = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const candidate = error as { code?: unknown; param?: unknown; message?: unknown };
+  const param = typeof candidate.param === "string" ? candidate.param : "";
+  const message = typeof candidate.message === "string" ? candidate.message : "";
+  const code = typeof candidate.code === "string" ? candidate.code : "";
+  const unsupportedCode =
+    code === "unsupported_value" || code === "unsupported_parameter" || code === "unknown_parameter";
+  return param === "prompt_cache_key" || (unsupportedCode && message.includes("prompt_cache_key"));
+};

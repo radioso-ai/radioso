@@ -174,16 +174,72 @@ describe("grounded answer prompt contract", () => {
       suggestedQuestionsCount: 3,
       hasRetrievedContexts: true,
       conversationIntentSnapshot,
-      steering: [{ id: "rule-1", instruction: "Current steering", surfaces: ["answer"] }],
+      steering: [{ id: "rule-1", action: "Current steering", source: "directive", lifespan: "response", surfaces: ["answer"] }],
     });
 
+    expect(result.systemPrompt).toContain("Current steering");
+    const stableSystemPrefix = [
+      "OPERATOR INSTRUCTIONS",
+      loadPromptTemplate("chat/answer-coverage-head.md"),
+      loadPromptTemplate("chat/answer-coverage-response-guidance.md"),
+      loadPromptTemplate("chat/answer-envelope.md"),
+    ].join("\n\n");
     expect(result.reusableInputBoundary).toEqual({
-      stableSystemPrefix: "OPERATOR INSTRUCTIONS",
-      dynamicSystemSuffix: result.systemPrompt.slice("OPERATOR INSTRUCTIONS".length),
+      stableSystemPrefix,
+      dynamicSystemSuffix: result.systemPrompt.slice(stableSystemPrefix.length),
     });
     expect(`${result.reusableInputBoundary?.stableSystemPrefix}${result.reusableInputBoundary?.dynamicSystemSuffix}`)
       .toBe(result.systemPrompt);
     expect(result.reusableInputBoundary?.stableSystemPrefix).not.toContain("Current steering");
+  });
+
+  it("shares one stable prefix, holding every standing block, across turns that differ in steering, offers, suggestions, and lead-backs", () => {
+    const base = {
+      baseSystemPrompt: "OPERATOR INSTRUCTIONS",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
+      conversationIntentSnapshot,
+    };
+    const steered = composeGroundedAnswerSystemPrompt({
+      ...base,
+      hasRetrievedContexts: true,
+      steering: [{ id: "d1", action: "Mention the spring retreat.", source: "directive", lifespan: "response" }],
+      retrievalSenseOfferAlternatives: [{ label: "Retreat lodging" }],
+      pendingRoutineStep: { stepId: "ask_dates", instruction: "Ask for the arrival date.", missingSlotKeys: [] },
+    });
+    const plain = composeGroundedAnswerSystemPrompt({ ...base, hasRetrievedContexts: false });
+
+    const stable = steered.reusableInputBoundary?.stableSystemPrefix;
+    expect(stable).toBeDefined();
+    expect(plain.reusableInputBoundary?.stableSystemPrefix).toBe(stable);
+    for (const standing of ["OPERATOR INSTRUCTIONS", "Coverage verdict", "Coverage-aware response", "Output envelope"]) {
+      expect(stable).toContain(standing);
+    }
+    for (const turnSpecific of ["Mention the spring retreat.", "Retrieval sense offer", "Follow-up field rules", "Ask for the arrival date."]) {
+      expect(steered.systemPrompt).toContain(turnSpecific);
+      expect(stable).not.toContain(turnSpecific);
+    }
+  });
+
+  it("renders turn steering after the output envelope and before the follow-up rules", () => {
+    const { systemPrompt } = composeGroundedAnswerSystemPrompt({
+      baseSystemPrompt: "BASE",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
+      hasRetrievedContexts: true,
+      conversationIntentSnapshot,
+      steering: [{ id: "d1", action: "Mention the spring retreat.", source: "directive", lifespan: "response" }],
+      retrievalSenseOfferAlternatives: [{ label: "Retreat lodging" }],
+    });
+
+    const envelope = systemPrompt.indexOf("Output envelope");
+    const steering = systemPrompt.indexOf("Mention the spring retreat.");
+    const offer = systemPrompt.indexOf("Retrieval sense offer");
+    const followUps = systemPrompt.indexOf("Follow-up field rules");
+    expect(envelope).toBeGreaterThan(-1);
+    expect(steering).toBeGreaterThan(envelope);
+    expect(offer).toBeGreaterThan(steering);
+    expect(followUps).toBeGreaterThan(offer);
   });
 
   it("always wires the coverage head verdict instructions and response guidance (#1260)", () => {

@@ -414,6 +414,53 @@ describe("OpenAITextGenerationClient.complete sampling reconciliation", () => {
     expect(createMock.mock.calls[1]?.[0]).not.toHaveProperty("reasoning_effort");
   });
 
+  it("retries without prompt_cache_key when the API rejects it and omits it on later calls for that scope", async () => {
+    createMock
+      .mockRejectedValueOnce(openAIError({
+        code: "unknown_parameter",
+        param: "prompt_cache_key",
+        message: "Unrecognized request argument supplied: prompt_cache_key",
+      }))
+      .mockResolvedValue(completion("ok"));
+    const client = new OpenAITextGenerationClient(chatConfig("complete-cache-key-reject"));
+    const request = {
+      prompt: "Hi",
+      systemPrompt: "RULES",
+      reusableInputBoundary: { stableSystemPrefix: "RULES", dynamicSystemSuffix: "" },
+      maxOutputTokens: 64,
+    };
+
+    const result = await client.complete(request);
+    await client.complete(request);
+
+    expect(result.text).toBe("ok");
+    expect(createMock).toHaveBeenCalledTimes(3);
+    expect(createMock.mock.calls[0]?.[0]).toHaveProperty("prompt_cache_key");
+    expect(createMock.mock.calls[1]?.[0]).not.toHaveProperty("prompt_cache_key");
+    expect(createMock.mock.calls[1]?.[0]).toMatchObject({ max_completion_tokens: 64 });
+    expect(createMock.mock.calls[2]?.[0]).not.toHaveProperty("prompt_cache_key");
+  });
+
+  it("keeps prompt_cache_key when a 400 names a different parameter", async () => {
+    createMock.mockRejectedValue(
+      openAIError({
+        message: "Invalid value for 'max_completion_tokens'",
+        code: "invalid_value",
+        param: "max_completion_tokens",
+      }),
+    );
+
+    await expect(
+      new OpenAITextGenerationClient(chatConfig("complete-cache-key-unrelated-400")).complete({
+        prompt: "Hi",
+        systemPrompt: "RULES",
+        reusableInputBoundary: { stableSystemPrefix: "RULES", dynamicSystemSuffix: "" },
+      }),
+    ).rejects.toThrow("Invalid value for 'max_completion_tokens'");
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(createMock.mock.calls[0]?.[0]).toHaveProperty("prompt_cache_key");
+  });
+
   it("still sends a different reasoning effort to a model that rejected another value", async () => {
     createMock
       .mockRejectedValueOnce(unsupportedReasoningEffortError())

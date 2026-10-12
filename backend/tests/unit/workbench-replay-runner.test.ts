@@ -725,7 +725,7 @@ describe("WorkbenchReplayRunner", () => {
       routineRankings: [],
       directiveClassifications: [{ name: "refund-tone", matched: true, confidence: 0.9 }],
     });
-    const plannerComplete = vi.fn(async (_request: { prompt: string }) => ({ text: planText }));
+    const plannerComplete = vi.fn(async (_request: { prompt: string; systemPrompt?: string }) => ({ text: planText }));
     const plannerCreate = vi.fn(async () => ({ complete: plannerComplete }));
     const throwingDirectiveGatewayFactory = {
       create: vi.fn(async () => {
@@ -779,12 +779,14 @@ describe("WorkbenchReplayRunner", () => {
     expect(plannerCreate).toHaveBeenCalledWith(expect.objectContaining({
       workspaceContext: { workspaceId: "ws-1", capabilityOverride: { provider: "openai", model: "gpt-5-mini" } },
     }));
-    expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("Replay semantic guidance.");
-    expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("Replay lexical guidance.");
-    expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("The buyer already returned the item last week.");
-    expect(plannerComplete.mock.calls[0]?.[0].prompt).not.toContain("USER: history-message-0 [");
-    expect(plannerComplete.mock.calls[0]?.[0].prompt).not.toContain("ASSISTANT: history-message-1 [");
-    expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("history-message-11");
+    // Standing rules and agent guidance travel as the system prompt; conversation data as the request.
+    const plannerRequest = plannerComplete.mock.calls[0]?.[0];
+    expect(plannerRequest?.systemPrompt).toContain("Replay semantic guidance.");
+    expect(plannerRequest?.systemPrompt).toContain("Replay lexical guidance.");
+    expect(plannerRequest?.prompt).toContain("The buyer already returned the item last week.");
+    expect(plannerRequest?.prompt).not.toContain("USER: history-message-0 [");
+    expect(plannerRequest?.prompt).not.toContain("ASSISTANT: history-message-1 [");
+    expect(plannerRequest?.prompt).toContain("history-message-11");
     expect(classify).not.toHaveBeenCalled();
     expect(throwingDirectiveGatewayFactory.create).not.toHaveBeenCalled();
     expect(capturedRequests[0]?.precomputedRewriteProposal?.rewrittenQuery).toBe("refund processing duration");
@@ -835,7 +837,7 @@ describe("WorkbenchReplayRunner", () => {
       routineRankings: [],
       directiveClassifications: [{ name: "live-tone", matched: false, confidence: 0.2 }],
     });
-    const plannerComplete = vi.fn(async (_request: { prompt: string }) => ({ text: planText }));
+    const plannerComplete = vi.fn(async (_request: { prompt: string; systemPrompt?: string }) => ({ text: planText }));
     const boundAgent: ConversationAgent = {
       ...agent(),
       authoredDirectives: [
@@ -908,7 +910,7 @@ describe("WorkbenchReplayRunner", () => {
     });
 
     expect(plannerComplete).toHaveBeenCalledTimes(1);
-    const prompt = plannerComplete.mock.calls[0]?.[0].prompt;
+    const prompt = plannerComplete.mock.calls[0]?.[0].systemPrompt;
     expect(prompt).toContain('"name": "live-tone"');
     expect(prompt).not.toContain("disabled-tone");
   });

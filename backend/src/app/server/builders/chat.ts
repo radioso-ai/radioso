@@ -284,6 +284,7 @@ export const buildChatServices = (input: {
       new ContextualTurnPlanGatewayFactory(
         { resolver: input.llmCapabilityResolver, clientCache: new TextGenerationClientCache() },
         input.usageEventRecorder,
+        input.metricsRegistry,
       ),
     ),
     input.logger,

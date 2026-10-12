@@ -80,29 +80,31 @@ export const composeGroundedAnswerSystemPrompt = (
     input.hasRetrievedContexts;
 
   const base = input.baseSystemPrompt ?? "";
+  // Standing blocks first: they read the same on every turn of this agent, so they
+  // form the reusable prefix. The model commits its own coverage verdict as the
+  // envelope's head rather than receiving one (#1260), so both coverage blocks
+  // render on every grounded call.
+  const standing = [
+    renderPromptTemplate("chat/answer-coverage-head.md", {}),
+    renderPromptTemplate("chat/answer-coverage-response-guidance.md", {}),
+    renderPromptTemplate("chat/answer-envelope.md", {}),
+  ].reduce(joinBlocks, base);
+
+  // Turn-specific blocks follow. Answer steering stays ahead of the follow-up rules,
+  // which carry their own suggestion-scoped steering.
   const steeringBlock = renderSteeringBlock(input.steering ?? [], { includeRuleIds: true });
-  const withSteering = steeringBlock ? joinBlocks(base, steeringBlock) : base;
+  const withSteering = steeringBlock ? joinBlocks(standing, steeringBlock) : standing;
   const alternatives = formatOfferAlternatives(input.retrievalSenseOfferAlternatives);
-  const grounded = alternatives
+  const withTurnBlocks = alternatives
     ? joinBlocks(withSteering, renderPromptTemplate("chat/retrieval-sense-offer.md", {}))
     : withSteering;
-
-  const envelopeBlock = renderPromptTemplate("chat/answer-envelope.md", {});
-  // The model commits its own coverage verdict as the envelope's head rather than
-  // receiving one (#1260), so both blocks render on every grounded call.
-  const coverageHeadBlock = renderPromptTemplate("chat/answer-coverage-head.md", {});
-  const coverageGuidance = renderPromptTemplate("chat/answer-coverage-response-guidance.md", {});
-  const withEnvelope = joinBlocks(
-    joinBlocks(joinBlocks(grounded, coverageHeadBlock), coverageGuidance),
-    envelopeBlock,
-  );
   // A parked routine's lead-back shapes the answer's last sentence, so it closes the prompt.
   const withLeadBack = (prompt: string): string =>
     appendRoutineLeadBack(prompt, input.steering ?? [], input.pendingRoutineStep, {
       noSupportHandsOff: input.noSupportHandsOff,
     });
   if (!suggestionsExpected) {
-    return resultWithReusablePrefix(base, withLeadBack(withEnvelope), {
+    return resultWithReusablePrefix(standing, withLeadBack(withTurnBlocks), {
       conversationContextPrompt: input.conversationSummary?.trim() || alternatives
         ? renderConversationContextPrompt(input)
         : "",
@@ -120,7 +122,7 @@ export const composeGroundedAnswerSystemPrompt = (
     steering_block: suggestionSteering ? `${suggestionSteering}\n\n` : "",
   });
 
-  return resultWithReusablePrefix(base, withLeadBack(joinBlocks(withEnvelope, suggestionBlock)), {
+  return resultWithReusablePrefix(standing, withLeadBack(joinBlocks(withTurnBlocks, suggestionBlock)), {
     conversationContextPrompt: renderConversationContextPrompt(input),
     suggestionsExpected: true,
   });

@@ -126,8 +126,9 @@ const plannerFactory = (input: {
 } => {
   const prompts: string[] = [];
   const workspaceContexts: LlmCapabilityResolveInput[] = [];
-  const complete = vi.fn(async (request: { prompt: string; signal?: AbortSignal }) => {
-    prompts.push(request.prompt);
+  const complete = vi.fn(async (request: { prompt: string; systemPrompt?: string; signal?: AbortSignal }) => {
+    // Everything the planner reads: standing rules (system) and the turn's request (user).
+    prompts.push(`${request.systemPrompt ?? ""}\n\n${request.prompt}`);
     if (input.neverComplete) {
       return new Promise<never>((_resolve, reject) => {
         if (request.signal?.aborted) {
@@ -1251,8 +1252,10 @@ describe("chat service fused turn planning", () => {
       completions: [
         planJson({
           route: "direct",
+          // "r1": the planner sees candidates by position, never by real id — this
+          // turn has exactly one candidate ("contact.request", registered below).
           routineRankings: [{
-            routineId: "contact.request",
+            routineId: "r1",
             confidence: 0.95,
             variables: { company: "Acme", preferredDay: "tomorrow" },
           }],

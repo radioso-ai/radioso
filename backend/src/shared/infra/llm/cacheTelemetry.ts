@@ -9,7 +9,8 @@ const providers = new Set(["openai", "openai-compatible", "gemini", "claude"]);
 const capabilities = new Set<ProviderCacheCapability>(["unsupported", "implicit", "explicit_checkpoint"]);
 const surfaces = new Set(["assistant", "api", "embed", "mcp", "operator", "worker"]);
 const operations = new Set([
-  "answer", "direct_answer", "turn_interpretation", "response_language_detection", "query_rewrite", "rerank",
+  "answer", "direct_answer", "turn_planning", "turn_interpretation", "response_language_detection", "query_rewrite",
+  "rerank", "agent_step",
 ]);
 
 const bounded = (value: string, allowed: Set<string>): string => allowed.has(value) ? value : "other";

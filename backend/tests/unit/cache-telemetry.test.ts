@@ -26,6 +26,22 @@ describe("cache inference telemetry", () => {
     expect(rendered).not.toContain("private-model-token");
   });
 
+  it.each(["turn_planning", "agent_step"])("keeps the %s operation as its own bounded label", (operation) => {
+    const metrics = new MetricsRegistry();
+    recordCacheInferenceTelemetry(metrics, {
+      metadata: { capability: "chat", provider: "openai", model: "gpt", cacheCapability: "implicit" },
+      surface: "assistant",
+      operation,
+      accounting: { state: "reported", readInputTokens: 1024 },
+      outcome: "succeeded",
+      timingBoundary: "provider_invocation",
+    });
+
+    const rendered = metrics.renderPrometheus();
+    expect(rendered).toContain(`operation="${operation}"`);
+    expect(rendered).toContain('capability="implicit"');
+  });
+
   it("tolerates a broken metrics sink", () => {
     expect(() => recordCacheInferenceTelemetry({
       incrementCounter() { throw new Error("telemetry unavailable"); },

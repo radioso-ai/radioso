@@ -22,10 +22,14 @@ type DirectiveAdherenceAttestation = DirectiveAdherenceEntry;
 interface DirectiveAdherenceProbe {
   /**
    * Schema fragment (strict-mode `properties` + `required`) to merge into a
-   * composer's structured answer schema, or `null` when no directive rules are
-   * active so the model is never asked to invent attestations.
+   * composer's structured answer schema. Identical whether or not any directive
+   * rules are active this turn, so a composer's answer schema never changes
+   * shape based on this turn's steering — a provider that caches the response
+   * schema with the prompt would otherwise miss on every turn where the active
+   * rule set changed. {@link resolve} drops every attestation when no rule ids
+   * were rendered, so the model is never credited for inventing one.
    */
-  responseSchemaFragment(): AnswerSchemaExtension | null;
+  responseSchemaFragment(): AnswerSchemaExtension;
   /**
    * Resolves a composer's structured side-channel into directive-named entries,
    * dropping any attestation whose rule id was not actually rendered this turn.
@@ -45,6 +49,12 @@ const ADHERENCE_FIELD = "adherence";
 
 const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
 
+// The steering block renders each id as `[d1]`; a model may copy the brackets.
+const unbracketRuleId = (value: string): string => {
+  const trimmed = value.trim();
+  return trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1).trim() : trimmed;
+};
+
 interface RawAttestation {
   rule: string;
   satisfied: boolean;
@@ -57,7 +67,7 @@ const readAttestation = (entry: unknown): RawAttestation | null => {
     return null;
   }
   const record = entry as Record<string, unknown>;
-  const rule = typeof record.rule === "string" ? record.rule.trim() : "";
+  const rule = typeof record.rule === "string" ? unbracketRuleId(record.rule) : "";
   const note = typeof record.note === "string" ? normalizeWhitespace(record.note) : "";
   if (!rule || typeof record.satisfied !== "boolean" || typeof record.applicable !== "boolean" || !note) {
     return null;
@@ -73,7 +83,6 @@ const readAttestation = (entry: unknown): RawAttestation | null => {
 export const createDirectiveAdherenceProbe = (
   rules: readonly SteeringRule[] = [],
 ): DirectiveAdherenceProbe => {
-  const ruleIds = rules.flatMap((rule) => (rule.id ? [rule.id] : []));
   const directiveByRuleId = new Map(
     rules.flatMap((rule) =>
       rule.id && rule.directiveName ? [[rule.id, rule.directiveName] as const] : [],
@@ -81,10 +90,14 @@ export const createDirectiveAdherenceProbe = (
   );
 
   return {
+    // Identical on every turn, including a turn with no attestable rule ids at
+    // all: the rule count has no hard cap (unconditional directives always
+    // render), so an id enum would change whenever the active rule set does, and
+    // a turn with zero active rules would omit the field entirely, changing the
+    // schema's shape instead of its enum. Either would miss a provider's
+    // response-schema cache. `resolve` drops any id not rendered, which is every
+    // id on a turn with none.
     responseSchemaFragment() {
-      if (ruleIds.length === 0) {
-        return null;
-      }
       return {
         properties: {
           [ADHERENCE_FIELD]: {
@@ -95,7 +108,10 @@ export const createDirectiveAdherenceProbe = (
               additionalProperties: false,
               required: ["rule", "satisfied", "applicable", "note"],
               properties: {
-                rule: { type: "string", enum: [...ruleIds] },
+                rule: {
+                  type: "string",
+                  description: "A rule id shown in brackets before a steering rule, written without the brackets, such as d1.",
+                },
                 satisfied: { type: "boolean" },
                 // A conditional rule (coverage-gated) whose criteria did not match
                 // this turn's verdict attests false here, not false `satisfied`.

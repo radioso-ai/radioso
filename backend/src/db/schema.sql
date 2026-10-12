@@ -3973,6 +3973,23 @@ CREATE TABLE public.visitors (
 
 
 --
+-- Name: voice_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.voice_sessions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    vendor text NOT NULL,
+    session_key text NOT NULL,
+    conversation_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT voice_sessions_session_key_check CHECK (((length(session_key) >= 1) AND (length(session_key) <= 256))),
+    CONSTRAINT voice_sessions_vendor_check CHECK (((length(vendor) >= 1) AND (length(vendor) <= 64)))
+);
+
+
+--
 -- Name: website_crawl_jobs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6181,6 +6198,22 @@ ALTER TABLE ONLY public.vector_index_work
 
 ALTER TABLE ONLY public.visitors
     ADD CONSTRAINT visitors_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: voice_sessions voice_sessions_agent_vendor_session_key_uniq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_sessions
+    ADD CONSTRAINT voice_sessions_agent_vendor_session_key_uniq UNIQUE (agent_id, vendor, session_key);
+
+
+--
+-- Name: voice_sessions voice_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_sessions
+    ADD CONSTRAINT voice_sessions_pkey PRIMARY KEY (id);
 
 
 --
@@ -8796,6 +8829,13 @@ CREATE INDEX slack_inbound_events_received_at_idx ON public.slack_inbound_events
 --
 
 CREATE UNIQUE INDEX uq_slack_channel_bindings_install_channel ON public.slack_channel_bindings USING btree (installation_id, channel_id) NULLS NOT DISTINCT;
+
+
+--
+-- Name: voice_sessions_conversation_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX voice_sessions_conversation_id_idx ON public.voice_sessions USING btree (conversation_id);
 
 
 --
@@ -12130,6 +12170,30 @@ ALTER TABLE ONLY public.vector_index_work
 
 ALTER TABLE ONLY public.visitors
     ADD CONSTRAINT visitors_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: voice_sessions voice_sessions_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_sessions
+    ADD CONSTRAINT voice_sessions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: voice_sessions voice_sessions_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_sessions
+    ADD CONSTRAINT voice_sessions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: voice_sessions voice_sessions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_sessions
+    ADD CONSTRAINT voice_sessions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

@@ -265,6 +265,32 @@ describe("runMigrations", () => {
     )).toBe(true);
   });
 
+  it("threads a caller's logger through pending-migration verification so a lost connection is reported, not absorbed silently", async () => {
+    const logger = createLogger();
+
+    await ensureNoPendingMigrations(
+      "postgres://user:secret@localhost:5432/radioso",
+      { lockTimeoutMs: 3_000, statementTimeoutMs: 9_000 },
+      logger,
+    );
+
+    expect(databaseState.instances[0]?.options).toMatchObject({
+      applicationName: "radioso-migrations",
+      logger,
+    });
+  });
+
+  it("verifies pending migrations without a logger when the caller has none", async () => {
+    await expect(
+      ensureNoPendingMigrations("postgres://user:secret@localhost:5432/radioso"),
+    ).resolves.toBeUndefined();
+
+    expect(databaseState.instances[0]?.options).toMatchObject({
+      applicationName: "radioso-migrations",
+      logger: undefined,
+    });
+  });
+
   describe("session-level advisory lock", () => {
     it("tries the advisory lock on a dedicated client before checking migration metadata", async () => {
       await runMigrations("postgres://user:secret@localhost:5432/radioso", createLogger());

@@ -7,10 +7,14 @@ import type { AppDependencies } from "../app/server/types.js";
 import type { RuntimeHandle } from "./types.js";
 import { startRuntimeTracing, stopRuntimeTracing } from "./tracing.js";
 
-export interface StartCrawlerWorkerRuntimeOptions {
+interface StartCrawlerWorkerRuntimeOptions {
   env: Env;
   logger?: AppLogger;
-  ensureNoPendingMigrations?: (connectionString: string, options: MigrationTimeoutOptions) => Promise<void>;
+  ensureNoPendingMigrations?: (
+    connectionString: string,
+    options: MigrationTimeoutOptions,
+    logger?: AppLogger,
+  ) => Promise<void>;
   buildDependencies?: (env: Env) => AppDependencies;
   applicationModules?: ApplicationModule[];
 }
@@ -22,7 +26,7 @@ export const startCrawlerWorkerRuntime = async (
   await (options.ensureNoPendingMigrations ?? ensureNoPendingMigrations)(options.env.DATABASE_URL, {
     lockTimeoutMs: options.env.DB_MIGRATION_LOCK_TIMEOUT_MS,
     statementTimeoutMs: options.env.DB_MIGRATION_STATEMENT_TIMEOUT_MS,
-  });
+  }, logger);
   startRuntimeTracing(options.env, logger, "crawler-worker");
 
   const dependencies = options.buildDependencies

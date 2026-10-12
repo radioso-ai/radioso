@@ -14,10 +14,14 @@ interface ServerLike {
   close(callback?: (error?: Error) => void): void;
 }
 
-export interface StartCrawlerWorkerTaskRuntimeOptions {
+interface StartCrawlerWorkerTaskRuntimeOptions {
   env: Env;
   logger?: AppLogger;
-  ensureNoPendingMigrations?: (connectionString: string, options: MigrationTimeoutOptions) => Promise<void>;
+  ensureNoPendingMigrations?: (
+    connectionString: string,
+    options: MigrationTimeoutOptions,
+    logger?: AppLogger,
+  ) => Promise<void>;
   buildDependencies?: (env: Env) => AppDependencies;
   createApp?: (dependencies: AppDependencies) => Express;
   listen?: (app: Express, port: number, onListening: () => void) => ServerLike;
@@ -33,7 +37,7 @@ export const startCrawlerWorkerTaskRuntime = async (
   await (options.ensureNoPendingMigrations ?? ensureNoPendingMigrations)(options.env.DATABASE_URL, {
     lockTimeoutMs: options.env.DB_MIGRATION_LOCK_TIMEOUT_MS,
     statementTimeoutMs: options.env.DB_MIGRATION_STATEMENT_TIMEOUT_MS,
-  });
+  }, logger);
   startRuntimeTracing(options.env, logger, "crawler-worker-task-server");
 
   const dependencies = (options.buildDependencies ?? buildDependencies)(options.env);

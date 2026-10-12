@@ -290,15 +290,16 @@ describe("runtime startup", () => {
     const env = createEnv();
     const dependencies = createDependencies();
     const ensureNoPendingMigrations = vi.fn().mockResolvedValue(undefined);
+    const { logger } = createLogger();
 
     const runtime = await startWorkerRuntime({
       env,
-      logger: createLogger().logger as any,
+      logger: logger as any,
       ensureNoPendingMigrations,
       buildDependencies: () => dependencies,
     });
 
-    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env));
+    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env), logger);
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.vectorIndexReconciler?.start).toHaveBeenCalledOnce();
@@ -337,17 +338,18 @@ describe("runtime startup", () => {
       onListening();
       return { close };
     });
+    const { logger } = createLogger();
 
     const runtime = await startWorkerTaskRuntime({
       env,
-      logger: createLogger().logger as any,
+      logger: logger as any,
       ensureNoPendingMigrations,
       buildDependencies: () => dependencies,
       createApp: () => ({}) as any,
       listen,
     });
 
-    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env));
+    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env), logger);
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
     expect(dependencies.vectorIndexReconciler?.start).not.toHaveBeenCalled();
@@ -366,15 +368,16 @@ describe("runtime startup", () => {
     const env = createEnv();
     const dependencies = createDependencies();
     const ensureNoPendingMigrations = vi.fn().mockResolvedValue(undefined);
+    const { logger } = createLogger();
 
     const runtime = await startCrawlerWorkerRuntime({
       env,
-      logger: createLogger().logger as any,
+      logger: logger as any,
       ensureNoPendingMigrations,
       buildDependencies: () => dependencies,
     });
 
-    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env));
+    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env), logger);
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
@@ -397,17 +400,18 @@ describe("runtime startup", () => {
       onListening();
       return { close };
     });
+    const { logger } = createLogger();
 
     const runtime = await startCrawlerWorkerTaskRuntime({
       env,
-      logger: createLogger().logger as any,
+      logger: logger as any,
       ensureNoPendingMigrations,
       buildDependencies: () => dependencies,
       createApp: () => ({}) as any,
       listen,
     });
 
-    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env));
+    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env), logger);
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();

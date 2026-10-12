@@ -65,6 +65,7 @@ import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { VisitorGeoResolver } from "../../shared/domain/visitorGeoResolver.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import type { VoiceTurnPort } from "../../modules/voiceChannel/public.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { WebhookDestinationPublicAdapter } from "../../modules/webhooks/public.js";
@@ -312,6 +313,8 @@ export interface AppDependencies {
   agentPublicProfile: AgentPublicProfilePort;
   chatHistoryService: ChatHistoryService;
   assistantChatService: AssistantChatService;
+  /** One spoken caller turn on a voice session; vendor adapters mount over it. */
+  voiceTurns: VoiceTurnPort;
   assistantHistoryService: AssistantHistoryService;
   retrievalSearchService: RetrievalSearchService;
   retrievalAnswerService: RetrievalAnswerService;

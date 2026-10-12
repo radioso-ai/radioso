@@ -8003,6 +8003,14 @@ export interface components {
             participant: {
                 address: string;
             };
+        } | {
+            /** @enum {string} */
+            provider: "voice";
+            vendor: string;
+            sessionKey: string;
+            /** @enum {string} */
+            transport: "phone" | "web";
+            callerId?: string;
         };
         ConversationRequestContext: {
             clientIp: string | null;

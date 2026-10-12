@@ -147,12 +147,13 @@ export const diffAgainstBaseline = (
     const previous = baselineCaseStatus(entry);
     const previousRate = baselineCaseRate(entry);
     // With both sides sampled, the rate is the measurement and the status only its reduction at the
-    // pass bar, so a status flip counts only when the rate moved past the tolerance too.
+    // pass bar, so a flip to `fail` counts only when the rate moved past the tolerance too. A flip to
+    // `error` always counts: every sample errored, so the rate measured nothing.
     const rates =
       previousRate !== null && outcome.passRate !== undefined ? { from: previousRate, to: outcome.passRate } : null;
     const statusFell = isRegression(previous, outcome.status);
     const rateDropped = rates !== null && rates.to < rates.from - tolerance;
-    const wouldRegress = rateDropped || (statusFell && rates === null);
+    const wouldRegress = rateDropped || (statusFell && (rates === null || outcome.status !== "fail"));
 
     // A run that sampled less deeply than the baseline cannot support ANY regression claim, whether
     // the status moved or only the rate did. The bare smoke run is one sample, and a case that

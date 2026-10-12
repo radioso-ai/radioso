@@ -102,7 +102,7 @@ const elevenlabsBody = (overrides: Record<string, unknown> = {}) => ({
     { role: "user", content: [{ type: "text", text: "When do you open?" }] },
   ],
   tools: [{ type: "function", function: { name: "end_call", parameters: { type: "object" } } }],
-  elevenlabs_extra_body: { conversation_id: "conv_abc" },
+  elevenlabs_extra_body: { session_key: "conv_abc" },
   ...overrides,
 });
 
@@ -149,6 +149,56 @@ describe("voice completions route", () => {
       expect.objectContaining({ scope: "agent.channel.chat.grant", subjectKey: `grant:${grant().id}` }),
       expect.objectContaining({ scope: "agent.channel.chat.workspace", subjectKey: `workspace:${workspaceId}:global` }),
     ]);
+  });
+
+  it("answers the request ElevenLabs sends, turning only its newest user message into the utterance", async () => {
+    const dependencies = createDependencies();
+
+    await request(createApp(dependencies))
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send({
+        model: "radioso",
+        stream: true,
+        stream_options: { include_usage: true },
+        max_tokens: 8192,
+        temperature: 0,
+        tools: [],
+        messages: [
+          { role: "system", content: "ElevenLabs task prompt" },
+          { role: "user", content: "Do you have yoga on Sundays?" },
+          { role: "assistant", content: "Thanks for asking, let me..." },
+          { role: "user", content: "And on Saturdays?" },
+        ],
+        elevenlabs_extra_body: { session_key: "6d0c3f0e-9c55-4c1b-8d7e-1f7f5a2b9e40" },
+      })
+      .expect(200);
+
+    expect(dependencies.voiceTurns.runTurn).toHaveBeenCalledWith({
+      session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey: "6d0c3f0e-9c55-4c1b-8d7e-1f7f5a2b9e40" },
+      transport: "web",
+      utterance: "And on Saturdays?",
+    }, expect.any(AbortSignal));
+  });
+
+  it("rejects the placeholder bearer ElevenLabs sends when the agent has no secret", async () => {
+    const dependencies = createDependencies({
+      accessGrantService: {
+        resolveAgentChannelGrant: vi.fn().mockResolvedValue(null),
+        evaluate: vi.fn().mockReturnValue({ allowed: true }),
+        recordAuthFailure: vi.fn().mockResolvedValue(undefined),
+        recordAgentChannelChatSucceeded: vi.fn().mockResolvedValue(undefined),
+      } as unknown as AppDependencies["accessGrantService"],
+    });
+
+    await request(createApp(dependencies))
+      .post(completionsPath())
+      .set("Authorization", "Bearer not_provided")
+      .send(elevenlabsBody())
+      .expect(401);
+
+    expect(dependencies.accessGrantService.resolveAgentChannelGrant).toHaveBeenCalledWith("not_provided", "agent-api");
+    expect(dependencies.voiceTurns.runTurn).not.toHaveBeenCalled();
   });
 
   it("answers a non-streaming request with one chat.completion object", async () => {
@@ -261,7 +311,7 @@ describe("voice completions route", () => {
     await request(createApp(dependencies))
       .post(completionsPath())
       .set("Authorization", "Bearer voice-secret")
-      .send(elevenlabsBody({ elevenlabs_extra_body: { conversation_id: "k".repeat(300) } }))
+      .send(elevenlabsBody({ elevenlabs_extra_body: { session_key: "k".repeat(300) } }))
       .expect(400);
 
     expect(dependencies.voiceTurns.runTurn).not.toHaveBeenCalled();

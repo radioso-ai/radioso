@@ -19,7 +19,9 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   conversation's routine state, starts the chat turn with
   `sourceChannel: "voice"` and a `voice` channel context, and maps the chat
   stream to `VoiceTurnEvent`s; `speechSegmenter.ts` is the pure sentence cutter
-  (punctuation only, no words); `voiceTurnPolicy.ts` is the pure timing wrapper
+  (punctuation only, no words); `speechText.ts` removes the composer's
+  citation markers (`[1]`, `[?]`, `[[1]]`, `[[?]]`) from everything spoken, by
+  structure only; `voiceTurnPolicy.ts` is the pure timing wrapper
   (bridge and turn limit) over those events; `voiceLines.ts` picks the turn's
   bridge and fallback lines by routine state and locale (tag structure only,
   never the lines' words); `voiceTurnMetrics.ts` names the policy's series.

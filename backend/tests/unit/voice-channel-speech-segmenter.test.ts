@@ -63,4 +63,59 @@ describe("voice speech segmenter", () => {
     expect(splitCompleteSentences("")).toEqual({ sentences: [], remainder: "" });
     expect(splitCompleteSentences("Let me check")).toEqual({ sentences: [], remainder: "Let me check" });
   });
+
+  describe("assertion markers", () => {
+    it("removes the four marker forms the composer writes for citations", () => {
+      expect(splitCompleteSentences(
+        "Open at nine[[1]]. Closed Sundays[[?]]. Parking nearby[2]. Booking needed[?]. Next",
+      )).toEqual({
+        sentences: ["Open at nine. ", "Closed Sundays. ", "Parking nearby. ", "Booking needed. "],
+        remainder: "Next",
+      });
+    });
+
+    it("removes a run of markers and the whitespace before them", () => {
+      expect(splitCompleteSentences("A good point[1][3]. Another [[2]][[?]]. Next")).toEqual({
+        sentences: ["A good point. ", "Another. "],
+        remainder: "Next",
+      });
+    });
+
+    it("removes a marker inside a sentence without leaving a double space", () => {
+      expect(splitCompleteSentences("The price [2] is fixed. Next")).toEqual({
+        sentences: ["The price is fixed. "],
+        remainder: "Next",
+      });
+    });
+
+    it("speaks the live reply that leaked markers without them", () => {
+      const reply = "I can't confirm the cost from this information.[?] If you mean the monthly plan, ask me about that instead.[?]";
+
+      expect(splitCompleteSentences(reply)).toEqual({
+        sentences: ["I can't confirm the cost from this information. "],
+        remainder: "If you mean the monthly plan, ask me about that instead.",
+      });
+    });
+
+    it("removes a marker that arrives split across chunks", () => {
+      const first = splitCompleteSentences("From this information.[");
+      const second = splitCompleteSentences(`${first.remainder}?] If you mean[[1`);
+      const third = splitCompleteSentences(`${second.remainder}]] it.`);
+
+      expect(first.sentences).toEqual([]);
+      expect(second.sentences).toEqual(["From this information. "]);
+      expect(third).toEqual({ sentences: [], remainder: "If you mean it." });
+    });
+
+    it("leaves nothing to speak when a buffer was only markers", () => {
+      expect(splitCompleteSentences("[1][[?]]")).toEqual({ sentences: [], remainder: "" });
+    });
+
+    it("keeps other bracketed text", () => {
+      expect(splitCompleteSentences("Room [B] is free [today]. Next")).toEqual({
+        sentences: ["Room [B] is free [today]. "],
+        remainder: "Next",
+      });
+    });
+  });
 });

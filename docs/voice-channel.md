@@ -265,10 +265,13 @@ data: [DONE]
 
 A sentence ends at terminal punctuation followed by whitespace, or at a
 full-width terminator such as `。`. A bridge or fallback line arrives as a
-content frame like any sentence. Leaving out a bridge line and the
-`elevenlabs` dialect's flush deltas, the text of the frames joined
-together is what the caller hears: the agent's reply, character for
-character, or the fallback line after a turn limit.
+content frame like any sentence. Structural assertion markers the composer
+uses for citations are removed from speech: `[1]`, `[?]`, `[[1]]` and `[[?]]`,
+with the space before them, so "information.[?] If" is spoken as
+"information. If". Leaving out a bridge line and the `elevenlabs` dialect's
+flush deltas, the text of the frames joined together is what the caller
+hears: the agent's reply without those markers, or the fallback line after a
+turn limit.
 
 With `stream: false`, the response is one `chat.completion` object whose
 `choices[0].message.content` is the whole reply, or the fallback line after a

@@ -141,6 +141,23 @@ describe("VoiceTurnService", () => {
     expect(sessions.bind).not.toHaveBeenCalled();
   });
 
+  it("speaks a reply whose citation markers leaked without them, even split across chunks", async () => {
+    const chat = fakeChat([
+      { type: "conversation", conversationId },
+      { type: "chunk", text: "I can't confirm the cost from this information.[" },
+      { type: "chunk", text: "?] If you mean the monthly plan, ask me about that instead.[?]" },
+      done(),
+    ]);
+    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
+
+    const events = await collect(service.runTurn(input(), new AbortController().signal));
+
+    expect(events.filter((event) => event.type === "speech")).toEqual([
+      { type: "speech", text: "I can't confirm the cost from this information. ", last: false },
+      { type: "speech", text: "If you mean the monthly plan, ask me about that instead.", last: true },
+    ]);
+  });
+
   it("hands the caller's abort signal to the chat turn", async () => {
     const chat = fakeChat([{ type: "conversation", conversationId }, done()]);
     const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });

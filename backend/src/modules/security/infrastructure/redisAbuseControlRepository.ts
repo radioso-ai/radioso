@@ -393,6 +393,11 @@ export class RedisAbuseControlRepository implements AbuseControlRepositoryPort {
     if (this.client !== client) return;
     this.client = undefined;
     this.connectPromise = undefined;
-    client.destroy();
+    if (!client.isOpen) return;
+    try {
+      client.destroy();
+    } catch {
+      // A connection error can close the client between the state check and destroy().
+    }
   }
 }

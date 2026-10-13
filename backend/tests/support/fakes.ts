@@ -1664,6 +1664,7 @@ export const admittedAbuseControlDecision = (
   limit: 100,
   remaining: 99,
   resetAtMs: Date.now() + 60_000,
+  resetAfterSeconds: 60,
   ...overrides,
 });
 

@@ -62,17 +62,63 @@ describe("FallbackAbuseControlRepository", () => {
     await halfOpenProbe;
   });
 
-  it("sweeps expired Postgres fallback rows as well as Redis keys", async () => {
-    const primary = new InMemoryAbuseControlRepository();
+  it("starts the breaker interval when a delayed primary failure completes", async () => {
+    let nowMs = 0;
+    let rejectPrimary: ((reason?: unknown) => void) | undefined;
+    const primaryConsume = vi.fn<() => Promise<AbuseControlConsumption>>().mockImplementation(
+      () => new Promise<AbuseControlConsumption>((_resolve, reject) => {
+        rejectPrimary = reject;
+      }),
+    );
+    const primary: AbuseControlRepositoryPort = {
+      find: async () => null,
+      save: async () => { throw new Error("not used"); },
+      consume: primaryConsume,
+      consumeBatch: async () => ({ entries: [], rejected: null }),
+      deleteExpired: async () => {},
+    };
+    const repository = new FallbackAbuseControlRepository(primary, new InMemoryAbuseControlRepository(), {
+      logger: { warn: vi.fn() },
+    }, {
+      clock: () => nowMs,
+      failureThreshold: 1,
+      initialOpenMs: 500,
+      jitter: () => 0.5,
+    });
+
+    const delayedRequest = repository.consume(input);
+    await Promise.resolve();
+    nowMs = 1_000;
+    rejectPrimary?.(new Error("Redis unavailable"));
+    await delayedRequest;
+
+    await repository.consume(input);
+    expect(primaryConsume).toHaveBeenCalledOnce();
+  });
+
+  it("sweeps fallback rows once after a fallback write and never sweeps Redis keys", async () => {
+    let nowMs = input.now.getTime();
+    const primary: AbuseControlRepositoryPort = {
+      find: async () => null,
+      save: async () => { throw new Error("Redis unavailable"); },
+      consume: async () => { throw new Error("Redis unavailable"); },
+      consumeBatch: async () => { throw new Error("Redis unavailable"); },
+      deleteExpired: async () => { throw new Error("Redis expiry is TTL-driven"); },
+    };
     const fallback = new InMemoryAbuseControlRepository();
-    const primaryDeleteExpired = vi.spyOn(primary, "deleteExpired");
     const fallbackDeleteExpired = vi.spyOn(fallback, "deleteExpired");
-    const repository = new FallbackAbuseControlRepository(primary, fallback, { logger: { warn: vi.fn() } });
-    const now = new Date();
+    const repository = new FallbackAbuseControlRepository(primary, fallback, { logger: { warn: vi.fn() } }, {
+      clock: () => nowMs,
+    });
 
-    await repository.deleteExpired(now);
+    await repository.consume(input);
+    await repository.deleteExpired(input.now);
+    await repository.deleteExpired(input.now);
 
-    expect(primaryDeleteExpired).toHaveBeenCalledWith(now);
-    expect(fallbackDeleteExpired).toHaveBeenCalledWith(now);
+    expect(fallbackDeleteExpired).toHaveBeenCalledOnce();
+    nowMs += 5 * 60_000;
+    await repository.consume(input);
+    await repository.deleteExpired(input.now);
+    expect(fallbackDeleteExpired).toHaveBeenCalledTimes(2);
   });
 });

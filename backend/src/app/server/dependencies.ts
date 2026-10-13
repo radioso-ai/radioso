@@ -145,6 +145,7 @@ import { PostgresSlackInboundEventRetention } from "../../modules/slack/public.j
 import { createAccountAdministratorDirectory } from "../composition/accountAdministratorDirectory.js";
 import { createNoticeMailAdapter } from "../composition/noticeMail.js";
 import { PeriodicTaskRunner, createPeriodicTasksLifecycle } from "../composition/periodicTaskRunner.js";
+import { createAbuseControlComposition } from "../composition/abuseControl.js";
 
 interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -180,6 +181,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   }
   const agentSkillSettings = createDefaultAgentSkillSettingsRegistry();
   const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings });
+  const abuseControlComposition = createAbuseControlComposition({
+    env,
+    logger,
+    metricsRegistry: infrastructure.metricsRegistry,
+    postgresRepository: repositories.abuseControlRepository,
+  });
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
     env,
@@ -295,6 +302,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     messages: repositories.messageRepository,
   });
   const chat = buildChatServices({
+    abuseControlService: abuseControlComposition.service,
     accountAccessService: access.accountAccessService,
     agentRetrievalScope,
     agentService,
@@ -1273,6 +1281,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
     closeApprovalResumeEffectJournal: chat.closeApprovalResumeEffectJournal,
+    closeAbuseControlRepository: () => abuseControlComposition.shutdown(),
     conversationOwnershipService,
     conversationIngestService,
     conversationOperatorDirectory,

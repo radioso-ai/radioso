@@ -18,7 +18,7 @@ interface WorkspaceSetupState {
   hasCredential: boolean
 }
 
-type WorkspaceSummaryResponse = WorkspaceSummaryResponseApi & { setup?: WorkspaceSetupState }
+type WorkspaceSummaryResponse = Omit<WorkspaceSummaryResponseApi, 'setup'> & { setup?: WorkspaceSetupState }
 
 export const workspaceApi = {
   async list(): Promise<Workspace[]> {

@@ -85,7 +85,7 @@ test("first-run dismissal follows server state into a fresh browser context", as
     conversationCount: 0, hasDocuments: false, hasPendingDocuments: false, hasReadyDocuments: false,
     hasCompletedChat: false, sampleDocumentsImported: false, websiteCrawlerEnabled: true,
     setup: {
-      purpose: null, dismissed: false, notifyReceiptConfirmed: false, skippedSteps: [], shouldShowFirstRun: true,
+      purpose: null, dismissed: false, skippedSteps: [], shouldShowFirstRun: true,
       hasDirectivesOrRoutines: false, hasNotifyDestination: false, hasNotifyDeliveryConfirmed: false, hasCredential: false,
     },
   };

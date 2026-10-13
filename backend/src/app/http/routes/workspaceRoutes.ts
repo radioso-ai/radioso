@@ -81,6 +81,7 @@ export const createWorkspaceRoutes = (dependencies: WorkspaceRouteDependencies):
     }
   });
 
+  // This existing owner/admin-only permission is the narrowest settings-adjacent authority available.
   router.patch("/setup-state", workspaceSession, requireWorkspacePermission(dependencies, "workspace.credentials.manage"), validateBody(updateWorkspaceSetupStateSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };

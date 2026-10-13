@@ -51,7 +51,7 @@ export function DashboardShell({
   const { activeWorkspaceId, workspaces, isLoading: isWorkspaceLoading, switchWorkspace } = useWorkspace()
   const [copilotAvailability, setCopilotAvailability] = useState<CopilotAvailability | null>(null)
   const [copilotPermissionDenied, setCopilotPermissionDenied] = useState(false)
-  const onboarding = useWorkspaceOnboarding(activeWorkspaceId, workspaces.length)
+  const onboarding = useWorkspaceOnboarding(activeWorkspaceId)
   const requestedWorkspaceId = routeState.workspaceId
   const requestedWorkspaceExists = requestedWorkspaceId
     ? workspaces.some((workspace) => workspace.id === requestedWorkspaceId)

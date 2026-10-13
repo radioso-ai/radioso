@@ -4,6 +4,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import { apiPrincipalRoutePolicy } from "../../src/app/http/apiPrincipalRoutePolicy.js";
+import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
 import { operationPermissionRequirements } from "../../src/app/http/openapi/operationPermissionRequirements.js";
 import { CustomerReplyDeliveryDispatcher } from "../../src/modules/customerReplyDelivery/public.js";
 import { EmailHeldReplyChannelScope, emailMailboxPolicyRef } from "../../src/modules/emailChannel/heldReplyChannelScope.js";
@@ -93,6 +94,7 @@ const recordReview = (h: Harness, held: HeldReplyRecord, metadata: Record<string
 const pendingWire = (record: HeldReplyRecord) => ({
   id: record.id,
   conversationId: record.conversationId,
+  channel: record.sourceChannel ?? null,
   agentId: record.agentId,
   state: "pending",
   holdReason: "draft_mode",
@@ -521,6 +523,19 @@ describe("held replies contract", () => {
       }
       expect(operationPermissionRequirements.listHeldReplies).toEqual(["workspace.conversation.takeover"]);
       expect(operationPermissionRequirements.getCurrentHeldReply).toEqual(["workspace.conversation.takeover"]);
+    });
+
+    it("documents the held reply's conversation channel", () => {
+      const schema = createOpenApiDocument().components?.schemas?.HeldReply;
+
+      expect(schema).toMatchObject({
+        properties: expect.objectContaining({
+          channel: expect.objectContaining({
+            description: "The conversation's source channel; null when its conversation record is unavailable.",
+          }),
+        }),
+        required: expect.arrayContaining(["channel"]),
+      });
     });
 
     it("refuses a machine credential on every route", async () => {

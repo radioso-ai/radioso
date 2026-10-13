@@ -158,11 +158,7 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
   async findById(heldReplyId: string): Promise<HeldReplyRecord | null> {
     const row = await this.db
       .selectFrom("held_replies")
-      .leftJoin("conversations as c", (join) =>
-        join.onRef("c.id", "=", "held_replies.conversation_id").onRef("c.workspace_id", "=", "held_replies.workspace_id"),
-      )
-      .selectAll("held_replies")
-      .select("c.source_channel as source_channel")
+      .selectAll()
       .where("id", "=", heldReplyId)
       .executeTakeFirst();
     return row ? mapHeldReply(row) : null;

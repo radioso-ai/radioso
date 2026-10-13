@@ -80,14 +80,15 @@ When registration is available:
 
 ```bash
 curl -sS \
+  -c cookies.txt \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"verysecurepassword"}' \
   https://api.radioso.ai/api/v1/auth/register
 ```
 
-Registration returns bootstrap data such as `workspaceId` and a `requiresEmailVerification` boolean. Production returns `true`, sends a verification email, and waits for verification before login. The development stack returns `false` and establishes the session in the registration response.
+Registration returns bootstrap data such as `workspaceId` and a `requiresEmailVerification` boolean. A development stack with `AUTH_AUTO_VERIFY_EMAIL=true` returns `false` and saves the registration session in `cookies.txt`.
 
-If the user already exists, log in and save the session cookie:
+In production, `requiresEmailVerification` is `true`. Open the verification link from the email, then log in and save the session cookie before creating a credential:
 
 ```bash
 curl -sS -c cookies.txt \
@@ -95,6 +96,8 @@ curl -sS -c cookies.txt \
   -d '{"email":"you@example.com","password":"verysecurepassword"}' \
   https://api.radioso.ai/api/v1/auth/login
 ```
+
+An existing user follows the same login step.
 
 ## Issue a personal API credential
 

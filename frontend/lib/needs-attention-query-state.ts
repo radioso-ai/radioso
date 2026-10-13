@@ -34,6 +34,20 @@ const NEEDS_ATTENTION_FEEDBACK_PAGE_SIZE = 25
  */
 const ATTENTION_SOURCE_MAX_PAGES = 20
 
+type NeedsAttentionServerFilters = {
+  type?: 'all' | 'approval' | 'handoff' | 'negative_feedback' | 'delivery_failed'
+  agentId?: string
+  channel?: string
+}
+
+const sourceFiltersForQuality = (filters: NeedsAttentionServerFilters) => ({
+  agentId: filters.agentId,
+  channel: filters.channel,
+})
+
+const includesQuality = (type: NeedsAttentionServerFilters['type']) =>
+  type === undefined || type === 'all' || type === 'negative_feedback'
+
 type CursorPage<T> = { items: T[]; nextCursor: string | null }
 type HumanOwnedCursorPage = CursorPage<ChatConversationSummary> & { total: number }
 
@@ -258,22 +272,26 @@ const retryReplyReview = (attempt: number, error: unknown) =>
   && isDashboardQueryRetryable(error)
   && !(typeof error === 'object' && error !== null && 'status' in error && error.status === 404)
 
-export const useAttentionRailQueries = (workspaceId: string) => {
+export const useAttentionRailQueries = (workspaceId: string, filters: NeedsAttentionServerFilters = {}) => {
   const policy = useDashboardQueryPolicy()
-  const decisionsKey = dashboardQueryKeys.attention.decisions(workspaceId)
+  const sourceFilters = { agentId: filters.agentId, channel: filters.channel }
+  const decisionsKey = dashboardQueryKeys.attention.decisions(workspaceId, sourceFilters)
   const humanOwnedKey = dashboardQueryKeys.attention.humanOwned(workspaceId, {
     pageSize: NEEDS_ATTENTION_PAGE_SIZE,
+    ...sourceFilters,
   })
   const deliveryFailuresKey = dashboardQueryKeys.attention.deliveryFailures(workspaceId, {
     limit: NEEDS_ATTENTION_PAGE_SIZE,
+    ...sourceFilters,
   })
   const heldRepliesKey = dashboardQueryKeys.attention.heldReplies(workspaceId, {
     limit: NEEDS_ATTENTION_PAGE_SIZE,
+    ...sourceFilters,
   })
   const decisions = useQuery({
     queryKey: decisionsKey,
-    queryFn: ({ signal }) => hitlApi.listPendingDecisions(signal),
-    enabled: Boolean(workspaceId) && policy.queriesEnabled,
+    queryFn: ({ signal }) => hitlApi.listPendingDecisions(signal, sourceFilters),
+    enabled: Boolean(workspaceId) && policy.queriesEnabled && (filters.type === undefined || filters.type === 'all' || filters.type === 'approval'),
     refetchInterval: policy.intervalFor(decisionsKey),
   })
   const humanOwned = useInfiniteQuery({
@@ -284,6 +302,7 @@ export const useAttentionRailQueries = (workspaceId: string) => {
         const response = await chatApi.listChatHistory({
           limit: NEEDS_ATTENTION_PAGE_SIZE,
           ownership: 'human_owned',
+          ...sourceFilters,
           ...cursorQuery(cursor),
         }, signal)
         total = response.total
@@ -301,7 +320,7 @@ export const useAttentionRailQueries = (workspaceId: string) => {
         total: chunks.pages[0]?.total ?? 0,
       }
     },
-    enabled: Boolean(workspaceId) && policy.queriesEnabled,
+    enabled: Boolean(workspaceId) && policy.queriesEnabled && (filters.type === undefined || filters.type === 'all' || filters.type === 'handoff'),
     refetchInterval: policy.intervalFor(humanOwnedKey),
   })
   // Both reply-review sources read every page: they list newest first, and the queue serves the
@@ -310,24 +329,24 @@ export const useAttentionRailQueries = (workspaceId: string) => {
   const deliveryFailures = useInfiniteQuery({
     queryKey: deliveryFailuresKey,
     queryFn: ({ pageParam, signal }) => readAllCursorPages((cursor) =>
-      replyReviewApi.listDeliveryFailures({ state: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE, ...cursorQuery(cursor) }, signal),
+      replyReviewApi.listDeliveryFailures({ state: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE, ...sourceFilters, ...cursorQuery(cursor) }, signal),
     ATTENTION_SOURCE_MAX_PAGES, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: nextChunkCursor,
     select: flattenAttentionChunks,
-    enabled: Boolean(workspaceId) && policy.queriesEnabled,
+    enabled: Boolean(workspaceId) && policy.queriesEnabled && (filters.type === undefined || filters.type === 'all' || filters.type === 'delivery_failed'),
     refetchInterval: policy.intervalFor(deliveryFailuresKey),
     retry: retryReplyReview,
   })
   const heldReplies = useInfiniteQuery({
     queryKey: heldRepliesKey,
     queryFn: ({ pageParam, signal }) => readAllCursorPages((cursor) =>
-      replyReviewApi.listHeldReplies({ attention: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE, ...cursorQuery(cursor) }, signal),
+      replyReviewApi.listHeldReplies({ attention: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE, ...sourceFilters, ...cursorQuery(cursor) }, signal),
     ATTENTION_SOURCE_MAX_PAGES, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: nextChunkCursor,
     select: flattenAttentionChunks,
-    enabled: Boolean(workspaceId) && policy.queriesEnabled,
+    enabled: Boolean(workspaceId) && policy.queriesEnabled && (filters.type === undefined || filters.type === 'all' || filters.type === 'approval'),
     refetchInterval: policy.intervalFor(heldRepliesKey),
     retry: retryReplyReview,
   })
@@ -426,20 +445,20 @@ export const useConversationSources = (
   })
 }
 
-export const useNeedsAttentionQueries = (workspaceId: string) => {
-  const attention = useAttentionRailQueries(workspaceId)
+export const useNeedsAttentionQueries = (workspaceId: string, filters: NeedsAttentionServerFilters = {}) => {
+  const attention = useAttentionRailQueries(workspaceId, filters)
   const { policy } = attention
   const commentedFeedback = useQualityTurnsQuery(
     workspaceId,
-    needsAttentionQualityInputs.commentedFeedback,
-    policy.queriesEnabled,
-    policy.intervalFor(dashboardQueryKeys.quality.turns(workspaceId, needsAttentionQualityInputs.commentedFeedback)),
+    { ...needsAttentionQualityInputs.commentedFeedback, ...sourceFiltersForQuality(filters) },
+    policy.queriesEnabled && includesQuality(filters.type),
+    policy.intervalFor(dashboardQueryKeys.quality.turns(workspaceId, { ...needsAttentionQualityInputs.commentedFeedback, ...sourceFiltersForQuality(filters) })),
   )
   const reviewSummary = useQualityTurnsQuery(
     workspaceId,
-    needsAttentionQualityInputs.reviewSummary,
-    policy.queriesEnabled,
-    policy.intervalFor(dashboardQueryKeys.quality.turns(workspaceId, needsAttentionQualityInputs.reviewSummary)),
+    { ...needsAttentionQualityInputs.reviewSummary, ...sourceFiltersForQuality(filters) },
+    policy.queriesEnabled && includesQuality(filters.type),
+    policy.intervalFor(dashboardQueryKeys.quality.turns(workspaceId, { ...needsAttentionQualityInputs.reviewSummary, ...sourceFiltersForQuality(filters) })),
   )
 
   return { ...attention, commentedFeedback, reviewSummary }

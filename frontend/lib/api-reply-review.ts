@@ -58,6 +58,7 @@ type HeldReplyPage = { items: HeldReply[]; nextCursor: string | null }
 type HeldReplyQuery = {
   attention?: 'open' | 'all'
   agentId?: string
+  channel?: string
   cursor?: string | null
   limit?: number
 }
@@ -90,6 +91,7 @@ type DeliveryFailurePage = { items: DeliveryFailure[]; nextCursor: string | null
 type DeliveryFailureQuery = {
   state?: 'open' | 'all'
   agentId?: string
+  channel?: string
   cursor?: string | null
   limit?: number
 }
@@ -115,6 +117,7 @@ export const replyReviewApi = {
       withQuery('/held-replies', {
         attention: query.attention,
         agentId: query.agentId,
+        channel: query.channel,
         cursor: query.cursor,
         limit: query.limit,
       }),
@@ -147,6 +150,7 @@ export const replyReviewApi = {
       withQuery('/delivery-failures', {
         state: query.state,
         agentId: query.agentId,
+        channel: query.channel,
         cursor: query.cursor,
         limit: query.limit,
       }),

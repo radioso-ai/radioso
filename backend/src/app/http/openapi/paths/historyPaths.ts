@@ -81,6 +81,8 @@ export const registerHistoryPaths = (
         ownership: z.enum(["human_owned"]).optional().openapi({
           description: "Restrict results to conversations currently owned by a human operator.",
         }),
+        agentId: z.string().uuid().optional(),
+        channel: z.string().min(1).max(100).optional(),
       }),
     },
     responses: {

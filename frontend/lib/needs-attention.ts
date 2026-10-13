@@ -200,6 +200,7 @@ export const buildInboxModel = (input: {
     timestamp: decision.createdAt,
     escalatedAt: decision.createdAt,
     agentId: decision.agentId,
+    channel: decision.channel,
     handle: decision.handle,
     // PendingApprovalDecision carries no conversation-level last-message time.
     lastMessageAt: null,

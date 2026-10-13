@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-08
+last_updated: 2026-10-13
 ---
 
 # Code Map
@@ -1095,7 +1095,6 @@ Focused checks:
 - `cd backend && pnpm test -- tests/unit/retrieval-pipeline-stages.test.ts tests/unit/retrieval-shape-resolver.test.ts tests/unit/hybrid-retrieval-search.test.ts`
 - `cd backend && pnpm test -- tests/unit/sense-grouping-service.test.ts tests/unit/retrieval-sense-clarification.test.ts`
 - `cd backend && pnpm test -- tests/unit/agentic-retrieval-runner.test.ts tests/unit/agentic-retrieval-pipeline-service.test.ts tests/unit/agentic-tools.test.ts tests/unit/agentic-activity-trace-builder.test.ts tests/unit/query-rewrite-port.test.ts tests/unit/retrieval-context-stage-override.test.ts`
-- `cd backend && pnpm run lint:legacy-chunk-vectors` keeps runtime vector reads on canonical storage.
 - `cd backend && pnpm run test:integration`
 
 Related docs and specs:

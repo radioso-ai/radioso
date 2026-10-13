@@ -1510,13 +1510,11 @@ CREATE TABLE public.chunks (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 )
@@ -1535,13 +1533,11 @@ CREATE TABLE public.chunks_p0 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1559,13 +1555,11 @@ CREATE TABLE public.chunks_p1 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1583,13 +1577,11 @@ CREATE TABLE public.chunks_p10 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1607,13 +1599,11 @@ CREATE TABLE public.chunks_p11 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1631,13 +1621,11 @@ CREATE TABLE public.chunks_p12 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1655,13 +1643,11 @@ CREATE TABLE public.chunks_p13 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1679,13 +1665,11 @@ CREATE TABLE public.chunks_p14 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1703,13 +1687,11 @@ CREATE TABLE public.chunks_p15 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1727,13 +1709,11 @@ CREATE TABLE public.chunks_p2 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1751,13 +1731,11 @@ CREATE TABLE public.chunks_p3 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1775,13 +1753,11 @@ CREATE TABLE public.chunks_p4 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1799,13 +1775,11 @@ CREATE TABLE public.chunks_p5 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1823,13 +1797,11 @@ CREATE TABLE public.chunks_p6 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1847,13 +1819,11 @@ CREATE TABLE public.chunks_p7 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1871,13 +1841,11 @@ CREATE TABLE public.chunks_p8 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -1895,13 +1863,11 @@ CREATE TABLE public.chunks_p9 (
     content text NOT NULL,
     token_count integer,
     search_text text,
-    embedding public.vector(1536),
     start_offset integer,
     end_offset integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector,
     date_from date,
     date_to date
 );
@@ -6615,13 +6581,6 @@ CREATE INDEX chunk_embeddings_p9_workspace_id_embedding_space_id_idx ON public.c
 
 
 --
--- Name: chunks_embedding_hnsw_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_embedding_hnsw_idx ON ONLY public.chunks USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
-
-
---
 -- Name: idx_chunks_document_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6633,13 +6592,6 @@ CREATE INDEX idx_chunks_document_id ON ONLY public.chunks USING btree (document_
 --
 
 CREATE INDEX chunks_p0_document_id_idx ON public.chunks_p0 USING btree (document_id);
-
-
---
--- Name: chunks_p0_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p0_embedding_idx ON public.chunks_p0 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
 
 
 --
@@ -6692,13 +6644,6 @@ CREATE INDEX chunks_p10_document_id_idx ON public.chunks_p10 USING btree (docume
 
 
 --
--- Name: chunks_p10_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p10_embedding_idx ON public.chunks_p10 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
-
-
---
 -- Name: chunks_p10_metadata_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6724,13 +6669,6 @@ CREATE INDEX chunks_p10_workspace_id_idx ON public.chunks_p10 USING btree (works
 --
 
 CREATE INDEX chunks_p11_document_id_idx ON public.chunks_p11 USING btree (document_id);
-
-
---
--- Name: chunks_p11_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p11_embedding_idx ON public.chunks_p11 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
 
 
 --
@@ -6762,13 +6700,6 @@ CREATE INDEX chunks_p12_document_id_idx ON public.chunks_p12 USING btree (docume
 
 
 --
--- Name: chunks_p12_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p12_embedding_idx ON public.chunks_p12 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
-
-
---
 -- Name: chunks_p12_metadata_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6794,13 +6725,6 @@ CREATE INDEX chunks_p12_workspace_id_idx ON public.chunks_p12 USING btree (works
 --
 
 CREATE INDEX chunks_p13_document_id_idx ON public.chunks_p13 USING btree (document_id);
-
-
---
--- Name: chunks_p13_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p13_embedding_idx ON public.chunks_p13 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
 
 
 --
@@ -6832,13 +6756,6 @@ CREATE INDEX chunks_p14_document_id_idx ON public.chunks_p14 USING btree (docume
 
 
 --
--- Name: chunks_p14_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p14_embedding_idx ON public.chunks_p14 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
-
-
---
 -- Name: chunks_p14_metadata_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6864,13 +6781,6 @@ CREATE INDEX chunks_p14_workspace_id_idx ON public.chunks_p14 USING btree (works
 --
 
 CREATE INDEX chunks_p15_document_id_idx ON public.chunks_p15 USING btree (document_id);
-
-
---
--- Name: chunks_p15_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p15_embedding_idx ON public.chunks_p15 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
 
 
 --
@@ -6902,13 +6812,6 @@ CREATE INDEX chunks_p1_document_id_idx ON public.chunks_p1 USING btree (document
 
 
 --
--- Name: chunks_p1_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p1_embedding_idx ON public.chunks_p1 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
-
-
---
 -- Name: chunks_p1_metadata_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6934,13 +6837,6 @@ CREATE INDEX chunks_p1_workspace_id_idx ON public.chunks_p1 USING btree (workspa
 --
 
 CREATE INDEX chunks_p2_document_id_idx ON public.chunks_p2 USING btree (document_id);
-
-
---
--- Name: chunks_p2_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p2_embedding_idx ON public.chunks_p2 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
 
 
 --
@@ -6972,13 +6868,6 @@ CREATE INDEX chunks_p3_document_id_idx ON public.chunks_p3 USING btree (document
 
 
 --
--- Name: chunks_p3_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p3_embedding_idx ON public.chunks_p3 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
-
-
---
 -- Name: chunks_p3_metadata_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7004,13 +6893,6 @@ CREATE INDEX chunks_p3_workspace_id_idx ON public.chunks_p3 USING btree (workspa
 --
 
 CREATE INDEX chunks_p4_document_id_idx ON public.chunks_p4 USING btree (document_id);
-
-
---
--- Name: chunks_p4_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p4_embedding_idx ON public.chunks_p4 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
 
 
 --
@@ -7042,13 +6924,6 @@ CREATE INDEX chunks_p5_document_id_idx ON public.chunks_p5 USING btree (document
 
 
 --
--- Name: chunks_p5_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p5_embedding_idx ON public.chunks_p5 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
-
-
---
 -- Name: chunks_p5_metadata_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7074,13 +6949,6 @@ CREATE INDEX chunks_p5_workspace_id_idx ON public.chunks_p5 USING btree (workspa
 --
 
 CREATE INDEX chunks_p6_document_id_idx ON public.chunks_p6 USING btree (document_id);
-
-
---
--- Name: chunks_p6_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p6_embedding_idx ON public.chunks_p6 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
 
 
 --
@@ -7112,13 +6980,6 @@ CREATE INDEX chunks_p7_document_id_idx ON public.chunks_p7 USING btree (document
 
 
 --
--- Name: chunks_p7_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p7_embedding_idx ON public.chunks_p7 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
-
-
---
 -- Name: chunks_p7_metadata_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7147,13 +7008,6 @@ CREATE INDEX chunks_p8_document_id_idx ON public.chunks_p8 USING btree (document
 
 
 --
--- Name: chunks_p8_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p8_embedding_idx ON public.chunks_p8 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
-
-
---
 -- Name: chunks_p8_metadata_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7179,13 +7033,6 @@ CREATE INDEX chunks_p8_workspace_id_idx ON public.chunks_p8 USING btree (workspa
 --
 
 CREATE INDEX chunks_p9_document_id_idx ON public.chunks_p9 USING btree (document_id);
-
-
---
--- Name: chunks_p9_embedding_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p9_embedding_idx ON public.chunks_p9 USING hnsw (embedding public.vector_cosine_ops) WHERE (embedding IS NOT NULL);
 
 
 --
@@ -9142,13 +8989,6 @@ ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p0_docu
 
 
 --
--- Name: chunks_p0_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p0_embedding_idx;
-
-
---
 -- Name: chunks_p0_metadata_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -9188,13 +9028,6 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p0_wor
 --
 
 ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p10_document_id_idx;
-
-
---
--- Name: chunks_p10_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p10_embedding_idx;
 
 
 --
@@ -9240,13 +9073,6 @@ ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p11_doc
 
 
 --
--- Name: chunks_p11_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p11_embedding_idx;
-
-
---
 -- Name: chunks_p11_metadata_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -9286,13 +9112,6 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p11_wo
 --
 
 ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p12_document_id_idx;
-
-
---
--- Name: chunks_p12_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p12_embedding_idx;
 
 
 --
@@ -9338,13 +9157,6 @@ ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p13_doc
 
 
 --
--- Name: chunks_p13_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p13_embedding_idx;
-
-
---
 -- Name: chunks_p13_metadata_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -9384,13 +9196,6 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p13_wo
 --
 
 ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p14_document_id_idx;
-
-
---
--- Name: chunks_p14_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p14_embedding_idx;
 
 
 --
@@ -9436,13 +9241,6 @@ ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p15_doc
 
 
 --
--- Name: chunks_p15_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p15_embedding_idx;
-
-
---
 -- Name: chunks_p15_metadata_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -9482,13 +9280,6 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p15_wo
 --
 
 ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p1_document_id_idx;
-
-
---
--- Name: chunks_p1_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p1_embedding_idx;
 
 
 --
@@ -9534,13 +9325,6 @@ ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p2_docu
 
 
 --
--- Name: chunks_p2_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p2_embedding_idx;
-
-
---
 -- Name: chunks_p2_metadata_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -9580,13 +9364,6 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p2_wor
 --
 
 ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p3_document_id_idx;
-
-
---
--- Name: chunks_p3_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p3_embedding_idx;
 
 
 --
@@ -9632,13 +9409,6 @@ ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p4_docu
 
 
 --
--- Name: chunks_p4_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p4_embedding_idx;
-
-
---
 -- Name: chunks_p4_metadata_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -9678,13 +9448,6 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p4_wor
 --
 
 ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p5_document_id_idx;
-
-
---
--- Name: chunks_p5_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p5_embedding_idx;
 
 
 --
@@ -9730,13 +9493,6 @@ ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p6_docu
 
 
 --
--- Name: chunks_p6_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p6_embedding_idx;
-
-
---
 -- Name: chunks_p6_metadata_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -9776,13 +9532,6 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p6_wor
 --
 
 ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p7_document_id_idx;
-
-
---
--- Name: chunks_p7_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p7_embedding_idx;
 
 
 --
@@ -9828,13 +9577,6 @@ ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p8_docu
 
 
 --
--- Name: chunks_p8_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p8_embedding_idx;
-
-
---
 -- Name: chunks_p8_metadata_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -9874,13 +9616,6 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p8_wor
 --
 
 ALTER INDEX public.idx_chunks_document_id ATTACH PARTITION public.chunks_p9_document_id_idx;
-
-
---
--- Name: chunks_p9_embedding_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.chunks_embedding_hnsw_idx ATTACH PARTITION public.chunks_p9_embedding_idx;
 
 
 --

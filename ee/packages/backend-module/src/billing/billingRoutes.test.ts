@@ -735,4 +735,66 @@ describe("POST /api/v1/ee/billing/webhook", () => {
 
     expect(response.body).toEqual({ received: true, outcome: "ignored" });
   });
+
+  it("returns 503 for an unknown Radioso plan so Stripe retries after rollout", async () => {
+    const event: StripeWebhookEvent = {
+      id: "evt_future_plan",
+      type: "checkout.session.completed",
+      session: {
+        id: "cs_future_plan",
+        mode: "subscription",
+        customerId: "cus_1",
+        clientReferenceId: sessionAccountId,
+        subscriptionId: "sub_future_plan",
+        priceId: "price_future_plan",
+        priceLookupKey: "future_plan_month",
+        productId: "prod_future_plan",
+        interval: "month",
+        currentPeriodEnd: null,
+      },
+    };
+    const gateway = createFakeGateway({
+      constructWebhookEvent: vi.fn(async () => event),
+      getProduct: vi.fn(async (id: string) => ({ id, metadata: { plan: "future_plan" } })),
+    });
+
+    const response = await request(createApp(configuredConfig, { gateway }))
+      .post("/api/v1/ee/billing/webhook")
+      .set("stripe-signature", "t=1,v1=good")
+      .send({ id: event.id })
+      .expect(503);
+
+    expect(response.body.error.code).toBe("billing_price_unmapped");
+  });
+
+  it("acknowledges an unmapped subscription product without Radioso plan metadata", async () => {
+    const event: StripeWebhookEvent = {
+      id: "evt_foreign_product",
+      type: "checkout.session.completed",
+      session: {
+        id: "cs_foreign_product",
+        mode: "subscription",
+        customerId: "cus_1",
+        clientReferenceId: sessionAccountId,
+        subscriptionId: "sub_foreign_product",
+        priceId: "price_foreign_product",
+        priceLookupKey: null,
+        productId: "prod_foreign_product",
+        interval: "month",
+        currentPeriodEnd: null,
+      },
+    };
+    const gateway = createFakeGateway({
+      constructWebhookEvent: vi.fn(async () => event),
+      getProduct: vi.fn(async (id: string) => ({ id, metadata: {} })),
+    });
+
+    const response = await request(createApp(configuredConfig, { gateway }))
+      .post("/api/v1/ee/billing/webhook")
+      .set("stripe-signature", "t=1,v1=good")
+      .send({ id: event.id })
+      .expect(200);
+
+    expect(response.body).toEqual({ received: true, outcome: "unmapped_price" });
+  });
 });

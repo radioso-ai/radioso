@@ -979,25 +979,49 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       const failed = await trx
         .selectFrom("document_processing_jobs as job")
         .innerJoin("documents as document", "document.id", "job.document_id")
-        .select(["job.id", "job.document_id"])
+        .select(["job.id", "job.document_id", "job.document_revision", "job.kind"])
         .where("job.workspace_id", "=", workspaceId)
         .whereRef("document.workspace_id", "=", "job.workspace_id")
         .whereRef("document.revision", "=", "job.document_revision")
         .where("job.status", "=", "failed")
         .where("job.last_error_code", "=", "provider_misconfigured")
         .orderBy("job.created_at")
+        .forUpdate()
+        .skipLocked()
         .limit(limit)
         .execute();
       if (failed.length === 0) return 0;
       const ids = failed.map((job) => job.id);
-      const documentIds = failed.map((job) => job.document_id);
-      await trx.updateTable("document_processing_jobs").set({
-        status: "queued", last_error: null, last_error_code: null, completed_at: null,
-        claimed_at: null, available_at: currentTimestamp(), updated_at: currentTimestamp(),
-      }).where("id", "in", ids).execute();
-      await trx.updateTable("documents").set({
-        status: "queued", failure_reason: null, failed_at: null, updated_at: currentTimestamp(),
-      }).where("workspace_id", "=", workspaceId).where("id", "in", documentIds).where("status", "=", "failed").execute();
+      const vectorizeDocumentIds = failed
+        .filter((job) => job.kind === "vectorize")
+        .map((job) => job.document_id);
+      await trx
+        .updateTable("document_processing_jobs")
+        .set({
+          status: "queued",
+          last_error: null,
+          last_error_code: null,
+          completed_at: null,
+          claimed_at: null,
+          available_at: currentTimestamp(),
+          updated_at: currentTimestamp(),
+        })
+        .where("id", "in", ids)
+        .execute();
+      if (vectorizeDocumentIds.length > 0) {
+        await trx
+          .updateTable("documents")
+          .set({
+            status: "queued",
+            failure_reason: null,
+            failed_at: null,
+            updated_at: currentTimestamp(),
+          })
+          .where("workspace_id", "=", workspaceId)
+          .where("id", "in", vectorizeDocumentIds)
+          .where("status", "=", "failed")
+          .execute();
+      }
       return ids.length;
     });
   }

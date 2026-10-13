@@ -56,17 +56,83 @@ The script builds the plan catalog and the backend module before it runs, so it 
 
 Deploy the catalog-aware application revision to every region and drain older revisions before exposing a new live Stripe price. An older webhook consumer cannot map that price; it returns a retryable response so Stripe retains the event until the rollout completes. After every serving revision recognizes the catalog entry, run the live sync with the owner-provided live key.
 
-Before the rollout, run this read-only query in each region to list BYOK Planet workspaces that have no stored provider credential. It reads credential presence only and never selects ciphertext.
+Before the rollout, run this read-only query in each region to list each BYOK Planet capability whose configured provider has no matching workspace credential. Set the three values in `deployment_defaults` to that region's provider configuration first. The query includes workspace defaults, agent chat overrides, and the active or pending embedding model. It reads credential presence only and never selects ciphertext.
 
 ```sql
-SELECT w.id AS workspace_id, w.name AS workspace_name, w.account_id
-FROM workspaces AS w
-JOIN ee_usage_limit_account_assignments AS assignment ON assignment.account_id = w.account_id
-LEFT JOIN workspace_provider_credentials AS credential ON credential.workspace_id = w.id
-WHERE assignment.profile_key = 'planet'
-GROUP BY w.id, w.name, w.account_id
-HAVING COUNT(credential.provider) = 0
-ORDER BY w.account_id, w.id;
+WITH deployment_defaults AS (
+  -- Match these values to this region's LLM_CHAT_PROVIDER,
+  -- LLM_REWRITE_PROVIDER, and LLM_RERANK_PROVIDER settings.
+  SELECT
+    'openai'::text AS chat_provider,
+    'openai'::text AS rewrite_provider,
+    'openai'::text AS rerank_provider
+),
+planet_workspaces AS (
+  SELECT w.id, w.name, w.account_id
+  FROM ee_usage_limit_account_assignments AS assignment
+  JOIN workspaces AS w ON w.account_id = assignment.account_id
+  WHERE assignment.profile_key = 'planet'
+),
+workspace_capability_providers AS (
+  SELECT
+    workspace.id AS workspace_id,
+    workspace.name AS workspace_name,
+    workspace.account_id,
+    configured.capability,
+    configured.provider
+  FROM planet_workspaces AS workspace
+  LEFT JOIN retrieval_settings AS retrieval
+    ON retrieval.workspace_id = workspace.id
+  LEFT JOIN ingestion_settings AS ingestion
+    ON ingestion.workspace_id = workspace.id
+  CROSS JOIN deployment_defaults AS defaults
+  CROSS JOIN LATERAL (
+    VALUES
+      ('chat', COALESCE(retrieval.chat_provider, defaults.chat_provider)),
+      ('rewrite', COALESCE(retrieval.rewrite_provider, defaults.rewrite_provider)),
+      ('rerank', COALESCE(retrieval.rerank_provider, defaults.rerank_provider)),
+      (
+        'embeddings',
+        CASE
+          WHEN COALESCE(
+            ingestion.pending_embedding_model,
+            ingestion.embedding_model,
+            'text-embedding-3-small'
+          ) LIKE 'gemini-%'
+            THEN 'gemini'
+          ELSE 'openai'
+        END
+      )
+  ) AS configured(capability, provider)
+),
+agent_capability_providers AS (
+  SELECT
+    workspace.id AS workspace_id,
+    workspace.name AS workspace_name,
+    workspace.account_id,
+    'agent_chat:' || agent.id::text AS capability,
+    agent.chat_provider AS provider
+  FROM planet_workspaces AS workspace
+  JOIN agents AS agent ON agent.workspace_id = workspace.id
+  WHERE agent.chat_provider IS NOT NULL
+),
+configured_capability_providers AS (
+  SELECT * FROM workspace_capability_providers
+  UNION
+  SELECT * FROM agent_capability_providers
+)
+SELECT
+  configured.workspace_id,
+  configured.workspace_name,
+  configured.account_id,
+  configured.capability,
+  configured.provider
+FROM configured_capability_providers AS configured
+LEFT JOIN workspace_provider_credentials AS credential
+  ON credential.workspace_id = configured.workspace_id
+ AND credential.provider = configured.provider
+WHERE credential.workspace_id IS NULL
+ORDER BY configured.account_id, configured.workspace_id, configured.capability;
 ```
 
 When the plan looks right, apply it and create the webhook endpoint in the same run:

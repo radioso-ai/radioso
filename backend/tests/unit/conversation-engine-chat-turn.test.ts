@@ -441,13 +441,14 @@ describe("ChatTurnAssembly.claimRoutineTurn", () => {
     variables: {},
     status: "active" as const,
   };
+  type ActiveRoutine = typeof activeRoutine | Omit<typeof activeRoutine, "startedMessageId"> & { startedMessageId?: undefined };
 
   // One assembly per turn, over the real engine, runner, selector, and step renderer: only the
   // host model gateway is scripted, and it records which call ran, how, and under which usage key.
   const assemblyForTurn = ({
     hostStreams = true,
     active = activeRoutine,
-  }: { hostStreams?: boolean; active?: typeof activeRoutine | null } = {}) => {
+  }: { hostStreams?: boolean; active?: ActiveRoutine | null } = {}) => {
     const modelCalls: string[] = [];
     const pageReadCommits: number[] = [];
     const isSelector = (input: ChatGatewayInput): boolean =>
@@ -545,6 +546,25 @@ describe("ChatTurnAssembly.claimRoutineTurn", () => {
     const result = await claim!.reply.render();
 
     expect(result.routineStateTransition).toMatchObject({
+      kind: "save",
+      state: { startedMessageId: "msg_1" },
+    });
+  });
+
+  it("keeps the routine anchor unknown when resuming a legacy execution", async () => {
+    const legacy = assemblyForTurn({
+      active: { ...activeRoutine, startedMessageId: undefined },
+    });
+    const visitorTurn = session();
+    const claim = await legacy.assembly.claimRoutineTurn(visitorTurn, {
+      responseLanguage: Promise.resolve(undefined),
+      activeRoutine: { ...activeRoutine, startedMessageId: undefined },
+    });
+
+    const result = await claim!.reply.render();
+
+    expect(visitorTurn.routineStartMessageId).toBeUndefined();
+    expect(result.routineStateTransition).not.toMatchObject({
       kind: "save",
       state: { startedMessageId: "msg_1" },
     });

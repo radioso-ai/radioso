@@ -32,6 +32,7 @@ export type EnvProviderAvailability = Record<LlmProviderName, boolean>
 
 interface ProviderCredentialsList {
   encryptionConfigured: boolean
+  credentialSource: 'managed' | 'byok' | 'self_hosted'
   credentials: ProviderCredentialSummary[]
   envProviderAvailability: EnvProviderAvailability
 }

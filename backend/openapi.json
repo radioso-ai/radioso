@@ -2453,6 +2453,14 @@
           "encryptionConfigured": {
             "type": "boolean"
           },
+          "credentialSource": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "byok",
+              "self_hosted"
+            ]
+          },
           "credentials": {
             "type": "array",
             "items": {
@@ -2485,6 +2493,7 @@
         },
         "required": [
           "encryptionConfigured",
+          "credentialSource",
           "credentials",
           "envProviderAvailability"
         ]

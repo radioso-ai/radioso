@@ -278,6 +278,29 @@ describe("LlmProviderRegistry", () => {
     });
   });
 
+  it("fails closed instead of using a deployment key when a workspace resolver lacks workspace context", async () => {
+    const resolver = { resolve: vi.fn() };
+    const registry = new LlmProviderRegistry(
+      resolveLlmConfig({ OPENAI_API_KEY: "platform-key" }),
+      undefined,
+      { resolver },
+    );
+
+    const failure = await registry.createChatInferencePipeline().complete({
+      prompt: "hello",
+      operation: {
+        workspaceId: "unknown",
+        requestId: "req-1",
+        surface: "agent_runtime",
+        operation: "answer",
+        attemptKey: "answer:0",
+      },
+    }).catch((error) => error);
+
+    expect(failure).toMatchObject({ code: "provider_misconfigured" });
+    expect(resolver.resolve).not.toHaveBeenCalled();
+  });
+
   it("forwards the configured metrics sink to created inference pipelines", async () => {
     const metrics = {
       incrementCounter: vi.fn(),

@@ -320,7 +320,7 @@ describe("default application composition", () => {
     const policy: ManagedModelPolicy = {
       resolveModelPolicy: vi.fn(async () => ({
         managedModel: null,
-        platformCredentials: "allowed" as const,
+        credentialSource: "self_hosted" as const,
       })),
     };
     const composition = createDefaultApplicationComposition({

@@ -77,6 +77,7 @@ import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
+import type { ManagedModelPolicy } from "../../shared/domain/managedModelPolicy.js";
 import type {
   ApplicationAccountAdministratorDirectoryPort,
   ApplicationModuleCoordinator,
@@ -177,6 +178,7 @@ export interface AppDependencies {
   visitorGeoResolver: VisitorGeoResolver;
   usageLimitPolicy: UsageLimitPolicy;
   usageEventRecorder: UsageEventRecorder;
+  managedModelPolicy: ManagedModelPolicy;
   organizationCreationGuard: OrganizationCreationGuard;
   publicChatActionAdvertiser: PublicChatActionAdvertiserPort;
   publicConversationEventBus: PublicConversationEventBus;

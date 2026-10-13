@@ -12,8 +12,8 @@ export interface WorkspacePlanLookup {
 
 /**
  * Workspace → account's assigned plan → the catalog's model and credential
- * policy. Managed plans may use deployment credentials; BYOK plans never may.
- * An account with no assignment or an unknown profile resolves like self-host.
+ * policy. Managed plans use deployment credentials; BYOK plans use only their
+ * own credentials.
  */
 export class EnterpriseManagedModelPolicy implements ManagedModelPolicy {
   constructor(private readonly plans: WorkspacePlanLookup) {}
@@ -25,10 +25,12 @@ export class EnterpriseManagedModelPolicy implements ManagedModelPolicy {
     const profileKey = await this.plans.findProfileKeyForWorkspace(input.workspaceId);
     const plan = profileKey ? findPlan(profileKey) : undefined;
     if (plan?.models === "byok") {
-      return { managedModel: null, platformCredentials: "denied" };
+      return { managedModel: null, credentialSource: "byok" };
     }
     if (plan?.models !== "managed") {
-      return { managedModel: null, platformCredentials: "allowed" };
+      // Pending product-owner inventory decision: preserve the existing
+      // self-hosted behavior for unknown, custom, and unassigned profiles.
+      return { managedModel: null, credentialSource: "self_hosted" };
     }
     const selection = input.capability === "chat"
       ? PLAN_CATALOG.managedModels.chat
@@ -37,7 +39,7 @@ export class EnterpriseManagedModelPolicy implements ManagedModelPolicy {
       managedModel: input.capability === "embeddings"
         ? null
         : { provider: selection.provider, model: selection.model },
-      platformCredentials: "allowed",
+      credentialSource: "managed",
     };
   }
 }

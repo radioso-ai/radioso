@@ -2628,6 +2628,7 @@ export const createTestDependencies = (overrides: {
     externalSkillDefinitionService,
     webhookDestinations,
     workspaceLlmCapabilitySettingsService,
+    managedModelPolicy: overrides.managedModelPolicy ?? new NoopManagedModelPolicy(),
     llmCapabilityResolver: {
       async resolve() {
         throw new Error("Workspace LLM capability resolution is not configured in the in-memory test app");

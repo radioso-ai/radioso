@@ -65,12 +65,12 @@ interface CandidateSelection {
 
 interface PolicyAwareSelection {
   selection: LlmCapabilitySelection;
-  platformCredentials: ManagedModelPolicyDecision["platformCredentials"];
+  credentialSource: ManagedModelPolicyDecision["credentialSource"];
 }
 
 const unrestrictedModelPolicy: ManagedModelPolicyDecision = {
   managedModel: null,
-  platformCredentials: "allowed",
+  credentialSource: "self_hosted",
 };
 
 export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
@@ -84,14 +84,14 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
 
     const {
       selection: { provider, model, resolvedBy },
-      platformCredentials,
+      credentialSource,
     } = await this.resolvePolicyAwareSelection(capability, input);
 
     const apiKey = await this.resolveApiKey(
       input.workspaceId,
       provider,
       capability,
-      platformCredentials,
+      credentialSource,
     );
     const baseUrl = this.resolveBaseUrl(
       provider,
@@ -128,7 +128,7 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
           capability,
         })
       : unrestrictedModelPolicy;
-    const managed = await this.resolveManaged(capability, input.workspaceId, candidate.provider, policy.managedModel);
+    const managed = this.resolveManaged(capability, policy.managedModel);
     const selection: LlmCapabilitySelection = managed
       ? { provider: managed.provider, model: managed.model, resolvedBy: "managed_plan" }
       : candidate;
@@ -152,7 +152,7 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
         "Managed plan replaced the requested LLM model",
       );
     }
-    return { selection, platformCredentials: policy.platformCredentials };
+    return { selection, credentialSource: policy.credentialSource };
   }
 
   private async resolveCandidate(
@@ -179,42 +179,41 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   }
 
   /**
-   * The lock applies to text capabilities only, and only while the workspace
-   * has no key of its own for the provider it would otherwise use.
+   * Managed plans own the model and credential source. Stored workspace keys
+   * survive a later downgrade but never influence a managed inference call.
    */
-  private async resolveManaged(
+  private resolveManaged(
     capability: LlmCapabilityName,
-    workspaceId: string,
-    candidateProvider: LlmProviderName,
     managed: ManagedModelSelection | null,
   ) {
     if (!managed || !isWorkspaceCapability(capability)) {
       return null;
     }
-    const ownsCandidateKey = await this.deps.credentials.hasCredentials(workspaceId, candidateProvider);
-    return ownsCandidateKey ? null : managed;
+    return managed;
   }
 
   private async resolveApiKey(
     workspaceId: string,
     provider: LlmProviderName,
     capability: LlmCapabilityName,
-    platformCredentials: ManagedModelPolicyDecision["platformCredentials"],
+    credentialSource: ManagedModelPolicyDecision["credentialSource"],
   ): Promise<string> {
-    const workspaceKey = await this.deps.credentials.getApiKey(workspaceId, provider);
-    if (workspaceKey) {
-      return workspaceKey;
+    if (credentialSource !== "managed") {
+      const workspaceKey = await this.deps.credentials.getApiKey(workspaceId, provider);
+      if (workspaceKey) return workspaceKey;
     }
-    if (platformCredentials === "allowed") {
+    if (credentialSource !== "byok") {
       const envKey = this.deps.envKeys.resolveEnvApiKey(provider);
       if (envKey) {
         return envKey;
       }
     }
-    const workspaceCredentialOnly = platformCredentials === "denied";
+    const workspaceCredentialOnly = credentialSource === "byok";
     const remediation = workspaceCredentialOnly
       ? "Add a workspace credential at Settings → Credentials."
-      : "Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.";
+      : credentialSource === "managed"
+        ? "Set the matching deployment environment variable and restart Radioso."
+        : "Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.";
     throw new ProviderConfigurationError(
       `No API key configured for provider "${provider}". ${remediation}`,
       {

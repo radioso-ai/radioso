@@ -159,6 +159,7 @@ export function ProvidersPanel({
 }) {
   const [encryptionConfigured, setEncryptionConfigured] = useState(true)
   const [credentials, setCredentials] = useState<ProviderCredentialSummary[]>([])
+  const [credentialSource, setCredentialSource] = useState<'managed' | 'byok' | 'self_hosted'>('self_hosted')
   const [envProviderAvailability, setEnvProviderAvailability] =
     useState<EnvProviderAvailability>(emptyEnvProviderAvailability)
   const [models, setModels] = useState<WorkspaceLlmModels | null>(null)
@@ -176,6 +177,7 @@ export function ProvidersPanel({
   const reloadCredentials = useCallback(async () => {
     const next = await llmProvidersApi.listCredentials()
     setCredentials(next.credentials)
+    setCredentialSource(next.credentialSource)
     setEncryptionConfigured(next.encryptionConfigured)
     setEnvProviderAvailability(next.envProviderAvailability)
     return next
@@ -206,6 +208,7 @@ export function ProvidersPanel({
         ])
         if (!active) return
         setCredentials(credentialList.credentials)
+        setCredentialSource(credentialList.credentialSource)
         setEncryptionConfigured(credentialList.encryptionConfigured)
         setEnvProviderAvailability(credentialList.envProviderAvailability)
         setModels(modelList)
@@ -248,6 +251,7 @@ export function ProvidersPanel({
       <CredentialsCard
         encryptionConfigured={encryptionConfigured}
         credentials={credentials}
+        credentialSource={credentialSource}
         envProviderAvailability={envProviderAvailability}
         onChange={reloadCredentials}
         emitSaveState={emitSaveState}
@@ -271,12 +275,14 @@ export function ProvidersPanel({
 function CredentialsCard({
   encryptionConfigured,
   credentials,
+  credentialSource,
   envProviderAvailability,
   onChange,
   emitSaveState,
 }: {
   encryptionConfigured: boolean
   credentials: ProviderCredentialSummary[]
+  credentialSource: 'managed' | 'byok' | 'self_hosted'
   envProviderAvailability: EnvProviderAvailability
   onChange: () => Promise<unknown>
   emitSaveState: (state: SaveState) => void
@@ -296,7 +302,7 @@ function CredentialsCard({
       id="provider-credentials"
       icon={<Key className="h-5 w-5 text-primary" />}
       title="Provider API keys"
-      description="Workspace keys are encrypted at rest. They take precedence over deployment-level environment variables when set."
+      description={credentialSource === 'byok' ? "This Planet workspace uses only its own provider keys. Add a key before using chat or document ingestion." : "Workspace keys are encrypted at rest. They take precedence over deployment-level environment variables when set."}
     >
       <div className="space-y-3">
         {!encryptionConfigured ? (

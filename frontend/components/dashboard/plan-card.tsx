@@ -152,6 +152,7 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
   const largestKind = largestPlanUsageKind(monthlyConversations.byKind)
   // The backend derives the next self-serve plan from the catalog; the card never names plans.
   const upgradePlanId = billing.upgradePlanId
+  const upgradePlanIds = billing.upgradePlanIds ?? (upgradePlanId ? [upgradePlanId] : [])
   const upgradePlan = plans.plans.find((entry) => entry.id === upgradePlanId)
   const managedModelUpgrade = plan?.models === 'byok'
     && upgradePlan?.models === 'managed'
@@ -192,7 +193,7 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
 
   const actions = (
     <div className="flex flex-wrap items-center gap-2">
-      {upgradePlanId ? (
+      {upgradePlanIds.length > 0 ? (
         <>
           <SegmentedControl
             value={checkoutInterval}
@@ -200,12 +201,23 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
             options={INTERVAL_OPTIONS}
             aria-label="Billing interval"
           />
-          <Button
-            onClick={() => void runCheckout({ plan: upgradePlanId, interval: checkoutInterval, returnPath: pathname }, 'upgrade')}
-            disabled={pendingAction !== null}
-          >
-            {upgradeLabel}
-          </Button>
+          {upgradePlanIds.map((planId) => {
+            const option = plans.plans.find((entry) => entry.id === planId)
+            const byokChoice = planId === 'planet'
+            return (
+              <div key={planId} className="space-y-1">
+                <Button
+                  onClick={() => void runCheckout({ plan: planId, interval: checkoutInterval, returnPath: pathname }, 'upgrade')}
+                  disabled={pendingAction !== null}
+                >
+                  {planId === upgradePlanId ? upgradeLabel : option?.models === 'managed' ? "Planet with Radioso's models" : 'Planet — bring your own provider keys'}
+                </Button>
+                {billing.planId === 'satellite' && byokChoice ? (
+                  <p className="text-xs text-amber-700 dark:text-amber-300">Planet requires a workspace provider key. Add one in Settings before using chat or ingestion.</p>
+                ) : null}
+              </div>
+            )
+          })}
         </>
       ) : null}
       {billing.topUpAvailable ? (

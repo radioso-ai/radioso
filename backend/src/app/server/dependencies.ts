@@ -1192,6 +1192,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     visitorGeoResolver,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     usageEventRecorder: infrastructure.usageEventRecorder,
+    managedModelPolicy: infrastructure.managedModelPolicy,
     organizationCreationGuard,
     publicChatActionAdvertiser: chat.publicChatActionAdvertiser,
     publicConversationEventBus,

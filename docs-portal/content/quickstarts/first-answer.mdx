@@ -1,0 +1,46 @@
+---
+title: "Get your first grounded answer"
+description: "Upload one policy document in the dashboard and confirm that an agent answers from it with a citation."
+last_updated: 2026-10-13
+---
+
+# Get your first grounded answer
+
+Put one fact in front of your agent, then ask for that fact back. This gives you a useful baseline: you can see document processing finish, read an answer, and follow its citation to the source that supported it.
+
+Use a short document with an answer you can recognize. This example uses a refund policy:
+
+> Refunds are available within 14 days of purchase with proof of payment.
+
+## Add the document
+
+1. In the dashboard sidebar, open **Knowledge Base → Documents**.
+2. Choose **Import** for a file, or **Create** to paste the refund policy as text.
+3. Give it the title `Refund policy`, then save or import it.
+4. Wait for its status to read **Ready**.
+
+The worker extracts, chunks, and embeds the document before chat can use it. A **Ready** status means the answer test has evidence to work with.
+
+![The Documents list with uploaded files in Ready status, which confirms that they are available for a grounded answer.](/screenshots/dashboard-knowledge-documents.png)
+
+## Ask the question
+
+1. Select an agent in the sidebar.
+2. Open **Test Chat**.
+3. Ask: `What is the refund window?`
+4. Open the source control on the response and confirm it names **Refund policy**.
+
+![The Test Chat workbench answering a question with a grounded reply and source controls.](/screenshots/dashboard-agents-workbench.png)
+
+The answer should name the 14-day window and cite the document you added. That gives you a concrete way to recognize future regressions: change the policy document, let it reach **Ready**, and ask the same question again.
+
+## Common failure modes
+
+- Wait for the document to reach **Ready**, then start a fresh Test Chat turn.
+- Add a valid provider key under **Settings → Providers** before embedding or answer generation.
+- Ask a question whose answer appears plainly in the document, then inspect the cited source.
+
+## Read next
+
+- [Create your first agent](/quickstarts/first-agent) — give a separate agent its own identity and instructions.
+- [Your first API answer](/quickstarts/api-first-success) — use the role-bound credential model from a script or service.

@@ -539,6 +539,8 @@ export const buildChatServices = (input: {
               errorReporter: input.errorReporter,
               metrics: input.metricsRegistry ?? null,
               publisher: input.workspaceInvalidationPublisher,
+              llmRegistry: input.llmRegistry,
+              usageEventRecorder: input.usageEventRecorder,
             })
           : registration.handler,
     })),

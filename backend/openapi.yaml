@@ -3997,6 +3997,8 @@ components:
                     minLength: 1
                     maxLength: 120
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                  includeAiSummary:
+                    type: boolean
                 additionalProperties: false
               ordinal:
                 type: integer
@@ -4401,6 +4403,8 @@ components:
                         minLength: 1
                         maxLength: 120
                         pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                      includeAiSummary:
+                        type: boolean
                     additionalProperties: false
                   ordinal:
                     type: integer
@@ -4867,6 +4871,8 @@ components:
                     minLength: 1
                     maxLength: 120
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                  includeAiSummary:
+                    type: boolean
                 additionalProperties: false
               ordinal:
                 type: integer
@@ -5325,6 +5331,8 @@ components:
                         minLength: 1
                         maxLength: 120
                         pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                      includeAiSummary:
+                        type: boolean
                     additionalProperties: false
                   ordinal:
                     type: integer
@@ -6471,6 +6479,8 @@ components:
                         minLength: 1
                         maxLength: 120
                         pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                      includeAiSummary:
+                        type: boolean
                     additionalProperties: false
                   ordinal:
                     type: integer

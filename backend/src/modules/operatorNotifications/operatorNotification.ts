@@ -18,6 +18,7 @@ export type OperatorNoticeTemplate = {
   subject?: string;
   intro?: string;
   replyToSlot?: string;
+  includeAiSummary?: boolean;
 };
 
 /** Facts already stored about the conversation, shown as context lines; `null` when not stored. */
@@ -44,6 +45,8 @@ type RoutineEndingNoticeFields = {
    */
   replyTo?: string;
   conversation?: OperatorNoticeConversationFacts;
+  /** Background-generated context, deliberately kept separate from collected values. */
+  aiSummary?: string;
 };
 
 /** A conversation went to a person: a routine hand-off ending, or a retrieval miss. */

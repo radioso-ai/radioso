@@ -23,6 +23,8 @@ export const buildRoutineEndingNotifyAction = (input: {
   agentId: string;
   userMessageId: string;
   notice: RoutineOperatorNoticeEffect;
+  responseLanguage?: string;
+  routineStartMessageId?: string;
 }): RoutineActionRequest => {
   const action = routineEndingNoticeAction(input.notice.terminalKind);
   return {
@@ -37,6 +39,8 @@ export const buildRoutineEndingNotifyAction = (input: {
       stepId: input.notice.stepId,
       collected: input.notice.collected,
       notice: input.notice,
+      responseLanguage: input.responseLanguage,
+      routineStartMessageId: input.routineStartMessageId,
     }),
     ...(input.notice.skillName ? { skillName: input.notice.skillName } : {}),
   };
@@ -90,6 +94,8 @@ export const routineEndingEffectsForTurn = (input: {
             agentId: input.session.agent.id,
             userMessageId: input.session.userMessage.id,
             notice: operatorNotice,
+            responseLanguage: input.session.responseLanguage,
+            routineStartMessageId: input.session.routineStartMessageId,
           }),
         ]
       : actions,

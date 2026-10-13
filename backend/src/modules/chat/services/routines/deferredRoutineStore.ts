@@ -19,7 +19,7 @@ export type CapturedRoutineTransition =
 export class DeferredRoutineStore implements ConversationRoutineStore {
   private transition: CapturedRoutineTransition | null = null;
 
-  constructor(private readonly inner: ConversationRoutineStore) {}
+  constructor(private readonly inner: ConversationRoutineStore, private readonly startedMessageId?: string) {}
 
   loadActive(input: { sessionId: string }): ReturnType<ConversationRoutineStore["loadActive"]> {
     return this.inner.loadActive(input);
@@ -30,7 +30,7 @@ export class DeferredRoutineStore implements ConversationRoutineStore {
   }
 
   async save(state: RoutineState): Promise<void> {
-    this.transition = { kind: "save", state };
+    this.transition = { kind: "save", state: state.startedMessageId || !this.startedMessageId ? state : { ...state, startedMessageId: this.startedMessageId } };
   }
 
   async clear(input: { sessionId: string }): Promise<void> {

@@ -142,6 +142,7 @@ export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
     else delete next.replyToSlot
     onChange(next)
   }
+  const includeAiSummary = (checked: boolean) => update({ includeAiSummary: checked })
 
   return (
     <div className="w-full space-y-2 rounded-md border border-border p-3">
@@ -175,6 +176,11 @@ export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
             maxLength={ROUTINE_DEFINITION_LIMITS.operatorNoticeIntro}
             onChange={(intro) => update({ intro })}
           />
+          <div className="flex items-center gap-2">
+            <Switch id={`${id}-ai-summary`} checked={notice?.includeAiSummary === true} onCheckedChange={includeAiSummary} />
+            <Label htmlFor={`${id}-ai-summary`} className="text-sm">Include AI summary</Label>
+          </div>
+          <p className="text-xs text-muted-foreground">Adds a background summary of details not captured in the collected values.</p>
           <p className="text-xs text-muted-foreground">Every collected value is listed below the intro.</p>
         </div>
       ) : null}

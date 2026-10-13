@@ -1614,6 +1614,7 @@ export interface RoutineStates {
   reask_count: Generated<number>;
   routine_id: string;
   session_id: string;
+  started_message_id: string | null;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
   variables: Generated<Json>;

@@ -9,7 +9,6 @@ import type { PasswordResetTokenRepositoryPort } from "../../../db/repositories/
 import type { AuthFunnelRepositoryPort } from "./authFunnelService.js";
 import type {
   AccountRepositoryPort,
-  FederatedIdentityRepositoryPort,
   SessionRepositoryPort,
 } from "./authService.js";
 import { appUrl } from "../../../shared/domain/appUrl.js";
@@ -37,8 +36,7 @@ export class PasswordResetService {
     accountAccessService: AccountAccessService;
     workspaceService: WorkspaceService;
     sessionRepository: SessionRepositoryPort;
-    federatedIdentityRepository: Pick<FederatedIdentityRepositoryPort, "deleteForUser">;
-    authFunnelRepository: Pick<AuthFunnelRepositoryPort, "revokePendingRegistrationCredentials">;
+    authFunnelRepository: Pick<AuthFunnelRepositoryPort, "completePasswordReset">;
     passwordResetTokenRepository: PasswordResetTokenRepositoryPort;
     mailService: EmailService;
     auditService: AuditService;
@@ -134,54 +132,18 @@ export class PasswordResetService {
     sessionCookie: string;
   }> {
     const now = new Date();
-    const record = await this.dependencies.passwordResetTokenRepository.findByTokenHash(sha256(input.token));
-
-    if (!record || record.usedAt || record.expiresAt <= now) {
-      throw unauthorized("Password reset link is invalid or expired");
-    }
-
-    const latestActive = await this.dependencies.passwordResetTokenRepository.findLatestActiveForUser(
-      record.userId,
-      now,
-    );
-    if (!latestActive || latestActive.id !== record.id) {
-      await this.dependencies.passwordResetTokenRepository.markUsed(record.id, now);
-      throw unauthorized("Password reset link is invalid or expired");
-    }
-
-    const user = await this.dependencies.userRepository.findById(record.userId);
-    if (!user) {
-      throw unauthorized("Password reset link is invalid or expired");
-    }
-
     const passwordHash = await hashPassword(input.password);
-    const consumedCount = await this.dependencies.passwordResetTokenRepository.markUsed(record.id, now);
-    if (consumedCount !== 1) {
+    const recovery = await this.dependencies.authFunnelRepository.completePasswordReset({
+      resetTokenHash: sha256(input.token),
+      passwordHash,
+      now,
+    });
+    if (!recovery) {
       throw unauthorized("Password reset link is invalid or expired");
     }
-
-    // These repository ports do not share a transaction boundary. Consume the one-time
-    // token before mutating account state so a retry cannot replay the same reset link.
-    await this.dependencies.userRepository.updatePassword(user.id, passwordHash);
-    // A name chosen before the address was verified came from whoever registered it,
-    // not necessarily the mailbox owner now reclaiming the account.
-    const displayName = user.emailVerifiedAt ? user.displayName : null;
-    if (displayName !== user.displayName) {
-      await this.dependencies.userRepository.updateDisplayName(user.id, displayName);
-    }
-    await this.dependencies.authFunnelRepository.revokePendingRegistrationCredentials({ userId: user.id, now });
-    // Reset possession proves control of the mailbox, so a successful reset also verifies the email.
-    await this.dependencies.userRepository.markEmailVerified(user.id, now);
-    await this.dependencies.passwordResetTokenRepository.markAllActiveUsedForUser(user.id, now);
-    await this.dependencies.sessionRepository.revokeAllForUser(user.id, now);
-    // A reset is someone reclaiming the account, and provider links are a
-    // credential too — one established while an address was briefly held by
-    // somebody else would otherwise outlive the password it replaced. A
-    // legitimate provider login re-links on its next sign-in.
-    const revokedFederatedIdentities = await this.dependencies.federatedIdentityRepository.deleteForUser(user.id);
 
     const membership = await this.dependencies.accountAccessService.resolveLoginAccount(
-      user.id,
+      recovery.userId,
       input.preferredAccountId ?? null,
     );
     const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(
@@ -191,7 +153,7 @@ export class PasswordResetService {
     const account = await this.dependencies.accountRepository.findById(membership.accountId);
     const sessionToken = generateSessionToken();
     await this.dependencies.sessionRepository.create({
-      userId: user.id,
+      userId: recovery.userId,
       accountId: membership.accountId,
       sessionTokenHash: sha256(sessionToken),
       expiresAt: new Date(now.getTime() + this.dependencies.env.SESSION_TTL_HOURS * 60 * 60 * 1000),
@@ -203,15 +165,19 @@ export class PasswordResetService {
       workspaceId: workspace.id,
       eventType: "auth.password_reset.confirm",
       eventStatus: "success",
-      metadata: { userId: user.id, revokedSessions: true, revokedFederatedIdentities },
+      metadata: {
+        userId: recovery.userId,
+        revokedSessions: true,
+        revokedFederatedIdentities: recovery.revokedFederatedIdentities,
+      },
     });
 
     return {
-      userId: user.id,
-      displayName,
+      userId: recovery.userId,
+      displayName: recovery.displayName,
       accountId: membership.accountId,
-      email: user.email,
-      organizationName: account?.name ?? deriveOrganizationName(user.email),
+      email: recovery.email,
+      organizationName: account?.name ?? deriveOrganizationName(recovery.email),
       workspaceId: workspace.id,
       workspaceName: workspace.name,
       workspacePublicRouteKey: workspace.publicRouteKey,

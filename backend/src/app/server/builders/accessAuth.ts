@@ -264,7 +264,6 @@ export const buildPasswordResetService = (input: {
     accountAccessService: input.access.accountAccessService,
     workspaceService: input.workspaceService,
     sessionRepository: input.repositories.sessionRepository,
-    federatedIdentityRepository: input.repositories.userFederatedIdentityRepository,
     authFunnelRepository: input.repositories.authFunnelRepository,
     passwordResetTokenRepository: input.repositories.passwordResetTokenRepository,
     mailService: input.infrastructure.mailService,

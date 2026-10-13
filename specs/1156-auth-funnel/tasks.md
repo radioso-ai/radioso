@@ -33,3 +33,8 @@
 - [x] T017 Perform senior review and engineering-manager scope/readiness review in this session.
 - [x] T018 Commit, push, and open the PR with exact validation and security notes.
 - [x] T019 Address recovery, ticket-activation, polling-budget, mixed-revision, and return-path review findings with regression coverage.
+- [x] T020 Add failing recovery fault/race tests and make reset and Google recovery one transaction-owned unit of work.
+- [x] T021 Add a failing fast-verification registration test and create the verification token plus pending ticket atomically before email delivery.
+- [x] T022 Preserve normalized return targets after every successful funnel completion and cover the verified waiting-tab journey in Playwright.
+- [x] T023 Parse real pending-poll rate-limit headers/details and cover the scheduled backoff.
+- [x] T024 Run the full required validation, update the security/rollout notes, and push the rework commit.

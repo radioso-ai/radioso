@@ -1094,11 +1094,40 @@ describe("AuthService rollback", () => {
     expect(result.sessionCookie).toContain("radioso_session=");
   });
 
+  it("does not rotate credentials when link verification wins after Google's lookup", async () => {
+    const sessionRepository = new WorkingSessionRepository();
+    const revokedUsers: string[] = [];
+    sessionRepository.revokeAllForUser = async (userId) => {
+      revokedUsers.push(userId);
+      return 0;
+    };
+    const { authService, authFunnelRepository, userRepository } = createAuthService({ sessionRepository });
+    const registered = await authService.register({
+      email: "google-link-wins@example.com",
+      password: "verysecurepassword",
+    });
+    const originalHash = (await userRepository.findById(registered.userId))?.passwordHash;
+    const recover = authFunnelRepository.recoverFederatedUser.bind(authFunnelRepository);
+    authFunnelRepository.recoverFederatedUser = async (input) => {
+      await userRepository.markEmailVerified(input.userId, new Date());
+      return recover(input);
+    };
+
+    await authService.federatedLogin({
+      provider: "google",
+      subject: "google-link-wins-subject",
+      email: "google-link-wins@example.com",
+      emailVerified: true,
+    });
+
+    expect((await userRepository.findById(registered.userId))?.passwordHash).toBe(originalHash);
+    expect(revokedUsers).toEqual([]);
+  });
+
   it("consumes outstanding verification links and pending tickets when Google reclaims an account", async () => {
     const {
       authService,
       authFunnelRepository,
-      emailVerificationTokenRepository,
       auditService,
     } = createAuthService({
       sessionRepository: new WorkingSessionRepository(),
@@ -1107,16 +1136,10 @@ describe("AuthService rollback", () => {
       email: "google-recovery@example.com",
       password: "attacker-known-password",
     });
-    const verificationToken = "google-recovery-verification-token";
-    await emailVerificationTokenRepository.create({
-      userId: registered.userId,
-      tokenHash: sha256(verificationToken),
-      expiresAt: new Date(Date.now() + 60_000),
-    });
     const recoveryFunnel = new AuthFunnelService({
       env: createTestEnv(), repository: authFunnelRepository, auditService,
     });
-    const pendingCookie = await recoveryFunnel.issuePendingTicket({
+    const challenge = await recoveryFunnel.issueRegistrationChallenge({
       userId: registered.userId,
       accountId: registered.accountId,
     });
@@ -1128,8 +1151,9 @@ describe("AuthService rollback", () => {
       emailVerified: true,
     });
 
-    await expect(recoveryFunnel.verify({ token: verificationToken })).rejects.toMatchObject({ statusCode: 401 });
-    await expect(recoveryFunnel.exchangePendingTicket(pendingCookie.split(";")[0]?.split("=")[1]))
+    await expect(recoveryFunnel.verify({ token: challenge.verification.token }))
+      .rejects.toMatchObject({ statusCode: 401 });
+    await expect(recoveryFunnel.exchangePendingTicket(challenge.pendingCookie.split(";")[0]?.split("=")[1]))
       .resolves.toEqual({ ready: false });
   });
 

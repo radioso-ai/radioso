@@ -189,16 +189,18 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
       });
       let developmentVerificationUrl: string | undefined;
       if (result.requiresEmailVerification) {
-        const verification = await dependencies.emailVerificationService.resend({
-          email: req.body.email,
+        const challenge = await dependencies.authFunnelService.issueRegistrationChallenge({
+          userId: result.userId,
+          accountId: result.accountId,
           requestIp: readRequestSource(req, res).address,
           requestUserAgent: req.get("user-agent"),
         });
+        const verification = await dependencies.emailVerificationService.sendIssued({
+          email: req.body.email,
+          ...challenge.verification,
+        });
         developmentVerificationUrl = verification.developmentVerificationUrl;
-        res.append("Set-Cookie", await dependencies.authFunnelService.issuePendingTicket({
-          userId: result.userId,
-          accountId: result.accountId,
-        }));
+        res.append("Set-Cookie", challenge.pendingCookie);
       }
       if (result.sessionCookie) {
         res.append("Set-Cookie", result.sessionCookie);

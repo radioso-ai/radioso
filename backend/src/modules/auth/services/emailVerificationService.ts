@@ -24,6 +24,49 @@ export class EmailVerificationService {
     responsePaddingMs?: number;
   }) {}
 
+  async sendIssued(input: {
+    email: string;
+    userId: string;
+    tokenRecordId: string;
+    token: string;
+    issuedAt: Date;
+  }): Promise<{ accepted: true; developmentVerificationUrl?: string }> {
+    const email = normalizeEmail(input.email);
+    const verificationUrl = appUrl("/verify-email", this.dependencies.env.APP_BASE_URL);
+    verificationUrl.searchParams.set("token", input.token);
+
+    let sent = true;
+    try {
+      await this.dependencies.mailService.send(renderEmailVerificationEmail({
+        to: email,
+        verificationUrl: verificationUrl.toString(),
+        appBaseUrl: this.dependencies.env.APP_BASE_URL,
+      }));
+    } catch (error) {
+      sent = false;
+      logAuthMailDeliveryFailure(this.dependencies.logger, {
+        flow: "email_verification",
+        userId: input.userId,
+        tokenRecordId: input.tokenRecordId,
+        error,
+      });
+      await this.dependencies.emailVerificationTokenRepository.markUsed(input.tokenRecordId, input.issuedAt);
+    }
+
+    await this.dependencies.auditService.record({
+      eventType: "auth.email_verification.resend",
+      eventStatus: sent ? "success" : "failure",
+      metadata: sent ? { email, sent: true } : { email, sent: false, reason: "delivery_failed" },
+    });
+    return {
+      accepted: true,
+      ...(sent && this.dependencies.env.NODE_ENV === "development"
+        && this.dependencies.env.AUTH_EXPOSE_EMAIL_VERIFICATION_LINK
+        ? { developmentVerificationUrl: verificationUrl.toString() }
+        : {}),
+    };
+  }
+
   async resend(input: {
     email: string;
     requestIp?: string | null;
@@ -63,39 +106,13 @@ export class EmailVerificationService {
         });
         return { accepted: true };
       }
-      const verificationUrl = appUrl("/verify-email", this.dependencies.env.APP_BASE_URL);
-      verificationUrl.searchParams.set("token", token);
-
-      let sent = true;
-      try {
-        await this.dependencies.mailService.send(renderEmailVerificationEmail({
-          to: email,
-          verificationUrl: verificationUrl.toString(),
-          appBaseUrl: this.dependencies.env.APP_BASE_URL,
-        }));
-      } catch (error) {
-        sent = false;
-        logAuthMailDeliveryFailure(this.dependencies.logger, {
-          flow: "email_verification",
-          userId: user.id,
-          tokenRecordId: record.id,
-          error,
-        });
-        await this.dependencies.emailVerificationTokenRepository.markUsed(record.id, now);
-      }
-
-      await this.dependencies.auditService.record({
-        eventType: "auth.email_verification.resend",
-        eventStatus: sent ? "success" : "failure",
-        metadata: sent ? { email, sent: true } : { email, sent: false, reason: "delivery_failed" },
+      return this.sendIssued({
+        email,
+        userId: user.id,
+        tokenRecordId: record.id,
+        token,
+        issuedAt: now,
       });
-      return {
-        accepted: true,
-        ...(sent && this.dependencies.env.NODE_ENV === "development"
-          && this.dependencies.env.AUTH_EXPOSE_EMAIL_VERIFICATION_LINK
-          ? { developmentVerificationUrl: verificationUrl.toString() }
-          : {}),
-      };
     } finally {
       await waitForMinimumElapsed(
         startedAtMs,

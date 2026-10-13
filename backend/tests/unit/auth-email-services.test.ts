@@ -78,6 +78,8 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
     users: userRepository,
     sessions: sessionRepository,
     listMemberships: (userId) => accountAccessService.listUserMemberships(userId),
+    passwordResetTokens: passwordResetTokenRepository,
+    federatedIdentities: federatedIdentityRepository,
   });
   const mailDriver = new RecordingEmailDriver();
   const mailService = new EmailService(mailDriver, { fromEmail: "noreply@example.com", fromName: "Radioso" });
@@ -103,7 +105,6 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
       accountRepository,
       userRepository,
       sessionRepository,
-      federatedIdentityRepository,
       authFunnelRepository,
       accountAccessService,
       workspaceService,
@@ -134,13 +135,13 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
 describe("PasswordResetService", () => {
   it("consumes outstanding verification links and pending tickets when a reset reclaims an account", async () => {
     const harness = await createHarness({ verified: false });
-    await harness.emailVerificationService.resend({ email: "ada@example.com" });
-    const verificationToken = readTokenFromUrl(harness.mailDriver.messages[0]?.metadata?.verificationUrl ?? "");
-    const pendingCookie = await harness.authFunnelService.issuePendingTicket({
+    const challenge = await harness.authFunnelService.issueRegistrationChallenge({
       userId: harness.user.id,
       accountId: harness.user.id,
     });
-    const pendingToken = pendingCookie.split(";")[0]?.split("=")[1] ?? "";
+    await harness.emailVerificationService.sendIssued({ email: harness.user.email, ...challenge.verification });
+    const verificationToken = challenge.verification.token;
+    const pendingToken = challenge.pendingCookie.split(";")[0]?.split("=")[1] ?? "";
     await harness.passwordResetService.requestReset({ email: "ada@example.com" });
     const resetToken = readTokenFromUrl(harness.mailDriver.messages[1]?.metadata?.resetUrl ?? "");
 
@@ -301,7 +302,6 @@ describe("PasswordResetService", () => {
       accountRepository: new InMemoryAccountRepository(),
       userRepository: harness.userRepository,
       sessionRepository: harness.sessionRepository,
-      federatedIdentityRepository: new InMemoryFederatedIdentityRepository(),
       authFunnelRepository: harness.authFunnelRepository,
       accountAccessService: new AccountAccessService(new InMemoryAccountMembershipRepository(), harness.auditService),
       workspaceService: new WorkspaceService(new InMemoryWorkspaceRepository(), harness.auditService),

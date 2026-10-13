@@ -769,16 +769,42 @@ export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
     users: InMemoryUserRepository;
     sessions: Pick<SessionRepositoryPort, "create" | "revokeAllForUser">;
     listMemberships: (userId: string) => Promise<AccountMembershipRecord[]>;
+    passwordResetTokens?: InMemoryPasswordResetTokenRepository;
+    federatedIdentities?: Pick<FederatedIdentityRepositoryPort, "deleteForUser">;
   }) {}
 
-  async createPendingTicket(input: {
-    id: string;
+  async createRegistrationChallenge(input: {
     userId: string;
     accountId: string;
-    tokenHash: string;
-    expiresAt: Date;
-  }): Promise<void> {
-    this.tickets.set(input.id, { ...input, activatedAt: null, usedAt: null });
+    verificationTokenId: string;
+    verificationTokenHash: string;
+    verificationExpiresAt: Date;
+    pendingTicketId: string;
+    pendingTokenHash: string;
+    pendingExpiresAt: Date;
+    requestIp: string | null;
+    requestUserAgent: string | null;
+  }): Promise<boolean> {
+    const user = await this.dependencies.users.findById(input.userId);
+    if (!user || user.emailVerifiedAt || this.dependencies.users.disabledAt(input.userId)) return false;
+    this.dependencies.emailVerificationTokens.items.set(input.verificationTokenId, {
+      id: input.verificationTokenId,
+      userId: input.userId,
+      tokenHash: input.verificationTokenHash,
+      expiresAt: input.verificationExpiresAt,
+      usedAt: null,
+      createdAt: new Date(),
+    });
+    this.tickets.set(input.pendingTicketId, {
+      id: input.pendingTicketId,
+      userId: input.userId,
+      accountId: input.accountId,
+      tokenHash: input.pendingTokenHash,
+      expiresAt: input.pendingExpiresAt,
+      activatedAt: null,
+      usedAt: null,
+    });
+    return true;
   }
 
   async verifyEmailAndCreateSession(input: {
@@ -834,12 +860,59 @@ export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
     return { userId: user.id, accountId: membership.accountId };
   }
 
-  async revokePendingRegistrationCredentials(input: { userId: string; now: Date }): Promise<void> {
-    await this.dependencies.sessions.revokeAllForUser(input.userId, input.now);
-    await this.dependencies.emailVerificationTokens.markAllActiveUsedForUser(input.userId, input.now);
+  async completePasswordReset(input: {
+    resetTokenHash: string;
+    passwordHash: string;
+    now: Date;
+  }): Promise<{
+    userId: string;
+    email: string;
+    displayName: string | null;
+    revokedFederatedIdentities: number;
+  } | null> {
+    const tokens = this.dependencies.passwordResetTokens;
+    if (!tokens) throw new Error("Password reset repository is not configured");
+    const token = await tokens.findByTokenHash(input.resetTokenHash);
+    if (!token || token.usedAt || token.expiresAt <= input.now) return null;
+    const latest = await tokens.findLatestActiveForUser(token.userId, input.now);
+    if (latest?.id !== token.id) {
+      await tokens.markUsed(token.id, input.now);
+      return null;
+    }
+    const user = await this.dependencies.users.findById(token.userId);
+    if (!user || await tokens.markUsed(token.id, input.now) !== 1) return null;
+    const displayName = user.emailVerifiedAt ? user.displayName : null;
+    await this.dependencies.users.updatePassword(user.id, input.passwordHash);
+    await this.dependencies.users.updateDisplayName(user.id, displayName);
+    await this.dependencies.users.markEmailVerified(user.id, input.now);
+    await tokens.markAllActiveUsedForUser(user.id, input.now);
+    await this.invalidateRecoveryCredentials(user.id, input.now);
+    const revokedFederatedIdentities = await this.dependencies.federatedIdentities?.deleteForUser(user.id) ?? 0;
+    return { userId: user.id, email: user.email, displayName, revokedFederatedIdentities };
+  }
+
+  async recoverFederatedUser(input: {
+    userId: string;
+    passwordHash: string;
+    displayName: string | null;
+    now: Date;
+  }): Promise<{ recovered: boolean; displayName: string | null } | null> {
+    const user = await this.dependencies.users.findById(input.userId);
+    if (!user) return null;
+    if (user.emailVerifiedAt) return { recovered: false, displayName: user.displayName };
+    await this.dependencies.users.updatePassword(user.id, input.passwordHash);
+    await this.dependencies.users.updateDisplayName(user.id, input.displayName);
+    await this.dependencies.users.markEmailVerified(user.id, input.now);
+    await this.invalidateRecoveryCredentials(user.id, input.now);
+    return { recovered: true, displayName: input.displayName };
+  }
+
+  private async invalidateRecoveryCredentials(userId: string, now: Date): Promise<void> {
+    await this.dependencies.sessions.revokeAllForUser(userId, now);
+    await this.dependencies.emailVerificationTokens.markAllActiveUsedForUser(userId, now);
     for (const ticket of this.tickets.values()) {
-      if (ticket.userId === input.userId && !ticket.usedAt) {
-        ticket.usedAt = input.now;
+      if (ticket.userId === userId && !ticket.usedAt) {
+        ticket.usedAt = now;
       }
     }
   }

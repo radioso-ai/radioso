@@ -27,12 +27,13 @@ import type {
   EvalRun,
   EvalSnapshot,
 } from "../../src/modules/eval/domain/types.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const fixedDate = new Date("2026-05-23T12:00:00.000Z");
 
 const agent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent-1",
   workspaceId: "ws-1",
   name: "Snapshot Bot",

@@ -96,8 +96,11 @@ export const agentInputFieldSchemas = {
    * (`agentBodySchema`) and Ray's `propose_agent_setting`, and a public id is minted and rotated
    * by the agent service, never authored — an entry here would let a caller pick its own
    * discovery key or quietly re-point one that is already in the wild.
+   *
+   * `voice` is absent too: the PUT body takes it from the voice channel's own schema, and Ray has
+   * no reviewed descriptor for it, so `propose_agent_setting` must not reach it by name.
    */
-} satisfies Record<Exclude<keyof AgentInput, "publicId">, ZodType>;
+} satisfies Record<Exclude<keyof AgentInput, "publicId" | "voice">, ZodType>;
 
 /** The reviewed-operation surface deliberately excludes channel, retrieval, model, asset, and
  * skill settings because those owners have dedicated authoring flows. */

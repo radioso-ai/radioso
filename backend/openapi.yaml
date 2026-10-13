@@ -2227,6 +2227,44 @@ components:
               required:
                 - url
             - type: "null"
+    AgentVoiceSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        bridgeLines:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              acknowledge:
+                type: array
+                items:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                maxItems: 5
+              check:
+                type: array
+                items:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                maxItems: 5
+            required:
+              - acknowledge
+              - check
+        fallbackLine:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 200
+      required:
+        - enabled
+        - bridgeLines
+        - fallbackLine
+      description: How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. An update replaces the block whole.
     ConversationAgent:
       allOf:
         - $ref: "#/components/schemas/Agent"
@@ -2315,6 +2353,8 @@ components:
                 - "null"
             proactiveGreetingEnabled:
               type: boolean
+            voice:
+              $ref: "#/components/schemas/AgentVoiceSettings"
             assistantBootstrapActive:
               type: boolean
             publicId:
@@ -2375,6 +2415,7 @@ components:
             - greetingInstruction
             - assistantDefaultLocale
             - proactiveGreetingEnabled
+            - voice
             - assistantBootstrapActive
             - publicId
             - publicDescription
@@ -2477,6 +2518,8 @@ components:
           maxLength: 35
         proactiveGreetingEnabled:
           type: boolean
+        voice:
+          $ref: "#/components/schemas/AgentVoiceSettings"
         publicDescription:
           type: string
           maxLength: 500

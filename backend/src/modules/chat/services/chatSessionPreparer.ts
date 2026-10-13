@@ -52,7 +52,7 @@ import type {
   AgentService,
 } from "../../agents/public.js";
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
-import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, isAgentRetrievalEnabled, unpublishedAgentPublicIdentity } from "../../agents/public.js";
+import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, defaultAgentVoiceSettings, isAgentRetrievalEnabled, unpublishedAgentPublicIdentity } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
@@ -1258,6 +1258,7 @@ export class ChatSessionPreparer {
         greetingInstruction: "",
         assistantDefaultLocale: null,
         proactiveGreetingEnabled: false,
+        voice: defaultAgentVoiceSettings(),
         chatModelOverride: null,
         surfaceSettings: {
           authenticatedChat: {
@@ -1311,6 +1312,7 @@ export class ChatSessionPreparer {
       greetingInstruction: workspace.greetingInstruction,
       assistantDefaultLocale: workspace.assistantDefaultLocale,
       proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
+      voice: defaultAgentVoiceSettings(),
       chatModelOverride: null,
       surfaceSettings: {
         authenticatedChat: {

@@ -5382,6 +5382,19 @@ export interface components {
                 url: string;
             };
         };
+        /** @description How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. An update replaces the block whole. */
+        AgentVoiceSettings: {
+            enabled: boolean;
+            bridgeLines: {
+                [key: string]: {
+                    acknowledge: string[];
+                    check: string[];
+                };
+            };
+            fallbackLine: {
+                [key: string]: string;
+            };
+        };
         ConversationAgent: components["schemas"]["Agent"] & {
             isDefault: boolean;
             customInstruction: string;
@@ -5415,6 +5428,7 @@ export interface components {
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
+            voice: components["schemas"]["AgentVoiceSettings"];
             assistantBootstrapActive: boolean;
             /** @description Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller. */
             publicId: string | null;
@@ -5471,6 +5485,7 @@ export interface components {
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
             proactiveGreetingEnabled?: boolean;
+            voice?: components["schemas"]["AgentVoiceSettings"];
             publicDescription?: string;
             agentCardEnabled?: boolean;
             publicAgentAccessEnabled?: boolean;

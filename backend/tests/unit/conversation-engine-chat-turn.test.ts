@@ -59,7 +59,7 @@ import {
   runWithModelCallTrace,
 } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { buildTurnTraceEnvelope } from "../../src/modules/chat/services/turnTraceEnvelope.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 import { ChatTurnAssembly } from "../../src/modules/chat/services/chatTurnAssembly.js";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 
@@ -94,6 +94,7 @@ const message = (overrides: Partial<MessageRecord> = {}): MessageRecord => ({
 
 const agent = (): AgentRecord => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent_1",
   workspaceId: "workspace_1",
   name: "Support",

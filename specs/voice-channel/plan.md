@@ -14,7 +14,7 @@ Date: 2026-10-12 · Freeze: 6 November · 19 working days left · Companion: [pr
 
 The full contract is in [channel-contract.md](channel-contract.md). In short:
 
-**Three layers.** A vendor-neutral voice domain (`backend/src/modules/voiceChannel/`) owns sessions, utterances, speakable replies, the turn policy (bridge, limit, interruption), outcomes, and the agent's voice settings. Vendor adapters (`voiceChannel/adapters/*`) translate one wire protocol to the domain port and back; vendors that share a wire differ only by a data-only dialect. The chat service learns nothing except the `sourceChannel` literal and, in PR 4, a cancellation mode on the turn lease.
+**Three layers.** A vendor-neutral voice domain (`backend/src/modules/voiceChannel/`) owns sessions, utterances, speakable replies, the turn policy (bridge, limit, interruption) and outcomes, and reads the agent's voice settings. Vendor adapters (`voiceChannel/adapters/*`) translate one wire protocol to the domain port and back; vendors that share a wire differ only by a data-only dialect. The chat service learns nothing except the `sourceChannel` literal and, in PR 4, a cancellation mode on the turn lease.
 
 **Port.** `VoiceTurnPort.runTurn(VoiceTurnInput, AbortSignal): AsyncIterable<VoiceTurnEvent>` with events `bridge | speech | outcome | interrupted` and outcomes `continue | transfer | end | callback_requested`. Consumed ports, all existing: `AssistantChatService.streamAnswer`, the agent-channel grant middleware, the reply envelope's `ownership.state`. New and narrow: `VoiceSessionRepository` keyed `(agentId, vendor, sessionKey) → conversationId`, mirroring the email thread table.
 

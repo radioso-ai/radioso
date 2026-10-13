@@ -49,6 +49,7 @@ const responseAgent = (behavior: AssistantBehaviorSettings): AgentSettings => ({
   greetingInstruction: '',
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
+  voice: { enabled: false, bridgeLines: {}, fallbackLine: {} },
   assistantBootstrapActive: false,
   surfaceSettings: {
     authenticatedChat: { enabled: true },

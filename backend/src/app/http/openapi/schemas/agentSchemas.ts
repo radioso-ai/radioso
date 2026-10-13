@@ -11,6 +11,7 @@ import {
 import {
   AGENT_CONFIG_SCHEMA_VERSION,
   agentSurfacePositions,
+  agentVoiceSettingsSchema,
   authoredDirectiveRouteValues,
   authoredDirectiveSurfaceValues,
 } from "../../../../modules/agents/public.js";
@@ -112,6 +113,15 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const AgentVoiceSettingsSchema = registry.register(
+    "AgentVoiceSettings",
+    agentVoiceSettingsSchema.openapi({
+      description:
+        "How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag "
+        + "(at most 10 each); each style holds at most 5 lines of 1 to 200 characters. An update replaces the block whole.",
+    }),
+  );
+
   const ConversationAgentSchema = registry.register(
     "ConversationAgent",
     AgentSchema.extend({
@@ -140,6 +150,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       greetingInstruction: z.string(),
       assistantDefaultLocale: z.string().nullable(),
       proactiveGreetingEnabled: z.boolean(),
+      voice: AgentVoiceSettingsSchema,
       assistantBootstrapActive: z.boolean(),
       publicId: z.string().nullable().openapi({
         description: "Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller.",
@@ -206,6 +217,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       greetingInstruction: z.string().max(200).optional(),
       assistantDefaultLocale: z.string().max(35).nullable().optional(),
       proactiveGreetingEnabled: z.boolean().optional(),
+      voice: AgentVoiceSettingsSchema.optional(),
       publicDescription: z.string().max(500).optional(),
       agentCardEnabled: z.boolean().optional(),
       publicAgentAccessEnabled: z.boolean().optional(),

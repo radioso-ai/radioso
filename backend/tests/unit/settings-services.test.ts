@@ -10,7 +10,7 @@ import type {
 } from "../../src/modules/settings/contracts/services.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const transitionState = (
   overrides: Partial<EmbeddingModelTransitionState> = {},
@@ -59,6 +59,7 @@ describe("settings services", () => {
     overrides: Partial<AgentRecord> = {},
   ): AgentRecord => ({
     ...unpublishedAgentPublicIdentity(),
+    voice: defaultAgentVoiceSettings(),
     id: `${workspace.id}-agent`,
     workspaceId: workspace.id,
     name: workspace.assistantName,

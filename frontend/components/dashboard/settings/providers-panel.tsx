@@ -302,7 +302,11 @@ function CredentialsCard({
       id="provider-credentials"
       icon={<Key className="h-5 w-5 text-primary" />}
       title="Provider API keys"
-      description={credentialSource === 'byok' ? "This Planet workspace uses only its own provider keys. Add a key before using chat or document ingestion." : "Workspace keys are encrypted at rest. They take precedence over deployment-level environment variables when set."}
+      description={credentialSource === 'byok'
+        ? "This Planet workspace uses only its own provider keys. Add a key before using chat or document ingestion."
+        : credentialSource === 'managed'
+          ? "Managed plans use Radioso's model by default. A stored key for a capability's selected provider keeps that capability on your provider; remove that key to use the managed default."
+          : "Workspace keys are encrypted at rest. They take precedence over deployment-level environment variables when set."}
     >
       <div className="space-y-3">
         {!encryptionConfigured ? (

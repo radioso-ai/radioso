@@ -390,10 +390,15 @@ export const createBillingRoutes = (
         appBaseUrl,
         metadataKey: config.metadataKey,
       });
-      if (
-        result.outcome === "unmapped_price" &&
-        (event.type === "checkout.session.completed" || event.type === "customer.subscription.updated")
-      ) {
+      const subscriptionProductId = event.type === "checkout.session.completed" && "session" in event
+        ? event.session.productId
+        : event.type === "customer.subscription.updated" && "subscription" in event
+          ? event.subscription.productId
+          : null;
+      const subscriptionProduct = result.outcome === "unmapped_price" && subscriptionProductId
+        ? await activeGateway.getProduct(subscriptionProductId)
+        : null;
+      if (subscriptionProduct && Object.hasOwn(subscriptionProduct.metadata, config.metadataKey)) {
         // A revision without the new catalog entry must make Stripe retry after
         // rollout rather than acknowledge a price it cannot map.
         throw new HttpError(503, "billing_price_unmapped", "Subscription price is not mapped by this deployment.");

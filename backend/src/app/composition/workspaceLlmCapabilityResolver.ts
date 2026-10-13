@@ -128,7 +128,7 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
           capability,
         })
       : unrestrictedModelPolicy;
-    const managed = this.resolveManaged(capability, policy.managedModel);
+    const managed = await this.resolveManaged(capability, input.workspaceId, candidate.provider, policy.managedModel);
     const selection: LlmCapabilitySelection = managed
       ? { provider: managed.provider, model: managed.model, resolvedBy: "managed_plan" }
       : candidate;
@@ -179,17 +179,19 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   }
 
   /**
-   * Managed plans own the model and credential source. Stored workspace keys
-   * survive a later downgrade but never influence a managed inference call.
+   * A managed plan supplies the default model. A workspace key for the model
+   * it selected is an intentional per-capability opt-out of that default.
    */
-  private resolveManaged(
+  private async resolveManaged(
     capability: LlmCapabilityName,
+    workspaceId: string,
+    candidateProvider: LlmProviderName,
     managed: ManagedModelSelection | null,
   ) {
     if (!managed || !isWorkspaceCapability(capability)) {
       return null;
     }
-    return managed;
+    return await this.deps.credentials.hasCredentials(workspaceId, candidateProvider) ? null : managed;
   }
 
   private async resolveApiKey(
@@ -198,10 +200,8 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     capability: LlmCapabilityName,
     credentialSource: ManagedModelPolicyDecision["credentialSource"],
   ): Promise<string> {
-    if (credentialSource !== "managed") {
-      const workspaceKey = await this.deps.credentials.getApiKey(workspaceId, provider);
-      if (workspaceKey) return workspaceKey;
-    }
+    const workspaceKey = await this.deps.credentials.getApiKey(workspaceId, provider);
+    if (workspaceKey) return workspaceKey;
     if (credentialSource !== "byok") {
       const envKey = this.deps.envKeys.resolveEnvApiKey(provider);
       if (envKey) {

@@ -60,6 +60,7 @@ import {
 } from "./builders/infra.js";
 import {
   buildAccessServices,
+  buildAuthFunnelService,
   buildAuthService,
   buildEmailVerificationService,
   buildPasswordResetService,
@@ -400,6 +401,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     env,
     infrastructure,
     logger,
+    repositories,
+  });
+  const authFunnelService = buildAuthFunnelService({
+    auditService: infrastructure.auditService,
+    env,
     repositories,
   });
   const emailChannelConfig = parseEmailChannelConfig(env);
@@ -1210,6 +1216,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     accessGrantService: access.accessGrantService,
     passwordResetService,
     emailVerificationService,
+    authFunnelService,
     accountAccessService: access.accountAccessService,
     accountInvitationService: access.accountInvitationService,
     apiPrincipalAuthenticator: access.apiPrincipalAuthenticator,

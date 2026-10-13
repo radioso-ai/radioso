@@ -1,14 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { useOptionalAuth } from '@/lib/auth-context'
 import { useAuthSunrise } from './auth-shell'
+import { GoogleAuthButton } from './google-auth-button'
 
 interface RegisterFormProps {
+  returnTo?: string
   onSwitchToLogin: () => void
   onVerificationPending: () => void
 }
@@ -29,7 +31,7 @@ const getErrorMessage = (error: unknown) => {
   return 'Registration failed. Please try again.'
 }
 
-export function RegisterForm({ onSwitchToLogin, onVerificationPending }: RegisterFormProps) {
+export function RegisterForm({ returnTo, onSwitchToLogin, onVerificationPending }: RegisterFormProps) {
   const auth = useOptionalAuth()
   const riseSun = useAuthSunrise()
   const [organizationName, setOrganizationName] = useState('')
@@ -38,10 +40,58 @@ export function RegisterForm({ onSwitchToLogin, onVerificationPending }: Registe
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState('')
+  const [developmentVerificationUrl, setDevelopmentVerificationUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isResendingVerification, setIsResendingVerification] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    if (!pendingVerificationEmail) return
+    let active = true
+    let completed = false
+    let polling = false
+    let timeout: ReturnType<typeof setTimeout> | undefined
+
+    const schedule = () => {
+      if (!active || completed) return
+      if (timeout) clearTimeout(timeout)
+      timeout = setTimeout(() => void poll(), 6_000)
+    }
+
+    async function poll() {
+      if (!active || completed || polling) return
+      polling = true
+      try {
+        const result = await authApi.exchangePendingRegistrationSession()
+        if (!active) return
+        if (result.ready) {
+          completed = true
+          window.location.assign('/')
+          return
+        }
+      } catch {
+        // The next bounded poll retries transient startup and network failures.
+      } finally {
+        polling = false
+        schedule()
+      }
+    }
+
+    const pollWhenVisible = () => {
+      if (document.visibilityState === 'visible') void poll()
+    }
+
+    void poll()
+    window.addEventListener('focus', pollWhenVisible)
+    document.addEventListener('visibilitychange', pollWhenVisible)
+    return () => {
+      active = false
+      if (timeout) clearTimeout(timeout)
+      window.removeEventListener('focus', pollWhenVisible)
+      document.removeEventListener('visibilitychange', pollWhenVisible)
+    }
+  }, [pendingVerificationEmail])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -69,6 +119,7 @@ export function RegisterForm({ onSwitchToLogin, onVerificationPending }: Registe
       })
       if (response.requiresEmailVerification) {
         setPendingVerificationEmail(email)
+        setDevelopmentVerificationUrl(response.developmentVerificationUrl ?? null)
         setPassword('')
         setConfirmPassword('')
         setMessage('Check your email to verify your account before signing in.')
@@ -116,15 +167,21 @@ export function RegisterForm({ onSwitchToLogin, onVerificationPending }: Registe
         {error ? (
           <p className="text-sm text-destructive">{error}</p>
         ) : null}
-        <Button
-          type="button"
-          className="w-full"
-          variant="outline"
-          loading={isResendingVerification}
-          onClick={handleResendVerification}
-        >
-          Resend verification email
-        </Button>
+        {developmentVerificationUrl ? (
+          <Button asChild type="button" className="w-full">
+            <a href={developmentVerificationUrl}>Open development verification link</a>
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            className="w-full"
+            variant="outline"
+            loading={isResendingVerification}
+            onClick={handleResendVerification}
+          >
+            Resend verification email
+          </Button>
+        )}
         <Button type="button" className="w-full" onClick={onSwitchToLogin}>
           Back to Sign In
         </Button>
@@ -202,6 +259,7 @@ export function RegisterForm({ onSwitchToLogin, onVerificationPending }: Registe
       <Button type="submit" className="w-full" loading={isLoading}>
         Create account
       </Button>
+      <GoogleAuthButton label="Continue with Google" returnTo={returnTo} disabled={isLoading} />
     </form>
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,6 +9,7 @@ import { authApi, getStoredActiveWorkspaceId, seedWorkspaceSession } from '@/lib
 import { getStoredLastAccountId, useOptionalAuth } from '@/lib/auth-context'
 import { normalizeSameOriginReturnPath } from '@/lib/auth-return-url'
 import { useAuthSunrise } from './auth-shell'
+import { GoogleAuthButton } from './google-auth-button'
 
 interface LoginFormProps {
   returnTo?: string
@@ -37,25 +38,6 @@ export function LoginForm({ returnTo }: LoginFormProps) {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  const [googleEnabled, setGoogleEnabled] = useState(false)
-
-  useEffect(() => {
-    let active = true
-    authApi.getGoogleLoginStatus().then((status) => {
-      if (active) {
-        setGoogleEnabled(status.enabled)
-      }
-    }).catch(() => {
-      // Google sign-in stays hidden (its default state) when availability can't be determined.
-    })
-    return () => {
-      active = false
-    }
-  }, [])
-
-  const handleGoogleSignIn = () => {
-    window.location.assign(authApi.getGoogleLoginStartUrl({ returnTo }))
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -121,24 +103,7 @@ export function LoginForm({ returnTo }: LoginFormProps) {
       <Button type="submit" className="w-full" loading={isLoading}>
         Sign in
       </Button>
-      {googleEnabled && (
-        <>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="h-px flex-1 bg-border" />
-            <span>or</span>
-            <span className="h-px flex-1 bg-border" />
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={handleGoogleSignIn}
-            disabled={isLoading}
-          >
-            Sign in with Google
-          </Button>
-        </>
-      )}
+      <GoogleAuthButton label="Sign in with Google" returnTo={returnTo} disabled={isLoading} />
     </form>
   )
 }

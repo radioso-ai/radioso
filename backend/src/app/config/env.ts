@@ -212,6 +212,8 @@ const envSchema = z.object({
   WEBSITE_EMBED_SECRET: emptyStringToUndefined(z.string().min(16)),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
   AUTH_AUTO_VERIFY_EMAIL: booleanish(false),
+  AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: booleanish(false),
+  AUTH_PENDING_REGISTRATION_TTL_MINUTES: z.coerce.number().int().positive().max(60).default(15),
   CONNECTOR_ENCRYPTION_KEY: emptyStringToUndefined(
     z
       .string()
@@ -491,6 +493,13 @@ const envSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["AUTH_AUTO_VERIFY_EMAIL"],
       message: "AUTH_AUTO_VERIFY_EMAIL can only be enabled when NODE_ENV is development",
+    });
+  }
+  if (value.NODE_ENV !== "development" && value.AUTH_EXPOSE_EMAIL_VERIFICATION_LINK) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["AUTH_EXPOSE_EMAIL_VERIFICATION_LINK"],
+      message: "AUTH_EXPOSE_EMAIL_VERIFICATION_LINK can only be enabled when NODE_ENV is development",
     });
   }
 

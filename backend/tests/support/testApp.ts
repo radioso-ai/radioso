@@ -24,6 +24,7 @@ import { AccountInvitationService } from "../../src/modules/account/services/acc
 import { ApprovalDecisionService } from "../../src/modules/approvals/public.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
+import { AuthFunnelService } from "../../src/modules/auth/services/authFunnelService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ReviewTurnAuditReader } from "../../src/modules/chat/contracts/index.js";
@@ -324,6 +325,7 @@ import {
   InMemoryFederatedIdentityRepository,
   InMemorySessionRepository,
   InMemoryEmailVerificationTokenRepository,
+  InMemoryAuthFunnelRepository,
   InMemoryPasswordResetTokenRepository,
   InMemoryWorkspaceRepository,
   InMemoryAgentRepository,
@@ -388,8 +390,13 @@ export const createTestEnv = (): Env => ({
   PUBLIC_CHAT_SESSION_SECRET: "00112233445566778899aabbccddeeff",
   SESSION_TTL_HOURS: 168,
   AUTH_AUTO_VERIFY_EMAIL: false,
+  AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: false,
+  AUTH_PENDING_REGISTRATION_TTL_MINUTES: 15,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
+  SLACK_INBOUND_EVENT_RETENTION_DAYS: 7,
+  EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS: 30_000,
+  ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: true,
   PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
   EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: 30,
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
@@ -909,6 +916,13 @@ export const createTestDependencies = (overrides: {
     }),
   );
   const sessionRepository = new InMemorySessionRepository();
+  const emailVerificationTokenRepository = new InMemoryEmailVerificationTokenRepository();
+  const authFunnelRepository = new InMemoryAuthFunnelRepository({
+    emailVerificationTokens: emailVerificationTokenRepository,
+    users: userRepository,
+    sessions: sessionRepository,
+    listMemberships: (userId) => accountAccessService.listUserMemberships(userId),
+  });
   const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
   const machineAccessRepository = new InMemoryMachineAccessRepository();
   const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
@@ -2464,7 +2478,17 @@ export const createTestDependencies = (overrides: {
         return operatorCopilotService.cancelMcpReviewedProposal(input);
       },
     },
+    proposalDetail: {
+      getProposalDetail: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot proposal service is not initialized");
+        return operatorCopilotService.getProposalDetail(input);
+      },
+    },
     retrievalAuthoring,
+    agentSettings: agentService,
+    ingestionSettings: ingestionSettingsService,
+    directiveAuthor: directiveAuthorService,
+    directives: authoredDirectiveService,
     documents: new DocumentReviewedOperationService(
       documentRepository,
       documentIngestionService,
@@ -2608,6 +2632,8 @@ export const createTestDependencies = (overrides: {
     }),
     auditService,
     mailService: createMailService({ MAIL_DRIVER: "noop" }),
+    noticeMail: { send: async () => ({ dispatched: false }) },
+    accountAdministrators: { list: async () => [] },
     accountAccessService,
     accountInvitationService,
     workspaceSessionService,
@@ -2660,8 +2686,13 @@ export const createTestDependencies = (overrides: {
       env,
       auditService,
       userRepository,
-      emailVerificationTokenRepository: new InMemoryEmailVerificationTokenRepository(),
+      emailVerificationTokenRepository,
       mailService: createMailService({ MAIL_DRIVER: "noop" }),
+    }),
+    authFunnelService: new AuthFunnelService({
+      env,
+      repository: authFunnelRepository,
+      auditService,
     }),
     workspaceService,
     workspaceSummaryService,

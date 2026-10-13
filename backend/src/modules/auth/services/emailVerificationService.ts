@@ -8,7 +8,6 @@ import type { EmailService } from "../../mail/public.js";
 import { renderEmailVerificationEmail } from "../../mail/templates/emailVerificationEmail.js";
 import { normalizeEmail, sha256 } from "../domain/authPrimitives.js";
 import { appUrl } from "../../../shared/domain/appUrl.js";
-import { unauthorized } from "../../../shared/domain/errors.js";
 import { logAuthMailDeliveryFailure, type AuthMailDeliveryLogger } from "./authMailDeliveryLogging.js";
 import { DEFAULT_AUTH_EMAIL_FLOW_MIN_RESPONSE_MS, waitForMinimumElapsed } from "./responsePadding.js";
 
@@ -29,7 +28,7 @@ export class EmailVerificationService {
     email: string;
     requestIp?: string | null;
     requestUserAgent?: string | null;
-  }): Promise<{ accepted: true }> {
+  }): Promise<{ accepted: true; developmentVerificationUrl?: string }> {
     const startedAtMs = Date.now();
     try {
       const email = normalizeEmail(input.email);
@@ -82,7 +81,13 @@ export class EmailVerificationService {
         eventStatus: sent ? "success" : "failure",
         metadata: sent ? { email, sent: true } : { email, sent: false, reason: "delivery_failed" },
       });
-      return { accepted: true };
+      return {
+        accepted: true,
+        ...(sent && this.dependencies.env.NODE_ENV === "development"
+          && this.dependencies.env.AUTH_EXPOSE_EMAIL_VERIFICATION_LINK
+          ? { developmentVerificationUrl: verificationUrl.toString() }
+          : {}),
+      };
     } finally {
       await waitForMinimumElapsed(
         startedAtMs,
@@ -91,35 +96,4 @@ export class EmailVerificationService {
     }
   }
 
-  async verify(input: { token: string }): Promise<{ verified: true }> {
-    const now = new Date();
-    const record = await this.dependencies.emailVerificationTokenRepository.findByTokenHash(sha256(input.token));
-
-    if (!record || record.usedAt || record.expiresAt <= now) {
-      throw unauthorized("Email verification link is invalid or expired");
-    }
-
-    const latestActive = await this.dependencies.emailVerificationTokenRepository.findLatestActiveForUser(
-      record.userId,
-      now,
-    );
-    if (!latestActive || latestActive.id !== record.id) {
-      await this.dependencies.emailVerificationTokenRepository.markUsed(record.id, now);
-      throw unauthorized("Email verification link is invalid or expired");
-    }
-
-    const existingUser = await this.dependencies.userRepository.findById(record.userId);
-    if (!existingUser) {
-      throw unauthorized("Email verification link is invalid or expired");
-    }
-
-    const user = await this.dependencies.userRepository.markEmailVerified(record.userId, now);
-    await this.dependencies.emailVerificationTokenRepository.markAllActiveUsedForUser(record.userId, now);
-    await this.dependencies.auditService.record({
-      eventType: "auth.email_verification.verify",
-      eventStatus: "success",
-      metadata: { userId: user.id },
-    });
-    return { verified: true };
-  }
 }

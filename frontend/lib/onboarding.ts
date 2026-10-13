@@ -107,8 +107,8 @@ export interface WorkspaceOnboardingState {
   shouldShowFirstRun: boolean
   importSampleDocs: () => Promise<void>
   isImportingSampleDocs: boolean
-  markCompleted: () => void
-  markActive: () => void
+  markCompleted: () => Promise<boolean>
+  markActive: () => Promise<boolean>
 }
 
 export const getOnboardingProgress = (input: {
@@ -119,7 +119,6 @@ export const getOnboardingProgress = (input: {
 
 export const useWorkspaceOnboarding = (
   workspaceId: string | null,
-  _workspaceCount: number,
 ): WorkspaceOnboardingState => {
   const [isLoading, setIsLoading] = useState(true)
   const [sampleDocumentSlugs, setSampleDocumentSlugs] = useState<string[]>([])
@@ -244,10 +243,10 @@ export const useWorkspaceOnboarding = (
     }
 
     setIsImportingSampleDocs(true)
-    await workspaceApi.updateSetupState({ dismissed: false })
-    setIsOnboardingActive(true)
-
     try {
+      await workspaceApi.updateSetupState({ dismissed: false })
+      setIsOnboardingActive(true)
+
       const existingSlugs = new Set(sampleDocumentSlugs)
 
       const missingDocs = SAMPLE_DOCUMENTS.filter((document) => !existingSlugs.has(document.slug))
@@ -267,6 +266,8 @@ export const useWorkspaceOnboarding = (
       )
 
       await refresh()
+    } catch {
+      // Keep the takeover visible and retryable when the server cannot persist activation.
     } finally {
       setIsImportingSampleDocs(false)
     }
@@ -274,22 +275,32 @@ export const useWorkspaceOnboarding = (
 
   const markCompleted = useCallback(async () => {
     if (!workspaceId) {
-      return
+      return false
     }
 
-    await workspaceApi.updateSetupState({ dismissed: true })
-    setIsOnboardingCompleted(true)
-    setIsOnboardingActive(false)
+    try {
+      await workspaceApi.updateSetupState({ dismissed: true })
+      setIsOnboardingCompleted(true)
+      setIsOnboardingActive(false)
+      return true
+    } catch {
+      return false
+    }
   }, [workspaceId])
 
   const markActive = useCallback(async () => {
     if (!workspaceId) {
-      return
+      return false
     }
 
-    await workspaceApi.updateSetupState({ dismissed: false })
-    setIsOnboardingCompleted(false)
-    setIsOnboardingActive(true)
+    try {
+      await workspaceApi.updateSetupState({ dismissed: false })
+      setIsOnboardingCompleted(false)
+      setIsOnboardingActive(true)
+      return true
+    } catch {
+      return false
+    }
   }, [workspaceId])
 
   const value = useMemo<WorkspaceOnboardingState>(() => {

@@ -874,7 +874,6 @@ const buildWorkspaceSummary = (input: {
     setup: {
       purpose: null,
       dismissed: false,
-      notifyReceiptConfirmed: false,
       skippedSteps: [],
       shouldShowFirstRun: conversationCount === 0,
       hasDirectivesOrRoutines: false,
@@ -1382,7 +1381,7 @@ export const installDashboardApiMocks = async (
   };
   const workspaceSummary = options.workspaceSummary ?? buildWorkspaceSummary({ documentList: documents, historyList });
   const workspaceSetupState = (workspaceSummary as { setup?: Record<string, unknown> }).setup ?? {
-    purpose: null, dismissed: false, notifyReceiptConfirmed: false, skippedSteps: [], shouldShowFirstRun: true,
+    purpose: null, dismissed: false, skippedSteps: [], shouldShowFirstRun: true,
     hasDirectivesOrRoutines: false, hasNotifyDestination: false, hasNotifyDeliveryConfirmed: false, hasCredential: false,
   };
   const usageTrends = options.usageTrends ?? {

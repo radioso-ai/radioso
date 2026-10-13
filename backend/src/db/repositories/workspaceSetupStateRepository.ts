@@ -61,13 +61,43 @@ export class WorkspaceSetupStateRepository implements WorkspaceSetupStateReposit
   }
 
   async getOutcomeFlags(workspaceId: string) {
-    const [directive, routine, destination, delivery, credential] = await Promise.all([
-      this.db.selectFrom("agent_directives").innerJoin("agents", "agents.id", "agent_directives.agent_id").select("agent_directives.id").where("agents.workspace_id", "=", workspaceId).limit(1).executeTakeFirst(),
-      this.db.selectFrom("routine_definition").innerJoin("agents", "agents.id", "routine_definition.agent_id").select("routine_definition.id").where("agents.workspace_id", "=", workspaceId).limit(1).executeTakeFirst(),
-      this.db.selectFrom("workspace_webhook_destinations").select("id").where("workspace_id", "=", workspaceId).limit(1).executeTakeFirst(),
-      this.db.selectFrom("workspace_webhook_destinations").select("id").where("workspace_id", "=", workspaceId).where("last_delivery_status", "=", "success").limit(1).executeTakeFirst(),
-      this.db.selectFrom("api_credentials").select("id").where("workspace_id", "=", workspaceId).where("revoked_at", "is", null).where("expires_at", ">", new Date()).limit(1).executeTakeFirst(),
-    ]);
-    return { hasDirectivesOrRoutines: Boolean(directive || routine), hasNotifyDestination: Boolean(destination), hasNotifyDeliveryConfirmed: Boolean(delivery), hasCredential: Boolean(credential) };
+    const row = await this.db
+      .selectFrom("workspaces")
+      .select(({ exists, or, selectFrom }) => [
+        or([
+          exists(selectFrom("agent_directives")
+            .innerJoin("agents", "agents.id", "agent_directives.agent_id")
+            .select("agent_directives.id")
+            .where("agents.workspace_id", "=", workspaceId)),
+          exists(selectFrom("routine_definition")
+            .innerJoin("agents", "agents.id", "routine_definition.agent_id")
+            .select("routine_definition.id")
+            .where("agents.workspace_id", "=", workspaceId)),
+        ]).as("has_directives_or_routines"),
+        exists(selectFrom("workspace_webhook_destinations")
+          .select("id")
+          .where("workspace_id", "=", workspaceId)).as("has_notify_destination"),
+        exists(selectFrom("workspace_webhook_destinations")
+          .select("id")
+          .where("workspace_id", "=", workspaceId)
+          .where("last_delivery_status", "=", "success")).as("has_notify_delivery_confirmed"),
+        exists(selectFrom("api_credentials")
+          .select("id")
+          .where("workspace_id", "=", workspaceId)
+          .where("revoked_at", "is", null)
+          .where((eb) => eb.or([
+            eb("expires_at", "is", null),
+            eb("expires_at", ">", new Date()),
+          ]))).as("has_credential"),
+      ])
+      .where("workspaces.id", "=", workspaceId)
+      .executeTakeFirstOrThrow();
+
+    return {
+      hasDirectivesOrRoutines: Boolean(row.has_directives_or_routines),
+      hasNotifyDestination: Boolean(row.has_notify_destination),
+      hasNotifyDeliveryConfirmed: Boolean(row.has_notify_delivery_confirmed),
+      hasCredential: Boolean(row.has_credential),
+    };
   }
 }

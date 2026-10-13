@@ -298,11 +298,17 @@ export const RETRIEVAL_BEHAVIOR = {
 } as const;
 
 export const VOICE_BEHAVIOR = {
-  // A caller hears silence as a dropped line within about a second. When no
-  // speech has come this long into a voice turn, the channel speaks one of the
-  // agent's authored bridge lines. Latency is a property of the runtime, not of
-  // an agent, so this is composition-owned rather than an operator setting.
-  bridgeAfterMs: 900,
+  // A caller hears silence as a dropped line within about a second, but a
+  // bridge line in front of a quick reply is worse than a short pause. So the
+  // bridge follows the turn's phase, as the chat stream reports it: it fires at
+  // once when the turn starts searching (retrieval always has seconds of work
+  // ahead); bridgeAfterComposingIdleMs after the turn starts composing with
+  // nothing spoken (a quick reply's first sentence lands well inside that); and
+  // bridgeAfterMs into a turn that has neither searched nor composed (the
+  // planner is slower than usual). Latency is a property of the runtime, not of
+  // an agent, so these are composition-owned rather than operator settings.
+  bridgeAfterComposingIdleMs: 400,
+  bridgeAfterMs: 1_800,
   // When no speech has come this long into a voice turn, the channel speaks the
   // agent's authored fallback line and ends the turn; the reply still finishes
   // and is stored. Long enough for a slow grounded answer, short enough that a

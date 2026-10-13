@@ -34,9 +34,9 @@ Activity and the Inbox.
    frames, one sentence per frame, ending with `finish_reason: "stop"` and
    `data: [DONE]`.
 5. If you turned the agent's voice settings on, the wait is covered: when
-   nothing is ready to say 900 ms into the turn, the caller hears one of your
-   bridge lines, and when nothing is ready at 8 seconds, they hear your
-   fallback line and the turn ends. See
+   the agent starts looking something up, or is slow to start its answer, the
+   caller hears one of your bridge lines, and when nothing is ready at 8
+   seconds, they hear your fallback line and the turn ends. See
    [Bridge lines and the turn limit](#bridge-lines-and-the-turn-limit).
 
 ## Set it up
@@ -172,8 +172,13 @@ characters. A new agent starts with `"enabled": false` and empty maps.
 
 What happens on a turn while `enabled` is true:
 
-- **Bridge, at 900 ms.** If the reply has not started speaking 900 ms into the
-  turn, the caller hears one bridge line, once. Inside a running routine (the
+- **Bridge.** The bridge fires when the turn starts searching, 400 ms after
+  it starts composing without speech, or after 1.8 s with no phase at all.
+  Searching means the agent is looking the answer up in your documents, which
+  always takes a few seconds; a short reply such as "Hi!" starts speaking well
+  inside the 400 ms, so it is never preceded by a bridge. The caller hears one
+  bridge line per turn at most, and none once the reply has started speaking.
+  Inside a running routine (the
   agent has just asked the caller something and is taking in the answer) it
   is an `acknowledge` line; otherwise a `check` line. Lines rotate across
   turns. The rotation is shared by every call one Radioso server handles, so
@@ -190,7 +195,7 @@ What happens on a turn while `enabled` is true:
   hears nothing extra. With no fallback line for the language, the turn keeps
   waiting for the reply past 8 seconds.
 
-The 900 ms and 8 second marks are the same for every agent. They follow from
+The 400 ms, 1.8 second and 8 second marks are the same for every agent. They follow from
 how long a caller tolerates silence, not from what an agent says, so they are
 not settings.
 

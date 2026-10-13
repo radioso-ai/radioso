@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VoiceTurnEvent } from "../../src/modules/voiceChannel/domain.js";
 import {
   applyVoiceTurnPolicy,
+  type VoiceReplyEvent,
+  type VoiceTurnPhase,
   type VoiceTurnPolicy,
   type VoiceTurnPolicyObserver,
 } from "../../src/modules/voiceChannel/services/voiceTurnPolicy.js";
@@ -14,10 +16,15 @@ interface TimedEvent {
   event: VoiceTurnEvent;
 }
 
+interface TimedStep {
+  atMs: number;
+  event: VoiceReplyEvent;
+}
+
 /** A reply stream that yields each event at its time on the fake clock, and says whether it ran to its end. */
-const timedReply = (steps: TimedEvent[]) => {
+const timedReply = (steps: TimedStep[]) => {
   const state = { exhausted: false, closed: false };
-  const events = (async function* (): AsyncGenerator<VoiceTurnEvent> {
+  const events = (async function* (): AsyncGenerator<VoiceReplyEvent> {
     const startedAt = Date.now();
     try {
       for (const step of steps) {
@@ -46,7 +53,8 @@ const recordingObserver = () => {
 const policy = (overrides: Partial<VoiceTurnPolicy> = {}): VoiceTurnPolicy => ({
   startedAt: Date.now(),
   now: () => Date.now(),
-  bridgeAfterMs: 900,
+  bridgeAfterMs: 1_800,
+  bridgeAfterComposingIdleMs: 400,
   turnLimitMs: 8_000,
   bridge: { style: "check", text: "Let me check." },
   fallbackLine: "Sorry, that took too long. Could you ask me again?",
@@ -54,7 +62,7 @@ const policy = (overrides: Partial<VoiceTurnPolicy> = {}): VoiceTurnPolicy => ({
   ...overrides,
 });
 
-const run = async (events: AsyncIterable<VoiceTurnEvent>, turnPolicy: VoiceTurnPolicy): Promise<TimedEvent[]> => {
+const run = async (events: AsyncIterable<VoiceReplyEvent>, turnPolicy: VoiceTurnPolicy): Promise<TimedEvent[]> => {
   const startedAt = Date.now();
   const seen: TimedEvent[] = [];
   const consumer = (async () => {
@@ -70,6 +78,7 @@ const run = async (events: AsyncIterable<VoiceTurnEvent>, turnPolicy: VoiceTurnP
 const speech = (text: string, last = false): VoiceTurnEvent => ({ type: "speech", text, last });
 const outcome: VoiceTurnEvent = { type: "outcome", outcome: { kind: "continue" } };
 const conversation: VoiceTurnEvent = { type: "conversation", conversationId };
+const phase = (name: VoiceTurnPhase): VoiceReplyEvent => ({ type: "phase", phase: name });
 
 describe("voice turn policy", () => {
   beforeEach(() => {
@@ -85,7 +94,7 @@ describe("voice turn policy", () => {
     }
   });
 
-  it("speaks the bridge line once when no speech has come 900 ms into the turn", async () => {
+  it("speaks the bridge line once when the turn shows no phase and no speech 1.8 s in", async () => {
     const { observer, calls } = recordingObserver();
     const { events } = timedReply([
       { atMs: 0, event: conversation },
@@ -97,7 +106,7 @@ describe("voice turn policy", () => {
 
     expect(seen).toEqual([
       { atMs: 0, event: conversation },
-      { atMs: 900, event: { type: "bridge", text: "Let me check." } },
+      { atMs: 1_800, event: { type: "bridge", text: "Let me check." } },
       { atMs: 2_000, event: speech("We open at nine.", true) },
       { atMs: 2_000, event: outcome },
     ]);
@@ -124,7 +133,7 @@ describe("voice turn policy", () => {
 
     const seen = await run(events, policy({ startedAt: Date.now() - 400 }));
 
-    expect(seen[0]).toEqual({ atMs: 500, event: { type: "bridge", text: "Let me check." } });
+    expect(seen[0]).toEqual({ atMs: 1_400, event: { type: "bridge", text: "Let me check." } });
   });
 
   it("speaks no bridge when the agent has no line for the turn, and says so to the observer", async () => {
@@ -149,7 +158,7 @@ describe("voice turn policy", () => {
 
     expect(seen).toEqual([
       { atMs: 0, event: conversation },
-      { atMs: 900, event: { type: "bridge", text: "Let me check." } },
+      { atMs: 1_800, event: { type: "bridge", text: "Let me check." } },
       { atMs: 8_000, event: speech("Sorry, that took too long. Could you ask me again?", true) },
       { atMs: 8_000, event: outcome },
     ]);
@@ -170,7 +179,7 @@ describe("voice turn policy", () => {
 
     const seen = await run(timedReply(reply).events, policy({ fallbackLine: null, observer }));
 
-    expect(seen).toEqual([{ atMs: 900, event: { type: "bridge", text: "Let me check." } }, ...reply]);
+    expect(seen).toEqual([{ atMs: 1_800, event: { type: "bridge", text: "Let me check." } }, ...reply]);
     expect(calls).toEqual([
       ["bridgeDue", "check", true],
       ["turnLimitReached", false],
@@ -241,6 +250,118 @@ describe("voice turn policy", () => {
     expect(await settled).toMatchObject({ name: "AbortError" });
     expect(seen).toEqual([conversation]);
     expect(calls).toEqual([]);
+  });
+
+  describe("deciding the bridge from the turn's phase", () => {
+    it("bridges a retrieval turn the moment it starts searching, not on a timer", async () => {
+      const { observer, calls } = recordingObserver();
+      const { events } = timedReply([
+        { atMs: 0, event: conversation },
+        { atMs: 0, event: phase("interpreting") },
+        { atMs: 1_100, event: phase("searching") },
+        { atMs: 3_000, event: speech("We open at nine.", true) },
+        { atMs: 3_000, event: outcome },
+      ]);
+
+      const seen = await run(events, policy({ observer }));
+
+      expect(seen).toEqual([
+        { atMs: 0, event: conversation },
+        { atMs: 1_100, event: { type: "bridge", text: "Let me check." } },
+        { atMs: 3_000, event: speech("We open at nine.", true) },
+        { atMs: 3_000, event: outcome },
+      ]);
+      expect(calls).toEqual([["bridgeDue", "check", true], ["firstSpeech", 3_000, true]]);
+    });
+
+    it("bridges a composing turn that has not spoken 400 ms after it started composing", async () => {
+      const { events } = timedReply([
+        { atMs: 0, event: phase("interpreting") },
+        { atMs: 1_100, event: phase("composing") },
+        { atMs: 3_000, event: speech("We open at nine.", true) },
+        { atMs: 3_000, event: outcome },
+      ]);
+
+      const seen = await run(events, policy());
+
+      expect(seen).toEqual([
+        { atMs: 1_500, event: { type: "bridge", text: "Let me check." } },
+        { atMs: 3_000, event: speech("We open at nine.", true) },
+        { atMs: 3_000, event: outcome },
+      ]);
+    });
+
+    it("lets a quick reply speak without a bridge", async () => {
+      const { observer, calls } = recordingObserver();
+      const reply: TimedStep[] = [
+        { atMs: 0, event: phase("interpreting") },
+        { atMs: 1_100, event: phase("composing") },
+        { atMs: 1_150, event: speech("Hi!", true) },
+        { atMs: 1_150, event: outcome },
+      ];
+
+      const seen = await run(timedReply(reply).events, policy({ observer }));
+
+      expect(seen).toEqual([{ atMs: 1_150, event: speech("Hi!", true) }, { atMs: 1_150, event: outcome }]);
+      expect(calls).toEqual([["firstSpeech", 1_150, false]]);
+    });
+
+    it("keeps the 1.8 s fallback armed while the turn is still interpreting", async () => {
+      const { events } = timedReply([
+        { atMs: 0, event: phase("interpreting") },
+        { atMs: 3_000, event: speech("We open at nine.", true) },
+        { atMs: 3_000, event: outcome },
+      ]);
+
+      const seen = await run(events, policy());
+
+      expect(seen[0]).toEqual({ atMs: 1_800, event: { type: "bridge", text: "Let me check." } });
+    });
+
+    it("speaks no bridge when speech comes before any phase", async () => {
+      const { observer, calls } = recordingObserver();
+      const { events } = timedReply([
+        { atMs: 500, event: speech("Hello.", true) },
+        { atMs: 500, event: outcome },
+        { atMs: 2_000, event: phase("searching") },
+      ]);
+
+      const seen = await run(events, policy({ observer }));
+
+      expect(seen.map(({ event }) => event.type)).toEqual(["speech", "outcome"]);
+      expect(calls).toEqual([["firstSpeech", 500, false]]);
+    });
+
+    it("still speaks the fallback line at 8 s after a composing bridge", async () => {
+      const { events } = timedReply([
+        { atMs: 1_100, event: phase("composing") },
+        { atMs: 12_000, event: speech("We open at nine.", true) },
+        { atMs: 12_000, event: outcome },
+      ]);
+
+      const seen = await run(events, policy());
+
+      expect(seen).toEqual([
+        { atMs: 1_500, event: { type: "bridge", text: "Let me check." } },
+        { atMs: 8_000, event: speech("Sorry, that took too long. Could you ask me again?", true) },
+        { atMs: 8_000, event: outcome },
+      ]);
+    });
+
+    it("bridges at most once when the turn moves from composing to searching", async () => {
+      const { events } = timedReply([
+        { atMs: 1_100, event: phase("composing") },
+        { atMs: 1_600, event: phase("searching") },
+        { atMs: 3_000, event: speech("We open at nine.", true) },
+        { atMs: 3_000, event: outcome },
+      ]);
+
+      const seen = await run(events, policy());
+
+      expect(seen.filter(({ event }) => event.type === "bridge")).toEqual([
+        { atMs: 1_500, event: { type: "bridge", text: "Let me check." } },
+      ]);
+    });
   });
 
   it("closes the reply stream when its consumer stops early", async () => {

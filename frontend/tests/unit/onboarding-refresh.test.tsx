@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/api-client'
 import { workspaceApi } from '@/lib/api-workspace'
 import { useWorkspaceOnboarding, type WorkspaceOnboardingState } from '@/lib/onboarding'
-import { markOnboardingActive } from '@/lib/onboarding-storage'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -76,7 +75,6 @@ describe('useWorkspaceOnboarding refresh', () => {
   it('emits each observed first-run step once per workspace, including a completed chat', async () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetch)
-    markOnboardingActive('workspace-1')
     vi.mocked(workspaceApi.getSummary).mockResolvedValue({
       documentCount: 1,
       readyDocumentCount: 1,
@@ -90,6 +88,17 @@ describe('useWorkspaceOnboarding refresh', () => {
       hasCompletedChat: true,
       sampleDocumentsImported: true,
       websiteCrawlerEnabled: true,
+      setup: {
+        purpose: null,
+        dismissed: false,
+        notifyReceiptConfirmed: false,
+        skippedSteps: [],
+        shouldShowFirstRun: true,
+        hasDirectivesOrRoutines: false,
+        hasNotifyDestination: false,
+        hasNotifyDeliveryConfirmed: false,
+        hasCredential: false,
+      },
     })
 
     const firstMount = mountOnboarding(1)

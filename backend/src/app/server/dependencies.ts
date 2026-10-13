@@ -982,6 +982,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     contextVariables: contextVariableService,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
+    workspaceSetupState: workspace.workspaceSummaryService,
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {
         return retrievalDefaultsProvider.getDefaults(workspaceId);

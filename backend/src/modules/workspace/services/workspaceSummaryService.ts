@@ -1,5 +1,6 @@
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { DocumentRepositoryPort } from "../../documents/contracts/index.js";
+import type { WorkspaceSetupStateRepositoryPort, WorkspaceSetupStep } from "../../../db/repositories/workspaceSetupStateRepository.js";
 
 export interface WorkspaceSummary {
   documentCount: number;
@@ -14,19 +15,38 @@ export interface WorkspaceSummary {
   hasCompletedChat: boolean;
   sampleDocumentsImported: boolean;
   websiteCrawlerEnabled: boolean;
+  setup: {
+    purpose: string | null;
+    dismissed: boolean;
+    notifyReceiptConfirmed: boolean;
+    skippedSteps: WorkspaceSetupStep[];
+    shouldShowFirstRun: boolean;
+    hasDirectivesOrRoutines: boolean;
+    hasNotifyDestination: boolean;
+    hasNotifyDeliveryConfirmed: boolean;
+    hasCredential: boolean;
+  };
 }
 
 export class WorkspaceSummaryService {
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly conversationRepository: ConversationRepositoryPort,
+    private readonly setupStateRepository: WorkspaceSetupStateRepositoryPort,
     private readonly featureFlags: { websiteCrawlerEnabled: boolean } = { websiteCrawlerEnabled: true },
   ) {}
 
+  async updateSetupState(workspaceId: string, input: Parameters<WorkspaceSetupStateRepositoryPort["update"]>[1]): Promise<WorkspaceSummary> {
+    await this.setupStateRepository.update(workspaceId, input);
+    return this.getSummary(workspaceId);
+  }
+
   async getSummary(workspaceId: string): Promise<WorkspaceSummary> {
-    const [documentSummary, conversationCount] = await Promise.all([
+    const [documentSummary, conversationCount, setupState, outcomes] = await Promise.all([
       this.documentRepository.summarizeWorkspace(workspaceId),
       this.conversationRepository.countByWorkspaceId(workspaceId),
+      this.setupStateRepository.get(workspaceId),
+      this.setupStateRepository.getOutcomeFlags(workspaceId),
     ]);
 
     // Projected field by field rather than spread: this summary is the onboarding
@@ -44,6 +64,17 @@ export class WorkspaceSummaryService {
       hasCompletedChat: conversationCount > 0,
       sampleDocumentsImported: documentSummary.sampleDocumentCount > 0,
       websiteCrawlerEnabled: this.featureFlags.websiteCrawlerEnabled,
+      setup: {
+        purpose: setupState.purpose,
+        dismissed: setupState.dismissedAt !== null,
+        notifyReceiptConfirmed: setupState.notifyReceiptConfirmedAt !== null,
+        skippedSteps: setupState.skippedSteps,
+        shouldShowFirstRun: setupState.dismissedAt === null && conversationCount === 0,
+        hasDirectivesOrRoutines: outcomes.hasDirectivesOrRoutines,
+        hasNotifyDestination: outcomes.hasNotifyDestination,
+        hasNotifyDeliveryConfirmed: outcomes.hasNotifyDestination && setupState.notifyReceiptConfirmedAt !== null,
+        hasCredential: outcomes.hasCredential,
+      },
     };
   }
 }

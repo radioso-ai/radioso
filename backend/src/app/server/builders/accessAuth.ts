@@ -2,6 +2,7 @@ import { AccountMembershipRepository } from "../../../db/repositories/accountMem
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { DocumentRepository } from "../../../db/repositories/documentRepository.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
+import { WorkspaceSetupStateRepository } from "../../../db/repositories/workspaceSetupStateRepository.js";
 import { AccountAccessService, AccountInvitationService } from "../../../modules/account/public.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../../modules/accessGrants/public.js";
 import { AuditService } from "../../../modules/audit/composition.js";
@@ -199,6 +200,7 @@ export const buildWorkspaceServices = (input: {
   personalCredentialTermination?: import("../../../modules/workspace/services/workspaceService.js").WorkspacePersonalCredentialTerminationPort;
   personalCredentialLifecycle?: import("../../../modules/machineAccess/public.js").PersonalCredentialLifecyclePort;
   workspaceRepository: WorkspaceRepository;
+  workspaceSetupStateRepository: WorkspaceSetupStateRepository;
 }) => {
   const workspaceService = new WorkspaceService(
     input.workspaceRepository,
@@ -210,7 +212,7 @@ export const buildWorkspaceServices = (input: {
   return {
     workspaceService,
     workspaceSessionService: new WorkspaceSessionService(workspaceService),
-    workspaceSummaryService: new WorkspaceSummaryService(input.documentRepository, input.conversationRepository, {
+    workspaceSummaryService: new WorkspaceSummaryService(input.documentRepository, input.conversationRepository, input.workspaceSetupStateRepository, {
       websiteCrawlerEnabled: input.env.WEBSITE_CRAWLER_ENABLED,
     }),
   };

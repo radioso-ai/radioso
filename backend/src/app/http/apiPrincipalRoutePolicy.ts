@@ -73,6 +73,8 @@ const sessionOnly = (method: string, pathPattern: string, permission = "session"
 const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("GET", "/api/v1/workspace", "workspace.list"),
   allow("GET", "/api/v1/workspace/summary", "workspace.summary.read"),
+  allow("GET", "/api/v1/workspace/setup-state", "workspace.summary.read"),
+  allow("PATCH", "/api/v1/workspace/setup-state", "workspace.settings.manage"),
   sessionOnly("GET", "/api/v1/workspace/resolve/:workspaceKey", "workspace.resolve"),
   sessionOnly("POST", "/api/v1/workspace", "workspace.create"),
   sessionOnly("PATCH", "/api/v1/workspace/:workspaceId", "workspace.rename"),

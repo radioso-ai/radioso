@@ -74,12 +74,32 @@ test("first-run onboarding can be skipped and stays hidden", async ({ page }) =>
   await page.getByRole("button", { name: "Skip" }).click();
   await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeHidden();
 
-  await page.goto(`/w/${workspaceKey}/knowledge`);
-  await expect(page.getByRole("link", { name: "Resume setup" })).toBeVisible();
-  await page.getByRole("link", { name: "Resume setup" }).click();
-  await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeVisible();
-
   await page.reload();
 
   await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeHidden();
+});
+
+test("first-run dismissal follows server state into a fresh browser context", async ({ page, browser }) => {
+  const workspaceSummary = {
+    documentCount: 0, readyDocumentCount: 0, pendingDocumentCount: 0, sampleDocumentCount: 0, sampleDocumentSlugs: [],
+    conversationCount: 0, hasDocuments: false, hasPendingDocuments: false, hasReadyDocuments: false,
+    hasCompletedChat: false, sampleDocumentsImported: false, websiteCrawlerEnabled: true,
+    setup: {
+      purpose: null, dismissed: false, notifyReceiptConfirmed: false, skippedSteps: [], shouldShowFirstRun: true,
+      hasDirectivesOrRoutines: false, hasNotifyDestination: false, hasNotifyDeliveryConfirmed: false, hasCredential: false,
+    },
+  };
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { workspaceSummary });
+  await page.goto(`/w/${workspaceKey}/agents`);
+  await page.getByRole("button", { name: "Skip" }).click();
+  await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeHidden();
+
+  const freshContext = await browser.newContext();
+  const freshPage = await freshContext.newPage();
+  await seedDashboardStorage(freshPage);
+  await installDashboardApiMocks(freshPage, { workspaceSummary });
+  await freshPage.goto(`/w/${workspaceKey}/agents`);
+  await expect(freshPage.getByRole("heading", { name: "Get started with Radioso" })).toBeHidden();
+  await freshContext.close();
 });

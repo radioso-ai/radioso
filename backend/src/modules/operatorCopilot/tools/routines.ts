@@ -248,7 +248,7 @@ const projectRoutineEditableElements = (routine: RoutineDefinition) => {
           skillName: terminal.operatorNotice.skillName ?? null,
           // The key of the email field replies go to; null is no reply-to.
           replyToSlot: terminal.operatorNotice.replyToSlot ?? null,
-          includeAiSummary: terminal.operatorNotice.includeAiSummary === true,
+          ...(terminal.operatorNotice.includeAiSummary === true ? { includeAiSummary: true } : {}),
         }
       : null,
   })));

@@ -36,18 +36,21 @@ export class RoutineEndingNotifyActionHandler implements ActionHandler {
   private readonly dispatcher: Pick<OperatorNotificationDispatcher, "dispatch">;
   private readonly subjects: RoutineEndingNotificationSubjectResolver;
   private readonly summaryGenerator?: RoutineEndingNoticeSummaryGenerator;
+  private readonly summaryTimeoutMs: number;
 
   constructor(options: {
     ending: Pick<RoutineEndingNoticeAction, "notificationKind" | "reason">;
     dispatcher: Pick<OperatorNotificationDispatcher, "dispatch">;
     subjects: RoutineEndingNotificationSubjectResolver;
     summaryGenerator?: RoutineEndingNoticeSummaryGenerator;
+    summaryTimeoutMs?: number;
     logger?: { warn(payload: Record<string, unknown>, message: string): void };
   }) {
     this.ending = options.ending;
     this.dispatcher = options.dispatcher;
     this.subjects = options.subjects;
     this.summaryGenerator = options.summaryGenerator;
+    this.summaryTimeoutMs = options.summaryTimeoutMs ?? ROUTINE_NOTICE_SUMMARY_TIMEOUT_MS;
     this.logger = options.logger;
   }
   private readonly logger?: { warn(payload: Record<string, unknown>, message: string): void };
@@ -70,28 +73,39 @@ export class RoutineEndingNotifyActionHandler implements ActionHandler {
     });
     let summaryOutcome: "generated" | "skipped" | "failed" = "skipped";
     const endingMessageId = asString(input.payload.userMessageId);
-    const summary = notification.notice?.includeAiSummary && this.summaryGenerator && endingMessageId
+    const responseLanguage = asString(input.payload.responseLanguage);
+    const summaryGenerator = this.summaryGenerator;
+    const summary = notification.notice?.includeAiSummary && summaryGenerator
       ? await traceOperation({
           name: "routine.operator_notice_summary",
           attributes: { "radioso.workspace_id": workspaceId, "radioso.conversation_id": conversationId },
           resultAttributes: () => ({ "routine.operator_notice_summary.outcome": summaryOutcome }),
           run: async () => {
+            if (!endingMessageId) {
+              return null;
+            }
+            const abortController = new AbortController();
+            const timedOut = Symbol("timed_out");
+            let timeout: ReturnType<typeof setTimeout> | undefined;
             try {
-              const timedOut = Symbol("timed_out");
-              let timeout: ReturnType<typeof setTimeout> | undefined;
               const generated = await Promise.race<string | null | typeof timedOut>([
-                this.summaryGenerator!.generate({
-                workspaceId,
-                accountId: input.context.accountId,
-                conversationId,
-                endingMessageId,
-                routineStartMessageId: asString(input.payload.routineStartMessageId) ?? undefined,
-                outputLanguage: asString(input.payload.responseLanguage) ?? "the conversation's language",
-                collected: notification.collected ?? {},
+                summaryGenerator.generate({
+                  workspaceId,
+                  accountId: input.context.accountId,
+                  conversationId,
+                  endingMessageId,
+                  routineStartMessageId: asString(input.payload.routineStartMessageId) ?? undefined,
+                  ...(responseLanguage ? { outputLanguage: responseLanguage } : {}),
+                  collected: notification.collected ?? {},
+                  signal: abortController.signal,
                 }),
-                new Promise<typeof timedOut>((resolve) => { timeout = setTimeout(() => resolve(timedOut), ROUTINE_NOTICE_SUMMARY_TIMEOUT_MS); }),
+                new Promise<typeof timedOut>((resolve) => {
+                  timeout = setTimeout(() => {
+                    resolve(timedOut);
+                    abortController.abort();
+                  }, this.summaryTimeoutMs);
+                }),
               ]);
-              if (timeout) clearTimeout(timeout);
               if (generated === timedOut) {
                 summaryOutcome = "failed";
                 this.logger?.warn({ event: "routine_operator_notice_summary_failed", operation: "routine_operator_notice_summary", errorType: "timeout" }, "Routine operator notice summary timed out");
@@ -103,6 +117,8 @@ export class RoutineEndingNotifyActionHandler implements ActionHandler {
               summaryOutcome = "failed";
               this.logger?.warn({ event: "routine_operator_notice_summary_failed", operation: "routine_operator_notice_summary", errorType: error instanceof Error ? error.name : typeof error }, "Routine operator notice summary failed");
               return null;
+            } finally {
+              if (timeout) clearTimeout(timeout);
             }
           },
         })

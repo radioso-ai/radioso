@@ -3549,7 +3549,8 @@ CREATE TABLE public.routine_states (
     attempts jsonb DEFAULT '{}'::jsonb NOT NULL,
     execution_id uuid,
     reask_count integer DEFAULT 0 NOT NULL,
-    started_message_id uuid
+    started_message_id uuid,
+    started_execution_id uuid
 );
 
 
@@ -3591,8 +3592,10 @@ CREATE TABLE public.routine_terminal (
     operator_notice_intro text,
     operator_notice_skill_name text,
     operator_notice_reply_to_slot text,
+    operator_notice_include_ai_summary boolean DEFAULT false NOT NULL,
     CONSTRAINT routine_terminal_check CHECK ((((kind = 'action'::text) AND (NULLIF(btrim(action_type), ''::text) IS NOT NULL)) OR (kind <> 'action'::text))),
     CONSTRAINT routine_terminal_kind_check CHECK ((kind = ANY (ARRAY['complete'::text, 'handoff'::text]))),
+    CONSTRAINT routine_terminal_operator_notice_ai_summary_check CHECK ((operator_notice_enabled OR (NOT operator_notice_include_ai_summary))),
     CONSTRAINT routine_terminal_operator_notice_reply_to_check CHECK (((operator_notice_enabled OR (operator_notice_reply_to_slot IS NULL)) AND ((operator_notice_reply_to_slot IS NULL) OR (btrim(operator_notice_reply_to_slot) <> ''::text)))),
     CONSTRAINT routine_terminal_operator_notice_skill_check CHECK (((operator_notice_enabled OR (operator_notice_skill_name IS NULL)) AND ((operator_notice_skill_name IS NULL) OR (btrim(operator_notice_skill_name) <> ''::text)))),
     CONSTRAINT routine_terminal_operator_notice_text_check CHECK ((operator_notice_enabled OR ((operator_notice_subject IS NULL) AND (operator_notice_intro IS NULL)))),

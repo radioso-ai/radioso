@@ -711,7 +711,9 @@ export class ChatTurnAssembly {
         effects: reactionEffects,
       };
     }
-    const deferredStore = new DeferredRoutineStore(this.options.routineStore);
+    const routineStartMessageId = getSession().userMessage.id;
+    getSession().routineStartMessageId = routineStartMessageId;
+    const deferredStore = new DeferredRoutineStore(this.options.routineStore, routineStartMessageId);
     const deferredClarificationStore = input.clarification?.store;
     return {
       coverageRoutineActivator: routineTurnPorts.coverageActivator,

@@ -166,9 +166,11 @@ export function ProvidersPanel({
   const [ingestionSettings, setIngestionSettings] = useState<IngestionSettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const effectiveEnvProviderAvailability = credentialSource === 'self_hosted'
-    ? envProviderAvailability
-    : emptyEnvProviderAvailability
+  // BYOK is the only policy that forbids deployment credentials. Managed plans
+  // still expose deployment providers for capabilities the plan does not lock.
+  const effectiveEnvProviderAvailability = credentialSource === 'byok'
+    ? emptyEnvProviderAvailability
+    : envProviderAvailability
 
   const emitSaveState = useCallback(
     (state: SaveState) => {

@@ -72,6 +72,7 @@ test("a managed plan shows the plan's model read-only and says how to choose", a
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     platformSettings: basePlatformSettings(),
+    providerCredentialSource: "managed",
     llmModelUpdates,
     llmManagedModels: {
       chat: { provider: "claude", model: "claude-sonnet-5" },

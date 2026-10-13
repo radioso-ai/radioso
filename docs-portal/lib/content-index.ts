@@ -47,7 +47,7 @@ async function collectContentPages(dir: string, prefix: string): Promise<Content
 }
 
 /** Documentation metadata derived from the MDX tree for build-time machine readers. */
-export const listContentPages = async (): Promise<ContentPage[]> =>
+const listContentPages = async (): Promise<ContentPage[]> =>
   (await collectContentPages(CONTENT_DIR, '')).sort((left, right) => left.route.localeCompare(right.route))
 
 export const renderLlmsTxt = async (): Promise<string> => {

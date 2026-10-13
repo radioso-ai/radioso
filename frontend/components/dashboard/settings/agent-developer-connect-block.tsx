@@ -33,7 +33,14 @@ export function AgentDeveloperConnectBlock({
 
       <div className="grid gap-4 xl:grid-cols-2">
         {MCP_OPEN_ACCESS_CLIENT_SETUPS.map((setup) => (
-          <CodeSnippet key={setup.id} label={`${setup.name} configuration`} code={setup.buildSnippet(endpoint)} wrap />
+          'buildSteps' in setup
+            ? <div key={setup.id} className="space-y-2 rounded-lg border border-border bg-background p-3 text-xs text-muted-foreground">
+              <h5 className="font-medium text-foreground">{setup.name} setup</h5>
+              <ol className="list-decimal space-y-1 pl-4">
+                {setup.buildSteps(endpoint).map((step) => <li key={step}>{step}</li>)}
+              </ol>
+            </div>
+            : <CodeSnippet key={setup.id} label={`${setup.name} configuration`} code={setup.buildSnippet(endpoint)} wrap />
         ))}
       </div>
     </section>

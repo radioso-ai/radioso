@@ -15,12 +15,12 @@ describe('agent MCP connect details', () => {
     })
   })
 
-  it('uses the dashboard host for a single-host deployment with no public API override', () => {
+  it('uses the dashboard backend proxy for a single-host deployment with no public API override', () => {
     expect(buildAgentMcpConnectDetails({
       dashboardOrigin: 'https://radioso.example.com',
       mcpUrl: 'https://mcp.radioso.example.com/mcp',
       publicApiUrl: '',
       publicId: 'ag_public',
-    }).discoveryCardUrl).toBe('https://radioso.example.com/.well-known/agent-card/ag_public.json')
+    }).discoveryCardUrl).toBe('https://radioso.example.com/backend/.well-known/agent-card/ag_public.json')
   })
 })

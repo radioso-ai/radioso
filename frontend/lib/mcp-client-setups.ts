@@ -60,7 +60,11 @@ export const MCP_CLIENT_SETUPS: readonly McpClientSetup[] = [
   },
 ]
 
-const buildChatGptConnectorConfig = (mcpUrl: string) => JSON.stringify({ url: mcpUrl }, null, 2)
+const buildChatGptConnectorSteps = (mcpUrl: string) => [
+  'In ChatGPT, enable Developer Mode and create a custom app.',
+  `Set the MCP server endpoint to ${mcpUrl}.`,
+  'For open access, choose no authentication. For protected access, issue an MCP credential with Connect a client and configure that credential as static bearer authentication.',
+]
 
 const buildOpenAiResponsesConfig = (mcpUrl: string) => `const response = await client.responses.create({
   model: 'gpt-5',
@@ -83,7 +87,7 @@ export const MCP_OPEN_ACCESS_CLIENT_SETUPS = [
     name: setup.openAccess.name,
     buildSnippet: setup.openAccess.buildSnippet,
   }] : []),
-  { id: 'chatgpt', name: 'ChatGPT', buildSnippet: buildChatGptConnectorConfig },
+  { id: 'chatgpt', name: 'ChatGPT', buildSteps: buildChatGptConnectorSteps },
   { id: 'openai-responses', name: 'OpenAI Responses API', buildSnippet: buildOpenAiResponsesConfig },
 ] as const
 

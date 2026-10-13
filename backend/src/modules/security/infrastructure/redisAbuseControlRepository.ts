@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { createClient } from "redis";
+import { createClient, type RedisClientType } from "redis";
 
 import type {
   AbuseControlBatchConsumption,
@@ -60,6 +60,8 @@ return cjson.encode({
  * script, so concurrent replicas cannot observe the same remaining slot.
  */
 const consumeScript = String.raw`
+local redisTime = redis.call('TIME')
+local nowMs = tonumber(redisTime[1]) * 1000 + math.floor(tonumber(redisTime[2]) / 1000)
 local count = #KEYS
 local rollbackOnReject = ARGV[1] == '1'
 local staged = {}
@@ -89,11 +91,10 @@ local function loadState(key)
 end
 
 for index = 1, count do
-  local argumentOffset = 2 + (index - 1) * 4
+  local argumentOffset = 2 + (index - 1) * 3
   local limit = tonumber(ARGV[argumentOffset])
   local windowMs = tonumber(ARGV[argumentOffset + 1])
   local blockMs = tonumber(ARGV[argumentOffset + 2])
-  local nowMs = tonumber(ARGV[argumentOffset + 3])
   local key = KEYS[index]
   local existing = loadState(key)
   local activeBlock = existing and existing.blockedUntilMs > nowMs
@@ -136,7 +137,7 @@ for index = 1, count do
     updatedAtMs = nowMs,
     weightedAttemptCount = weightedAttemptCount,
     blocked = blockedUntilMs > nowMs,
-    expiresAtMs = math.max(nowMs + tonumber(ARGV[2 + count * 4]), blockedUntilMs)
+    expiresAtMs = math.max(nowMs + tonumber(ARGV[2 + count * 3]), blockedUntilMs)
   }
   staged[key] = state
   ordered[index] = state
@@ -166,7 +167,7 @@ if rejectedIndex == 0 or not rollbackOnReject then
   end
 end
 
-return cjson.encode({ entries = ordered, rejectedIndex = rejectedIndex })
+return cjson.encode({ entries = ordered, evaluatedAtMs = nowMs, rejectedIndex = rejectedIndex })
 `;
 
 interface StoredEntryReply {
@@ -185,6 +186,7 @@ interface ConsumptionReply extends StoredEntryReply {
 
 interface ConsumeScriptReply {
   entries: ConsumptionReply[];
+  evaluatedAtMs: number;
   rejectedIndex: number;
 }
 
@@ -214,7 +216,7 @@ const parseConsumeReply = (reply: unknown): ConsumeScriptReply => {
   const parsed: unknown = JSON.parse(reply);
   if (!parsed || typeof parsed !== "object") throw new Error("Redis abuse-control script returned an invalid result");
   const candidate = parsed as Partial<ConsumeScriptReply>;
-  if (!Number.isInteger(candidate.rejectedIndex) || !Array.isArray(candidate.entries)) {
+  if (!Number.isInteger(candidate.rejectedIndex) || !isFiniteNumber(candidate.evaluatedAtMs) || !Array.isArray(candidate.entries)) {
     throw new Error("Redis abuse-control script returned an invalid result");
   }
   if (!candidate.entries.every((entry) =>
@@ -244,20 +246,23 @@ const mapEntry = (scope: string, subjectKey: string, reply: StoredEntryReply): A
 });
 
 export class RedisAbuseControlRepository implements AbuseControlRepositoryPort {
-  private readonly client;
-  private connectPromise: Promise<unknown> | undefined;
+  private client: RedisClientType | undefined;
+  private connectPromise: Promise<RedisClientType> | undefined;
 
-  constructor(private readonly input: { redisUrl: string; commandTimeoutMs: number }) {
-    this.client = createClient({
-      url: input.redisUrl,
+  constructor(private readonly input: { redisUrl: string; commandTimeoutMs: number }) {}
+
+  private createClient(): RedisClientType {
+    const client = createClient({
+      url: this.input.redisUrl,
       disableOfflineQueue: true,
       commandsQueueMaxLength: 128,
       socket: {
-        connectTimeout: input.commandTimeoutMs,
+        connectTimeout: this.input.commandTimeoutMs,
         reconnectStrategy: false,
       },
     });
-    this.client.on("error", () => undefined);
+    client.on("error", () => undefined);
+    return client;
   }
 
   async find(scope: string, subjectKey: string): Promise<AbuseControlEntry | null> {
@@ -286,7 +291,7 @@ export class RedisAbuseControlRepository implements AbuseControlRepositoryPort {
     const reply = await this.consumeInputs([input], false);
     const entry = reply.entries[0];
     if (!entry) throw new Error("Redis abuse-control consumption returned no entry");
-    return this.mapConsumption(input, entry);
+    return this.mapConsumption(input, entry, reply.evaluatedAtMs);
   }
 
   async consumeBatch(inputs: readonly AbuseControlConsumptionInput[]): Promise<AbuseControlBatchConsumption> {
@@ -296,10 +301,10 @@ export class RedisAbuseControlRepository implements AbuseControlRepositoryPort {
       const index = reply.rejectedIndex - 1;
       const rejected = reply.entries[index];
       if (!rejected) throw new Error("Redis abuse-control batch returned no rejected entry");
-      return { entries: [], rejected: this.mapConsumption(inputs[index], rejected) };
+      return { entries: [], rejected: this.mapConsumption(inputs[index], rejected, reply.evaluatedAtMs) };
     }
     return {
-      entries: reply.entries.map((entry, index) => this.mapConsumption(inputs[index], entry)),
+      entries: reply.entries.map((entry, index) => this.mapConsumption(inputs[index], entry, reply.evaluatedAtMs)),
       rejected: null,
     };
   }
@@ -309,8 +314,8 @@ export class RedisAbuseControlRepository implements AbuseControlRepositoryPort {
   }
 
   async close(): Promise<void> {
-    await this.connectPromise?.catch(() => undefined);
-    if (this.client.isOpen) await this.client.close();
+    const client = this.client;
+    if (client) this.destroyClient(client);
   }
 
   private async consumeInputs(
@@ -323,7 +328,6 @@ export class RedisAbuseControlRepository implements AbuseControlRepositoryPort {
         String(input.limit),
         String(input.windowMs),
         String(input.blockMs),
-        String(input.now.getTime()),
       );
     }
     arguments_.push(String(ENTRY_TTL_MS));
@@ -337,27 +341,58 @@ export class RedisAbuseControlRepository implements AbuseControlRepositoryPort {
   private mapConsumption(
     input: AbuseControlConsumptionInput,
     reply: ConsumptionReply,
+    evaluatedAtMs: number,
   ): AbuseControlConsumption {
     return {
       entry: mapEntry(input.scope, input.subjectKey, reply),
+      evaluatedAt: new Date(evaluatedAtMs),
       blocked: reply.blocked,
       weightedAttemptCount: reply.weightedAttemptCount,
     };
   }
 
   private async eval(script: string, keys: string[], arguments_: string[]): Promise<unknown> {
-    await this.ensureConnected();
-    return this.client.withCommandOptions({ timeout: this.input.commandTimeoutMs }).eval(script, {
-      keys,
-      arguments: arguments_,
+    const client = this.client ?? (this.client = this.createClient());
+    return this.withDeadline(client, async () => {
+      await this.ensureConnected(client);
+      return client.eval(script, {
+        keys,
+        arguments: arguments_,
+      });
     });
   }
 
-  private async ensureConnected(): Promise<void> {
-    if (this.client.isReady) return;
-    this.connectPromise ??= this.client.connect().finally(() => {
-      this.connectPromise = undefined;
+  private async ensureConnected(client: RedisClientType): Promise<void> {
+    if (client.isReady) return;
+    this.connectPromise ??= client.connect().then(() => client).finally(() => {
+      if (this.client === client) this.connectPromise = undefined;
     });
     await this.connectPromise;
+  }
+
+  private withDeadline<T>(client: RedisClientType, operation: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.destroyClient(client);
+        reject(new Error(`Redis abuse-control command exceeded ${this.input.commandTimeoutMs}ms`));
+      }, this.input.commandTimeoutMs);
+      void operation().then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          reject(error instanceof Error ? error : new Error("Redis abuse-control command failed"));
+        },
+      );
+    });
+  }
+
+  private destroyClient(client: RedisClientType): void {
+    if (this.client !== client) return;
+    this.client = undefined;
+    this.connectPromise = undefined;
+    client.destroy();
   }
 }

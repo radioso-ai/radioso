@@ -74,12 +74,13 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
    */
   private decide(consumption: AbuseControlConsumption, input: AbuseControlConsumptionInput): AbuseControlDecision {
     const { blockedUntil, windowStartedAt } = consumption.entry;
+    const evaluatedAt = consumption.evaluatedAt;
     if (consumption.blocked && blockedUntil) {
       throw tooManyRequests("Rate limit exceeded. Please wait before trying again.", {
         limit: input.limit,
         remaining: 0,
         resetAtMs: blockedUntil.getTime(),
-        retryAfterSeconds: this.retryAfterSeconds(blockedUntil, input.now),
+        retryAfterSeconds: this.retryAfterSeconds(blockedUntil, evaluatedAt),
       } satisfies AbuseControlDecision);
     }
     return {

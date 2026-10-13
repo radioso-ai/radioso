@@ -21,7 +21,7 @@
 - [X] T004 [US1] Add failing resolver tests in `backend/tests/unit/workspace-llm-capability-resolver.test.ts` and Enterprise policy tests in `ee/packages/backend-module/src/managedModels/managedModelPolicy.test.ts`; run them and record the red result.
 - [X] T005 [US1] Replace the ambiguous shared/Enterprise policy result with a single model-and-credential decision in `backend/src/shared/domain/managedModelPolicy.ts`, the resolver, and `ee/packages/backend-module/src/radiosoModuleTypes.ts` / `managedModels/managedModelPolicy.ts`.
 - [X] T006 [US1] Update policy mocks/contracts and composition documentation, then run resolver, provider-registry, composition, settings, Ray availability, and Enterprise managed-policy tests.
-- [ ] T007 [US1] Commit the BYOK fix and evidence as the first Conventional Commit.
+- [X] T007 [US1] Commit the BYOK fix and evidence as the first Conventional Commit.
 
 ## Phase 3: User Story 2 - Choose Managed Models On Planet (Priority: P1)
 
@@ -29,16 +29,16 @@
 
 **Independent Test**: Catalog, checkout, webhook, Stripe sync, upgrade ordering, usage-limit seeds, and the Plan card all recognize and present `planet_managed` through existing generic paths.
 
-- [ ] T008 [US2] Add failing plan-catalog parity/price tests, pricing-order tests, webhook/Stripe-sync assertions, and a Playwright test for the Planet managed-model choice; run them and record the red result.
-- [ ] T009 [US2] Add `planet_managed` and its lookup keys to `ee/packages/plan-catalog/src/plans.json` / `index.ts`, make it the self-serve ceiling, and update affected catalog fixtures/enumerations.
-- [ ] T010 [US2] Implement catalog-derived Planet plan-card wording/action and update billing, usage-limit, webhook, Stripe-sync, staff/operator-console, analytics, and frontend tests where enumeration audits require explicit coverage.
-- [ ] T011 [US2] Read `docs/document-writer-prompt.md`, update `ee/packages/plan-catalog/README.md`, `ee/readme.md`, billing setup and Enterprise pricing/usage docs, then regenerate the product-docs corpus.
-- [ ] T012 [US2] If a local Stripe test key exists, run test-mode `stripe:sync` dry-run and apply as appropriate; never pass `--live`. Record the exact owner live command regardless.
+- [X] T008 [US2] Add failing plan-catalog parity/price tests, pricing-order tests, webhook/Stripe-sync assertions, and a Playwright test for the Planet managed-model choice; run them and record the red result.
+- [X] T009 [US2] Add `planet_managed` and its lookup keys to `ee/packages/plan-catalog/src/plans.json` / `index.ts`, make it the self-serve ceiling, and update affected catalog fixtures/enumerations.
+- [X] T010 [US2] Implement catalog-derived Planet plan-card wording/action and update billing, usage-limit, webhook, Stripe-sync, staff/operator-console, analytics, and frontend tests where enumeration audits require explicit coverage.
+- [X] T011 [US2] Read `docs/document-writer-prompt.md`, update `ee/packages/plan-catalog/README.md`, `ee/readme.md`, billing setup and Enterprise pricing/usage docs, then regenerate the product-docs corpus.
+- [X] T012 [US2] If a local Stripe test key exists, run test-mode `stripe:sync` dry-run and apply as appropriate; never pass `--live`. Record the exact owner live command regardless.
 
 ## Phase 4: Verification And Delivery
 
-- [ ] T013 Run changed-module tests and all required backend, frontend, Enterprise, ESLint, dead-code, docs, and product-corpus gates; report exact results and pre-existing baselines.
-- [ ] T014 Perform a self senior-engineer findings-first review and one self engineering-manager scope/release review because subagent delegation is explicitly prohibited; resolve all in-scope findings.
+- [X] T013 Run changed-module tests and all required backend, frontend, Enterprise, ESLint, dead-code, docs, and product-corpus gates; report exact results and pre-existing baselines.
+- [X] T014 Perform a self senior-engineer findings-first review and one self engineering-manager scope/release review because subagent delegation is explicitly prohibited; resolve all in-scope findings.
 - [ ] T015 Commit Part 2 as the second Conventional Commit, push `feat/planet-managed-models-1421`, and open a PR with design answers, exact validation, owner live-sync step, `Closes #1421`, and the required footer.
 
 ## Dependencies & Execution Order

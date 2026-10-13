@@ -574,6 +574,17 @@ describe("POST /api/v1/ee/billing/checkout", () => {
     );
   });
 
+  it("checks out the managed Planet price through the catalog lookup key", async () => {
+    const gateway = createFakeGateway();
+    await withSessionCookie(
+      request(createApp(configuredConfig, { gateway }))
+        .post("/api/v1/ee/billing/checkout")
+        .send({ plan: "planet_managed", interval: "month", returnPath: "/usage" }),
+    ).expect(200);
+
+    expect(gateway.findPriceByLookupKey).toHaveBeenCalledWith("planet_managed_month");
+  });
+
   it("returns a checkout URL for the top-up pack on a paid plan", async () => {
     const gateway = createFakeGateway();
     const response = await withSessionCookie(

@@ -78,6 +78,10 @@ describe("upgradePlanIdFor", () => {
     expect(upgradePlanIdFor("satellite")).toBe("planet");
   });
 
+  it("offers the managed-model variant above Planet BYOK", () => {
+    expect(upgradePlanIdFor("planet")).toBe("planet_managed");
+  });
+
   it("returns null at the self-serve ceiling plan", () => {
     expect(upgradePlanIdFor(PLAN_CATALOG.selfServeCeilingPlanId)).toBeNull();
   });

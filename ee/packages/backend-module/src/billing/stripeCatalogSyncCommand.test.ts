@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { PLAN_CATALOG } from "@radioso/plan-catalog";
+
 import type {
   StripeAccountSummary,
   StripeCatalogAdmin,
@@ -229,7 +231,9 @@ describe("runStripeCatalogSyncCommand", () => {
     expect(admin.writes).toContain("update_tax_defaults");
     expect(admin.writes.some((write) => write.startsWith("create_portal_configuration"))).toBe(true);
     expect(admin.writes).toContain(`create_webhook_endpoint ${WEBHOOK_URL}`);
-    expect(admin.portals[0]?.features.subscriptionUpdate.products).toHaveLength(2);
+    expect(admin.portals[0]?.features.subscriptionUpdate.products).toHaveLength(
+      PLAN_CATALOG.plans.filter((plan) => plan.stripe !== null).length,
+    );
 
     const writesAfterFirst = admin.writes.length;
     const second = await run(admin, ["--apply", "--webhook-url", WEBHOOK_URL, "--webhook-secret-file", join(dir, "whsec-2")]);

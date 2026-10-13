@@ -50,6 +50,7 @@ import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capability
 import {
   createAuditService,
   InMemoryAgentRepository,
+  InMemoryAuditEventRepository,
   InMemoryConversationRepository,
   InMemoryMessageRepository,
   pinExistingConversationsToPublishedRevisions,
@@ -175,12 +176,13 @@ const chatService = async (input: {
   };
   const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
   const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  const auditEvents = new InMemoryAuditEventRepository();
   const service = new ChatService({
     conversationRepository,
     messageRepository,
     retrievalTurn: new RetrievalTurnController(directAnswerPipeline as never),
     chatGateway: input.chatGateway,
-    auditService: createAuditService(),
+    auditService: createAuditService(auditEvents),
     turnRuntime: buildChatTurnRuntime({
       chatGateway: input.chatGateway,
       fallbackReplyComposer,
@@ -203,10 +205,13 @@ const chatService = async (input: {
   });
   /** An existing conversation with this agent, for turns that must share one. */
   const existingConversationId = conversation.id;
-  return { service, messageRepository, routineStore, reservation, metrics, logger, existingConversationId };
+  return { service, messageRepository, routineStore, reservation, metrics, logger, auditEvents, existingConversationId };
 };
 
-const request = (query: string, extra: { conversationId?: string; signal?: AbortSignal } = {}) => ({
+const request = (
+  query: string,
+  extra: { conversationId?: string; signal?: AbortSignal; supersession?: "latest_input_wins" } = {},
+) => ({
   workspaceId: "workspace-1",
   query,
   stream: true,
@@ -1019,6 +1024,154 @@ describe("ChatService streams a routine reply that reports no completed action",
     expect(first.events.some((event) => event.type === "cancelled")).toBe(false);
     expect(first.events.at(-1)).toMatchObject({ type: "done", answer: "Which email can we use?" });
     expect(chunkText(second.events)).toBe("Thanks.");
+  });
+
+  describe("when the newest input wins", () => {
+    const latest = { supersession: "latest_input_wins" as const };
+
+    const storedMessages = async (harness: Awaited<ReturnType<typeof chatService>>) =>
+      (await harness.messageRepository.listByConversationId("workspace-1", harness.existingConversationId))
+        .map((message) => `${message.role}: ${message.content}`);
+
+    const cancelledAudits = (harness: Awaited<ReturnType<typeof chatService>>) =>
+      harness.auditEvents.items.filter((event) => event.eventType === "chat.answer" && event.eventStatus === "cancelled");
+
+    it("cuts off a reply that has started showing and keeps the user message it answered", async () => {
+      const firstHeld = deferred();
+      const { routineProvider } = claimingRoutine([
+        { reply: streamingReply(["Which email ", "can we use?"], { hold: firstHeld.promise, holdAt: 1 }) },
+        { reply: streamingReply(["Thanks."]) },
+      ]);
+      const first: Observed = { order: [], events: [] };
+      const second: Observed = { order: [], events: [] };
+      const harness = await chatService({ routineProvider, chatGateway: unusedGateway, order: first.order });
+      const conversationId = harness.existingConversationId;
+
+      const firstEvents = harness.service.streamAnswer(request("contact me", { conversationId, ...latest }))[Symbol.asyncIterator]();
+      let next = await firstEvents.next();
+      while (!next.done && next.value.type !== "chunk") {
+        next = await firstEvents.next();
+      }
+      expect(next.value).toEqual({ type: "chunk", text: "Which email " });
+      const secondTurn = drainTurn(harness.service.streamAnswer(request("a@b.c", { conversationId, ...latest })), second);
+      firstHeld.resolve();
+
+      expect(await drainTurn({ [Symbol.asyncIterator]: () => firstEvents }, first)).toBeUndefined();
+      expect(await secondTurn).toBeUndefined();
+      expect(first.events.at(-1)).toMatchObject({ type: "cancelled", reason: "superseded", stage: "persisting" });
+      expect(first.events.some((event) => event.type === "done")).toBe(false);
+      expect(chunkText(second.events)).toBe("Thanks.");
+      expect(await storedMessages(harness)).toEqual(["user: contact me", "user: a@b.c", "assistant: Thanks."]);
+      expect(cancelledAudits(harness)).toEqual([
+        expect.objectContaining({ metadata: expect.objectContaining({ userMessageId: expect.any(String) }) }),
+      ]);
+      // The cut reply is not billed as an answer: its reservation is released, the newer turn's commits.
+      expect(harness.reservation.release).toHaveBeenCalledTimes(1);
+      expect(harness.reservation.commit).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves no user message for a turn superseded before its reply showed", async () => {
+      const firstHeld = deferred();
+      const firstReply = streamingReply(["Stale ", "reply"], { hold: firstHeld.promise });
+      const { routineProvider } = claimingRoutine([
+        { reply: firstReply },
+        { reply: streamingReply(["Latest ", "reply"]) },
+      ]);
+      const first: Observed = { order: [], events: [] };
+      const second: Observed = { order: [], events: [] };
+      const harness = await chatService({ routineProvider, chatGateway: unusedGateway, order: first.order });
+      const conversationId = harness.existingConversationId;
+
+      const firstTurn = drainTurn(harness.service.streamAnswer(request("contact me", { conversationId, ...latest })), first);
+      await vi.waitFor(() => expect(firstReply.stream).toHaveBeenCalled());
+      const secondTurn = drainTurn(harness.service.streamAnswer(request("contact me please", { conversationId, ...latest })), second);
+      firstHeld.resolve();
+
+      expect(await firstTurn).toBeUndefined();
+      expect(await secondTurn).toBeUndefined();
+      expect(first.events.filter((event) => event.type === "chunk")).toEqual([]);
+      expect(first.events.at(-1)).toMatchObject({ type: "cancelled", reason: "superseded" });
+      expect(await storedMessages(harness)).toEqual(["user: contact me please", "assistant: Latest reply"]);
+      const [cancellation] = cancelledAudits(harness);
+      expect(cancelledAudits(harness)).toHaveLength(1);
+      expect(cancellation?.metadata).toMatchObject({ conversationId, userMessageId: expect.any(String), userMessageDiscarded: true });
+      expect(harness.reservation.commit).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the caller's message when a default-mode turn cancels the turn before its reply", async () => {
+      const firstHeld = deferred();
+      const firstReply = streamingReply(["Stale ", "reply"], { hold: firstHeld.promise });
+      const { routineProvider } = claimingRoutine([
+        { reply: firstReply },
+        { reply: streamingReply(["Approved."]) },
+      ]);
+      const harness = await chatService({ routineProvider, chatGateway: unusedGateway, order: [] });
+      const conversationId = harness.existingConversationId;
+
+      const firstTurn = drainTurn(harness.service.streamAnswer(request("contact me", { conversationId, ...latest })), { order: [], events: [] });
+      await vi.waitFor(() => expect(firstReply.stream).toHaveBeenCalled());
+      // Any turn that is not itself `latest_input_wins`, such as one an operator's approval starts.
+      const secondTurn = drainTurn(harness.service.streamAnswer(request("go ahead", { conversationId })), { order: [], events: [] });
+      firstHeld.resolve();
+      await Promise.all([firstTurn, secondTurn]);
+
+      expect(await storedMessages(harness)).toEqual(["user: contact me", "user: go ahead", "assistant: Approved."]);
+      expect(cancelledAudits(harness)[0]?.metadata).not.toHaveProperty("userMessageDiscarded");
+    });
+
+    it("keeps the superseded user message when the turns run in the default mode", async () => {
+      const firstHeld = deferred();
+      const firstReply = streamingReply(["Stale ", "reply"], { hold: firstHeld.promise });
+      const { routineProvider } = claimingRoutine([
+        { reply: firstReply },
+        { reply: streamingReply(["Latest ", "reply"]) },
+      ]);
+      const first: Observed = { order: [], events: [] };
+      const harness = await chatService({ routineProvider, chatGateway: unusedGateway, order: first.order });
+      const conversationId = harness.existingConversationId;
+
+      const firstTurn = drainTurn(harness.service.streamAnswer(request("contact me", { conversationId })), first);
+      await vi.waitFor(() => expect(firstReply.stream).toHaveBeenCalled());
+      const secondTurn = drainTurn(harness.service.streamAnswer(request("contact me please", { conversationId })), { order: [], events: [] });
+      firstHeld.resolve();
+      await Promise.all([firstTurn, secondTurn]);
+
+      expect(await storedMessages(harness)).toEqual([
+        "user: contact me",
+        "user: contact me please",
+        "assistant: Latest reply",
+      ]);
+      expect(cancelledAudits(harness)[0]?.metadata).toMatchObject({ userMessageId: expect.any(String) });
+    });
+
+    it("records three revisions in quick succession as one user message and one answer", async () => {
+      const firstHeld = deferred();
+      const firstReply = streamingReply(["First ", "guess"], { hold: firstHeld.promise });
+      const { routineProvider, claim } = claimingRoutine([
+        { reply: firstReply },
+        { reply: streamingReply(["Final ", "answer"]) },
+      ]);
+      const harness = await chatService({ routineProvider, chatGateway: unusedGateway, order: [] });
+      const conversationId = harness.existingConversationId;
+      const first: Observed = { order: [], events: [] };
+      const second: Observed = { order: [], events: [] };
+      const third: Observed = { order: [], events: [] };
+
+      const firstTurn = drainTurn(harness.service.streamAnswer(request("book Hatha", { conversationId, ...latest })), first);
+      await vi.waitFor(() => expect(firstReply.stream).toHaveBeenCalled());
+      const secondTurn = drainTurn(harness.service.streamAnswer(request("book hatter", { conversationId, ...latest })), second);
+      const thirdTurn = drainTurn(harness.service.streamAnswer(request("book Hatha yoga", { conversationId, ...latest })), third);
+      firstHeld.resolve();
+      await Promise.all([firstTurn, secondTurn, thirdTurn]);
+
+      expect(first.events.at(-1)).toMatchObject({ type: "cancelled" });
+      expect(second.events.at(-1)).toMatchObject({ type: "cancelled" });
+      expect(chunkText(third.events)).toBe("Final answer");
+      expect(await storedMessages(harness)).toEqual(["user: book Hatha yoga", "assistant: Final answer"]);
+      // The middle revision was overtaken while it waited, so it never stored a message or ran the routine.
+      expect(harness.messageRepository.create).not.toHaveBeenCalledWith(expect.objectContaining({ content: "book hatter" }));
+      expect(claim).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("renders the reply whole on the non-streaming path, as before", async () => {

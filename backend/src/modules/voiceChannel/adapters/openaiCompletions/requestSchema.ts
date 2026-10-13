@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { CHAT_MESSAGE_MAX_LENGTH } from "../../../../app/http/schemas/textInputLimits.js";
+import type { CompletionsDialect } from "./dialects.js";
 
 const contentPartSchema = z.object({ type: z.string(), text: z.unknown().optional() }).passthrough();
 
@@ -24,8 +25,17 @@ const textOf = (content: CompletionsMessage["content"]): string => {
  * The caller's utterance is the last user message. The vendor replays the whole call on every
  * request; the conversation already holds that history, so the rest is ignored.
  */
+const lastUserIndex = (messages: readonly CompletionsMessage[]): number => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") {
+      return index;
+    }
+  }
+  return -1;
+};
+
 const utteranceIn = (messages: readonly CompletionsMessage[]): string => {
-  const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
+  const lastUserMessage = messages[lastUserIndex(messages)];
   return lastUserMessage ? textOf(lastUserMessage.content).trim() : "";
 };
 
@@ -59,4 +69,22 @@ type CompletionsRequest = z.infer<typeof completionsRequestSchema>;
 export const utteranceOf = (request: CompletionsRequest): string | null => {
   const utterance = utteranceIn(request.messages);
   return utterance.length > 0 ? utterance : null;
+};
+
+/**
+ * What the caller heard of the agent's previous reply, when the dialect's runtime replays it cut
+ * short: the assistant message right before the newest user message, ending in the dialect's
+ * suffix, without it. Undefined when that reply was heard whole or the dialect reports nothing.
+ */
+export const heardUntilFor = (
+  dialect: Pick<CompletionsDialect, "interruptedReplySuffix">,
+  request: CompletionsRequest,
+): string | undefined => {
+  const suffix = dialect.interruptedReplySuffix;
+  const previous = request.messages[lastUserIndex(request.messages) - 1];
+  if (!suffix || previous?.role !== "assistant") {
+    return undefined;
+  }
+  const reply = textOf(previous.content).trimEnd();
+  return reply.endsWith(suffix) ? reply.slice(0, -suffix.length).trimEnd() : undefined;
 };

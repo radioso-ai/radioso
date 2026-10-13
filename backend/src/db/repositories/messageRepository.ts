@@ -117,6 +117,13 @@ export interface MessageRepositoryPort {
     totalLatencyMs?: number;
     grounding?: GroundingDiagnosticSnapshot;
   }): Promise<MessageRecord>;
+  /**
+   * Deletes one user message of the conversation, for a turn whose input a newer request replaced
+   * before it answered. Rows that reference the message follow their foreign keys: usage events
+   * keep the spend with the link cleared; coverage assessments, facets and facet jobs go with it.
+   * Resolves false when the conversation has no user message with that id.
+   */
+  deleteUserMessage(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<boolean>;
 }
 
 export interface MessageRow {
@@ -614,5 +621,16 @@ export class MessageRepository implements MessageRepositoryPort {
       .executeTakeFirstOrThrow();
 
     return mapMessageRow(row as MessageRow);
+  }
+
+  async deleteUserMessage(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom("messages")
+      .where("workspace_id", "=", input.workspaceId)
+      .where("conversation_id", "=", input.conversationId)
+      .where("id", "=", input.messageId)
+      .where("role", "=", "user")
+      .executeTakeFirst();
+    return result.numDeletedRows > 0n;
   }
 }

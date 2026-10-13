@@ -64,6 +64,20 @@ describeIntegration("MessageRepository (Postgres)", () => {
     expect(human.metadata).toEqual({ humanAgent: { accountId: "account-1", displayName: "Dana Operator" } });
   });
 
+  it("deletes one user message of the conversation and nothing else", async () => {
+    const otherConversationId = randomUUID();
+    await database.query(`INSERT INTO conversations (id, workspace_id) VALUES ($1,$2)`, [otherConversationId, workspaceId]);
+    const kept = await repository.create({ conversationId, workspaceId, role: "user", content: "When do you open?" });
+    const replaced = await repository.create({ conversationId, workspaceId, role: "user", content: "When do you op" });
+    const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "At nine." });
+
+    expect(await repository.deleteUserMessage({ workspaceId, conversationId, messageId: replaced.id })).toBe(true);
+    expect(await repository.deleteUserMessage({ workspaceId, conversationId, messageId: replaced.id })).toBe(false);
+    expect(await repository.deleteUserMessage({ workspaceId, conversationId, messageId: reply.id })).toBe(false);
+    expect(await repository.deleteUserMessage({ workspaceId, conversationId: otherConversationId, messageId: kept.id })).toBe(false);
+    expect((await repository.listByConversationId(workspaceId, conversationId)).map((message) => message.id)).toEqual([kept.id, reply.id]);
+  });
+
   it("round-trips nested metadata through jsonb", async () => {
     const nested = { activityTrace: { traceId: "t1", stages: [{ kind: "intake", outputs: { nested: { a: [1, 2] } } }] } };
     const created = await repository.create({ conversationId, workspaceId, role: "assistant", content: "x", metadata: nested });

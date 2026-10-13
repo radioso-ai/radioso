@@ -12,49 +12,70 @@ const managedPlan = PLAN_CATALOG.plans.find((plan) => plan.models === "managed")
 const byokPlan = PLAN_CATALOG.plans.find((plan) => plan.models === "byok")!;
 
 describe("EnterpriseManagedModelPolicy", () => {
+  it.each(["chat", "embeddings"] as const)(
+    "denies platform credentials for %s on a byok plan",
+    async (capability) => {
+      const policy = new EnterpriseManagedModelPolicy(lookup(byokPlan.id));
+
+      await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability })).resolves.toEqual({
+        managedModel: null,
+        platformCredentials: "denied",
+      });
+    },
+  );
+
   it("runs the catalog's chat selection for chat on a managed plan", async () => {
     const policy = new EnterpriseManagedModelPolicy(lookup(managedPlan.id));
 
-    await expect(policy.resolveManagedModel({ workspaceId: "ws-1", capability: "chat" })).resolves.toEqual(
-      PLAN_CATALOG.managedModels.chat,
-    );
+    await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "chat" })).resolves.toEqual({
+      managedModel: PLAN_CATALOG.managedModels.chat,
+      platformCredentials: "allowed",
+    });
   });
 
   it("runs the catalog's default selection for rewrite and rerank on a managed plan", async () => {
     const policy = new EnterpriseManagedModelPolicy(lookup(managedPlan.id));
 
-    await expect(policy.resolveManagedModel({ workspaceId: "ws-1", capability: "rewrite" })).resolves.toEqual(
-      PLAN_CATALOG.managedModels.default,
-    );
-    await expect(policy.resolveManagedModel({ workspaceId: "ws-1", capability: "rerank" })).resolves.toEqual(
-      PLAN_CATALOG.managedModels.default,
-    );
+    await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "rewrite" })).resolves.toEqual({
+      managedModel: PLAN_CATALOG.managedModels.default,
+      platformCredentials: "allowed",
+    });
+    await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "rerank" })).resolves.toEqual({
+      managedModel: PLAN_CATALOG.managedModels.default,
+      platformCredentials: "allowed",
+    });
   });
 
   it("never manages embeddings", async () => {
     const policy = new EnterpriseManagedModelPolicy(lookup(managedPlan.id));
 
-    await expect(policy.resolveManagedModel({ workspaceId: "ws-1", capability: "embeddings" })).resolves.toBeNull();
+    await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "embeddings" })).resolves.toEqual({
+      managedModel: null,
+      platformCredentials: "allowed",
+    });
   });
 
-  it("lets a byok plan choose freely", async () => {
+  it("keeps a byok plan on workspace credentials", async () => {
     const policy = new EnterpriseManagedModelPolicy(lookup(byokPlan.id));
 
-    await expect(policy.resolveManagedModel({ workspaceId: "ws-1", capability: "chat" })).resolves.toBeNull();
+    await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "chat" })).resolves.toEqual({
+      managedModel: null,
+      platformCredentials: "denied",
+    });
   });
 
   it("treats an unassigned or unknown account like self-host", async () => {
     await expect(
-      new EnterpriseManagedModelPolicy(lookup(null)).resolveManagedModel({ workspaceId: "ws-1", capability: "chat" }),
-    ).resolves.toBeNull();
+      new EnterpriseManagedModelPolicy(lookup(null)).resolveModelPolicy({ workspaceId: "ws-1", capability: "chat" }),
+    ).resolves.toEqual({ managedModel: null, platformCredentials: "allowed" });
     await expect(
-      new EnterpriseManagedModelPolicy(lookup("not-in-catalog")).resolveManagedModel({ workspaceId: "ws-1", capability: "chat" }),
-    ).resolves.toBeNull();
+      new EnterpriseManagedModelPolicy(lookup("not-in-catalog")).resolveModelPolicy({ workspaceId: "ws-1", capability: "chat" }),
+    ).resolves.toEqual({ managedModel: null, platformCredentials: "allowed" });
   });
 
   it("asks the plan lookup with the workspace it was given", async () => {
     const source = lookup(managedPlan.id);
-    await new EnterpriseManagedModelPolicy(source).resolveManagedModel({ workspaceId: "ws-42", capability: "chat" });
+    await new EnterpriseManagedModelPolicy(source).resolveModelPolicy({ workspaceId: "ws-42", capability: "chat" });
 
     expect(source.findProfileKeyForWorkspace).toHaveBeenCalledWith("ws-42");
   });

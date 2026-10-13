@@ -42,8 +42,11 @@ const buildCredentials = (keys: Record<string, string>) => ({
 const managedPolicy = (
   selections: Partial<Record<string, ManagedModelSelection>>,
 ): ManagedModelPolicy => ({
-  async resolveManagedModel({ capability }) {
-    return selections[capability] ?? null;
+  async resolveModelPolicy({ capability }) {
+    return {
+      managedModel: selections[capability] ?? null,
+      platformCredentials: "allowed",
+    };
   },
 });
 
@@ -55,6 +58,12 @@ const managedForAll = managedPolicy({
   rerank: managedDefault,
   embeddings: managedDefault,
 });
+
+const byokPolicy = {
+  async resolveModelPolicy() {
+    return { managedModel: null, platformCredentials: "denied" as const };
+  },
+} satisfies ManagedModelPolicy;
 
 const envKeyResolver = (lookup: Partial<Record<LlmProviderName, string>>) => ({
   resolveEnvApiKey(provider: LlmProviderName): string | undefined {
@@ -426,8 +435,39 @@ describe("WorkspaceLlmCapabilityResolver managed plans", () => {
     expect(config).toMatchObject({ provider: "openai", model: "gpt-5.2", resolvedBy: "workspace_preference" });
   });
 
+  it.each(["chat", "embeddings"] as const)(
+    "never resolves deployment credentials for the %s capability on a BYOK plan",
+    async (capability) => {
+      const resolver = new WorkspaceLlmCapabilityResolver({
+        defaults: envConfig,
+        settings: buildSettings([]),
+        credentials: buildCredentials({}),
+        envKeys: envKeyResolver({ openai: "platform-openai" }),
+        managedModelPolicy: byokPolicy,
+      });
+
+      const failure = await resolver.resolve(capability, { workspaceId: "ws-1" }).catch((error) => error);
+
+      expect(failure).toBeInstanceOf(ProviderConfigurationError);
+      expect(failure).toMatchObject({
+        statusCode: 503,
+        code: "provider_misconfigured",
+        details: {
+          kind: "missing_api_key",
+          provider: "openai",
+          capability,
+          remediation: "Add a workspace credential at Settings → Credentials.",
+        },
+      });
+    },
+  );
+
   it("never locks embeddings, even when the policy would answer for them", async () => {
-    const policy: ManagedModelPolicy = { resolveManagedModel: vi.fn(async () => managedDefault) };
+    const resolveModelPolicy = vi.fn(async () => ({
+      managedModel: managedDefault,
+      platformCredentials: "allowed" as const,
+    }));
+    const policy: ManagedModelPolicy = { resolveModelPolicy };
     const resolver = new WorkspaceLlmCapabilityResolver({
       defaults: envConfig,
       settings: buildSettings([]),
@@ -443,7 +483,7 @@ describe("WorkspaceLlmCapabilityResolver managed plans", () => {
       model: "text-embedding-3-small",
       resolvedBy: "environment_default",
     });
-    expect(policy.resolveManagedModel).not.toHaveBeenCalled();
+    expect(resolveModelPolicy).toHaveBeenCalledWith({ workspaceId: "ws-1", capability: "embeddings" });
   });
 
   it("logs at info when the lock overrides an explicit preference or override, and at debug otherwise", async () => {

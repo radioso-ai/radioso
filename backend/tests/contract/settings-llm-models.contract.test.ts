@@ -5,10 +5,13 @@ import { adminSessionHeaders, createTestApp, issueTestSession } from "../support
 import type { ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
 
 const managedEverywhere: ManagedModelPolicy = {
-  async resolveManagedModel({ capability }) {
-    return capability === "chat"
-      ? { provider: "claude", model: "claude-sonnet-5" }
-      : { provider: "claude", model: "claude-haiku-4-5" };
+  async resolveModelPolicy({ capability }) {
+    return {
+      managedModel: capability === "chat"
+        ? { provider: "claude", model: "claude-sonnet-5" }
+        : { provider: "claude", model: "claude-haiku-4-5" },
+      platformCredentials: "allowed",
+    };
   },
 };
 

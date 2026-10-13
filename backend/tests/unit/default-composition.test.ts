@@ -318,7 +318,10 @@ describe("default application composition", () => {
 
   it("collects an optional managed model policy through module registration", () => {
     const policy: ManagedModelPolicy = {
-      resolveManagedModel: vi.fn(async () => null),
+      resolveModelPolicy: vi.fn(async () => ({
+        managedModel: null,
+        platformCredentials: "allowed" as const,
+      })),
     };
     const composition = createDefaultApplicationComposition({
       logger: createLogger(),

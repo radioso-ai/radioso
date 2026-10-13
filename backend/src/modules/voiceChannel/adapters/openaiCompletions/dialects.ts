@@ -17,8 +17,8 @@ export interface CompletionsDialect {
   localeFrom: readonly CompletionsFieldSource[];
   transportDefault: VoiceTransport;
   /**
-   * A delta sent after each bridge line and speech piece, for a runtime that speaks a sentence only
-   * once a following non-blank delta arrives. Wire-only: never part of the stored reply.
+   * A delta sent after each bridge line and speech piece, for a runtime that holds a finished
+   * sentence back from speech until the wire shows it ended. Wire-only: never part of the stored reply.
    */
   sentenceFlushDelta?: string;
 }
@@ -31,9 +31,10 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
     sessionKeyFrom: [{ bodyPath: ["elevenlabs_extra_body", "session_key"] }],
     localeFrom: [{ bodyPath: ["elevenlabs_extra_body", "locale"] }],
     transportDefault: "web",
-    // Observed 2026-10-13: ElevenLabs holds a sentence back from speech until another non-blank
-    // delta arrives. A space or a newline does not release it; a zero-width space does.
-    sentenceFlushDelta: "\u200B",
+    // Observed 2026-10-13: ElevenLabs hands a sentence to speech once its terminator is followed by
+    // whitespace and a later non-blank delta arrives. Pieces end on the terminator, so the flush is
+    // a space (the whitespace) plus a zero-width space (the non-blank delta), sent as one chunk.
+    sentenceFlushDelta: " \u200B",
   }],
   ["generic", {
     id: "generic",

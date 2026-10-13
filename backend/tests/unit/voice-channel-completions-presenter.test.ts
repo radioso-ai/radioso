@@ -70,7 +70,7 @@ describe("OpenAI completions presenter", () => {
   });
 
   it("follows every bridge line and sentence with the dialect's flush delta", () => {
-    const render = createCompletionChunkRenderer(identity, { sentenceFlushDelta: "\u200B" });
+    const render = createCompletionChunkRenderer(identity, { sentenceFlushDelta: " \u200B" });
     const frames = [
       { type: "conversation", conversationId: "55555555-5555-4555-8555-555555555555" },
       { type: "bridge", text: "Let me check." },
@@ -81,18 +81,18 @@ describe("OpenAI completions presenter", () => {
 
     expect(frames.map(deltaOf)).toEqual([
       { role: "assistant", content: "Let me check." },
-      { content: "\u200B" },
+      { content: " \u200B" },
       { content: "We open at nine. " },
-      { content: "\u200B" },
+      { content: " \u200B" },
       { content: "See you then!" },
-      { content: "\u200B" },
+      { content: " \u200B" },
       {},
       "[DONE]",
     ]);
   });
 
   it("sends no flush delta after an empty final piece", () => {
-    const render = createCompletionChunkRenderer(identity, { sentenceFlushDelta: "\u200B" });
+    const render = createCompletionChunkRenderer(identity, { sentenceFlushDelta: " \u200B" });
 
     expect(render({ type: "speech", text: "", last: true })).toEqual([]);
   });

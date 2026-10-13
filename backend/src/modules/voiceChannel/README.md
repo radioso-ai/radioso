@@ -98,10 +98,10 @@ helpers and the shared chat message limit from `app/http`
   is stored. The stored answer is then not what the caller heard, and nothing in
   history marks that. The route ends the HTTP response at the outcome in both
   modes, so the runtime never waits for the drain.
-- **Flush delta.** ElevenLabs hands a sentence to speech only once a following
-  non-blank delta arrives (a space or newline does not count; observed
-  2026-10-13). The
-  `elevenlabs` dialect's `sentenceFlushDelta` (U+200B) follows every bridge
+- **Flush delta.** ElevenLabs hands a sentence to speech once the terminator
+  is followed by whitespace and a later non-blank delta arrives (observed
+  2026-10-13). Pieces end on the terminator, so the `elevenlabs` dialect's
+  `sentenceFlushDelta` is a space plus U+200B in one chunk, after every bridge
   line and speech piece on the wire; `renderCompletion` and history never see
   it.
 - **Metering.** The chat service reserves usage with `surface` = the source

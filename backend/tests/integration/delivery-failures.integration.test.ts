@@ -84,11 +84,11 @@ describeIntegration("conversation delivery failures (Postgres)", () => {
     return { workspaceId, agentId, otherAgentId, userId };
   };
 
-  const seedConversation = async (workspaceId: string, agentId: string | null, messages = 1) => {
+  const seedConversation = async (workspaceId: string, agentId: string | null, messages = 1, channel = "email") => {
     const conversationId = randomUUID();
     await database.execute(
-      "INSERT INTO conversations (id, workspace_id, agent_id, source_channel) VALUES ($1, $2, $3, 'email')",
-      [conversationId, workspaceId, agentId],
+      "INSERT INTO conversations (id, workspace_id, agent_id, source_channel) VALUES ($1, $2, $3, $4)",
+      [conversationId, workspaceId, agentId, channel],
     );
     const messageIds: string[] = [];
     for (let index = 0; index < messages; index += 1) {
@@ -129,6 +129,22 @@ describeIntegration("conversation delivery failures (Postgres)", () => {
       .orderBy("created_at")
       .orderBy("id")
       .execute();
+
+  it("filters failures by agent and channel through a filtered cursor without workspace leakage", async () => {
+    const { workspaceId, agentId, otherAgentId } = await seedWorkspace();
+    const otherWorkspace = await seedWorkspace();
+    const emailOne = await seedConversation(workspaceId, agentId, 1, "email");
+    const emailTwo = await seedConversation(workspaceId, agentId, 1, "email");
+    const web = await seedConversation(workspaceId, otherAgentId, 1, "website_embed");
+    const foreign = await seedConversation(otherWorkspace.workspaceId, otherWorkspace.agentId, 1, "email");
+    for (const item of [emailOne, emailTwo, web, foreign]) {
+      await failures.open(openInput(item === foreign ? otherWorkspace.workspaceId : workspaceId, item.conversationId, item.messageIds[0]));
+    }
+    const query = { agentId, channel: "email", limit: 1 };
+    const first = await failures.list(workspaceId, { state: "open", ...query });
+    const second = await failures.list(workspaceId, { state: "open", ...query, cursor: first.nextCursor! });
+    expect([...first.items, ...second.items].map((row) => row.conversationId).sort()).toEqual([emailOne.conversationId, emailTwo.conversationId].sort());
+  });
 
   it("keeps one open failure per message, so a repeated or concurrent open records it once", async () => {
     const { workspaceId } = await seedWorkspace();

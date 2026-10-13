@@ -133,7 +133,7 @@ export interface DeliveryFailureWriteStore {
   acknowledgeOpen(input: { workspaceId: string; failureId: string; userId: string }): Promise<DeliveryFailureRecord | null>;
 }
 
-type DeliveryFailureListQuery = { agentId: string | undefined; after: DeliveryFailurePosition | null; limit: number };
+type DeliveryFailureListQuery = { agentId: string | undefined; channel?: string; after: DeliveryFailurePosition | null; limit: number };
 
 export interface DeliveryFailureReadStore {
   /** Up to `limit` open failures, newest first, after `after`; with `agentId`, on that agent's conversations. */
@@ -285,11 +285,11 @@ export class DeliveryFailures implements DeliveryFailureRecorderPort, DeliveryFa
   /** A workspace's failures newest first: the open ones, or with `state: "all"` the cleared ones too. */
   async list(
     workspaceId: string,
-    query: { state: "open" | "all"; agentId?: string; cursor?: string; limit: number },
+    query: { state: "open" | "all"; agentId?: string; channel?: string; cursor?: string; limit: number },
   ): Promise<DeliveryFailurePage> {
     const after = query.cursor === undefined ? null : decodePosition(query.cursor);
     // One past the page tells whether another follows.
-    const page = { agentId: query.agentId, after, limit: query.limit + 1 };
+    const page = { agentId: query.agentId, channel: query.channel, after, limit: query.limit + 1 };
     const rows = query.state === "all"
       ? await this.deps.reads.listAll(workspaceId, page)
       : await this.deps.reads.listOpen(workspaceId, page);

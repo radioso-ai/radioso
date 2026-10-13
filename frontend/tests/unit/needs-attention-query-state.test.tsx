@@ -208,6 +208,7 @@ describe('Needs Attention query state', () => {
         canResolve: true,
         deadline: null,
         createdAt: '2026-06-19T09:00:00.000Z',
+        channel: null,
       }],
     })
     vi.mocked(chatApi.listChatHistory).mockResolvedValue({ conversations: [], total: 0 } as never)

@@ -22274,6 +22274,12 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -22287,7 +22293,8 @@
           "contentHash",
           "canResolve",
           "deadline",
-          "createdAt"
+          "createdAt",
+          "channel"
         ]
       },
       "PendingApprovalDecisionListResponse": {
@@ -49639,6 +49646,25 @@
             "required": false,
             "name": "ownership",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "channel",
+            "in": "query"
           }
         ],
         "responses": {
@@ -50799,6 +50825,16 @@
           {
             "schema": {
               "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "channel",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "minLength": 1
             },
             "required": false,
@@ -51079,6 +51115,16 @@
             },
             "required": false,
             "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "channel",
             "in": "query"
           },
           {
@@ -51437,6 +51483,27 @@
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "channel",
+            "in": "query"
           }
         ],
         "responses": {

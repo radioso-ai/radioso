@@ -95,7 +95,11 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const workspaceId = routeState.workspaceId ?? ''
   // "Taken by: me" is the signed-in teammate, not their organisation.
   const currentUserId = useOptionalAuth()?.user?.userId ?? null
-  const attentionQueries = useNeedsAttentionQueries(workspaceId)
+  const attentionQueries = useNeedsAttentionQueries(workspaceId, {
+    type: routeState.inboxEscalation ?? 'all',
+    agentId: routeState.inboxAgentId,
+    channel: routeState.inboxChannel,
+  })
   const queryClient = useQueryClient()
   const router = useRouter()
   const hasAppliedDefaultLensRef = useRef(false)

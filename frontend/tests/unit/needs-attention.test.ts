@@ -141,6 +141,17 @@ describe('Inbox channel filter', () => {
       .toMatchObject([{ conversationId: 'email' }])
     expect(listInboxChannels(items)).toEqual([{ channel: 'web' }, { channel: 'email' }])
   })
+
+  it('keeps an email-channel routine approval under the email filter', () => {
+    const items = buildInboxModel({
+      decisions: [decision({ conversationId: 'email-approval', channel: 'email' })],
+      conversations: [],
+      qualityTurns: [],
+    }).items
+
+    expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, channel: 'email' }, { currentUserId: null }))
+      .toMatchObject([{ conversationId: 'email-approval', type: 'approval', channel: 'email' }])
+  })
 })
 
 describe('deriveInboxResponseHandoffItem', () => {
@@ -265,6 +276,7 @@ const decision = (overrides: Partial<PendingApprovalDecision> = {}): PendingAppr
   canResolve: true,
   deadline: null,
   createdAt: '2026-06-19T10:00:00.000Z',
+  channel: null,
   ...overrides,
 })
 

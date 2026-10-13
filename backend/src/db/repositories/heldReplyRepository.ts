@@ -414,6 +414,15 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
     if (agentId !== undefined) {
       select = select.where("agent_id", "=", agentId);
     }
+    if (query.channel !== undefined) {
+      select = select.where((eb) => eb.exists(
+        eb.selectFrom("conversations as c")
+          .select("c.id")
+          .whereRef("c.id", "=", "held_replies.conversation_id")
+          .where("c.workspace_id", "=", workspaceId)
+          .where("c.source_channel", "=", query.channel!),
+      ));
+    }
     if (after) {
       select = select.where((eb) => eb.or([
         eb("created_at", "<", after.createdAt),

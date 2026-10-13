@@ -194,6 +194,7 @@ test("operator resolves a pending decision from the response view", async ({ pag
     canResolve: true,
     deadline: null,
     createdAt: nowIso,
+    channel: "authenticated_chat",
   };
   const secondPendingDecision = {
     ...pendingDecision,
@@ -808,6 +809,39 @@ test("Needs-you loads human-owned handoffs beyond the original 50-item page", as
 
   await expect(page.getByLabel("Inbox queue").getByRole("button", { name: /Waiting handoff 60/ })).toBeVisible();
   await expect(page.getByText(/not shown yet|Load older/)).toHaveCount(0);
+});
+
+test("Needs-you asks the server for an agent match beyond an unfiltered page", async ({ page }) => {
+  const targetAgentId = "22222222-2222-4222-8222-222222222222";
+  const conversations = Array.from({ length: 51 }, (_, index) => {
+    const id = `conversation-filtered-page-${index + 1}`;
+    return {
+      ...handoffSummary(id, index === 50 ? "Only target agent handoff" : `Other handoff ${index + 1}`, handoffOwnership(id, null, 1)),
+      agentId: index === 50 ? targetAgentId : defaultAgentId,
+    };
+  });
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { historyList: { conversations: [], total: 0, nextCursor: null, hasMore: false } });
+  await stubEmptyQualityQueue(page);
+  await page.route("**/backend/api/v1/history/chat?**", async (route) => {
+    const url = new URL(route.request().url());
+    const matching = url.searchParams.get("agentId") === targetAgentId;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        conversations: matching ? [conversations[50]] : conversations.slice(0, 50),
+        total: matching ? 1 : conversations.length,
+        nextCursor: null,
+        hasMore: false,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention&inboxAgent=${targetAgentId}`);
+
+  await expect(page.getByLabel("Inbox queue").getByRole("button", { name: /Only target agent handoff/ })).toBeVisible();
 });
 
 test("Needs-you names quality feedback beyond its 25-item queue cap and links to it", async ({ page }) => {

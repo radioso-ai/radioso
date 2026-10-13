@@ -27,6 +27,7 @@ import {
   PLAN_USAGE_KIND_LABELS,
   type PlanUsageKind,
 } from '@/lib/plan-card-usage'
+import { planUpgradeOptions } from '@/lib/plan-upgrade-options'
 
 type MonthlyConversations = NonNullable<AccountUsageSummary['monthlyConversations']>
 type PendingAction = 'upgrade' | 'pack' | 'portal' | null
@@ -201,18 +202,16 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
             options={INTERVAL_OPTIONS}
             aria-label="Billing interval"
           />
-          {upgradePlanIds.map((planId) => {
-            const option = plans.plans.find((entry) => entry.id === planId)
-            const byokChoice = planId === 'planet'
+          {planUpgradeOptions(billing.planId, upgradePlanIds).map(({ planId, label, requiresWorkspaceKey }) => {
             return (
               <div key={planId} className="space-y-1">
                 <Button
                   onClick={() => void runCheckout({ plan: planId, interval: checkoutInterval, returnPath: pathname }, 'upgrade')}
                   disabled={pendingAction !== null}
                 >
-                  {planId === upgradePlanId ? upgradeLabel : option?.models === 'managed' ? "Planet with Radioso's models" : 'Planet — bring your own provider keys'}
+                  {planId === upgradePlanId ? upgradeLabel : label}
                 </Button>
-                {billing.planId === 'satellite' && byokChoice ? (
+                {requiresWorkspaceKey ? (
                   <p className="text-xs text-amber-700 dark:text-amber-300">Planet requires a workspace provider key. Add one in Settings before using chat or ingestion.</p>
                 ) : null}
               </div>

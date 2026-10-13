@@ -31,7 +31,7 @@ export interface DocumentProcessingJobRecord {
   status: DocumentProcessingJobStatus;
   attemptCount: number;
   lastError: string | null;
-  lastErrorCode: string | null;
+  lastErrorCode?: string | null;
   availableAt: Date;
   claimedAt: Date | null;
   completedAt: Date | null;
@@ -111,7 +111,6 @@ export interface DocumentProcessingJobRepositoryPort {
     errorMessage: string;
     errorCode?: string | null;
   }): Promise<boolean>;
-  requeueProviderCredentialFailures(workspaceId: string): Promise<number>;
   reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void>;
   releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
 }
@@ -975,14 +974,19 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     });
   }
 
-  async requeueProviderCredentialFailures(workspaceId: string): Promise<number> {
+  async requeueProviderCredentialFailures(workspaceId: string, limit = 100): Promise<number> {
     return this.db.transaction().execute(async (trx) => {
       const failed = await trx
-        .selectFrom("document_processing_jobs")
-        .select(["id", "document_id"])
-        .where("workspace_id", "=", workspaceId)
-        .where("status", "=", "failed")
-        .where("last_error_code", "=", "provider_misconfigured")
+        .selectFrom("document_processing_jobs as job")
+        .innerJoin("documents as document", "document.id", "job.document_id")
+        .select(["job.id", "job.document_id"])
+        .where("job.workspace_id", "=", workspaceId)
+        .whereRef("document.workspace_id", "=", "job.workspace_id")
+        .whereRef("document.revision", "=", "job.document_revision")
+        .where("job.status", "=", "failed")
+        .where("job.last_error_code", "=", "provider_misconfigured")
+        .orderBy("job.created_at")
+        .limit(limit)
         .execute();
       if (failed.length === 0) return 0;
       const ids = failed.map((job) => job.id);

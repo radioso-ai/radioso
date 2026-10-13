@@ -390,11 +390,11 @@ describe("WorkspaceLlmCapabilityResolver managed plans", () => {
     expect(rerank).toMatchObject({ provider: "claude", model: "claude-haiku-4-5", resolvedBy: "managed_plan" });
   });
 
-  it("uses the managed model and platform credential even when a workspace key and preference exist", async () => {
+  it("lifts the managed default when the chosen provider has a workspace key", async () => {
     const resolver = new WorkspaceLlmCapabilityResolver({
       defaults: envConfig,
       settings: buildSettings([chatPreference]),
-      credentials: buildCredentials({ "ws-1:openai": "ws-openai", "ws-1:claude": "ws-claude" }),
+      credentials: buildCredentials({ "ws-1:openai": "ws-openai" }),
       envKeys: envKeyResolver({ claude: "env-claude" }),
       managedModelPolicy: managedForAll,
     });
@@ -402,10 +402,10 @@ describe("WorkspaceLlmCapabilityResolver managed plans", () => {
     const config = await resolver.resolve("chat", { workspaceId: "ws-1" });
 
     expect(config).toMatchObject({
-      provider: "claude",
-      model: "claude-sonnet-5",
-      apiKey: "env-claude",
-      resolvedBy: "managed_plan",
+      provider: "openai",
+      model: "gpt-5.2",
+      apiKey: "ws-openai",
+      resolvedBy: "workspace_preference",
     });
   });
 

@@ -67,7 +67,7 @@ Radioso seeds four profiles from the `@radioso/plan-catalog` package — `comet`
 
 The seed only inserts a profile that is missing; it never overwrites one that already exists. Edit a seeded profile through the admin API above, and the edit stays — a later deploy that re-runs the seed leaves it alone.
 
-`comet`, `satellite`, and `planet_managed` are managed plans: a workspace on one of them runs the catalog's managed model set (`gpt-5.4-mini` on OpenAI for chat, query rewrite, and rerank) whenever it holds no provider credential of its own for the provider it would otherwise use. The lock is served from the deployment's `OPENAI_API_KEY`, so set it on every Enterprise deployment that assigns managed plans; a managed workspace with neither its own OpenAI key nor a deployment key gets a `provider_misconfigured` error on its first model call. The [Settings API](/api/settings#llm-model-selection) reports the lock per capability under `managed`.
+`comet`, `satellite`, and `planet_managed` are managed plans: a workspace on one of them runs the catalog's managed model set (`gpt-5.4-mini` on OpenAI for chat, query rewrite, and rerank) whenever it holds no provider credential of its own for the provider it would otherwise use. A stored key for that selected provider lifts the managed default for that capability; remove the key to return the capability to Radioso's managed model. The lock is served from the deployment's `OPENAI_API_KEY`, so set it on every Enterprise deployment that assigns managed plans; a managed workspace with neither its own OpenAI key nor a deployment key gets a `provider_misconfigured` error on its first model call. The [Settings API](/api/settings#llm-model-selection) reports the lock per capability under `managed`.
 
 `planet` is the bring-your-own-key profile. Its workspaces use only provider credentials saved for that workspace. Without one, chat, Ray, document embeddings, rewrites, reranking, and other model-backed work report `provider_misconfigured`, and the dashboard directs the operator to connect an AI provider. Deployment provider keys never satisfy a BYOK workspace.
 
@@ -191,7 +191,7 @@ The banner follows `level`:
 
 Both `limit_reached` and `grace_exhausted` carry the **Upgrade** and **Buy** buttons described below; `nearing_limit` does not.
 
-- **Upgrade** starts a subscription checkout for the next self-serve plan above the account's current one. On Planet, the action reads **Use Radioso's models (+€250/month)** and selects Planet + managed models while keeping the same allowances. It is absent once the account already holds the catalog's `selfServeCeilingPlanId`.
+- **Upgrade** offers both Planet credential policies from Satellite and the managed-model option from Planet. An active or past-due subscriber changes plans in Stripe's customer portal, which updates the existing subscription with the configured proration.
 - **Buy 300 more** starts a one-time checkout for the catalog's top-up pack. The conversations expire 12 months after purchase. The button appears on Satellite and both Planet profiles: Comet, the free plan, doesn't sell top-ups, since a free account plus a few packs would undercut Satellite. `GET /api/v1/ee/billing/me`'s `topUpAvailable` field carries this, and `POST /api/v1/ee/billing/checkout` rejects a pack request from an ineligible account with `409 top_up_unavailable` before it reaches Stripe.
 - **Manage billing** opens the Stripe customer portal. It appears once the account has a Stripe customer, which the first checkout creates.
 

@@ -22,7 +22,7 @@ export interface WorkspaceCredentialsEncryptionConfig {
 }
 
 interface ProviderCredentialFailureRecoveryPort {
-  requeueProviderCredentialFailures(workspaceId: string): Promise<number>;
+  requeueProviderCredentialFailures(workspaceId: string, limit?: number): Promise<number>;
 }
 
 interface SetApiKeyInput {
@@ -89,7 +89,7 @@ export class WorkspaceProviderCredentialsService {
         provider: input.provider,
         ciphertext,
       });
-      await this.recovery?.requeueProviderCredentialFailures(input.workspaceId);
+      this.recoverProviderCredentialFailures(input.workspaceId);
       await this.recordAudit({
         accountId: input.actor.accountId,
         workspaceId: input.workspaceId,
@@ -110,6 +110,19 @@ export class WorkspaceProviderCredentialsService {
       }
       throw error;
     }
+  }
+
+  private recoverProviderCredentialFailures(workspaceId: string): void {
+    if (!this.recovery) return;
+    void (async () => {
+      try {
+        while (await this.recovery!.requeueProviderCredentialFailures(workspaceId, 100) === 100) {
+          // Each transaction claims a bounded, revision-fenced batch.
+        }
+      } catch (error) {
+        this.logger?.warn({ workspaceId, err: error instanceof Error ? error.message : String(error) }, "Provider credential recovery failed");
+      }
+    })();
   }
 
   async getApiKey(workspaceId: string, provider: LlmProviderName): Promise<string | undefined> {

@@ -56,6 +56,19 @@ The script builds the plan catalog and the backend module before it runs, so it 
 
 Deploy the catalog-aware application revision to every region and drain older revisions before exposing a new live Stripe price. An older webhook consumer cannot map that price; it returns a retryable response so Stripe retains the event until the rollout completes. After every serving revision recognizes the catalog entry, run the live sync with the owner-provided live key.
 
+Before the rollout, run this read-only query in each region to list BYOK Planet workspaces that have no stored provider credential. It reads credential presence only and never selects ciphertext.
+
+```sql
+SELECT w.id AS workspace_id, w.name AS workspace_name, w.account_id
+FROM workspaces AS w
+JOIN ee_usage_limit_account_assignments AS assignment ON assignment.account_id = w.account_id
+LEFT JOIN workspace_provider_credentials AS credential ON credential.workspace_id = w.id
+WHERE assignment.profile_key = 'planet'
+GROUP BY w.id, w.name, w.account_id
+HAVING COUNT(credential.provider) = 0
+ORDER BY w.account_id, w.id;
+```
+
 When the plan looks right, apply it and create the webhook endpoint in the same run:
 
 ```bash

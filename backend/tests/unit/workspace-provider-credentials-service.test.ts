@@ -116,7 +116,8 @@ describe("WorkspaceProviderCredentialsService", () => {
         actor: { accountId: "acc-1" },
       });
 
-      expect(recovery.requeueProviderCredentialFailures).toHaveBeenCalledWith(WORKSPACE_ID);
+      await vi.waitFor(() => expect(recovery.requeueProviderCredentialFailures).toHaveBeenCalledWith(WORKSPACE_ID, 100));
+
     });
 
     it("retrieves and decrypts a stored api key", async () => {

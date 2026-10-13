@@ -42,6 +42,39 @@ describe("notification recipient confirmation contract", () => {
     expect(revoke).toHaveBeenCalledWith({ recipientId: "recipient-id" });
   });
 
+  it("confirms a stop to the person who asked, even when they had already stopped, and offers to resume", async () => {
+    const { app, dependencies } = createTestApp();
+    vi.spyOn(dependencies.notificationRecipientPolicy, "revoke").mockResolvedValue(false);
+    const resume = vi.spyOn(dependencies.notificationRecipientPolicy, "resume").mockResolvedValue(true);
+    const signer = new NotificationRecipientTokenSigner(dependencies.env.SESSION_COOKIE_SECRET);
+    const revokeToken = signer.sign("recipient-id", "revoke");
+
+    const stopped = await request(app).post("/api/v1/notification-recipient-confirmations/revoke")
+      .query({ token: revokeToken });
+
+    expect(stopped.status).toBe(200);
+    expect(stopped.headers["content-type"]).toContain("text/html");
+    expect(stopped.text).toContain(`action="resume?token=${encodeURIComponent(revokeToken)}"`);
+    expect(resume).not.toHaveBeenCalled();
+
+    const resumed = await request(app).post("/api/v1/notification-recipient-confirmations/resume")
+      .query({ token: revokeToken });
+
+    expect(resumed.status).toBe(200);
+    expect(resumed.text).toContain("Stop sending me these notifications");
+    expect(resume).toHaveBeenCalledWith({ recipientId: "recipient-id" });
+  });
+
+  it("rejects a confirmation token at the resume endpoint", async () => {
+    const { app, dependencies } = createTestApp();
+    const signer = new NotificationRecipientTokenSigner(dependencies.env.SESSION_COOKIE_SECRET);
+
+    const response = await request(app).post("/api/v1/notification-recipient-confirmations/resume")
+      .query({ token: signer.sign("recipient-id", "confirm", 0) });
+
+    expect(response.status).toBe(400);
+  });
+
   it("rejects a confirmation token at the revocation endpoint", async () => {
     const { app, dependencies } = createTestApp();
     const signer = new NotificationRecipientTokenSigner(dependencies.env.SESSION_COOKIE_SECRET);

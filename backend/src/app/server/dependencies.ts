@@ -196,12 +196,22 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
+  const notificationRecipientSuppressions = new NotificationRecipientStateRepository(infrastructure.database.kysely);
+  const notificationRecipientPolicy = buildNotificationRecipientPolicy({
+    database: infrastructure.database,
+    env,
+    mailer: infrastructure.mailService,
+    logger,
+    metrics: infrastructure.metricsRegistry,
+    states: notificationRecipientSuppressions,
+  });
   const integrations = buildIntegrationServices({
     assertPublicUrl: assertPublicWebsiteUrl,
     composition,
     env,
     infrastructure,
     logger,
+    recipientConfirmations: notificationRecipientPolicy,
     repositories,
   });
   const {
@@ -222,18 +232,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     webhookDestinations,
     webhookSkillDefinitionService,
   } = integrations;
-  const notificationRecipientSuppressions = new NotificationRecipientStateRepository(infrastructure.database.kysely);
-  const notificationRecipientPolicy = buildNotificationRecipientPolicy({
-    database: infrastructure.database,
-    env,
-    mailer: infrastructure.mailService,
-    logger,
-    metrics: infrastructure.metricsRegistry,
-    states: notificationRecipientSuppressions,
-  });
   const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(
     infrastructure.database,
     notificationRecipientPolicy,
+    infrastructure.usageLimitPolicy,
   );
   const documentRetrievalGraph = buildDocumentRetrievalGraph({
     composition,
@@ -281,6 +283,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     access.accessGrantService,
     agentSkillRepository,
     infrastructure.auditService,
+    notificationRecipientPolicy,
   );
   // Shared by routine publishing (write-time trigger embedding) and the chat
   // activation prefilter (lazy self-heal of unembedded/stale rows) so both

@@ -16,22 +16,33 @@ interface NotificationRecipientStateView {
   generation?: number | null;
 }
 
+/**
+ * How often one workspace may ask strangers to confirm. The daily cap stops confirmation mail from
+ * becoming the relay itself; the per-address spacing stops an operator from re-asking one inbox.
+ */
+export const NOTIFICATION_CONFIRMATION_LIMITS = {
+  dailySends: 25,
+  resendCooldownMs: 24 * 60 * 60 * 1000,
+} as const;
+
 interface NotificationRecipientStateStore {
   read(input: {
     workspaceId: string;
     emails: readonly string[];
     now: Date;
   }): Promise<NotificationRecipientStateView[]>;
-  ensure(workspaceId: string, email: string, initialState: "confirmed" | "pending"): Promise<{ recipientId: string; generation: number }>;
+  ensure(workspaceId: string, email: string): Promise<{ recipientId: string; generation: number }>;
   reserveConfirmationSend(input: {
     workspaceId: string;
     email: string;
     now: Date;
     force: boolean;
+    limits: { dailySends: number; resendCooldownMs: number };
   }): Promise<{ recipientId: string; generation: number } | null>;
   releaseConfirmationSend(recipientId: string, generation: number, reservedAt: Date): Promise<void>;
   confirm(recipientId: string, generation: number, now: Date): Promise<boolean>;
   revoke(recipientId: string, now: Date): Promise<boolean>;
+  resume(recipientId: string, now: Date): Promise<boolean>;
 }
 
 interface ConfirmationEmailRequest {
@@ -61,6 +72,12 @@ export interface NotificationRecipientPolicyPort {
     skipped: { unconfirmed: number; suppressed: number };
   }>;
   describe(workspaceId: string, emails: readonly string[]): Promise<NotificationRecipientDescription[]>;
+  requestConfirmations(input: {
+    workspaceId: string;
+    agentId: string;
+    emails: readonly string[];
+    idempotencyKey: string;
+  }): Promise<void>;
   resendConfirmation(input: {
     workspaceId: string;
     email: string;
@@ -72,6 +89,7 @@ export interface NotificationRecipientPolicyPort {
   }): Promise<boolean>;
   confirm(subject: { recipientId: string; generation: number }): Promise<boolean>;
   revoke(subject: { recipientId: string }): Promise<boolean>;
+  resume(subject: { recipientId: string }): Promise<boolean>;
 }
 
 export interface NotificationRecipientDescription {
@@ -154,11 +172,7 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
         || recipient.state === "grandfathered"
         || recipient.state === "confirmation_not_required") {
         eligibleEmails.push(recipient.email);
-        const ensured = await this.options.states.ensure(
-          input.workspaceId,
-          recipient.email,
-          recipient.state === "confirmed" ? "confirmed" : "pending",
-        );
+        const ensured = await this.options.states.ensure(input.workspaceId, recipient.email);
         eligibleRecipients.push({
           email: recipient.email,
           listUnsubscribeUrl: this.options.revocationUrl?.(ensured.recipientId) ?? "",
@@ -176,6 +190,29 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
     this.recordSkipped(input.workspaceId, "unconfirmed", unconfirmed);
     this.recordSkipped(input.workspaceId, "suppressed", suppressed);
     return { eligibleEmails, eligibleRecipients, skipped: { unconfirmed, suppressed } };
+  }
+
+  /** Asks newly configured addresses to confirm before any notice is due, so the first one is not lost. */
+  async requestConfirmations(input: {
+    workspaceId: string;
+    agentId: string;
+    emails: readonly string[];
+    idempotencyKey: string;
+  }): Promise<void> {
+    if (!this.options.enabled) return;
+    // A settings save never fails on this: an address that misses it is asked at its first notice.
+    let recipients: NotificationRecipientDescription[];
+    try {
+      recipients = await this.describe(input.workspaceId, input.emails);
+    } catch {
+      this.recordConfirmationFailure(input.workspaceId);
+      return;
+    }
+    for (const recipient of recipients) {
+      if (recipient.state === "waiting_for_confirmation" || recipient.state === "grandfathered") {
+        await this.requestConfirmation(input, recipient.email, false);
+      }
+    }
   }
 
   async resendConfirmation(input: {
@@ -204,6 +241,12 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
     return revoked;
   }
 
+  async resume(subject: { recipientId: string }): Promise<boolean> {
+    const resumed = await this.options.states.resume(subject.recipientId, this.options.now?.() ?? new Date());
+    if (resumed) this.recordLifecycle("resumed");
+    return resumed;
+  }
+
   private async sendConfirmationWhenReserved(input: ConfirmationEmailRequest, force: boolean): Promise<boolean> {
     const now = this.options.now?.() ?? new Date();
     let reservation: { recipientId: string; generation: number } | null;
@@ -213,6 +256,7 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
         email: input.email,
         now,
         force,
+        limits: NOTIFICATION_CONFIRMATION_LIMITS,
       });
     } catch {
       this.recordConfirmationFailure(input.workspaceId);
@@ -294,7 +338,7 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
     return { workspaceName: input.workspaceName ?? "Your workspace", agentName: input.agentName ?? "your agent" };
   }
 
-  private recordLifecycle(event: "confirmed" | "revoked"): void {
+  private recordLifecycle(event: "confirmed" | "revoked" | "resumed"): void {
     this.options.metrics?.incrementCounter("notification_recipient_confirmation_events_total", {
       help: "Notification recipient confirmation lifecycle events.",
       labels: { event },

@@ -82,6 +82,18 @@ describeIntegration("NotificationDeliveryOutcomeRepository (Postgres)", () => {
     expect(outcomes.filter((outcome) => outcome.reason === "workspace_daily_email_cap")).toHaveLength(7);
   });
 
+  it("reads a workspace's emails sent today and how many requests the daily cap stopped", async () => {
+    const workspaceId = randomUUID();
+    await reserve({ workspaceId, conversationId: randomUUID(), requestedEmailCount: 2, dailyEmailLimit: 3 });
+    await reserve({ workspaceId, conversationId: randomUUID(), requestedEmailCount: 2, dailyEmailLimit: 3 });
+    await reserve({ workspaceId: randomUUID(), conversationId: randomUUID(), requestedEmailCount: 1, dailyEmailLimit: 3 });
+
+    await expect(repository.readDailyUsage({ workspaceId, usageDate: new Date("2026-10-11T00:00:00.000Z") }))
+      .resolves.toEqual({ reservedEmails: 2, cappedRequests: 1 });
+    await expect(repository.readDailyUsage({ workspaceId, usageDate: new Date("2026-10-12T00:00:00.000Z") }))
+      .resolves.toEqual({ reservedEmails: 0, cappedRequests: 0 });
+  });
+
   it("reserves recipient attempts atomically and replays the same request without double counting", async () => {
     const workspaceId = randomUUID();
     const conversationId = randomUUID();

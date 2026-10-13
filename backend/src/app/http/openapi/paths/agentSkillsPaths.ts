@@ -120,6 +120,11 @@ const OperatorNoticeDestinationSchema = z.object({
 const OperatorNoticeDestinationsResponseSchema = z.object({
   default: OperatorNoticeDestinationSchema,
   skills: z.array(OperatorNoticeDestinationSchema),
+  dailyEmailAllowance: z.object({
+    limit: z.number().int().describe("Recipient emails the workspace may send per UTC day across contact and notice delivery."),
+    sentToday: z.number().int().describe("Recipient emails sent so far today."),
+    reachedToday: z.boolean().describe("The allowance is used up or has already stopped a send today; further emails wait until tomorrow (UTC), while webhooks still post."),
+  }).nullable(),
 });
 
 export const registerAgentSkillsPaths = (
@@ -159,7 +164,7 @@ export const registerAgentSkillsPaths = (
     path: "/api/v1/agents/{agentId}/notification-recipient-confirmations/resend",
     tags: ["Agent Skills"],
     summary: "Resend recipient confirmation",
-    description: "Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap.",
+    description: "Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap. An address is asked at most once a day, and never after it stops notifications.",
     operationId: "resendNotificationRecipientConfirmation",
     security: sec,
     request: {

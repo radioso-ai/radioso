@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   defaultNoticeDestinationLabel,
+  describeDailyEmailAllowance,
   describeNoticeDestination,
   parseOperatorNoticeDestinations,
   type OperatorNoticeDestination,
@@ -24,6 +25,7 @@ const destination = (overrides: Partial<OperatorNoticeDestination> = {}): Operat
 const destinations: OperatorNoticeDestinations = {
   default: destination(),
   skills: [destination({ skillName: 'notify_bookings', via: 'named_skill', recipientEmails: ['francesco@ananda.it', 'desk@ananda.it'], recipientsFromWorkspaceOwner: false })],
+  dailyEmailAllowance: { limit: 100, sentToday: 12, reachedToday: false },
 }
 
 describe('describeNoticeDestination', () => {
@@ -40,7 +42,7 @@ describe('describeNoticeDestination', () => {
         { email: 'bounce@example.com', state: 'suppressed' },
       ],
     })
-    expect(describeNoticeDestination({ default: stateful, skills: [] }, undefined))
+    expect(describeNoticeDestination({ default: stateful, skills: [], dailyEmailAllowance: null }, undefined))
       .toBe('Sends to waiting@example.com (waiting for confirmation), bounce@example.com (suppressed) (workspace owner)')
   })
 
@@ -77,7 +79,31 @@ describe('defaultNoticeDestinationLabel', () => {
 describe('parseOperatorNoticeDestinations', () => {
   it('reads the endpoint payload and rejects a malformed one', () => {
     expect(parseOperatorNoticeDestinations(destinations)).toEqual(destinations)
+    expect(parseOperatorNoticeDestinations({ ...destinations, dailyEmailAllowance: null }).dailyEmailAllowance).toBeNull()
+    expect(() => parseOperatorNoticeDestinations({ ...destinations, dailyEmailAllowance: { limit: '100' } })).toThrow()
     expect(() => parseOperatorNoticeDestinations({ default: { via: 'carrier_pigeon' }, skills: [] })).toThrow()
     expect(() => parseOperatorNoticeDestinations({ skills: [] })).toThrow()
+  })
+})
+
+describe('describeDailyEmailAllowance', () => {
+  it('says nothing while today\'s notice emails are within the limit', () => {
+    expect(describeDailyEmailAllowance(destinations)).toBeNull()
+    expect(describeDailyEmailAllowance(null)).toBeNull()
+  })
+
+  it('says when the daily limit has stopped notice emails', () => {
+    expect(describeDailyEmailAllowance({ ...destinations, dailyEmailAllowance: { limit: 100, sentToday: 100, reachedToday: true } }))
+      .toBe('Daily email limit reached (100 of 100). Emails resume tomorrow (UTC); webhooks still post.')
+  })
+})
+
+describe('recipient states in the Sends to line', () => {
+  it('adds nothing when the deployment does not ask recipients to confirm', () => {
+    const unconfirmedDeployment = {
+      ...destinations,
+      default: destination({ recipients: [{ email: 'owner@ananda.it', state: 'confirmation_not_required' }] }),
+    }
+    expect(describeNoticeDestination(unconfirmedDeployment, undefined)).toBe('Sends to owner@ananda.it (workspace owner)')
   })
 })

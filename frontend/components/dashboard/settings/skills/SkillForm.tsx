@@ -154,6 +154,36 @@ const shouldShowGroupHeading = (
 ): boolean =>
   !(fields.length === 1 && fields[0]?.type === 'boolean' && fields[0].label === group)
 
+type RecipientState = OperatorNoticeDestination['recipients'][number]['state']
+
+const RECIPIENT_STATE_LABELS: Record<Exclude<RecipientState, 'confirmation_not_required'>, string> = {
+  confirmed: 'Confirmed',
+  grandfathered: 'Confirmation grace period',
+  waiting_for_confirmation: 'Waiting for confirmation',
+  revoked: 'Notifications stopped by the recipient',
+  suppressed: 'Suppressed after a bounce or complaint',
+}
+
+function RecipientConfirmationStatus({ email, state, onResend }: {
+  email: string
+  state: RecipientState
+  onResend?: (email: string) => Promise<string>
+}) {
+  const [resendResult, setResendResult] = useState<string | null>(null)
+  if (state === 'confirmation_not_required') return null
+  const canResend = (state === 'waiting_for_confirmation' || state === 'grandfathered') && onResend
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+      <span>{RECIPIENT_STATE_LABELS[state]}</span>
+      {resendResult ? <span>{resendResult}</span> : canResend ? (
+        <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => void onResend(email).then(setResendResult)}>
+          <RefreshCw className="mr-1 h-3 w-3" /> Resend confirmation
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 function SkillSettingControl({
   field,
   value,
@@ -172,8 +202,8 @@ function SkillSettingControl({
   sourceList: DocumentSourceListItem[]
   metadataFieldSuggestions: MetadataFieldSuggestion[]
   onChange: (value: SkillSettingDraftValue) => void
-  recipientStates?: Map<string, OperatorNoticeDestination['recipients'][number]['state']>
-  onResendConfirmation?: (email: string) => Promise<void>
+  recipientStates?: Map<string, RecipientState>
+  onResendConfirmation?: (email: string) => Promise<string>
 }) {
   const fieldId = `skill-setting-${field.key.replace(/[^a-z0-9_-]/giu, '-')}`
   const defaultValue = formatDefaultValue(field)
@@ -353,27 +383,13 @@ function SkillSettingControl({
                   </Button>
                 ) : null}
               </div>
-              {index < items.length && recipientStates?.get(item.trim().toLowerCase()) ? (() => {
-                const state = recipientStates.get(item.trim().toLowerCase())
-                const labels = {
-                  confirmed: 'Confirmed',
-                  grandfathered: 'Confirmation grace period',
-                  waiting_for_confirmation: 'Waiting for confirmation',
-                  revoked: 'Notifications stopped',
-                  suppressed: 'Suppressed after a bounce or complaint',
-                  confirmation_not_required: 'Confirmation disabled for this deployment',
-                } as const
-                return (
-                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span>{state ? labels[state] : null}</span>
-                    {(state === 'waiting_for_confirmation' || state === 'grandfathered') && onResendConfirmation ? (
-                      <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => void onResendConfirmation(item)}>
-                        <RefreshCw className="mr-1 h-3 w-3" /> Resend confirmation
-                      </Button>
-                    ) : null}
-                  </div>
-                )
-              })() : null}
+              {index < items.length && recipientStates?.get(item.trim().toLowerCase()) ? (
+                <RecipientConfirmationStatus
+                  email={item}
+                  state={recipientStates.get(item.trim().toLowerCase())!}
+                  onResend={onResendConfirmation}
+                />
+              ) : null}
             </div>
           ))}
         </div>
@@ -513,7 +529,7 @@ export function SkillForm({
   const [isDiscovering, setIsDiscovering] = useState(false)
   const [discoveryError, setDiscoveryError] = useState<string | null>(null)
   const [discoveryUnavailable, setDiscoveryUnavailable] = useState(false)
-  const [recipientStates, setRecipientStates] = useState<Map<string, OperatorNoticeDestination['recipients'][number]['state']>>(new Map())
+  const [recipientStates, setRecipientStates] = useState<Map<string, RecipientState>>(new Map())
   const discoveryRequestId = useRef(0)
   const capability = useMemo(
     () => scopedCapabilities.find((item) => item.id === draft.capabilityId) ?? null,
@@ -807,9 +823,9 @@ export function SkillForm({
                       ? async (email) => {
                           try {
                             const result = await routineSkillCatalogApi.resendNotificationRecipientConfirmation(agentId, email)
-                            setLocalError(result.sent ? null : 'Confirmation was not sent. The daily cap may be reached, or this recipient cannot be contacted.')
+                            return result.sent ? 'Confirmation sent' : 'Not sent: asked within the last day, or today\'s limit is reached'
                           } catch (resendError) {
-                            setLocalError(getApiErrorMessage(resendError, 'Failed to resend recipient confirmation.'))
+                            return getApiErrorMessage(resendError, 'Could not resend the confirmation')
                           }
                         }
                       : undefined}

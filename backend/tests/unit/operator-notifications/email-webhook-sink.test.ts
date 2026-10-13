@@ -303,6 +303,42 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(requests).toHaveLength(1);
   });
 
+  it("posts no webhook once the conversation has used its dispatch allowance", async () => {
+    const { mailer, sent } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => routedTo(["owner@business.example"], { url: "https://hooks.example.com/approval" }) },
+      undefined,
+      httpClient,
+      undefined,
+      { admit: async () => ({ dispatchAllowed: false, emailAllowed: false, reason: "conversation_dispatch_cap" }) },
+    );
+
+    await expect(sink.deliver(notification, context)).resolves.toEqual({
+      disposition: "skipped",
+      reason: "conversation_dispatch_cap",
+    });
+    expect(sent).toHaveLength(0);
+    expect(requests).toHaveLength(0);
+  });
+
+  it("leaves an email-only notice to retry when recipient preparation fails", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => routedTo(["waiting@example.com"]) },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { prepareDelivery: async () => { throw new Error("recipient reservation unavailable"); } },
+    );
+
+    await expect(sink.deliver(notification, context)).rejects.toThrow("recipient reservation unavailable");
+    expect(sent).toEqual([]);
+  });
+
   it("reports the bounded email-cap reason when email is the only delivery route", async () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(

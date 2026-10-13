@@ -86,4 +86,17 @@ export class NotificationDeliveryOutcomeRepository implements NotificationDelive
       return mapOutcome(outcome, true);
     });
   }
+
+  async readDailyUsage(input: { workspaceId: string; usageDate: Date }): Promise<{ reservedEmails: number; cappedRequests: number }> {
+    const usage = await this.db
+      .selectFrom("notification_delivery_outcomes")
+      .select((expression) => [
+        expression.fn.coalesce(expression.fn.sum<number>("reserved_email_count"), expression.val(0)).as("reservedEmails"),
+        expression.fn.countAll<number>().filterWhere("outcome", "=", "workspace_daily_email_cap").as("cappedRequests"),
+      ])
+      .where("workspace_id", "=", input.workspaceId)
+      .where("usage_date", "=", input.usageDate)
+      .executeTakeFirstOrThrow();
+    return { reservedEmails: Number(usage.reservedEmails), cappedRequests: Number(usage.cappedRequests) };
+  }
 }

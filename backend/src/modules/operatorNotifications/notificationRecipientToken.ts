@@ -11,17 +11,24 @@ const TOKEN_VERSION = 1;
 const CONFIRMATION_TOKEN_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 const REVOCATION_TOKEN_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 
-const signature = (secret: string, payload: string): Buffer =>
-  createHmac("sha256", secret).update(payload).digest();
+// The deployment secret also signs sessions, so tokens use a key derived for this purpose only.
+const tokenKey = (secret: string): Buffer =>
+  createHmac("sha256", secret).update("radioso:notification-recipient-token").digest();
+
+const signature = (key: Buffer, payload: string): Buffer =>
+  createHmac("sha256", key).update(payload).digest();
 
 export class NotificationRecipientTokenSigner {
-  constructor(private readonly secret: string, private readonly options: {
+  private readonly key: Buffer;
+
+  constructor(secret: string, private readonly options: {
     now?: () => Date;
     maxAgeMs?: number;
   } = {}) {
     if (secret.length < 16) {
       throw new Error("Notification recipient token secret must be at least 16 characters");
     }
+    this.key = tokenKey(secret);
   }
 
   sign(recipientId: string, action: NotificationRecipientTokenAction, generation?: number): string {
@@ -38,7 +45,7 @@ export class NotificationRecipientTokenSigner {
       issuedAt,
       expiresAt: issuedAt + this.maxAgeMs(action),
     })).toString("base64url");
-    return `${payload}.${signature(this.secret, payload).toString("base64url")}`;
+    return `${payload}.${signature(this.key, payload).toString("base64url")}`;
   }
 
   verify(token: string, expectedAction: NotificationRecipientTokenAction, now = this.now()): NotificationRecipientTokenSubject | null {
@@ -50,7 +57,7 @@ export class NotificationRecipientTokenSigner {
     } catch {
       return null;
     }
-    const expected = signature(this.secret, payload);
+    const expected = signature(this.key, payload);
     if (presented.length !== expected.length || !timingSafeEqual(presented, expected)) return null;
     try {
       const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as unknown;

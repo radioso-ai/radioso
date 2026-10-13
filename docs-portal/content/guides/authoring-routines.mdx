@@ -237,10 +237,15 @@ eligible for delivery. After that, Radioso records a
 attempts also count against the workspace's daily plan allowance; reaching it
 records `workspace_daily_email_cap` and leaves a configured webhook active.
 An external address must confirm within its workspace before it receives a
-notice. A configured address in its recorded 14-day grace period still receives
-the notice and gets a confirmation message on its first delivery attempt. Every
-notice carries a one-click unsubscribe link, and a hard bounce or complaint
-suppresses notification mail to that address across the deployment.
+notice. Adding it to a notify skill sends the confirmation message right away,
+so Francesco can confirm before the first booking arrives. A configured address
+in its recorded 14-day grace period still receives the notice and gets a
+confirmation message on its first delivery attempt. Every notice carries a
+one-click unsubscribe link, and a hard bounce or complaint suppresses
+notification mail to that address across the deployment. When the workspace has
+used up its daily notice email allowance, a **Daily email limit reached** line
+appears under the destination; email resumes the next UTC day, and webhooks
+still post.
 Routine slot text is capped at 1,000 characters before it reaches either
 delivery, and a collected reply-to is used only when it is a valid email
 address.

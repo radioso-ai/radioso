@@ -48,6 +48,25 @@ describe("NotificationDeliveryAdmissionService", () => {
     expect(JSON.stringify(record.mock.calls)).not.toContain("@");
   });
 
+  it("tells the operator how much of today's notice email allowance is used and whether the cap stopped a send", async () => {
+    const readDailyUsage = vi.fn<NotificationDeliveryOutcomeRepositoryPort["readDailyUsage"]>()
+      .mockResolvedValueOnce({ reservedEmails: 40, cappedRequests: 0 })
+      .mockResolvedValueOnce({ reservedEmails: 99, cappedRequests: 2 });
+    const service = new NotificationDeliveryAdmissionService(
+      { reserve: vi.fn(), readDailyUsage },
+      new NoopUsageLimitPolicy(),
+      undefined,
+      undefined,
+      () => new Date("2026-10-11T12:00:00.000Z"),
+    );
+
+    await expect(service.describeDailyEmailAllowance({ workspaceId: "workspace-1" }))
+      .resolves.toEqual({ limit: 100, sentToday: 40, reachedToday: false });
+    await expect(service.describeDailyEmailAllowance({ workspaceId: "workspace-1" }))
+      .resolves.toEqual({ limit: 100, sentToday: 99, reachedToday: true });
+    expect(readDailyUsage).toHaveBeenCalledWith({ workspaceId: "workspace-1", usageDate: new Date("2026-10-11T00:00:00.000Z") });
+  });
+
   it("fails closed without workspace and conversation context", async () => {
     const reserve = vi.fn<NotificationDeliveryOutcomeRepositoryPort["reserve"]>();
     const service = new NotificationDeliveryAdmissionService({ reserve }, new NoopUsageLimitPolicy());

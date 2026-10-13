@@ -40,11 +40,35 @@ describe("NotificationRecipientConfirmationMailer", () => {
       subject: "Ananda wants to send you Reception notifications via Radioso",
       text: expect.stringMatching(/confirm\?token=[A-Za-z0-9_.-]+/u),
       listUnsubscribeUrl: expect.stringMatching(/revoke\?token=[A-Za-z0-9_.-]+/u),
-      idempotencyKey: "notification-recipient-confirmation:request-id:recipient-id",
+      idempotencyKey: "notification-recipient-confirmation:request-id:recipient-id:4",
     }));
     const message = messages[0];
     expect(message?.text).toContain("https://api.example.com/api/v1/notification-recipient-confirmations/confirm?token=");
     expect(message?.listUnsubscribeUrl).toContain("https://api.example.com/api/v1/notification-recipient-confirmations/revoke?token=");
+  });
+
+  it("keeps tenant-authored names too short to carry a message of their own", async () => {
+    const send = vi.fn(async (_message: { subject: string; text: string }) => ({ dispatched: true }));
+    const mailer = new NotificationRecipientConfirmationMailer({
+      mailer: { send },
+      signer: new NotificationRecipientTokenSigner("a deployment secret that is long enough"),
+      publicBaseUrl: "https://api.example.com/",
+    });
+
+    await mailer.send({
+      workspaceId: "workspace-id",
+      workspaceName: `Cheap watches ${"x".repeat(200)} visit spam.example`,
+      agentName: "Reception",
+      email: "francesco@example.com",
+      recipientId: "recipient-id",
+      generation: 1,
+      idempotencyKey: "request-id",
+    });
+
+    const [message] = send.mock.calls[0]!;
+    expect(message.subject).not.toContain("spam.example");
+    expect(message.text).not.toContain("spam.example");
+    expect(message.subject.startsWith("Cheap watches")).toBe(true);
   });
 
   it("reports an undispatched log or noop send without recording it as sent", async () => {

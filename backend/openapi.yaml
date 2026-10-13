@@ -30337,7 +30337,7 @@ paths:
       tags:
         - Agent Skills
       summary: Resend recipient confirmation
-      description: Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap.
+      description: Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap. An address is asked at most once a day, and never after it stops notifications.
       operationId: resendNotificationRecipientConfirmation
       security: *a112
       parameters:
@@ -30793,9 +30793,28 @@ paths:
                         - recipients
                         - recipientsFromWorkspaceOwner
                         - webhookConfigured
+                  dailyEmailAllowance:
+                    type:
+                      - object
+                      - "null"
+                    properties:
+                      limit:
+                        type: integer
+                        description: Recipient emails the workspace may send per UTC day across contact and notice delivery.
+                      sentToday:
+                        type: integer
+                        description: Recipient emails sent so far today.
+                      reachedToday:
+                        type: boolean
+                        description: The allowance is used up or has already stopped a send today; further emails wait until tomorrow (UTC), while webhooks still post.
+                    required:
+                      - limit
+                      - sentToday
+                      - reachedToday
                 required:
                   - default
                   - skills
+                  - dailyEmailAllowance
         "401":
           description: Authentication required
           content:

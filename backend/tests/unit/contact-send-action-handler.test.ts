@@ -304,7 +304,7 @@ describe("ContactSendActionHandler", () => {
     expect(requests).toHaveLength(1);
   });
 
-  it("skips capped email while preserving the independent webhook", async () => {
+  it("posts no webhook once the conversation has used its dispatch allowance", async () => {
     const { mailer, sent } = recordingMailer();
     const { httpClient, requests } = recordingWebhookClient();
     const handler = new ContactSendActionHandler(
@@ -320,7 +320,7 @@ describe("ContactSendActionHandler", () => {
       .rejects.toMatchObject({ name: "ActionDispatchSkippedError", reason: "conversation_dispatch_cap" });
 
     expect(sent).toHaveLength(0);
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(0);
   });
 });
 

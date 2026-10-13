@@ -2685,7 +2685,7 @@ export interface paths {
         put?: never;
         /**
          * Resend recipient confirmation
-         * @description Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap.
+         * @description Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap. An address is asked at most once a day, and never after it stops notifications.
          */
         post: operations["resendNotificationRecipientConfirmation"];
         delete?: never;
@@ -23019,6 +23019,14 @@ export interface operations {
                             /** @description A webhook also receives the notice. Its URL is never returned. */
                             webhookConfigured: boolean;
                         }[];
+                        dailyEmailAllowance: {
+                            /** @description Recipient emails the workspace may send per UTC day across contact and notice delivery. */
+                            limit: number;
+                            /** @description Recipient emails sent so far today. */
+                            sentToday: number;
+                            /** @description The allowance is used up or has already stopped a send today; further emails wait until tomorrow (UTC), while webhooks still post. */
+                            reachedToday: boolean;
+                        } | null;
                     };
                 };
             };

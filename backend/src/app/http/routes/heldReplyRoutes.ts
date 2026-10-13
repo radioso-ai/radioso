@@ -69,6 +69,7 @@ const traceOf = (heldReply: HeldReplyView, review: ReviewTurnAuditRecord | null)
 const presentHeldReply = (heldReply: HeldReplyView, review: ReviewTurnAuditRecord | null) => ({
   id: heldReply.id,
   conversationId: heldReply.conversationId,
+  channel: heldReply.sourceChannel,
   agentId: heldReply.agentId,
   state: heldReply.state,
   holdReason: heldReply.holdReason,

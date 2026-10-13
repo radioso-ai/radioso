@@ -70,6 +70,7 @@ const mapHeldReply = (row: HeldReplyRow): HeldReplyRecord => ({
   id: row.id,
   workspaceId: row.workspace_id,
   conversationId: row.conversation_id,
+  sourceChannel: (row as HeldReplyRow & { source_channel?: string | null }).source_channel ?? null,
   agentId: row.agent_id,
   // The table's CHECKs hold the enum columns to the machine's vocabulary.
   state: row.state as HeldReplyRecord["state"],
@@ -157,7 +158,11 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
   async findById(heldReplyId: string): Promise<HeldReplyRecord | null> {
     const row = await this.db
       .selectFrom("held_replies")
-      .selectAll()
+      .leftJoin("conversations as c", (join) =>
+        join.onRef("c.id", "=", "held_replies.conversation_id").onRef("c.workspace_id", "=", "held_replies.workspace_id"),
+      )
+      .selectAll("held_replies")
+      .select("c.source_channel")
       .where("id", "=", heldReplyId)
       .executeTakeFirst();
     return row ? mapHeldReply(row) : null;

@@ -283,6 +283,7 @@ export interface HeldReplyUnitOfWork {
 export interface HeldReplyView {
   id: string;
   conversationId: string;
+  sourceChannel: string | null;
   agentId: string | null;
   state: HeldReplyState;
   holdReason: string;
@@ -355,6 +356,7 @@ const authorityView = (record: HeldReplyRecord): HeldReplyAuthorityView => ({
 const presentHeldReply = (record: HeldReplyRecord): HeldReplyView => ({
   id: record.id,
   conversationId: record.conversationId,
+  sourceChannel: record.sourceChannel ?? null,
   agentId: record.agentId,
   state: record.state,
   holdReason: record.holdReason,

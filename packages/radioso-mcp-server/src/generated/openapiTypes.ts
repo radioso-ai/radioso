@@ -9814,6 +9814,8 @@ export interface components {
             id: string;
             /** Format: uuid */
             conversationId: string;
+            /** @description The conversation's source channel; null when its conversation record is unavailable. */
+            channel: string | null;
             /**
              * Format: uuid
              * @description The agent whose review wrote the draft.

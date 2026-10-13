@@ -91,8 +91,7 @@ import {
 } from "../../../modules/retrieval/composition.js";
 import type { ClusteringEmbeddingPort } from "../../../modules/embeddingProfiles/contracts/embeddingConsumers.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import { AbuseControlRepository } from "../../../db/repositories/abuseControlRepository.js";
-import { AbuseControlService } from "../../../modules/security/services/abuseControlService.js";
+import type { AbuseControlService } from "../../../modules/security/services/abuseControlService.js";
 import { CustomerEmailConnectionRepository } from "../../../db/repositories/customerEmailConnectionRepository.js";
 import { EmailSkillDefinitionRepository } from "../../../db/repositories/emailSkillDefinitionRepository.js";
 import { EmailSkillActivityRepository } from "../../../db/repositories/emailSkillActivityRepository.js";
@@ -203,6 +202,7 @@ export const buildMcpConverseServices = (
 };
 
 export const buildChatServices = (input: {
+  abuseControlService: AbuseControlService;
   accountAccessService: AccountAccessService;
   agentService: AgentService;
   agentSkillRepository: AgentSkillRepository;
@@ -295,7 +295,7 @@ export const buildChatServices = (input: {
     normalize: answerPresentationService.normalize.bind(answerPresentationService),
     present: answerPresentationService.present.bind(answerPresentationService),
   };
-  const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database.kysely));
+  const abuseControlService = input.abuseControlService;
   // Conversation-action outbox drain push (contact-outbox fix): every current
   // producer of `routine_action_requests` rows requests a drain once its enqueue is
   // durable. Cloud Tasks under WORKER_DISPATCH_DRIVER=cloud-tasks + a configured

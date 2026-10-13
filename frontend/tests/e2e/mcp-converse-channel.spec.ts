@@ -434,6 +434,8 @@ test("operator copies a credential-free connect block for agent developers", asy
   await expect(share.getByText(discoveryCard, { exact: true })).toBeVisible();
   await expect(share.getByText('server_url:')).toBeVisible();
   await expect(share.getByText("mcpServers").first()).toBeVisible();
+  await expect(share.getByText(`Set the MCP server endpoint to ${endpoint}.`)).toBeVisible();
+  await expect(share.getByText(/choose no authentication/i)).toBeVisible();
   await expect(share.getByText("Authorization")).toHaveCount(0);
   await expect(share.getByText(/radioso_mcp_/)).toHaveCount(0);
 

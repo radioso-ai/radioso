@@ -80,7 +80,7 @@ Treat it as an address rather than a secret. It is meant to appear in a page, a 
 
 Alongside the switches, **Description** is the one line a calling agent reads before deciding to ask — write what the agent helps with, in the visitor's terms. **New conversations per hour** caps what one looping caller can spend from the workspace's conversation allowance; leave it empty to use the deployment's own budget.
 
-When open access is enabled, **Share with agent developers** provides the agent endpoint, its discovery card URL, and ready-to-copy examples for Claude, ChatGPT, Cursor, and the OpenAI Responses API. Those examples include the public id but never an MCP credential. Copy them into the developer guide you share with callers; switch to a credential-specific configuration when callers need controlled access instead.
+When open access is enabled, **Share with agent developers** provides the agent endpoint, its discovery card URL, and ready-to-copy examples for Claude, Cursor, and the OpenAI Responses API. It also gives the ChatGPT Developer Mode setup steps: use the endpoint with no authentication for open access, or issue an MCP credential from **Connect a client** and configure it as static bearer authentication for controlled access. Nothing in this block includes a credential.
 
 Rotating replaces the id:
 

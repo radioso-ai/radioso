@@ -1,5 +1,3 @@
-import { resolveApiBaseUrl } from '@/lib/runtime-config'
-
 const AGENT_CARD_PATH = (publicId: string) => `/.well-known/agent-card/${encodeURIComponent(publicId)}.json`
 
 export const buildAgentMcpConnectDetails = ({
@@ -14,14 +12,13 @@ export const buildAgentMcpConnectDetails = ({
   publicId: string
 }) => {
   const endpoint = `${mcpUrl.replace(/\/+$/u, '')}/a/${encodeURIComponent(publicId)}`
-  const apiBaseUrl = resolveApiBaseUrl({
-    publicApiUrl,
-    dashboardOrigin,
-    basePath: '/backend/api/v1',
-  })
+  const canonicalApiOrigin = publicApiUrl.trim().replace(/\/+$/u, '')
+  const dashboardBase = dashboardOrigin.replace(/\/+$/u, '')
 
   return {
     endpoint,
-    discoveryCardUrl: new URL(AGENT_CARD_PATH(publicId), apiBaseUrl).toString(),
+    discoveryCardUrl: canonicalApiOrigin
+      ? new URL(AGENT_CARD_PATH(publicId), canonicalApiOrigin).toString()
+      : `${dashboardBase}/backend${AGENT_CARD_PATH(publicId)}`,
   }
 }

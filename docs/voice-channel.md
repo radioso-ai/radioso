@@ -280,10 +280,15 @@ full-width terminator such as `。`. A bridge or fallback line arrives as a
 content frame like any sentence. Structural assertion markers the composer
 uses for citations are removed from speech: `[1]`, `[?]`, `[[1]]` and `[[?]]`,
 with the space before them, so "information.[?] If" is spoken as
-"information. If". Leaving out a bridge line and the `elevenlabs` dialect's
-flush deltas, the text of the frames joined together is what the caller
-hears: the agent's reply without those markers, or the fallback line after a
-turn limit.
+"information. If". Markdown syntax is removed the same way, by structure:
+emphasis (`**`, `__`, and a single `*` or `_` around a word), inline code
+backticks, heading and list markers (`#`, `-`, `*`, `1.`) at the start of a
+line, and link syntax, which leaves the link text. "la **versione
+open-source**" is spoken as "la versione open-source"; hyphens, apostrophes,
+decimals, ellipses and a `*` between numbers stay. Leaving out a bridge line
+and the `elevenlabs` dialect's flush deltas, the text of the frames joined
+together is what the caller hears: the agent's reply as spoken text, or the
+fallback line after a turn limit.
 
 With `stream: false`, the response is one `chat.completion` object whose
 `choices[0].message.content` is the whole reply, or the fallback line after a

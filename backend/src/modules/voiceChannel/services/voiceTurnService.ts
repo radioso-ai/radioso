@@ -19,7 +19,7 @@ import {
   type VoiceTurnPhase,
   type VoiceTurnPolicy,
 } from "./voiceTurnPolicy.js";
-import { splitCompleteSentences } from "./speechSegmenter.js";
+import { createSentenceCutter } from "./speechSegmenter.js";
 
 /** Where a voice session's conversation is remembered. */
 export interface VoiceSessionStore {
@@ -206,7 +206,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     record: VoiceTurnRecord,
     signal: AbortSignal,
   ): AsyncGenerator<VoiceReplyEvent> {
-    let pending = "";
+    const speech = createSentenceCutter();
     for await (const event of this.dependencies.chat.streamTurn({
       workspaceId: input.session.workspaceId,
       agentId: input.session.agentId,
@@ -227,15 +227,19 @@ export class VoiceTurnService implements VoiceTurnPort {
       if (event.type === "status") {
         yield { type: "phase", phase: PHASE_OF_STAGE[event.stage] };
       } else if (event.type === "chunk") {
-        const { sentences, remainder } = splitCompleteSentences(pending + event.text);
-        pending = remainder;
-        for (const text of sentences) {
+        for (const text of speech.push(event.text)) {
           record.speechPieceCount += 1;
           yield { type: "speech", text, last: false };
         }
       } else if (event.type === "done") {
+        // The reply is whole, so an emphasis its last chunk left open closes now.
+        const rest = speech.finish();
+        for (const text of rest.sentences) {
+          record.speechPieceCount += 1;
+          yield { type: "speech", text, last: false };
+        }
         record.speechPieceCount += 1;
-        yield { type: "speech", text: pending, last: true };
+        yield { type: "speech", text: rest.remainder, last: true };
         yield { type: "outcome", outcome: { kind: "continue" } };
         record.result = "completed";
         // What follows `done` is suggestion enrichment, which nobody hears.

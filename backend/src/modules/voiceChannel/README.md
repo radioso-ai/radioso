@@ -19,12 +19,17 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   conversation's routine state, starts the chat turn with
   `sourceChannel: "voice"` and a `voice` channel context, and maps the chat
   stream to `VoiceTurnEvent`s; `speechSegmenter.ts` is the pure sentence cutter
-  (punctuation only, no words); `speechText.ts` removes the composer's
-  citation markers (`[1]`, `[?]`, `[[1]]`, `[[?]]`) from everything spoken, by
-  structure only; `voiceTurnPolicy.ts` is the pure timing wrapper
-  (bridge and turn limit) over those events; `voiceLines.ts` picks the turn's
-  bridge and fallback lines by routine state and locale (tag structure only,
-  never the lines' words); `voiceTurnMetrics.ts` names the policy's series.
+  (punctuation only, no words); `speechText.ts` turns text into what a caller
+  hears: it removes the composer's citation markers (`[1]`, `[?]`, `[[1]]`,
+  `[[?]]`) and markdown syntax (emphasis, inline code, line-start heading and
+  list markers, link syntax) from everything spoken, by structure only;
+  while a reply streams, `speechSegmenter.ts`'s sentence cutter closes an
+  emphasis only before a space, line break or punctuation (the end of the
+  reply closes the rest) and removes list markers only at a real line start;
+  `voiceTurnPolicy.ts` is the pure timing wrapper (bridge and turn limit) over
+  those events; `voiceLines.ts` picks the turn's bridge and fallback lines by
+  routine state and locale (tag structure only, never the lines' words);
+  `voiceTurnMetrics.ts` names the policy's series.
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
   `voice_sessions`. The first binding wins.
 - `adapters/*` translate one wire to the domain port and back, and nothing

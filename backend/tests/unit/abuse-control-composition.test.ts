@@ -12,18 +12,24 @@ import { InMemoryAbuseControlRepository } from "../support/fakes.js";
 
 const trackingRepository = (): {
   consume: ReturnType<typeof vi.fn>;
+  methods: ReturnType<typeof vi.fn>[];
   repository: AbuseControlRepositoryPort;
 } => {
   const delegate = new InMemoryAbuseControlRepository();
+  const find = vi.fn(delegate.find.bind(delegate));
+  const save = vi.fn(delegate.save.bind(delegate));
   const consume = vi.fn(delegate.consume.bind(delegate));
+  const consumeBatch = vi.fn(delegate.consumeBatch.bind(delegate));
+  const deleteExpired = vi.fn(delegate.deleteExpired.bind(delegate));
   return {
     consume,
+    methods: [find, save, consume, consumeBatch, deleteExpired],
     repository: {
-      find: delegate.find.bind(delegate),
-      save: delegate.save.bind(delegate),
+      find,
+      save,
       consume,
-      consumeBatch: delegate.consumeBatch.bind(delegate),
-      deleteExpired: delegate.deleteExpired.bind(delegate),
+      consumeBatch,
+      deleteExpired,
     },
   };
 };
@@ -57,11 +63,15 @@ describe("abuse-control composition", () => {
       res.status(error.statusCode ?? 500).json({ statusCode: error.statusCode ?? 500 });
     });
 
-    await request(app).get("/limited").expect(204);
-    await request(app).get("/limited").expect(429).expect("Retry-After", "60");
+    for (let requestIndex = 0; requestIndex < 5; requestIndex += 1) {
+      await request(app).get("/limited").expect(requestIndex === 0 ? 204 : 429);
+    }
+    await new Promise<void>((resolve) => setImmediate(resolve));
 
-    expect(redis.consume).toHaveBeenCalledTimes(2);
-    expect(postgres.consume).not.toHaveBeenCalled();
+    expect(redis.consume).toHaveBeenCalledTimes(5);
+    for (const method of postgres.methods) {
+      expect(method).not.toHaveBeenCalled();
+    }
     expect(auditRecord).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "security.rate_limit_enforced",
       eventStatus: "success",

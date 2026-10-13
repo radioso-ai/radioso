@@ -80,6 +80,7 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
         limit: input.limit,
         remaining: 0,
         resetAtMs: blockedUntil.getTime(),
+        resetAfterSeconds: this.resetAfterSeconds(blockedUntil, evaluatedAt),
         retryAfterSeconds: this.retryAfterSeconds(blockedUntil, evaluatedAt),
       } satisfies AbuseControlDecision);
     }
@@ -87,10 +88,15 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
       limit: input.limit,
       remaining: Math.max(0, Math.floor(input.limit - consumption.weightedAttemptCount)),
       resetAtMs: windowStartedAt.getTime() + input.windowMs,
+      resetAfterSeconds: this.resetAfterSeconds(new Date(windowStartedAt.getTime() + input.windowMs), evaluatedAt),
     };
   }
 
   private retryAfterSeconds(blockedUntil: Date, now: Date): number {
     return Math.max(1, Math.ceil((blockedUntil.getTime() - now.getTime()) / 1000));
+  }
+
+  private resetAfterSeconds(resetAt: Date, evaluatedAt: Date): number {
+    return Math.max(0, Math.ceil((resetAt.getTime() - evaluatedAt.getTime()) / 1000));
   }
 }

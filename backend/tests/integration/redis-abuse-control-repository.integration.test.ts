@@ -28,11 +28,75 @@ const redisEntryKey = (scope: string, subjectKey: string): string => {
   return `radioso:abuse-control:v1:${digest}`;
 };
 
-const startBlackholeRedis = async (): Promise<{ close(): Promise<void>; url: string }> => {
+const RESP3_HELLO = "%7\r\n$6\r\nserver\r\n$5\r\nredis\r\n$7\r\nversion\r\n$5\r\n7.0.0\r\n$5\r\nproto\r\n:3\r\n$2\r\nid\r\n:1\r\n$4\r\nmode\r\n$10\r\nstandalone\r\n$4\r\nrole\r\n$6\r\nmaster\r\n$7\r\nmodules\r\n*0\r\n";
+
+const parseRespCommand = (buffer: Buffer): { bytes: number; command: string[] } | null => {
+  const readLine = (offset: number): { end: number; value: string } | null => {
+    const lineEnd = buffer.indexOf("\r\n", offset);
+    return lineEnd === -1 ? null : { end: lineEnd + 2, value: buffer.toString("utf8", offset, lineEnd) };
+  };
+  if (buffer[0] !== 42) return null;
+  const countLine = readLine(1);
+  if (!countLine) return null;
+  const count = Number(countLine.value);
+  if (!Number.isInteger(count) || count < 0) throw new Error("RESP stub received an invalid array");
+  let offset = countLine.end;
+  const command: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    if (buffer[offset] !== 36) return null;
+    const lengthLine = readLine(offset + 1);
+    if (!lengthLine) return null;
+    const length = Number(lengthLine.value);
+    if (!Number.isInteger(length) || length < 0) throw new Error("RESP stub received an invalid bulk string");
+    const valueEnd = lengthLine.end + length;
+    if (buffer.length < valueEnd + 2) return null;
+    command.push(buffer.toString("utf8", lengthLine.end, valueEnd));
+    offset = valueEnd + 2;
+  }
+  return { bytes: offset, command };
+};
+
+const startHandshakeThenStallRedis = async (targetRedisUrl: string): Promise<{
+  close(): Promise<void>;
+  recover(): void;
+  url: string;
+  waitForEval(): Promise<void>;
+}> => {
+  const target = new URL(targetRedisUrl);
+  if (target.protocol !== "redis:") throw new Error("RESP stall test requires a redis:// target");
   const sockets = new Set<net.Socket>();
+  let stalling = true;
+  let evalReceived = false;
+  let resolveEval: (() => void) | undefined;
   const server = net.createServer((socket) => {
     sockets.add(socket);
     socket.once("close", () => sockets.delete(socket));
+    socket.on("error", () => undefined);
+    if (!stalling) {
+      const upstream = net.connect({ host: target.hostname, port: Number(target.port || 6379) });
+      upstream.on("error", () => socket.destroy());
+      socket.pipe(upstream).pipe(socket);
+      return;
+    }
+    let buffer = Buffer.alloc(0);
+    socket.on("data", (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      for (;;) {
+        const parsed = parseRespCommand(buffer);
+        if (!parsed) return;
+        buffer = buffer.subarray(parsed.bytes);
+        const command = parsed.command[0]?.toUpperCase();
+        if (command === "HELLO") {
+          socket.write(RESP3_HELLO);
+        } else if (command === "EVAL") {
+          evalReceived = true;
+          resolveEval?.();
+          resolveEval = undefined;
+        } else {
+          socket.write("+OK\r\n");
+        }
+      }
+    });
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -42,6 +106,21 @@ const startBlackholeRedis = async (): Promise<{ close(): Promise<void>; url: str
   if (!address || typeof address === "string") throw new Error("Blackhole Redis server did not bind a TCP address");
   return {
     url: `redis://127.0.0.1:${address.port}`,
+    recover() {
+      stalling = false;
+      for (const socket of sockets) socket.destroy();
+    },
+    waitForEval() {
+      if (evalReceived) return Promise.resolve();
+      return Promise.race([
+        new Promise<void>((resolve) => {
+          resolveEval = resolve;
+        }),
+        new Promise<void>((_resolve, reject) => {
+          setTimeout(() => reject(new Error("RESP stub did not receive EVAL")), 500);
+        }),
+      ]);
+    },
     async close() {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -123,6 +202,7 @@ describeRedis("RedisAbuseControlRepository", () => {
       limit: 5,
       remaining: 4,
       resetAtMs: entry!.windowStartedAt.getTime() + 60_000,
+      resetAfterSeconds: 60,
     });
   });
 
@@ -152,7 +232,7 @@ describeRedis("RedisAbuseControlRepository", () => {
   });
 
   it("preserves blockMs and rolls back an atomically rejected batch", async () => {
-    const now = new Date();
+    const now = new Date("2000-01-01T00:00:00.000Z");
     const blockedScope = `${scope}.batch`;
     await service.enforce({
       scope: blockedScope,
@@ -163,6 +243,15 @@ describeRedis("RedisAbuseControlRepository", () => {
       now,
     });
 
+    const redisTime = await rawRedis.time();
+    const redisNowMs = Number(redisTime[0]) * 1_000 + Math.floor(Number(redisTime[1]) / 1_000);
+    const rejected = await repository.consumeBatch([
+      { scope: blockedScope, subjectKey: "preflight-grant", limit: 3, windowMs: 60_000, blockMs: 15_000, now },
+      { scope: blockedScope, subjectKey: "workspace", limit: 1, windowMs: 60_000, blockMs: 15_000, now },
+    ]);
+    expect(rejected.rejected?.evaluatedAt.getTime()).toBeGreaterThanOrEqual(redisNowMs);
+    expect(rejected.rejected?.evaluatedAt.getTime()).toBeLessThan(redisNowMs + 5_000);
+
     await expect(service.enforceBatch([
       { scope: blockedScope, subjectKey: "grant", limit: 3, windowMs: 60_000, blockMs: 15_000, now },
       { scope: blockedScope, subjectKey: "workspace", limit: 1, windowMs: 60_000, blockMs: 15_000, now },
@@ -170,6 +259,7 @@ describeRedis("RedisAbuseControlRepository", () => {
       statusCode: 429,
       details: {
         resetAtMs: expect.any(Number),
+        resetAfterSeconds: 15,
         retryAfterSeconds: 15,
       },
     });
@@ -242,6 +332,34 @@ describeRedis("RedisAbuseControlRepository", () => {
   });
 });
 
+describe("RedisAbuseControlRepository connection lifecycle", () => {
+  it("closes cleanly after a refused connection", async () => {
+    const server = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen({ host: "127.0.0.1", port: 0 }, () => resolve());
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Refused Redis test did not bind a TCP address");
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+
+    const repository = new RedisAbuseControlRepository({
+      redisUrl: `redis://127.0.0.1:${address.port}`,
+      commandTimeoutMs: 100,
+    });
+    await expect(repository.consume({
+      scope: "test.abuse-control.refused",
+      subjectKey: "same-subject",
+      limit: 1,
+      windowMs: 60_000,
+      blockMs: 60_000,
+      now: new Date(),
+    })).rejects.toThrow();
+
+    await expect(repository.close()).resolves.toBeUndefined();
+  });
+});
+
 describeRedisIntegration("Redis abuse-control failover and semantic parity", () => {
   const database = new Database(integrationDatabaseUrl);
   const postgres = new AbuseControlRepository(database.kysely);
@@ -252,28 +370,46 @@ describeRedisIntegration("Redis abuse-control failover and semantic parity", () 
     await database.close().catch(() => undefined);
   });
 
-  it("falls back to Postgres within the command deadline when Redis accepts but never replies", async () => {
-    const blackhole = await startBlackholeRedis();
+  it("falls back after a Redis handshake stalls EVALs and recovers with a fresh connection", async () => {
+    const stalledRedis = await startHandshakeThenStallRedis(redisUrl!);
     const deadlineMs = 100;
-    const redis = new RedisAbuseControlRepository({ redisUrl: blackhole.url, commandTimeoutMs: deadlineMs });
+    const redis = new RedisAbuseControlRepository({ redisUrl: stalledRedis.url, commandTimeoutMs: deadlineMs });
     const repository = new FallbackAbuseControlRepository(redis, postgres, {
       logger: { warn: () => undefined },
+    }, {
+      failureThreshold: 1,
+      initialOpenMs: 30,
+      jitter: () => 0.5,
+      maxOpenMs: 30,
     });
     const service = new AbuseControlService(repository);
-    const fallbackScope = `${scope}.blackhole`;
+    const fallbackScope = `${scope}.stalled-eval`;
     const startedAt = Date.now();
     try {
+      const evalReceived = stalledRedis.waitForEval();
+      const attempts = await Promise.all(Array.from({ length: 4 }, (_unused, index) => service.enforce({
+        scope: fallbackScope,
+        subjectKey: `subject-${index}`,
+        limit: 2,
+        windowMs: 60_000,
+      })));
+      await evalReceived;
+      expect(attempts).toHaveLength(4);
+      expect(Date.now() - startedAt).toBeLessThan(deadlineMs + 200);
+      await Promise.all(attempts.map((_attempt, index) =>
+        expect(postgres.find(fallbackScope, `subject-${index}`)).resolves.not.toBeNull()));
+
+      stalledRedis.recover();
+      await new Promise((resolve) => setTimeout(resolve, 40));
       await expect(service.enforce({
         scope: fallbackScope,
-        subjectKey: "same-subject",
+        subjectKey: "recovered",
         limit: 2,
         windowMs: 60_000,
       })).resolves.toMatchObject({ remaining: 1 });
-      expect(Date.now() - startedAt).toBeLessThan(deadlineMs + 200);
-      expect(await postgres.find(fallbackScope, "same-subject")).not.toBeNull();
     } finally {
       await redis.close();
-      await blackhole.close();
+      await stalledRedis.close();
     }
   });
 

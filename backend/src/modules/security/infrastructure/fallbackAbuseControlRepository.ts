@@ -34,6 +34,7 @@ const DEFAULT_CIRCUIT_OPTIONS: Required<FallbackCircuitOptions> = {
   maxOpenMs: 60_000,
   warningIntervalMs: 60_000,
 };
+const FALLBACK_CLEANUP_INTERVAL_MS = 5 * 60_000;
 
 export class FallbackAbuseControlRepository implements AbuseControlRepositoryPort {
   private readonly circuit: Required<FallbackCircuitOptions>;
@@ -41,6 +42,10 @@ export class FallbackAbuseControlRepository implements AbuseControlRepositoryPor
   private halfOpenProbeInFlight = false;
   private lastWarningAtMs: number | undefined;
   private openUntilMs: number | undefined;
+  private fallbackWriteGeneration = 0;
+  private cleanedFallbackWriteGeneration = 0;
+  private fallbackCleanupInFlight: Promise<void> | undefined;
+  private nextFallbackCleanupAtMs = 0;
 
   constructor(
     private readonly primary: AbuseControlRepositoryPort,
@@ -81,13 +86,26 @@ export class FallbackAbuseControlRepository implements AbuseControlRepositoryPor
     );
   }
 
-  async deleteExpired(now: Date): Promise<void> {
-    const results = await Promise.allSettled([
-      this.primary.deleteExpired(now),
-      this.fallback.deleteExpired(now),
-    ]);
-    const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
-    if (rejected) throw rejected.reason;
+  async deleteExpired(_now: Date): Promise<void> {
+    const nowMs = this.circuit.clock();
+    if (
+      this.fallbackCleanupInFlight
+      || this.cleanedFallbackWriteGeneration === this.fallbackWriteGeneration
+      || nowMs < this.nextFallbackCleanupAtMs
+    ) {
+      return;
+    }
+
+    const generation = this.fallbackWriteGeneration;
+    this.nextFallbackCleanupAtMs = nowMs + FALLBACK_CLEANUP_INTERVAL_MS;
+    const cleanup = this.fallback.deleteExpired(new Date(nowMs));
+    this.fallbackCleanupInFlight = cleanup;
+    try {
+      await cleanup;
+      this.cleanedFallbackWriteGeneration = generation;
+    } finally {
+      if (this.fallbackCleanupInFlight === cleanup) this.fallbackCleanupInFlight = undefined;
+    }
   }
 
   private async withFallback<T>(
@@ -98,7 +116,7 @@ export class FallbackAbuseControlRepository implements AbuseControlRepositoryPor
     const nowMs = this.circuit.clock();
     if (this.isCircuitOpen(nowMs) || this.halfOpenProbeInFlight) {
       this.recordFallback(operation, nowMs);
-      return useFallback();
+      return this.useFallback(operation, useFallback);
     }
 
     const isHalfOpenProbe = this.openUntilMs !== undefined;
@@ -108,9 +126,10 @@ export class FallbackAbuseControlRepository implements AbuseControlRepositoryPor
       this.resetCircuit();
       return result;
     } catch {
-      this.recordFailure(nowMs);
-      this.recordFallback(operation, nowMs);
-      return useFallback();
+      const failedAtMs = this.circuit.clock();
+      this.recordFailure(failedAtMs);
+      this.recordFallback(operation, failedAtMs);
+      return this.useFallback(operation, useFallback);
     } finally {
       if (isHalfOpenProbe) this.halfOpenProbeInFlight = false;
     }
@@ -133,6 +152,16 @@ export class FallbackAbuseControlRepository implements AbuseControlRepositoryPor
   private resetCircuit(): void {
     this.consecutiveFailures = 0;
     this.openUntilMs = undefined;
+  }
+
+  private isFallbackWrite(operation: FallbackOperation): boolean {
+    return operation === "consume" || operation === "consume_batch" || operation === "save";
+  }
+
+  private async useFallback<T>(operation: FallbackOperation, useFallback: () => Promise<T>): Promise<T> {
+    const result = await useFallback();
+    if (this.isFallbackWrite(operation)) this.fallbackWriteGeneration += 1;
+    return result;
   }
 
   private recordFallback(operation: FallbackOperation, nowMs: number): void {

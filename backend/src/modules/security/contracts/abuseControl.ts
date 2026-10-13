@@ -66,6 +66,8 @@ export interface AbuseControlDecision {
   limit: number;
   remaining: number;
   resetAtMs: number;
+  /** Seconds to the reset from the repository clock that made the admission decision. */
+  resetAfterSeconds: number;
   retryAfterSeconds?: number;
 }
 

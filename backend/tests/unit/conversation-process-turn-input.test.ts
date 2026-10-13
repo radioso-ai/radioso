@@ -28,7 +28,7 @@ import type {
   DirectiveSteerInput,
   DirectiveSteeringResult,
 } from "../../src/modules/directives/public.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const inMemoryDirectiveStateStore = (): DirectiveStateStore => {
   const rows = new Map<string, DirectiveFiringState>();
@@ -74,6 +74,7 @@ const message = (overrides: Partial<MessageRecord> = {}): MessageRecord => ({
 
 const agent = (): AgentRecord => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent_1",
   workspaceId: "workspace_1",
   name: "Support",

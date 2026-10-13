@@ -37,6 +37,13 @@ export {
   rotatedPublicIdInput,
 } from "./services/agentPublicIdentity.js";
 export {
+  agentVoiceSettingsSchema,
+  defaultAgentVoiceSettings,
+  readStoredAgentVoiceSettings,
+  type AgentVoiceSettings,
+  type VoiceBridgeStyle,
+} from "./voiceSettings.js";
+export {
   DEFAULT_CONTACT_REQUEST_DELIVERY,
   hasConfiguredContactDestination,
   readNotifyContactDelivery,

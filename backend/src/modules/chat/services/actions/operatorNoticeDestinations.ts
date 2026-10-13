@@ -1,6 +1,7 @@
 import type { ContactDeliveryRoute } from "../../../../shared/domain/contactDeliveryRoute.js";
 import { isRoutineNamedSkill } from "../../../../shared/domain/routineNamedSkill.js";
 import type { RoutedContactDeliveryTarget } from "./contactSendActionHandler.js";
+import type { NotificationRecipientDescription, NotificationRecipientPolicyService } from "../../../operatorNotifications/public.js";
 
 /** Where one choice of "Send with" delivers a routine ending's notice. */
 interface OperatorNoticeDestination {
@@ -8,6 +9,7 @@ interface OperatorNoticeDestination {
   skillName: string | null;
   via: ContactDeliveryRoute;
   recipientEmails: string[];
+  recipients: NotificationRecipientDescription[];
   recipientsFromWorkspaceOwner: boolean;
   /** A webhook also receives the notice. Its URL is never returned: it often carries a token. */
   webhookConfigured: boolean;
@@ -37,14 +39,6 @@ interface OperatorNoticeDestinationResolver {
   }): Promise<RoutedContactDeliveryTarget>;
 }
 
-const toDestination = (skillName: string | null, target: RoutedContactDeliveryTarget): OperatorNoticeDestination => ({
-  skillName,
-  via: target.via,
-  recipientEmails: target.emails,
-  recipientsFromWorkspaceOwner: target.recipientsFromWorkspaceOwner,
-  webhookConfigured: target.webhook !== null,
-});
-
 /**
  * Where a routine ending's "Notify the team" notice goes for this agent: the default destination
  * and each notify skill an ending may name. Recipient emails are personal data, so callers serve
@@ -54,6 +48,7 @@ export class OperatorNoticeDestinationsReader {
   constructor(private readonly options: {
     skills: OperatorNoticeSkillLister;
     resolver: OperatorNoticeDestinationResolver;
+    recipientPolicy?: Pick<NotificationRecipientPolicyService, "describe">;
   }) {}
 
   async read(input: { workspaceId: string; agentId: string }): Promise<OperatorNoticeDestinations> {
@@ -64,9 +59,21 @@ export class OperatorNoticeDestinationsReader {
     const [defaultTarget, ...skillTargets] = await Promise.all(
       [null, ...nameable].map((skillName) => this.options.resolver.resolveForAgent({ ...input, skillName })),
     );
+    const targets = [defaultTarget, ...skillTargets];
+    const recipients = await Promise.all(targets.map((target) => this.options.recipientPolicy
+      ? this.options.recipientPolicy.describe(input.workspaceId, target.emails)
+      : Promise.resolve(target.emails.map((email) => ({ email, state: "confirmation_not_required" as const })))));
+    const toDestination = (skillName: string | null, target: RoutedContactDeliveryTarget, index: number): OperatorNoticeDestination => ({
+      skillName,
+      via: target.via,
+      recipientEmails: target.emails,
+      recipients: recipients[index] ?? [],
+      recipientsFromWorkspaceOwner: target.recipientsFromWorkspaceOwner,
+      webhookConfigured: target.webhook !== null,
+    });
     return {
-      default: toDestination(null, defaultTarget),
-      skills: nameable.map((skillName, index) => toDestination(skillName, skillTargets[index])),
+      default: toDestination(null, defaultTarget, 0),
+      skills: nameable.map((skillName, index) => toDestination(skillName, skillTargets[index], index + 1)),
     };
   }
 }

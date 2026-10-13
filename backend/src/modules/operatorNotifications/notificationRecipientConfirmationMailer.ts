@@ -1,0 +1,82 @@
+import type { EmailKind } from "../mail/public.js";
+import type { NotificationRecipientTokenSigner } from "./notificationRecipientToken.js";
+
+interface ConfirmationMailTransport {
+  send(message: {
+    to: string;
+    kind: EmailKind;
+    subject: string;
+    text: string;
+    idempotencyKey: string;
+    listUnsubscribeUrl: string;
+  }): Promise<unknown>;
+}
+
+interface ConfirmationObservability {
+  logger?: { info(payload: Record<string, unknown>, message: string): void };
+  metrics?: {
+    incrementCounter(name: string, options: { help: string; labels?: Record<string, string>; value?: number }): void;
+  } | null;
+}
+
+const oneLine = (value: string): string => value.replace(/[\r\n]+/gu, " ").trim();
+
+export class NotificationRecipientConfirmationMailer {
+  private readonly baseUrl: URL;
+
+  constructor(private readonly options: {
+    mailer: ConfirmationMailTransport;
+    signer: NotificationRecipientTokenSigner;
+    publicBaseUrl: string;
+  } & ConfirmationObservability) {
+    this.baseUrl = new URL(options.publicBaseUrl);
+  }
+
+  async send(input: {
+    workspaceId: string;
+    workspaceName: string;
+    agentName: string;
+    email: string;
+    recipientId: string;
+    idempotencyKey: string;
+  }): Promise<void> {
+    const confirmUrl = this.actionUrl("confirm", this.options.signer.sign(input.recipientId, "confirm"));
+    const revokeUrl = this.revocationUrl(input.recipientId);
+    const workspaceName = oneLine(input.workspaceName) || "A Radioso workspace";
+    const agentName = oneLine(input.agentName) || "an agent";
+    await this.options.mailer.send({
+      to: input.email,
+      kind: "recipient_confirmation",
+      subject: `${workspaceName} wants to send you ${agentName} notifications via Radioso`,
+      text: [
+        `${workspaceName} wants to send you ${agentName} notifications via Radioso.`,
+        "",
+        "Confirm this address:",
+        confirmUrl,
+        "",
+        "If you do not want these notifications, you can stop them here:",
+        revokeUrl,
+      ].join("\n"),
+      listUnsubscribeUrl: revokeUrl,
+      idempotencyKey: `notification-recipient-confirmation:${input.idempotencyKey}:${input.recipientId}`,
+    });
+    this.options.metrics?.incrementCounter("notification_recipient_confirmation_events_total", {
+      help: "Notification recipient confirmation lifecycle events.",
+      labels: { event: "sent" },
+    });
+    this.options.logger?.info({
+      event: "notification_recipient_confirmation_sent",
+      workspaceId: input.workspaceId,
+    }, "Notification recipient confirmation sent");
+  }
+
+  revocationUrl(recipientId: string): string {
+    return this.actionUrl("revoke", this.options.signer.sign(recipientId, "revoke"));
+  }
+
+  private actionUrl(action: "confirm" | "revoke", token: string): string {
+    const url = new URL(`/api/v1/notification-recipient-confirmations/${action}`, this.baseUrl);
+    url.searchParams.set("token", token);
+    return url.toString();
+  }
+}

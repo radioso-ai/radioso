@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-09-30
+last_updated: 2026-10-13
 ---
 
 import { Callout } from 'nextra/components'
@@ -101,6 +101,10 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 `WORKSPACE_TOKEN_SECRET` derives the per-agent signing key a workspace admin can reveal so their website's own backend can prove [signed visitor identity](/operators/context-variables#signed-visitor-identity) for embedded chat. It is not a signer for personal or service API credentials.
 
 Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`. Without `RESEND_MAIL_API_KEY`, the backend writes outbound mail to the log instead of sending it, so password resets, email verification, and [user invitations](/api/accounts-and-users#invite-a-user) reach nobody.
+
+`NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED` defaults to `true`. Keep it on for shared or multi-tenant deployments: an external contact or operator-notice address confirms before it receives notification content. A single-tenant self-hosted deployment can set it to `false`; recipient status then reads `confirmation_not_required`, while hard-bounce and complaint suppression still applies. Confirmation and unsubscribe links use `CONNECTOR_PUBLIC_BASE_URL` when it is set, then `APP_BASE_URL`; configure one of those as the public HTTPS origin that reaches the backend.
+
+When transactional mail uses Resend, subscribe the existing `/api/connectors/email/webhook` endpoint to `email.bounced` and `email.complained`. Radioso verifies those requests with `EMAIL_CHANNEL_WEBHOOK_SECRET` and records permanent bounces and complaints for notification-tagged messages. SMTP and log drivers have no provider webhook, so their notification delivery continues without automatic bounce or complaint suppression.
 
 The included staging and live Terraform environments enable PostHog error reporting with `ERROR_SINKS=audit,posthog`. Staging also sends product analytics to PostHog with `PRODUCT_ANALYTICS_SINKS=audit,posthog`. Set `POSTHOG_API_KEY` for each environment. `POSTHOG_HOST` defaults to the US ingestion host and can be overridden for another PostHog region or a self-hosted instance.
 

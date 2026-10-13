@@ -19,6 +19,7 @@ export type EmailKind =
   | "conversation_transfer"
   | "contact_notification"
   | "operator_notice"
+  | "recipient_confirmation"
   | "usage_alert"
   | "billing_notice"
   | "channel_reply";
@@ -46,6 +47,8 @@ export interface EmailMessage {
   metadata?: Record<string, string>;
   idempotencyKey?: string | null;
   threading?: OutboundThreadingHeaders | null;
+  /** Signed recipient-revocation endpoint, carried as RFC 8058 one-click unsubscribe headers. */
+  listUnsubscribeUrl?: string | null;
 }
 
 export interface EmailSendResult {

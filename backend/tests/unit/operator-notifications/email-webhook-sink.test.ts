@@ -146,6 +146,35 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(sent[0].text).not.toContain("Open:");
   });
 
+  it("sends only eligible recipients with their one-click unsubscribe link", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => routedTo(["waiting@example.com", "ready@example.com"]) },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        prepareDelivery: async () => ({
+          eligibleEmails: ["ready@example.com"],
+          eligibleRecipients: [{
+            email: "ready@example.com",
+            listUnsubscribeUrl: "https://api.example.com/revoke?token=signed",
+          }],
+          skipped: { unconfirmed: 1, suppressed: 0 },
+        }),
+      },
+    );
+
+    await expect(sink.deliver(notification, context)).resolves.toEqual({ disposition: "delivered" });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      to: "ready@example.com",
+      listUnsubscribeUrl: "https://api.example.com/revoke?token=signed",
+    });
+  });
+
   it("preserves approval webhook delivery", async () => {
     const { mailer, sent } = recordingMailer();
     const { httpClient, requests } = recordingWebhookClient();

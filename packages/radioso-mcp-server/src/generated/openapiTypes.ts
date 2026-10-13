@@ -2669,6 +2669,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/notification-recipient-confirmations/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend recipient confirmation
+         * @description Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap.
+         */
+        post: operations["resendNotificationRecipientConfirmation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/skills": {
         parameters: {
             query?: never;
@@ -22668,6 +22688,73 @@ export interface operations {
             };
         };
     };
+    resendNotificationRecipientConfirmation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: email */
+                    email: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Confirmation send admitted or skipped */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sent: boolean;
+                    };
+                };
+            };
+            /** @description Recipient is not configured for the agent */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Owner or admin permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listAgentSkills: {
         parameters: {
             query?: never;
@@ -22894,6 +22981,13 @@ export interface operations {
                              */
                             via: "named_skill" | "contact_human" | "contact_human_off" | "agent_setting" | "workspace_owner" | "none";
                             recipientEmails: string[];
+                            /** @description Recipient addresses with their effective confirmation or suppression state. */
+                            recipients: {
+                                /** Format: email */
+                                email: string;
+                                /** @enum {string} */
+                                state: "confirmed" | "grandfathered" | "waiting_for_confirmation" | "revoked" | "suppressed" | "confirmation_not_required";
+                            }[];
                             /** @description The emails are the workspace owner's because the route lists no recipients of its own. */
                             recipientsFromWorkspaceOwner: boolean;
                             /** @description A webhook also receives the notice. Its URL is never returned. */
@@ -22908,6 +23002,13 @@ export interface operations {
                              */
                             via: "named_skill" | "contact_human" | "contact_human_off" | "agent_setting" | "workspace_owner" | "none";
                             recipientEmails: string[];
+                            /** @description Recipient addresses with their effective confirmation or suppression state. */
+                            recipients: {
+                                /** Format: email */
+                                email: string;
+                                /** @enum {string} */
+                                state: "confirmed" | "grandfathered" | "waiting_for_confirmation" | "revoked" | "suppressed" | "confirmation_not_required";
+                            }[];
                             /** @description The emails are the workspace owner's because the route lists no recipients of its own. */
                             recipientsFromWorkspaceOwner: boolean;
                             /** @description A webhook also receives the notice. Its URL is never returned. */

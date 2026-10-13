@@ -138,10 +138,11 @@ import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolve
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
 import { DeliveryFailureDecisions } from "../../modules/customerReplyDelivery/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
-import { buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
+import { buildNotificationRecipientPolicy, buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 import { PostgresSlackInboundEventRetention } from "../../modules/slack/public.js";
+import { NotificationRecipientStateRepository } from "../../db/repositories/notificationRecipientStateRepository.js";
 import { createAccountAdministratorDirectory } from "../composition/accountAdministratorDirectory.js";
 import { createNoticeMailAdapter } from "../composition/noticeMail.js";
 import { PeriodicTaskRunner, createPeriodicTasksLifecycle } from "../composition/periodicTaskRunner.js";
@@ -221,7 +222,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     webhookDestinations,
     webhookSkillDefinitionService,
   } = integrations;
-  const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(infrastructure.database);
+  const notificationRecipientSuppressions = new NotificationRecipientStateRepository(infrastructure.database.kysely);
+  const notificationRecipientPolicy = buildNotificationRecipientPolicy({
+    database: infrastructure.database,
+    env,
+    mailer: infrastructure.mailService,
+    logger,
+    metrics: infrastructure.metricsRegistry,
+    states: notificationRecipientSuppressions,
+  });
+  const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(
+    infrastructure.database,
+    notificationRecipientPolicy,
+  );
   const documentRetrievalGraph = buildDocumentRetrievalGraph({
     composition,
     env,
@@ -1323,6 +1336,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillCapabilityRegistry,
     agentSkillsService,
     operatorNoticeDestinations,
+    notificationRecipientPolicy,
+    notificationRecipientSuppressions,
     accountRepository: repositories.accountRepository,
     userRepository: repositories.userRepository,
     workspaceRepository: repositories.workspaceRepository,

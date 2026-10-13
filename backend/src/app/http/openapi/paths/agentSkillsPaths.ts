@@ -101,6 +101,17 @@ const OperatorNoticeDestinationSchema = z.object({
   via: z.enum(contactDeliveryRoutes)
     .describe("Which rule picked the recipients."),
   recipientEmails: z.array(z.string()),
+  recipients: z.array(z.object({
+    email: z.string().email(),
+    state: z.enum([
+      "confirmed",
+      "grandfathered",
+      "waiting_for_confirmation",
+      "revoked",
+      "suppressed",
+      "confirmation_not_required",
+    ]),
+  })).describe("Recipient addresses with their effective confirmation or suppression state."),
   recipientsFromWorkspaceOwner: z.boolean()
     .describe("The emails are the workspace owner's because the route lists no recipients of its own."),
   webhookConfigured: z.boolean().describe("A webhook also receives the notice. Its URL is never returned."),
@@ -139,6 +150,27 @@ export const registerAgentSkillsPaths = (
       200: { description: "Skill capabilities", content: json(z.object({ capabilities: z.array(CapabilitySchema) })) },
       401: errorResponse("Authentication required"),
       403: errorResponse("Agent read permission required"),
+      404: errorResponse("Agent not found"),
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/notification-recipient-confirmations/resend",
+    tags: ["Agent Skills"],
+    summary: "Resend recipient confirmation",
+    description: "Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap.",
+    operationId: "resendNotificationRecipientConfirmation",
+    security: sec,
+    request: {
+      params: AgentParams,
+      body: { required: true, content: json(z.object({ email: z.string().email().max(320) })) },
+    },
+    responses: {
+      202: { description: "Confirmation send admitted or skipped", content: json(z.object({ sent: z.boolean() })) },
+      400: errorResponse("Recipient is not configured for the agent"),
+      401: errorResponse("Authentication required"),
+      403: errorResponse("Owner or admin permission required"),
       404: errorResponse("Agent not found"),
     },
   });

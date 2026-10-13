@@ -26,3 +26,10 @@ export {
   routineEndingNotificationFromAction,
   type RoutineEndingNotificationSubject,
 } from "./routineEndingNotificationFromAction.js";
+export {
+  NotificationRecipientPolicyService,
+  type NotificationRecipientDescription,
+} from "./notificationRecipientPolicy.js";
+export { NotificationRecipientConfirmationMailer } from "./notificationRecipientConfirmationMailer.js";
+export { NotificationRecipientTokenSigner } from "./notificationRecipientToken.js";
+export { notificationProviderSuppressionReason } from "./providerSuppression.js";

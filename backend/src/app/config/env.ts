@@ -177,6 +177,7 @@ const envSchema = z.object({
   RADIOSO_EDITION: z.enum(["oss", "enterprise"]).default("oss"),
   ...realtimeEnvShape,
   ...emailChannelEnvShape,
+  NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED: booleanish(true),
   GOOGLE_CLOUD_PROJECT: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_CDN_URL_MAP: emptyStringToUndefined(z.string().min(1)),
   DATABASE_URL: z.string().min(1),

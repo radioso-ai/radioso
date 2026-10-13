@@ -7,6 +7,7 @@ import {
   type OperatorNotificationSink,
   type OperatorNotificationSinkOutcome,
   type RoutineEndingOperatorNotification,
+  type NotificationRecipientPolicyService,
 } from "../../../operatorNotifications/public.js";
 import {
   resolveConversationLink,
@@ -68,6 +69,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     private readonly webhookClient?: ContactWebhookHttpClient,
     private readonly conversationLinks?: ConversationLinkResolver,
     private readonly admission?: NotificationDeliveryAdmissionPort,
+    private readonly recipientPolicy?: Pick<NotificationRecipientPolicyService, "prepareDelivery">,
   ) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome> {
@@ -104,13 +106,27 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       );
       return { disposition: "skipped", reason: "contact_destination_not_configured" };
     }
+    const baseIdempotencyKey = context.idempotencyKey ?? context.requestId;
+    const recipientDecision = this.recipientPolicy
+      ? await this.recipientPolicy.prepareDelivery({
+          workspaceId: recipientContext.workspaceId,
+          agentId: notification.agentId,
+          conversationId: recipientContext.conversationId,
+          emails: target.emails,
+          idempotencyKey: baseIdempotencyKey,
+        })
+      : {
+          eligibleEmails: target.emails,
+          eligibleRecipients: target.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
+          skipped: { unconfirmed: 0, suppressed: 0 },
+        };
     const admission = await this.admission?.admit({
       requestId: context.requestId,
       workspaceId: recipientContext.workspaceId,
       accountId: recipientContext.accountId,
       conversationId: recipientContext.conversationId,
-      recipientEmails: target.emails,
-      requestedEmailCount: target.emails.length,
+      recipientEmails: recipientDecision.eligibleEmails,
+      requestedEmailCount: recipientDecision.eligibleEmails.length,
     });
     if (admission && !admission.dispatchAllowed) {
       return { disposition: "skipped", reason: admission.reason ?? "conversation_dispatch_cap" };
@@ -128,7 +144,6 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     const openLine = conversationUrl ? [`Open: ${conversationUrl}`] : [];
     const links = { dashboardUrl: conversationUrl, dashboardPath: deprecatedDashboardPath(conversationUrl) };
 
-    const baseIdempotencyKey = context.idempotencyKey ?? context.requestId;
     const delivery = notification.kind === "approval"
       ? {
           subject: "Conversation needs an approval",
@@ -154,14 +169,15 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       : this.routineEndingDelivery(notification, context, openLine, links);
 
     const [emailResults] = await Promise.all([
-      Promise.all((admission?.emailAllowed === false ? [] : target.emails).map((to) =>
+      Promise.all((admission?.emailAllowed === false ? [] : recipientDecision.eligibleRecipients).map((recipient) =>
         this.mailer.send({
-          to,
+          to: recipient.email,
           kind: "operator_notice",
           ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),
           subject: delivery.subject,
           text: delivery.text,
-          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(to)}`,
+          ...(recipient.listUnsubscribeUrl ? { listUnsubscribeUrl: recipient.listUnsubscribeUrl } : {}),
+          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
         })),
       ),
       target.webhook ? this.postWebhook({
@@ -174,7 +190,11 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     if (!target.webhook) {
       const skipReason = admission?.emailAllowed === false
         ? admission.reason
-        : mailDeliverySkipReason(emailResults);
+        : recipientDecision.eligibleEmails.length === 0
+          ? recipientDecision.skipped.suppressed > 0 && recipientDecision.skipped.unconfirmed === 0
+            ? "notification_recipient_suppressed"
+            : "notification_recipient_unconfirmed"
+          : mailDeliverySkipReason(emailResults);
       if (skipReason) {
         return { disposition: "skipped", reason: skipReason };
       }

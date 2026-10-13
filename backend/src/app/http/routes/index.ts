@@ -48,6 +48,8 @@ import { createAgentDiscoveryRoutes } from "../../../modules/agentDiscovery/publ
 import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../../modules/operatorMcpAuthorization/routes.js";
 import { createOperatorMcpInternalRoutes } from "../../../modules/operatorCopilot/mcpRoutes.js";
 import { createTestExecutionRoutes } from "./testExecutionRoutes.js";
+import { createNotificationRecipientConfirmationRoutes } from "./notificationRecipientConfirmationRoutes.js";
+import { createNotificationDeliveryWebhookRoutes } from "./notificationDeliveryWebhookRoutes.js";
 
 type ApiRouteMount = {
   path: string;
@@ -62,6 +64,8 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/.well-known", createRouter: createOperatorMcpDiscoveryRoutes },
   { path: "/.well-known", createRouter: createAgentDiscoveryRoutes },
   { path: "/api/v1/auth", createRouter: createAuthRoutes },
+  { path: "/api/v1", createRouter: createNotificationRecipientConfirmationRoutes },
+  { path: "/api/connectors/email", createRouter: createNotificationDeliveryWebhookRoutes },
   { path: "/api/v1/account", createRouter: createAccountRoutes },
   { path: "/api/v1/account", createRouter: createAccountUserRoutes },
   { path: "/api/v1/account", createRouter: createApiAccessRoutes },

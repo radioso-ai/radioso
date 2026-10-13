@@ -106,6 +106,12 @@ helpers and the shared chat message limit from `app/http`
   `sentenceFlushDelta` is a space plus U+200B in one chunk, after every bridge
   line and speech piece on the wire; `renderCompletion` and history never see
   it.
+- **Keep-alive.** ElevenLabs drops a custom-LLM stream that is silent for about
+  4 s and re-asks with the same utterance (observed 2026-10-13). The streaming
+  route writes the `elevenlabs` dialect's `keepAlive.delta` (space plus U+200B)
+  after every 2.5 s without a frame, the role frame first if nothing was
+  written yet, and stops at the outcome, on disconnect and on error. It is
+  wire-level and lives in the adapter; the turn policy knows nothing of it.
 - **Metering.** The chat service reserves usage with `surface` = the source
   channel and prices it from the same value: `voice` reserves
   `surface: "voice"`, `usage: "conversation_reply"`, the treatment the REST

@@ -219,6 +219,13 @@ a zero-width space after each sentence piece and bridge line (observed
 wait for the next one to start before the caller heard it. The flush travels on
 the wire only; the stored reply has none.
 
+ElevenLabs drops a custom-LLM stream that is silent for about 4 s and re-asks
+with the same utterance (observed 2026-10-13); the dialect sends an invisible
+keep-alive delta every 2.5 s of silence. The keep-alive is the same space plus
+zero-width space, it stops at the end of the reply or when the runtime hangs
+up, and the stored reply never contains it. The `generic` dialect sends
+neither.
+
 ElevenLabs also holds the first sentence of a reply until it has about 45
 characters of text (observed 2026-10-13: 26 characters waited for the next
 sentence, 46 and 57 did not; invisible padding and two short sentences do not

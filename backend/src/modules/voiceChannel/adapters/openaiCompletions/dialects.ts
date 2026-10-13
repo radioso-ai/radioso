@@ -21,6 +21,12 @@ export interface CompletionsDialect {
    * sentence back from speech until the wire shows it ended. Wire-only: never part of the stored reply.
    */
   sentenceFlushDelta?: string;
+  /**
+   * For a runtime that abandons a stream after a stretch of silence: once no frame has been written
+   * for `afterIdleMs`, the route writes `delta` and keeps doing so while the turn stays silent.
+   * Wire-only, like the flush delta.
+   */
+  keepAlive?: { delta: string; afterIdleMs: number };
 }
 
 const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
@@ -35,6 +41,9 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
     // whitespace and a later non-blank delta arrives. Pieces end on the terminator, so the flush is
     // a space (the whitespace) plus a zero-width space (the non-blank delta), sent as one chunk.
     sentenceFlushDelta: " \u200B",
+    // Observed 2026-10-13: ElevenLabs drops a custom-LLM stream that is silent for about 4 s (4.0 s
+    // held, 4.5 s dropped) and re-asks with the same utterance; any invisible delta resets that.
+    keepAlive: { delta: " \u200B", afterIdleMs: 2_500 },
   }],
   ["generic", {
     id: "generic",

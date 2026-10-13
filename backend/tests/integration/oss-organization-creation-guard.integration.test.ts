@@ -7,6 +7,7 @@ import { OssOrganizationCreationGuard } from "../../src/modules/auth/composition
 import { PostgresOssOrganizationBootstrap } from "../../src/modules/auth/infra/postgresOssOrganizationBootstrap.js";
 import { PostgresOrganizationProvisioner } from "../../src/modules/auth/infra/postgresOrganizationProvisioner.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
+import { AuthFunnelRepository } from "../../src/db/repositories/authFunnelRepository.js";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { UserRepository } from "../../src/db/repositories/userRepository.js";
 import { AccountMembershipRepository } from "../../src/db/repositories/accountMembershipRepository.js";
@@ -191,6 +192,7 @@ const createAuthService = (database: Database): AuthService => {
     userRepository,
     sessionRepository: new InMemorySessionRepository(),
     federatedIdentityRepository: new InMemoryFederatedIdentityRepository(),
+    authFunnelRepository: new AuthFunnelRepository(database.kysely),
     workspaceService,
     accountAccessService,
     accountInvitationService: new AccountInvitationService(

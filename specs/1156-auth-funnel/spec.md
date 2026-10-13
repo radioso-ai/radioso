@@ -39,6 +39,8 @@ Development can expose the verification URL in the registration response and UI 
 - Invalid, expired, stale, or replayed verification tokens never create sessions.
 - Missing, expired, invalid, or replayed pending tickets return the same not-ready response and do not reveal account existence.
 - Concurrent exchanges of the same verification token or pending ticket produce at most one session.
+- Password-reset and provider-verified recovery invalidate outstanding verification links and pending tickets; neither recovery path activates a ticket.
+- A mixed backend/frontend rollout leaves a verified person with a sign-in link when the backend did not issue a session.
 - Registration availability failures do not make `/signup` disappear.
 - Production configuration rejects development verification-link exposure.
 
@@ -50,6 +52,7 @@ Development can expose the verification URL in the registration response and UI 
 - **FR-002**: Successful email verification MUST atomically consume the single-use, expiring, user-bound verification token and create a session using existing cookie security attributes.
 - **FR-003**: Registration requiring verification MUST issue a short-lived, single-use pending ticket only in an httpOnly cookie.
 - **FR-004**: A rate-limited pending-session endpoint MUST exchange a valid ticket for a session only after its bound user is verified and MUST use a constant response shape for ready and not-ready outcomes.
+- **FR-004a**: A pending ticket MUST be activated only by the transaction that changes its bound user from unverified to verified through its email-verification link; credential recovery MUST atomically invalidate outstanding tickets and verification links.
 - **FR-005**: Pending tickets MUST never appear in URLs or response bodies.
 - **FR-006**: A development-only setting MAY add the verification URL to the registration response; production configuration MUST reject that setting.
 - **FR-007**: The registration card MUST reuse the Enterprise Google availability and start surfaces and render no Google action when disabled or unavailable.

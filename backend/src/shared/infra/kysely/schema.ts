@@ -1478,6 +1478,7 @@ export interface PendingDecisions {
 
 export interface PendingRegistrationTickets {
   account_id: string;
+  activated_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   expires_at: Timestamp;
   id: string;

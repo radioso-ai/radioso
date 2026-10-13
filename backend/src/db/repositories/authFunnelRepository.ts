@@ -68,44 +68,66 @@ export class AuthFunnelRepository implements AuthFunnelRepositoryPort {
     now: Date;
   }): Promise<{ userId: string; accountId: string } | null> {
     return this.db.transaction().execute(async (transaction) => {
+      // Resolve the owner without locking the credential first. Every
+      // mutating auth path then locks the user before it rechecks a credential,
+      // which gives recovery and verification one consistent lock order.
       const token = await transaction
         .selectFrom("email_verification_tokens")
         .select(["id", "user_id"])
         .where("token_hash", "=", input.verificationTokenHash)
         .where("used_at", "is", null)
         .where("expires_at", ">", input.now)
-        .forUpdate()
         .executeTakeFirst();
       if (!token) return null;
-
-      const latest = await transaction
-        .selectFrom("email_verification_tokens")
-        .select("id")
-        .where("user_id", "=", token.user_id)
-        .where("used_at", "is", null)
-        .where("expires_at", ">", input.now)
-        .orderBy("created_at", "desc")
-        .limit(1)
-        .executeTakeFirst();
-      if (latest?.id !== token.id) return null;
 
       const user = await transaction
         .selectFrom("users")
         .select("id")
         .where("id", "=", token.user_id)
         .where("disabled_at", "is", null)
+        .where("email_verified_at", "is", null)
+        .forUpdate()
         .executeTakeFirst();
       if (!user) return null;
+
+      const lockedToken = await transaction
+        .selectFrom("email_verification_tokens")
+        .select(["id", "user_id"])
+        .where("id", "=", token.id)
+        .where("token_hash", "=", input.verificationTokenHash)
+        .where("used_at", "is", null)
+        .where("expires_at", ">", input.now)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!lockedToken) return null;
+
+      const latest = await transaction
+        .selectFrom("email_verification_tokens")
+        .select("id")
+        .where("user_id", "=", user.id)
+        .where("used_at", "is", null)
+        .where("expires_at", ">", input.now)
+        .orderBy("created_at", "desc")
+        .limit(1)
+        .executeTakeFirst();
+      if (latest?.id !== lockedToken.id) return null;
       const accountId = await findActiveAccountId(transaction, user.id);
       if (!accountId) return null;
 
-      await transaction.updateTable("users").set({
+      const verified = await transaction.updateTable("users").set({
         email_verified_at: input.now,
         updated_at: input.now,
-      }).where("id", "=", user.id).where("email_verified_at", "is", null).execute();
+      }).where("id", "=", user.id).where("email_verified_at", "is", null).executeTakeFirst();
+      if (Number(verified.numUpdatedRows) !== 1) return null;
       await transaction.updateTable("email_verification_tokens").set({ used_at: input.now })
         .where("user_id", "=", user.id)
         .where("used_at", "is", null)
+        .execute();
+      await transaction.updateTable("pending_registration_tickets")
+        .set({ activated_at: input.now })
+        .where("user_id", "=", user.id)
+        .where("used_at", "is", null)
+        .where("expires_at", ">", input.now)
         .execute();
       await createSession(transaction, { ...input, userId: user.id, accountId });
       return { userId: user.id, accountId };
@@ -126,7 +148,6 @@ export class AuthFunnelRepository implements AuthFunnelRepositoryPort {
         .where("token_hash", "=", input.pendingTokenHash)
         .where("used_at", "is", null)
         .where("expires_at", ">", input.now)
-        .forUpdate()
         .executeTakeFirst();
       if (!ticket) return null;
 
@@ -134,21 +155,61 @@ export class AuthFunnelRepository implements AuthFunnelRepositoryPort {
         .selectFrom("users")
         .select("id")
         .where("id", "=", ticket.user_id)
-        .where("email_verified_at", "is not", null)
         .where("disabled_at", "is", null)
+        .forUpdate()
         .executeTakeFirst();
       if (!user) return null;
-      const accountId = await findActiveAccountId(transaction, user.id, ticket.account_id);
+
+      const lockedTicket = await transaction
+        .selectFrom("pending_registration_tickets")
+        .select(["id", "account_id"])
+        .where("id", "=", ticket.id)
+        .where("token_hash", "=", input.pendingTokenHash)
+        .where("used_at", "is", null)
+        .where("activated_at", "is not", null)
+        .where("expires_at", ">", input.now)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!lockedTicket) return null;
+      const accountId = await findActiveAccountId(transaction, user.id, lockedTicket.account_id);
       if (!accountId) return null;
 
       const consumed = await transaction.updateTable("pending_registration_tickets")
         .set({ used_at: input.now })
-        .where("id", "=", ticket.id)
+        .where("id", "=", lockedTicket.id)
         .where("used_at", "is", null)
         .executeTakeFirst();
       if (Number(consumed.numUpdatedRows) !== 1) return null;
       await createSession(transaction, { ...input, userId: user.id, accountId });
       return { userId: user.id, accountId };
+    });
+  }
+
+  async revokePendingRegistrationCredentials(input: { userId: string; now: Date }): Promise<void> {
+    await this.db.transaction().execute(async (transaction) => {
+      const user = await transaction
+        .selectFrom("users")
+        .select("id")
+        .where("id", "=", input.userId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!user) return;
+
+      await transaction.updateTable("sessions")
+        .set({ revoked_at: input.now })
+        .where("user_id", "=", user.id)
+        .where("revoked_at", "is", null)
+        .execute();
+      await transaction.updateTable("email_verification_tokens")
+        .set({ used_at: input.now })
+        .where("user_id", "=", user.id)
+        .where("used_at", "is", null)
+        .execute();
+      await transaction.updateTable("pending_registration_tickets")
+        .set({ used_at: input.now })
+        .where("user_id", "=", user.id)
+        .where("used_at", "is", null)
+        .execute();
     });
   }
 }

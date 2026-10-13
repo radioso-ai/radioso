@@ -5,6 +5,8 @@ import {
   createAuditService,
   InMemoryAccountInvitationRepository,
   InMemoryAccountMembershipRepository,
+  InMemoryAuthFunnelRepository,
+  InMemoryEmailVerificationTokenRepository,
   InMemoryUserRepository,
   InMemoryFederatedIdentityRepository,
   InMemoryWorkspaceRepository,
@@ -20,6 +22,7 @@ import {
 } from "../../src/modules/auth/services/authService.js";
 import { sha256 } from "../../src/modules/auth/domain/authPrimitives.js";
 import { registrationClosed } from "../../src/modules/auth/services/ossOrganizationCreationGuard.js";
+import { AuthFunnelService } from "../../src/modules/auth/services/authFunnelService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import type {
   OrganizationCoreProvisioner,
@@ -221,6 +224,14 @@ const createAuthService = (options: {
   );
   const workspaceService = options.workspaceService ?? new WorkspaceService(new InMemoryWorkspaceRepository(), auditService);
   const federatedIdentityRepository = options.federatedIdentityRepository ?? new InMemoryFederatedIdentityRepository();
+  const sessionRepository = options.sessionRepository ?? new FailingSessionRepository();
+  const emailVerificationTokenRepository = new InMemoryEmailVerificationTokenRepository();
+  const authFunnelRepository = new InMemoryAuthFunnelRepository({
+    emailVerificationTokens: emailVerificationTokenRepository,
+    users: userRepository,
+    sessions: sessionRepository,
+    listMemberships: (userId) => accountAccessService.listUserMemberships(userId),
+  });
 
   return {
     authService: new AuthService({
@@ -228,8 +239,9 @@ const createAuthService = (options: {
       auditService,
       accountRepository,
       userRepository,
-      sessionRepository: options.sessionRepository ?? new FailingSessionRepository(),
+      sessionRepository,
       federatedIdentityRepository,
+      authFunnelRepository,
       workspaceService,
       accountAccessService,
       accountInvitationService,
@@ -248,6 +260,9 @@ const createAuthService = (options: {
     accountRepository,
     userRepository,
     federatedIdentityRepository,
+    authFunnelRepository,
+    emailVerificationTokenRepository,
+    sessionRepository,
     accountMembershipRepository,
     accountInvitationRepository,
     auditService,
@@ -1077,6 +1092,45 @@ describe("AuthService rollback", () => {
     expect(result.userId).toBe(registered.userId);
     expect((await userRepository.findById(registered.userId))?.emailVerifiedAt).not.toBeNull();
     expect(result.sessionCookie).toContain("radioso_session=");
+  });
+
+  it("consumes outstanding verification links and pending tickets when Google reclaims an account", async () => {
+    const {
+      authService,
+      authFunnelRepository,
+      emailVerificationTokenRepository,
+      auditService,
+    } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const registered = await authService.register({
+      email: "google-recovery@example.com",
+      password: "attacker-known-password",
+    });
+    const verificationToken = "google-recovery-verification-token";
+    await emailVerificationTokenRepository.create({
+      userId: registered.userId,
+      tokenHash: sha256(verificationToken),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const recoveryFunnel = new AuthFunnelService({
+      env: createTestEnv(), repository: authFunnelRepository, auditService,
+    });
+    const pendingCookie = await recoveryFunnel.issuePendingTicket({
+      userId: registered.userId,
+      accountId: registered.accountId,
+    });
+
+    await authService.federatedLogin({
+      provider: "google",
+      subject: "google-recovery-subject",
+      email: "google-recovery@example.com",
+      emailVerified: true,
+    });
+
+    await expect(recoveryFunnel.verify({ token: verificationToken })).rejects.toMatchObject({ statusCode: 401 });
+    await expect(recoveryFunnel.exchangePendingTicket(pendingCookie.split(";")[0]?.split("=")[1]))
+      .resolves.toEqual({ ready: false });
   });
 
   it("rotates the password and revokes sessions when verifying a squatted account (anti pre-hijack)", async () => {

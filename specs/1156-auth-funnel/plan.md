@@ -33,7 +33,7 @@ Finish the auth funnel by adding route-addressable auth pages and by introducing
 ## Structure And Ownership
 
 - `backend/src/modules/auth/services/authFunnelService.ts`: token generation, cookie-ready exchange results, no SQL.
-- `backend/src/db/repositories/authFunnelRepository.ts`: atomic `FOR UPDATE` claims and session inserts, no HTTP.
+- `backend/src/db/repositories/authFunnelRepository.ts`: atomic user-first credential claims, ticket activation/revocation, session inserts, no HTTP.
 - `backend/src/app/http/routes/authRoutes.ts`: validation, rate limiting, Set-Cookie headers, constant response presentation.
 - `frontend/components/auth/`: route mode, provider action, pending polling, session navigation.
 - `frontend/app/login`, `frontend/app/signup`: linkable entry pages.
@@ -43,8 +43,10 @@ Finish the auth funnel by adding route-addressable auth pages and by introducing
 - Verification token lifetime stays `EMAIL_VERIFICATION_TOKEN_TTL_MINUTES`; pending tickets default to 15 minutes.
 - Raw tokens exist only transiently in services; persistence stores SHA-256 hashes.
 - The transaction locks and consumes the credential before inserting one session, preventing replay and concurrent double issuance.
+- Only the successful `email_verified_at NULL → verified` update activates pending tickets and mints a verification session. Password reset and provider recovery lock the same user and revoke sessions, unused verification links, and pending tickets in one transaction; recovery therefore leaves no usable pre-recovery session even if a claim was in flight.
 - Pending cookies use the existing secure/httpOnly/SameSite/path policy and are cleared after exchange.
 - The pending endpoint always returns `{ ready: boolean }` with HTTP 200 after a syntactically valid request; absent/invalid/expired/used tickets are indistinguishable.
+- Pending polls spend a hashed-ticket budget plus a looser source budget; the client honors `Retry-After`. During backend-first rollout, a frontend checks for the session after verify and sends a verified-but-sessionless person to sign in.
 
 ## Validation
 

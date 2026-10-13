@@ -6,6 +6,7 @@ import type { AuditService } from "../../audit/contracts/index.js";
 import type { WorkspaceService } from "../../workspace/public.js";
 import type { UserRepositoryPort } from "../../../db/repositories/userRepository.js";
 import type { PasswordResetTokenRepositoryPort } from "../../../db/repositories/passwordResetTokenRepository.js";
+import type { AuthFunnelRepositoryPort } from "./authFunnelService.js";
 import type {
   AccountRepositoryPort,
   FederatedIdentityRepositoryPort,
@@ -37,6 +38,7 @@ export class PasswordResetService {
     workspaceService: WorkspaceService;
     sessionRepository: SessionRepositoryPort;
     federatedIdentityRepository: Pick<FederatedIdentityRepositoryPort, "deleteForUser">;
+    authFunnelRepository: Pick<AuthFunnelRepositoryPort, "revokePendingRegistrationCredentials">;
     passwordResetTokenRepository: PasswordResetTokenRepositoryPort;
     mailService: EmailService;
     auditService: AuditService;
@@ -167,6 +169,7 @@ export class PasswordResetService {
     if (displayName !== user.displayName) {
       await this.dependencies.userRepository.updateDisplayName(user.id, displayName);
     }
+    await this.dependencies.authFunnelRepository.revokePendingRegistrationCredentials({ userId: user.id, now });
     // Reset possession proves control of the mailbox, so a successful reset also verifies the email.
     await this.dependencies.userRepository.markEmailVerified(user.id, now);
     await this.dependencies.passwordResetTokenRepository.markAllActiveUsedForUser(user.id, now);

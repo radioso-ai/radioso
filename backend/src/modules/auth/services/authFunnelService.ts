@@ -39,6 +39,11 @@ export interface AuthFunnelRepositoryPort {
     sessionExpiresAt: Date;
     now: Date;
   }): Promise<AuthFunnelClaim | null>;
+  /**
+   * Recovery proves mailbox possession through a different credential. It
+   * invalidates registration credentials, but never activates their tickets.
+   */
+  revokePendingRegistrationCredentials(input: { userId: string; now: Date }): Promise<void>;
 }
 
 interface PreparedSession {
@@ -107,6 +112,10 @@ export class AuthFunnelService {
       metadata: { userId: claim.userId },
     });
     return { verified: true, sessionCookie: session.cookie };
+  }
+
+  async revokePendingRegistrationCredentials(input: { userId: string; now: Date }): Promise<void> {
+    await this.dependencies.repository.revokePendingRegistrationCredentials(input);
   }
 
   async exchangePendingTicket(token: string | undefined): Promise<

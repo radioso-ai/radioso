@@ -3,6 +3,7 @@ import type { ChatBootstrapResponse, ChatResponse } from "./chatResponses.js";
 import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
 import type { PageReadCapability } from "../services/pageRead/pageReadDecision.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
+import type { ConversationTurnSupersession } from "../contracts/interruption.js";
 
 export type AssistantRouteType = "direct" | "retrieval";
 export type AssistantRouteReason =
@@ -84,6 +85,8 @@ export interface AssistantChatRequest {
    * derived from it and the turn admits the named routine directly.
    */
   routineInvocation?: RoutineInvocation;
+  /** How a newer turn on the conversation cuts this one off, used only by `streamAnswer`; `until_emission` when absent. */
+  supersession?: ConversationTurnSupersession;
   /**
    * Caller-owned abort signal (#885), used only by `streamAnswer`. The HTTP
    * presenter fires this once the client has disconnected and the turn has

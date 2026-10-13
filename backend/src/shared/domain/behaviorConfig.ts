@@ -315,6 +315,11 @@ export const VOICE_BEHAVIOR = {
   // caller is not left waiting on a line that sounds dead. Composition-owned for
   // the same reason as bridgeAfterMs.
   turnLimitMs: 8_000,
+  // A voice runtime that loses a reply (it hung up on the stream, or a newer
+  // request overtook it) can re-send the same utterance seconds later. Within
+  // this window the channel speaks the stored answer again instead of running
+  // and storing a second turn; past it, an identical utterance is a new question.
+  replayWindowMs: 30_000,
 } as const;
 
 export const DOCUMENT_BEHAVIOR = {

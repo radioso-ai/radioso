@@ -10,8 +10,10 @@ import { admittedAbuseControlDecision } from "../support/fakes.js";
 import { createAgentRoutes } from "../../src/app/http/routes/agentRoutes.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { AccessGrant } from "../../src/modules/accessGrants/domain.js";
+import type { ChatStreamEvent } from "../../src/modules/chat/contracts/index.js";
+import { defaultAgentVoiceSettings } from "../../src/modules/agents/public.js";
 import type { VoiceTurnEvent, VoiceTurnInput } from "../../src/modules/voiceChannel/domain.js";
-import { registerOpenAiCompletionsRoute } from "../../src/modules/voiceChannel/public.js";
+import { registerOpenAiCompletionsRoute, VoiceTurnService } from "../../src/modules/voiceChannel/public.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -144,7 +146,7 @@ describe("voice completions route", () => {
       session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey: "conv_abc" },
       transport: "web",
       utterance: "When do you open?",
-    }, expect.any(AbortSignal));
+    }, expect.any(AbortSignal), expect.any(AbortSignal));
     expect(dependencies.accessGrantService.recordAgentChannelChatSucceeded).toHaveBeenCalledWith({
       grant: expect.objectContaining({ id: grant().id, agentId }),
     });
@@ -154,7 +156,7 @@ describe("voice completions route", () => {
     ]);
   });
 
-  it("answers the request ElevenLabs sends, turning only its newest user message into the utterance", async () => {
+  it("answers the request ElevenLabs sends, turning its newest user message into the utterance and its cut-off reply into what was heard", async () => {
     const dependencies = createDependencies();
 
     await request(createApp(dependencies))
@@ -181,7 +183,8 @@ describe("voice completions route", () => {
       session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey: "6d0c3f0e-9c55-4c1b-8d7e-1f7f5a2b9e40" },
       transport: "web",
       utterance: "And on Saturdays?",
-    }, expect.any(AbortSignal));
+      heardUntil: "Thanks for asking, let me",
+    }, expect.any(AbortSignal), expect.any(AbortSignal));
   });
 
   it("rejects the placeholder bearer ElevenLabs sends when the agent has no secret", async () => {
@@ -370,7 +373,7 @@ describe("voice completions route", () => {
     expect(dependencies.voiceTurns.runTurn).toHaveBeenCalledWith(expect.objectContaining({
       session: { workspaceId, agentId, vendor: "generic", sessionKey: "room-7" },
       utterance: "Hello",
-    }), expect.any(AbortSignal));
+    }), expect.any(AbortSignal), expect.any(AbortSignal));
   });
 
   it("rejects a request without an agent channel credential", async () => {
@@ -760,3 +763,95 @@ describe("voice completions route keep-alive", () => {
     expect(writesAfterClose).toEqual([]);
   });
 });
+
+describe("voice completions route when a newer utterance supersedes the turn", () => {
+  it("ends the superseded turn's stream with stop and [DONE] after what it already spoke, and no error frame", async () => {
+    const chat = {
+      streamTurn: () => (async function* (): AsyncGenerator<ChatStreamEvent> {
+        yield { type: "conversation", conversationId };
+        yield { type: "chunk", text: "We open at nine. See" };
+        yield { type: "cancelled", conversationId, reason: "superseded", stage: "persisting" };
+      })(),
+    };
+    const turns = new VoiceTurnService({
+      sessions: { findConversationId: async () => conversationId, bind: async (_session, id) => id },
+      chat,
+      agents: { findVoiceProfile: async () => ({ voice: defaultAgentVoiceSettings(), defaultLocale: null }) },
+      routines: { isRoutineActive: async () => false },
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    const response = await request(createApp(createDependencies({ voiceTurns: turns })))
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody())
+      .expect(200);
+
+    const frames = dataFrames(response.text);
+    expect(frames.at(-1)).toBe("[DONE]");
+    expect(frames.slice(0, -1).map((frame) => (JSON.parse(frame) as { choices: unknown[] }).choices[0])).toEqual([
+      { index: 0, delta: { role: "assistant", content: "We open at nine. " }, finish_reason: null },
+      { index: 0, delta: { content: " \u200B" }, finish_reason: null },
+      { index: 0, delta: {}, finish_reason: "stop" },
+    ]);
+    expect(response.text).not.toContain("error");
+  });
+});
+
+describe("voice completions route hang-up signal", () => {
+  const serve = async (turns: { runTurn: (input: VoiceTurnInput, signal: AbortSignal, hungUp?: AbortSignal) => AsyncIterable<VoiceTurnEvent> }) => {
+    const app = express();
+    app.use(express.json());
+    const router = Router();
+    registerOpenAiCompletionsRoute(router, {
+      turns,
+      admission: { handlers: [], callerOf: () => ({ workspaceId, agentId }), onTurnAccepted: () => undefined },
+      logger: { warn: vi.fn() },
+    });
+    app.use("/api/v1/agents", router);
+    const server = app.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    return server;
+  };
+
+  it("fires when the runtime closes the request before the outcome, and not once the outcome was sent", async () => {
+    const hangUps: AbortSignal[] = [];
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const turns = {
+      runTurn: (_input: VoiceTurnInput, _signal: AbortSignal, hungUp?: AbortSignal) => {
+        if (hungUp) hangUps.push(hungUp);
+        const holds = hangUps.length === 1;
+        return (async function* (): AsyncGenerator<VoiceTurnEvent> {
+          yield { type: "conversation", conversationId };
+          yield { type: "speech", text: "We open at nine. ", last: false };
+          if (holds) await released;
+          yield { type: "speech", text: "See you then!", last: true };
+          yield { type: "outcome", outcome: { kind: "continue" } };
+        })();
+      },
+    };
+    const server = await serve(turns);
+
+    try {
+      const { port } = server.address() as AddressInfo;
+      const client = http.request({ host: "127.0.0.1", port, method: "POST", path: completionsPath(), headers: { "content-type": "application/json" } });
+      client.on("error", () => undefined);
+      client.end(JSON.stringify(elevenlabsBody()));
+      const [response] = await once(client, "response") as [http.IncomingMessage];
+      response.on("error", () => undefined);
+      await once(response, "data");
+      client.destroy();
+      await vi.waitFor(() => expect(hangUps[0]?.aborted).toBe(true), { timeout: 2_000, interval: 10 });
+      release();
+
+      await request(server).post(completionsPath()).send(elevenlabsBody()).expect(200);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(hangUps[1]?.aborted).toBe(false);
+    } finally {
+      release();
+      server.close();
+    }
+  });
+});
+

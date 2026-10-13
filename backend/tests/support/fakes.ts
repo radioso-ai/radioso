@@ -4612,6 +4612,14 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     return null;
   }
 
+  async deleteUserMessage(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<boolean> {
+    const messages = this.items.get(input.conversationId) ?? [];
+    const kept = messages.filter((message) =>
+      !(message.workspaceId === input.workspaceId && message.id === input.messageId && message.role === "user"));
+    this.items.set(input.conversationId, kept);
+    return kept.length < messages.length;
+  }
+
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     return [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
   }

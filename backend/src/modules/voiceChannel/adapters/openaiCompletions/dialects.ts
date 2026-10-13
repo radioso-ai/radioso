@@ -27,6 +27,12 @@ export interface CompletionsDialect {
    * Wire-only, like the flush delta.
    */
   keepAlive?: { delta: string; afterIdleMs: number };
+  /**
+   * For a runtime that replays the agent's reply cut short when the caller spoke over it: the
+   * suffix it appends to the part that was heard. The reply right before the newest user message,
+   * ending in it, is what the caller heard (`VoiceTurnInput.heardUntil`).
+   */
+  interruptedReplySuffix?: string;
 }
 
 const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
@@ -44,6 +50,9 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
     // Observed 2026-10-13: ElevenLabs drops a custom-LLM stream that is silent for about 4 s (4.0 s
     // held, 4.5 s dropped) and re-asks with the same utterance; any invisible delta resets that.
     keepAlive: { delta: " \u200B", afterIdleMs: 2_500 },
+    // Observed 2026-10-12: after a barge-in, the next request's history carries the interrupted
+    // reply truncated to what was heard, followed by "...".
+    interruptedReplySuffix: "...",
   }],
   ["generic", {
     id: "generic",

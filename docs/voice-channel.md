@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with one conversation per voice session and authored lines that cover the wait."
-last_updated: 2026-10-13
+last_updated: 2026-10-14
 ---
 
 # Voice Channel
@@ -29,7 +29,9 @@ Activity and the Inbox.
 3. The last `user` message is the utterance. The earlier messages, including
    the runtime's own system prompt, are its replay of the call; the
    conversation already holds that history and the agent has its own
-   instructions, so Radioso reads only the last one.
+   instructions, so Radioso reads only the last one, plus, on the `elevenlabs`
+   dialect, how much of the previous reply the caller heard (see
+   [When the caller talks over the agent](#when-the-caller-talks-over-the-agent)).
 4. The agent runs its turn. The reply comes back as `chat.completion.chunk`
    frames, one sentence per frame, ending with `finish_reason: "stop"` and
    `data: [DONE]`.
@@ -178,6 +180,8 @@ What happens on a turn while `enabled` is true:
   always takes a few seconds; a short reply such as "Hi!" starts speaking well
   inside the 400 ms, so it is never preceded by a bridge. The caller hears one
   bridge line per turn at most, and none once the reply has started speaking.
+  A turn that replaces one whose bridge line went out less than 1.8 s earlier
+  speaks none, so bridges never stack.
   Inside a running routine (the
   agent has just asked the caller something and is taking in the answer) it
   is an `acknowledge` line; otherwise a `check` line. Lines rotate across
@@ -204,6 +208,52 @@ Inbox shows the caller's words and the agent's reply, the way a chat
 conversation never shows its typing indicator. After a turn limit, the stored
 reply is the agent's full answer, which the caller did not hear; the caller
 heard the fallback line.
+
+## When the caller talks over the agent
+
+The newest thing the caller said wins. ElevenLabs keeps a reply's stream open
+when the caller speaks over it and sends the new utterance as a new request,
+so Radioso cancels the running turn as soon as a newer request of the same
+session arrives, even when its reply has started speaking. The cancelled
+request's response ends with `finish_reason: "stop"` and `data: [DONE]` after
+whatever it had already sent, with no error frame.
+
+What the conversation keeps depends on how far the cancelled turn got:
+
+- **Cancelled before its reply started:** nothing. The caller's message is
+  removed and no reply is stored; the audit trail keeps a cancelled
+  `chat.answer` event that names the removed message and marks it
+  `userMessageDiscarded: true`. This is what happens when the runtime guesses
+  the end of a sentence too early and re-sends the longer transcript. Only a
+  newer voice request removes the message; any other turn that starts on the
+  conversation, such as an operator approving a routine step, cancels the
+  turn and keeps it.
+- **Cancelled after its reply started:** the caller's message stays and the
+  part of the reply the caller heard is not stored. The next turn answers the
+  newer utterance with that message in its history.
+
+An unclear word can make the transcriber flap, and ElevenLabs then sends
+several requests within a second or two with alternating transcripts. Each
+one replaces the one before, so the conversation stores the last transcript
+and one answer to it. A request that arrives while the previous one is still
+being set up replaces it before its turn starts.
+
+When the runtime loses a reply, because it hung up on the stream before the
+reply finished or a newer request overtook it, it can send the same utterance
+again a few seconds later. If that happens within 30 seconds and the reply
+was stored, the caller hears the stored reply again: no new message in the
+conversation, no bridge line, no model call. The audit trail records
+`voice.reply_replayed` against the reply. If the reply is still being written
+when the same utterance arrives, the new request runs as a new turn and
+replaces the running one.
+
+When the caller speaks over a reply that was stored, ElevenLabs replays that
+reply in the next request cut short to what was heard, followed by `...`. The
+conversation keeps the full reply; the audit trail records
+`voice.reply_interrupted` against it, with how many characters the caller
+heard (`heardCharacterCount`) and how long the spoken reply was
+(`spokenCharacterCount`). A bridge line spoken before the reply does not count
+toward either.
 
 ## Dialects
 
@@ -251,7 +301,7 @@ The body is an OpenAI chat-completions request.
 
 | Field | Meaning |
 |---|---|
-| `messages` | Required. The call so far. The last message with `role: "user"` is the utterance, up to 4,000 characters; its `content` is a string or an array of content parts, of which the `text` parts are read. Earlier messages and the runtime's `system` prompt are ignored. |
+| `messages` | Required. The call so far. The last message with `role: "user"` is the utterance, up to 4,000 characters; its `content` is a string or an array of content parts, of which the `text` parts are read. On `elevenlabs`, an `assistant` message right before the utterance that ends in `...` is read as the part of the previous reply the caller heard. Other earlier messages and the runtime's `system` prompt are ignored. |
 | `stream` | `true` for SSE frames, `false` or absent for one JSON object. Voice runtimes send `true`. |
 | `model` | Echoed back in every response. Radioso answers with the agent's own model configuration. |
 | `tools` | Accepted. Replies carry text only and never call the runtime's tools. |
@@ -355,10 +405,20 @@ that session key starts a new conversation.
   workspace. The credential budget is shared by every call that uses the
   credential at the same time, so five concurrent calls share 30 turns a
   minute. Past it, the runtime gets `429`.
-- ElevenLabs keeps the previous reply's stream open after an interruption and
-  sends the next utterance as a new request; Radioso's next turn waits for
-  the running reply to finish. The conversation stores that full reply,
-  including the part the caller talked over.
+- The newest-utterance rule, the 30-second replay and the bridge rule hold
+  within one Radioso instance. Requests of one session that land on different
+  instances do not see each other there: a burst of revised transcripts split
+  across two instances can store two caller messages, and a re-request that
+  lands on another instance runs as a new turn.
+- When a newer utterance arrives while a reply is still streaming, the caller
+  has heard part of it and the vendor keeps the truncated text, but Radioso
+  stores the caller's message with no reply. The Inbox shows an unanswered
+  message, and the next turn (including a routine collecting slots) does not
+  know what the agent started to say. The cut reply is not billed as an
+  answer; its model tokens stay in the usage ledger.
+- A request that replaces an unanswered one carries only its own utterance.
+  When the runtime's newer transcript does not repeat the caller's earlier
+  words, the agent answers without them.
 - An operator who takes a voice conversation over cannot reach the caller.
   A written reply has no way onto the call, so the Inbox offers no Send on a
   voice conversation. Until an operator writes in the conversation, each new
@@ -380,7 +440,8 @@ that session key starts a new conversation.
 - An agent bundle does not carry the `voice` block, so an agent created from a
   bundle import starts with voice off.
 - If the runtime hangs up mid-reply, the turn still finishes and is saved,
-  the same as a REST agent-channel client that disconnects. A turn still
+  the same as a REST agent-channel client that disconnects, and the same
+  utterance sent again within 30 seconds hears the saved reply. A turn still
   running well after the disconnect is cancelled.
 - The endpoint speaks the OpenAI chat-completions format voice runtimes call,
   not Radioso's own API contract, so it is described on this page rather

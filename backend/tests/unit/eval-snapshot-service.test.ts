@@ -158,6 +158,10 @@ class StubMessageRepository implements MessageRepositoryPort {
       message.workspaceId === workspaceId && message.conversationId === conversationId);
   }
 
+  async deleteUserMessage(): Promise<boolean> {
+    return false;
+  }
+
   async listRecentByConversationId(): Promise<MessageRecord[]> {
     throw new Error("not implemented");
   }

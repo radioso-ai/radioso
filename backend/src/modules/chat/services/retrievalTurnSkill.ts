@@ -10,6 +10,7 @@ import {
   GroundedAnswerEnvelopeReader,
   parseGroundedAnswerEnvelope,
   type GroundedAnswerEnvelope,
+  type GroundingEnvelopeOutcome,
   type PlannedEnvelopeSuggestion,
 } from "./groundedAnswerEnvelope.js";
 import type {
@@ -112,6 +113,15 @@ const declinePendingRoutineStep = (session: PreparedSession): RoutinePendingStep
  * ever runs for `RETRIEVAL` turns; social/identity turns are answered by their own
  * skills and never reach here.
  */
+/**
+ * The grounded answer committed a decline (`no_support` or `out_of_scope`) in its head
+ * and wrote no text for it. The commitment is still a valid verdict, so the turn
+ * delivers the focused decline that outcome promised instead of failing as a blank
+ * generation. An empty `answer` commitment stays a generation failure.
+ */
+const commitsDeclineWithoutText = (envelope: { outcome: GroundingEnvelopeOutcome | null }, answer: string): boolean =>
+  !answer.trim() && (envelope.outcome === "no_support" || envelope.outcome === "out_of_scope");
+
 export class RetrievalAnswerComposer {
   constructor(
     private readonly support: ChatAnswerSupport,
@@ -244,6 +254,24 @@ export class RetrievalAnswerComposer {
         reason: "gate_bound",
         stream: "true",
         decline: declineReason,
+      },
+    });
+  }
+
+  private recordBlankDecline(
+    outcome: GroundingEnvelopeOutcome | null,
+    declineReason: TurnDeclineReason,
+    stream: boolean,
+  ): void {
+    this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
+      help: "Computed chat grounding assertion outcomes",
+      labels: {
+        protocol: "v2",
+        verdict: "no_support",
+        reason: "blank_decline",
+        stream: String(stream),
+        decline: declineReason,
+        outcome: outcome ?? "none",
       },
     });
   }
@@ -392,7 +420,7 @@ export class RetrievalAnswerComposer {
       ...(signal ? { signal } : {}),
     });
     const envelope = parseGroundedAnswerEnvelope(raw);
-    if (!envelope.answer.trim()) {
+    if (!envelope.answer.trim() && !commitsDeclineWithoutText(envelope, envelope.answer)) {
       throw new BlankChatAnswerError();
     }
     return envelope;
@@ -419,7 +447,10 @@ export class RetrievalAnswerComposer {
       signal,
       knownAssessment,
     );
-    return { ...envelope, answer: envelope.answer.trim() };
+    const answer = envelope.answer.trim();
+    // A decline committed without text leaves the page with nothing to say; the caller
+    // composes its own decline, as it does when there is no page at all.
+    return answer ? { ...envelope, answer } : null;
   }
 
   /**
@@ -439,7 +470,7 @@ export class RetrievalAnswerComposer {
     attemptKey: string,
     signal?: AbortSignal,
     knownAssessment?: AnswerCoverageAssessment,
-  ): AsyncGenerator<string, GroundedAnswerEnvelope> {
+  ): AsyncGenerator<string, GroundedAnswerEnvelope | null> {
     const groundedPrompt = this.promptWithConversationContext(prompt, session, knownAssessment);
     const reader = new GroundedAnswerEnvelopeReader();
     const citationSanitizer = new CitationAnchorSanitizer();
@@ -474,6 +505,9 @@ export class RetrievalAnswerComposer {
     const finalized = reader.finalize();
     const fullAnswer = finalized.fullAnswer.trim();
     if (!fullAnswer) {
+      if (commitsDeclineWithoutText(finalized, fullAnswer)) {
+        return null;
+      }
       throw new BlankChatAnswerError();
     }
     return { ...finalized, answer: fullAnswer };
@@ -589,7 +623,20 @@ export class RetrievalAnswerComposer {
         envelope,
         contextCount: session.retrieval.contexts.length,
       });
-      if (shouldSuppressUnsupportedDraft(session, envelope, summary)) {
+      if (commitsDeclineWithoutText(envelope, envelope.answer)) {
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "blank_decline",
+          envelopeAssessment,
+        );
+        this.recordBlankDecline(envelope.outcome, decline.declineReason, false);
+        answer = decline.text;
+        declineReason = decline.declineReason;
+        grounding = "no_support";
+      } else if (shouldSuppressUnsupportedDraft(session, envelope, summary)) {
         const decline = await this.composeFocusedDecline(
           session,
           query,
@@ -909,7 +956,8 @@ export class RetrievalAnswerComposer {
       plannedSuggestions = finalized.suggestions;
       metadataPatch = this.sideChannel(session)?.resolve(finalized.extras);
       rawAnswer = finalized.fullAnswer;
-      if (!rawAnswer.trim()) {
+      const blankDecline = commitsDeclineWithoutText(finalized, rawAnswer);
+      if (!rawAnswer.trim() && !blankDecline) {
         throw new BlankChatAnswerError();
       }
       const summary = computeGroundingSummary({
@@ -917,7 +965,26 @@ export class RetrievalAnswerComposer {
         envelope: finalized,
         contextCount: session.retrieval.contexts.length,
       });
-      if (!hasStreamedAnswer && shouldSuppressUnsupportedDraft(session, finalized, summary)) {
+      if (blankDecline) {
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "stream_blank_decline",
+          headAssessment ?? buildInvalidHeadAssessment(),
+          signal,
+        );
+        if (signal?.aborted) {
+          throw signal.reason ?? new Error("chat_turn_aborted");
+        }
+        this.recordBlankDecline(finalized.outcome, decline.declineReason, true);
+        rawAnswer = decline.text;
+        declineReason = decline.declineReason;
+        grounding = "no_support";
+        plannedSuggestions = [];
+        metadataPatch = undefined;
+      } else if (!hasStreamedAnswer && shouldSuppressUnsupportedDraft(session, finalized, summary)) {
         const decline = await this.composeFocusedDecline(
           session,
           query,

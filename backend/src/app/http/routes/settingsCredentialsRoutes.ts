@@ -8,7 +8,7 @@ import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 
 export const providerNames = ["openai", "openai-compatible", "gemini", "claude"] as const;
-export type ProviderNameInput = (typeof providerNames)[number];
+type ProviderNameInput = (typeof providerNames)[number];
 
 export const setProviderCredentialSchema = z.object({
   apiKey: z.string().min(1).max(4096),

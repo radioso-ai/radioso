@@ -831,10 +831,10 @@ test("Needs-you asks the server for an agent match beyond an unfiltered page", a
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        conversations: matching ? [conversations[50]] : conversations.slice(0, 50),
+        conversations: matching ? [conversations[50]] : url.searchParams.get("cursor") === "page-2" ? [conversations[50]] : conversations.slice(0, 50),
         total: matching ? 1 : conversations.length,
-        nextCursor: null,
-        hasMore: false,
+        nextCursor: matching || url.searchParams.get("cursor") === "page-2" ? null : "page-2",
+        hasMore: !matching && url.searchParams.get("cursor") !== "page-2",
       }),
     });
   });

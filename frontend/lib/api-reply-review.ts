@@ -28,6 +28,7 @@ export type HeldReplyTrace = {
 export type HeldReply = {
   id: string
   conversationId: string
+  channel?: string | null
   agentId: string | null
   state: HeldReplyState
   holdReason: string

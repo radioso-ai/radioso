@@ -14998,6 +14998,11 @@ components:
         conversationId:
           type: string
           format: uuid
+        channel:
+          type:
+            - string
+            - "null"
+          description: The conversation's source channel; null when its conversation record is unavailable.
         agentId:
           type:
             - string
@@ -15112,6 +15117,7 @@ components:
       required:
         - id
         - conversationId
+        - channel
         - agentId
         - state
         - holdReason

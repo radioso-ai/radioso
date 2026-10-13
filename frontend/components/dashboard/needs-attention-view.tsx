@@ -655,8 +655,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     } else if (result.kind === 'delivery_failure_cleared') {
       // No workspace event reports a cleared failure, so this view drops the row itself and
       // re-reads the failures and the recently-closed strip.
-      const deliveryFailuresKey = dashboardQueryKeys.attention.deliveryFailures(workspaceId, { limit: NEEDS_ATTENTION_PAGE_SIZE })
-      queryClient.setQueryData<AttentionChunks<DeliveryFailure>>(deliveryFailuresKey, (chunks) =>
+      const deliveryFailuresKey = ['workspace', workspaceId, 'attention', 'delivery-failures'] as const
+      queryClient.setQueriesData<AttentionChunks<DeliveryFailure>>({ queryKey: deliveryFailuresKey }, (chunks) =>
         withoutAttentionItem(chunks, result.failureId))
       void queryClient.invalidateQueries({ queryKey: deliveryFailuresKey })
       void queryClient.invalidateQueries({
@@ -738,8 +738,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   // lens toggle lives in the left pane) — only the row list swaps for the
   // confidence message, so the operator can always reach the All lens even
   // when nothing needs them (spec 1116 unification, fix for issue #6).
+  const hasActiveFilters = filters.type !== 'all' || filters.agentId !== 'all' || filters.channel !== 'all'
+    || filters.search.trim().length > 0 || filters.takenBy !== EMPTY_INBOX_FILTERS.takenBy
   const isQueueEmpty = !isLoading && !approvalError && !conversationError && !deliveryFailureError && !heldReplyError
-    && items.length === 0
+    && items.length === 0 && !hasActiveFilters
   const showNoFilterMatches = !isQueueEmpty
     && filteredItems.length === 0
     && !selectedInboxItem

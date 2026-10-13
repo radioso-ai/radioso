@@ -2484,7 +2484,7 @@ describe("chat service streaming", () => {
         terminal: { kind: "handoff" as const, stepId: "escalate", collected: { order: "A-17" } },
         handoff: { routineId: "refund-flow", stepId: "escalate", terminalKind: "handoff" as const, collected: { order: "A-17" } },
       },
-      ownershipHandoff: { reason: "routine_handoff", routineId: "refund-flow", stepId: "escalate" },
+      ownershipHandoff: { reason: "routine_handoff", routineId: "refund-flow", stepId: "escalate", collectedSlotCount: 1 },
       notifyType: HANDOFF_NOTIFY_ACTION_TYPE,
       reason: "routine_handoff",
     },
@@ -3419,6 +3419,7 @@ describe("chat service streaming", () => {
       reason: "routine_handoff",
       routineId: "coverage.follow-up",
       stepId: "operator_review",
+      collectedSlotCount: 2,
     });
     expect(persisted.routineStateTransition).toMatchObject({
       kind: "save",
@@ -3467,6 +3468,7 @@ describe("chat service streaming", () => {
       reason: "routine_handoff",
       routineId: "coverage.follow-up",
       stepId: "operator_review",
+      collectedSlotCount: 2,
     });
     expect(persisted.pendingDecisionTransition).toMatchObject({
       routineId: "coverage.follow-up",
@@ -3931,6 +3933,7 @@ describe("chat service streaming", () => {
       reason: "routine_handoff",
       routineId: "routine_support",
       stepId: "handoff_terminal",
+      collectedSlotCount: 2,
     });
     expect(persisted.actions).toContainEqual({
       type: HANDOFF_NOTIFY_ACTION_TYPE,
@@ -4015,6 +4018,7 @@ describe("chat service streaming", () => {
       reason: "routine_stuck",
       routineId: "routine_support",
       stepId: "ask_contact",
+      collectedSlotCount: 1,
     });
     expect(persisted.actions).toContainEqual({
       type: HANDOFF_NOTIFY_ACTION_TYPE,

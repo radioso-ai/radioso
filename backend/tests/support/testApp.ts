@@ -176,6 +176,7 @@ import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/publi
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import {
   ConversationOwnershipService,
+  isHumanOwned,
   OperatorIdentityResolver,
   OperatorReplyService,
 } from "../../src/modules/handoff/public.js";
@@ -2827,6 +2828,7 @@ export const createTestDependencies = (overrides: {
         },
       },
       routines: { isRoutineActive: async (conversationId) => (await routineStateStore.loadActive({ sessionId: conversationId })) !== null },
+      ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await conversationOwnershipRepository.load(conversationId)) },
       metrics: metricsRegistry,
       logger,
     }),

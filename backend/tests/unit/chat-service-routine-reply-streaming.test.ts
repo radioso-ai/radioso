@@ -797,6 +797,25 @@ describe("ChatService streams a routine reply that reports no completed action",
     });
   }
 
+  it("closes a streamed routine hand-off with the hand-off it applied: why, and how many slots the routine held", async () => {
+    const observed: Observed = { order: [], events: [] };
+    const routine = claimingRoutine([{
+      effects: {
+        nextState: null,
+        terminal: { kind: "handoff", stepId: "escalate", collected: { name: "Ada", email: "ada@example.com" } },
+      },
+      reply: streamingReply(["A teammate ", "will call you back."]),
+    }]);
+    const harness = await chatService({ routineProvider: routine.routineProvider, chatGateway: unusedGateway, order: observed.order });
+
+    expect(await drainTurn(harness.service.streamAnswer(request("contact me")), observed)).toBeUndefined();
+
+    expect(observed.events.find((event) => event.type === "done")).toMatchObject({
+      ownership: { state: "human_owned", suppressed: false },
+      handoff: { reason: "routine_handoff", collectedSlotCount: 2 },
+    });
+  });
+
   it("keeps the routine on its step when persisting fails after the reply was shown, and says so without its content", async () => {
     const observed: Observed = { order: [], events: [] };
     const { routineProvider } = claimingRoutine([{ reply: streamingReply(["Which email ", "can we use?"]) }]);

@@ -43,7 +43,7 @@ import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
-import type { ChatResponse, ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
+import type { ChatResponse, ChatRoute, ChatSuggestion, ChatTurnHandoff, ChatTurnHandoffReason } from "../types/chatResponses.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { appendDirectiveSteeringStage } from "./directiveTracePresenter.js";
@@ -286,6 +286,19 @@ export interface OwnershipHandoffInput {
   routineId?: string;
   stepId?: string;
 }
+
+/** The hand-off a turn applies, by one of the reasons a turn can raise. */
+interface TurnHandoffInput extends OwnershipHandoffInput {
+  reason: ChatTurnHandoffReason;
+  /** How many of the ending routine's declared slots held a value; the reply reports it, nothing stores it. */
+  collectedSlotCount?: number;
+}
+
+/** What the reply tells its delivering channel about the hand-off the turn applied. */
+const turnHandoffReport = (handoff: TurnHandoffInput): ChatTurnHandoff => ({
+  reason: handoff.reason,
+  collectedSlotCount: handoff.collectedSlotCount ?? 0,
+});
 
 interface AssistantTurnSuccessInput {
   workspaceId: string;
@@ -591,7 +604,7 @@ interface CompleteAssistantTurnInput {
   /** Names and describes the routine state above for the reply envelope; absent when no routine ran. */
   routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: PendingDecisionCreateInput | null;
-  ownershipHandoff?: OwnershipHandoffInput | null;
+  ownershipHandoff?: TurnHandoffInput | null;
   suspended?: boolean;
   additionalAuditEvent?: AuditEventInput | null;
   transaction?: Db;
@@ -945,7 +958,9 @@ export class ChatTurnLifecycle {
           : {}),
         // A handoff this turn leaves the conversation human-owned; the reply itself
         // was still generated, so it is not suppressed. Safe-test turns never hand off.
-        ...(ownershipHandoff ? { ownership: { state: "human_owned", suppressed: false } } : {}),
+        ...(ownershipHandoff
+          ? { ownership: { state: "human_owned", suppressed: false }, handoff: turnHandoffReport(ownershipHandoff) }
+          : {}),
         ...(routineTurnState ? { routine: routineTurnState } : {}),
         ...(invocationReport ? { invocation: invocationReport } : {}),
       },

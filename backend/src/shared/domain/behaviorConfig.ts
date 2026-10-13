@@ -309,12 +309,16 @@ export const VOICE_BEHAVIOR = {
   // an agent, so these are composition-owned rather than operator settings.
   bridgeAfterComposingIdleMs: 400,
   bridgeAfterMs: 1_800,
-  // When no speech has come this long into a voice turn, the channel speaks the
-  // agent's authored fallback line and ends the turn; the reply still finishes
-  // and is stored. Long enough for a slow grounded answer, short enough that a
-  // caller is not left waiting on a line that sounds dead. Composition-owned for
-  // the same reason as bridgeAfterMs.
-  turnLimitMs: 8_000,
+  // When no speech has come this long into a voice turn the agent owns, the
+  // channel speaks the agent's authored fallback line and ends the turn; the
+  // reply still finishes and is stored. Long enough for a slow grounded answer,
+  // short enough that a caller is not left waiting on a line that sounds dead.
+  // Measured in local headset sessions (2026-10-14): at 8 s the limit cut off
+  // about one grounded turn in fifteen on model latency spikes. The bridge has
+  // spoken by then and the ElevenLabs keep-alive holds the stream open through
+  // the silence, so 10 s costs the caller nothing but a longer pause.
+  // Composition-owned for the same reason as bridgeAfterMs.
+  turnLimitMs: 10_000,
   // A voice runtime that loses a reply (it hung up on the stream, or a newer
   // request overtook it) can re-send the same utterance seconds later. Within
   // this window the channel speaks the stored answer again instead of running

@@ -1315,6 +1315,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       assistantChatService: chat.assistantChatService,
       agentRepository: repositories.agentRepository,
       routineStates: new RoutineStateRepository(infrastructure.database.kysely),
+      conversationOwnership: repositories.conversationOwnershipRepository,
       auditService: infrastructure.auditService,
       metricsRegistry: infrastructure.metricsRegistry,
       logger,

@@ -162,7 +162,7 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
         join.onRef("c.id", "=", "held_replies.conversation_id").onRef("c.workspace_id", "=", "held_replies.workspace_id"),
       )
       .selectAll("held_replies")
-      .select("c.source_channel")
+      .select("c.source_channel as source_channel")
       .where("id", "=", heldReplyId)
       .executeTakeFirst();
     return row ? mapHeldReply(row) : null;
@@ -409,15 +409,19 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
   ): Promise<HeldReplyRecord[]> {
     let select = this.db
       .selectFrom("held_replies")
-      .selectAll()
-      .where("workspace_id", "=", workspaceId);
+      .leftJoin("conversations as c", (join) =>
+        join.onRef("c.id", "=", "held_replies.conversation_id").onRef("c.workspace_id", "=", "held_replies.workspace_id"),
+      )
+      .selectAll("held_replies")
+      .select("c.source_channel as source_channel")
+      .where("held_replies.workspace_id", "=", workspaceId);
     if (options.attentionOpenOnly) {
       // `isHeldReplyAttentionOpen`, spelled as the attention index's predicate so the read uses it.
-      select = select.where("attention_cleared_at", "is", null).where("state", "<>", "queued_auto");
+      select = select.where("held_replies.attention_cleared_at", "is", null).where("held_replies.state", "<>", "queued_auto");
     }
     const { agentId, after } = query;
     if (agentId !== undefined) {
-      select = select.where("agent_id", "=", agentId);
+      select = select.where("held_replies.agent_id", "=", agentId);
     }
     if (query.channel !== undefined) {
       select = select.where((eb) => eb.exists(
@@ -430,13 +434,13 @@ export class HeldReplyRepository implements HeldReplyWriteStore, HeldReplyReadSt
     }
     if (after) {
       select = select.where((eb) => eb.or([
-        eb("created_at", "<", after.createdAt),
-        eb.and([eb("created_at", "=", after.createdAt), eb("id", "<", after.id)]),
+        eb("held_replies.created_at", "<", after.createdAt),
+        eb.and([eb("held_replies.created_at", "=", after.createdAt), eb("held_replies.id", "<", after.id)]),
       ]));
     }
     const rows = await select
-      .orderBy("created_at", "desc")
-      .orderBy("id", "desc")
+      .orderBy("held_replies.created_at", "desc")
+      .orderBy("held_replies.id", "desc")
       .limit(query.limit)
       .execute();
     return rows.map(mapHeldReply);

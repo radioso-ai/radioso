@@ -79,6 +79,9 @@ test("a finish ending notifies the team with the notice its author wrote, and ke
   const finishSwitch = documentEditor.getByRole("switch", { name: "Notify the team" });
   await expect(finishSwitch).not.toBeChecked();
   await finishSwitch.click();
+  const summarySwitch = documentEditor.getByRole("switch", { name: "Include AI summary" });
+  await expect(summarySwitch).not.toBeChecked();
+  await summarySwitch.click();
 
   const subject = documentEditor.getByLabel("Subject", { exact: true });
   await subject.click();
@@ -93,13 +96,18 @@ test("a finish ending notifies the team with the notice its author wrote, and ke
     () => routineUpdates.filter((update) => update.method === "PATCH").at(-1)?.body?.terminals
       ?.find((terminal) => terminal.stableStepId === "booked")?.operatorNotice,
     { timeout: 15_000 },
-  ).toEqual({ subject: "New booking for {{slot.guest_name}}", intro: "Please confirm the room." });
+  ).toEqual({
+    subject: "New booking for {{slot.guest_name}}",
+    intro: "Please confirm the room.",
+    includeAiSummary: true,
+  });
 
   await page.reload();
   await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
   await expect(documentEditor.getByRole("button", { name: "Finish ending", exact: true })).toContainText("notifies the team");
   await documentEditor.getByRole("button", { name: "Finish ending", exact: true }).click();
   await expect(documentEditor.getByRole("switch", { name: "Notify the team" })).toBeChecked();
+  await expect(documentEditor.getByRole("switch", { name: "Include AI summary" })).toBeChecked();
   await expect(documentEditor.getByLabel("Subject", { exact: true })).toContainText("New booking for");
   await expect(documentEditor.getByLabel("Subject", { exact: true })).toContainText("guest_name");
   await expect(documentEditor.getByLabel("Intro", { exact: true })).toContainText("Please confirm the room.");

@@ -4431,7 +4431,7 @@ describe("DefaultRoutineRunner operator notices", () => {
   const renderer: ConversationRoutineStepRenderer = { render: vi.fn(async ({ step }) => ({ answer: `[${step.id}]` })) };
 
   it("reports the notice template the landed terminal step carries, with the declared slot values", async () => {
-    const runner = new DefaultRoutineRunner([ending({ terminalKind: "complete", operatorNotice: { subject: "Booking: {{slot.name}}" } })], landingOnDone(), renderer);
+    const runner = new DefaultRoutineRunner([ending({ terminalKind: "complete", operatorNotice: { subject: "Booking: {{slot.name}}", includeAiSummary: true } })], landingOnDone(), renderer);
 
     const result = await runner.resume({ turn, state: state(["ask_name"]) });
 
@@ -4439,7 +4439,7 @@ describe("DefaultRoutineRunner operator notices", () => {
       kind: "complete",
       stepId: "done",
       collected: { name: "Ada" },
-      operatorNotice: { subject: "Booking: {{slot.name}}" },
+      operatorNotice: { subject: "Booking: {{slot.name}}", includeAiSummary: true },
     });
   });
 

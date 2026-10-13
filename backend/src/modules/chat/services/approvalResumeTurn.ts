@@ -156,6 +156,10 @@ export class ApprovalResumeTurn {
       accountId: input.decidedBy,
       query: session.userMessage.content,
     }, session));
+    const suspendedState = await this.options.suspendedRoutineReader.loadSuspended({
+      sessionId: input.record.sessionId,
+    });
+    session.routineStartMessageId = suspendedState?.startedMessageId;
     this.checkTurnCancellation(coordination, "routing");
     // Its own usage key: a resume usually reuses the suspending turn's user message, whose
     // routine calls metered under `routine_turn`, and a shared key drops usage (#1378).
@@ -201,7 +205,7 @@ export class ApprovalResumeTurn {
           : {}),
       },
       suspendedReader: {
-        loadSuspended: (query) => this.options.suspendedRoutineReader!.loadSuspended(query),
+        loadSuspended: async () => suspendedState,
       },
       routineRunner: routineTurnPorts.runner,
     });

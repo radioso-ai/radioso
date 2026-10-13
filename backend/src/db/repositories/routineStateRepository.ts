@@ -9,6 +9,7 @@ interface RoutineStateRow {
   routine_id: string;
   execution_id: string | null;
   started_message_id: string | null;
+  started_execution_id: string | null;
   path: string[] | null;
   variables: Record<string, unknown> | null;
   attempts: Record<string, unknown> | null;
@@ -22,6 +23,7 @@ const routineStateColumns = [
   "routine_id",
   "execution_id",
   "started_message_id",
+  "started_execution_id",
   "path",
   "variables",
   "attempts",
@@ -46,7 +48,9 @@ const mapState = (row: RoutineStateRow): RoutineState => {
     sessionId: row.session_id,
     routineId: row.routine_id,
     ...(row.execution_id ? { executionId: row.execution_id } : {}),
-    ...(row.started_message_id ? { startedMessageId: row.started_message_id } : {}),
+    ...(row.started_message_id && row.started_execution_id === row.execution_id
+      ? { startedMessageId: row.started_message_id }
+      : {}),
     path: row.path ?? [],
     variables: row.variables ?? {},
     ...(attempts ? { attempts } : {}),
@@ -114,6 +118,7 @@ export class RoutineStateRepository implements ConversationRoutineStore {
         routine_id: state.routineId,
         execution_id: state.executionId ?? null,
         started_message_id: state.startedMessageId ?? null,
+        started_execution_id: state.startedMessageId ? state.executionId ?? null : null,
         path: state.path,
         variables: toJsonb(state.variables),
         attempts: toJsonb(state.attempts ?? {}),
@@ -127,6 +132,7 @@ export class RoutineStateRepository implements ConversationRoutineStore {
           routine_id: eb.ref("excluded.routine_id"),
           execution_id: eb.ref("excluded.execution_id"),
           started_message_id: eb.ref("excluded.started_message_id"),
+          started_execution_id: eb.ref("excluded.started_execution_id"),
           path: eb.ref("excluded.path"),
           variables: eb.ref("excluded.variables"),
           attempts: eb.ref("excluded.attempts"),

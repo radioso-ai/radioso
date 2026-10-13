@@ -261,15 +261,18 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
   it("round-trips an ending's operator notice on both kinds, and reads an ending without one as absent", async () => {
     const created = await repository.createDraft(agentId, baseDraft({
       terminals: [
-        { stableStepId: "term_complete", kind: "complete", instruction: "All done", operatorNotice: { subject: "Refund: {{slot.order_id}}", intro: null }, ordinal: 0 },
+        { stableStepId: "term_complete", kind: "complete", instruction: "All done", operatorNotice: { subject: "Refund: {{slot.order_id}}", intro: null, includeAiSummary: true }, ordinal: 0 },
         { stableStepId: "term_handoff", kind: "handoff", instruction: null, operatorNotice: { subject: null, intro: null }, ordinal: 1 },
         { stableStepId: "term_quiet", kind: "complete", instruction: null, ordinal: 2 },
       ],
     }));
 
-    expect(created.terminals[0].operatorNotice).toEqual({ subject: "Refund: {{slot.order_id}}", intro: null });
+    expect(created.terminals[0].operatorNotice).toEqual({ subject: "Refund: {{slot.order_id}}", intro: null, includeAiSummary: true });
     expect(created.terminals[1].operatorNotice).toEqual({ subject: null, intro: null });
     expect(created.terminals[2]).not.toHaveProperty("operatorNotice");
+
+    const read = await repository.findById(agentId, created.id);
+    expect(read?.terminals[0].operatorNotice?.includeAiSummary).toBe(true);
 
     const cleared = await repository.updateDraft(agentId, created.id, baseDraft());
     expect(cleared.terminals[0]).not.toHaveProperty("operatorNotice");

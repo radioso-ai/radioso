@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { RoutineEndingNotifyActionHandler } from "../../src/modules/chat/services/actions/routineEndingNotifyActionHandler.js";
+import type { RoutineEndingNoticeSummaryGenerator } from "../../src/modules/chat/services/actions/routineEndingNoticeSummary.js";
 import { ROUTINE_ENDING_NOTICE_ACTIONS } from "../../src/modules/chat/services/operatorNoticeAction.js";
 import {
   formatRoutineEndingNotification,
@@ -74,18 +75,98 @@ describe("RoutineEndingNotifyActionHandler", () => {
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ aiSummary: "Visitor requested a late arrival and vegetarian meals." }), expect.any(Object));
   });
 
+  it("leaves the notice unchanged and never calls the generator when the ending did not opt in", async () => {
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const generate = vi.fn(async () => "Should never be used.");
+    const handler = new RoutineEndingNotifyActionHandler({
+      ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
+      dispatcher: { dispatch },
+      subjects: { resolve: async () => ({ agentId: "agent_1", agentName: null, routineName: null }) },
+      summaryGenerator: { generate },
+    });
+
+    await handler.handle({ payload: { userMessageId: "message_1", notice: { subject: "Done" } }, context });
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(expect.not.objectContaining({ aiSummary: expect.anything() }), expect.any(Object));
+  });
+
   it("sends the notice when AI summary generation fails", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const warn = vi.fn();
     const handler = new RoutineEndingNotifyActionHandler({
       ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
       dispatcher: { dispatch },
       subjects: { resolve: async () => ({ agentId: "agent_1", agentName: null, routineName: null }) },
       summaryGenerator: { generate: async () => { throw new Error("timeout"); } },
+      logger: { warn },
     });
 
     await handler.handle({ payload: { userMessageId: "message_1", notice: { includeAiSummary: true } }, context });
 
     expect(dispatch).toHaveBeenCalledWith(expect.not.objectContaining({ aiSummary: expect.anything() }), expect.any(Object));
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({
+      operation: "routine_operator_notice_summary",
+      errorType: "Error",
+    }), expect.any(String));
+  });
+
+  it("aborts timed-out generation and still sends the notice without a summary", async () => {
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const warn = vi.fn();
+    let receivedSignal: AbortSignal | undefined;
+    const generate = vi.fn<RoutineEndingNoticeSummaryGenerator["generate"]>(async (generateInput) => {
+      receivedSignal = generateInput.signal;
+      await new Promise<never>((_resolve, reject) => {
+        generateInput.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+      });
+      return null;
+    });
+    const handler = new RoutineEndingNotifyActionHandler({
+      ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
+      dispatcher: { dispatch },
+      subjects: { resolve: async () => ({ agentId: "agent_1", agentName: null, routineName: null }) },
+      summaryGenerator: { generate },
+      summaryTimeoutMs: 5,
+      logger: { warn },
+    });
+
+    await handler.handle({ payload: { userMessageId: "message_1", notice: { includeAiSummary: true } }, context });
+
+    expect(receivedSignal?.aborted).toBe(true);
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ errorType: "timeout" }), expect.any(String));
+    expect(dispatch).toHaveBeenCalledWith(expect.not.objectContaining({ aiSummary: expect.anything() }), expect.any(Object));
+  });
+
+  it("skips generation when a legacy payload has no ending message id", async () => {
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const generate = vi.fn(async () => "Should never be used.");
+    const handler = new RoutineEndingNotifyActionHandler({
+      ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
+      dispatcher: { dispatch },
+      subjects: { resolve: async () => ({ agentId: "agent_1", agentName: null, routineName: null }) },
+      summaryGenerator: { generate },
+    });
+
+    await handler.handle({ payload: { notice: { includeAiSummary: true } }, context });
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+
+  it("uses a conversation-language instruction for legacy queued payloads without a language", async () => {
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const generate = vi.fn<RoutineEndingNoticeSummaryGenerator["generate"]>(async () => "Summary.");
+    const handler = new RoutineEndingNotifyActionHandler({
+      ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
+      dispatcher: { dispatch },
+      subjects: { resolve: async () => ({ agentId: "agent_1", agentName: null, routineName: null }) },
+      summaryGenerator: { generate },
+    });
+
+    await handler.handle({ payload: { userMessageId: "message_1", notice: { includeAiSummary: true } }, context });
+
+    expect(generate.mock.calls[0][0]).not.toHaveProperty("outputLanguage");
   });
 
   it("forwards the notify skill the queued row names to the sinks", async () => {

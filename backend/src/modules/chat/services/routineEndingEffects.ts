@@ -94,7 +94,7 @@ export const routineEndingEffectsForTurn = (input: {
             agentId: input.session.agent.id,
             userMessageId: input.session.userMessage.id,
             notice: operatorNotice,
-            responseLanguage: input.session.responseLanguage,
+            responseLanguage: input.session.agent.assistantDefaultLocale ?? input.session.responseLanguage,
             routineStartMessageId: input.session.routineStartMessageId,
           }),
         ]

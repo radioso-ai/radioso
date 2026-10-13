@@ -42,7 +42,7 @@ export class NotificationRecipientConfirmationMailer {
     idempotencyKey: string;
   }): Promise<{ dispatched: boolean }> {
     const confirmUrl = this.actionUrl("confirm", this.options.signer.sign(input.recipientId, "confirm", input.generation));
-    const revokeUrl = this.revocationUrl(input.recipientId, input.generation);
+    const revokeUrl = this.revocationUrl(input.recipientId);
     const workspaceName = oneLine(input.workspaceName) || "A Radioso workspace";
     const agentName = oneLine(input.agentName) || "an agent";
     const result = await this.options.mailer.send({
@@ -73,12 +73,13 @@ export class NotificationRecipientConfirmationMailer {
     return result;
   }
 
-  revocationUrl(recipientId: string, generation: number): string {
-    return this.actionUrl("revoke", this.options.signer.sign(recipientId, "revoke", generation));
+  revocationUrl(recipientId: string): string {
+    return this.actionUrl("revoke", this.options.signer.sign(recipientId, "revoke"));
   }
 
   private actionUrl(action: "confirm" | "revoke", token: string): string {
-    const url = new URL(`/api/v1/notification-recipient-confirmations/${action}`, this.baseUrl);
+    const apiBase = this.baseUrl.toString().endsWith("/") ? this.baseUrl : new URL(`${this.baseUrl.toString()}/`);
+    const url = new URL(`api/v1/notification-recipient-confirmations/${action}`, apiBase);
     url.searchParams.set("token", token);
     return url.toString();
   }

@@ -15,7 +15,7 @@ describe("NotificationRecipientTokenSigner", () => {
   });
 
   it("rejects modified and malformed tokens", () => {
-    const token = signer.sign("018f4c41-a873-7ad5-b1ab-45f4f83c6220", "revoke", 0);
+    const token = signer.sign("018f4c41-a873-7ad5-b1ab-45f4f83c6220", "revoke");
 
     expect(signer.verify(`${token}x`, "revoke")).toBeNull();
     expect(signer.verify("not-a-token", "revoke")).toBeNull();
@@ -26,5 +26,12 @@ describe("NotificationRecipientTokenSigner", () => {
     const expired = new Date(issuedAt.getTime() + (14 * 24 * 60 * 60 * 1000));
 
     expect(signer.verify(token, "confirm", expired)).toBeNull();
+  });
+
+  it("keeps a revocation token valid across confirmation generations for its longer expiry", () => {
+    const token = signer.sign("recipient-id", "revoke");
+    const later = new Date(issuedAt.getTime() + (15 * 24 * 60 * 60 * 1000));
+
+    expect(signer.verify(token, "revoke", later)).toEqual({ recipientId: "recipient-id" });
   });
 });

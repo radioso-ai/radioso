@@ -13,7 +13,7 @@ describe("notification recipient confirmation contract", () => {
     const signer = new NotificationRecipientTokenSigner(dependencies.env.SESSION_COOKIE_SECRET);
 
     const confirmToken = signer.sign("recipient-id", "confirm", 0);
-    const revokeToken = signer.sign("recipient-id", "revoke", 0);
+    const revokeToken = signer.sign("recipient-id", "revoke");
     const confirmPage = await request(app).get("/api/v1/notification-recipient-confirmations/confirm")
       .query({ token: confirmToken });
     const revokePage = await request(app).get("/api/v1/notification-recipient-confirmations/revoke")
@@ -22,6 +22,8 @@ describe("notification recipient confirmation contract", () => {
     expect(revokePage.status).toBe(200);
     expect(confirmPage.text).toContain('method="post"');
     expect(revokePage.text).toContain('method="post"');
+    expect(confirmPage.text).toContain(`action="?token=${encodeURIComponent(confirmToken)}"`);
+    expect(revokePage.text).toContain(`action="?token=${encodeURIComponent(revokeToken)}"`);
     expect(confirm).not.toHaveBeenCalled();
     expect(revoke).not.toHaveBeenCalled();
     const confirmed = await request(app).post("/api/v1/notification-recipient-confirmations/confirm")
@@ -34,10 +36,10 @@ describe("notification recipient confirmation contract", () => {
     expect(confirmed.status).toBe(200);
     expect(confirmed.headers["cache-control"]).toBe("no-store");
     expect(confirmed.text).toContain("Stop sending me these notifications");
-    expect(confirmed.text).toContain("/notification-recipient-confirmations/revoke?token=");
+    expect(confirmed.text).toContain('action="?token=');
     expect(revoked.status).toBe(200);
     expect(confirm).toHaveBeenCalledWith({ recipientId: "recipient-id", generation: 0 });
-    expect(revoke).toHaveBeenCalledWith({ recipientId: "recipient-id", generation: 0 });
+    expect(revoke).toHaveBeenCalledWith({ recipientId: "recipient-id" });
   });
 
   it("rejects a confirmation token at the revocation endpoint", async () => {

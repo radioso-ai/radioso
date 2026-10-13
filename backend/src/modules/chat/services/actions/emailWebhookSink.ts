@@ -107,29 +107,6 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       return { disposition: "skipped", reason: "contact_destination_not_configured" };
     }
     const baseIdempotencyKey = context.idempotencyKey ?? context.requestId;
-    const recipientDecision = await this.recipientPolicy.prepareDelivery({
-      workspaceId: recipientContext.workspaceId,
-      agentId: notification.agentId,
-      conversationId: recipientContext.conversationId,
-      emails: target.emails,
-      idempotencyKey: baseIdempotencyKey,
-    });
-    const admission = await this.admission?.admit({
-      requestId: context.requestId,
-      workspaceId: recipientContext.workspaceId,
-      accountId: recipientContext.accountId,
-      conversationId: recipientContext.conversationId,
-      recipientEmails: recipientDecision.eligibleEmails,
-      requestedEmailCount: recipientDecision.eligibleEmails.length,
-    });
-    if (admission && !admission.dispatchAllowed) {
-      return { disposition: "skipped", reason: admission.reason ?? "conversation_dispatch_cap" };
-    }
-    this.logger?.info(
-      { kind: notification.kind, via: target.via, emailCount: target.emails.length, webhook: target.webhook !== null },
-      "operator_notice_routed",
-    );
-
     const conversationUrl = await resolveConversationLink(
       this.conversationLinks,
       { workspaceId: notification.workspaceId, conversationId: notification.conversationId },
@@ -161,6 +138,49 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
           },
         }
       : this.routineEndingDelivery(notification, context, openLine, links);
+    const webhookDelivery = target.webhook ? this.postWebhook({
+      webhook: target.webhook,
+      payload: delivery.webhookPayload,
+      idempotencyKey: `${baseIdempotencyKey}:webhook`,
+      missingClientMessage: TRANSPORT_TEXT_BY_KIND[notification.kind].missingWebhookClientMessage,
+    }) : Promise.resolve();
+
+    let prepared: {
+      recipientDecision: Awaited<ReturnType<NotificationRecipientPolicyPort["prepareDelivery"]>>;
+      admission: Awaited<ReturnType<NotificationDeliveryAdmissionPort["admit"]>> | undefined;
+    };
+    try {
+      const recipientDecision = await this.recipientPolicy.prepareDelivery({
+        workspaceId: recipientContext.workspaceId,
+        agentId: notification.agentId,
+        conversationId: recipientContext.conversationId,
+        emails: target.emails,
+        idempotencyKey: baseIdempotencyKey,
+      });
+      const admission = await this.admission?.admit({
+        requestId: context.requestId,
+        workspaceId: recipientContext.workspaceId,
+        accountId: recipientContext.accountId,
+        conversationId: recipientContext.conversationId,
+        recipientEmails: recipientDecision.eligibleEmails,
+        requestedEmailCount: recipientDecision.eligibleEmails.length,
+      });
+      prepared = { recipientDecision, admission };
+    } catch {
+      await webhookDelivery;
+      return target.webhook
+        ? { disposition: "delivered" }
+        : { disposition: "skipped", reason: "notification_recipient_unconfirmed" };
+    }
+    const { recipientDecision, admission } = prepared;
+    if (admission && !admission.dispatchAllowed) {
+      await webhookDelivery;
+      return { disposition: "skipped", reason: admission.reason ?? "conversation_dispatch_cap" };
+    }
+    this.logger?.info(
+      { kind: notification.kind, via: target.via, emailCount: target.emails.length, webhook: target.webhook !== null },
+      "operator_notice_routed",
+    );
 
     const [emailResults] = await Promise.all([
       Promise.all((admission?.emailAllowed === false ? [] : recipientDecision.eligibleRecipients).map((recipient) =>
@@ -174,12 +194,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
           idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
         })),
       ),
-      target.webhook ? this.postWebhook({
-        webhook: target.webhook,
-        payload: delivery.webhookPayload,
-        idempotencyKey: `${baseIdempotencyKey}:webhook`,
-        missingClientMessage: TRANSPORT_TEXT_BY_KIND[notification.kind].missingWebhookClientMessage,
-      }) : Promise.resolve(),
+      webhookDelivery,
     ]);
     if (!target.webhook) {
       const skipReason = admission?.emailAllowed === false

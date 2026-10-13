@@ -24,6 +24,12 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import type { Env } from "../config/env.js";
 import type { MailTransportPort } from "./applicationModule.js";
 
+export const notificationRecipientPublicApiBase = (env: Pick<Env, "APP_BASE_URL" | "CONNECTOR_PUBLIC_BASE_URL" | "PORT">): string => {
+  if (env.CONNECTOR_PUBLIC_BASE_URL) return env.CONNECTOR_PUBLIC_BASE_URL.replace(/\/+$/u, "");
+  if (env.APP_BASE_URL) return `${env.APP_BASE_URL.replace(/\/+$/u, "")}/backend`;
+  return `http://localhost:${env.PORT}`;
+};
+
 /**
  * The one place the default contact destination is wired: a named notify skill, then
  * `contact_human`, then the agent's contact settings, then the workspace owner or admin.
@@ -66,9 +72,7 @@ export const buildNotificationRecipientPolicy = (input: {
   const confirmationMailer = new NotificationRecipientConfirmationMailer({
     mailer: input.mailer,
     signer,
-    publicBaseUrl: input.env.CONNECTOR_PUBLIC_BASE_URL
-      ?? input.env.APP_BASE_URL
-      ?? `http://localhost:${input.env.PORT}`,
+    publicBaseUrl: notificationRecipientPublicApiBase(input.env),
     logger: input.logger,
     metrics: input.metrics,
   });
@@ -80,7 +84,7 @@ export const buildNotificationRecipientPolicy = (input: {
       if (request.generation === undefined) throw new Error("Confirmation recipient generation was not reserved");
       return confirmationMailer.send({ ...request, recipientId: request.recipientId, generation: request.generation });
     },
-    revocationUrl: (recipientId, generation) => confirmationMailer.revocationUrl(recipientId, generation),
+    revocationUrl: (recipientId) => confirmationMailer.revocationUrl(recipientId),
     identity: new NotificationRecipientIdentityRepository(input.database.kysely),
     logger: input.logger,
     metrics: input.metrics,

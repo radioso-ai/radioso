@@ -4,8 +4,10 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { NotificationRecipientTokenSigner } from "../../../modules/operatorNotifications/public.js";
 import { badRequest } from "../../../shared/domain/errors.js";
+import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
+import { readRequestSource } from "../middleware/requestSource.js";
 
-type Dependencies = Pick<AppDependencies, "env" | "notificationRecipientPolicy">;
+type Dependencies = Pick<AppDependencies, "abuseControlService" | "auditService" | "env" | "notificationRecipientPolicy">;
 
 const tokenSchema = z.string().min(1).max(4096);
 
@@ -23,63 +25,76 @@ export const createNotificationRecipientConfirmationRoutes = (dependencies: Depe
   const router = Router();
   const signer = new NotificationRecipientTokenSigner(dependencies.env.SESSION_COOKIE_SECRET);
 
-  const signedAction = (rawToken: unknown, action: "confirm" | "revoke") => {
-    const subject = signer.verify(tokenOf(rawToken), action);
+  const confirmedSubject = (rawToken: unknown): { recipientId: string; generation: number } => {
+    const subject = signer.verify(tokenOf(rawToken), "confirm");
+    if (!subject || subject.generation === undefined) throw badRequest("Invalid notification recipient token");
+    return { recipientId: subject.recipientId, generation: subject.generation };
+  };
+  const revokedSubject = (rawToken: unknown): { recipientId: string } => {
+    const subject = signer.verify(tokenOf(rawToken), "revoke");
     if (!subject) throw badRequest("Invalid notification recipient token");
-    return subject;
+    return { recipientId: subject.recipientId };
   };
 
-  const formUrl = (action: "confirm" | "revoke", token: string): string =>
-    `/api/v1/notification-recipient-confirmations/${action}?token=${encodeURIComponent(token)}`;
+  const formUrl = (token: string): string => `?token=${encodeURIComponent(token)}`;
+  const publicRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "notification_recipient_confirmation.public",
+    limit: 120,
+    windowMs: 60 * 60 * 1000,
+    blockMs: 60 * 1000,
+    resolveSubjectKey: (req, res) => readRequestSource(req, res).digest,
+  });
 
-  router.get("/notification-recipient-confirmations/confirm", async (req, res, next) => {
+  router.get("/notification-recipient-confirmations/confirm", publicRateLimit, async (req, res, next) => {
     try {
-      signedAction(req.query.token, "confirm");
+      confirmedSubject(req.query.token);
       res.setHeader("Cache-Control", "no-store");
       res.status(200).type("html").send(confirmationPage(
         "Confirm notification delivery",
-        { url: formUrl("confirm", tokenOf(req.query.token)), label: "Confirm notifications" },
+        { url: formUrl(tokenOf(req.query.token)), label: "Confirm notifications" },
       ));
     } catch (error) {
       next(error);
     }
   });
 
-  router.post("/notification-recipient-confirmations/confirm", async (req, res, next) => {
+  router.post("/notification-recipient-confirmations/confirm", publicRateLimit, async (req, res, next) => {
     try {
-      const subject = signedAction(req.query.token, "confirm");
+      const subject = confirmedSubject(req.query.token);
       const confirmed = await dependencies.notificationRecipientPolicy.confirm(subject);
       res.setHeader("Cache-Control", "no-store");
       if (!confirmed) {
         res.status(410).type("html").send(confirmationPage("This confirmation link is no longer active"));
         return;
       }
-      const revokeToken = signer.sign(subject.recipientId, "revoke", subject.generation);
+      const revokeToken = signer.sign(subject.recipientId, "revoke");
       res.status(200).type("html").send(confirmationPage(
         "Notifications confirmed",
-        { url: formUrl("revoke", revokeToken), label: "Stop sending me these notifications" },
+        { url: formUrl(revokeToken), label: "Stop sending me these notifications" },
       ));
     } catch (error) {
       next(error);
     }
   });
 
-  router.get("/notification-recipient-confirmations/revoke", async (req, res, next) => {
+  router.get("/notification-recipient-confirmations/revoke", publicRateLimit, async (req, res, next) => {
     try {
-      signedAction(req.query.token, "revoke");
+      revokedSubject(req.query.token);
       res.setHeader("Cache-Control", "no-store");
       res.status(200).type("html").send(confirmationPage(
         "Stop notification delivery",
-        { url: formUrl("revoke", tokenOf(req.query.token)), label: "Stop sending me these notifications" },
+        { url: formUrl(tokenOf(req.query.token)), label: "Stop sending me these notifications" },
       ));
     } catch (error) {
       next(error);
     }
   });
 
-  router.post("/notification-recipient-confirmations/revoke", async (req, res, next) => {
+  router.post("/notification-recipient-confirmations/revoke", publicRateLimit, async (req, res, next) => {
     try {
-      const revoked = await dependencies.notificationRecipientPolicy.revoke(signedAction(req.query.token, "revoke"));
+      const revoked = await dependencies.notificationRecipientPolicy.revoke(revokedSubject(req.query.token));
       res.setHeader("Cache-Control", "no-store");
       res.sendStatus(revoked ? 200 : 410);
     } catch (error) {

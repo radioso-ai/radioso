@@ -4,11 +4,12 @@ type NotificationRecipientTokenAction = "confirm" | "revoke";
 
 interface NotificationRecipientTokenSubject {
   recipientId: string;
-  generation: number;
+  generation?: number;
 }
 
 const TOKEN_VERSION = 1;
-const TOKEN_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+const CONFIRMATION_TOKEN_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+const REVOCATION_TOKEN_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 
 const signature = (secret: string, payload: string): Buffer =>
   createHmac("sha256", secret).update(payload).digest();
@@ -23,15 +24,19 @@ export class NotificationRecipientTokenSigner {
     }
   }
 
-  sign(recipientId: string, action: NotificationRecipientTokenAction, generation: number): string {
+  sign(recipientId: string, action: NotificationRecipientTokenAction, generation?: number): string {
+    if (action === "confirm" && (typeof generation !== "number" || !Number.isSafeInteger(generation) || generation < 0)) {
+      throw new Error("Confirmation tokens require a recipient generation");
+    }
+    const confirmationGeneration = action === "confirm" ? generation as number : undefined;
     const issuedAt = this.now().getTime();
     const payload = Buffer.from(JSON.stringify({
       v: TOKEN_VERSION,
       recipientId,
       action,
-      generation,
+      ...(action === "confirm" ? { generation: confirmationGeneration } : {}),
       issuedAt,
-      expiresAt: issuedAt + this.maxAgeMs(),
+      expiresAt: issuedAt + this.maxAgeMs(action),
     })).toString("base64url");
     return `${payload}.${signature(this.secret, payload).toString("base64url")}`;
   }
@@ -55,14 +60,16 @@ export class NotificationRecipientTokenSigner {
         || record.action !== expectedAction
         || typeof record.recipientId !== "string"
         || record.recipientId.length === 0
-        || !Number.isSafeInteger(record.generation)
-        || (record.generation as number) < 0
         || !Number.isSafeInteger(record.issuedAt)
         || !Number.isSafeInteger(record.expiresAt)) return null;
+      if (expectedAction === "confirm" && (!Number.isSafeInteger(record.generation) || (record.generation as number) < 0)) return null;
+      if (expectedAction === "revoke" && record.generation !== undefined) return null;
       const issuedAt = record.issuedAt as number;
       const expiresAt = record.expiresAt as number;
-      if (expiresAt <= issuedAt || expiresAt - issuedAt > this.maxAgeMs() || now.getTime() >= expiresAt) return null;
-      return { recipientId: record.recipientId, generation: record.generation as number };
+      if (expiresAt <= issuedAt || expiresAt - issuedAt > this.maxAgeMs(expectedAction) || now.getTime() >= expiresAt) return null;
+      return expectedAction === "confirm"
+        ? { recipientId: record.recipientId, generation: record.generation as number }
+        : { recipientId: record.recipientId };
     } catch {
       return null;
     }
@@ -72,7 +79,9 @@ export class NotificationRecipientTokenSigner {
     return this.options.now?.() ?? new Date();
   }
 
-  private maxAgeMs(): number {
-    return this.options.maxAgeMs ?? TOKEN_MAX_AGE_MS;
+  private maxAgeMs(action: NotificationRecipientTokenAction): number {
+    return action === "confirm"
+      ? this.options.maxAgeMs ?? CONFIRMATION_TOKEN_MAX_AGE_MS
+      : REVOCATION_TOKEN_MAX_AGE_MS;
   }
 }

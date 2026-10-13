@@ -144,9 +144,10 @@ export class NotificationRecipientStateRepository {
       }).onConflict((conflict) => conflict.columns(["workspace_id", "normalized_email"]).doNothing()).execute();
 
       const recipient = await transaction.selectFrom("notification_recipient_confirmations")
-        .select(["id", "state", "confirmation_sent_at", "confirmation_generation"])
+        .select(["id", "state", "grandfathered_until", "confirmation_sent_at", "confirmation_generation"])
         .where("workspace_id", "=", input.workspaceId)
         .where("normalized_email", "=", email)
+        .forUpdate()
         .executeTakeFirstOrThrow();
       if (recipient.state === "confirmed"
         || (recipient.state === "revoked" && !input.force)
@@ -166,13 +167,16 @@ export class NotificationRecipientStateRepository {
         .executeTakeFirst();
       if (!usage) return null;
 
-      const nextState = recipient.state === "revoked" ? "pending" : recipient.state;
+      const grandfatheringExpired = recipient.state === "grandfathered"
+        && recipient.grandfathered_until !== null
+        && new Date(recipient.grandfathered_until).getTime() <= input.now.getTime();
+      const nextState = recipient.state === "revoked" || grandfatheringExpired ? "pending" : recipient.state;
       const reserved = await transaction.updateTable("notification_recipient_confirmations")
         .set({
           confirmation_sent_at: input.now,
           confirmation_generation: sql`confirmation_generation + 1`,
           state: nextState,
-          grandfathered_until: recipient.state === "revoked" ? null : undefined,
+          grandfathered_until: nextState === "pending" ? null : undefined,
           revoked_at: recipient.state === "revoked" ? null : undefined,
           requires_confirmation: recipient.state === "revoked" ? true : undefined,
           updated_at: input.now,
@@ -185,27 +189,24 @@ export class NotificationRecipientStateRepository {
   }
 
   async confirm(recipientId: string, generation: number, now: Date): Promise<boolean> {
-    const confirmed = await this.db.updateTable("notification_recipient_confirmations")
-      .set({
-        state: "confirmed",
-        grandfathered_until: null,
-        confirmed_at: now,
-        revoked_at: null,
-        requires_confirmation: false,
-        updated_at: now,
-      })
-      .where("id", "=", recipientId)
-      .where("confirmation_generation", "=", generation)
-      .where((expression) => expression.or([
-        expression("state", "=", "pending"),
-        expression.and([
-          expression("state", "=", "grandfathered"),
-          expression("grandfathered_until", ">", now),
-        ]),
-      ]))
-      .returning("id")
-      .executeTakeFirst();
-    return Boolean(confirmed);
+    return this.db.transaction().execute(async (transaction) => {
+      const recipient = await transaction.selectFrom("notification_recipient_confirmations")
+        .select(["state", "confirmation_generation", "grandfathered_until"])
+        .where("id", "=", recipientId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!recipient || recipient.confirmation_generation !== generation) return false;
+      const confirmable = recipient.state === "pending"
+        || (recipient.state === "grandfathered"
+          && recipient.grandfathered_until !== null
+          && new Date(recipient.grandfathered_until).getTime() > now.getTime());
+      if (!confirmable) return false;
+      await transaction.updateTable("notification_recipient_confirmations")
+        .set({ state: "confirmed", grandfathered_until: null, confirmed_at: now, revoked_at: null, requires_confirmation: false, updated_at: now })
+        .where("id", "=", recipientId)
+        .execute();
+      return true;
+    });
   }
 
   async releaseConfirmationSend(recipientId: string, generation: number, reservedAt: Date): Promise<void> {
@@ -218,15 +219,20 @@ export class NotificationRecipientStateRepository {
       .execute();
   }
 
-  async revoke(recipientId: string, generation: number, now: Date): Promise<boolean> {
-    const revoked = await this.db.updateTable("notification_recipient_confirmations")
-      .set({ state: "revoked", grandfathered_until: null, revoked_at: now, updated_at: now })
-      .where("id", "=", recipientId)
-      .where("confirmation_generation", "=", generation)
-      .where("state", "!=", "revoked")
-      .returning("id")
-      .executeTakeFirst();
-    return Boolean(revoked);
+  async revoke(recipientId: string, now: Date): Promise<boolean> {
+    return this.db.transaction().execute(async (transaction) => {
+      const recipient = await transaction.selectFrom("notification_recipient_confirmations")
+        .select("state")
+        .where("id", "=", recipientId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!recipient || recipient.state === "revoked") return false;
+      await transaction.updateTable("notification_recipient_confirmations")
+        .set({ state: "revoked", grandfathered_until: null, revoked_at: now, updated_at: now })
+        .where("id", "=", recipientId)
+        .execute();
+      return true;
+    });
   }
 
   async suppress(input: {

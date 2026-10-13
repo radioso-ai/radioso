@@ -297,6 +297,20 @@ export const RETRIEVAL_BEHAVIOR = {
   },
 } as const;
 
+export const VOICE_BEHAVIOR = {
+  // A caller hears silence as a dropped line within about a second. When no
+  // speech has come this long into a voice turn, the channel speaks one of the
+  // agent's authored bridge lines. Latency is a property of the runtime, not of
+  // an agent, so this is composition-owned rather than an operator setting.
+  bridgeAfterMs: 900,
+  // When no speech has come this long into a voice turn, the channel speaks the
+  // agent's authored fallback line and ends the turn; the reply still finishes
+  // and is stored. Long enough for a slow grounded answer, short enough that a
+  // caller is not left waiting on a line that sounds dead. Composition-owned for
+  // the same reason as bridgeAfterMs.
+  turnLimitMs: 8_000,
+} as const;
+
 export const DOCUMENT_BEHAVIOR = {
   searchEvidenceMaxChars: 180,
 } as const;

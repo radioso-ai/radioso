@@ -382,10 +382,13 @@ Related docs:
 
 Owns voice sessions (a vendor's opaque session key mapped to one
 conversation), the vendor-neutral turn port that runs one caller utterance as
-a streaming chat turn and re-cuts the reply into sentence-sized speech, and
-the vendor adapters that bind that port to a wire. Voice enters the chat path
-as `sourceChannel: "voice"` with a `voice` channel context; the chat turn
-itself is unchanged.
+a streaming chat turn and re-cuts the reply into sentence-sized speech, the
+turn policy that covers the wait with the agent's authored bridge and fallback
+lines read from the agent's `voice` settings block (which the agents module
+owns, stores and serves), and the vendor adapters that bind that port to a
+wire.
+Voice enters the chat path as `sourceChannel: "voice"` with a `voice` channel
+context; the chat turn itself is unchanged.
 
 Should not own planning, retrieval, routines, or any vendor's field names
 outside `adapters/`. The domain names no vendor.
@@ -394,7 +397,8 @@ Public surfaces and key files:
 
 - `backend/src/modules/voiceChannel/public.ts`
 - `backend/src/modules/voiceChannel/domain.ts` — `VoiceTurnPort`, `VoiceTurnInput`, `VoiceTurnEvent`, `VoiceTurnOutcome`
-- `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`
+- `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`, `voiceTurnPolicy.ts` (bridge and turn limit, `VOICE_BEHAVIOR`) and `voiceLines.ts`
+- `backend/src/modules/agents/voiceSettings.ts` — the agent's `voice` block on `GET`/`PUT /api/v1/agents/:agentId`, read by the voice services as types from `agents/public.ts`
 - `backend/src/modules/voiceChannel/persistence/voiceSessionRepository.ts` (`voice_sessions`, migration `214_voice_sessions.sql`)
 - `backend/src/modules/voiceChannel/adapters/openaiCompletions/` — dialects as data, request schema, SSE presenter, route
 - `backend/src/app/composition/voiceChannel.ts` and `backend/src/app/http/routes/agentVoiceRoute.ts` (mounted beside the REST agent channel)
@@ -407,6 +411,7 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts`
+- `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
 
 Related docs:

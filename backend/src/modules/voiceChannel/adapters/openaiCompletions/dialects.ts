@@ -1,3 +1,4 @@
+import { isLocaleTag } from "../../../../shared/domain/locale.js";
 import type { VoiceTransport } from "../../domain.js";
 
 /** Where one value travels on a request: a header, or a path into the JSON body. */
@@ -12,7 +13,14 @@ type CompletionsFieldSource = { header: string } | { bodyPath: readonly string[]
 export interface CompletionsDialect {
   id: string;
   sessionKeyFrom: readonly CompletionsFieldSource[];
+  /** Where the caller's language tag travels, when the runtime or the page that starts the session sends one. */
+  localeFrom: readonly CompletionsFieldSource[];
   transportDefault: VoiceTransport;
+  /**
+   * A delta sent after each bridge line and speech piece, for a runtime that speaks a sentence only
+   * once a following non-blank delta arrives. Wire-only: never part of the stored reply.
+   */
+  sentenceFlushDelta?: string;
 }
 
 const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
@@ -21,11 +29,16 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
   ["elevenlabs", {
     id: "elevenlabs",
     sessionKeyFrom: [{ bodyPath: ["elevenlabs_extra_body", "session_key"] }],
+    localeFrom: [{ bodyPath: ["elevenlabs_extra_body", "locale"] }],
     transportDefault: "web",
+    // Observed 2026-10-13: ElevenLabs holds a sentence back from speech until another non-blank
+    // delta arrives. A space or a newline does not release it; a zero-width space does.
+    sentenceFlushDelta: "\u200B",
   }],
   ["generic", {
     id: "generic",
     sessionKeyFrom: [{ header: "x-radioso-voice-session" }, { bodyPath: ["metadata", "session_key"] }],
+    localeFrom: [{ header: "x-radioso-voice-locale" }, { bodyPath: ["metadata", "locale"] }],
     transportDefault: "web",
   }],
 ]);
@@ -63,13 +76,15 @@ const usableValue = (value: unknown): string | undefined => {
   return trimmed.length > 0 && !UNINTERPOLATED_PLACEHOLDER.test(trimmed) ? trimmed : undefined;
 };
 
+/** The first source whose value is usable and passes `accept`; a source that fails falls through to the next. */
 const firstValue = (
   sources: readonly CompletionsFieldSource[],
   request: CompletionsRequestParts,
+  accept: (value: string) => boolean = () => true,
 ): string | undefined => {
   for (const source of sources) {
     const value = usableValue(readSource(source, request));
-    if (value) {
+    if (value && accept(value)) {
       return value;
     }
   }
@@ -78,3 +93,7 @@ const firstValue = (
 
 export const sessionKeyFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): string | null =>
   firstValue(dialect.sessionKeyFrom, request) ?? null;
+
+/** The caller's language tag from the first source that carries a well-formed one. */
+export const localeFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): string | undefined =>
+  firstValue(dialect.localeFrom, request, isLocaleTag);

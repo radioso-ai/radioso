@@ -128,9 +128,12 @@ describe("voice completions route", () => {
       model: string;
       choices: Array<{ index: number; delta: Record<string, string>; finish_reason: string | null }>;
     });
+    // ElevenLabs holds a sentence back from speech until another non-blank delta arrives.
     expect(chunks.map((chunk) => chunk.choices[0])).toEqual([
       { index: 0, delta: { role: "assistant", content: "We open at nine. " }, finish_reason: null },
+      { index: 0, delta: { content: "\u200B" }, finish_reason: null },
       { index: 0, delta: { content: "See you then!" }, finish_reason: null },
+      { index: 0, delta: { content: "\u200B" }, finish_reason: null },
       { index: 0, delta: {}, finish_reason: "stop" },
     ]);
     expect(new Set(chunks.map((chunk) => chunk.id)).size).toBe(1);
@@ -214,6 +217,144 @@ describe("voice completions route", () => {
       model: "radioso-voice",
       choices: [{ index: 0, message: { role: "assistant", content: "We open at nine. See you then!" }, finish_reason: "stop" }],
     });
+  });
+
+  it("streams the generic dialect's reply without flush deltas", async () => {
+    const dependencies = createDependencies({
+      voiceTurns: voiceTurns([
+        { type: "conversation", conversationId },
+        { type: "bridge", text: "Let me check." },
+        { type: "speech", text: "We open at nine.", last: true },
+        { type: "outcome", outcome: { kind: "continue" } },
+      ]),
+    });
+
+    const response = await request(createApp(dependencies))
+      .post(completionsPath("generic"))
+      .set("Authorization", "Bearer voice-secret")
+      .set("X-Radioso-Voice-Session", "room-7")
+      .send({ stream: true, messages: [{ role: "user", content: "When do you open?" }] })
+      .expect(200);
+
+    const deltas = dataFrames(response.text).slice(0, -1).map((frame) =>
+      (JSON.parse(frame) as { choices: [{ delta: Record<string, string> }] }).choices[0].delta);
+    expect(deltas).toEqual([
+      { role: "assistant", content: "Let me check." },
+      { content: "We open at nine." },
+      {},
+    ]);
+  });
+
+  it("follows an ElevenLabs bridge line with a flush delta so it is spoken at once", async () => {
+    const dependencies = createDependencies({
+      voiceTurns: voiceTurns([
+        { type: "conversation", conversationId },
+        { type: "bridge", text: "Let me check." },
+        { type: "speech", text: "We open at nine.", last: true },
+        { type: "outcome", outcome: { kind: "continue" } },
+      ]),
+    });
+
+    const response = await request(createApp(dependencies))
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody())
+      .expect(200);
+
+    const contents = dataFrames(response.text).slice(0, -1).map((frame) =>
+      (JSON.parse(frame) as { choices: [{ delta: { content?: string } }] }).choices[0].delta.content);
+    expect(contents).toEqual(["Let me check.", "\u200B", "We open at nine.", "\u200B", undefined]);
+  });
+
+  it("passes on the caller's locale where the dialect reads it, and ignores one that is not a language tag", async () => {
+    const dependencies = createDependencies();
+    const app = createApp(dependencies);
+
+    await request(app)
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({ elevenlabs_extra_body: { session_key: "conv_abc", locale: "it-IT" } }))
+      .expect(200);
+    await request(app)
+      .post(completionsPath("generic"))
+      .set("Authorization", "Bearer voice-secret")
+      .set("X-Radioso-Voice-Session", "room-7")
+      .set("X-Radioso-Voice-Locale", "de")
+      .send({ messages: [{ role: "user", content: "Hallo" }] })
+      .expect(200);
+    await request(app)
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({ elevenlabs_extra_body: { session_key: "conv_abc", locale: "Italian" } }))
+      .expect(200);
+
+    await request(app)
+      .post(completionsPath("generic"))
+      .set("Authorization", "Bearer voice-secret")
+      .set("X-Radioso-Voice-Session", "room-7")
+      .set("X-Radioso-Voice-Locale", "German")
+      .send({ messages: [{ role: "user", content: "Hallo" }], metadata: { locale: "de-AT" } })
+      .expect(200);
+
+    const inputs = vi.mocked(dependencies.voiceTurns.runTurn).mock.calls.map(([turn]) => turn);
+    expect(inputs[0]).toMatchObject({ locale: "it-IT" });
+    expect(inputs[1]).toMatchObject({ locale: "de" });
+    expect(inputs[2]).not.toHaveProperty("locale");
+    // A malformed header falls through to the next source.
+    expect(inputs[3]).toMatchObject({ locale: "de-AT" });
+  });
+
+  it("finishes the response at the outcome while the turn behind it is still draining", async () => {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const drained = vi.fn();
+    const turns = {
+      runTurn: vi.fn(() => (async function* (): AsyncGenerator<VoiceTurnEvent> {
+        yield { type: "conversation", conversationId };
+        yield { type: "speech", text: "Sorry, could you ask me again?", last: true };
+        yield { type: "outcome", outcome: { kind: "continue" } };
+        await released;
+        drained();
+      })()),
+    };
+
+    try {
+      const streamed = await request(createApp(createDependencies({ voiceTurns: turns })))
+        .post(completionsPath())
+        .set("Authorization", "Bearer voice-secret")
+        .send(elevenlabsBody())
+        .expect(200);
+      const answered = await request(createApp(createDependencies({ voiceTurns: turns })))
+        .post(completionsPath())
+        .set("Authorization", "Bearer voice-secret")
+        .send(elevenlabsBody({ stream: false }))
+        .expect(200);
+
+      expect(dataFrames(streamed.text).at(-1)).toBe("[DONE]");
+      expect(answered.body.choices[0].message.content).toBe("Sorry, could you ask me again?");
+      expect(drained).not.toHaveBeenCalled();
+    } finally {
+      release();
+    }
+    await vi.waitFor(() => expect(drained).toHaveBeenCalledTimes(2));
+  });
+
+  it("still answers a non-streaming request whose turn ends without an outcome", async () => {
+    const dependencies = createDependencies({
+      voiceTurns: voiceTurns([
+        { type: "conversation", conversationId },
+        { type: "speech", text: "We open at nine.", last: false },
+      ]),
+    });
+
+    const response = await request(createApp(dependencies))
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({ stream: false }))
+      .expect(200);
+
+    expect(response.headers["x-radioso-conversation-id"]).toBe(conversationId);
+    expect(response.body.choices[0].message.content).toBe("We open at nine.");
   });
 
   it("reads the generic dialect's session key from its header", async () => {
@@ -364,11 +505,11 @@ describe("voice completions route", () => {
       .expect(200);
 
     const frames = dataFrames(response.text);
-    expect(frames).toHaveLength(2);
+    expect(frames).toHaveLength(3);
     expect(JSON.parse(frames[0] ?? "")).toMatchObject({
       choices: [{ index: 0, delta: { role: "assistant", content: "We open at nine. " }, finish_reason: null }],
     });
-    expect(frames[1]).toBe('{"error":{"message":"The agent could not finish this reply.","type":"server_error"}}');
+    expect(frames[2]).toBe('{"error":{"message":"The agent could not finish this reply.","type":"server_error"}}');
     expect(response.text).not.toContain("internal detail");
     expect(response.text).not.toContain("[DONE]");
   });

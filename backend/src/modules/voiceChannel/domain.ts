@@ -17,14 +17,18 @@ export interface VoiceTurnInput {
   transport: VoiceTransport;
   /** The final transcript of one caller turn. */
   utterance: string;
+  /** The caller's language as a BCP 47 tag, when the vendor or the page that started the session names it. */
+  locale?: string;
 }
 
 /** How the session goes on after the turn. */
 export type VoiceTurnOutcome = { kind: "continue" };
 
 export type VoiceTurnEvent =
-  /** The conversation the turn runs in, before any speech. */
+  /** The conversation the turn runs in, before any speech. A bridge can precede it on a session's first turn. */
   | { type: "conversation"; conversationId: string }
+  /** An authored line the channel speaks while the reply is still being written. Never stored. */
+  | { type: "bridge"; text: string }
   /** A speakable piece of the agent's reply, verbatim; the final piece carries `last: true`. */
   | { type: "speech"; text: string; last: boolean }
   /** Exactly one, always last. */

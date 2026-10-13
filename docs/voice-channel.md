@@ -219,6 +219,12 @@ a zero-width space after each sentence piece and bridge line (observed
 wait for the next one to start before the caller heard it. The flush travels on
 the wire only; the stored reply has none.
 
+ElevenLabs also holds the first sentence of a reply until it has about 45
+characters of text (observed 2026-10-13: 26 characters waited for the next
+sentence, 46 and 57 did not; invisible padding and two short sentences do not
+count). Write every bridge line and fallback line as a full sentence of at
+least 45 characters, or the caller hears it only together with the answer.
+
 The session key must name one call. A value that spans calls, such as a
 user id, would run every call of that user in one conversation, so no dialect
 falls back to one.

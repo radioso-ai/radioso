@@ -18,6 +18,7 @@ import {
   inboxItemKeys,
   inboxWaitingPresentation,
   listInboxAgents,
+  listInboxChannels,
   listTakenByOperators,
   matchesInboxSearch,
   ownershipLabel,
@@ -124,7 +125,21 @@ describe('toHandoffInboxItem', () => {
       severity: 'critical',
       title: 'Weekly yoga schedule',
       takenBy: { userId: 'user-anna', label: 'Anna' },
+      channel: 'authenticated_chat',
     })
+  })
+})
+
+describe('Inbox channel filter', () => {
+  it('keeps only rows from the selected structured channel', () => {
+    const items = [
+      { ...toHandoffInboxItem(conversation({ id: 'web', sourceChannel: 'web', ownership: ownership({ conversationId: 'web' }) })), channel: 'web' },
+      { ...toHandoffInboxItem(conversation({ id: 'email', sourceChannel: 'email', ownership: ownership({ conversationId: 'email' }) })), channel: 'email' },
+    ]
+
+    expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, channel: 'email' }, { currentUserId: null }))
+      .toMatchObject([{ conversationId: 'email' }])
+    expect(listInboxChannels(items)).toEqual([{ channel: 'web' }, { channel: 'email' }])
   })
 })
 

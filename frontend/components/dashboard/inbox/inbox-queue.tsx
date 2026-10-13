@@ -18,6 +18,7 @@ import {
   TAKEN_BY_UNCLAIMED,
   type EscalationType,
   type InboxAgentOption,
+  type InboxChannelOption,
   type InboxFilters,
   type InboxItem,
   type InboxOperatorOption,
@@ -51,6 +52,7 @@ interface InboxQueueProps {
   filters: InboxFilters
   onFiltersChange: (next: InboxFilters) => void
   agentOptions: InboxAgentOption[]
+  channelOptions: InboxChannelOption[]
   operatorOptions: InboxOperatorOption[]
   now: Date
   selectedKey: string | null
@@ -68,6 +70,7 @@ export function InboxQueue({
   filters,
   onFiltersChange,
   agentOptions,
+  channelOptions,
   operatorOptions,
   now,
   selectedKey,
@@ -126,6 +129,20 @@ export function InboxQueue({
                     <SelectItem key={agent.agentId} value={agent.agentId}>
                       {agent.agentInternalName?.trim() || agent.agentName?.trim() || 'Unnamed agent'}
                     </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={filters.channel}
+                onValueChange={(value) => onFiltersChange({ ...filters, channel: value })}
+              >
+                <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs" aria-label="Filter by channel">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Channel: all</SelectItem>
+                  {channelOptions.map(({ channel }) => (
+                    <SelectItem key={channel} value={channel}>{channel}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

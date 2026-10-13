@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { ConversationDrawer } from './conversation-drawer'
@@ -47,6 +48,7 @@ import {
   countInboxItemsByType,
   EMPTY_INBOX_FILTERS,
   filterInboxItems,
+  listInboxChannels,
   findRefreshedInboxItem,
   listInboxAgents,
   listTakenByOperators,
@@ -123,7 +125,17 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     useState<typeof qualitySnapshotInputs | null>(null)
   const [terminalQualityMessageIds, setTerminalQualityMessageIds] = useState<ReadonlySet<string>>(new Set())
   const [now, setNow] = useState(() => new Date())
-  const [filters, setFilters] = useState<InboxFilters>(EMPTY_INBOX_FILTERS)
+  const [localFilters, setLocalFilters] = useState<Pick<InboxFilters, 'search' | 'takenBy'>>({
+    search: '',
+    takenBy: EMPTY_INBOX_FILTERS.takenBy,
+  })
+  const filters = useMemo<InboxFilters>(() => ({
+    ...EMPTY_INBOX_FILTERS,
+    ...localFilters,
+    type: routeState.inboxEscalation ?? 'all',
+    agentId: routeState.inboxAgentId ?? 'all',
+    channel: routeState.inboxChannel ?? 'all',
+  }), [localFilters, routeState.inboxAgentId, routeState.inboxChannel, routeState.inboxEscalation])
   const [selectedInboxItem, setSelectedInboxItem] = useState<InboxItem | null>(null)
   const [selectedRecentlyClosedItem, setSelectedRecentlyClosedItem] = useState<RecentlyClosedInboxItem | null>(null)
   const [debugConversationId, setDebugConversationId] = useState<string | null>(null)
@@ -303,6 +315,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const workspaceAgentOptions = useInboxAgentOptions(Boolean(workspaceId))
   const queueAgentOptions = useMemo(() => listInboxAgents(items), [items])
   const agentOptions = workspaceAgentOptions.length > 0 ? workspaceAgentOptions : queueAgentOptions
+  const channelOptions = useMemo(() => listInboxChannels(items), [items])
   const operatorOptions = useMemo(() => listTakenByOperators(items, currentUserId), [items, currentUserId])
   const filteredItems = useMemo(
     () => filterInboxItems(items, filters, { currentUserId }),
@@ -317,6 +330,25 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       ? recentlyClosed
       : recentlyClosed.filter((item) => item.title.toLowerCase().includes(query))
   }, [recentlyClosed, filters.search])
+  const handleFiltersChange = useCallback((next: InboxFilters) => {
+    setLocalFilters({ search: next.search, takenBy: next.takenBy })
+    const inboxEscalation = next.type === 'all' ? undefined : next.type
+    const inboxAgentId = next.agentId === 'all' ? undefined : next.agentId
+    const inboxChannel = next.channel === 'all' ? undefined : next.channel
+    if (
+      routeState.inboxEscalation === inboxEscalation
+      && routeState.inboxAgentId === inboxAgentId
+      && routeState.inboxChannel === inboxChannel
+    ) return
+    router.replace(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'activity',
+      activityTab: 'needs-attention',
+      inboxEscalation,
+      inboxAgentId,
+      inboxChannel,
+    }))
+  }, [accountId, routeState, router])
   const isSelectionDataReady = attentionQueries.policy.queriesEnabled
     && !isLoading
     && !recentlyClosedQuery.isLoading
@@ -462,8 +494,16 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       section: 'quality',
       workspaceId: routeState.workspaceId,
       workspacePublicRouteKey: routeState.workspacePublicRouteKey,
+      qualityFeedback: ['down'],
+      qualityActiveNegativeFeedbackOnly: true,
+      qualityHasComment: true,
+      qualitySort: 'negative_feedback_updated_at',
     }),
     [accountId, routeState],
+  )
+  const qualityItemsNotShown = Math.max(
+    0,
+    (qualityPresentation.commentedFeedbackCount ?? 0) - qualityPresentation.turns.length,
   )
   const buildRoutineHref = useCallback(
     (agentId: string, routineId: string) =>
@@ -786,9 +826,19 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         ) : null}
         {olderAttention.available ? (
           <div className="m-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-            <span>Older drafts or delivery failures are waiting beyond what the Inbox shows.</span>
+            <span>{olderAttention.humanOwnedRemaining > 0
+              ? `${olderAttention.humanOwnedRemaining} waiting handoff${olderAttention.humanOwnedRemaining === 1 ? '' : 's'} not shown yet.`
+              : 'Older handoffs, drafts, or delivery failures are waiting beyond what the Inbox shows.'}</span>
             <Button type="button" size="sm" variant="outline" disabled={olderAttention.loading} onClick={olderAttention.load}>
               {olderAttention.loading ? 'Loading…' : 'Load older'}
+            </Button>
+          </div>
+        ) : null}
+        {qualityItemsNotShown > 0 ? (
+          <div className="m-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+            <span>{qualityItemsNotShown} feedback item{qualityItemsNotShown === 1 ? '' : 's'} not shown in this queue.</span>
+            <Button asChild type="button" size="sm" variant="outline">
+              <Link href={qualityReviewHref}>Review all feedback</Link>
             </Button>
           </div>
         ) : null}
@@ -813,8 +863,9 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               recentlyClosed={filteredRecentlyClosed}
               typeCounts={typeCounts}
               filters={filters}
-              onFiltersChange={setFilters}
+              onFiltersChange={handleFiltersChange}
               agentOptions={agentOptions}
+              channelOptions={channelOptions}
               operatorOptions={operatorOptions}
               now={now}
               selectedKey={selectedInboxItem?.key ?? null}

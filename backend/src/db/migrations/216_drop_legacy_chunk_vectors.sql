@@ -1,8 +1,12 @@
 -- `chunks` is a hot partitioned table and API migrations run while the preceding
--- application revision still serves requests. These metadata-only catalog changes need ACCESS
--- EXCLUSIVE briefly, so fail the deploy instead of queueing traffic behind a long
--- reader or writer.
+-- application revision still serves requests. Acquire the parent and all partition
+-- locks together, then keep their whole acquisition inside a five-second deadline.
+-- The runner resets both timeouts for each migration body, so these SET LOCAL values
+-- deliberately restore the deployment bound after that reset.
 SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '5s';
+
+LOCK TABLE chunks IN ACCESS EXCLUSIVE MODE;
 
 -- Dropping the partitioned parent removes the attached HNSW indexes on every
 -- partition before their `embedding` column disappears.

@@ -16,6 +16,7 @@ import type {
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { DocumentProcessingService } from "./documentProcessingService.js";
 import { getProviderFailureReason, isPermanentProviderFailure } from "../../../shared/infra/llm/providerErrors.js";
+import { AppError } from "../../../shared/domain/errors.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import type {
   EmbeddingProfileJobService,
@@ -433,7 +434,7 @@ export class DocumentProcessingWorker {
       if (job.kind !== "vectorize") {
         // The document is already queryable; a failed enrich job must never flip
         // it to "failed". Mark only the job failed and leave the document ready.
-        await this.jobRepository.markFailed(job.id, message);
+        await this.jobRepository.markFailed(job.id, message, error instanceof AppError ? error.code : null);
       } else {
         const markedFailed = await this.jobRepository.markFailedIfDocumentMatches({
           jobId: job.id,
@@ -441,6 +442,7 @@ export class DocumentProcessingWorker {
           workspaceId: job.workspaceId,
           revision: job.documentRevision,
           errorMessage: message,
+          errorCode: error instanceof AppError ? error.code : null,
         });
         if (!markedFailed) {
           const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);

@@ -21,6 +21,10 @@ export interface WorkspaceCredentialsEncryptionConfig {
   key: string | undefined;
 }
 
+interface ProviderCredentialFailureRecoveryPort {
+  requeueProviderCredentialFailures(workspaceId: string): Promise<number>;
+}
+
 interface SetApiKeyInput {
   workspaceId: string;
   provider: LlmProviderName;
@@ -50,6 +54,7 @@ export class WorkspaceProviderCredentialsService {
     private readonly auditService: AuditPort,
     private readonly encryption: WorkspaceCredentialsEncryptionConfig,
     private readonly logger?: Pick<AppLogger, "warn">,
+    private readonly recovery?: ProviderCredentialFailureRecoveryPort,
   ) {}
 
   isEncryptionConfigured(): boolean {
@@ -84,6 +89,7 @@ export class WorkspaceProviderCredentialsService {
         provider: input.provider,
         ciphertext,
       });
+      await this.recovery?.requeueProviderCredentialFailures(input.workspaceId);
       await this.recordAudit({
         accountId: input.actor.accountId,
         workspaceId: input.workspaceId,

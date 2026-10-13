@@ -158,6 +158,20 @@ describe("VoiceTurnService", () => {
     ]);
   });
 
+  it("closes an emphasis left open at the end of the reply once the reply is whole", async () => {
+    const chat = fakeChat([
+      { type: "conversation", conversationId },
+      { type: "chunk", text: "È *davvero" },
+      { type: "chunk", text: "*" },
+      done(),
+    ]);
+    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
+
+    const events = await collect(service.runTurn(input(), new AbortController().signal));
+
+    expect(events.filter((event) => event.type === "speech")).toEqual([{ type: "speech", text: "È davvero", last: true }]);
+  });
+
   it("hands the caller's abort signal to the chat turn", async () => {
     const chat = fakeChat([{ type: "conversation", conversationId }, done()]);
     const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });

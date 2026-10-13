@@ -100,6 +100,7 @@ export class AbuseControlRepository implements AbuseControlRepositoryPort {
     const entry = mapEntry(row);
     return {
       entry,
+      evaluatedAt: input.now,
       blocked: Boolean(entry.blockedUntil && entry.blockedUntil.getTime() > input.now.getTime()),
       weightedAttemptCount: Number(row.weighted_attempt_count),
     };

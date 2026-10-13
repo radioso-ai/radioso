@@ -1717,7 +1717,12 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
       windowStartedAt,
       blockedUntil,
     });
-    return { entry, blocked: Boolean(blockedUntil && blockedUntil > input.now), weightedAttemptCount };
+    return {
+      entry,
+      evaluatedAt: input.now,
+      blocked: Boolean(blockedUntil && blockedUntil > input.now),
+      weightedAttemptCount,
+    };
   }
 
   private store(input: {

@@ -128,12 +128,12 @@ describe("voice completions route", () => {
       model: string;
       choices: Array<{ index: number; delta: Record<string, string>; finish_reason: string | null }>;
     });
-    // ElevenLabs holds a sentence back from speech until another non-blank delta arrives.
+    // ElevenLabs speaks a sentence once its terminator is followed by whitespace and a later non-blank delta.
     expect(chunks.map((chunk) => chunk.choices[0])).toEqual([
       { index: 0, delta: { role: "assistant", content: "We open at nine. " }, finish_reason: null },
-      { index: 0, delta: { content: "\u200B" }, finish_reason: null },
+      { index: 0, delta: { content: " \u200B" }, finish_reason: null },
       { index: 0, delta: { content: "See you then!" }, finish_reason: null },
-      { index: 0, delta: { content: "\u200B" }, finish_reason: null },
+      { index: 0, delta: { content: " \u200B" }, finish_reason: null },
       { index: 0, delta: {}, finish_reason: "stop" },
     ]);
     expect(new Set(chunks.map((chunk) => chunk.id)).size).toBe(1);
@@ -263,7 +263,7 @@ describe("voice completions route", () => {
 
     const contents = dataFrames(response.text).slice(0, -1).map((frame) =>
       (JSON.parse(frame) as { choices: [{ delta: { content?: string } }] }).choices[0].delta.content);
-    expect(contents).toEqual(["Let me check.", "\u200B", "We open at nine.", "\u200B", undefined]);
+    expect(contents).toEqual(["Let me check.", " \u200B", "We open at nine.", " \u200B", undefined]);
   });
 
   it("passes on the caller's locale where the dialect reads it, and ignores one that is not a language tag", async () => {

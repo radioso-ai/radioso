@@ -212,12 +212,12 @@ wins. A locale that is not a language tag is ignored.
 | `elevenlabs` | body `elevenlabs_extra_body.session_key` | body `elevenlabs_extra_body.locale` | `web` |
 | `generic` | header `X-Radioso-Voice-Session`, then body `metadata.session_key` | header `X-Radioso-Voice-Locale`, then body `metadata.locale` | `web` |
 
-ElevenLabs releases a sentence to speech only when a following non-blank delta
-arrives (observed on 2026-10-13; a space or a newline does not count), so the
-`elevenlabs` dialect sends a zero-width space (U+200B) as its own delta after
-each sentence, bridge line and fallback line. Without it, each
-sentence would wait for the next one to start before the caller heard it. The
-zero-width space travels on the wire only; the stored reply has none.
+ElevenLabs hands a sentence to speech once the terminator is followed by
+whitespace and a later non-blank delta arrives; the dialect sends a space plus
+a zero-width space after each sentence piece and bridge line (observed
+2026-10-13). The fallback line gets the same. Without it, each sentence would
+wait for the next one to start before the caller heard it. The flush travels on
+the wire only; the stored reply has none.
 
 The session key must name one call. A value that spans calls, such as a
 user id, would run every call of that user in one conversation, so no dialect
@@ -260,7 +260,7 @@ data: [DONE]
 A sentence ends at terminal punctuation followed by whitespace, or at a
 full-width terminator such as `。`. A bridge or fallback line arrives as a
 content frame like any sentence. Leaving out a bridge line and the
-`elevenlabs` dialect's zero-width spaces, the text of the frames joined
+`elevenlabs` dialect's flush deltas, the text of the frames joined
 together is what the caller hears: the agent's reply, character for
 character, or the fallback line after a turn limit.
 

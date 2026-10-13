@@ -1,0 +1,36 @@
+---
+title: "Invite your team"
+description: "Invite a teammate from the dashboard, choose their organization role, and keep a shareable acceptance link for delivery recovery."
+last_updated: 2026-10-13
+---
+
+# Invite your team
+
+Invite the people who will review hand-offs, test changes, and maintain the workspace. An owner or admin sends the invitation from the account menu; the invitation grants an organization role, then workspace access follows the account's workspace grants.
+
+Transactional mail carries the invite. Configure it before sending invitations with [Set up transactional mail](/operators/mail-setup).
+
+## Send an invitation
+
+1. Open the account menu at the bottom of the dashboard sidebar.
+2. Choose **Members**.
+3. Choose **Invite teammate**.
+4. Enter `teammate@example.com` in **Email address**.
+5. Choose **Member** for someone who needs assigned workspace access, or **Admin** for someone who manages members and workspaces.
+6. Choose **Send invite**.
+
+The result includes a backup invite link and its seven-day expiry. Keep that link until the teammate joins. When delivery needs attention, the dialog labels it **Share invite link**, so you can deliver the same acceptance path through your team's normal channel.
+
+## Give the teammate workspace access
+
+On **Members**, open the **Workspaces** tab. Owners have access to every workspace. Give other teammates the member or admin grant that fits the workspace they will operate.
+
+## Common failure modes
+
+- The invitation reports an email delivery failure. Copy **Share invite link**, then review the Resend key and sender address in [Set up transactional mail](/operators/mail-setup).
+- Add or adjust the teammate's role in the **Workspaces** tab after they join.
+- The invitation expires. Send another invitation from **Members**.
+
+## Read next
+
+- [Prepare for production](/operators/deployment) — configure the deployment surfaces that carry your live traffic.

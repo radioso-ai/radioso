@@ -1,4 +1,6 @@
 const meta = {
+  'start-here': 'Start here',
+  'mail-setup': 'Set up transactional mail',
   deployment: 'Deployment',
   'clarification-behavior': 'Clarification behavior',
   'context-variables': 'Context variables',

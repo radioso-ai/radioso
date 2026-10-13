@@ -1,9 +1,7 @@
 'use client'
 
-import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { authApi } from '@/lib/api'
 import { getErrorMessage } from './auth-errors'
@@ -11,7 +9,7 @@ import { AuthShell } from './auth-shell'
 
 const VERIFY_COPY = {
   verifying: { title: 'Almost there', subtitle: 'Confirming your email address.' },
-  success: { title: 'You’re all set', subtitle: 'Your email is verified. You can sign in now.' },
+  success: { title: 'You’re all set', subtitle: 'Your email is verified. Opening your workspace.' },
   error: { title: 'This link has faded', subtitle: 'Head back to sign in.' },
 } as const
 
@@ -31,6 +29,7 @@ export function VerifyEmailScreen({ token }: { token?: string }) {
         await authApi.verifyEmail({ token })
         if (!cancelled) {
           setStatus('success')
+          window.location.assign('/')
         }
       } catch (error) {
         if (!cancelled) {
@@ -57,19 +56,11 @@ export function VerifyEmailScreen({ token }: { token?: string }) {
           </div>
         </div>
       ) : null}
-      {status === 'success' ? (
-        <div className="space-y-4">
-          <Button asChild className="w-full">
-            <Link href="/">Go to Sign In</Link>
-          </Button>
-        </div>
-      ) : null}
+      {status === 'success' ? <p className="text-sm text-muted-foreground">Opening your workspace…</p> : null}
       {status === 'error' ? (
         <div className="space-y-4">
           <p className="text-sm text-destructive">{error}</p>
-          <Button asChild className="w-full" variant="outline">
-            <Link href="/">Back to Sign In</Link>
-          </Button>
+          <a href="/login" className="text-sm font-medium text-primary hover:underline">Back to Sign In</a>
         </div>
       ) : null}
     </AuthShell>

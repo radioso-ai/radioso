@@ -57,6 +57,7 @@ import type {
   SessionRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
 import type { CreateUserParams, UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
+import type { AuthFunnelRepositoryPort } from "../../src/modules/auth/services/authFunnelService.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
 import type {
   AgentGreetingUpdateOptions,
@@ -739,6 +740,82 @@ export class InMemoryEmailVerificationTokenRepository implements EmailVerificati
       }
     }
     return count;
+  }
+}
+
+export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
+  private readonly tickets = new Map<string, {
+    id: string;
+    userId: string;
+    accountId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    usedAt: Date | null;
+  }>();
+
+  constructor(private readonly dependencies: {
+    emailVerificationTokens: InMemoryEmailVerificationTokenRepository;
+    users: InMemoryUserRepository;
+    sessions: InMemorySessionRepository;
+    listMemberships: (userId: string) => Promise<AccountMembershipRecord[]>;
+  }) {}
+
+  async createPendingTicket(input: {
+    id: string;
+    userId: string;
+    accountId: string;
+    tokenHash: string;
+    expiresAt: Date;
+  }): Promise<void> {
+    this.tickets.set(input.id, { ...input, usedAt: null });
+  }
+
+  async verifyEmailAndCreateSession(input: {
+    verificationTokenHash: string;
+    sessionId: string;
+    sessionTokenHash: string;
+    sessionExpiresAt: Date;
+    now: Date;
+  }): Promise<{ userId: string; accountId: string } | null> {
+    const token = await this.dependencies.emailVerificationTokens.findByTokenHash(input.verificationTokenHash);
+    if (!token || token.usedAt || token.expiresAt <= input.now) return null;
+    const latest = await this.dependencies.emailVerificationTokens.findLatestActiveForUser(token.userId, input.now);
+    if (latest?.id !== token.id) return null;
+    const user = await this.dependencies.users.findById(token.userId);
+    const membership = (await this.dependencies.listMemberships(token.userId))[0];
+    if (!user || !membership) return null;
+    await this.dependencies.users.markEmailVerified(user.id, input.now);
+    await this.dependencies.emailVerificationTokens.markAllActiveUsedForUser(user.id, input.now);
+    await this.dependencies.sessions.create({
+      userId: user.id,
+      accountId: membership.accountId,
+      sessionTokenHash: input.sessionTokenHash,
+      expiresAt: input.sessionExpiresAt,
+    });
+    return { userId: user.id, accountId: membership.accountId };
+  }
+
+  async exchangePendingTicket(input: {
+    pendingTokenHash: string;
+    sessionId: string;
+    sessionTokenHash: string;
+    sessionExpiresAt: Date;
+    now: Date;
+  }): Promise<{ userId: string; accountId: string } | null> {
+    const ticket = [...this.tickets.values()].find((candidate) => candidate.tokenHash === input.pendingTokenHash);
+    if (!ticket || ticket.usedAt || ticket.expiresAt <= input.now) return null;
+    const user = await this.dependencies.users.findById(ticket.userId);
+    const membership = (await this.dependencies.listMemberships(ticket.userId))
+      .find((candidate) => candidate.accountId === ticket.accountId);
+    if (!user?.emailVerifiedAt || !membership) return null;
+    ticket.usedAt = input.now;
+    await this.dependencies.sessions.create({
+      userId: user.id,
+      accountId: membership.accountId,
+      sessionTokenHash: input.sessionTokenHash,
+      expiresAt: input.sessionExpiresAt,
+    });
+    return { userId: user.id, accountId: membership.accountId };
   }
 }
 

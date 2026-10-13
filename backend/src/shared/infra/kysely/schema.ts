@@ -1476,6 +1476,16 @@ export interface PendingDecisions {
   workspace_id: string;
 }
 
+export interface PendingRegistrationTickets {
+  account_id: string;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  id: string;
+  token_hash: string;
+  used_at: Timestamp | null;
+  user_id: string;
+}
+
 export interface RetrievalSettings {
   chat_model: string | null;
   chat_provider: string | null;
@@ -2098,6 +2108,7 @@ export interface DB {
   operator_mcp_refresh_lineages: OperatorMcpRefreshLineages;
   password_reset_tokens: PasswordResetTokens;
   pending_decisions: PendingDecisions;
+  pending_registration_tickets: PendingRegistrationTickets;
   retrieval_settings: RetrievalSettings;
   revision_eval_run_attempts: RevisionEvalRunAttempts;
   revision_eval_run_cases: RevisionEvalRunCases;

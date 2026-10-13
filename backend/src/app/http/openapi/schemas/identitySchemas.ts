@@ -49,6 +49,9 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
       workspaceName: z.string(),
       workspacePublicRouteKey: z.string(),
       requiresEmailVerification: z.boolean(),
+      developmentVerificationUrl: z.string().url().optional().openapi({
+        description: "Development-only verification URL. Absent unless explicitly enabled in a development runtime.",
+      }),
     }),
   );
 
@@ -100,6 +103,10 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     z.object({
       verified: z.literal(true),
     }),
+  );
+  const PendingRegistrationSessionResponseSchema = registry.register(
+    "PendingRegistrationSessionResponse",
+    z.object({ ready: z.boolean() }),
   );
 
   const WorkspaceSchema = registry.register(
@@ -273,6 +280,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     UserProfileSchema,
     UserProfileUpdateRequestSchema,
     EmailVerificationVerifyResponseSchema,
+    PendingRegistrationSessionResponseSchema,
     WorkspaceSchema,
     WorkspaceRouteResolutionResponseSchema,
     WorkspaceListResponseSchema,

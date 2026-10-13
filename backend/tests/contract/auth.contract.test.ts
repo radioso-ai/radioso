@@ -97,7 +97,8 @@ describe("auth contract", () => {
     expect(response.body.displayName).toBeNull();
     expect(response.body.token).toBeUndefined();
     expect(response.body.requiresEmailVerification).toBe(true);
-    expect(response.headers["set-cookie"]).toBeUndefined();
+    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_pending_registration=");
+    expect(response.body.pendingTicket).toBeUndefined();
     expect(repositories.auditEventRepository.items).toEqual(expect.arrayContaining([
       expect.objectContaining({
         eventType: "auth.register",
@@ -105,6 +106,43 @@ describe("auth contract", () => {
         metadata: expect.objectContaining({ verificationMode: "email_verification" }),
       }),
     ]));
+  });
+
+  it("returns a development verification URL only when explicitly enabled", async () => {
+    const development = createTestApp({
+      envOverrides: {
+        NODE_ENV: "development",
+        AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: true,
+      },
+    });
+    const hidden = createTestApp();
+
+    const visibleResponse = await request(development.app).post("/api/v1/auth/register").send({
+      email: "visible-link@example.com",
+      password: "verysecurepassword",
+    });
+    const hiddenResponse = await request(hidden.app).post("/api/v1/auth/register").send({
+      email: "hidden-link@example.com",
+      password: "verysecurepassword",
+    });
+    const resendResponse = await request(development.app).post("/api/v1/auth/email-verification/resend").send({
+      email: "visible-link@example.com",
+    });
+
+    expect(visibleResponse.body.developmentVerificationUrl).toMatch(/^http:\/\/localhost:3000\/verify-email\?token=/);
+    expect(hiddenResponse.body.developmentVerificationUrl).toBeUndefined();
+    expect(resendResponse.body).toEqual({ accepted: true });
+  });
+
+  it("rate limits the constant-shape pending-session exchange", async () => {
+    const { app } = createTestApp({ envOverrides: { AUTH_RATE_LIMIT_MAX_ATTEMPTS: 1 } });
+
+    const first = await request(app).post("/api/v1/auth/email-verification/pending-session");
+    const second = await request(app).post("/api/v1/auth/email-verification/pending-session");
+
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({ ready: false });
+    expect(second.status).toBe(429);
   });
 
   it("auto-verifies new password registrations and creates a session in development", async () => {

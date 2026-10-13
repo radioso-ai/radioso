@@ -333,6 +333,29 @@ describe("runtime configuration", () => {
     }
   });
 
+  it("allows verification-link exposure only in development", () => {
+    const env = getEnv({
+      ...baseEnv,
+      NODE_ENV: "development",
+      AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: "true",
+      AUTH_PENDING_REGISTRATION_TTL_MINUTES: "12",
+    });
+
+    expect(env.AUTH_EXPOSE_EMAIL_VERIFICATION_LINK).toBe(true);
+    expect(env.AUTH_PENDING_REGISTRATION_TTL_MINUTES).toBe(12);
+    expect(() => getEnv({
+      ...baseEnv,
+      AUTH_PENDING_REGISTRATION_TTL_MINUTES: "61",
+    })).toThrow(/AUTH_PENDING_REGISTRATION_TTL_MINUTES/);
+    for (const nodeEnv of ["test", "production"] as const) {
+      expect(() => getEnv({
+        ...baseEnv,
+        NODE_ENV: nodeEnv,
+        AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: "true",
+      })).toThrow(/AUTH_EXPOSE_EMAIL_VERIFICATION_LINK/);
+    }
+  });
+
   it("requires an OTLP endpoint when tracing is enabled", () => {
     expect(() => getEnv({
       ...baseEnv,

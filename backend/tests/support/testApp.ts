@@ -1697,8 +1697,8 @@ export const createTestDependencies = (overrides: {
       skipped: { unconfirmed: 0, suppressed: 0 },
     }),
     resendConfirmation: async () => false,
-    confirm: async () => undefined,
-    revoke: async () => undefined,
+    confirm: async () => true,
+    revoke: async () => true,
   };
   const notificationRecipientSuppressions = {
     suppress: async (_input: {

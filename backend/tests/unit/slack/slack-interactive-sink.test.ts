@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EmailWebhookOperatorNotificationSink } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
+import { EmailWebhookOperatorNotificationSink as EmailWebhookOperatorNotificationSinkBase } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
 import type { ContactNotificationMailer } from "../../../src/modules/chat/services/actions/contactSendActionHandler.js";
 import { OperatorNotificationDispatcher } from "../../../src/modules/operatorNotifications/public.js";
 import { SlackOperatorNotificationSink } from "../../../src/modules/slack/public.js";
@@ -10,6 +10,18 @@ import type {
   SlackPostOutboxPort,
 } from "../../../src/modules/slack/public.js";
 import type { PendingDecisionRecord } from "../../../src/db/repositories/pendingDecisionRepository.js";
+
+const allowedRecipientPolicy = {
+  prepareDelivery: async (input: { emails: readonly string[] }) => ({
+    eligibleEmails: [...input.emails], eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })), skipped: { unconfirmed: 0, suppressed: 0 },
+  }),
+};
+class EmailWebhookOperatorNotificationSink extends EmailWebhookOperatorNotificationSinkBase {
+  constructor(...args: unknown[]) {
+    const [mailer, recipients, logger, webhookClient, conversationLinks, admission, recipientPolicy] = args as Partial<ConstructorParameters<typeof EmailWebhookOperatorNotificationSinkBase>>;
+    super(mailer!, recipients!, logger, webhookClient, conversationLinks, admission, recipientPolicy ?? allowedRecipientPolicy);
+  }
+}
 
 const installation: SlackInstallationRecord = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -389,7 +401,7 @@ describe("SlackOperatorNotificationSink", () => {
   it("keeps email delivery when the workspace has no Slack installation", async () => {
     const sent: Array<Parameters<ContactNotificationMailer["send"]>[0]> = [];
     const emailSink = new EmailWebhookOperatorNotificationSink(
-      { send: async (message) => { sent.push(message); } },
+      { send: async (message: Parameters<ContactNotificationMailer["send"]>[0]) => { sent.push(message); } },
       { resolve: async () => ({ emails: ["owner@business.example"], webhook: null, via: "workspace_owner", recipientsFromWorkspaceOwner: true }) },
     );
     const slack = createSink({ installation: null });

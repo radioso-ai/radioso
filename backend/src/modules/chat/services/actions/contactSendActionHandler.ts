@@ -12,7 +12,7 @@ import {
   REPLY_TO_MAX_LENGTH,
   validVisitorReplyTo,
   type NotificationDeliveryAdmissionPort,
-  type NotificationRecipientPolicyService,
+  type NotificationRecipientPolicyPort,
 } from "../../../operatorNotifications/public.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
@@ -255,12 +255,12 @@ export class ContactSendActionHandler implements ActionHandler {
   constructor(
     private readonly mailer: ContactNotificationMailer,
     private readonly recipients: ContactRecipientResolver,
-    private readonly logger?: { warn(payload: Record<string, unknown>, message: string): void },
-    private readonly webhookClient?: ContactWebhookHttpClient,
+    private readonly logger: { warn(payload: Record<string, unknown>, message: string): void } | undefined,
+    private readonly webhookClient: ContactWebhookHttpClient | undefined,
     // Terminal (retry-budget-exhausted) failures are alertable — see recordFailureOutcome.
-    private readonly errorReporter?: ErrorReporter,
-    private readonly admission?: NotificationDeliveryAdmissionPort,
-    private readonly recipientPolicy?: Pick<NotificationRecipientPolicyService, "prepareDelivery">,
+    private readonly errorReporter: ErrorReporter | undefined,
+    private readonly admission: NotificationDeliveryAdmissionPort | undefined,
+    private readonly recipientPolicy: Pick<NotificationRecipientPolicyPort, "prepareDelivery">,
   ) {}
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
@@ -272,20 +272,17 @@ export class ContactSendActionHandler implements ActionHandler {
       );
       return;
     }
+    if (!input.context.workspaceId) {
+      throw new ActionDispatchSkippedError("contact_destination_not_configured");
+    }
 
     const baseIdempotencyKey = input.context.idempotencyKey ?? input.context.requestId;
-    const recipientDecision = input.context.workspaceId && this.recipientPolicy
-      ? await this.recipientPolicy.prepareDelivery({
-          workspaceId: input.context.workspaceId,
-          conversationId: input.context.conversationId,
-          emails: target.emails,
-          idempotencyKey: baseIdempotencyKey,
-        })
-      : {
-          eligibleEmails: target.emails,
-          eligibleRecipients: target.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
-          skipped: { unconfirmed: 0, suppressed: 0 },
-        };
+    const recipientDecision = await this.recipientPolicy.prepareDelivery({
+      workspaceId: input.context.workspaceId,
+      conversationId: input.context.conversationId,
+      emails: target.emails,
+      idempotencyKey: baseIdempotencyKey,
+    });
     const admission = await this.admission?.admit({
       requestId: input.context.requestId,
       workspaceId: input.context.workspaceId,

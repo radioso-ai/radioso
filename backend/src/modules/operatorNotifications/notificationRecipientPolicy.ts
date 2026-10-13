@@ -13,6 +13,7 @@ interface NotificationRecipientStateView {
   state: StoredNotificationRecipientState;
   grandfatheredUntil: Date | null;
   recipientId?: string | null;
+  generation?: number | null;
 }
 
 interface NotificationRecipientStateStore {
@@ -21,16 +22,16 @@ interface NotificationRecipientStateStore {
     emails: readonly string[];
     now: Date;
   }): Promise<NotificationRecipientStateView[]>;
-  ensure(workspaceId: string, email: string): Promise<{ recipientId: string }>;
+  ensure(workspaceId: string, email: string, initialState: "confirmed" | "pending"): Promise<{ recipientId: string; generation: number }>;
   reserveConfirmationSend(input: {
     workspaceId: string;
     email: string;
     now: Date;
     force: boolean;
-  }): Promise<{ recipientId: string } | null>;
-  releaseConfirmationSend(recipientId: string, reservedAt: Date): Promise<void>;
-  confirm(recipientId: string, now: Date): Promise<void>;
-  revoke(recipientId: string, now: Date): Promise<void>;
+  }): Promise<{ recipientId: string; generation: number } | null>;
+  releaseConfirmationSend(recipientId: string, generation: number, reservedAt: Date): Promise<void>;
+  confirm(recipientId: string, generation: number, now: Date): Promise<boolean>;
+  revoke(recipientId: string, generation: number, now: Date): Promise<boolean>;
 }
 
 interface ConfirmationEmailRequest {
@@ -40,9 +41,38 @@ interface ConfirmationEmailRequest {
   email: string;
   idempotencyKey: string;
   recipientId?: string;
+  generation?: number;
 }
 
-type ConfirmationEmailSender = (input: ConfirmationEmailRequest) => Promise<void>;
+type ConfirmationEmailSender = (input: ConfirmationEmailRequest) => Promise<{ dispatched: boolean }>;
+
+export interface NotificationRecipientPolicyPort {
+  prepareDelivery(input: {
+    workspaceId: string;
+    workspaceName?: string;
+    agentName?: string;
+    agentId?: string | null;
+    conversationId?: string | null;
+    emails: readonly string[];
+    idempotencyKey: string;
+  }): Promise<{
+    eligibleEmails: string[];
+    eligibleRecipients: Array<{ email: string; listUnsubscribeUrl: string }>;
+    skipped: { unconfirmed: number; suppressed: number };
+  }>;
+  describe(workspaceId: string, emails: readonly string[]): Promise<NotificationRecipientDescription[]>;
+  resendConfirmation(input: {
+    workspaceId: string;
+    email: string;
+    idempotencyKey: string;
+    workspaceName?: string;
+    agentName?: string;
+    agentId?: string | null;
+    conversationId?: string | null;
+  }): Promise<boolean>;
+  confirm(subject: { recipientId: string; generation: number }): Promise<boolean>;
+  revoke(subject: { recipientId: string; generation: number }): Promise<boolean>;
+}
 
 export interface NotificationRecipientDescription {
   email: string;
@@ -61,12 +91,12 @@ const effectiveState = (view: NotificationRecipientStateView, now: Date): Stored
     ? "waiting_for_confirmation"
     : view.state;
 
-export class NotificationRecipientPolicyService {
+export class NotificationRecipientPolicyService implements NotificationRecipientPolicyPort {
   constructor(private readonly options: {
     enabled: boolean;
     states: NotificationRecipientStateStore;
     sendConfirmation: ConfirmationEmailSender;
-    revocationUrl?: (recipientId: string) => string;
+    revocationUrl?: (recipientId: string, generation: number) => string;
     identity?: {
       resolve(input: { workspaceId: string; agentId?: string | null; conversationId?: string | null }): Promise<{
         workspaceName: string;
@@ -124,10 +154,14 @@ export class NotificationRecipientPolicyService {
         || recipient.state === "grandfathered"
         || recipient.state === "confirmation_not_required") {
         eligibleEmails.push(recipient.email);
-        const ensured = await this.options.states.ensure(input.workspaceId, recipient.email);
+        const ensured = await this.options.states.ensure(
+          input.workspaceId,
+          recipient.email,
+          recipient.state === "confirmed" ? "confirmed" : "pending",
+        );
         eligibleRecipients.push({
           email: recipient.email,
-          listUnsubscribeUrl: this.options.revocationUrl?.(ensured.recipientId) ?? "",
+          listUnsubscribeUrl: this.options.revocationUrl?.(ensured.recipientId, ensured.generation) ?? "",
         });
       } else {
         unconfirmed += 1;
@@ -165,14 +199,16 @@ export class NotificationRecipientPolicyService {
     return this.sendConfirmationWhenReserved({ ...input, ...identity }, true);
   }
 
-  async confirm(recipientId: string): Promise<void> {
-    await this.options.states.confirm(recipientId, this.options.now?.() ?? new Date());
-    this.recordLifecycle("confirmed");
+  async confirm(subject: { recipientId: string; generation: number }): Promise<boolean> {
+    const confirmed = await this.options.states.confirm(subject.recipientId, subject.generation, this.options.now?.() ?? new Date());
+    if (confirmed) this.recordLifecycle("confirmed");
+    return confirmed;
   }
 
-  async revoke(recipientId: string): Promise<void> {
-    await this.options.states.revoke(recipientId, this.options.now?.() ?? new Date());
-    this.recordLifecycle("revoked");
+  async revoke(subject: { recipientId: string; generation: number }): Promise<boolean> {
+    const revoked = await this.options.states.revoke(subject.recipientId, subject.generation, this.options.now?.() ?? new Date());
+    if (revoked) this.recordLifecycle("revoked");
+    return revoked;
   }
 
   private async sendConfirmationWhenReserved(input: ConfirmationEmailRequest, force: boolean): Promise<boolean> {
@@ -185,20 +221,32 @@ export class NotificationRecipientPolicyService {
     });
     if (!reservation) return false;
     try {
-      await this.options.sendConfirmation({ ...input, recipientId: reservation.recipientId });
-    } catch (error) {
-      await this.options.states.releaseConfirmationSend(reservation.recipientId, now).catch(() => undefined);
-      this.options.metrics?.incrementCounter("notification_recipient_confirmation_events_total", {
-        help: "Notification recipient confirmation lifecycle events.",
-        labels: { event: "send_failed" },
-      });
-      this.options.logger?.info({
-        event: "notification_recipient_confirmation_send_failed",
-        workspaceId: input.workspaceId,
-      }, "Notification recipient confirmation send failed");
-      throw error;
+      const result = await this.options.sendConfirmation({ ...input, recipientId: reservation.recipientId, generation: reservation.generation });
+      if (!result.dispatched) {
+        await this.releaseConfirmationReservation(input.workspaceId, reservation, now);
+        return false;
+      }
+    } catch {
+      await this.releaseConfirmationReservation(input.workspaceId, reservation, now);
+      return false;
     }
     return true;
+  }
+
+  private async releaseConfirmationReservation(
+    workspaceId: string,
+    reservation: { recipientId: string; generation: number },
+    reservedAt: Date,
+  ): Promise<void> {
+    await this.options.states.releaseConfirmationSend(reservation.recipientId, reservation.generation, reservedAt).catch(() => undefined);
+    this.options.metrics?.incrementCounter("notification_recipient_confirmation_events_total", {
+      help: "Notification recipient confirmation lifecycle events.",
+      labels: { event: "send_failed" },
+    });
+    this.options.logger?.info({
+      event: "notification_recipient_confirmation_send_failed",
+      workspaceId,
+    }, "Notification recipient confirmation send failed");
   }
 
   private async identityFor(input: {

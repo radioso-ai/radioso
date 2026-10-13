@@ -18,6 +18,7 @@ describe("NotificationRecipientConfirmationMailer", () => {
       agentName: "Reception",
       email: "francesco@example.com",
       recipientId: "recipient-id",
+      generation: 4,
       idempotencyKey: "request-id",
     });
 
@@ -29,5 +30,22 @@ describe("NotificationRecipientConfirmationMailer", () => {
       listUnsubscribeUrl: expect.stringMatching(/revoke\?token=[A-Za-z0-9_.-]+/u),
       idempotencyKey: "notification-recipient-confirmation:request-id:recipient-id",
     }));
+  });
+
+  it("reports an undispatched log or noop send without recording it as sent", async () => {
+    const send = vi.fn(async () => ({ dispatched: false }));
+    const incrementCounter = vi.fn();
+    const mailer = new NotificationRecipientConfirmationMailer({
+      mailer: { send },
+      signer: new NotificationRecipientTokenSigner("a deployment secret that is long enough"),
+      publicBaseUrl: "https://api.example.com/",
+      metrics: { incrementCounter },
+    });
+
+    await expect(mailer.send({
+      workspaceId: "workspace-id", workspaceName: "Ananda", agentName: "Reception",
+      email: "francesco@example.com", recipientId: "recipient-id", generation: 0, idempotencyKey: "request-id",
+    })).resolves.toEqual({ dispatched: false });
+    expect(incrementCounter).not.toHaveBeenCalled();
   });
 });

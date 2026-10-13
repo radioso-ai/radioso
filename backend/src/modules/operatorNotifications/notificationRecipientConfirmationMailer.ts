@@ -9,7 +9,7 @@ interface ConfirmationMailTransport {
     text: string;
     idempotencyKey: string;
     listUnsubscribeUrl: string;
-  }): Promise<unknown>;
+  }): Promise<{ dispatched: boolean }>;
 }
 
 interface ConfirmationObservability {
@@ -38,13 +38,14 @@ export class NotificationRecipientConfirmationMailer {
     agentName: string;
     email: string;
     recipientId: string;
+    generation: number;
     idempotencyKey: string;
-  }): Promise<void> {
-    const confirmUrl = this.actionUrl("confirm", this.options.signer.sign(input.recipientId, "confirm"));
-    const revokeUrl = this.revocationUrl(input.recipientId);
+  }): Promise<{ dispatched: boolean }> {
+    const confirmUrl = this.actionUrl("confirm", this.options.signer.sign(input.recipientId, "confirm", input.generation));
+    const revokeUrl = this.revocationUrl(input.recipientId, input.generation);
     const workspaceName = oneLine(input.workspaceName) || "A Radioso workspace";
     const agentName = oneLine(input.agentName) || "an agent";
-    await this.options.mailer.send({
+    const result = await this.options.mailer.send({
       to: input.email,
       kind: "recipient_confirmation",
       subject: `${workspaceName} wants to send you ${agentName} notifications via Radioso`,
@@ -60,6 +61,7 @@ export class NotificationRecipientConfirmationMailer {
       listUnsubscribeUrl: revokeUrl,
       idempotencyKey: `notification-recipient-confirmation:${input.idempotencyKey}:${input.recipientId}`,
     });
+    if (!result.dispatched) return result;
     this.options.metrics?.incrementCounter("notification_recipient_confirmation_events_total", {
       help: "Notification recipient confirmation lifecycle events.",
       labels: { event: "sent" },
@@ -68,10 +70,11 @@ export class NotificationRecipientConfirmationMailer {
       event: "notification_recipient_confirmation_sent",
       workspaceId: input.workspaceId,
     }, "Notification recipient confirmation sent");
+    return result;
   }
 
-  revocationUrl(recipientId: string): string {
-    return this.actionUrl("revoke", this.options.signer.sign(recipientId, "revoke"));
+  revocationUrl(recipientId: string, generation: number): string {
+    return this.actionUrl("revoke", this.options.signer.sign(recipientId, "revoke", generation));
   }
 
   private actionUrl(action: "confirm" | "revoke", token: string): string {

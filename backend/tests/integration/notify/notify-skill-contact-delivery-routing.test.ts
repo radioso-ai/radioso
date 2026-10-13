@@ -9,11 +9,11 @@ import {
 } from "../../../src/modules/chat/services/actions/actionDispatcher.js";
 import {
   ConfiguredContactDeliveryResolver,
-  ContactSendActionHandler,
+  ContactSendActionHandler as ContactSendActionHandlerBase,
   type ContactNotificationMailer,
 } from "../../../src/modules/chat/services/actions/contactSendActionHandler.js";
 import { CONTACT_SEND_ACTION_TYPE } from "../../../src/modules/chat/contracts/index.js";
-import { EmailWebhookOperatorNotificationSink } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
+import { EmailWebhookOperatorNotificationSink as EmailWebhookOperatorNotificationSinkBase } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
 import { RoutineEndingNotifyActionHandler } from "../../../src/modules/chat/services/actions/routineEndingNotifyActionHandler.js";
 import { ROUTINE_ENDING_NOTICE_ACTIONS } from "../../../src/modules/chat/services/operatorNoticeAction.js";
 import { buildRoutineEndingNotifyAction } from "../../../src/modules/chat/services/routineEndingEffects.js";
@@ -24,6 +24,24 @@ import type {
   ActionRequestRecord,
   EnqueueActionRequestInput,
 } from "../../../src/db/repositories/actionRequestRepository.js";
+
+const allowedRecipientPolicy = {
+  prepareDelivery: async (input: { emails: readonly string[] }) => ({
+    eligibleEmails: [...input.emails], eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })), skipped: { unconfirmed: 0, suppressed: 0 },
+  }),
+};
+class ContactSendActionHandler extends ContactSendActionHandlerBase {
+  constructor(...args: unknown[]) {
+    const [mailer, recipients, logger, webhookClient, errorReporter, admission, recipientPolicy] = args as Partial<ConstructorParameters<typeof ContactSendActionHandlerBase>>;
+    super(mailer!, recipients!, logger, webhookClient, errorReporter, admission, recipientPolicy ?? allowedRecipientPolicy);
+  }
+}
+class EmailWebhookOperatorNotificationSink extends EmailWebhookOperatorNotificationSinkBase {
+  constructor(...args: unknown[]) {
+    const [mailer, recipients, logger, webhookClient, conversationLinks, admission, recipientPolicy] = args as Partial<ConstructorParameters<typeof EmailWebhookOperatorNotificationSinkBase>>;
+    super(mailer!, recipients!, logger, webhookClient, conversationLinks, admission, recipientPolicy ?? allowedRecipientPolicy);
+  }
+}
 
 /**
  * Minimal in-memory stand-in for `ActionRequestRepository`: just enough enqueue /

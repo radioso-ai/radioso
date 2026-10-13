@@ -7,7 +7,7 @@ import {
   type OperatorNotificationSink,
   type OperatorNotificationSinkOutcome,
   type RoutineEndingOperatorNotification,
-  type NotificationRecipientPolicyService,
+  type NotificationRecipientPolicyPort,
 } from "../../../operatorNotifications/public.js";
 import {
   resolveConversationLink,
@@ -65,11 +65,11 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
   constructor(
     private readonly mailer: ContactNotificationMailer,
     private readonly recipients: RoutedContactRecipientResolver,
-    private readonly logger?: OperatorNotificationSinkLogger,
-    private readonly webhookClient?: ContactWebhookHttpClient,
-    private readonly conversationLinks?: ConversationLinkResolver,
-    private readonly admission?: NotificationDeliveryAdmissionPort,
-    private readonly recipientPolicy?: Pick<NotificationRecipientPolicyService, "prepareDelivery">,
+    private readonly logger: OperatorNotificationSinkLogger | undefined,
+    private readonly webhookClient: ContactWebhookHttpClient | undefined,
+    private readonly conversationLinks: ConversationLinkResolver | undefined,
+    private readonly admission: NotificationDeliveryAdmissionPort | undefined,
+    private readonly recipientPolicy: Pick<NotificationRecipientPolicyPort, "prepareDelivery">,
   ) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome> {
@@ -107,19 +107,13 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       return { disposition: "skipped", reason: "contact_destination_not_configured" };
     }
     const baseIdempotencyKey = context.idempotencyKey ?? context.requestId;
-    const recipientDecision = this.recipientPolicy
-      ? await this.recipientPolicy.prepareDelivery({
-          workspaceId: recipientContext.workspaceId,
-          agentId: notification.agentId,
-          conversationId: recipientContext.conversationId,
-          emails: target.emails,
-          idempotencyKey: baseIdempotencyKey,
-        })
-      : {
-          eligibleEmails: target.emails,
-          eligibleRecipients: target.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
-          skipped: { unconfirmed: 0, suppressed: 0 },
-        };
+    const recipientDecision = await this.recipientPolicy.prepareDelivery({
+      workspaceId: recipientContext.workspaceId,
+      agentId: notification.agentId,
+      conversationId: recipientContext.conversationId,
+      emails: target.emails,
+      idempotencyKey: baseIdempotencyKey,
+    });
     const admission = await this.admission?.admit({
       requestId: context.requestId,
       workspaceId: recipientContext.workspaceId,

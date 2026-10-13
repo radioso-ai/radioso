@@ -82,9 +82,15 @@ helpers and the shared chat message limit from `app/http`
   `propose_agent_setting` refuses it by name; `fieldParity.ts` records the gap
   for it and for `prepare_agent_settings`.
 - **Turn policy.** Runs only while the agent's `voice.enabled` is true; with
-  voice off a turn runs exactly as a plain chat turn. Both deadlines count from
-  the turn's start (`VOICE_BEHAVIOR` in `shared/domain/behaviorConfig.ts`:
-  bridge at 900 ms, limit at 8 s) and stop at the first speech. The bridge
+  voice off a turn runs exactly as a plain chat turn. The bridge fires when the
+  turn starts searching, 400 ms after it starts composing without speech, or
+  after 1.8 s with no phase at all; the limit is 8 s into the turn
+  (`VOICE_BEHAVIOR` in `shared/domain/behaviorConfig.ts`). The turn service
+  turns chat `status` events into phase markers (`interpreting`, `searching`,
+  `composing`) that only the policy reads; adapters never see them, and with
+  voice off they are dropped. `interpreting` is where every turn starts, so
+  it leaves the 1.8 s fallback armed. Everything stops at the first speech or
+  the outcome, and at most one bridge is spoken. The bridge
   style is `acknowledge` while a routine is active in the conversation at turn
   start and `check` otherwise; a session's first turn has no routine. Lines
   rotate per policy turn within the process. The locale is the request's

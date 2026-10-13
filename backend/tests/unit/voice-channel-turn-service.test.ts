@@ -429,6 +429,39 @@ describe("VoiceTurnService", () => {
       vi.useRealTimers();
     });
 
+    it("bridges when chat reports a search, and lets a quick composed reply through without one", async () => {
+      const turn = (steps: Array<{ atMs: number; event: ChatStreamEvent }>) => new VoiceTurnService({
+        agents: voiceProfiles(voiceOn),
+        routines: routineStates(false),
+        sessions: fakeSessions(conversationId),
+        chat: timedChat(steps),
+        logger: fakeLogger(),
+      });
+      const status = (stage: "interpreting" | "searching" | "composing"): ChatStreamEvent => ({ type: "status", stage });
+
+      const retrieval = await runWithClock(turn([
+        { atMs: 0, event: status("interpreting") },
+        { atMs: 0, event: { type: "conversation", conversationId } },
+        { atMs: 1_100, event: status("searching") },
+        { atMs: 3_000, event: { type: "chunk", text: "We open at nine." } },
+        { atMs: 3_000, event: done() },
+      ]));
+      const quick = await runWithClock(turn([
+        { atMs: 0, event: status("interpreting") },
+        { atMs: 0, event: { type: "conversation", conversationId } },
+        { atMs: 1_100, event: status("composing") },
+        { atMs: 1_150, event: { type: "chunk", text: "Hi!" } },
+        { atMs: 1_150, event: done() },
+      ]));
+
+      expect(retrieval.map((event) => event.type)).toEqual(["conversation", "bridge", "speech", "outcome"]);
+      expect(quick).toEqual([
+        { type: "conversation", conversationId },
+        { type: "speech", text: "Hi!", last: true },
+        { type: "outcome", outcome: { kind: "continue" } },
+      ]);
+    });
+
     it("runs the turn without a bridge or a limit while voice is off", async () => {
       const agents = voiceProfiles({ ...voiceOn, enabled: false });
       const service = new VoiceTurnService({

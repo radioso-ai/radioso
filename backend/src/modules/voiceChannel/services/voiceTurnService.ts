@@ -12,7 +12,13 @@ import type {
 } from "../domain.js";
 import { chooseVoiceTurnLines, resolveVoiceTurnLocale } from "./voiceLines.js";
 import { recordVoiceBridgeDue, recordVoiceFirstSpeech, recordVoiceTurnLimit, type VoiceTurnMetricsSink } from "./voiceTurnMetrics.js";
-import { applyVoiceTurnPolicy, type VoiceTurnPolicy } from "./voiceTurnPolicy.js";
+import {
+  applyVoiceTurnPolicy,
+  withoutPhaseMarkers,
+  type VoiceReplyEvent,
+  type VoiceTurnPhase,
+  type VoiceTurnPolicy,
+} from "./voiceTurnPolicy.js";
 import { splitCompleteSentences } from "./speechSegmenter.js";
 
 /** Where a voice session's conversation is remembered. */
@@ -57,8 +63,18 @@ interface VoiceRoutineStateSource {
 
 interface VoiceTurnTiming {
   bridgeAfterMs: number;
+  bridgeAfterComposingIdleMs: number;
   turnLimitMs: number;
 }
+
+type ChatStatusStage = Extract<ChatStreamEvent, { type: "status" }>["stage"];
+
+/** The chat stage each status event reports, as the phase the turn policy reads. */
+const PHASE_OF_STAGE: Record<ChatStatusStage, VoiceTurnPhase> = {
+  interpreting: "interpreting",
+  searching: "searching",
+  composing: "composing",
+};
 
 interface VoiceTurnServiceDependencies {
   sessions: VoiceSessionStore;
@@ -151,7 +167,7 @@ export class VoiceTurnService implements VoiceTurnPort {
 
       const policy = await this.policyFor(input, claim.conversationId, startedAt, record);
       const reply = this.replyEvents(input, claim.conversationId, firstTurn, record, signal);
-      yield* policy ? applyVoiceTurnPolicy(reply, policy) : reply;
+      yield* policy ? applyVoiceTurnPolicy(reply, policy) : withoutPhaseMarkers(reply);
     } catch (error) {
       record.result = "failed";
       failure = error;
@@ -179,14 +195,17 @@ export class VoiceTurnService implements VoiceTurnPort {
     }
   }
 
-  /** The chat turn's reply as voice events, re-cut into sentences. Binds a new session as soon as chat names its conversation. */
+  /**
+   * The chat turn's reply as voice events, re-cut into sentences, with the chat's status stages as
+   * phase markers for the policy. Binds a new session as soon as chat names its conversation.
+   */
   private async *replyEvents(
     input: VoiceTurnInput,
     boundConversationId: string | null,
     firstTurn: FirstTurn | undefined,
     record: VoiceTurnRecord,
     signal: AbortSignal,
-  ): AsyncGenerator<VoiceTurnEvent> {
+  ): AsyncGenerator<VoiceReplyEvent> {
     let pending = "";
     for await (const event of this.dependencies.chat.streamTurn({
       workspaceId: input.session.workspaceId,
@@ -205,7 +224,9 @@ export class VoiceTurnService implements VoiceTurnPort {
         yield { type: "conversation", conversationId: record.conversationId };
       }
 
-      if (event.type === "chunk") {
+      if (event.type === "status") {
+        yield { type: "phase", phase: PHASE_OF_STAGE[event.stage] };
+      } else if (event.type === "chunk") {
         const { sentences, remainder } = splitCompleteSentences(pending + event.text);
         pending = remainder;
         for (const text of sentences) {

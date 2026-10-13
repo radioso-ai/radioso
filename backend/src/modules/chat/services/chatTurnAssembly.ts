@@ -495,7 +495,8 @@ export class ChatTurnAssembly {
     const activator = input.clarification?.resolution?.kind === "routine_activation"
       ? input.clarification.resolution.activator
       : routineTurnPorts.activator;
-    const deferredStore = new DeferredRoutineStore(this.options.routineStore);
+    session.routineStartMessageId = input.activeRoutine?.startedMessageId ?? session.userMessage.id;
+    const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId);
     const deferredClarificationStore = input.clarification?.store;
     input.coordination?.checkpoint("routing");
     const claim = await claimRoutineTurnWithConversationEngine({

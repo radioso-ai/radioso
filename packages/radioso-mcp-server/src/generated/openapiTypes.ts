@@ -5909,6 +5909,7 @@ export interface components {
                     intro?: string | null;
                     skillName?: string;
                     replyToSlot?: string;
+                    includeAiSummary?: boolean;
                 };
                 ordinal: number;
             }[];
@@ -6019,6 +6020,7 @@ export interface components {
                     intro?: string | null;
                     skillName?: string;
                     replyToSlot?: string;
+                    includeAiSummary?: boolean;
                 };
                 ordinal: number;
             }[];
@@ -6140,6 +6142,7 @@ export interface components {
                     intro?: string | null;
                     skillName?: string;
                     replyToSlot?: string;
+                    includeAiSummary?: boolean;
                 };
                 ordinal: number;
             }[];
@@ -6277,6 +6280,7 @@ export interface components {
                         intro?: string | null;
                         skillName?: string;
                         replyToSlot?: string;
+                        includeAiSummary?: boolean;
                     };
                     ordinal: number;
                 }[];
@@ -6651,6 +6655,7 @@ export interface components {
                         intro?: string | null;
                         skillName?: string;
                         replyToSlot?: string;
+                        includeAiSummary?: boolean;
                     };
                     ordinal: number;
                 }[];

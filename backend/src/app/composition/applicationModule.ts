@@ -22,6 +22,7 @@ import type { OrganizationCreationGuard } from "../../shared/domain/organization
 import type { DocumentCapacityReadPort, UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { ManagedModelPolicy } from "../../shared/domain/managedModelPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
+import type { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/contracts/websiteEmbedIntegration.js";
 import type { FacetExtractionPort } from "../../modules/facets/contracts.js";
 import type {
@@ -231,6 +232,8 @@ interface ApplicationActionHandlerRegistration {
         metrics: MetricsRegistry | null;
         // Tells the dashboard of what a handler committed, e.g. a held reply it returned to a teammate.
         publisher: WorkspaceInvalidationPublisher;
+        llmRegistry: LlmProviderRegistry;
+        usageEventRecorder: UsageEventRecorder;
       }) => ActionHandler);
 }
 

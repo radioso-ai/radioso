@@ -209,6 +209,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         collected: notification.collected ?? {},
         subject: formatted.notice.subject,
         intro: formatted.notice.intro,
+        ...(notification.aiSummary ? { aiSummary: notification.aiSummary } : {}),
         replyTo,
         ...links,
         requestId: context.requestId,

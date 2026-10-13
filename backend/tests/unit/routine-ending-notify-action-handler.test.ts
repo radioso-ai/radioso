@@ -55,6 +55,39 @@ describe("RoutineEndingNotifyActionHandler", () => {
     });
   });
 
+  it("adds a background AI summary only when the ending opted in", async () => {
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const generate = vi.fn(async () => "Visitor requested a late arrival and vegetarian meals.");
+    const handler = new RoutineEndingNotifyActionHandler({
+      ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
+      dispatcher: { dispatch },
+      subjects: { resolve: async () => ({ agentId: "agent_1", agentName: null, routineName: null }) },
+      summaryGenerator: { generate },
+    });
+
+    await handler.handle({ payload: { userMessageId: "message_1", reason: "routine_completed", notice: { includeAiSummary: true }, collected: { guests: 2 } }, context });
+
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "ws_1", conversationId: "conv_1", endingMessageId: expect.any(String),
+      collected: { guests: 2 },
+    }));
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ aiSummary: "Visitor requested a late arrival and vegetarian meals." }), expect.any(Object));
+  });
+
+  it("sends the notice when AI summary generation fails", async () => {
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const handler = new RoutineEndingNotifyActionHandler({
+      ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
+      dispatcher: { dispatch },
+      subjects: { resolve: async () => ({ agentId: "agent_1", agentName: null, routineName: null }) },
+      summaryGenerator: { generate: async () => { throw new Error("timeout"); } },
+    });
+
+    await handler.handle({ payload: { userMessageId: "message_1", notice: { includeAiSummary: true } }, context });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.not.objectContaining({ aiSummary: expect.anything() }), expect.any(Object));
+  });
+
   it("forwards the notify skill the queued row names to the sinks", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();

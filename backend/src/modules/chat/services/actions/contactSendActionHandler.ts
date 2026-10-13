@@ -10,6 +10,7 @@ import {
   CONTACT_MESSAGE_MAX_LENGTH,
   CONTACT_NAME_MAX_LENGTH,
   REPLY_TO_MAX_LENGTH,
+  planNotificationEmail,
   validVisitorReplyTo,
   type NotificationDeliveryAdmissionPort,
   type NotificationRecipientPolicyPort,
@@ -288,54 +289,29 @@ export class ContactSendActionHandler implements ActionHandler {
       "",
       message,
     ].filter((line): line is string => line !== null);
-    const webhookDelivery = target.webhook ? this.postWebhook({
-      webhook: target.webhook,
-      payload: {
-        name,
-        email,
-        message,
-        workspaceId: input.context.workspaceId,
-        conversationId: input.context.conversationId,
-        requestId: input.context.requestId,
-      },
-      idempotencyKey: `${baseIdempotencyKey}:webhook`,
-    }) : Promise.resolve();
-
-    let prepared: {
-      recipientDecision: Awaited<ReturnType<NotificationRecipientPolicyPort["prepareDelivery"]>>;
-      admission: Awaited<ReturnType<NotificationDeliveryAdmissionPort["admit"]>> | undefined;
-    };
-    try {
-      const recipientDecision = await this.recipientPolicy.prepareDelivery({
-        workspaceId: input.context.workspaceId,
-        conversationId: input.context.conversationId,
-        emails: target.emails,
-        idempotencyKey: baseIdempotencyKey,
-      });
-      const admission = await this.admission?.admit({
+    const plan = await planNotificationEmail({
+      recipientPolicy: this.recipientPolicy,
+      admission: this.admission,
+      webhookConfigured: target.webhook !== null,
+      onPreparationFailure: (error) => this.logger?.warn(
+        { workspaceId: input.context.workspaceId, errorName: error instanceof Error ? error.name : "unknown" },
+        "contact.send: recipient state unavailable; email skipped, webhook still posted",
+      ),
+      request: {
         requestId: input.context.requestId,
         workspaceId: input.context.workspaceId,
         accountId: input.context.accountId,
         conversationId: input.context.conversationId,
-        recipientEmails: recipientDecision.eligibleEmails,
-        requestedEmailCount: recipientDecision.eligibleEmails.length,
-      });
-      prepared = { recipientDecision, admission };
-    } catch (error) {
-      await webhookDelivery;
-      if (target.webhook) {
-        return;
-      }
-      throw error;
-    }
-    const { recipientDecision, admission } = prepared;
-    if (admission && !admission.dispatchAllowed) {
-      await webhookDelivery;
-      throw new ActionDispatchSkippedError(admission.reason ?? "conversation_dispatch_cap");
+        emails: target.emails,
+        idempotencyKey: baseIdempotencyKey,
+      },
+    });
+    if (!plan.dispatchAllowed) {
+      throw new ActionDispatchSkippedError(plan.reason);
     }
 
     const [emailResults] = await Promise.all([
-      Promise.all((admission?.emailAllowed === false ? [] : recipientDecision.eligibleRecipients).map((recipient) =>
+      Promise.all(plan.recipients.map((recipient) =>
         this.mailer.send({
           to: recipient.email,
           kind: "contact_notification",
@@ -346,16 +322,21 @@ export class ContactSendActionHandler implements ActionHandler {
           idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
         })),
       ),
-      webhookDelivery,
+      target.webhook ? this.postWebhook({
+        webhook: target.webhook,
+        payload: {
+          name,
+          email,
+          message,
+          workspaceId: input.context.workspaceId,
+          conversationId: input.context.conversationId,
+          requestId: input.context.requestId,
+        },
+        idempotencyKey: `${baseIdempotencyKey}:webhook`,
+      }) : Promise.resolve(),
     ]);
     if (!target.webhook) {
-      const skipReason = admission?.emailAllowed === false
-        ? admission.reason
-        : recipientDecision.eligibleEmails.length === 0
-          ? recipientDecision.skipped.suppressed > 0 && recipientDecision.skipped.unconfirmed === 0
-            ? "notification_recipient_suppressed"
-            : "notification_recipient_unconfirmed"
-          : mailDeliverySkipReason(emailResults);
+      const skipReason = plan.emailSkipReason ?? mailDeliverySkipReason(emailResults);
       if (skipReason) {
         throw new ActionDispatchSkippedError(skipReason);
       }

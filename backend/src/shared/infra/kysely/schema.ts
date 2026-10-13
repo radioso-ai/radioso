@@ -1310,7 +1310,6 @@ export interface NotificationRecipientConfirmations {
   grandfathered_until: Timestamp | null;
   id: Generated<string>;
   normalized_email: string;
-  requires_confirmation: Generated<boolean>;
   revoked_at: Timestamp | null;
   state: string;
   updated_at: Generated<Timestamp>;

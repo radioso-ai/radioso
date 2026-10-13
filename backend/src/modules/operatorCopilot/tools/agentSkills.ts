@@ -159,6 +159,11 @@ const operatorNoticeDestinationSchema = z.object({
 const operatorNoticeDestinationsOutputSchema = z.object({
   default: operatorNoticeDestinationSchema,
   skills: z.array(operatorNoticeDestinationSchema),
+  dailyEmailAllowance: z.object({
+    limit: z.number().int(),
+    sentToday: z.number().int(),
+    reachedToday: z.boolean(),
+  }).nullable(),
 });
 type CopilotOperatorNoticeDestinations = z.infer<typeof operatorNoticeDestinationsOutputSchema>;
 
@@ -170,7 +175,7 @@ export interface OperatorNoticeDestinationsCopilotToolDependencies {
   readonly operatorNoticeDestinations: CopilotOperatorNoticeDestinationsPort;
 }
 
-const operatorNoticeDestinationsDescription = "Read where a routine ending's Notify-the-team email is sent. `default` is where an ending sends when its `operatorNotice` names no skill; `skills` lists each notify skill an ending can name as `operatorNotice.skillName`, with where it sends. Each destination gives recipient emails with confirmation or suppression state and `via`, the rule that picked them: named_skill (the skill's own recipients), contact_human (the contact_human skill), contact_human_off (contact_human is turned off, so nothing is sent), agent_setting (the agent's contact settings), workspace_owner (the workspace owner or admin), or none. A webhook shows only as webhookConfigured; its URL is never returned.";
+const operatorNoticeDestinationsDescription = "Read where a routine ending's Notify-the-team email is sent. `default` is where an ending sends when its `operatorNotice` names no skill; `skills` lists each notify skill an ending can name as `operatorNotice.skillName`, with where it sends. Each destination gives recipient emails with confirmation or suppression state and `via`, the rule that picked them: named_skill (the skill's own recipients), contact_human (the contact_human skill), contact_human_off (contact_human is turned off, so nothing is sent), agent_setting (the agent's contact settings), workspace_owner (the workspace owner or admin), or none. A webhook shows only as webhookConfigured; its URL is never returned. `dailyEmailAllowance` gives today's (UTC) notice email limit and use; when `reachedToday` is true, further emails wait until tomorrow while webhooks still post.";
 
 // Recipient emails are the team's own addresses, shown to the operator who asks so a notice's
 // destination is never implicit. Webhook URLs stay out: they often carry a token.

@@ -7,7 +7,7 @@ interface RecipientEmailChangeMetadata extends Record<string, unknown> {
   recipientHashes: string[];
 }
 
-const normalize = (emails: readonly string[]): string[] =>
+export const normalizeRecipientEmails = (emails: readonly string[]): string[] =>
   [...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))].sort();
 
 const hashes = (emails: readonly string[]): string[] =>
@@ -22,7 +22,7 @@ export const recipientEmailDeliveryDigest = (
   emails: readonly string[],
   recipientCount: number,
 ): string => createHash("sha256")
-  .update(JSON.stringify({ recipientCount, recipients: normalize(emails) }))
+  .update(JSON.stringify({ recipientCount, recipients: normalizeRecipientEmails(emails) }))
   .digest("hex");
 
 export const recipientEmailsFromDeliveryConfig = (config: Record<string, unknown>): string[] => {
@@ -36,8 +36,8 @@ export const recipientEmailChangeMetadata = (
   previous: readonly string[],
   next: readonly string[],
 ): RecipientEmailChangeMetadata | null => {
-  const normalizedPrevious = normalize(previous);
-  const normalizedNext = normalize(next);
+  const normalizedPrevious = normalizeRecipientEmails(previous);
+  const normalizedNext = normalizeRecipientEmails(next);
   if (normalizedPrevious.length === normalizedNext.length
     && normalizedPrevious.every((email, index) => email === normalizedNext[index])) {
     return null;

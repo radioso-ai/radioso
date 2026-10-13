@@ -3091,7 +3091,6 @@ CREATE TABLE public.notification_recipient_confirmations (
     confirmed_at timestamp with time zone,
     revoked_at timestamp with time zone,
     confirmation_generation integer DEFAULT 0 NOT NULL,
-    requires_confirmation boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT notification_recipient_confirmati_confirmation_generation_check CHECK ((confirmation_generation >= 0)),

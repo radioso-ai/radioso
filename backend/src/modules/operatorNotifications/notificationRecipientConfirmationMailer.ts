@@ -19,7 +19,14 @@ interface ConfirmationObservability {
   } | null;
 }
 
-const oneLine = (value: string): string => value.replace(/[\r\n]+/gu, " ").trim();
+// Workspace and agent names are tenant-authored, so they are kept short enough that the
+// confirmation request cannot carry a message of its own.
+const NAME_MAX_LENGTH = 60;
+
+const boundedName = (value: string): string => {
+  const line = value.replace(/[\r\n]+/gu, " ").trim();
+  return line.length > NAME_MAX_LENGTH ? `${line.slice(0, NAME_MAX_LENGTH - 1).trimEnd()}…` : line;
+};
 
 export class NotificationRecipientConfirmationMailer {
   private readonly baseUrl: URL;
@@ -43,8 +50,8 @@ export class NotificationRecipientConfirmationMailer {
   }): Promise<{ dispatched: boolean }> {
     const confirmUrl = this.actionUrl("confirm", this.options.signer.sign(input.recipientId, "confirm", input.generation));
     const revokeUrl = this.revocationUrl(input.recipientId);
-    const workspaceName = oneLine(input.workspaceName) || "A Radioso workspace";
-    const agentName = oneLine(input.agentName) || "an agent";
+    const workspaceName = boundedName(input.workspaceName) || "A Radioso workspace";
+    const agentName = boundedName(input.agentName) || "an agent";
     const result = await this.options.mailer.send({
       to: input.email,
       kind: "recipient_confirmation",
@@ -59,7 +66,8 @@ export class NotificationRecipientConfirmationMailer {
         revokeUrl,
       ].join("\n"),
       listUnsubscribeUrl: revokeUrl,
-      idempotencyKey: `notification-recipient-confirmation:${input.idempotencyKey}:${input.recipientId}`,
+      // Each reservation signs a new generation, so a retry must not replay an earlier link.
+      idempotencyKey: `notification-recipient-confirmation:${input.idempotencyKey}:${input.recipientId}:${input.generation}`,
     });
     if (!result.dispatched) return result;
     this.options.metrics?.incrementCounter("notification_recipient_confirmation_events_total", {

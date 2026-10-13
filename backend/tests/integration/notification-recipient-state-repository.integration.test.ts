@@ -3,19 +3,21 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import {
-  NOTIFICATION_CONFIRMATION_DAILY_LIMIT,
-  NotificationRecipientStateRepository,
-} from "../../src/db/repositories/notificationRecipientStateRepository.js";
+import { NotificationRecipientStateRepository } from "../../src/db/repositories/notificationRecipientStateRepository.js";
 import { ContactSendActionHandler, type ContactNotificationMailer } from "../../src/modules/chat/services/actions/contactSendActionHandler.js";
 import { EmailWebhookOperatorNotificationSink } from "../../src/modules/chat/services/actions/emailWebhookSink.js";
-import { NotificationRecipientPolicyService } from "../../src/modules/operatorNotifications/notificationRecipientPolicy.js";
+import {
+  NOTIFICATION_CONFIRMATION_LIMITS,
+  NotificationRecipientPolicyService,
+} from "../../src/modules/operatorNotifications/notificationRecipientPolicy.js";
 import { NotificationRecipientTokenSigner } from "../../src/modules/operatorNotifications/notificationRecipientToken.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
   const databaseName = `notification_recipient_${randomUUID().replaceAll("-", "")}_test`;
@@ -72,7 +74,7 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
 
     await expect(repository.read({ workspaceId, emails: ["member@example.com"], now: new Date() }))
       .resolves.toEqual([{ email: "member@example.com", state: "confirmed", grandfatheredUntil: null }]);
-    await expect(repository.reserveConfirmationSend({
+    await expect(repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
       workspaceId,
       email: "member@example.com",
       now: new Date("2026-10-12T12:00:00.000Z"),
@@ -80,22 +82,42 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
     })).resolves.toBeNull();
   });
 
+  it("keeps member confirmation derived, so an address that leaves the workspace must confirm", async () => {
+    const userId = randomUUID();
+    const membershipId = randomUUID();
+    await database.query(
+      "INSERT INTO users (id, email, password_hash, email_verified_at) VALUES ($1, $2, $3, $4)",
+      [userId, "leaver@example.com", "hash", new Date()],
+    );
+    await database.query(
+      "INSERT INTO account_memberships (id, account_id, user_id, role, status) VALUES ($1, $2, $3, 'member', 'active')",
+      [membershipId, accountId, userId],
+    );
+    await repository.ensure(workspaceId, "leaver@example.com");
+    expect((await repository.read({ workspaceId, emails: ["leaver@example.com"], now: new Date() }))[0]?.state).toBe("confirmed");
+
+    await database.query("DELETE FROM account_memberships WHERE id = $1", [membershipId]);
+
+    expect((await repository.read({ workspaceId, emails: ["leaver@example.com"], now: new Date() }))[0]?.state)
+      .toBe("waiting_for_confirmation");
+  });
+
   it("reserves no more than the workspace daily confirmation cap under concurrency", async () => {
     const now = new Date("2026-10-13T12:00:00.000Z");
-    const reservations = await Promise.all(Array.from({ length: NOTIFICATION_CONFIRMATION_DAILY_LIMIT + 5 }, (_, index) =>
-      repository.reserveConfirmationSend({
+    const reservations = await Promise.all(Array.from({ length: NOTIFICATION_CONFIRMATION_LIMITS.dailySends + 5 }, (_, index) =>
+      repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
         workspaceId,
         email: `external-${index}@example.com`,
         now,
         force: false,
       })));
 
-    expect(reservations.filter(Boolean)).toHaveLength(NOTIFICATION_CONFIRMATION_DAILY_LIMIT);
+    expect(reservations.filter(Boolean)).toHaveLength(NOTIFICATION_CONFIRMATION_LIMITS.dailySends);
   });
 
   it("persists confirmation and revocation transitions", async () => {
     const nextDay = new Date("2026-10-14T12:00:00.000Z");
-    const reservation = await repository.reserveConfirmationSend({
+    const reservation = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
       workspaceId,
       email: "state@example.com",
       now: nextDay,
@@ -111,21 +133,65 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
       .toBe("revoked");
   });
 
-  it("rejects stale confirmation generations and does not re-enable a revoked recipient", async () => {
+  it("rejects stale confirmation generations and never re-solicits a revoked recipient", async () => {
     const now = new Date("2026-10-15T12:00:00.000Z");
-    const first = await repository.reserveConfirmationSend({
+    const first = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
       workspaceId, email: "generation@example.com", now, force: false,
     });
     expect(first).not.toBeNull();
-    await repository.revoke(first!.recipientId, now);
+    const second = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "generation@example.com", now: new Date(now.getTime() + 2 * DAY_MS), force: true,
+    });
+    expect(second).toMatchObject({ recipientId: first!.recipientId, generation: first!.generation + 1 });
     expect(await repository.confirm(first!.recipientId, first!.generation, now)).toBe(false);
 
-    const resent = await repository.reserveConfirmationSend({
-      workspaceId, email: "generation@example.com", now: new Date(now.getTime() + 1), force: true,
+    await repository.revoke(first!.recipientId, now);
+    expect(await repository.confirm(second!.recipientId, second!.generation, now)).toBe(false);
+    await expect(repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "generation@example.com", now: new Date(now.getTime() + 10 * DAY_MS), force: true,
+    })).resolves.toBeNull();
+  });
+
+  it("spaces forced resends to one address at least a day apart", async () => {
+    const now = new Date("2026-10-16T12:00:00.000Z");
+    const first = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "cooldown@example.com", now, force: false,
     });
-    expect(resent).toMatchObject({ recipientId: first!.recipientId, generation: first!.generation + 1 });
-    expect(await repository.confirm(first!.recipientId, first!.generation, now)).toBe(false);
-    expect(await repository.confirm(resent!.recipientId, resent!.generation, now)).toBe(true);
+    expect(first).not.toBeNull();
+
+    await expect(repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "cooldown@example.com", now: new Date(now.getTime() + DAY_MS - 1), force: true,
+    })).resolves.toBeNull();
+    await expect(repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "cooldown@example.com", now: new Date(now.getTime() + DAY_MS), force: true,
+    })).resolves.toMatchObject({ recipientId: first!.recipientId });
+  });
+
+  it("lets a recipient resume notifications they stopped", async () => {
+    const now = new Date("2026-10-17T12:00:00.000Z");
+    const reservation = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "resume@example.com", now, force: false,
+    });
+    expect(await repository.resume(reservation!.recipientId, now)).toBe(false);
+
+    await repository.revoke(reservation!.recipientId, now);
+    expect(await repository.resume(reservation!.recipientId, now)).toBe(true);
+    expect((await repository.read({ workspaceId, emails: ["resume@example.com"], now }))[0]?.state).toBe("confirmed");
+  });
+
+  it("confirms a grandfathered recipient whose link arrived before the grace deadline", async () => {
+    const deadline = new Date("2026-10-30T12:00:00.000Z");
+    await database.query(
+      "INSERT INTO notification_recipient_confirmations (workspace_id, normalized_email, state, grandfathered_until) VALUES ($1, $2, 'grandfathered', $3)",
+      [workspaceId, "late-click@example.com", deadline],
+    );
+    const reservation = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "late-click@example.com", now: new Date(deadline.getTime() - DAY_MS), force: false,
+    });
+    expect(reservation).not.toBeNull();
+
+    expect(await repository.confirm(reservation!.recipientId, reservation!.generation, new Date(deadline.getTime() + DAY_MS)))
+      .toBe(true);
   });
 
   it("moves expired grandfathered recipients to pending while keeping in-window grace deliverable", async () => {
@@ -143,11 +209,11 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
     await seed("after-grandfather@example.com", atDeadline);
     await seed("resent-grandfather@example.com", atDeadline, beforeDeadline);
 
-    const before = await repository.reserveConfirmationSend({ workspaceId, email: "before-grandfather@example.com", now: beforeDeadline, force: false });
-    const at = await repository.reserveConfirmationSend({ workspaceId, email: "at-grandfather@example.com", now: atDeadline, force: false });
-    const after = await repository.reserveConfirmationSend({ workspaceId, email: "after-grandfather@example.com", now: afterDeadline, force: false });
-    const withoutResend = await repository.reserveConfirmationSend({ workspaceId, email: "resent-grandfather@example.com", now: afterDeadline, force: false });
-    const withResend = await repository.reserveConfirmationSend({ workspaceId, email: "resent-grandfather@example.com", now: afterDeadline, force: true });
+    const before = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "before-grandfather@example.com", now: beforeDeadline, force: false });
+    const at = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "at-grandfather@example.com", now: atDeadline, force: false });
+    const after = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "after-grandfather@example.com", now: afterDeadline, force: false });
+    const withoutResend = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "resent-grandfather@example.com", now: afterDeadline, force: false });
+    const withResend = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "resent-grandfather@example.com", now: afterDeadline, force: true });
 
     expect((await repository.read({ workspaceId, emails: ["before-grandfather@example.com"], now: beforeDeadline }))[0]?.state).toBe("grandfathered");
     expect((await repository.read({ workspaceId, emails: ["at-grandfather@example.com", "after-grandfather@example.com"], now: afterDeadline })).map((row) => row.state))
@@ -161,10 +227,10 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
 
   it("keeps an earlier unsubscribe token effective after a resend changes confirmation generation", async () => {
     const now = new Date("2026-11-04T12:00:00.000Z");
-    const first = await repository.reserveConfirmationSend({ workspaceId, email: "unsubscribe-generation@example.com", now, force: false });
+    const first = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "unsubscribe-generation@example.com", now, force: false });
     const signer = new NotificationRecipientTokenSigner("a deployment secret that is long enough", { now: () => now });
     const unsubscribe = signer.sign(first!.recipientId, "revoke");
-    const resent = await repository.reserveConfirmationSend({ workspaceId, email: "unsubscribe-generation@example.com", now: new Date(now.getTime() + 1), force: true });
+    const resent = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "unsubscribe-generation@example.com", now: new Date(now.getTime() + DAY_MS), force: true });
 
     expect(resent!.generation).toBeGreaterThan(first!.generation);
     expect(signer.verify(unsubscribe, "revoke")).toEqual({ recipientId: first!.recipientId });
@@ -174,7 +240,7 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
 
   it("serializes a confirmation and a resend behind the recipient row lock", async () => {
     const now = new Date("2026-11-05T12:00:00.000Z");
-    const first = await repository.reserveConfirmationSend({ workspaceId, email: "confirm-race@example.com", now, force: false });
+    const first = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "confirm-race@example.com", now, force: false });
     expect(first).not.toBeNull();
     const barrier = new pg.Client({ connectionString: databaseUrl });
     await barrier.connect();
@@ -182,7 +248,7 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
       await barrier.query("BEGIN");
       await barrier.query("SELECT id FROM notification_recipient_confirmations WHERE id = $1 FOR UPDATE", [first!.recipientId]);
       const confirming = repository.confirm(first!.recipientId, first!.generation, now);
-      const resending = repository.reserveConfirmationSend({ workspaceId, email: "confirm-race@example.com", now: new Date(now.getTime() + 1), force: true });
+      const resending = repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "confirm-race@example.com", now: new Date(now.getTime() + DAY_MS), force: true });
       await barrier.query("COMMIT");
       const [confirmed, resent] = await Promise.all([confirming, resending]);
       const state = (await repository.read({ workspaceId, emails: ["confirm-race@example.com"], now }))[0]?.state;
@@ -200,9 +266,9 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
     }
   });
 
-  it("serializes a revoke and a resend without restoring a stale pending row", async () => {
+  it("serializes a revoke and a resend so a stopped recipient stays stopped", async () => {
     const now = new Date("2026-11-06T12:00:00.000Z");
-    const first = await repository.reserveConfirmationSend({ workspaceId, email: "revoke-race@example.com", now, force: false });
+    const first = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "revoke-race@example.com", now, force: false });
     expect(first).not.toBeNull();
     const barrier = new pg.Client({ connectionString: databaseUrl });
     await barrier.connect();
@@ -210,19 +276,16 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
       await barrier.query("BEGIN");
       await barrier.query("SELECT id FROM notification_recipient_confirmations WHERE id = $1 FOR UPDATE", [first!.recipientId]);
       const revoking = repository.revoke(first!.recipientId, now);
-      const resending = repository.reserveConfirmationSend({ workspaceId, email: "revoke-race@example.com", now: new Date(now.getTime() + 1), force: true });
+      const resending = repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "revoke-race@example.com", now: new Date(now.getTime() + DAY_MS), force: true });
       await barrier.query("COMMIT");
-      await Promise.all([revoking, resending]);
-      const row = await database.query<{ state: string; requires_confirmation: boolean; revoked_at: Date | null }>(
-        "SELECT state, requires_confirmation, revoked_at FROM notification_recipient_confirmations WHERE id = $1",
+      const [, resent] = await Promise.all([revoking, resending]);
+      const row = await database.query<{ state: string }>(
+        "SELECT state FROM notification_recipient_confirmations WHERE id = $1",
         [first!.recipientId],
       );
 
-      if (row[0]?.state === "pending") {
-        expect(row[0]).toMatchObject({ requires_confirmation: true, revoked_at: null });
-      } else {
-        expect(row[0]?.state).toBe("revoked");
-      }
+      expect(row[0]?.state).toBe("revoked");
+      if (resent) expect(await repository.confirm(resent.recipientId, resent.generation, now)).toBe(false);
     } finally {
       await barrier.query("ROLLBACK").catch(() => undefined);
       await barrier.end();

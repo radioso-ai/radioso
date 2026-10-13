@@ -53,9 +53,30 @@ describe("OperatorNoticeDestinationsReader", () => {
         recipientsFromWorkspaceOwner: false,
         webhookConfigured: true,
       }],
+      dailyEmailAllowance: null,
     });
     expect(resolveForAgent).toHaveBeenCalledWith({ workspaceId: "ws_1", agentId: "agent_1", skillName: null });
     expect(resolveForAgent).toHaveBeenCalledWith({ workspaceId: "ws_1", agentId: "agent_1", skillName: "notify_bookings" });
     expect(JSON.stringify(destinations)).not.toContain("hooks.example.com");
+  });
+
+  it("shows today's notice email allowance next to the destinations", async () => {
+    const reader = new OperatorNoticeDestinationsReader({
+      skills: { listByAgent: async () => [] },
+      resolver: {
+        resolveForAgent: async () => ({ emails: [], webhook: null, via: "none", recipientsFromWorkspaceOwner: false }),
+      },
+      emailAllowance: {
+        describeDailyEmailAllowance: async ({ workspaceId }) => ({
+          limit: 100,
+          sentToday: workspaceId === "ws_1" ? 100 : 0,
+          reachedToday: workspaceId === "ws_1",
+        }),
+      },
+    });
+
+    await expect(reader.read({ workspaceId: "ws_1", agentId: "agent_1" })).resolves.toMatchObject({
+      dailyEmailAllowance: { limit: 100, sentToday: 100, reachedToday: true },
+    });
   });
 });

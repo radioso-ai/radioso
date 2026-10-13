@@ -36,6 +36,10 @@ import { ensurePublicIdMintedForInput } from "./agentPublicIdentity.js";
 import type { OwnerCommitHook } from "../../../shared/infra/kysely/types.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import { recipientEmailChangeMetadata } from "../../../shared/domain/recipientEmailAudit.js";
+import {
+  requestAddedRecipientConfirmations,
+  type RecipientConfirmationRequester,
+} from "../../../shared/domain/recipientConfirmationRequests.js";
 
 export type AgentSettingsResource = Omit<AgentRecord, "authoredDirectives"> & {
   isDefault: boolean;
@@ -115,6 +119,7 @@ export class AgentService {
     private readonly accessGrantService?: AccessGrantService,
     private readonly agentSkills?: Pick<AgentSkillRepositoryPort, "findByName">,
     private readonly audit?: Pick<AuditService, "record">,
+    private readonly recipientConfirmations?: RecipientConfirmationRequester,
   ) {}
 
   async list(workspaceId: string): Promise<AgentSettingsResource[]> {
@@ -180,7 +185,7 @@ export class AgentService {
       : await this.agentRepository.findDefaultByWorkspaceId(workspaceId);
     const agent = await this.agentRepository.create(workspaceId, input, options);
     await this.syncPublicLaunchGrants(null, agent);
-    await this.auditRecipientChange(workspace, null, agent);
+    await this.recordRecipientChange(workspace, null, agent);
     if (!existingDefault) {
       await this.agentRepository.setDefault(workspaceId, agent.id);
     }
@@ -540,7 +545,7 @@ export class AgentService {
     updated: AgentRecord,
   ): Promise<void> {
     await this.syncPublicLaunchGrants(previous, updated);
-    await this.auditRecipientChange(workspace, previous, updated);
+    await this.recordRecipientChange(workspace, previous, updated);
     if (workspace.defaultAgentId === updated.id) {
       await this.syncLegacyWorkspaceDefaults(workspace, updated);
     }
@@ -553,15 +558,13 @@ export class AgentService {
     }
   }
 
-  private async auditRecipientChange(
+  private async recordRecipientChange(
     workspace: WorkspaceRecord,
     previous: AgentRecord | null,
     updated: AgentRecord,
   ): Promise<void> {
-    const metadata = recipientEmailChangeMetadata(
-      previous?.contactRequestDelivery.recipientEmails ?? [],
-      updated.contactRequestDelivery.recipientEmails,
-    );
+    const previousRecipients = previous?.contactRequestDelivery.recipientEmails ?? [];
+    const metadata = recipientEmailChangeMetadata(previousRecipients, updated.contactRequestDelivery.recipientEmails);
     if (!metadata) return;
     await this.audit?.record({
       accountId: workspace.accountId,
@@ -569,6 +572,12 @@ export class AgentService {
       eventType: "agent.contact_recipients.changed",
       eventStatus: "success",
       metadata: { agentId: updated.id, ...metadata },
+    });
+    await requestAddedRecipientConfirmations(this.recipientConfirmations, {
+      workspaceId: workspace.id,
+      agentId: updated.id,
+      previous: previousRecipients,
+      next: updated.contactRequestDelivery.recipientEmails,
     });
   }
 

@@ -36,7 +36,8 @@ export const createNotificationRecipientConfirmationRoutes = (dependencies: Depe
     return { recipientId: subject.recipientId };
   };
 
-  const formUrl = (token: string): string => `?token=${encodeURIComponent(token)}`;
+  const formUrl = (token: string, action?: "resume"): string => `${action ?? ""}?token=${encodeURIComponent(token)}`;
+  const stopForm = (revokeToken: string) => ({ url: formUrl(revokeToken), label: "Stop sending me these notifications" });
   const publicRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
@@ -69,10 +70,9 @@ export const createNotificationRecipientConfirmationRoutes = (dependencies: Depe
         res.status(410).type("html").send(confirmationPage("This confirmation link is no longer active"));
         return;
       }
-      const revokeToken = signer.sign(subject.recipientId, "revoke");
       res.status(200).type("html").send(confirmationPage(
         "Notifications confirmed",
-        { url: formUrl(revokeToken), label: "Stop sending me these notifications" },
+        stopForm(signer.sign(subject.recipientId, "revoke")),
       ));
     } catch (error) {
       next(error);
@@ -83,20 +83,37 @@ export const createNotificationRecipientConfirmationRoutes = (dependencies: Depe
     try {
       revokedSubject(req.query.token);
       res.setHeader("Cache-Control", "no-store");
+      res.status(200).type("html").send(confirmationPage("Stop notification delivery", stopForm(tokenOf(req.query.token))));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Also the RFC 8058 one-click target, so a repeat stop succeeds rather than reporting a gone link.
+  router.post("/notification-recipient-confirmations/revoke", publicRateLimit, async (req, res, next) => {
+    try {
+      const token = tokenOf(req.query.token);
+      await dependencies.notificationRecipientPolicy.revoke(revokedSubject(token));
+      res.setHeader("Cache-Control", "no-store");
       res.status(200).type("html").send(confirmationPage(
-        "Stop notification delivery",
-        { url: formUrl(tokenOf(req.query.token)), label: "Stop sending me these notifications" },
+        "You will not receive these notifications",
+        { url: formUrl(token, "resume"), label: "Resume notifications" },
       ));
     } catch (error) {
       next(error);
     }
   });
 
-  router.post("/notification-recipient-confirmations/revoke", publicRateLimit, async (req, res, next) => {
+  router.post("/notification-recipient-confirmations/resume", publicRateLimit, async (req, res, next) => {
     try {
-      const revoked = await dependencies.notificationRecipientPolicy.revoke(revokedSubject(req.query.token));
+      const token = tokenOf(req.query.token);
+      const resumed = await dependencies.notificationRecipientPolicy.resume(revokedSubject(token));
       res.setHeader("Cache-Control", "no-store");
-      res.sendStatus(revoked ? 200 : 410);
+      if (!resumed) {
+        res.status(410).type("html").send(confirmationPage("This link is no longer active"));
+        return;
+      }
+      res.status(200).type("html").send(confirmationPage("Notifications resumed", stopForm(token)));
     } catch (error) {
       next(error);
     }

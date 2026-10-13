@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  NOTIFICATION_CONFIRMATION_LIMITS,
   NotificationRecipientPolicyService,
 } from "../../../src/modules/operatorNotifications/notificationRecipientPolicy.js";
 
@@ -21,6 +22,7 @@ const store = (states: Record<string, "confirmed" | "grandfathered" | "revoked" 
   releaseConfirmationSend: vi.fn(async () => undefined),
   confirm: vi.fn(),
   revoke: vi.fn(),
+  resume: vi.fn(async () => true),
 });
 
 describe("NotificationRecipientPolicyService", () => {
@@ -139,6 +141,46 @@ describe("NotificationRecipientPolicyService", () => {
 
     await expect(service.describe("workspace-id", ["stopped@example.com"]))
       .resolves.toEqual([{ email: "stopped@example.com", state: "revoked" }]);
+  });
+
+  it("asks newly added external addresses to confirm before any notice is due", async () => {
+    const states = store({ "member@example.com": "confirmed", "stopped@example.com": "revoked" });
+    const sendConfirmation = vi.fn(async (_input: { email: string }) => ({ dispatched: true }));
+    const service = new NotificationRecipientPolicyService({ enabled: true, states, sendConfirmation, now: () => NOW });
+
+    await service.requestConfirmations({
+      workspaceId: "workspace-id",
+      agentId: "agent-id",
+      emails: ["member@example.com", "New@example.com", "stopped@example.com"],
+      idempotencyKey: "change-id",
+    });
+
+    expect(sendConfirmation.mock.calls.map(([call]) => call.email)).toEqual(["new@example.com"]);
+    expect(states.reserveConfirmationSend).toHaveBeenCalledWith({
+      workspaceId: "workspace-id",
+      email: "new@example.com",
+      now: NOW,
+      force: false,
+      limits: NOTIFICATION_CONFIRMATION_LIMITS,
+    });
+  });
+
+  it("sends no confirmation for added addresses when the deployment switch is off", async () => {
+    const states = store({});
+    const sendConfirmation = vi.fn(async () => ({ dispatched: true }));
+    const service = new NotificationRecipientPolicyService({ enabled: false, states, sendConfirmation, now: () => NOW });
+
+    await service.requestConfirmations({ workspaceId: "workspace-id", agentId: "agent-id", emails: ["new@example.com"], idempotencyKey: "change-id" });
+
+    expect(sendConfirmation).not.toHaveBeenCalled();
+  });
+
+  it("resumes a stopped recipient by recipient identity", async () => {
+    const states = store({});
+    const service = new NotificationRecipientPolicyService({ enabled: true, states, sendConfirmation: vi.fn(async () => ({ dispatched: true })), now: () => NOW });
+
+    await expect(service.resume({ recipientId: "recipient-id" })).resolves.toBe(true);
+    expect(states.resume).toHaveBeenCalledWith("recipient-id", NOW);
   });
 
   it("confirms by token generation and revokes by recipient identity", async () => {

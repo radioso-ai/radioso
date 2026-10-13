@@ -9,6 +9,7 @@ import { ConversationRepository } from "../../db/repositories/conversationReposi
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { AgentSkillRepository } from "../../modules/agentSkills/repository.js";
 import {
+  NotificationDeliveryAdmissionService,
   NotificationRecipientConfirmationMailer,
   NotificationRecipientPolicyService,
   NotificationRecipientTokenSigner,
@@ -18,7 +19,9 @@ import {
   NotificationRecipientIdentityRepository,
   NotificationRecipientStateRepository,
 } from "../../db/repositories/notificationRecipientStateRepository.js";
+import { NotificationDeliveryOutcomeRepository } from "../../db/repositories/notificationDeliveryOutcomeRepository.js";
 import type { Database } from "../../shared/infra/database.js";
+import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { Env } from "../config/env.js";
@@ -49,13 +52,18 @@ export const buildContactDeliveryResolver = (database: Database): ConfiguredCont
 /** Shows an operator where a routine ending's notice goes, through the resolver that sends it. */
 export const buildOperatorNoticeDestinationsReader = (
   database: Database,
-  recipientPolicy?: Pick<NotificationRecipientPolicyPort, "describe">,
+  recipientPolicy: Pick<NotificationRecipientPolicyPort, "describe">,
+  usageLimitPolicy: UsageLimitPolicy,
 ): OperatorNoticeDestinationsReader => {
   const skills = new AgentSkillRepository(database.kysely);
   return new OperatorNoticeDestinationsReader({
     skills: { listByAgent: (workspaceId, agentId) => skills.listByAgent(workspaceId, agentId) },
     resolver: buildContactDeliveryResolver(database),
     recipientPolicy,
+    emailAllowance: new NotificationDeliveryAdmissionService(
+      new NotificationDeliveryOutcomeRepository(database.kysely),
+      usageLimitPolicy,
+    ),
   });
 };
 

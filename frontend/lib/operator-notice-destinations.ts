@@ -17,9 +17,16 @@ export interface OperatorNoticeDestination {
   webhookConfigured: boolean
 }
 
+interface DailyEmailAllowance {
+  limit: number
+  sentToday: number
+  reachedToday: boolean
+}
+
 export interface OperatorNoticeDestinations {
   default: OperatorNoticeDestination
   skills: OperatorNoticeDestination[]
+  dailyEmailAllowance: DailyEmailAllowance | null
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -53,9 +60,24 @@ const parseDestination = (value: unknown): OperatorNoticeDestination => {
   }
 }
 
+const parseDailyEmailAllowance = (value: unknown): DailyEmailAllowance | null => {
+  if (value === null || value === undefined) return null
+  if (!isRecord(value)
+    || typeof value.limit !== 'number'
+    || typeof value.sentToday !== 'number'
+    || typeof value.reachedToday !== 'boolean') {
+    throw new Error('The daily email allowance is malformed.')
+  }
+  return { limit: value.limit, sentToday: value.sentToday, reachedToday: value.reachedToday }
+}
+
 export const parseOperatorNoticeDestinations = (payload: unknown): OperatorNoticeDestinations => {
   if (!isRecord(payload) || !Array.isArray(payload.skills)) throw new Error('Notice destinations must include skills.')
-  return { default: parseDestination(payload.default), skills: payload.skills.map(parseDestination) }
+  return {
+    default: parseDestination(payload.default),
+    skills: payload.skills.map(parseDestination),
+    dailyEmailAllowance: parseDailyEmailAllowance(payload.dailyEmailAllowance),
+  }
 }
 
 // Who receives a notice sent this way, or why nothing is sent.
@@ -67,7 +89,7 @@ const destinationTarget = (destination: OperatorNoticeDestination): { sent: true
     waiting_for_confirmation: ' (waiting for confirmation)',
     revoked: ' (notifications stopped)',
     suppressed: ' (suppressed)',
-    confirmation_not_required: ' (confirmation disabled)',
+    confirmation_not_required: '',
   }
   const emails = destination.recipients.map((recipient) => `${recipient.email}${stateSuffix[recipient.state]}`).join(', ')
   const owner = destination.recipientsFromWorkspaceOwner ? ' (workspace owner)' : ''
@@ -94,6 +116,13 @@ export const describeNoticeDestination = (
   return fallback.sent
     ? `Unavailable, so it sends to the default: ${fallback.to}`
     : `Unavailable, and the default is not sent: ${fallback.reason}`
+}
+
+/** Shown under the destination once today's notice emails are used up, because nothing else says why mail stopped. */
+export const describeDailyEmailAllowance = (destinations: OperatorNoticeDestinations | null): string | null => {
+  const allowance = destinations?.dailyEmailAllowance
+  if (!allowance?.reachedToday) return null
+  return `Daily email limit reached (${allowance.sentToday} of ${allowance.limit}). Emails resume tomorrow (UTC); webhooks still post.`
 }
 
 const DEFAULT_ROUTE_LABELS: Partial<Record<OperatorNoticeRoute, string>> = {

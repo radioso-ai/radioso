@@ -1208,6 +1208,7 @@ export const installDashboardApiMocks = async (
   const operatorNoticeDestinations: OperatorNoticeDestinations = options.operatorNoticeDestinations ?? {
     default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@example.com"], recipients: [{ email: "owner@example.com", state: "confirmed" }], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
     skills: [],
+    dailyEmailAllowance: null,
   };
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;

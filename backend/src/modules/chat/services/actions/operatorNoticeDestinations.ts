@@ -1,7 +1,12 @@
 import type { ContactDeliveryRoute } from "../../../../shared/domain/contactDeliveryRoute.js";
 import { isRoutineNamedSkill } from "../../../../shared/domain/routineNamedSkill.js";
 import type { RoutedContactDeliveryTarget } from "./contactSendActionHandler.js";
-import type { NotificationRecipientDescription, NotificationRecipientPolicyService } from "../../../operatorNotifications/public.js";
+import type {
+  DailyNotificationEmailAllowance,
+  NotificationEmailAllowanceReader,
+  NotificationRecipientDescription,
+  NotificationRecipientPolicyService,
+} from "../../../operatorNotifications/public.js";
 
 /** Where one choice of "Send with" delivers a routine ending's notice. */
 interface OperatorNoticeDestination {
@@ -18,6 +23,8 @@ interface OperatorNoticeDestination {
 interface OperatorNoticeDestinations {
   default: OperatorNoticeDestination;
   skills: OperatorNoticeDestination[];
+  /** Shared by every email destination: once it is used up, today's notices go to webhooks only. */
+  dailyEmailAllowance: DailyNotificationEmailAllowance | null;
 }
 
 /** The agent's skills, enough to pick the notify skills a routine ending may name. */
@@ -49,6 +56,7 @@ export class OperatorNoticeDestinationsReader {
     skills: OperatorNoticeSkillLister;
     resolver: OperatorNoticeDestinationResolver;
     recipientPolicy?: Pick<NotificationRecipientPolicyService, "describe">;
+    emailAllowance?: NotificationEmailAllowanceReader;
   }) {}
 
   async read(input: { workspaceId: string; agentId: string }): Promise<OperatorNoticeDestinations> {
@@ -74,6 +82,7 @@ export class OperatorNoticeDestinationsReader {
     return {
       default: toDestination(null, defaultTarget, 0),
       skills: nameable.map((skillName, index) => toDestination(skillName, skillTargets[index], index + 1)),
+      dailyEmailAllowance: await this.options.emailAllowance?.describeDailyEmailAllowance({ workspaceId: input.workspaceId }) ?? null,
     };
   }
 }

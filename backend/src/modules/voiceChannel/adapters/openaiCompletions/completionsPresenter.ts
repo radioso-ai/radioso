@@ -26,6 +26,9 @@ const chunkFrame = (identity: CompletionIdentity, delta: ChunkDelta, finishReaso
     choices: [{ index: 0, delta, finish_reason: finishReason }],
   })}\n\n`;
 
+/** What the stream renders: the turn's events, and a wire-only keep-alive the route sends during silence. */
+type CompletionStreamEvent = VoiceTurnEvent | { type: "keep_alive"; delta: string };
+
 interface ChunkRendering {
   /** Sent after each bridge line and speech piece when the dialect's runtime needs it to speak them. */
   sentenceFlushDelta?: string;
@@ -39,7 +42,7 @@ interface ChunkRendering {
 export const createCompletionChunkRenderer = (
   identity: CompletionIdentity,
   rendering: ChunkRendering = {},
-): (event: VoiceTurnEvent) => string[] => {
+): (event: CompletionStreamEvent) => string[] => {
   let roleSent = false;
   const opening = (): ChunkDelta => {
     if (roleSent) return {};
@@ -50,17 +53,19 @@ export const createCompletionChunkRenderer = (
     ? [chunkFrame(identity, { content: rendering.sentenceFlushDelta }, null)]
     : [];
 
+  const roleFrame = (): string[] => (roleSent ? [] : [chunkFrame(identity, { ...opening(), content: "" }, null)]);
+
   return (event) => {
     switch (event.type) {
       case "conversation":
         return [];
+      case "keep_alive":
+        return [...roleFrame(), chunkFrame(identity, { content: event.delta }, null)];
       case "bridge":
       case "speech":
         return event.text.length > 0 ? [chunkFrame(identity, { ...opening(), content: event.text }, null), ...flush] : [];
-      case "outcome": {
-        const roleFrame = roleSent ? [] : [chunkFrame(identity, { ...opening(), content: "" }, null)];
-        return [...roleFrame, chunkFrame(identity, {}, "stop"), SSE_DONE_FRAME];
-      }
+      case "outcome":
+        return [...roleFrame(), chunkFrame(identity, {}, "stop"), SSE_DONE_FRAME];
     }
   };
 };

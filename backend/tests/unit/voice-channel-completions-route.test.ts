@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 
 import express, { Router } from "express";
 import request from "supertest";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { admittedAbuseControlDecision } from "../support/fakes.js";
 import { createAgentRoutes } from "../../src/app/http/routes/agentRoutes.js";
@@ -604,5 +604,159 @@ describe("voice completions route when the vendor disconnects mid-reply", () => 
       release();
       server.close();
     }
+  });
+});
+
+describe("voice completions route keep-alive", () => {
+  // Only the clock is fake: sockets and setImmediate stay real so frames can travel.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const flushIo = async (): Promise<void> => {
+    for (let tick = 0; tick < 20; tick += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+  };
+
+  /** A turn that names its conversation, says nothing for `silenceMs`, answers, then drains for `drainMs`. */
+  const silentTurn = (silenceMs: number, drainMs = 0) => ({
+    runTurn: (_input: VoiceTurnInput, _signal: AbortSignal) => (async function* (): AsyncGenerator<VoiceTurnEvent> {
+      yield { type: "conversation", conversationId };
+      await new Promise((resolve) => setTimeout(resolve, silenceMs));
+      yield { type: "speech", text: "We open at nine.", last: true };
+      yield { type: "outcome", outcome: { kind: "continue" } };
+      if (drainMs > 0) await new Promise((resolve) => setTimeout(resolve, drainMs));
+    })(),
+  });
+
+  interface Arrival { atMs: number; delta: unknown }
+
+  const streamOnFakeClock = async (options: {
+    dialect: "elevenlabs" | "generic";
+    turns: ReturnType<typeof silentTurn>;
+    runForMs: number;
+    hangUpAfterFirstFrame?: boolean;
+  }) => {
+    const writesAfterClose: unknown[] = [];
+    const app = express();
+    app.use(express.json());
+    app.use((_req, res, next) => {
+      let closed = false;
+      res.on("close", () => { closed = true; });
+      const write = res.write.bind(res) as (...args: unknown[]) => boolean;
+      res.write = ((...args: unknown[]) => {
+        if (closed) writesAfterClose.push(args[0]);
+        return write(...args);
+      }) as typeof res.write;
+      next();
+    });
+    let turnStarted = false;
+    const router = Router();
+    registerOpenAiCompletionsRoute(router, {
+      turns: {
+        runTurn: (input, signal) => {
+          turnStarted = true;
+          return options.turns.runTurn(input, signal);
+        },
+      },
+      admission: { handlers: [], callerOf: () => ({ workspaceId, agentId }), onTurnAccepted: () => undefined },
+      logger: { warn: vi.fn() },
+    });
+    app.use("/api/v1/agents", router);
+    const server = app.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const startedAt = Date.now();
+    const arrivals: Arrival[] = [];
+
+    try {
+      const { port } = server.address() as AddressInfo;
+      const client = http.request({
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: completionsPath(options.dialect),
+        headers: { "content-type": "application/json", "x-radioso-voice-session": "room-7" },
+      });
+      client.on("error", () => undefined);
+      client.on("response", (response) => {
+        response.on("error", () => undefined);
+        response.on("data", (chunk: Buffer) => {
+          for (const frame of dataFrames(chunk.toString("utf8"))) {
+            arrivals.push({
+              atMs: Date.now() - startedAt,
+              delta: frame === "[DONE]" ? frame : (JSON.parse(frame) as { choices: [{ delta: unknown }] }).choices[0].delta,
+            });
+          }
+          if (options.hangUpAfterFirstFrame) client.destroy();
+        });
+      });
+      client.end(JSON.stringify(options.dialect === "elevenlabs"
+        ? elevenlabsBody()
+        : { stream: true, messages: [{ role: "user", content: "When do you open?" }] }));
+
+      // The turn starts once the request has crossed the socket, at fake time zero.
+      for (let attempt = 0; attempt < 100 && !turnStarted; attempt += 1) await flushIo();
+      expect(turnStarted).toBe(true);
+      for (let elapsed = 0; elapsed < options.runForMs; elapsed += 100) {
+        await vi.advanceTimersByTimeAsync(100);
+        await flushIo();
+      }
+      client.destroy();
+      return { arrivals, writesAfterClose };
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  };
+
+  it("sends an invisible keep-alive delta at 2.5 s and 5 s of an ElevenLabs turn's silence", async () => {
+    const { arrivals } = await streamOnFakeClock({ dialect: "elevenlabs", turns: silentTurn(6_000), runForMs: 7_000 });
+
+    expect(arrivals).toEqual([
+      { atMs: 2_500, delta: { role: "assistant", content: "" } },
+      { atMs: 2_500, delta: { content: " \u200B" } },
+      { atMs: 5_000, delta: { content: " \u200B" } },
+      { atMs: 6_000, delta: { content: "We open at nine." } },
+      { atMs: 6_000, delta: { content: " \u200B" } },
+      { atMs: 6_000, delta: {} },
+      { atMs: 6_000, delta: "[DONE]" },
+    ]);
+  });
+
+  it("sends no keep-alive on the generic dialect", async () => {
+    const { arrivals } = await streamOnFakeClock({ dialect: "generic", turns: silentTurn(6_000), runForMs: 7_000 });
+
+    expect(arrivals).toEqual([
+      { atMs: 6_000, delta: { role: "assistant", content: "We open at nine." } },
+      { atMs: 6_000, delta: {} },
+      { atMs: 6_000, delta: "[DONE]" },
+    ]);
+  });
+
+  it("sends no keep-alive after the stop frame while the turn behind it drains", async () => {
+    const { arrivals, writesAfterClose } = await streamOnFakeClock({
+      dialect: "elevenlabs",
+      turns: silentTurn(100, 10_000),
+      runForMs: 11_000,
+    });
+
+    expect(arrivals.at(-1)).toEqual({ atMs: 100, delta: "[DONE]" });
+    expect(arrivals.filter(({ atMs }) => atMs > 100)).toEqual([]);
+    expect(writesAfterClose).toEqual([]);
+  });
+
+  it("sends no keep-alive after the runtime hangs up", async () => {
+    const { arrivals, writesAfterClose } = await streamOnFakeClock({
+      dialect: "elevenlabs",
+      turns: silentTurn(9_000),
+      runForMs: 10_000,
+      hangUpAfterFirstFrame: true,
+    });
+
+    expect(arrivals.every(({ atMs }) => atMs === 2_500)).toBe(true);
+    expect(writesAfterClose).toEqual([]);
   });
 });

@@ -147,6 +147,26 @@ const drainTurn = async (
   }
 };
 
+/** Calls `onIdle` each time `afterIdleMs` passes without a `touch`, until stopped. */
+const idleTimer = (afterIdleMs: number, onIdle: () => void): { touch(): void; stop(): void } => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  const touch = (): void => {
+    clearTimeout(timer);
+    if (!stopped) {
+      timer = setTimeout(onIdle, afterIdleMs);
+    }
+  };
+  touch();
+  return {
+    touch,
+    stop: () => {
+      stopped = true;
+      clearTimeout(timer);
+    },
+  };
+};
+
 const streamCompletion = async (
   drain: TurnDrain,
   identity: CompletionIdentity,
@@ -155,31 +175,44 @@ const streamCompletion = async (
   const { res } = drain;
   const render = createCompletionChunkRenderer(identity, { sentenceFlushDelta: dialect.sentenceFlushDelta });
   let conversationId: string | null = null;
+  let keepAlive: { touch(): void; stop(): void } | undefined;
+  const writeFrames = (frames: readonly string[]): void => {
+    if (frames.length === 0 || res.destroyed || res.writableEnded) {
+      return;
+    }
+    if (!res.headersSent) {
+      openEventStream(res, conversationId);
+    }
+    for (const frame of frames) {
+      res.write(frame);
+    }
+    keepAlive?.touch();
+  };
+  if (dialect.keepAlive) {
+    const { delta, afterIdleMs } = dialect.keepAlive;
+    const timer = idleTimer(afterIdleMs, () => writeFrames(render({ type: "keep_alive", delta })));
+    keepAlive = timer;
+    res.on("close", () => timer.stop());
+  }
   try {
     await drainTurn(drain, (event) => {
       if (event.type === "conversation") {
         conversationId = event.conversationId;
       }
-      const frames = render(event);
-      if (frames.length === 0 || res.destroyed || res.writableEnded) {
-        return;
-      }
-      if (!res.headersSent) {
-        openEventStream(res, conversationId);
-      }
-      for (const frame of frames) {
-        res.write(frame);
-      }
+      writeFrames(render(event));
       if (event.type === "outcome") {
+        keepAlive?.stop();
         res.end();
       }
     });
   } catch (error) {
+    keepAlive?.stop();
     if (res.headersSent && !res.destroyed && !res.writableEnded) {
       res.write(COMPLETION_ERROR_FRAME);
     }
     throw error;
   } finally {
+    keepAlive?.stop();
     if (res.headersSent && !res.destroyed && !res.writableEnded) {
       res.end();
     }

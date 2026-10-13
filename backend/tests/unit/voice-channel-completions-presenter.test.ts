@@ -91,6 +91,17 @@ describe("OpenAI completions presenter", () => {
     ]);
   });
 
+  it("renders a keep-alive as a content delta, sending the role first when nothing has been written", () => {
+    const render = createCompletionChunkRenderer(identity);
+
+    expect([...render({ type: "keep_alive", delta: " \u200B" }), ...render({ type: "keep_alive", delta: " \u200B" })]
+      .map(deltaOf)).toEqual([
+      { role: "assistant", content: "" },
+      { content: " \u200B" },
+      { content: " \u200B" },
+    ]);
+  });
+
   it("sends no flush delta after an empty final piece", () => {
     const render = createCompletionChunkRenderer(identity, { sentenceFlushDelta: " \u200B" });
 

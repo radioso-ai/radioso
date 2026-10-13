@@ -18,13 +18,18 @@ interface AuthFunnelClaim {
 }
 
 export interface AuthFunnelRepositoryPort {
-  createPendingTicket(input: {
-    id: string;
+  createRegistrationChallenge(input: {
     userId: string;
     accountId: string;
-    tokenHash: string;
-    expiresAt: Date;
-  }): Promise<void>;
+    verificationTokenId: string;
+    verificationTokenHash: string;
+    verificationExpiresAt: Date;
+    pendingTicketId: string;
+    pendingTokenHash: string;
+    pendingExpiresAt: Date;
+    requestIp: string | null;
+    requestUserAgent: string | null;
+  }): Promise<boolean>;
   verifyEmailAndCreateSession(input: {
     verificationTokenHash: string;
     sessionId: string;
@@ -39,11 +44,22 @@ export interface AuthFunnelRepositoryPort {
     sessionExpiresAt: Date;
     now: Date;
   }): Promise<AuthFunnelClaim | null>;
-  /**
-   * Recovery proves mailbox possession through a different credential. It
-   * invalidates registration credentials, but never activates their tickets.
-   */
-  revokePendingRegistrationCredentials(input: { userId: string; now: Date }): Promise<void>;
+  completePasswordReset(input: {
+    resetTokenHash: string;
+    passwordHash: string;
+    now: Date;
+  }): Promise<{
+    userId: string;
+    email: string;
+    displayName: string | null;
+    revokedFederatedIdentities: number;
+  } | null>;
+  recoverFederatedUser(input: {
+    userId: string;
+    passwordHash: string;
+    displayName: string | null;
+    now: Date;
+  }): Promise<{ recovered: boolean; displayName: string | null } | null>;
 }
 
 interface PreparedSession {
@@ -60,31 +76,53 @@ export class AuthFunnelService {
     auditService: AuditService;
   }) {}
 
-  async issuePendingTicket(input: { userId: string; accountId: string }): Promise<string> {
-    const token = randomBytes(32).toString("base64url");
-    const expiresAt = new Date(
-      Date.now() + this.dependencies.env.AUTH_PENDING_REGISTRATION_TTL_MINUTES * 60 * 1000,
+  async issueRegistrationChallenge(input: {
+    userId: string;
+    accountId: string;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }): Promise<{
+    pendingCookie: string;
+    verification: { userId: string; tokenRecordId: string; token: string; issuedAt: Date };
+  }> {
+    const issuedAt = new Date();
+    const verificationToken = randomBytes(32).toString("base64url");
+    const pendingToken = randomBytes(32).toString("base64url");
+    const verificationTokenId = randomUUID();
+    const pendingExpiresAt = new Date(
+      issuedAt.getTime() + this.dependencies.env.AUTH_PENDING_REGISTRATION_TTL_MINUTES * 60 * 1000,
     );
-    await this.dependencies.repository.createPendingTicket({
-      id: randomUUID(),
+    const created = await this.dependencies.repository.createRegistrationChallenge({
       userId: input.userId,
       accountId: input.accountId,
-      tokenHash: sha256(token),
-      expiresAt,
+      verificationTokenId,
+      verificationTokenHash: sha256(verificationToken),
+      verificationExpiresAt: new Date(
+        issuedAt.getTime() + this.dependencies.env.EMAIL_VERIFICATION_TOKEN_TTL_MINUTES * 60 * 1000,
+      ),
+      pendingTicketId: randomUUID(),
+      pendingTokenHash: sha256(pendingToken),
+      pendingExpiresAt,
+      requestIp: input.requestIp ?? null,
+      requestUserAgent: input.requestUserAgent ?? null,
     });
+    if (!created) throw unauthorized("Email verification is already complete");
     await this.dependencies.auditService.record({
       accountId: input.accountId,
       eventType: "auth.pending_registration.issue",
       eventStatus: "success",
-      metadata: { userId: input.userId, expiresAt: expiresAt.toISOString() },
+      metadata: { userId: input.userId, expiresAt: pendingExpiresAt.toISOString() },
     });
-    return serialize(PENDING_REGISTRATION_COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: this.dependencies.env.AUTH_PENDING_REGISTRATION_TTL_MINUTES * 60,
-    });
+    return {
+      pendingCookie: serialize(PENDING_REGISTRATION_COOKIE_NAME, pendingToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: this.dependencies.env.AUTH_PENDING_REGISTRATION_TTL_MINUTES * 60,
+      }),
+      verification: { userId: input.userId, tokenRecordId: verificationTokenId, token: verificationToken, issuedAt },
+    };
   }
 
   async verify(input: { token: string }): Promise<{ verified: true; sessionCookie: string }> {
@@ -112,10 +150,6 @@ export class AuthFunnelService {
       metadata: { userId: claim.userId },
     });
     return { verified: true, sessionCookie: session.cookie };
-  }
-
-  async revokePendingRegistrationCredentials(input: { userId: string; now: Date }): Promise<void> {
-    await this.dependencies.repository.revokePendingRegistrationCredentials(input);
   }
 
   async exchangePendingTicket(token: string | undefined): Promise<

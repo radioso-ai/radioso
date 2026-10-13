@@ -917,13 +917,16 @@ export const createTestDependencies = (overrides: {
   );
   const sessionRepository = new InMemorySessionRepository();
   const emailVerificationTokenRepository = new InMemoryEmailVerificationTokenRepository();
+  const passwordResetTokenRepository = new InMemoryPasswordResetTokenRepository();
+  const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
   const authFunnelRepository = new InMemoryAuthFunnelRepository({
     emailVerificationTokens: emailVerificationTokenRepository,
     users: userRepository,
     sessions: sessionRepository,
     listMemberships: (userId) => accountAccessService.listUserMemberships(userId),
+    passwordResetTokens: passwordResetTokenRepository,
+    federatedIdentities: federatedIdentityRepository,
   });
-  const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
   const machineAccessRepository = new InMemoryMachineAccessRepository();
   const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
@@ -2677,11 +2680,10 @@ export const createTestDependencies = (overrides: {
       accountRepository,
       userRepository,
       sessionRepository,
-      federatedIdentityRepository,
       authFunnelRepository,
       accountAccessService,
       workspaceService,
-      passwordResetTokenRepository: new InMemoryPasswordResetTokenRepository(),
+      passwordResetTokenRepository,
       mailService: createMailService({ MAIL_DRIVER: "noop" }),
     }),
     emailVerificationService: new EmailVerificationService({

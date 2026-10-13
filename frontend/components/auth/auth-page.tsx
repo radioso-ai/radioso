@@ -97,10 +97,10 @@ export function AuthPage({ returnTo, mode = 'login' }: { returnTo?: string; mode
         <p className="text-sm text-destructive">Google sign-in did not complete. Try again.</p>
       ) : null}
       {mode === 'login' ? (
-        <LoginForm returnTo={returnTo} />
+        <LoginForm returnTo={normalizedReturnTo} />
       ) : (
         <RegisterForm
-          returnTo={returnTo}
+          returnTo={normalizedReturnTo}
           onSwitchToLogin={() => window.location.assign(authHref('/login'))}
           onVerificationPending={() => setVerificationPending(true)}
         />

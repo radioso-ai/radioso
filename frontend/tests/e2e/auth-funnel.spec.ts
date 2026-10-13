@@ -154,10 +154,10 @@ test('keeps signup linkable while the availability probe is unavailable', async 
   await expect(page.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login')
 })
 
-test('registers, verifies in another tab, and signs in the waiting tab', async ({ page, context }) => {
+test('registers, verifies in another tab, and lands the waiting tab on returnTo', async ({ page, context }) => {
   const state = { verified: false, pendingExchangeCount: 0 }
   await installAuthFunnelMocks(page, state)
-  await page.goto('/signup')
+  await page.goto('/signup?returnTo=%2Fw%2Fworkspace-key%2Fsettings%3Ftab%3Dproviders')
   await page.getByLabel('Your name (optional)').fill('Operator')
   await page.getByLabel('Email').fill('operator@example.com')
   await page.getByLabel('Password', { exact: true }).fill('verysecurepassword')
@@ -177,7 +177,7 @@ test('registers, verifies in another tab, and signs in the waiting tab', async (
 
   await expect.poll(() => state.verified).toBe(true)
   await page.bringToFront()
-  await expect(page).toHaveURL(/\/w\/workspace-key\/agents(?:\/|$)/, { timeout: 30_000 })
+  await expect(page).toHaveURL(/\/w\/workspace-key\/settings\?tab=providers$/, { timeout: 30_000 })
 })
 
 test('a verification link lands signed in without asking for credentials', async ({ page }) => {
@@ -217,9 +217,9 @@ test('carries a safe return path between auth modes and from the waiting screen'
 test('redirects signed-in visitors away from auth routes', async ({ page }) => {
   await installAuthFunnelMocks(page, { verified: true })
 
-  await page.goto('/login')
+  await page.goto('/login?returnTo=%2Fw%2Fworkspace-key%2Fsettings%3Ftab%3Dproviders')
 
-  await expect(page).toHaveURL(/\/w\/workspace-key\/agents(?:\/|$)/, { timeout: 10_000 })
+  await expect(page).toHaveURL(/\/w\/workspace-key\/settings\?tab=providers$/, { timeout: 10_000 })
 })
 
 test('shows Google registration only when Enterprise Google login is enabled', async ({ page }) => {

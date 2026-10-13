@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
-import { ApiError } from '@/lib/api-client'
+import { pendingRegistrationPollDelayMs } from '@/lib/auth-pending-poll'
 import { useOptionalAuth } from '@/lib/auth-context'
 import { useAuthSunrise } from './auth-shell'
 import { GoogleAuthButton } from './google-auth-button'
@@ -68,16 +68,15 @@ export function RegisterForm({ returnTo, onSwitchToLogin, onVerificationPending 
         if (!active) return
         if (result.ready) {
           completed = true
-          window.location.assign('/')
+          window.location.assign(returnTo ?? '/')
           return
         }
         schedule()
       } catch (error) {
-        const retryAfterSeconds = error instanceof ApiError ? error.error.retryAfterSeconds : undefined
         // A 429 tells this browser precisely when its ticket budget is ready
         // again. Other transient failures back off rather than compounding a
         // startup outage.
-        schedule(typeof retryAfterSeconds === 'number' ? retryAfterSeconds * 1_000 : 12_000)
+        schedule(pendingRegistrationPollDelayMs(error))
       } finally {
         polling = false
       }
@@ -96,7 +95,7 @@ export function RegisterForm({ returnTo, onSwitchToLogin, onVerificationPending 
       window.removeEventListener('focus', pollWhenVisible)
       document.removeEventListener('visibilitychange', pollWhenVisible)
     }
-  }, [pendingVerificationEmail])
+  }, [pendingVerificationEmail, returnTo])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -137,6 +136,9 @@ export function RegisterForm({ returnTo, onSwitchToLogin, onVerificationPending 
       }
       riseSun()
       await auth.login({ ...response, email })
+      if (returnTo) {
+        window.location.assign(returnTo)
+      }
     } catch (error) {
       setError(getErrorMessage(error))
     } finally {

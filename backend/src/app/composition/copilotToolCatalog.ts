@@ -25,6 +25,7 @@ import {
   type CopilotWorkspaceSettingsPort,
   type CopilotProductDocsPort,
   type CopilotEmailChannelPort,
+  type CopilotWorkspaceSetupStatePort,
 } from "../../modules/operatorCopilot/tools/index.js";
 import type { DocumentInventoryPort } from "../../modules/documents/contracts/index.js";
 import type { CopilotWebsiteAnalysisProbePort } from "../../modules/operatorCopilot/contracts/agentAuthoring.js";
@@ -177,6 +178,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly operatorNoticeDestinations: CopilotOperatorNoticeDestinationsPort;
   readonly contextVariables: CopilotContextVariablesPort;
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
+  readonly workspaceSetupState: CopilotWorkspaceSetupStatePort;
   /** Null when the deployment has no email provider. */
   readonly emailChannel: CopilotEmailChannelPort | null;
   /** Open delivery failures, for `needs_attention` and `workspace_triage`. */

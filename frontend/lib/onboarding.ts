@@ -6,11 +6,7 @@ import { documentsApi, workspaceApi, type DocumentSummary } from '@/lib/api'
 import { API_BASE } from '@/lib/api-client'
 import {
   hasOnboardingAnalyticsMarker,
-  isOnboardingActive as getOnboardingActiveFlag,
-  isOnboardingCompleted as getOnboardingCompletedFlag,
   markOnboardingAnalyticsMarker,
-  markOnboardingActive,
-  markOnboardingCompleted,
 } from '@/lib/onboarding-storage'
 import {
   BeaconFrontendProductAnalyticsSink,
@@ -115,27 +111,6 @@ export interface WorkspaceOnboardingState {
   markActive: () => void
 }
 
-export const shouldAutoActivateOnboarding = (input: {
-  workspaceId: string
-  workspaceCount: number
-  documentCount: number
-  conversationCount: number
-}): boolean => {
-  if (input.workspaceCount !== 1) {
-    return false
-  }
-
-  if (input.documentCount > 0 || input.conversationCount > 0) {
-    return false
-  }
-
-  if (getOnboardingCompletedFlag(input.workspaceId)) {
-    return false
-  }
-
-  return true
-}
-
 export const getOnboardingProgress = (input: {
   hasDocuments: boolean
   hasReadyDocuments: boolean
@@ -144,7 +119,7 @@ export const getOnboardingProgress = (input: {
 
 export const useWorkspaceOnboarding = (
   workspaceId: string | null,
-  workspaceCount: number,
+  _workspaceCount: number,
 ): WorkspaceOnboardingState => {
   const [isLoading, setIsLoading] = useState(true)
   const [sampleDocumentSlugs, setSampleDocumentSlugs] = useState<string[]>([])
@@ -191,23 +166,11 @@ export const useWorkspaceOnboarding = (
     try {
       const summary = await workspaceApi.getSummary()
 
-      const nextCompleted = summary.hasCompletedChat || getOnboardingCompletedFlag(workspaceId)
-      const nextActive =
-        !nextCompleted &&
-        (getOnboardingActiveFlag(workspaceId) ||
-          shouldAutoActivateOnboarding({
-            workspaceId,
-            workspaceCount,
-            documentCount: summary.documentCount,
-            conversationCount: summary.conversationCount,
-          }))
-
-      if (nextActive) {
-        markOnboardingActive(workspaceId)
-      }
+      const nextCompleted = summary.setup.dismissed || summary.hasCompletedChat
+      const nextActive = summary.setup.shouldShowFirstRun
 
       const previousSummary = onboardingSummaryRef.current
-      const isObservingOnboarding = nextActive || getOnboardingActiveFlag(workspaceId)
+      const isObservingOnboarding = nextActive
       if (isObservingOnboarding && summary.hasDocuments) {
         trackOnboardingAnalyticsOnce(workspaceId, 'documents_added', 'onboarding.step_completed', { step: 'documents_added' })
       }
@@ -248,7 +211,7 @@ export const useWorkspaceOnboarding = (
     } finally {
       setIsLoading(false)
     }
-  }, [workspaceCount, workspaceId])
+  }, [workspaceId])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial onboarding refresh synchronizes API state for the active workspace.
@@ -281,7 +244,7 @@ export const useWorkspaceOnboarding = (
     }
 
     setIsImportingSampleDocs(true)
-    markOnboardingActive(workspaceId)
+    void workspaceApi.updateSetupState({ dismissed: false })
     setIsOnboardingActive(true)
 
     try {
@@ -314,7 +277,7 @@ export const useWorkspaceOnboarding = (
       return
     }
 
-    markOnboardingCompleted(workspaceId)
+    void workspaceApi.updateSetupState({ dismissed: true })
     setIsOnboardingCompleted(true)
     setIsOnboardingActive(false)
   }, [workspaceId])
@@ -324,7 +287,7 @@ export const useWorkspaceOnboarding = (
       return
     }
 
-    markOnboardingActive(workspaceId)
+    void workspaceApi.updateSetupState({ dismissed: false })
     setIsOnboardingCompleted(false)
     setIsOnboardingActive(true)
   }, [workspaceId])

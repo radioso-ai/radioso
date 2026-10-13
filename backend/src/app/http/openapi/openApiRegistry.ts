@@ -371,6 +371,8 @@ export interface OpenApiSchemaCatalog {
   WorkspaceRouteResolutionResponseSchema: z.ZodTypeAny;
   WorkspaceSchema: z.ZodTypeAny;
   WorkspaceSummaryResponseSchema: z.ZodTypeAny;
+  WorkspaceSetupStateSchema: z.ZodTypeAny;
+  UpdateWorkspaceSetupStateRequestSchema: z.ZodTypeAny;
   WorkspaceEventInvalidateDataSchema: z.ZodTypeAny;
   WorkspaceEventReadyDataSchema: z.ZodTypeAny;
   WorkspaceEventResyncDataSchema: z.ZodTypeAny;

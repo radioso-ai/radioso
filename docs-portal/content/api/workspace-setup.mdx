@@ -1,0 +1,45 @@
+---
+title: "Workspace setup state"
+description: "Read outcome-based workspace setup progress and save the operator choices that belong to the workspace."
+last_updated: 2026-10-13
+---
+
+# Workspace setup state
+
+Use workspace setup state to show an operator what is actually ready in a workspace. The checklist reports outcomes: a ready document, a completed conversation, an authored directive or routine, a configured notification destination, a confirmed receipt, and an active API credential. Opening a settings page does not complete an item.
+
+`GET /api/v1/workspace/setup-state` returns the state for the workspace selected by `X-Workspace-Id`. Workspace members can read it. The same state is included as `setup` in `GET /api/v1/workspace/summary`, which also carries document and conversation outcomes.
+
+```bash
+curl -sS -b cookies.txt \
+  -H 'X-Workspace-Id: <workspace-id>' \
+  https://api.radioso.ai/api/v1/workspace/setup-state
+```
+
+The response includes `shouldShowFirstRun`, which the dashboard uses for the first-run experience. It is workspace state, so dismissing setup follows the operator to another browser or device.
+
+## Save operator choices
+
+Owners and administrators can update `purpose`, `dismissed`, `notifyReceiptConfirmed`, and `skippedSteps` with `PATCH /api/v1/workspace/setup-state`. Derived outcome fields are read-only.
+
+```bash
+curl -sS -b cookies.txt -X PATCH \
+  -H 'Content-Type: application/json' \
+  -H 'X-Workspace-Id: <workspace-id>' \
+  -H 'X-Radioso-CSRF: 1' \
+  -d '{"purpose":"Answer product questions","dismissed":true}' \
+  https://api.radioso.ai/api/v1/workspace/setup-state
+```
+
+`skippedSteps` accepts `purpose`, `documents`, `conversation`, `directives_or_routines`, `notify_destination`, and `credential`. A skip records an operator preference; it does not change the matching outcome.
+
+## Common failure modes
+
+- `401` means the interactive session or workspace selection is missing.
+- `403` means the signed-in member may read setup state but cannot change it.
+- `400` means a PATCH body is empty, malformed, or attempts to send a field outside the persisted setup-state shape.
+
+## Read next
+
+- [Settings API](/api/settings)
+- [Connectors and webhooks API](/api/connectors-and-webhooks)

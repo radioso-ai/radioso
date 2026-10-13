@@ -3,6 +3,7 @@ const meta = {
   'auth-and-sessions': 'Auth and sessions',
   'accounts-and-users': 'Accounts and users',
   'workspaces-and-tokens': 'Personal tokens and service accounts',
+  'workspace-setup': 'Workspace setup state',
   'agents-and-skills': 'Agents and skills',
   'documents-and-search': 'Documents and search',
   'chat-and-history': 'Chat and history',

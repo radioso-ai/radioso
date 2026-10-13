@@ -58,6 +58,34 @@ describe("workspace summary contract", () => {
     expect(response.body.websiteCrawlerEnabled).toBe(false);
   });
 
+  it("persists only setup-owned fields and supplies the first-run decision from the server", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "workspace-setup-state@example.com");
+
+    const before = await request(app).get("/api/v1/workspace/setup-state").set(adminSessionHeaders(session));
+    expect(before.status).toBe(200);
+    expect(before.body).toMatchObject({ purpose: null, dismissed: false, shouldShowFirstRun: true });
+
+    const updated = await request(app)
+      .patch("/api/v1/workspace/setup-state")
+      .set(adminSessionHeaders(session))
+      .send({ purpose: "Answer product questions", dismissed: true, notifyReceiptConfirmed: true, skippedSteps: ["credential"] });
+    expect(updated.status).toBe(200);
+    expect(updated.body).toMatchObject({
+      purpose: "Answer product questions",
+      dismissed: true,
+      notifyReceiptConfirmed: true,
+      skippedSteps: ["credential"],
+      shouldShowFirstRun: false,
+    });
+
+    const derivedWrite = await request(app)
+      .patch("/api/v1/workspace/setup-state")
+      .set(adminSessionHeaders(session))
+      .send({ hasCredential: true });
+    expect(derivedWrite.status).toBe(400);
+  });
+
   it("returns the project ErrorResponse JSON shape on crawl routes when WEBSITE_CRAWLER_ENABLED is false", async () => {
     const { app } = createTestApp({ envOverrides: { WEBSITE_CRAWLER_ENABLED: false } });
     const session = await issueTestSession(app, "workspace-crawl-disabled@example.com");

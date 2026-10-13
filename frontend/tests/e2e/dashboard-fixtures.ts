@@ -1042,6 +1042,8 @@ export const installDashboardApiMocks = async (
     webhookDestinationUpdates?: WebhookDestinationMutationFixture[];
     requestLog?: string[];
     providerEncryptionConfigured?: boolean;
+    /** Credential policy reported by Settings. Defaults to the OSS/self-hosted policy. */
+    providerCredentialSource?: "managed" | "byok" | "self_hosted";
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
     llmModelUpdates?: Array<unknown>;
     /** Per capability, the model the plan runs instead of the preference. Defaults to none. */
@@ -2763,6 +2765,7 @@ export const installDashboardApiMocks = async (
     if (request.method() === "GET" && path === "/settings/credentials") {
       await json(route, {
         encryptionConfigured: providerEncryptionConfigured,
+        credentialSource: options.providerCredentialSource ?? "self_hosted",
         credentials: Object.entries(providerCredentials)
           .filter(([, value]) => value !== null)
           .map(([provider, value]) => ({ provider, updatedAt: value!.updatedAt })),

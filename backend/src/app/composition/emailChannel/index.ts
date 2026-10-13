@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { NotificationRecipientStateRepository } from "../../../db/repositories/notificationRecipientStateRepository.js";
 
 import type { ConnectorChatPort, ConnectorPlugin } from "@radioso/connector-api";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
@@ -250,6 +251,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       logger,
       clock,
     }),
+    recipientSuppressions: new NotificationRecipientStateRepository(db),
   });
   // Sampled where `/metrics` is scraped (the API): the worker that sweeps exposes no metrics endpoint.
   metrics?.registerCollector(createEmailBacklogSampler({ reader: new EmailBacklogRepository(db), metrics, logger, clock }));

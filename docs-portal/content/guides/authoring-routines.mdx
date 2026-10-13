@@ -1,7 +1,7 @@
 ---
 title: "Author a routine"
 description: "Build a multi-step flow your agent runs across turns in the dashboard routine editor, then test it and ship it with the agent."
-last_updated: 2026-10-11
+last_updated: 2026-10-13
 ---
 
 # Author a routine
@@ -215,8 +215,7 @@ Under **Notify the team**, the **Send with** select chooses which notify
 skill delivers the notice: **Default**, or any enabled notify skill the
 routine can name directly. The line underneath shows where that choice goes
 right now — Ananda's booking routine names its `notify_bookings` skill on the
-**Booked** ending, so the line reads `Sends to francesco@ananda.it`, the
-recipient on that skill's own delivery config. Choosing **Default** falls
+**Booked** ending, so the line reads `Sends to francesco@ananda.it (waiting for confirmation)` until Francesco uses the confirmation link. Confirmed addresses have no suffix; grandfathered, revoked, and bounce- or complaint-suppressed addresses carry their own status beside the address. Choosing **Default** falls
 back to the chain above: the line then shows the `contact_human` recipients,
 the agent's own delivery setting, or the workspace owner's email, whichever
 resolves first. A **Hand off** ending offers the same select, since it always
@@ -237,6 +236,11 @@ eligible for delivery. After that, Radioso records a
 `conversation_dispatch_cap` outcome and skips the dispatch. Email recipient
 attempts also count against the workspace's daily plan allowance; reaching it
 records `workspace_daily_email_cap` and leaves a configured webhook active.
+An external address must confirm within its workspace before it receives a
+notice. A configured address in its recorded 14-day grace period still receives
+the notice and gets a confirmation message on its first delivery attempt. Every
+notice carries a one-click unsubscribe link, and a hard bounce or complaint
+suppresses notification mail to that address across the deployment.
 Routine slot text is capped at 1,000 characters before it reaches either
 delivery, and a collected reply-to is used only when it is a valid email
 address.

@@ -315,6 +315,14 @@ describe("runtime configuration", () => {
     expect(env.AUTH_AUTO_VERIFY_EMAIL).toBe(false);
   });
 
+  it("enables notification recipient confirmation by default and accepts an explicit opt-out", () => {
+    expect(getEnv({ ...baseEnv }).NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED).toBe(true);
+    expect(getEnv({
+      ...baseEnv,
+      NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED: "false",
+    }).NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED).toBe(false);
+  });
+
   it("allows automatic email verification only in development", () => {
     const env = getEnv({
       ...baseEnv,
@@ -561,6 +569,7 @@ describe("runtime configuration", () => {
     expect(example).toContain("MAIL_FROM_EMAIL=noreply@example.com");
     expect(example).toContain("MAIL_FROM_NAME=Radioso");
     expect(example).toContain("RESEND_MAIL_API_KEY=");
+    expect(example).toContain("NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED=true");
     expect(example).toContain("PASSWORD_RESET_TOKEN_TTL_MINUTES=30");
     expect(example).toContain("EMAIL_VERIFICATION_TOKEN_TTL_MINUTES=30");
   });

@@ -12,6 +12,7 @@ import {
   REPLY_TO_MAX_LENGTH,
   validVisitorReplyTo,
   type NotificationDeliveryAdmissionPort,
+  type NotificationRecipientPolicyService,
 } from "../../../operatorNotifications/public.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
@@ -32,6 +33,7 @@ export interface ContactNotificationMailer {
     subject: string;
     text: string;
     idempotencyKey?: string | null;
+    listUnsubscribeUrl?: string | null;
     // The result is deliberately unconstrained: this handler needs the send to happen and
     // does not read what the transport reports back.
   }): Promise<unknown>;
@@ -258,6 +260,7 @@ export class ContactSendActionHandler implements ActionHandler {
     // Terminal (retry-budget-exhausted) failures are alertable — see recordFailureOutcome.
     private readonly errorReporter?: ErrorReporter,
     private readonly admission?: NotificationDeliveryAdmissionPort,
+    private readonly recipientPolicy?: Pick<NotificationRecipientPolicyService, "prepareDelivery">,
   ) {}
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
@@ -270,13 +273,26 @@ export class ContactSendActionHandler implements ActionHandler {
       return;
     }
 
+    const baseIdempotencyKey = input.context.idempotencyKey ?? input.context.requestId;
+    const recipientDecision = input.context.workspaceId && this.recipientPolicy
+      ? await this.recipientPolicy.prepareDelivery({
+          workspaceId: input.context.workspaceId,
+          conversationId: input.context.conversationId,
+          emails: target.emails,
+          idempotencyKey: baseIdempotencyKey,
+        })
+      : {
+          eligibleEmails: target.emails,
+          eligibleRecipients: target.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
+          skipped: { unconfirmed: 0, suppressed: 0 },
+        };
     const admission = await this.admission?.admit({
       requestId: input.context.requestId,
       workspaceId: input.context.workspaceId,
       accountId: input.context.accountId,
       conversationId: input.context.conversationId,
-      recipientEmails: target.emails,
-      requestedEmailCount: target.emails.length,
+      recipientEmails: recipientDecision.eligibleEmails,
+      requestedEmailCount: recipientDecision.eligibleEmails.length,
     });
     if (admission && !admission.dispatchAllowed) {
       throw new ActionDispatchSkippedError(admission.reason ?? "conversation_dispatch_cap");
@@ -294,16 +310,16 @@ export class ContactSendActionHandler implements ActionHandler {
       message,
     ].filter((line): line is string => line !== null);
 
-    const baseIdempotencyKey = input.context.idempotencyKey ?? input.context.requestId;
     const [emailResults] = await Promise.all([
-      Promise.all((admission?.emailAllowed === false ? [] : target.emails).map((to) =>
+      Promise.all((admission?.emailAllowed === false ? [] : recipientDecision.eligibleRecipients).map((recipient) =>
         this.mailer.send({
-          to,
+          to: recipient.email,
           kind: "contact_notification",
           replyTo,
           subject: "New contact request",
           text: lines.join("\n"),
-          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(to)}`,
+          ...(recipient.listUnsubscribeUrl ? { listUnsubscribeUrl: recipient.listUnsubscribeUrl } : {}),
+          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
         })),
       ),
       target.webhook ? this.postWebhook({
@@ -322,7 +338,11 @@ export class ContactSendActionHandler implements ActionHandler {
     if (!target.webhook) {
       const skipReason = admission?.emailAllowed === false
         ? admission.reason
-        : mailDeliverySkipReason(emailResults);
+        : recipientDecision.eligibleEmails.length === 0
+          ? recipientDecision.skipped.suppressed > 0 && recipientDecision.skipped.unconfirmed === 0
+            ? "notification_recipient_suppressed"
+            : "notification_recipient_unconfirmed"
+          : mailDeliverySkipReason(emailResults);
       if (skipReason) {
         throw new ActionDispatchSkippedError(skipReason);
       }

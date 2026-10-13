@@ -157,4 +157,10 @@ export const routineSkillCatalogApi = {
     }, { withSession: true })
     return parseOperatorNoticeDestinations(payload)
   },
+  async resendNotificationRecipientConfirmation(agentId: string, email: string): Promise<{ sent: boolean }> {
+    return request<{ sent: boolean }>(`/agents/${agentId}/notification-recipient-confirmations/resend`, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }, { withSession: true })
+  },
 }

@@ -1206,7 +1206,7 @@ export const installDashboardApiMocks = async (
   ];
   const routineSkillCatalog = options.routineSkillCatalog ?? [];
   const operatorNoticeDestinations: OperatorNoticeDestinations = options.operatorNoticeDestinations ?? {
-    default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@example.com"], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
+    default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@example.com"], recipients: [{ email: "owner@example.com", state: "confirmed" }], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
     skills: [],
   };
   let webhookDestinations = options.webhookDestinations ?? [];

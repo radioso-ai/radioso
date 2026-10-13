@@ -162,8 +162,8 @@ test("an ending's notice names the notify skill that sends it, and shows who tha
       hasDataOutputs: false,
     }],
     operatorNoticeDestinations: {
-      default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@ananda.it"], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
-      skills: [{ skillName: "notify_bookings", via: "named_skill", recipientEmails: ["francesco@ananda.it"], recipientsFromWorkspaceOwner: false, webhookConfigured: false }],
+      default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@ananda.it"], recipients: [{ email: "owner@ananda.it", state: "confirmed" }], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
+      skills: [{ skillName: "notify_bookings", via: "named_skill", recipientEmails: ["francesco@ananda.it"], recipients: [{ email: "francesco@ananda.it", state: "waiting_for_confirmation" }], recipientsFromWorkspaceOwner: false, webhookConfigured: false }],
     },
   });
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${bookingRoutine.id}`);
@@ -179,7 +179,7 @@ test("an ending's notice names the notify skill that sends it, and shows who tha
 
   await sendWith.click();
   await page.getByRole("option", { name: "Notify bookings" }).click();
-  await expect(documentEditor.getByText("Sends to francesco@ananda.it")).toBeVisible();
+  await expect(documentEditor.getByText("Sends to francesco@ananda.it (waiting for confirmation)")).toBeVisible();
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
   await expect.poll(

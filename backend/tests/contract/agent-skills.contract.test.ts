@@ -1,5 +1,5 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
@@ -271,7 +271,7 @@ describe("unified agent skills contract", () => {
   });
 
   it("shows a workspace member where routine ending notices go, and refuses a machine principal", async () => {
-    const { app } = createTestApp();
+    const { app, dependencies } = createTestApp();
     const session = await issueTestToken(app, "notice-destinations-owner@example.com");
     const headers = adminSessionHeaders(session);
     const agentId = (await request(app).get("/api/v1/agents").set(headers)).body.agents[0].id as string;
@@ -302,10 +302,25 @@ describe("unified agent skills contract", () => {
       skillName: "notify_bookings",
       via: "named_skill",
       recipientEmails: ["francesco@example.com"],
+      recipients: [{ email: "francesco@example.com", state: "confirmation_not_required" }],
       recipientsFromWorkspaceOwner: false,
       webhookConfigured: true,
     }]);
     expect(JSON.stringify(destinations.body)).not.toContain("hooks.example.com");
+
+    const resendConfirmation = vi.spyOn(dependencies.notificationRecipientPolicy, "resendConfirmation")
+      .mockResolvedValue(true);
+    const resend = await request(app)
+      .post(`/api/v1/agents/${agentId}/notification-recipient-confirmations/resend`)
+      .set(headers)
+      .send({ email: "FRANCESCO@example.com" });
+    expect(resend.status).toBe(202);
+    expect(resend.body).toEqual({ sent: true });
+    expect(resendConfirmation).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: session.workspaceId,
+      agentId,
+      email: "francesco@example.com",
+    }));
 
     const machine = await request(app)
       .get(`/api/v1/agents/${agentId}/operator-notice-destinations`)

@@ -8,7 +8,20 @@ import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { AgentSkillRepository } from "../../modules/agentSkills/repository.js";
+import {
+  NotificationRecipientConfirmationMailer,
+  NotificationRecipientPolicyService,
+  NotificationRecipientTokenSigner,
+} from "../../modules/operatorNotifications/public.js";
+import {
+  NotificationRecipientIdentityRepository,
+  NotificationRecipientStateRepository,
+} from "../../db/repositories/notificationRecipientStateRepository.js";
 import type { Database } from "../../shared/infra/database.js";
+import type { AppLogger } from "../../shared/observability/logger.js";
+import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
+import type { Env } from "../config/env.js";
+import type { MailTransportPort } from "./applicationModule.js";
 
 /**
  * The one place the default contact destination is wired: a named notify skill, then
@@ -27,10 +40,47 @@ export const buildContactDeliveryResolver = (database: Database): ConfiguredCont
   );
 
 /** Shows an operator where a routine ending's notice goes, through the resolver that sends it. */
-export const buildOperatorNoticeDestinationsReader = (database: Database): OperatorNoticeDestinationsReader => {
+export const buildOperatorNoticeDestinationsReader = (
+  database: Database,
+  recipientPolicy?: Pick<NotificationRecipientPolicyService, "describe">,
+): OperatorNoticeDestinationsReader => {
   const skills = new AgentSkillRepository(database.kysely);
   return new OperatorNoticeDestinationsReader({
     skills: { listByAgent: (workspaceId, agentId) => skills.listByAgent(workspaceId, agentId) },
     resolver: buildContactDeliveryResolver(database),
+    recipientPolicy,
+  });
+};
+
+export const buildNotificationRecipientPolicy = (input: {
+  database: Database;
+  env: Env;
+  mailer: MailTransportPort;
+  logger: AppLogger;
+  metrics: MetricsRegistry | null;
+  states?: NotificationRecipientStateRepository;
+}): NotificationRecipientPolicyService => {
+  const states = input.states ?? new NotificationRecipientStateRepository(input.database.kysely);
+  const signer = new NotificationRecipientTokenSigner(input.env.SESSION_COOKIE_SECRET);
+  const confirmationMailer = new NotificationRecipientConfirmationMailer({
+    mailer: input.mailer,
+    signer,
+    publicBaseUrl: input.env.CONNECTOR_PUBLIC_BASE_URL
+      ?? input.env.APP_BASE_URL
+      ?? `http://localhost:${input.env.PORT}`,
+    logger: input.logger,
+    metrics: input.metrics,
+  });
+  return new NotificationRecipientPolicyService({
+    enabled: input.env.NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED,
+    states,
+    sendConfirmation: async (request) => {
+      if (!request.recipientId) throw new Error("Confirmation recipient state was not reserved");
+      await confirmationMailer.send({ ...request, recipientId: request.recipientId });
+    },
+    revocationUrl: (recipientId) => confirmationMailer.revocationUrl(recipientId),
+    identity: new NotificationRecipientIdentityRepository(input.database.kysely),
+    logger: input.logger,
+    metrics: input.metrics,
   });
 };

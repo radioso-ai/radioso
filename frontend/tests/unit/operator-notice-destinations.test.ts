@@ -8,14 +8,18 @@ import {
   type OperatorNoticeDestinations,
 } from '@/lib/operator-notice-destinations'
 
-const destination = (overrides: Partial<OperatorNoticeDestination> = {}): OperatorNoticeDestination => ({
-  skillName: null,
-  via: 'workspace_owner',
-  recipientEmails: ['owner@ananda.it'],
-  recipientsFromWorkspaceOwner: true,
-  webhookConfigured: false,
-  ...overrides,
-})
+const destination = (overrides: Partial<OperatorNoticeDestination> = {}): OperatorNoticeDestination => {
+  const recipientEmails = overrides.recipientEmails ?? ['owner@ananda.it']
+  return {
+    skillName: null,
+    via: 'workspace_owner',
+    recipientEmails,
+    recipients: overrides.recipients ?? recipientEmails.map((email) => ({ email, state: 'confirmed' })),
+    recipientsFromWorkspaceOwner: true,
+    webhookConfigured: false,
+    ...overrides,
+  }
+}
 
 const destinations: OperatorNoticeDestinations = {
   default: destination(),
@@ -26,6 +30,18 @@ describe('describeNoticeDestination', () => {
   it('names the recipients of the default destination and of a named skill', () => {
     expect(describeNoticeDestination(destinations, undefined)).toBe('Sends to owner@ananda.it (workspace owner)')
     expect(describeNoticeDestination(destinations, 'notify_bookings')).toBe('Sends to francesco@ananda.it, desk@ananda.it')
+  })
+
+  it('shows waiting and suppressed recipient states in the Sends to line', () => {
+    const stateful = destination({
+      recipientEmails: ['waiting@example.com', 'bounce@example.com'],
+      recipients: [
+        { email: 'waiting@example.com', state: 'waiting_for_confirmation' },
+        { email: 'bounce@example.com', state: 'suppressed' },
+      ],
+    })
+    expect(describeNoticeDestination({ default: stateful, skills: [] }, undefined))
+      .toBe('Sends to waiting@example.com (waiting for confirmation), bounce@example.com (suppressed) (workspace owner)')
   })
 
   it('mentions a webhook without naming it, and says when nothing is sent', () => {

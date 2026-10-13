@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
@@ -27,9 +28,11 @@ type AgentSkillRouteDependencies = Pick<
   | "skillCapabilityRegistry"
   | "retrievalDefaultsProvider"
   | "operatorNoticeDestinations"
+  | "notificationRecipientPolicy"
 >;
 
 const uuidSchema = z.string().uuid();
+const recipientConfirmationResendSchema = z.object({ email: z.string().trim().email().max(320) }).strict();
 
 const parseUuid = (raw: unknown, field: string): string => {
   const parsed = uuidSchema.safeParse(raw);
@@ -151,6 +154,33 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
       next(error);
     }
   });
+
+  router.post(
+    "/:agentId/notification-recipient-confirmations/resend",
+    workspaceSession,
+    agentManage,
+    validateBody(recipientConfirmationResendSchema),
+    async (req, res, next) => {
+      try {
+        const { workspaceId, agentId } = await resolveAgent(req, res);
+        await requireRecipientManagement(dependencies, res);
+        const destinations = await dependencies.operatorNoticeDestinations.read({ workspaceId, agentId });
+        const normalizedEmail = req.body.email.trim().toLowerCase();
+        const configured = [destinations.default, ...destinations.skills]
+          .some((destination) => destination.recipientEmails.some((email) => email.trim().toLowerCase() === normalizedEmail));
+        if (!configured) throw badRequest("The recipient is not configured for this agent");
+        const sent = await dependencies.notificationRecipientPolicy.resendConfirmation({
+          workspaceId,
+          agentId,
+          email: normalizedEmail,
+          idempotencyKey: randomUUID(),
+        });
+        res.status(202).json({ sent });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.post(
     "/:agentId/skills",

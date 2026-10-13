@@ -299,6 +299,7 @@ const declarations: readonly PolicyDeclaration[] = [
     ["GET", "/api/v1/agents/:agentId/skills", "workspace.agents.read"],
     // Names the team's recipient emails, which are personal data: workspace members only.
     ["GET", "/api/v1/agents/:agentId/operator-notice-destinations", "workspace.agents.read"],
+    ["POST", "/api/v1/agents/:agentId/notification-recipient-confirmations/resend", "workspace.notification_recipients.manage"],
     ["POST", "/api/v1/agents/:agentId/skills", "workspace.agents.manage"],
     ["PATCH", "/api/v1/agents/:agentId/skills/:skillId", "workspace.agents.manage"],
     ["DELETE", "/api/v1/agents/:agentId/skills/:skillId", "workspace.agents.manage"],

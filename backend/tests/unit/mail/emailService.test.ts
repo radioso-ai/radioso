@@ -258,6 +258,28 @@ describe("mail service", () => {
     expect(body.tags).toEqual([{ name: "kind", value: "password_reset" }]);
   });
 
+  it("adds RFC 8058 one-click unsubscribe headers without putting the URL in transport logs", async () => {
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      new Response(PROVIDER_ACCEPTED_BODY, { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await resendDriver().send({
+      to: "ada@example.com",
+      from: { email: "noreply@example.com" },
+      subject: "Operator notice",
+      text: "Hello",
+      kind: "operator_notice",
+      listUnsubscribeUrl: "https://api.example.com/revoke?token=signed",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { headers?: unknown };
+    expect(body.headers).toEqual({
+      "List-Unsubscribe": "<https://api.example.com/revoke?token=signed>",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+  });
+
   it("omits Resend tags when a message declares no kind", async () => {
     const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
       new Response(PROVIDER_ACCEPTED_BODY, { status: 200 }),

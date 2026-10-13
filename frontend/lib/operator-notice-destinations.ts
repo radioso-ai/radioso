@@ -9,6 +9,10 @@ export interface OperatorNoticeDestination {
   skillName: string | null
   via: OperatorNoticeRoute
   recipientEmails: string[]
+  recipients: Array<{
+    email: string
+    state: 'confirmed' | 'grandfathered' | 'waiting_for_confirmation' | 'revoked' | 'suppressed' | 'confirmation_not_required'
+  }>
   recipientsFromWorkspaceOwner: boolean
   webhookConfigured: boolean
 }
@@ -32,7 +36,21 @@ const parseDestination = (value: unknown): OperatorNoticeDestination => {
   if (typeof recipientsFromWorkspaceOwner !== 'boolean' || typeof webhookConfigured !== 'boolean') {
     throw new Error('A notice destination is missing its flags.')
   }
-  return { skillName, via: via as OperatorNoticeRoute, recipientEmails, recipientsFromWorkspaceOwner, webhookConfigured }
+  const states = ['confirmed', 'grandfathered', 'waiting_for_confirmation', 'revoked', 'suppressed', 'confirmation_not_required'] as const
+  const recipients = value.recipients
+  if (!Array.isArray(recipients) || !recipients.every((recipient) => isRecord(recipient)
+    && typeof recipient.email === 'string'
+    && states.includes(recipient.state as typeof states[number]))) {
+    throw new Error('A notice destination has invalid recipient states.')
+  }
+  return {
+    skillName,
+    via: via as OperatorNoticeRoute,
+    recipientEmails,
+    recipients: recipients as OperatorNoticeDestination['recipients'],
+    recipientsFromWorkspaceOwner,
+    webhookConfigured,
+  }
 }
 
 export const parseOperatorNoticeDestinations = (payload: unknown): OperatorNoticeDestinations => {
@@ -43,7 +61,15 @@ export const parseOperatorNoticeDestinations = (payload: unknown): OperatorNotic
 // Who receives a notice sent this way, or why nothing is sent.
 const destinationTarget = (destination: OperatorNoticeDestination): { sent: true; to: string } | { sent: false; reason: string } => {
   if (destination.via === 'contact_human_off') return { sent: false, reason: 'contact_human is turned off' }
-  const emails = destination.recipientEmails.join(', ')
+  const stateSuffix: Record<OperatorNoticeDestination['recipients'][number]['state'], string> = {
+    confirmed: '',
+    grandfathered: ' (confirmation grace period)',
+    waiting_for_confirmation: ' (waiting for confirmation)',
+    revoked: ' (notifications stopped)',
+    suppressed: ' (suppressed)',
+    confirmation_not_required: ' (confirmation disabled)',
+  }
+  const emails = destination.recipients.map((recipient) => `${recipient.email}${stateSuffix[recipient.state]}`).join(', ')
   const owner = destination.recipientsFromWorkspaceOwner ? ' (workspace owner)' : ''
   if (emails && destination.webhookConfigured) return { sent: true, to: `${emails}${owner} and a webhook` }
   if (emails) return { sent: true, to: `${emails}${owner}` }

@@ -79,6 +79,31 @@ describe("ContactSendActionHandler", () => {
     ]);
   });
 
+  it("skips an unconfirmed recipient before admission or mail delivery", async () => {
+    const { mailer, sent } = recordingMailer();
+    const admit = vi.fn();
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["waiting@example.com"], webhook: null }) },
+      undefined,
+      undefined,
+      undefined,
+      { admit },
+      {
+        prepareDelivery: async () => ({
+          eligibleEmails: [],
+          eligibleRecipients: [],
+          skipped: { unconfirmed: 1, suppressed: 0 },
+        }),
+      },
+    );
+
+    await expect(handler.handle({ payload: { message: "hi" }, context }))
+      .rejects.toMatchObject({ name: "ActionDispatchSkippedError", reason: "notification_recipient_unconfirmed" });
+    expect(admit).toHaveBeenCalledWith(expect.objectContaining({ requestedEmailCount: 0 }));
+    expect(sent).toHaveLength(0);
+  });
+
   it("posts configured webhooks with conversation metadata and an idempotency key", async () => {
     const { mailer, sent } = recordingMailer();
     const { httpClient, requests } = recordingWebhookClient();

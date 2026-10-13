@@ -166,7 +166,9 @@ export const useWorkspaceOnboarding = (
       const summary = await workspaceApi.getSummary()
 
       const nextCompleted = summary.setup?.dismissed === true || summary.hasCompletedChat
-      const nextActive = summary.setup?.shouldShowFirstRun === true
+      // During a rolling deploy, an older backend has no server-owned setup state.
+      // Preserve its completed-chat signal, but do not infer that the takeover should open.
+      const nextActive = summary.setup === undefined ? false : summary.setup.shouldShowFirstRun
 
       const previousSummary = onboardingSummaryRef.current
       const isObservingOnboarding = nextActive

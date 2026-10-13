@@ -103,6 +103,34 @@ describe('useWorkspaceOnboarding refresh', () => {
 
     expect(mounted.latest()?.shouldShowFirstRun).toBe(false)
     expect(mounted.latest()?.isOnboardingActive).toBe(false)
+    expect(mounted.latest()?.isOnboardingCompleted).toBe(false)
+    await mounted.unmount()
+  })
+
+  it('keeps the completed-chat fallback when an older backend omits setup state', async () => {
+    vi.mocked(workspaceApi.getSummary).mockResolvedValue({
+      documentCount: 0,
+      readyDocumentCount: 0,
+      pendingDocumentCount: 0,
+      sampleDocumentCount: 0,
+      sampleDocumentSlugs: [],
+      conversationCount: 1,
+      hasDocuments: false,
+      hasPendingDocuments: false,
+      hasReadyDocuments: false,
+      hasCompletedChat: true,
+      sampleDocumentsImported: false,
+      websiteCrawlerEnabled: true,
+    })
+    const mounted = mountOnboarding()
+
+    await mounted.render()
+    await flush()
+    await flush()
+
+    expect(mounted.latest()?.shouldShowFirstRun).toBe(false)
+    expect(mounted.latest()?.isOnboardingActive).toBe(false)
+    expect(mounted.latest()?.isOnboardingCompleted).toBe(true)
     await mounted.unmount()
   })
 

@@ -104,6 +104,7 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
       userRepository,
       sessionRepository,
       federatedIdentityRepository,
+      authFunnelRepository,
       accountAccessService,
       workspaceService,
       passwordResetTokenRepository,
@@ -119,6 +120,7 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
       responsePaddingMs: 0,
     }),
     authFunnelService: new AuthFunnelService({ env, repository: authFunnelRepository, auditService }),
+    authFunnelRepository,
     auditService,
     emailVerificationTokenRepository,
     mailDriver,
@@ -130,6 +132,25 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
 };
 
 describe("PasswordResetService", () => {
+  it("consumes outstanding verification links and pending tickets when a reset reclaims an account", async () => {
+    const harness = await createHarness({ verified: false });
+    await harness.emailVerificationService.resend({ email: "ada@example.com" });
+    const verificationToken = readTokenFromUrl(harness.mailDriver.messages[0]?.metadata?.verificationUrl ?? "");
+    const pendingCookie = await harness.authFunnelService.issuePendingTicket({
+      userId: harness.user.id,
+      accountId: harness.user.id,
+    });
+    const pendingToken = pendingCookie.split(";")[0]?.split("=")[1] ?? "";
+    await harness.passwordResetService.requestReset({ email: "ada@example.com" });
+    const resetToken = readTokenFromUrl(harness.mailDriver.messages[1]?.metadata?.resetUrl ?? "");
+
+    await harness.passwordResetService.confirmReset({ token: resetToken, password: "new-secure-password" });
+
+    await expect(harness.authFunnelService.verify({ token: verificationToken }))
+      .rejects.toMatchObject({ statusCode: 401 });
+    await expect(harness.authFunnelService.exchangePendingTicket(pendingToken)).resolves.toEqual({ ready: false });
+  });
+
   it("accepts unknown emails without sending reset mail", async () => {
     const { passwordResetService, mailDriver, passwordResetTokenRepository } = await createHarness();
 
@@ -281,6 +302,7 @@ describe("PasswordResetService", () => {
       userRepository: harness.userRepository,
       sessionRepository: harness.sessionRepository,
       federatedIdentityRepository: new InMemoryFederatedIdentityRepository(),
+      authFunnelRepository: harness.authFunnelRepository,
       accountAccessService: new AccountAccessService(new InMemoryAccountMembershipRepository(), harness.auditService),
       workspaceService: new WorkspaceService(new InMemoryWorkspaceRepository(), harness.auditService),
       passwordResetTokenRepository: harness.passwordResetTokenRepository,

@@ -3344,6 +3344,7 @@ CREATE TABLE public.pending_registration_tickets (
     account_id uuid NOT NULL,
     token_hash text NOT NULL,
     expires_at timestamp with time zone NOT NULL,
+    activated_at timestamp with time zone,
     used_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );

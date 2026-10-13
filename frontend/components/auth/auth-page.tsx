@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { authApi } from '@/lib/api'
+import { normalizeSameOriginReturnPath } from '@/lib/auth-return-url'
 import { AuthShell } from './auth-shell'
 import { LoginForm } from './login-form'
 import { RegisterForm } from './register-form'
@@ -12,6 +13,10 @@ export type AuthMode = 'login' | 'register'
 
 export function AuthPage({ returnTo, mode = 'login' }: { returnTo?: string; mode?: AuthMode }) {
   const searchParams = useSearchParams()
+  const normalizedReturnTo = normalizeSameOriginReturnPath(returnTo)
+  const authHref = (path: '/login' | '/signup') => normalizedReturnTo
+    ? `${path}?${new URLSearchParams({ returnTo: normalizedReturnTo }).toString()}`
+    : path
   // Registration can end in "check your inbox" instead of a session.
   const [verificationPending, setVerificationPending] = useState(false)
   const [registrationAvailable, setRegistrationAvailable] = useState<boolean | null>(null)
@@ -60,17 +65,17 @@ export function AuthPage({ returnTo, mode = 'login' }: { returnTo?: string; mode
 
   const footer = verificationPending ? null : mode === 'register' ? (
     <>
-      Already have an account? <Link href="/login" className="font-medium text-primary hover:underline">Sign in</Link>
+      Already have an account? <Link href={authHref('/login')} className="font-medium text-primary hover:underline">Sign in</Link>
     </>
   ) : registrationAvailable === true ? (
     <>
-      New here? <Link href="/signup" className="font-medium text-primary hover:underline">Create an account</Link>
+      New here? <Link href={authHref('/signup')} className="font-medium text-primary hover:underline">Create an account</Link>
     </>
   ) : registrationAvailable === false ? (
     'Registration is invitation-only. Ask an organization administrator for an invitation.'
   ) : registrationAvailabilityFailed ? (
     <>
-      Unable to check registration availability. <Link href="/signup" className="font-medium text-primary hover:underline">Try signup</Link> or{' '}
+      Unable to check registration availability. <Link href={authHref('/signup')} className="font-medium text-primary hover:underline">Try signup</Link> or{' '}
       <button
         type="button"
         className="font-medium text-primary hover:underline"
@@ -96,7 +101,7 @@ export function AuthPage({ returnTo, mode = 'login' }: { returnTo?: string; mode
       ) : (
         <RegisterForm
           returnTo={returnTo}
-          onSwitchToLogin={() => window.location.assign('/login')}
+          onSwitchToLogin={() => window.location.assign(authHref('/login'))}
           onVerificationPending={() => setVerificationPending(true)}
         />
       )}

@@ -190,6 +190,30 @@ test('a verification link lands signed in without asking for credentials', async
   await expect.poll(() => state.verified).toBe(true)
 })
 
+test('offers sign-in when a mixed-version backend verifies without a session cookie', async ({ page }) => {
+  await installAuthFunnelMocks(page, { verified: false }, { allowVerifiedSession: false })
+
+  await page.goto('/verify-email?token=old-backend-token')
+
+  await expect(page.getByRole('heading', { name: 'Email verified — sign in' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login')
+})
+
+test('carries a safe return path between auth modes and from the waiting screen', async ({ page }) => {
+  await installAuthFunnelMocks(page, { verified: false })
+  await page.goto('/signup?returnTo=%2Fw%2Fworkspace-key%2Fagents')
+
+  await expect(page.getByRole('link', { name: 'Sign in' }))
+    .toHaveAttribute('href', '/login?returnTo=%2Fw%2Fworkspace-key%2Fagents')
+  await page.getByLabel('Email').fill('return-to@example.com')
+  await page.getByLabel('Password', { exact: true }).fill('verysecurepassword')
+  await page.getByLabel('Confirm Password').fill('verysecurepassword')
+  await page.getByRole('button', { name: 'Create account' }).click()
+  await page.getByRole('button', { name: 'Back to Sign In' }).click()
+
+  await expect(page).toHaveURL(/\/login\?returnTo=%2Fw%2Fworkspace-key%2Fagents/)
+})
+
 test('redirects signed-in visitors away from auth routes', async ({ page }) => {
   await installAuthFunnelMocks(page, { verified: true })
 

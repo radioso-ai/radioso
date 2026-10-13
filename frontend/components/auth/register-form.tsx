@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
+import { ApiError } from '@/lib/api-client'
 import { useOptionalAuth } from '@/lib/auth-context'
 import { useAuthSunrise } from './auth-shell'
 import { GoogleAuthButton } from './google-auth-button'
@@ -53,10 +54,10 @@ export function RegisterForm({ returnTo, onSwitchToLogin, onVerificationPending 
     let polling = false
     let timeout: ReturnType<typeof setTimeout> | undefined
 
-    const schedule = () => {
+    const schedule = (delayMs = 6_000) => {
       if (!active || completed) return
       if (timeout) clearTimeout(timeout)
-      timeout = setTimeout(() => void poll(), 6_000)
+      timeout = setTimeout(() => void poll(), delayMs)
     }
 
     async function poll() {
@@ -70,11 +71,15 @@ export function RegisterForm({ returnTo, onSwitchToLogin, onVerificationPending 
           window.location.assign('/')
           return
         }
-      } catch {
-        // The next bounded poll retries transient startup and network failures.
+        schedule()
+      } catch (error) {
+        const retryAfterSeconds = error instanceof ApiError ? error.error.retryAfterSeconds : undefined
+        // A 429 tells this browser precisely when its ticket budget is ready
+        // again. Other transient failures back off rather than compounding a
+        // startup outage.
+        schedule(typeof retryAfterSeconds === 'number' ? retryAfterSeconds * 1_000 : 12_000)
       } finally {
         polling = false
-        schedule()
       }
     }
 

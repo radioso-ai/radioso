@@ -48,13 +48,21 @@ export class EmailVerificationService {
       const expiresAt = new Date(
         now.getTime() + this.dependencies.env.EMAIL_VERIFICATION_TOKEN_TTL_MINUTES * 60 * 1000,
       );
-      const record = await this.dependencies.emailVerificationTokenRepository.create({
+      const record = await this.dependencies.emailVerificationTokenRepository.createIfUnverified({
         userId: user.id,
         tokenHash: sha256(token),
         expiresAt,
         requestIp: input.requestIp ?? null,
         requestUserAgent: input.requestUserAgent ?? null,
       });
+      if (!record) {
+        await this.dependencies.auditService.record({
+          eventType: "auth.email_verification.resend",
+          eventStatus: "success",
+          metadata: { email, sent: false },
+        });
+        return { accepted: true };
+      }
       const verificationUrl = appUrl("/verify-email", this.dependencies.env.APP_BASE_URL);
       verificationUrl.searchParams.set("token", token);
 

@@ -714,6 +714,16 @@ export class InMemoryEmailVerificationTokenRepository implements EmailVerificati
     return record;
   }
 
+  async createIfUnverified(params: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }): Promise<EmailVerificationTokenRecord | null> {
+    return this.create(params);
+  }
+
   async findByTokenHash(tokenHash: string): Promise<EmailVerificationTokenRecord | null> {
     return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
   }
@@ -750,13 +760,14 @@ export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
     accountId: string;
     tokenHash: string;
     expiresAt: Date;
+    activatedAt: Date | null;
     usedAt: Date | null;
   }>();
 
   constructor(private readonly dependencies: {
     emailVerificationTokens: InMemoryEmailVerificationTokenRepository;
     users: InMemoryUserRepository;
-    sessions: InMemorySessionRepository;
+    sessions: Pick<SessionRepositoryPort, "create" | "revokeAllForUser">;
     listMemberships: (userId: string) => Promise<AccountMembershipRecord[]>;
   }) {}
 
@@ -767,7 +778,7 @@ export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
     tokenHash: string;
     expiresAt: Date;
   }): Promise<void> {
-    this.tickets.set(input.id, { ...input, usedAt: null });
+    this.tickets.set(input.id, { ...input, activatedAt: null, usedAt: null });
   }
 
   async verifyEmailAndCreateSession(input: {
@@ -783,9 +794,14 @@ export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
     if (latest?.id !== token.id) return null;
     const user = await this.dependencies.users.findById(token.userId);
     const membership = (await this.dependencies.listMemberships(token.userId))[0];
-    if (!user || !membership) return null;
+    if (!user || user.emailVerifiedAt || !membership) return null;
     await this.dependencies.users.markEmailVerified(user.id, input.now);
     await this.dependencies.emailVerificationTokens.markAllActiveUsedForUser(user.id, input.now);
+    for (const ticket of this.tickets.values()) {
+      if (ticket.userId === user.id && !ticket.usedAt && ticket.expiresAt > input.now) {
+        ticket.activatedAt = input.now;
+      }
+    }
     await this.dependencies.sessions.create({
       userId: user.id,
       accountId: membership.accountId,
@@ -803,7 +819,7 @@ export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
     now: Date;
   }): Promise<{ userId: string; accountId: string } | null> {
     const ticket = [...this.tickets.values()].find((candidate) => candidate.tokenHash === input.pendingTokenHash);
-    if (!ticket || ticket.usedAt || ticket.expiresAt <= input.now) return null;
+    if (!ticket || ticket.usedAt || !ticket.activatedAt || ticket.expiresAt <= input.now) return null;
     const user = await this.dependencies.users.findById(ticket.userId);
     const membership = (await this.dependencies.listMemberships(ticket.userId))
       .find((candidate) => candidate.accountId === ticket.accountId);
@@ -816,6 +832,16 @@ export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
       expiresAt: input.sessionExpiresAt,
     });
     return { userId: user.id, accountId: membership.accountId };
+  }
+
+  async revokePendingRegistrationCredentials(input: { userId: string; now: Date }): Promise<void> {
+    await this.dependencies.sessions.revokeAllForUser(input.userId, input.now);
+    await this.dependencies.emailVerificationTokens.markAllActiveUsedForUser(input.userId, input.now);
+    for (const ticket of this.tickets.values()) {
+      if (ticket.userId === input.userId && !ticket.usedAt) {
+        ticket.usedAt = input.now;
+      }
+    }
   }
 }
 

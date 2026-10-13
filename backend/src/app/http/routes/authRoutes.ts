@@ -148,13 +148,27 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     windowMs: authWindowMs,
     resolveSubjectKey: (req, res) => readRequestSource(req, res).digest,
   });
-  const pendingSessionRateLimit = createRateLimitMiddleware({
+  // A waiting tab polls one browser-bound, opaque credential. Keep its own
+  // budget separate from the broader source guard so normal polling does not
+  // make people behind one NAT throttle each other.
+  const pendingSessionSourceRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
-    scope: "auth.email_verification.pending_session",
-    limit: authLimit,
+    scope: "auth.email_verification.pending_session.source",
+    limit: authLimit * 12,
     windowMs: authWindowMs,
     resolveSubjectKey: (req, res) => readRequestSource(req, res).digest,
+  });
+  const pendingSessionTicketRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "auth.email_verification.pending_session.ticket",
+    limit: authLimit * 2,
+    windowMs: authWindowMs,
+    resolveSubjectKey: (req) => {
+      const ticket = req.cookies?.[PENDING_REGISTRATION_COOKIE_NAME];
+      return typeof ticket === "string" ? createHash("sha256").update(ticket).digest("hex") : null;
+    },
   });
   router.get("/registration", async (_req, res, next) => {
     try {
@@ -422,7 +436,8 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
 
   router.post(
     "/email-verification/pending-session",
-    pendingSessionRateLimit,
+    pendingSessionSourceRateLimit,
+    pendingSessionTicketRateLimit,
     async (req, res, next) => {
       try {
         const result = await dependencies.authFunnelService.exchangePendingTicket(

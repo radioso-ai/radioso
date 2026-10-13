@@ -4,6 +4,7 @@ CREATE TABLE pending_registration_tickets (
   account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   token_hash TEXT NOT NULL UNIQUE,
   expires_at TIMESTAMPTZ NOT NULL,
+  activated_at TIMESTAMPTZ,
   used_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

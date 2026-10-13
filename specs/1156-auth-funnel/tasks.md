@@ -32,3 +32,4 @@
 - [x] T016 Run all required focused tests and repository gates.
 - [x] T017 Perform senior review and engineering-manager scope/readiness review in this session.
 - [x] T018 Commit, push, and open the PR with exact validation and security notes.
+- [x] T019 Address recovery, ticket-activation, polling-budget, mixed-revision, and return-path review findings with regression coverage.

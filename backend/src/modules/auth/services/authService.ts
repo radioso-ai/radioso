@@ -1,4 +1,5 @@
 import type { Env } from "../../../app/config/env.js";
+import type { AuthFunnelRepositoryPort } from "./authFunnelService.js";
 import { AppError, badRequest, conflict, forbidden, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService, AccountInvitationService, AuthenticatedPrincipal } from "../../account/public.js";
 import {
@@ -161,6 +162,7 @@ interface AuthServiceDependencies {
   userRepository: UserRepositoryPort;
   sessionRepository: SessionRepositoryPort;
   federatedIdentityRepository: FederatedIdentityRepositoryPort;
+  authFunnelRepository: Pick<AuthFunnelRepositoryPort, "revokePendingRegistrationCredentials">;
   workspaceService: WorkspaceService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
@@ -613,6 +615,10 @@ export class AuthService {
       // name for the mailbox owner replaces it.
       await runFederatedLoginStage({ reason: "account_reverification_failed" }, async () => {
         await this.dependencies.userRepository.updatePassword(existing.id, await hashPassword(generateSessionToken()));
+        await this.dependencies.authFunnelRepository.revokePendingRegistrationCredentials({
+          userId: existing.id,
+          now: new Date(),
+        });
         await this.dependencies.sessionRepository.revokeAllForUser(existing.id, new Date());
         displayName = providerDisplayName(input.displayName);
         await this.dependencies.userRepository.updateDisplayName(existing.id, displayName);

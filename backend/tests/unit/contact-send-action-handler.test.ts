@@ -142,6 +142,7 @@ describe("ContactSendActionHandler", () => {
       releaseConfirmationSend: vi.fn(async () => undefined),
       confirm: async () => false,
       revoke: async () => false,
+      resume: async () => false,
     };
     const policy = new NotificationRecipientPolicyService({
       enabled: true,

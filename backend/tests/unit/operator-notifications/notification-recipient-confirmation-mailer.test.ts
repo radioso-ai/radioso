@@ -65,7 +65,7 @@ describe("NotificationRecipientConfirmationMailer", () => {
       idempotencyKey: "request-id",
     });
 
-    const [message] = send.mock.calls[0]!;
+    const [message] = send.mock.calls[0];
     expect(message.subject).not.toContain("spam.example");
     expect(message.text).not.toContain("spam.example");
     expect(message.subject.startsWith("Cheap watches")).toBe(true);

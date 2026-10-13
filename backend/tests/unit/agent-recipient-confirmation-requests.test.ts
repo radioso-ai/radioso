@@ -5,10 +5,13 @@ import { describe, expect, it, vi } from "vitest";
 import { AgentSkillsService } from "../../src/modules/agentSkills/service.js";
 import { createDefaultSkillCapabilityRegistry } from "../../src/modules/skills/capabilityRegistry.js";
 import { AgentService } from "../../src/modules/agents/public.js";
+import type { RecipientConfirmationRequester } from "../../src/shared/domain/recipientConfirmationRequests.js";
 import { InMemoryAgentRepository, InMemoryWorkspaceRepository } from "../support/fakes.js";
 import { InMemoryAgentSkillRepository } from "../support/inMemoryAgentSkills.js";
 
-const requester = () => ({ requestConfirmations: vi.fn(async () => undefined) });
+const requester = () => ({
+  requestConfirmations: vi.fn<RecipientConfirmationRequester["requestConfirmations"]>(async () => undefined),
+});
 
 describe("recipient confirmation requests on save", () => {
   it("asks only the addresses an agent contact-settings change adds", async () => {

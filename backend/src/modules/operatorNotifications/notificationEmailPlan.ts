@@ -5,7 +5,7 @@ type RecipientDecision = Awaited<ReturnType<NotificationRecipientPolicyPort["pre
 type AdmissionReason = NonNullable<NotificationDeliveryAdmission["reason"]>;
 type RecipientSkipReason = "notification_recipient_unconfirmed" | "notification_recipient_suppressed";
 
-export type NotificationEmailPlan =
+type NotificationEmailPlan =
   | {
       /** The conversation has used its dispatch allowance: neither email nor webhook goes out. */
       dispatchAllowed: false;

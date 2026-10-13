@@ -23,7 +23,7 @@ describe("notification recipient confirmation contract", () => {
     expect(confirmPage.text).toContain('method="post"');
     expect(revokePage.text).toContain('method="post"');
     expect(confirmPage.text).toContain(`action="?token=${encodeURIComponent(confirmToken)}"`);
-    expect(revokePage.text).toContain(`action="?token=${encodeURIComponent(revokeToken)}"`);
+    expect(revokePage.text).toContain(`action="revoke?token=${encodeURIComponent(revokeToken)}"`);
     expect(confirm).not.toHaveBeenCalled();
     expect(revoke).not.toHaveBeenCalled();
     const confirmed = await request(app).post("/api/v1/notification-recipient-confirmations/confirm")
@@ -36,7 +36,8 @@ describe("notification recipient confirmation contract", () => {
     expect(confirmed.status).toBe(200);
     expect(confirmed.headers["cache-control"]).toBe("no-store");
     expect(confirmed.text).toContain("Stop sending me these notifications");
-    expect(confirmed.text).toContain('action="?token=');
+    // Posted from /confirm, the stop form must reach /revoke rather than the page's own path.
+    expect(confirmed.text).toContain('action="revoke?token=');
     expect(revoked.status).toBe(200);
     expect(confirm).toHaveBeenCalledWith({ recipientId: "recipient-id", generation: 0 });
     expect(revoke).toHaveBeenCalledWith({ recipientId: "recipient-id" });
@@ -61,7 +62,7 @@ describe("notification recipient confirmation contract", () => {
       .query({ token: revokeToken });
 
     expect(resumed.status).toBe(200);
-    expect(resumed.text).toContain("Stop sending me these notifications");
+    expect(resumed.text).toContain(`action="revoke?token=${encodeURIComponent(revokeToken)}"`);
     expect(resume).toHaveBeenCalledWith({ recipientId: "recipient-id" });
   });
 

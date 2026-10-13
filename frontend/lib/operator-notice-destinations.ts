@@ -118,11 +118,11 @@ export const describeNoticeDestination = (
     : `Unavailable, and the default is not sent: ${fallback.reason}`
 }
 
-/** Shown under the destination once today's notice emails are used up, because nothing else says why mail stopped. */
+/** Shown under the destination once the daily email limit has stopped mail, because nothing else says why it stopped. */
 export const describeDailyEmailAllowance = (destinations: OperatorNoticeDestinations | null): string | null => {
   const allowance = destinations?.dailyEmailAllowance
   if (!allowance?.reachedToday) return null
-  return `Daily email limit reached (${allowance.sentToday} of ${allowance.limit}). Emails resume tomorrow (UTC); webhooks still post.`
+  return `The daily email limit is stopping notice emails (${allowance.sentToday} of ${allowance.limit} sent today). It resets at midnight UTC.`
 }
 
 const DEFAULT_ROUTE_LABELS: Partial<Record<OperatorNoticeRoute, string>> = {

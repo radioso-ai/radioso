@@ -178,7 +178,7 @@ test("an ending's notice names the notify skill that sends it, and shows who tha
   await expect(sendWith).toContainText("Default (workspace owner)");
   await expect(documentEditor.getByText("Sends to owner@ananda.it (workspace owner)")).toBeVisible();
   // Nothing else would tell the author why today's notices stopped arriving.
-  await expect(documentEditor.getByText("Daily email limit reached (100 of 100).", { exact: false })).toBeVisible();
+  await expect(documentEditor.getByText("The daily email limit is stopping notice emails (100 of 100 sent today).", { exact: false })).toBeVisible();
 
   await sendWith.click();
   await page.getByRole("option", { name: "Notify bookings" }).click();

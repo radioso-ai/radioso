@@ -151,20 +151,24 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
   constructor(private readonly db: Db) {}
 
   async create(accountId: string, name: string, publicRouteKey?: string): Promise<WorkspaceRecord> {
-    const row = await this.db.transaction().execute(async (trx) => {
-      const workspace = await trx
-      .insertInto("workspaces")
-      .values({
-        id: randomUUID(),
-        account_id: accountId,
-        name,
-        public_route_key: publicRouteKey ?? createWorkspacePublicRouteKey(name),
-      })
-      .returning(workspaceColumns)
-      .executeTakeFirstOrThrow();
-      await trx.insertInto("workspace_setup_state").values({ workspace_id: workspace.id }).execute();
+    const createWorkspace = async (db: Db): Promise<WorkspaceRow> => {
+      const workspace = await db
+        .insertInto("workspaces")
+        .values({
+          id: randomUUID(),
+          account_id: accountId,
+          name,
+          public_route_key: publicRouteKey ?? createWorkspacePublicRouteKey(name),
+        })
+        .returning(workspaceColumns)
+        .executeTakeFirstOrThrow();
+      await db.insertInto("workspace_setup_state").values({ workspace_id: workspace.id }).execute();
       return workspace;
-    });
+    };
+
+    const row = this.db.isTransaction
+      ? await createWorkspace(this.db)
+      : await this.db.transaction().execute(createWorkspace);
 
     return mapWorkspace(row);
   }

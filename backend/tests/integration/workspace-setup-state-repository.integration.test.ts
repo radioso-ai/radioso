@@ -58,6 +58,21 @@ describeIntegration("WorkspaceSetupStateRepository (Postgres)", () => {
     });
   });
 
+  it("reuses a caller-owned transaction when seeding setup state", async () => {
+    const created = await database.kysely.transaction().execute(async (transaction) => {
+      return await new WorkspaceRepository(transaction).create(
+        accountId,
+        "Transactional Workspace",
+        `transactional-${randomUUID()}`,
+      );
+    });
+
+    await expect(repository.get(created.id)).resolves.toMatchObject({
+      workspaceId: created.id,
+      dismissedAt: null,
+    });
+  });
+
   it("rolls back workspace creation when its setup row cannot be seeded", async () => {
     const suffix = randomUUID().replaceAll("-", "");
     const functionName = `reject_setup_${suffix}`;

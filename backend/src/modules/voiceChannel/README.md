@@ -12,20 +12,25 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
 
 ## Boundaries
 
-- `domain.ts` knows sessions, utterances, speech pieces and turn outcomes. It
-  names no vendor and no wire.
+- `domain.ts` knows sessions, utterances, bridge lines, speech pieces and turn
+  outcomes. It names no vendor and no wire.
 - `services/` runs the turn: `voiceTurnService.ts` resolves or binds the
-  session's conversation, starts the chat turn with `sourceChannel: "voice"`
-  and a `voice` channel context, and maps the chat stream to
-  `VoiceTurnEvent`s; `speechSegmenter.ts` is the pure sentence cutter
-  (punctuation only, no words).
+  session's conversation, reads the agent's voice settings and the
+  conversation's routine state, starts the chat turn with
+  `sourceChannel: "voice"` and a `voice` channel context, and maps the chat
+  stream to `VoiceTurnEvent`s; `speechSegmenter.ts` is the pure sentence cutter
+  (punctuation only, no words); `voiceTurnPolicy.ts` is the pure timing wrapper
+  (bridge and turn limit) over those events; `voiceLines.ts` picks the turn's
+  bridge and fallback lines by routine state and locale (tag structure only,
+  never the lines' words); `voiceTurnMetrics.ts` names the policy's series.
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
   `voice_sessions`. The first binding wins.
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is
-  data: where the session key travels, and the default transport. Vendor field names live there and in `requestSchema.ts`, never
-  in the domain.
+  data: where the session key and the caller's locale travel, the default
+  transport, and the flush delta a runtime needs after each sentence. Vendor
+  field names live there and in `requestSchema.ts`, never in the domain.
 
 Dependency direction is adapter → `VoiceTurnPort` → chat. The service reaches
 chat through the narrow `VoiceChatPort` (`streamTurn`) and imports chat only
@@ -44,8 +49,15 @@ helpers and the shared chat message limit from `app/http`
 - `public.ts` — `VoiceTurnPort`, `VoiceTurnService`, `VoiceSessionRepository`,
   `registerOpenAiCompletionsRoute`.
 - `backend/src/app/composition/voiceChannel.ts` — builds the port over
-  Postgres and `AssistantChatService.streamAnswer`; exposed as
+  Postgres, `AssistantChatService.streamAnswer`, the agent repository (voice
+  settings and default locale) and the routine state store; exposed as
   `AppDependencies.voiceTurns`.
+- The agent's `voice` settings block belongs to the agents module
+  (`agents/voiceSettings.ts`, stored in `behavior_settings.voice`, served on
+  `GET`/`PUT /api/v1/agents/:agentId`). This module reads it: the services
+  import `AgentVoiceSettings` and `VoiceBridgeStyle` as types from
+  `agents/public.ts`, and composition hands the turn service the agent's block
+  and default locale.
 - `backend/src/app/http/routes/agentVoiceRoute.ts` — mounts
   `POST /api/v1/agents/:agentId/voice/:dialect/v1/chat/completions` beside the
   REST agent channel, behind `requireRestAgentChannelCredential` (an
@@ -61,10 +73,37 @@ helpers and the shared chat message limit from `app/http`
   `createAgentChannelChatResponse`, is Radioso's own contract and is
   registered.) The `voice` member of `ConversationChannelContext` is in
   OpenAPI, because history responses return it.
-- **Ray coverage.** The route is a deferred exclusion in
-  `tests/unit/operatorCopilot/catalogCoverage.ts`
-  (`internalRuntimeCoverageExclusions.voiceCompletionsAdapter`) until voice
-  settings exist for an operator to configure.
+- **Ray coverage.** The route and the settings block are deferred exclusions
+  in `tests/unit/operatorCopilot/catalogCoverage.ts`
+  (`internalRuntimeCoverageExclusions.voiceCompletionsAdapter`,
+  `voiceSettingsBlock`). `voice` is left out of `agentInputFieldSchemas`, so
+  `propose_agent_setting` refuses it by name; `fieldParity.ts` records the gap
+  for it and for `prepare_agent_settings`.
+- **Turn policy.** Runs only while the agent's `voice.enabled` is true; with
+  voice off a turn runs exactly as a plain chat turn. Both deadlines count from
+  the turn's start (`VOICE_BEHAVIOR` in `shared/domain/behaviorConfig.ts`:
+  bridge at 900 ms, limit at 8 s) and stop at the first speech. The bridge
+  style is `acknowledge` while a routine is active in the conversation at turn
+  start and `check` otherwise; a session's first turn has no routine. Lines
+  rotate per policy turn within the process. The locale is the request's
+  (`VoiceTurnInput.locale`, read by the dialect), else the agent's
+  `assistantDefaultLocale`, else `en`; chat stores no response language per
+  message, so the last reply's language is not a source. An agent with no line
+  for the locale and style hears silence, and an agent with no fallback line
+  keeps waiting past the limit.
+- **Bridge lines are not stored.** A bridge is a channel-level utterance, like
+  a typing indicator: it reaches the caller, never the conversation history.
+- **After the limit.** The policy speaks the fallback line, ends the turn with
+  `continue`, and drains the reply unheard so the chat turn still finishes and
+  is stored. The stored answer is then not what the caller heard, and nothing in
+  history marks that. The route ends the HTTP response at the outcome in both
+  modes, so the runtime never waits for the drain.
+- **Flush delta.** ElevenLabs hands a sentence to speech only once a following
+  non-blank delta arrives (a space or newline does not count; observed
+  2026-10-13). The
+  `elevenlabs` dialect's `sentenceFlushDelta` (U+200B) follows every bridge
+  line and speech piece on the wire; `renderCompletion` and history never see
+  it.
 - **Metering.** The chat service reserves usage with `surface` = the source
   channel and prices it from the same value: `voice` reserves
   `surface: "voice"`, `usage: "conversation_reply"`, the treatment the REST
@@ -102,7 +141,9 @@ helpers and the shared chat message limit from `app/http`
 ## Observability
 
 One log per turn with `agentId`, `vendor`, `transport`, `conversationId`,
-`result`, `durationMs` and `speechPieceCount`: `Voice turn finished` at info
+`result`, `durationMs` and `speechPieceCount`, plus `bridged`,
+`turnLimitReached` and `fallbackSpoken` when the voice policy ran: `Voice turn
+reached the turn limit` at warn when the limit fired, else `Voice turn finished` at info
 (`completed`, `superseded`, `abandoned`), or `Voice turn failed` at warn with
 `errorClass`. A warn when a concurrent first turn bound the session to another
 conversation, and a warn naming only `dialect` and `agentId` when a request
@@ -111,8 +152,17 @@ frame ends with one generic OpenAI error frame. Never the utterance, the reply
 or an internal error message. Chat-side spans, metrics and failure logs cover the
 turn itself.
 
+The policy records `voice_turn_first_speech_ms` (histogram, `bridged`),
+`voice_bridge_emitted_total` (`style`, `locale_resolved`: `no` when the agent
+had no line, so nothing was spoken) and `voice_turn_limit_total`
+(`locale_resolved`: `no` when there was no fallback line and the turn kept
+waiting). Labels are closed enums; no line text, locale tag or id.
+
 ## Tests
 
-- `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts` (the
+  policy tests use fake timers)
+- `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts`
+  (the settings round trip and the dashboard-save safety check)
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
   (needs the disposable integration database; see the code map)

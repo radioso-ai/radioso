@@ -2820,6 +2820,14 @@ export const createTestDependencies = (overrides: {
         };
       })(),
       chat: { streamTurn: (request) => assistantChatService.streamAnswer({ ...request, stream: true }) },
+      agents: {
+        findVoiceProfile: async ({ workspaceId, agentId }) => {
+          const agent = await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+          return agent ? { voice: agent.voice, defaultLocale: agent.assistantDefaultLocale } : null;
+        },
+      },
+      routines: { isRoutineActive: async (conversationId) => (await routineStateStore.loadActive({ sessionId: conversationId })) !== null },
+      metrics: metricsRegistry,
       logger,
     }),
     assistantHistoryService,

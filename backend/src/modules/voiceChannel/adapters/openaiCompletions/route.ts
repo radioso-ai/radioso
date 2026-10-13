@@ -12,7 +12,7 @@ import {
   renderCompletion,
   type CompletionIdentity,
 } from "./completionsPresenter.js";
-import { findCompletionsDialect, sessionKeyFor, type CompletionsDialect } from "./dialects.js";
+import { findCompletionsDialect, localeFor, sessionKeyFor, type CompletionsDialect } from "./dialects.js";
 import { completionsRequestSchema, utteranceOf } from "./requestSchema.js";
 
 const COMPLETIONS_PATH = "/:agentId/voice/:dialect/v1/chat/completions";
@@ -86,11 +86,13 @@ const turnInputFor = (
     logger.warn({ dialect: dialect.id, agentId: caller.agentId }, "Voice request carries no usable session key");
     throw badRequest(`The request carries no usable voice session key for the ${dialect.id} dialect`);
   }
+  const locale = localeFor(dialect, request);
   return {
     input: {
       session: { workspaceId: caller.workspaceId, agentId: caller.agentId, vendor: dialect.id, sessionKey },
       transport: dialect.transportDefault,
       utterance,
+      ...(locale ? { locale } : {}),
     },
     model: parsed.data.model ?? DEFAULT_MODEL_NAME,
     stream: parsed.data.stream ?? false,
@@ -111,7 +113,9 @@ const openEventStream = (res: Response, conversationId: string | null): void => 
 
 /**
  * Drains the turn the way the REST agent channel does: after a disconnect the turn may still
- * finish and persist, and it is aborted only once the post-disconnect ceiling passes.
+ * finish and persist, and it is aborted only once the post-disconnect ceiling passes. The
+ * response itself ends at the turn's outcome, which is always last; a turn whose limit spoke the
+ * fallback line keeps draining behind it, on the same ceiling.
  */
 interface TurnDrain {
   res: Response;
@@ -143,9 +147,13 @@ const drainTurn = async (
   }
 };
 
-const streamCompletion = async (drain: TurnDrain, identity: CompletionIdentity): Promise<void> => {
+const streamCompletion = async (
+  drain: TurnDrain,
+  identity: CompletionIdentity,
+  dialect: CompletionsDialect,
+): Promise<void> => {
   const { res } = drain;
-  const render = createCompletionChunkRenderer(identity);
+  const render = createCompletionChunkRenderer(identity, { sentenceFlushDelta: dialect.sentenceFlushDelta });
   let conversationId: string | null = null;
   try {
     await drainTurn(drain, (event) => {
@@ -162,6 +170,9 @@ const streamCompletion = async (drain: TurnDrain, identity: CompletionIdentity):
       for (const frame of frames) {
         res.write(frame);
       }
+      if (event.type === "outcome") {
+        res.end();
+      }
     });
   } catch (error) {
     if (res.headersSent && !res.destroyed && !res.writableEnded) {
@@ -175,20 +186,29 @@ const streamCompletion = async (drain: TurnDrain, identity: CompletionIdentity):
   }
 };
 
-const answerCompletion = async (drain: TurnDrain, identity: CompletionIdentity): Promise<void> => {
-  const { res } = drain;
-  const collected: VoiceTurnEvent[] = [];
-  const { disconnected } = await drainTurn(drain, (event) => collected.push(event));
-  if (disconnected) {
-    return;
-  }
+const sendCompletion = (res: Response, identity: CompletionIdentity, collected: readonly VoiceTurnEvent[]): void => {
   const conversation = collected.find(
-    (event): event is Extract<VoiceTurnEvent, { type: "conversation" }> => event.type === "conversation",
+    (seen): seen is Extract<VoiceTurnEvent, { type: "conversation" }> => seen.type === "conversation",
   );
   if (conversation) {
     res.setHeader(CONVERSATION_ID_HEADER, conversation.conversationId);
   }
   res.status(200).json(renderCompletion(identity, collected));
+};
+
+const answerCompletion = async (drain: TurnDrain, identity: CompletionIdentity): Promise<void> => {
+  const { res } = drain;
+  const collected: VoiceTurnEvent[] = [];
+  const { disconnected } = await drainTurn(drain, (event) => {
+    collected.push(event);
+    if (event.type === "outcome") {
+      sendCompletion(res, identity, collected);
+    }
+  });
+  // A turn that ended without an outcome still owes the caller what it said.
+  if (!res.headersSent && !disconnected) {
+    sendCompletion(res, identity, collected);
+  }
 };
 
 /**
@@ -219,7 +239,7 @@ export const registerOpenAiCompletionsRoute = (router: Router, dependencies: Com
         abort,
         disconnectAbortCeilingMs: dependencies.disconnectAbortCeilingMs,
       };
-      await (stream ? streamCompletion : answerCompletion)(drain, identity);
+      await (stream ? streamCompletion(drain, identity, dialect) : answerCompletion(drain, identity));
     } catch (error) {
       // A started stream already ended with its error frame, and the turn logged the failure;
       // Express would only destroy the socket under the frame.

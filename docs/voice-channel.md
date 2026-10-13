@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
-description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with one conversation per voice session."
-last_updated: 2026-10-12
+description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with one conversation per voice session and authored lines that cover the wait."
+last_updated: 2026-10-13
 ---
 
 # Voice Channel
@@ -33,6 +33,11 @@ Activity and the Inbox.
 4. The agent runs its turn. The reply comes back as `chat.completion.chunk`
    frames, one sentence per frame, ending with `finish_reason: "stop"` and
    `data: [DONE]`.
+5. If you turned the agent's voice settings on, the wait is covered: when
+   nothing is ready to say 900 ms into the turn, the caller hears one of your
+   bridge lines, and when nothing is ready at 8 seconds, they hear your
+   fallback line and the turn ends. See
+   [Bridge lines and the turn limit](#bridge-lines-and-the-turn-limit).
 
 ## Set it up
 
@@ -98,9 +103,13 @@ import { Conversation } from '@elevenlabs/client'
 
 const conversation = await Conversation.startSession({
   agentId: '<elevenlabs-agent-id>',
-  customLlmExtraBody: { session_key: crypto.randomUUID() },
+  customLlmExtraBody: { session_key: crypto.randomUUID(), locale: 'it' },
 })
 ```
+
+`locale` is optional. It tells Radioso which language the caller speaks, so
+bridge and fallback lines come in that language; leave it out and the agent's
+default locale applies.
 
 Over the WebSocket API, send the same object as `custom_llm_extra_body` in
 the `conversation_initiation_client_data` message. ElevenLabs then sends it
@@ -110,16 +119,105 @@ variable such as `{{system__conversation_id}}` inside the extra body arrives
 as that literal text, which would put every call in one conversation.
 Radioso answers a session key that is a whole `{{…}}` placeholder with `400`.
 
+## Bridge lines and the turn limit
+
+On a call, silence sounds like a dropped line. A grounded answer can take a
+second or two to start, so you give the agent a few short lines to say while
+it works, and one line to say if the answer takes far too long. They live in
+the agent's `voice` settings block:
+
+```json
+{
+  "voice": {
+    "enabled": true,
+    "bridgeLines": {
+      "en": {
+        "acknowledge": ["Got it.", "Thanks, noted."],
+        "check": ["Let me check that for you.", "One moment, I'm looking it up."]
+      },
+      "it": {
+        "acknowledge": ["Perfetto.", "Grazie, preso nota."],
+        "check": ["Controllo subito.", "Un attimo, sto verificando."]
+      }
+    },
+    "fallbackLine": {
+      "en": "Sorry, that is taking longer than it should. Could you ask me again?",
+      "it": "Scusa, ci sto mettendo troppo. Puoi ripetere la domanda?"
+    }
+  }
+}
+```
+
+Set it with the agent settings API, using a personal token or a
+service-account credential from **Settings → API access**:
+
+```bash
+curl -sS -X PUT \
+  "https://api.radioso.ai/api/v1/agents/<agent-id>" \
+  -H "Authorization: Bearer <personal-token>" \
+  -H "Content-Type: application/json" \
+  -d @voice.json
+```
+
+where `voice.json` holds the object above. `GET /api/v1/agents/<agent-id>`
+returns the block as `voice`. The dashboard has no editor for it; saving other
+agent settings from the dashboard leaves it as it is.
+
+The block is replaced whole: a request that carries `voice` must carry
+`enabled`, `bridgeLines` and `fallbackLine`, and a request without `voice`
+keeps the stored one. To turn voice off, send the block back with
+`"enabled": false`. Keys are language tags such as `en`, `it` or `pt-BR`, up
+to 10 for each map. Each style holds up to 5 lines, and every line is 1 to 200
+characters. A new agent starts with `"enabled": false` and empty maps.
+
+What happens on a turn while `enabled` is true:
+
+- **Bridge, at 900 ms.** If the reply has not started speaking 900 ms into the
+  turn, the caller hears one bridge line, once. Inside a running routine (the
+  agent has just asked the caller something and is taking in the answer) it
+  is an `acknowledge` line; otherwise a `check` line. Lines rotate across
+  turns. The rotation is shared by every call one Radioso server handles, so
+  when calls run at the same time a caller can hear the same line twice in a
+  row. Then the reply follows as usual.
+- **Turn limit, at 8 seconds.** If the reply still has not started speaking 8
+  seconds into the turn, the caller hears the fallback line and the turn ends,
+  so the runtime listens for the caller again. The agent's reply finishes in
+  the background and is stored in the conversation.
+- **Language.** The lines come in the caller's language: the locale the request
+  carries (see the dialect table), else the agent's default locale, else `en`.
+  A line keyed `it` serves `it-IT` and `it-CH`; an exact tag such as `pt-BR`
+  wins over a bare `pt`. With no line for that language and style, the caller
+  hears nothing extra. With no fallback line for the language, the turn keeps
+  waiting for the reply past 8 seconds.
+
+The 900 ms and 8 second marks are the same for every agent. They follow from
+how long a caller tolerates silence, not from what an agent says, so they are
+not settings.
+
+Bridge lines are spoken, never stored: the conversation in Activity and the
+Inbox shows the caller's words and the agent's reply, the way a chat
+conversation never shows its typing indicator. After a turn limit, the stored
+reply is the agent's full answer, which the caller did not hear; the caller
+heard the fallback line.
+
 ## Dialects
 
 Runtimes speak the same OpenAI wire and differ in where they put the id of
-the call. The dialect in the path tells Radioso where to look. Sources are
-tried in order, and the first non-empty string wins.
+the call and the caller's language. The dialect in the path tells Radioso
+where to look. Sources are tried in order, and the first non-empty string
+wins. A locale that is not a language tag is ignored.
 
-| Dialect | Session key, in order | Transport |
-|---|---|---|
-| `elevenlabs` | body `elevenlabs_extra_body.session_key` | `web` |
-| `generic` | header `X-Radioso-Voice-Session`, then body `metadata.session_key` | `web` |
+| Dialect | Session key, in order | Locale, in order | Transport |
+|---|---|---|---|
+| `elevenlabs` | body `elevenlabs_extra_body.session_key` | body `elevenlabs_extra_body.locale` | `web` |
+| `generic` | header `X-Radioso-Voice-Session`, then body `metadata.session_key` | header `X-Radioso-Voice-Locale`, then body `metadata.locale` | `web` |
+
+ElevenLabs releases a sentence to speech only when a following non-blank delta
+arrives (observed on 2026-10-13; a space or a newline does not count), so the
+`elevenlabs` dialect sends a zero-width space (U+200B) as its own delta after
+each sentence, bridge line and fallback line. Without it, each
+sentence would wait for the next one to start before the caller heard it. The
+zero-width space travels on the wire only; the stored reply has none.
 
 The session key must name one call. A value that spans calls, such as a
 user id, would run every call of that user in one conversation, so no dialect
@@ -160,11 +258,15 @@ data: [DONE]
 ```
 
 A sentence ends at terminal punctuation followed by whitespace, or at a
-full-width terminator such as `。`. The text of the frames joined together is
-the agent's reply, character for character.
+full-width terminator such as `。`. A bridge or fallback line arrives as a
+content frame like any sentence. Leaving out a bridge line and the
+`elevenlabs` dialect's zero-width spaces, the text of the frames joined
+together is what the caller hears: the agent's reply, character for
+character, or the fallback line after a turn limit.
 
 With `stream: false`, the response is one `chat.completion` object whose
-`choices[0].message.content` is the whole reply.
+`choices[0].message.content` is the whole reply, or the fallback line after a
+turn limit. It never contains a bridge line.
 
 If the turn fails after the first frame, the stream ends with one error frame
 in place of `stop` and `[DONE]`:
@@ -177,7 +279,9 @@ A turn that fails before its first frame answers with an HTTP error status
 instead.
 
 Both carry an `X-Radioso-Conversation-Id` header with the conversation the
-turn ran in, so you can open the call in Activity.
+turn ran in, so you can open the call in Activity. On a session's first turn,
+a bridge line can open the stream before the conversation exists; that one
+response then has no header, and the next turn's has it.
 
 Try it from a terminal with the `generic` dialect. curl gets the full path a
 runtime reaches after appending `/chat/completions` to the configured URL:
@@ -244,6 +348,11 @@ that session key starts a new conversation.
   dialect found no session key. Check that the runtime sends the field the
   dialect table names.
 - `404` means the dialect in the path is not one of the dialects above.
+- After a turn limit, the conversation stores the agent's full reply while the
+  caller heard the fallback line. Read the reply in Activity to see what the
+  caller missed.
+- An agent bundle does not carry the `voice` block, so an agent created from a
+  bundle import starts with voice off.
 - If the runtime hangs up mid-reply, the turn still finishes and is saved,
   the same as a REST agent-channel client that disconnects. A turn still
   running well after the disconnect is cancelled.

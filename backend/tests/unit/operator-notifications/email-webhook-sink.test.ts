@@ -229,6 +229,24 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     });
   });
 
+  it("posts the webhook but fails closed for email when recipient preparation rejects", async () => {
+    const { mailer, sent } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => routedTo(["waiting@example.com"], { url: "https://hooks.example.com/approval" }) },
+      undefined,
+      httpClient,
+      undefined,
+      undefined,
+      { prepareDelivery: async () => { throw new Error("recipient reservation unavailable"); } },
+    );
+
+    await expect(sink.deliver(notification, context)).resolves.toEqual({ disposition: "delivered" });
+    expect(sent).toEqual([]);
+    expect(requests).toHaveLength(1);
+  });
+
   it("sends the webhook the resolved permalink, absolute and as a routable path", async () => {
     const { mailer } = recordingMailer();
     const { httpClient, requests } = recordingWebhookClient();

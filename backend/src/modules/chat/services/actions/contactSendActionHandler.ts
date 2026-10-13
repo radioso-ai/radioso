@@ -277,24 +277,6 @@ export class ContactSendActionHandler implements ActionHandler {
     }
 
     const baseIdempotencyKey = input.context.idempotencyKey ?? input.context.requestId;
-    const recipientDecision = await this.recipientPolicy.prepareDelivery({
-      workspaceId: input.context.workspaceId,
-      conversationId: input.context.conversationId,
-      emails: target.emails,
-      idempotencyKey: baseIdempotencyKey,
-    });
-    const admission = await this.admission?.admit({
-      requestId: input.context.requestId,
-      workspaceId: input.context.workspaceId,
-      accountId: input.context.accountId,
-      conversationId: input.context.conversationId,
-      recipientEmails: recipientDecision.eligibleEmails,
-      requestedEmailCount: recipientDecision.eligibleEmails.length,
-    });
-    if (admission && !admission.dispatchAllowed) {
-      throw new ActionDispatchSkippedError(admission.reason ?? "conversation_dispatch_cap");
-    }
-
     const email = boundedVisitorText(input.payload.email, REPLY_TO_MAX_LENGTH);
     const replyTo = validVisitorReplyTo(input.payload.email);
     const message = boundedVisitorText(input.payload.message, CONTACT_MESSAGE_MAX_LENGTH) ?? "";
@@ -306,6 +288,51 @@ export class ContactSendActionHandler implements ActionHandler {
       "",
       message,
     ].filter((line): line is string => line !== null);
+    const webhookDelivery = target.webhook ? this.postWebhook({
+      webhook: target.webhook,
+      payload: {
+        name,
+        email,
+        message,
+        workspaceId: input.context.workspaceId,
+        conversationId: input.context.conversationId,
+        requestId: input.context.requestId,
+      },
+      idempotencyKey: `${baseIdempotencyKey}:webhook`,
+    }) : Promise.resolve();
+
+    let prepared: {
+      recipientDecision: Awaited<ReturnType<NotificationRecipientPolicyPort["prepareDelivery"]>>;
+      admission: Awaited<ReturnType<NotificationDeliveryAdmissionPort["admit"]>> | undefined;
+    };
+    try {
+      const recipientDecision = await this.recipientPolicy.prepareDelivery({
+        workspaceId: input.context.workspaceId,
+        conversationId: input.context.conversationId,
+        emails: target.emails,
+        idempotencyKey: baseIdempotencyKey,
+      });
+      const admission = await this.admission?.admit({
+        requestId: input.context.requestId,
+        workspaceId: input.context.workspaceId,
+        accountId: input.context.accountId,
+        conversationId: input.context.conversationId,
+        recipientEmails: recipientDecision.eligibleEmails,
+        requestedEmailCount: recipientDecision.eligibleEmails.length,
+      });
+      prepared = { recipientDecision, admission };
+    } catch (error) {
+      await webhookDelivery;
+      if (target.webhook) {
+        return;
+      }
+      throw error;
+    }
+    const { recipientDecision, admission } = prepared;
+    if (admission && !admission.dispatchAllowed) {
+      await webhookDelivery;
+      throw new ActionDispatchSkippedError(admission.reason ?? "conversation_dispatch_cap");
+    }
 
     const [emailResults] = await Promise.all([
       Promise.all((admission?.emailAllowed === false ? [] : recipientDecision.eligibleRecipients).map((recipient) =>
@@ -319,18 +346,7 @@ export class ContactSendActionHandler implements ActionHandler {
           idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
         })),
       ),
-      target.webhook ? this.postWebhook({
-        webhook: target.webhook,
-        payload: {
-          name,
-          email,
-          message,
-          workspaceId: input.context.workspaceId,
-          conversationId: input.context.conversationId,
-          requestId: input.context.requestId,
-        },
-        idempotencyKey: `${baseIdempotencyKey}:webhook`,
-      }) : Promise.resolve(),
+      webhookDelivery,
     ]);
     if (!target.webhook) {
       const skipReason = admission?.emailAllowed === false

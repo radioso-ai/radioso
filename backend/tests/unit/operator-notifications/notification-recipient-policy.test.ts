@@ -141,14 +141,14 @@ describe("NotificationRecipientPolicyService", () => {
       .resolves.toEqual([{ email: "stopped@example.com", state: "revoked" }]);
   });
 
-  it("confirms and revokes only through the state store with the token generation", async () => {
+  it("confirms by token generation and revokes by recipient identity", async () => {
     const states = store({});
     const service = new NotificationRecipientPolicyService({ enabled: true, states, sendConfirmation: vi.fn(async () => ({ dispatched: true })), now: () => NOW });
 
     await service.confirm({ recipientId: "recipient-id", generation: 2 });
-    await service.revoke({ recipientId: "recipient-id", generation: 2 });
+    await service.revoke({ recipientId: "recipient-id" });
 
     expect(states.confirm).toHaveBeenCalledWith("recipient-id", 2, NOW);
-    expect(states.revoke).toHaveBeenCalledWith("recipient-id", 2, NOW);
+    expect(states.revoke).toHaveBeenCalledWith("recipient-id", NOW);
   });
 });

@@ -164,6 +164,24 @@ describe("ContactSendActionHandler", () => {
     expect(states.releaseConfirmationSend).toHaveBeenCalledTimes(1);
   });
 
+  it("posts the webhook but fails closed for email when recipient preparation rejects", async () => {
+    const { mailer, sent } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["waiting@example.com"], webhook: { url: "https://hooks.example.com/contact" } }) },
+      undefined,
+      httpClient,
+      undefined,
+      undefined,
+      { prepareDelivery: async () => { throw new Error("identity lookup unavailable"); } },
+    );
+
+    await expect(handler.handle({ payload: { message: "Please call me" }, context })).resolves.toBeUndefined();
+    expect(sent).toEqual([]);
+    expect(requests).toHaveLength(1);
+  });
+
   it("posts configured webhooks with conversation metadata and an idempotency key", async () => {
     const { mailer, sent } = recordingMailer();
     const { httpClient, requests } = recordingWebhookClient();
@@ -286,7 +304,7 @@ describe("ContactSendActionHandler", () => {
     expect(requests).toHaveLength(1);
   });
 
-  it("skips email and webhook when the conversation dispatch cap is reached", async () => {
+  it("skips capped email while preserving the independent webhook", async () => {
     const { mailer, sent } = recordingMailer();
     const { httpClient, requests } = recordingWebhookClient();
     const handler = new ContactSendActionHandler(
@@ -302,7 +320,7 @@ describe("ContactSendActionHandler", () => {
       .rejects.toMatchObject({ name: "ActionDispatchSkippedError", reason: "conversation_dispatch_cap" });
 
     expect(sent).toHaveLength(0);
-    expect(requests).toHaveLength(0);
+    expect(requests).toHaveLength(1);
   });
 });
 

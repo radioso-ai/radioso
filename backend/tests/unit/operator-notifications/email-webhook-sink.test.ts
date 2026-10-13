@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EmailWebhookOperatorNotificationSink } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
+import { EmailWebhookOperatorNotificationSink as EmailWebhookOperatorNotificationSinkBase } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
 import { buildHandoffNotifyAction } from "../../../src/modules/chat/services/handoffOwnership.js";
 import type {
   ContactNotificationMailer,
@@ -17,6 +17,29 @@ const routedTo = (
   via: RoutedContactDeliveryTarget["via"] = "agent_setting",
 ): RoutedContactDeliveryTarget => ({ emails, webhook, via, recipientsFromWorkspaceOwner: false });
 type WebhookRequest = Parameters<ContactWebhookHttpClient["post"]>[0];
+
+const allowedRecipientPolicy = {
+  prepareDelivery: async (input: { emails: readonly string[] }) => ({
+    eligibleEmails: [...input.emails],
+    eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
+    skipped: { unconfirmed: 0, suppressed: 0 },
+  }),
+};
+
+class EmailWebhookOperatorNotificationSink extends EmailWebhookOperatorNotificationSinkBase {
+  constructor(...args: unknown[]) {
+    const [mailer, recipients, logger, webhookClient, conversationLinks, admission, recipientPolicy] = args as Partial<ConstructorParameters<typeof EmailWebhookOperatorNotificationSinkBase>>;
+    super(
+      mailer!,
+      recipients!,
+      logger,
+      webhookClient,
+      conversationLinks,
+      admission,
+      recipientPolicy ?? allowedRecipientPolicy,
+    );
+  }
+}
 
 const notification = {
   kind: "approval" as const,

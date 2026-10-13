@@ -10,6 +10,8 @@ CREATE TABLE notification_recipient_confirmations (
   confirmation_sent_at TIMESTAMPTZ,
   confirmed_at TIMESTAMPTZ,
   revoked_at TIMESTAMPTZ,
+  confirmation_generation INTEGER NOT NULL DEFAULT 0 CHECK (confirmation_generation >= 0),
+  requires_confirmation BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (workspace_id, normalized_email),

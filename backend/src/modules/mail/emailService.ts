@@ -9,8 +9,9 @@ import type { RfcMessageId } from "./emailHeaderValues.js";
  * bounce and complaint rates can be read per email type rather than for the account as a whole.
  * Values are provider tag names: ASCII letters, numbers and underscores only.
  *
- * `channel_reply` is a reply to a customer over the email channel. Its content is the customer's
- * conversation, so no driver ever logs its addresses, subject, body or headers (FR-045).
+ * `channel_reply` contains a customer's conversation. Recipient-confirmation messages and any
+ * notice carrying an unsubscribe URL contain signed recipient tokens. No driver logs identifying
+ * or token-bearing fields for those messages (FR-045).
  */
 export type EmailKind =
   | "email_verification"
@@ -153,12 +154,14 @@ const redactSensitiveEmailMetadata = (
 };
 
 /**
- * The only facts recorded about a channel reply: shape, never content. The idempotency key is
- * hashed so local runs can correlate retries without printing the key.
+ * The only facts recorded about sensitive mail: shape, never content. The idempotency key is
+ * hashed so local runs can correlate retries without printing it.
  */
-const redactedChannelReply = (message: EmailMessage) => ({
+const redactedSensitiveMail = (message: EmailMessage) => ({
   kind: message.kind,
   idempotencyKeyHash: message.idempotencyKey ? shortHash(message.idempotencyKey) : null,
+  toBytes: Buffer.byteLength(message.to, "utf8"),
+  subjectBytes: Buffer.byteLength(message.subject, "utf8"),
   textBytes: Buffer.byteLength(message.text, "utf8"),
   hasHtml: Boolean(message.html),
   hasThreading: Boolean(message.threading),
@@ -169,8 +172,8 @@ const shortHash = (value: string): string =>
 
 class LogEmailDriver implements EmailDriver {
   async send(message: EmailMessage): Promise<EmailSendResult> {
-    if (message.kind === "channel_reply") {
-      console.info("email.send", redactedChannelReply(message));
+    if (message.kind === "channel_reply" || message.kind === "recipient_confirmation" || Boolean(message.listUnsubscribeUrl)) {
+      console.info("email.send", redactedSensitiveMail(message));
       return { ...undispatched(), driver: "log" };
     }
     console.info("email.send", {

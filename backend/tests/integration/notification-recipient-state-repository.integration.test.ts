@@ -7,6 +7,9 @@ import {
   NOTIFICATION_CONFIRMATION_DAILY_LIMIT,
   NotificationRecipientStateRepository,
 } from "../../src/db/repositories/notificationRecipientStateRepository.js";
+import { ContactSendActionHandler, type ContactNotificationMailer } from "../../src/modules/chat/services/actions/contactSendActionHandler.js";
+import { EmailWebhookOperatorNotificationSink } from "../../src/modules/chat/services/actions/emailWebhookSink.js";
+import { NotificationRecipientPolicyService } from "../../src/modules/operatorNotifications/notificationRecipientPolicy.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -97,12 +100,29 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
     });
     expect(reservation).not.toBeNull();
 
-    await repository.confirm(reservation!.recipientId, nextDay);
+    await repository.confirm(reservation!.recipientId, reservation!.generation, nextDay);
     expect((await repository.read({ workspaceId, emails: ["state@example.com"], now: nextDay }))[0]?.state)
       .toBe("confirmed");
-    await repository.revoke(reservation!.recipientId, nextDay);
+    await repository.revoke(reservation!.recipientId, reservation!.generation, nextDay);
     expect((await repository.read({ workspaceId, emails: ["state@example.com"], now: nextDay }))[0]?.state)
       .toBe("revoked");
+  });
+
+  it("rejects stale confirmation generations and does not re-enable a revoked recipient", async () => {
+    const now = new Date("2026-10-15T12:00:00.000Z");
+    const first = await repository.reserveConfirmationSend({
+      workspaceId, email: "generation@example.com", now, force: false,
+    });
+    expect(first).not.toBeNull();
+    await repository.revoke(first!.recipientId, first!.generation, now);
+    expect(await repository.confirm(first!.recipientId, first!.generation, now)).toBe(false);
+
+    const resent = await repository.reserveConfirmationSend({
+      workspaceId, email: "generation@example.com", now: new Date(now.getTime() + 1), force: true,
+    });
+    expect(resent).toMatchObject({ recipientId: first!.recipientId, generation: first!.generation + 1 });
+    expect(await repository.confirm(first!.recipientId, first!.generation, now)).toBe(false);
+    expect(await repository.confirm(resent!.recipientId, resent!.generation, now)).toBe(true);
   });
 
   it("applies a suppression deployment-wide and lets complaint dominate hard bounce", async () => {
@@ -116,5 +136,46 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
 
     expect((await repository.read({ workspaceId: otherWorkspaceId, emails: ["bounce@example.com"], now: new Date() }))[0]?.state)
       .toBe("suppressed");
+  });
+
+  it("composes real recipient state into contact and routine-notice mail delivery", async () => {
+    const email = "unconfirmed-composed@example.com";
+    const now = new Date("2026-10-20T12:00:00.000Z");
+    const sent: string[] = [];
+    const policy = new NotificationRecipientPolicyService({
+      enabled: true,
+      states: repository,
+      sendConfirmation: async () => ({ dispatched: true }),
+      now: () => now,
+    });
+    const mailer: ContactNotificationMailer = { send: async (message) => { sent.push(message.to); } };
+    const contact = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: [email], webhook: null }) },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      policy,
+    );
+    const notice = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: [email], webhook: null, via: "agent_setting", recipientsFromWorkspaceOwner: false }) },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      policy,
+    );
+
+    await expect(contact.handle({
+      payload: { message: "Please call me" },
+      context: { requestId: randomUUID(), workspaceId, accountId: accountId, conversationId: randomUUID(), idempotencyKey: randomUUID(), attempt: 1, skillName: null },
+    })).rejects.toMatchObject({ reason: "notification_recipient_unconfirmed" });
+    await notice.deliver({ kind: "completion", workspaceId, conversationId: randomUUID(), agentId: randomUUID(), reason: "routine_complete" }, {
+      requestId: randomUUID(), workspaceId, conversationId: randomUUID(), idempotencyKey: randomUUID(), attempt: 1,
+    });
+
+    expect(sent).toEqual([]);
   });
 });

@@ -15,41 +15,63 @@ const tokenOf = (value: unknown): string => {
   return parsed.data;
 };
 
-const confirmationPage = (message: string, revokeUrl?: string): string => `<!doctype html>
+const confirmationPage = (message: string, action?: { url: string; label: string }): string => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Radioso notification preferences</title></head><body><main><h1>${message}</h1><p>You can close this page.</p>${revokeUrl ? `<p><a href="${revokeUrl}">Stop sending me these notifications</a></p>` : ""}</main></body></html>`;
+<title>Radioso notification preferences</title></head><body><main><h1>${message}</h1>${action ? `<form method="post" action="${action.url}"><button type="submit">${action.label}</button></form>` : "<p>You can close this page.</p>"}</main></body></html>`;
 
 export const createNotificationRecipientConfirmationRoutes = (dependencies: Dependencies): Router => {
   const router = Router();
   const signer = new NotificationRecipientTokenSigner(dependencies.env.SESSION_COOKIE_SECRET);
 
+  const signedAction = (rawToken: unknown, action: "confirm" | "revoke") => {
+    const subject = signer.verify(tokenOf(rawToken), action);
+    if (!subject) throw badRequest("Invalid notification recipient token");
+    return subject;
+  };
+
+  const formUrl = (action: "confirm" | "revoke", token: string): string =>
+    `/api/v1/notification-recipient-confirmations/${action}?token=${encodeURIComponent(token)}`;
+
   router.get("/notification-recipient-confirmations/confirm", async (req, res, next) => {
     try {
-      const recipientId = signer.verify(tokenOf(req.query.token), "confirm");
-      if (!recipientId) throw badRequest("Invalid notification recipient token");
-      await dependencies.notificationRecipientPolicy.confirm(recipientId);
+      signedAction(req.query.token, "confirm");
       res.setHeader("Cache-Control", "no-store");
-      const revokeToken = signer.sign(recipientId, "revoke");
       res.status(200).type("html").send(confirmationPage(
-        "Notifications confirmed",
-        `/api/v1/notification-recipient-confirmations/revoke?token=${encodeURIComponent(revokeToken)}`,
+        "Confirm notification delivery",
+        { url: formUrl("confirm", tokenOf(req.query.token)), label: "Confirm notifications" },
       ));
     } catch (error) {
       next(error);
     }
   });
 
-  const revoke = async (rawToken: unknown): Promise<void> => {
-    const recipientId = signer.verify(tokenOf(rawToken), "revoke");
-    if (!recipientId) throw badRequest("Invalid notification recipient token");
-    await dependencies.notificationRecipientPolicy.revoke(recipientId);
-  };
+  router.post("/notification-recipient-confirmations/confirm", async (req, res, next) => {
+    try {
+      const subject = signedAction(req.query.token, "confirm");
+      const confirmed = await dependencies.notificationRecipientPolicy.confirm(subject);
+      res.setHeader("Cache-Control", "no-store");
+      if (!confirmed) {
+        res.status(410).type("html").send(confirmationPage("This confirmation link is no longer active"));
+        return;
+      }
+      const revokeToken = signer.sign(subject.recipientId, "revoke", subject.generation);
+      res.status(200).type("html").send(confirmationPage(
+        "Notifications confirmed",
+        { url: formUrl("revoke", revokeToken), label: "Stop sending me these notifications" },
+      ));
+    } catch (error) {
+      next(error);
+    }
+  });
 
   router.get("/notification-recipient-confirmations/revoke", async (req, res, next) => {
     try {
-      await revoke(req.query.token);
+      signedAction(req.query.token, "revoke");
       res.setHeader("Cache-Control", "no-store");
-      res.status(200).type("html").send(confirmationPage("Notifications stopped"));
+      res.status(200).type("html").send(confirmationPage(
+        "Stop notification delivery",
+        { url: formUrl("revoke", tokenOf(req.query.token)), label: "Stop sending me these notifications" },
+      ));
     } catch (error) {
       next(error);
     }
@@ -57,9 +79,9 @@ export const createNotificationRecipientConfirmationRoutes = (dependencies: Depe
 
   router.post("/notification-recipient-confirmations/revoke", async (req, res, next) => {
     try {
-      await revoke(req.query.token);
+      const revoked = await dependencies.notificationRecipientPolicy.revoke(signedAction(req.query.token, "revoke"));
       res.setHeader("Cache-Control", "no-store");
-      res.sendStatus(200);
+      res.sendStatus(revoked ? 200 : 410);
     } catch (error) {
       next(error);
     }

@@ -6,16 +6,28 @@ import { NotificationRecipientTokenSigner } from "../../src/modules/operatorNoti
 import { createTestApp } from "../support/testApp.js";
 
 describe("notification recipient confirmation contract", () => {
-  it("confirms and revokes through purpose-bound public links", async () => {
+  it("renders public links without mutating state and confirms or revokes only on POST", async () => {
     const { app, dependencies } = createTestApp();
     const confirm = vi.spyOn(dependencies.notificationRecipientPolicy, "confirm");
     const revoke = vi.spyOn(dependencies.notificationRecipientPolicy, "revoke");
     const signer = new NotificationRecipientTokenSigner(dependencies.env.SESSION_COOKIE_SECRET);
 
-    const confirmed = await request(app).get("/api/v1/notification-recipient-confirmations/confirm")
-      .query({ token: signer.sign("recipient-id", "confirm") });
+    const confirmToken = signer.sign("recipient-id", "confirm", 0);
+    const revokeToken = signer.sign("recipient-id", "revoke", 0);
+    const confirmPage = await request(app).get("/api/v1/notification-recipient-confirmations/confirm")
+      .query({ token: confirmToken });
+    const revokePage = await request(app).get("/api/v1/notification-recipient-confirmations/revoke")
+      .query({ token: revokeToken });
+    expect(confirmPage.status).toBe(200);
+    expect(revokePage.status).toBe(200);
+    expect(confirmPage.text).toContain('method="post"');
+    expect(revokePage.text).toContain('method="post"');
+    expect(confirm).not.toHaveBeenCalled();
+    expect(revoke).not.toHaveBeenCalled();
+    const confirmed = await request(app).post("/api/v1/notification-recipient-confirmations/confirm")
+      .query({ token: confirmToken });
     const revoked = await request(app).post("/api/v1/notification-recipient-confirmations/revoke")
-      .query({ token: signer.sign("recipient-id", "revoke") })
+      .query({ token: revokeToken })
       .type("form")
       .send("List-Unsubscribe=One-Click");
 
@@ -24,8 +36,8 @@ describe("notification recipient confirmation contract", () => {
     expect(confirmed.text).toContain("Stop sending me these notifications");
     expect(confirmed.text).toContain("/notification-recipient-confirmations/revoke?token=");
     expect(revoked.status).toBe(200);
-    expect(confirm).toHaveBeenCalledWith("recipient-id");
-    expect(revoke).toHaveBeenCalledWith("recipient-id");
+    expect(confirm).toHaveBeenCalledWith({ recipientId: "recipient-id", generation: 0 });
+    expect(revoke).toHaveBeenCalledWith({ recipientId: "recipient-id", generation: 0 });
   });
 
   it("rejects a confirmation token at the revocation endpoint", async () => {
@@ -33,7 +45,7 @@ describe("notification recipient confirmation contract", () => {
     const signer = new NotificationRecipientTokenSigner(dependencies.env.SESSION_COOKIE_SECRET);
 
     const response = await request(app).post("/api/v1/notification-recipient-confirmations/revoke")
-      .query({ token: signer.sign("recipient-id", "confirm") });
+      .query({ token: signer.sign("recipient-id", "confirm", 0) });
 
     expect(response.status).toBe(400);
   });

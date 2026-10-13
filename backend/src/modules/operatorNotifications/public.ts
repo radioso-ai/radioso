@@ -29,6 +29,7 @@ export {
 export {
   NotificationRecipientPolicyService,
   type NotificationRecipientDescription,
+  type NotificationRecipientPolicyPort,
 } from "./notificationRecipientPolicy.js";
 export { NotificationRecipientConfirmationMailer } from "./notificationRecipientConfirmationMailer.js";
 export { NotificationRecipientTokenSigner } from "./notificationRecipientToken.js";

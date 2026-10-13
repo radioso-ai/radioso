@@ -1303,12 +1303,14 @@ export interface NotificationRecipientConfirmationDailyUsage {
 }
 
 export interface NotificationRecipientConfirmations {
+  confirmation_generation: Generated<number>;
   confirmation_sent_at: Timestamp | null;
   confirmed_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   grandfathered_until: Timestamp | null;
   id: Generated<string>;
   normalized_email: string;
+  requires_confirmation: Generated<boolean>;
   revoked_at: Timestamp | null;
   state: string;
   updated_at: Generated<Timestamp>;

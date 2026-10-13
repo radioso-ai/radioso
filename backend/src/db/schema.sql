@@ -3090,8 +3090,11 @@ CREATE TABLE public.notification_recipient_confirmations (
     confirmation_sent_at timestamp with time zone,
     confirmed_at timestamp with time zone,
     revoked_at timestamp with time zone,
+    confirmation_generation integer DEFAULT 0 NOT NULL,
+    requires_confirmation boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_recipient_confirmati_confirmation_generation_check CHECK ((confirmation_generation >= 0)),
     CONSTRAINT notification_recipient_confirmations_check CHECK (((state = 'grandfathered'::text) = (grandfathered_until IS NOT NULL))),
     CONSTRAINT notification_recipient_confirmations_normalized_email_check CHECK (((normalized_email = lower(btrim(normalized_email))) AND (normalized_email <> ''::text))),
     CONSTRAINT notification_recipient_confirmations_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'confirmed'::text, 'grandfathered'::text, 'revoked'::text])))

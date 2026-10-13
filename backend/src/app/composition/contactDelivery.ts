@@ -12,6 +12,7 @@ import {
   NotificationRecipientConfirmationMailer,
   NotificationRecipientPolicyService,
   NotificationRecipientTokenSigner,
+  type NotificationRecipientPolicyPort,
 } from "../../modules/operatorNotifications/public.js";
 import {
   NotificationRecipientIdentityRepository,
@@ -42,7 +43,7 @@ export const buildContactDeliveryResolver = (database: Database): ConfiguredCont
 /** Shows an operator where a routine ending's notice goes, through the resolver that sends it. */
 export const buildOperatorNoticeDestinationsReader = (
   database: Database,
-  recipientPolicy?: Pick<NotificationRecipientPolicyService, "describe">,
+  recipientPolicy?: Pick<NotificationRecipientPolicyPort, "describe">,
 ): OperatorNoticeDestinationsReader => {
   const skills = new AgentSkillRepository(database.kysely);
   return new OperatorNoticeDestinationsReader({
@@ -59,7 +60,7 @@ export const buildNotificationRecipientPolicy = (input: {
   logger: AppLogger;
   metrics: MetricsRegistry | null;
   states?: NotificationRecipientStateRepository;
-}): NotificationRecipientPolicyService => {
+}): NotificationRecipientPolicyPort => {
   const states = input.states ?? new NotificationRecipientStateRepository(input.database.kysely);
   const signer = new NotificationRecipientTokenSigner(input.env.SESSION_COOKIE_SECRET);
   const confirmationMailer = new NotificationRecipientConfirmationMailer({
@@ -76,9 +77,10 @@ export const buildNotificationRecipientPolicy = (input: {
     states,
     sendConfirmation: async (request) => {
       if (!request.recipientId) throw new Error("Confirmation recipient state was not reserved");
-      await confirmationMailer.send({ ...request, recipientId: request.recipientId });
+      if (request.generation === undefined) throw new Error("Confirmation recipient generation was not reserved");
+      return confirmationMailer.send({ ...request, recipientId: request.recipientId, generation: request.generation });
     },
-    revocationUrl: (recipientId) => confirmationMailer.revocationUrl(recipientId),
+    revocationUrl: (recipientId, generation) => confirmationMailer.revocationUrl(recipientId, generation),
     identity: new NotificationRecipientIdentityRepository(input.database.kysely),
     logger: input.logger,
     metrics: input.metrics,

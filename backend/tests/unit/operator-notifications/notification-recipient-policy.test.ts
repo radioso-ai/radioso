@@ -9,14 +9,14 @@ const NOW = new Date("2026-10-13T12:00:00.000Z");
 type StateStore = ConstructorParameters<typeof NotificationRecipientPolicyService>[0]["states"];
 
 const store = (states: Record<string, "confirmed" | "grandfathered" | "revoked" | "waiting_for_confirmation" | "suppressed">): StateStore => ({
-  read: vi.fn(async ({ emails }) => emails.map((email) => ({
+  read: vi.fn(async ({ emails }: { emails: readonly string[] }) => emails.map((email: string) => ({
     email,
     state: states[email] ?? "waiting_for_confirmation",
     grandfatheredUntil: states[email] === "grandfathered" ? new Date("2026-10-20T00:00:00.000Z") : null,
   }))),
-  ensure: vi.fn(async (_workspaceId, email) => ({ recipientId: `recipient:${email}` })),
-  reserveConfirmationSend: vi.fn(async ({ email }) => states[email] !== "revoked" && states[email] !== "suppressed"
-    ? { recipientId: `recipient:${email}` }
+  ensure: vi.fn(async (_workspaceId: string, email: string) => ({ recipientId: `recipient:${email}`, generation: 0 })),
+  reserveConfirmationSend: vi.fn(async ({ email }: { email: string }) => states[email] !== "revoked" && states[email] !== "suppressed"
+    ? { recipientId: `recipient:${email}`, generation: 1 }
     : null),
   releaseConfirmationSend: vi.fn(async () => undefined),
   confirm: vi.fn(),
@@ -30,7 +30,7 @@ describe("NotificationRecipientPolicyService", () => {
       "legacy@example.com": "grandfathered",
       "bounced@example.com": "suppressed",
     });
-    const sendConfirmation = vi.fn(async () => undefined);
+    const sendConfirmation = vi.fn(async (_input: { email: string }) => ({ dispatched: true }));
     const service = new NotificationRecipientPolicyService({
       enabled: true,
       states,
@@ -62,7 +62,7 @@ describe("NotificationRecipientPolicyService", () => {
   it("does not send another automatic confirmation after the store declines the reservation", async () => {
     const states = store({});
     vi.mocked(states.reserveConfirmationSend).mockResolvedValue(null);
-    const sendConfirmation = vi.fn(async () => undefined);
+    const sendConfirmation = vi.fn(async (_input: { email: string }) => ({ dispatched: true }));
     const service = new NotificationRecipientPolicyService({ enabled: true, states, sendConfirmation, now: () => NOW });
 
     await service.prepareDelivery({
@@ -76,7 +76,7 @@ describe("NotificationRecipientPolicyService", () => {
     expect(sendConfirmation).not.toHaveBeenCalled();
   });
 
-  it("releases a failed send reservation so a later delivery can retry", async () => {
+  it("releases a failed send reservation without blocking a healthy delivery", async () => {
     const states = store({});
     const service = new NotificationRecipientPolicyService({
       enabled: true,
@@ -91,8 +91,25 @@ describe("NotificationRecipientPolicyService", () => {
       agentName: "Concierge",
       emails: ["waiting@example.com"],
       idempotencyKey: "request-id",
-    })).rejects.toThrow("provider unavailable");
-    expect(states.releaseConfirmationSend).toHaveBeenCalledWith("recipient:waiting@example.com", NOW);
+    })).resolves.toMatchObject({ skipped: { unconfirmed: 1, suppressed: 0 } });
+    expect(states.releaseConfirmationSend).toHaveBeenCalledWith("recipient:waiting@example.com", 1, NOW);
+  });
+
+  it("releases an undispatched confirmation reservation without recording a send", async () => {
+    const states = store({});
+    const service = new NotificationRecipientPolicyService({
+      enabled: true,
+      states,
+      sendConfirmation: vi.fn(async () => ({ dispatched: false })),
+      now: () => NOW,
+    });
+
+    await service.prepareDelivery({
+      workspaceId: "workspace-id", workspaceName: "Acme", agentName: "Concierge",
+      emails: ["waiting@example.com"], idempotencyKey: "request-id",
+    });
+
+    expect(states.releaseConfirmationSend).toHaveBeenCalledWith("recipient:waiting@example.com", 1, NOW);
   });
 
   it("treats confirmation as not required when the deployment switch is off", async () => {
@@ -100,7 +117,7 @@ describe("NotificationRecipientPolicyService", () => {
     const service = new NotificationRecipientPolicyService({
       enabled: false,
       states,
-      sendConfirmation: vi.fn(),
+    sendConfirmation: vi.fn(async () => ({ dispatched: true })),
       now: () => NOW,
     });
 
@@ -116,7 +133,7 @@ describe("NotificationRecipientPolicyService", () => {
     const service = new NotificationRecipientPolicyService({
       enabled: false,
       states,
-      sendConfirmation: vi.fn(),
+    sendConfirmation: vi.fn(async () => ({ dispatched: true })),
       now: () => NOW,
     });
 
@@ -124,14 +141,14 @@ describe("NotificationRecipientPolicyService", () => {
       .resolves.toEqual([{ email: "stopped@example.com", state: "revoked" }]);
   });
 
-  it("confirms and revokes only through the state store", async () => {
+  it("confirms and revokes only through the state store with the token generation", async () => {
     const states = store({});
-    const service = new NotificationRecipientPolicyService({ enabled: true, states, sendConfirmation: vi.fn(), now: () => NOW });
+    const service = new NotificationRecipientPolicyService({ enabled: true, states, sendConfirmation: vi.fn(async () => ({ dispatched: true })), now: () => NOW });
 
-    await service.confirm("recipient-id");
-    await service.revoke("recipient-id");
+    await service.confirm({ recipientId: "recipient-id", generation: 2 });
+    await service.revoke({ recipientId: "recipient-id", generation: 2 });
 
-    expect(states.confirm).toHaveBeenCalledWith("recipient-id", NOW);
-    expect(states.revoke).toHaveBeenCalledWith("recipient-id", NOW);
+    expect(states.confirm).toHaveBeenCalledWith("recipient-id", 2, NOW);
+    expect(states.revoke).toHaveBeenCalledWith("recipient-id", 2, NOW);
   });
 });

@@ -2,12 +2,36 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   ConfiguredContactDeliveryResolver,
-  ContactSendActionHandler,
+  ContactSendActionHandler as ContactSendActionHandlerBase,
   FetchContactWebhookHttpClient,
   WorkspaceOwnerContactRecipientResolver,
   type ContactNotificationMailer,
   type ContactWebhookHttpClient,
 } from "../../src/modules/chat/services/actions/contactSendActionHandler.js";
+import { NotificationRecipientPolicyService } from "../../src/modules/operatorNotifications/notificationRecipientPolicy.js";
+
+const allowedRecipientPolicy = {
+  prepareDelivery: async (input: { emails: readonly string[] }) => ({
+    eligibleEmails: [...input.emails],
+    eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
+    skipped: { unconfirmed: 0, suppressed: 0 },
+  }),
+};
+
+class ContactSendActionHandler extends ContactSendActionHandlerBase {
+  constructor(...args: unknown[]) {
+    const [mailer, recipients, logger, webhookClient, errorReporter, admission, recipientPolicy] = args as Partial<ConstructorParameters<typeof ContactSendActionHandlerBase>>;
+    super(
+      mailer!,
+      recipients!,
+      logger,
+      webhookClient,
+      errorReporter,
+      admission,
+      recipientPolicy ?? allowedRecipientPolicy,
+    );
+  }
+}
 
 const context = {
   requestId: "request_1",
@@ -102,6 +126,42 @@ describe("ContactSendActionHandler", () => {
       .rejects.toMatchObject({ name: "ActionDispatchSkippedError", reason: "notification_recipient_unconfirmed" });
     expect(admit).toHaveBeenCalledWith(expect.objectContaining({ requestedEmailCount: 0 }));
     expect(sent).toHaveLength(0);
+  });
+
+  it("keeps a confirmed email and webhook healthy when confirmation delivery fails", async () => {
+    const { mailer, sent } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const states = {
+      read: async ({ emails }: { emails: readonly string[] }) => emails.map((email) => ({
+        email,
+        state: email === "ready@example.com" ? "confirmed" as const : "waiting_for_confirmation" as const,
+        grandfatheredUntil: null,
+      })),
+      ensure: async (_workspaceId: string, email: string) => ({ recipientId: `recipient:${email}`, generation: 0 }),
+      reserveConfirmationSend: async () => ({ recipientId: "recipient:waiting@example.com", generation: 1 }),
+      releaseConfirmationSend: vi.fn(async () => undefined),
+      confirm: async () => false,
+      revoke: async () => false,
+    };
+    const policy = new NotificationRecipientPolicyService({
+      enabled: true,
+      states,
+      sendConfirmation: async () => { throw new Error("provider unavailable"); },
+    });
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["ready@example.com", "waiting@example.com"], webhook: { url: "https://hooks.example.com/contact" } }) },
+      undefined,
+      httpClient,
+      undefined,
+      undefined,
+      policy,
+    );
+
+    await expect(handler.handle({ payload: { message: "Please call me" }, context })).resolves.toBeUndefined();
+    expect(sent.map((message) => message.to)).toEqual(["ready@example.com"]);
+    expect(requests).toHaveLength(1);
+    expect(states.releaseConfirmationSend).toHaveBeenCalledTimes(1);
   });
 
   it("posts configured webhooks with conversation metadata and an idempotency key", async () => {

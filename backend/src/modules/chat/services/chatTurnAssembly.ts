@@ -495,7 +495,11 @@ export class ChatTurnAssembly {
     const activator = input.clarification?.resolution?.kind === "routine_activation"
       ? input.clarification.resolution.activator
       : routineTurnPorts.activator;
-    session.routineStartMessageId = input.activeRoutine?.startedMessageId ?? session.userMessage.id;
+    // An active state from before anchors were persisted cannot be retroactively anchored
+    // to this turn: that would incorrectly narrow its summary transcript on a rolling deploy.
+    session.routineStartMessageId = input.activeRoutine
+      ? input.activeRoutine.startedMessageId
+      : session.userMessage.id;
     const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId);
     const deferredClarificationStore = input.clarification?.store;
     input.coordination?.checkpoint("routing");

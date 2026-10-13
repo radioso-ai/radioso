@@ -180,31 +180,53 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     expect(savedState.expires_at).toBeInstanceOf(Date);
   });
 
-  it("does not expose a previous execution's anchor after an old-revision upsert starts a new execution", async () => {
+  it("keeps an old-revision execution anchor unknown, then stores a new execution's anchor", async () => {
     const { conversation } = await seedConversation();
     const store = new RoutineStateRepository(database.kysely, 60_000);
     const previousExecutionId = randomUUID();
+    const oldRevisionExecutionId = randomUUID();
     const nextExecutionId = randomUUID();
+    const firstAnchor = randomUUID();
+    const nextAnchor = randomUUID();
     await store.save({
       sessionId: conversation.id,
       routineId: "routine_1",
       executionId: previousExecutionId,
-      startedMessageId: randomUUID(),
+      startedMessageId: firstAnchor,
       path: ["ask_contact"],
       variables: {},
       status: "active",
+    });
+    await expect(store.loadActive({ sessionId: conversation.id })).resolves.toMatchObject({
+      executionId: previousExecutionId,
+      startedMessageId: firstAnchor,
     });
 
     await database.query(
       `INSERT INTO routine_states (session_id, routine_id, execution_id, path, variables, attempts, reask_count, status, expires_at, updated_at)
        VALUES ($1, 'routine_1', $2, ARRAY['ask_again'], '{}'::jsonb, '{}'::jsonb, 0, 'active', now() + interval '1 hour', now())
        ON CONFLICT (session_id) DO UPDATE SET execution_id = EXCLUDED.execution_id, path = EXCLUDED.path, updated_at = now()`,
-      [conversation.id, nextExecutionId],
+      [conversation.id, oldRevisionExecutionId],
     );
 
-    const loaded = await store.loadActive({ sessionId: conversation.id });
-    expect(loaded?.executionId).toBe(nextExecutionId);
-    expect(loaded).not.toHaveProperty("startedMessageId");
+    const oldRevisionState = await store.loadActive({ sessionId: conversation.id });
+    expect(oldRevisionState?.executionId).toBe(oldRevisionExecutionId);
+    expect(oldRevisionState).not.toHaveProperty("startedMessageId");
+
+    await store.save({
+      sessionId: conversation.id,
+      routineId: "routine_1",
+      executionId: nextExecutionId,
+      startedMessageId: nextAnchor,
+      path: ["ask_contact"],
+      variables: {},
+      status: "active",
+    });
+
+    await expect(store.loadActive({ sessionId: conversation.id })).resolves.toMatchObject({
+      executionId: nextExecutionId,
+      startedMessageId: nextAnchor,
+    });
   });
 
   it("round-trips the re-ask count through the routine state repository", async () => {

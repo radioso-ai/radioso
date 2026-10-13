@@ -65,6 +65,7 @@ export class ModelRoutineEndingNoticeSummaryGenerator implements RoutineEndingNo
       beforeMessageId: input.endingMessageId,
       limit: MAX_TRANSCRIPT_QUERY_MESSAGES,
     });
+    input.signal?.throwIfAborted();
     if (!ending) return null;
     const start = input.routineStartMessageId ? before.findIndex((message) => message.id === input.routineStartMessageId) : -1;
     const source = transcript([
@@ -89,6 +90,7 @@ export class ModelRoutineEndingNoticeSummaryGenerator implements RoutineEndingNo
       messageId: input.endingMessageId, surface: "assistant", operation: "routine_operator_notice_summary",
       attemptKey: `routine_operator_notice_summary:${input.conversationId}:${input.endingMessageId}`,
     };
+    input.signal?.throwIfAborted();
     const { text } = await this.inference.complete({
       operation: usageContext,
       systemPrompt,
@@ -105,4 +107,4 @@ export class ModelRoutineEndingNoticeSummaryGenerator implements RoutineEndingNo
 const sanitizeSummary = (value: string): string => value
   .replace(/\[([^\]]+)\]\(\s*https?:\/\/[^)]+\)/giu, "$1")
   .replace(/https?:\/\/[^\s<>()]+/giu, "")
-  .replace(/(?<![\p{L}\p{N}._%+-])@[\p{L}\p{N}_-]+(?:\.[\p{L}\p{N}_-]+)*/gu, "");
+  .replace(/(?<![\p{L}\p{N}._%+-])@[\p{L}_][\p{L}\p{N}_-]*(?:\.[\p{L}\p{N}_-]+)*/gu, "");

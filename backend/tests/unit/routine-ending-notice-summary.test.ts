@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
+import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
+import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 import { ModelRoutineEndingNoticeSummaryGenerator } from "../../src/modules/chat/services/actions/routineEndingNoticeSummary.js";
 
 type CompleteInput = { prompt: string; systemPrompt?: string; signal?: AbortSignal };
@@ -122,6 +124,17 @@ describe("ModelRoutineEndingNoticeSummaryGenerator", () => {
     expect(summary).not.toMatch(/https?:|@finance-team/u);
   });
 
+  it("strips handles without corrupting times or email addresses", async () => {
+    const generator = new ModelRoutineEndingNoticeSummaryGenerator({
+      findByIdAndWorkspaceId: async () => message("ending", "user", "Done."),
+      listBeforeByConversationId: async () => [message("start", "assistant", "Ready?")],
+    }, {
+      complete: async () => ({ text: "Customer arrives @10:30; email ada@example.com; ping @ada." }),
+    } as never);
+
+    await expect(generator.generate(input)).resolves.toBe("Customer arrives @10:30; email ada@example.com; ping .");
+  });
+
   it("passes an abort signal through to model inference", async () => {
     const complete = vi.fn(async (_request: CompleteInput) => ({ text: "Detail." }));
     const generator = new ModelRoutineEndingNoticeSummaryGenerator({
@@ -133,5 +146,34 @@ describe("ModelRoutineEndingNoticeSummaryGenerator", () => {
     await generator.generate({ ...input, signal: controller.signal });
 
     expect(complete).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
+  });
+
+  it("does not record usage when repository reads finish after cancellation", async () => {
+    let resolveEnding: (value: MessageRecord) => void = () => {};
+    const ending = new Promise<MessageRecord>((resolve) => { resolveEnding = resolve; });
+    const usageEvents: ModelUsageEvent[] = [];
+    const usageRecorder: UsageEventRecorder = {
+      async recordEmbedding() {},
+      async recordModelCall(event) { usageEvents.push(event); },
+    };
+    const providerComplete = vi.fn(async () => ({ text: "Detail." }));
+    const inference = new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai", model: "test" },
+      complete: providerComplete,
+      stream: vi.fn(),
+    }, usageRecorder);
+    const generator = new ModelRoutineEndingNoticeSummaryGenerator({
+      findByIdAndWorkspaceId: async () => ending,
+      listBeforeByConversationId: async () => [message("start", "assistant", "Ready?")],
+    }, inference);
+    const controller = new AbortController();
+    const result = generator.generate({ ...input, signal: controller.signal });
+
+    controller.abort();
+    resolveEnding(message("ending", "user", "Done."));
+
+    await expect(result).rejects.toThrow(/abort/i);
+    expect(providerComplete).not.toHaveBeenCalled();
+    expect(usageEvents).toEqual([]);
   });
 });

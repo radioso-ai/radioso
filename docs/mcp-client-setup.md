@@ -1,7 +1,7 @@
 ---
 title: "MCP Client Setup"
 description: "Connect an MCP client either to one Radioso agent or to Ray's governed operator tools."
-last_updated: 2026-10-11
+last_updated: 2026-10-13
 ---
 
 # MCP Client Setup
@@ -79,6 +79,8 @@ ag_7Qb3nT1xK9wZs2Pv0Lm4Rd
 Treat it as an address rather than a secret. It is meant to appear in a page, a card, or a support email, and holding it grants nothing on its own — with **Allow connecting without a credential** off, a caller with the id still needs a credential. The id is separate from the embed token for exactly this reason: the embed token *is* a secret, and it sits in the page HTML.
 
 Alongside the switches, **Description** is the one line a calling agent reads before deciding to ask — write what the agent helps with, in the visitor's terms. **New conversations per hour** caps what one looping caller can spend from the workspace's conversation allowance; leave it empty to use the deployment's own budget.
+
+When open access is enabled, **Share with agent developers** provides the agent endpoint, its discovery card URL, and ready-to-copy examples for Claude, ChatGPT, Cursor, and the OpenAI Responses API. Those examples include the public id but never an MCP credential. Copy them into the developer guide you share with callers; switch to a credential-specific configuration when callers need controlled access instead.
 
 Rotating replaces the id:
 

@@ -1516,7 +1516,7 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/workspace/summary") {
-      await json(route, { ...(workspaceSummary as object), setup: workspaceSetupState });
+      await json(route, { ...workspaceSummary, setup: workspaceSetupState });
       return;
     }
 

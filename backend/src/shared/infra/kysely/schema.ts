@@ -1993,7 +1993,6 @@ export interface WorkspaceServiceAccounts {
 export interface WorkspaceSetupState {
   created_at: Generated<Timestamp>;
   dismissed_at: Timestamp | null;
-  notify_receipt_confirmed_at: Timestamp | null;
   purpose: string | null;
   skipped_steps: Generated<string[]>;
   updated_at: Generated<Timestamp>;

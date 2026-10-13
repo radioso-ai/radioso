@@ -28,9 +28,8 @@ export const workspaceKeyParamsSchema = z.object({
 export const updateWorkspaceSetupStateSchema = z.object({
   purpose: z.string().trim().min(1).max(2_000).nullable().optional(),
   dismissed: z.boolean().optional(),
-  notifyReceiptConfirmed: z.boolean().optional(),
   skippedSteps: z.array(z.enum(workspaceSetupSteps)).max(workspaceSetupSteps.length).optional(),
-}).refine((input) => Object.keys(input).length > 0, { message: "At least one setup state field is required" });
+}).strict().refine((input) => Object.keys(input).length > 0, { message: "At least one setup state field is required" });
 
 type WorkspaceRouteDependencies = SessionDependencies & WorkspaceSessionDependencies & Pick<
   AppDependencies,
@@ -82,7 +81,7 @@ export const createWorkspaceRoutes = (dependencies: WorkspaceRouteDependencies):
     }
   });
 
-  router.patch("/setup-state", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), validateBody(updateWorkspaceSetupStateSchema), async (req, res, next) => {
+  router.patch("/setup-state", workspaceSession, requireWorkspacePermission(dependencies, "workspace.credentials.manage"), validateBody(updateWorkspaceSetupStateSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       res.status(200).json((await dependencies.workspaceSummaryService.updateSetupState(workspaceId, req.body as z.infer<typeof updateWorkspaceSetupStateSchema>)).setup);

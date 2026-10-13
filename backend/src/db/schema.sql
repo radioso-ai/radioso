@@ -4103,7 +4103,6 @@ CREATE TABLE public.workspace_setup_state (
     workspace_id uuid NOT NULL,
     purpose text,
     dismissed_at timestamp with time zone,
-    notify_receipt_confirmed_at timestamp with time zone,
     skipped_steps text[] DEFAULT ARRAY[]::text[] NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,

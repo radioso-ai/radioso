@@ -544,7 +544,7 @@
         {
           "id": "save-operator-choices",
           "heading": "Save operator choices",
-          "body": "Owners and administrators can update `purpose`, `dismissed`, `notifyReceiptConfirmed`, and `skippedSteps` with `PATCH /api/v1/workspace/setup-state`. Derived outcome fields are read-only.\n\n```bash\ncurl -sS -b cookies.txt -X PATCH \\\n  -H 'Content-Type: application/json' \\\n  -H 'X-Workspace-Id: <workspace-id>' \\\n  -H 'X-Radioso-CSRF: 1' \\\n  -d '{\"purpose\":\"Answer product questions\",\"dismissed\":true}' \\\n  https://api.radioso.ai/api/v1/workspace/setup-state\n```\n\n`skippedSteps` accepts `purpose`, `documents`, `conversation`, `directives_or_routines`, `notify_destination`, and `credential`. A skip records an operator preference; it does not change the matching outcome."
+          "body": "Owners and administrators can update `purpose`, `dismissed`, and `skippedSteps` with `PATCH /api/v1/workspace/setup-state`. Derived outcome fields are read-only.\n\n```bash\ncurl -sS -b cookies.txt -X PATCH \\\n  -H 'Content-Type: application/json' \\\n  -H 'X-Workspace-Id: <workspace-id>' \\\n  -H 'X-Radioso-CSRF: 1' \\\n  -d '{\"purpose\":\"Answer product questions\",\"dismissed\":true}' \\\n  https://api.radioso.ai/api/v1/workspace/setup-state\n```\n\n`skippedSteps` accepts `purpose`, `documents`, `conversation`, `directives_or_routines`, `notify_destination`, and `credential`. A skip records an operator preference; it does not change the matching outcome."
         },
         {
           "id": "common-failure-modes",

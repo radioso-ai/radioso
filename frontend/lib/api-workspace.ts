@@ -5,12 +5,11 @@ import type {
   WorkspaceSummaryResponse as WorkspaceSummaryResponseApi,
 } from './api-types'
 
-export type WorkspaceSetupStep = 'purpose' | 'documents' | 'conversation' | 'directives_or_routines' | 'notify_destination' | 'credential'
+type WorkspaceSetupStep = 'purpose' | 'documents' | 'conversation' | 'directives_or_routines' | 'notify_destination' | 'credential'
 
-export interface WorkspaceSetupState {
+interface WorkspaceSetupState {
   purpose: string | null
   dismissed: boolean
-  notifyReceiptConfirmed: boolean
   skippedSteps: WorkspaceSetupStep[]
   shouldShowFirstRun: boolean
   hasDirectivesOrRoutines: boolean
@@ -19,7 +18,7 @@ export interface WorkspaceSetupState {
   hasCredential: boolean
 }
 
-export type WorkspaceSummaryResponse = WorkspaceSummaryResponseApi & { setup: WorkspaceSetupState }
+type WorkspaceSummaryResponse = WorkspaceSummaryResponseApi & { setup?: WorkspaceSetupState }
 
 export const workspaceApi = {
   async list(): Promise<Workspace[]> {
@@ -65,7 +64,7 @@ export const workspaceApi = {
     return request<WorkspaceSetupState>("/workspace/setup-state", { method: "GET" }, { withSession: true })
   },
 
-  async updateSetupState(input: Partial<Pick<WorkspaceSetupState, 'purpose' | 'dismissed' | 'notifyReceiptConfirmed' | 'skippedSteps'>>): Promise<WorkspaceSetupState> {
+  async updateSetupState(input: Partial<Pick<WorkspaceSetupState, 'purpose' | 'dismissed' | 'skippedSteps'>>): Promise<WorkspaceSetupState> {
     return request<WorkspaceSetupState>("/workspace/setup-state", {
       method: "PATCH",
       body: JSON.stringify(input),

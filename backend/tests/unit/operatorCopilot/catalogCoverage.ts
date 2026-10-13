@@ -345,7 +345,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["resolveWorkspaceRouteKey"], dashboardWorkspaceResolution),
   getWorkspaceSetupState: "workspace_setup_state",
   ...coverage(["updateWorkspaceSetupState"], workspaceSetupStateWrite),
-  ...coverage(["getWorkspaceSummary"], "workspace_setup_state"),
+  getWorkspaceSummary: "workspace_setup_state",
   // Answers with WebhookDestinationCreateResponse, the same one-time plaintext secret the
   // never-listed rotateWebhookDestinationSecret returns. The name-and-URL edit beside it carries none.
   ...coverage(["createWebhookDestination"], secretBearingRead),

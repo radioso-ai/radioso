@@ -4624,7 +4624,6 @@ export interface components {
         WorkspaceSetupState: {
             purpose: string | null;
             dismissed: boolean;
-            notifyReceiptConfirmed: boolean;
             skippedSteps: ("purpose" | "documents" | "conversation" | "directives_or_routines" | "notify_destination" | "credential")[];
             shouldShowFirstRun: boolean;
             hasDirectivesOrRoutines: boolean;
@@ -4635,7 +4634,6 @@ export interface components {
         UpdateWorkspaceSetupStateRequest: {
             purpose?: string | null;
             dismissed?: boolean;
-            notifyReceiptConfirmed?: boolean;
             skippedSteps?: ("purpose" | "documents" | "conversation" | "directives_or_routines" | "notify_destination" | "credential")[];
         };
         WorkspaceSummaryResponse: {

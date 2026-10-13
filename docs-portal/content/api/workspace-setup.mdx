@@ -20,7 +20,7 @@ The response includes `shouldShowFirstRun`, which the dashboard uses for the fir
 
 ## Save operator choices
 
-Owners and administrators can update `purpose`, `dismissed`, `notifyReceiptConfirmed`, and `skippedSteps` with `PATCH /api/v1/workspace/setup-state`. Derived outcome fields are read-only.
+Owners and administrators can update `purpose`, `dismissed`, and `skippedSteps` with `PATCH /api/v1/workspace/setup-state`. Derived outcome fields are read-only.
 
 ```bash
 curl -sS -b cookies.txt -X PATCH \

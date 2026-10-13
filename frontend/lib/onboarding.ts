@@ -166,8 +166,8 @@ export const useWorkspaceOnboarding = (
     try {
       const summary = await workspaceApi.getSummary()
 
-      const nextCompleted = summary.setup.dismissed || summary.hasCompletedChat
-      const nextActive = summary.setup.shouldShowFirstRun
+      const nextCompleted = summary.setup?.dismissed === true || summary.hasCompletedChat
+      const nextActive = summary.setup?.shouldShowFirstRun === true
 
       const previousSummary = onboardingSummaryRef.current
       const isObservingOnboarding = nextActive
@@ -244,7 +244,7 @@ export const useWorkspaceOnboarding = (
     }
 
     setIsImportingSampleDocs(true)
-    void workspaceApi.updateSetupState({ dismissed: false })
+    await workspaceApi.updateSetupState({ dismissed: false })
     setIsOnboardingActive(true)
 
     try {
@@ -272,22 +272,22 @@ export const useWorkspaceOnboarding = (
     }
   }, [refresh, sampleDocumentSlugs, workspaceId])
 
-  const markCompleted = useCallback(() => {
+  const markCompleted = useCallback(async () => {
     if (!workspaceId) {
       return
     }
 
-    void workspaceApi.updateSetupState({ dismissed: true })
+    await workspaceApi.updateSetupState({ dismissed: true })
     setIsOnboardingCompleted(true)
     setIsOnboardingActive(false)
   }, [workspaceId])
 
-  const markActive = useCallback(() => {
+  const markActive = useCallback(async () => {
     if (!workspaceId) {
       return
     }
 
-    void workspaceApi.updateSetupState({ dismissed: false })
+    await workspaceApi.updateSetupState({ dismissed: false })
     setIsOnboardingCompleted(false)
     setIsOnboardingActive(true)
   }, [workspaceId])

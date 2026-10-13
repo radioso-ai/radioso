@@ -151,7 +151,8 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
   constructor(private readonly db: Db) {}
 
   async create(accountId: string, name: string, publicRouteKey?: string): Promise<WorkspaceRecord> {
-    const row = await this.db
+    const row = await this.db.transaction().execute(async (trx) => {
+      const workspace = await trx
       .insertInto("workspaces")
       .values({
         id: randomUUID(),
@@ -161,6 +162,9 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       })
       .returning(workspaceColumns)
       .executeTakeFirstOrThrow();
+      await trx.insertInto("workspace_setup_state").values({ workspace_id: workspace.id }).execute();
+      return workspace;
+    });
 
     return mapWorkspace(row);
   }

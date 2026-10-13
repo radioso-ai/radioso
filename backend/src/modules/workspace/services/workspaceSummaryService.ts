@@ -2,7 +2,7 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { DocumentRepositoryPort } from "../../documents/contracts/index.js";
 import type { WorkspaceSetupStateRepositoryPort, WorkspaceSetupStep } from "../../../db/repositories/workspaceSetupStateRepository.js";
 
-export interface WorkspaceSummary {
+interface WorkspaceSummary {
   documentCount: number;
   readyDocumentCount: number;
   pendingDocumentCount: number;
@@ -18,7 +18,6 @@ export interface WorkspaceSummary {
   setup: {
     purpose: string | null;
     dismissed: boolean;
-    notifyReceiptConfirmed: boolean;
     skippedSteps: WorkspaceSetupStep[];
     shouldShowFirstRun: boolean;
     hasDirectivesOrRoutines: boolean;
@@ -67,12 +66,11 @@ export class WorkspaceSummaryService {
       setup: {
         purpose: setupState.purpose,
         dismissed: setupState.dismissedAt !== null,
-        notifyReceiptConfirmed: setupState.notifyReceiptConfirmedAt !== null,
         skippedSteps: setupState.skippedSteps,
         shouldShowFirstRun: setupState.dismissedAt === null && conversationCount === 0,
         hasDirectivesOrRoutines: outcomes.hasDirectivesOrRoutines,
         hasNotifyDestination: outcomes.hasNotifyDestination,
-        hasNotifyDeliveryConfirmed: outcomes.hasNotifyDestination && setupState.notifyReceiptConfirmedAt !== null,
+        hasNotifyDeliveryConfirmed: outcomes.hasNotifyDeliveryConfirmed,
         hasCredential: outcomes.hasCredential,
       },
     };

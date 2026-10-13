@@ -8,7 +8,6 @@ export interface WorkspaceSetupStateRecord {
   workspaceId: string;
   purpose: string | null;
   dismissedAt: Date | null;
-  notifyReceiptConfirmedAt: Date | null;
   skippedSteps: WorkspaceSetupStep[];
 }
 
@@ -16,7 +15,6 @@ interface WorkspaceSetupStateRow {
   workspace_id: string;
   purpose: string | null;
   dismissed_at: Date | null;
-  notify_receipt_confirmed_at: Date | null;
   skipped_steps: string[];
 }
 
@@ -24,7 +22,6 @@ const mapRow = (row: WorkspaceSetupStateRow): WorkspaceSetupStateRecord => ({
   workspaceId: row.workspace_id,
   purpose: row.purpose,
   dismissedAt: row.dismissed_at,
-  notifyReceiptConfirmedAt: row.notify_receipt_confirmed_at,
   skippedSteps: row.skipped_steps.filter((step): step is WorkspaceSetupStep => workspaceSetupSteps.includes(step as WorkspaceSetupStep)),
 });
 
@@ -33,33 +30,30 @@ export interface WorkspaceSetupStateRepositoryPort {
   update(workspaceId: string, input: {
     purpose?: string | null;
     dismissed?: boolean;
-    notifyReceiptConfirmed?: boolean;
     skippedSteps?: WorkspaceSetupStep[];
   }): Promise<WorkspaceSetupStateRecord>;
   getOutcomeFlags(workspaceId: string): Promise<{
     hasDirectivesOrRoutines: boolean;
     hasNotifyDestination: boolean;
+    hasNotifyDeliveryConfirmed: boolean;
     hasCredential: boolean;
   }>;
 }
 
-const columns = ["workspace_id", "purpose", "dismissed_at", "notify_receipt_confirmed_at", "skipped_steps"] as const;
+const columns = ["workspace_id", "purpose", "dismissed_at", "skipped_steps"] as const;
 
 export class WorkspaceSetupStateRepository implements WorkspaceSetupStateRepositoryPort {
   constructor(private readonly db: Db) {}
 
   async get(workspaceId: string): Promise<WorkspaceSetupStateRecord> {
-    await this.db.insertInto("workspace_setup_state").values({ workspace_id: workspaceId }).onConflict((oc) => oc.column("workspace_id").doNothing()).execute();
     const row = await this.db.selectFrom("workspace_setup_state").select(columns).where("workspace_id", "=", workspaceId).executeTakeFirstOrThrow();
     return mapRow(row);
   }
 
-  async update(workspaceId: string, input: { purpose?: string | null; dismissed?: boolean; notifyReceiptConfirmed?: boolean; skippedSteps?: WorkspaceSetupStep[] }): Promise<WorkspaceSetupStateRecord> {
-    await this.get(workspaceId);
+  async update(workspaceId: string, input: { purpose?: string | null; dismissed?: boolean; skippedSteps?: WorkspaceSetupStep[] }): Promise<WorkspaceSetupStateRecord> {
     const row = await this.db.updateTable("workspace_setup_state").set({
       ...(input.purpose !== undefined ? { purpose: input.purpose } : {}),
       ...(input.dismissed !== undefined ? { dismissed_at: input.dismissed ? currentTimestamp() : null } : {}),
-      ...(input.notifyReceiptConfirmed !== undefined ? { notify_receipt_confirmed_at: input.notifyReceiptConfirmed ? currentTimestamp() : null } : {}),
       ...(input.skippedSteps !== undefined ? { skipped_steps: input.skippedSteps } : {}),
       updated_at: currentTimestamp(),
     }).where("workspace_id", "=", workspaceId).returning(columns).executeTakeFirstOrThrow();
@@ -67,12 +61,13 @@ export class WorkspaceSetupStateRepository implements WorkspaceSetupStateReposit
   }
 
   async getOutcomeFlags(workspaceId: string) {
-    const [directive, routine, destination, credential] = await Promise.all([
+    const [directive, routine, destination, delivery, credential] = await Promise.all([
       this.db.selectFrom("agent_directives").innerJoin("agents", "agents.id", "agent_directives.agent_id").select("agent_directives.id").where("agents.workspace_id", "=", workspaceId).limit(1).executeTakeFirst(),
       this.db.selectFrom("routine_definition").innerJoin("agents", "agents.id", "routine_definition.agent_id").select("routine_definition.id").where("agents.workspace_id", "=", workspaceId).limit(1).executeTakeFirst(),
       this.db.selectFrom("workspace_webhook_destinations").select("id").where("workspace_id", "=", workspaceId).limit(1).executeTakeFirst(),
+      this.db.selectFrom("workspace_webhook_destinations").select("id").where("workspace_id", "=", workspaceId).where("last_delivery_status", "=", "success").limit(1).executeTakeFirst(),
       this.db.selectFrom("api_credentials").select("id").where("workspace_id", "=", workspaceId).where("revoked_at", "is", null).where("expires_at", ">", new Date()).limit(1).executeTakeFirst(),
     ]);
-    return { hasDirectivesOrRoutines: Boolean(directive || routine), hasNotifyDestination: Boolean(destination), hasCredential: Boolean(credential) };
+    return { hasDirectivesOrRoutines: Boolean(directive || routine), hasNotifyDestination: Boolean(destination), hasNotifyDeliveryConfirmed: Boolean(delivery), hasCredential: Boolean(credential) };
   }
 }

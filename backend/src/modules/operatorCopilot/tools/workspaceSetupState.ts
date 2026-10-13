@@ -4,14 +4,14 @@ import type { CopilotToolDescriptor } from "../contracts.js";
 
 export interface CopilotWorkspaceSetupStatePort {
   getSummary(workspaceId: string): Promise<{ hasReadyDocuments: boolean; hasCompletedChat: boolean; setup: {
-    purpose: string | null; dismissed: boolean; notifyReceiptConfirmed: boolean; skippedSteps: readonly string[];
+    purpose: string | null; dismissed: boolean; skippedSteps: readonly string[];
     shouldShowFirstRun: boolean; hasDirectivesOrRoutines: boolean; hasNotifyDestination: boolean;
     hasNotifyDeliveryConfirmed: boolean; hasCredential: boolean;
   } }>;
 }
 
 const outputSchema = z.object({
-  purpose: z.string().nullable(), dismissed: z.boolean(), notifyReceiptConfirmed: z.boolean(), skippedSteps: z.array(z.string()),
+  purpose: z.string().nullable(), dismissed: z.boolean(), skippedSteps: z.array(z.string()),
   shouldShowFirstRun: z.boolean(), documentsReady: z.boolean(), firstConversationHappened: z.boolean(),
   directivesOrRoutinesExist: z.boolean(), notifyDestinationConfigured: z.boolean(), notifyDeliveryConfirmed: z.boolean(), credentialExists: z.boolean(),
 }).strict();

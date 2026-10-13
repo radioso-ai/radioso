@@ -91,7 +91,6 @@ describe('useWorkspaceOnboarding refresh', () => {
       setup: {
         purpose: null,
         dismissed: false,
-        notifyReceiptConfirmed: false,
         skippedSteps: [],
         shouldShowFirstRun: true,
         hasDirectivesOrRoutines: false,

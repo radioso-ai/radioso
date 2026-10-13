@@ -469,9 +469,6 @@
           "dismissed": {
             "type": "boolean"
           },
-          "notifyReceiptConfirmed": {
-            "type": "boolean"
-          },
           "skippedSteps": {
             "type": "array",
             "items": {
@@ -505,7 +502,6 @@
         "required": [
           "purpose",
           "dismissed",
-          "notifyReceiptConfirmed",
           "skippedSteps",
           "shouldShowFirstRun",
           "hasDirectivesOrRoutines",
@@ -528,9 +524,6 @@
           "dismissed": {
             "type": "boolean"
           },
-          "notifyReceiptConfirmed": {
-            "type": "boolean"
-          },
           "skippedSteps": {
             "type": "array",
             "items": {
@@ -546,7 +539,8 @@
             },
             "maxItems": 6
           }
-        }
+        },
+        "additionalProperties": false
       },
       "WorkspaceSummaryResponse": {
         "type": "object",

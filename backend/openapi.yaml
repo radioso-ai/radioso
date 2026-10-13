@@ -305,8 +305,6 @@ components:
             - "null"
         dismissed:
           type: boolean
-        notifyReceiptConfirmed:
-          type: boolean
         skippedSteps:
           type: array
           items:
@@ -331,7 +329,6 @@ components:
       required:
         - purpose
         - dismissed
-        - notifyReceiptConfirmed
         - skippedSteps
         - shouldShowFirstRun
         - hasDirectivesOrRoutines
@@ -349,8 +346,6 @@ components:
           maxLength: 2000
         dismissed:
           type: boolean
-        notifyReceiptConfirmed:
-          type: boolean
         skippedSteps:
           type: array
           items:
@@ -363,6 +358,7 @@ components:
               - notify_destination
               - credential
           maxItems: 6
+      additionalProperties: false
     WorkspaceSummaryResponse:
       type: object
       properties:

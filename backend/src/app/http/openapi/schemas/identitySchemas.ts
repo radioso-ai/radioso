@@ -139,7 +139,6 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     z.object({
       purpose: z.string().nullable(),
       dismissed: z.boolean(),
-      notifyReceiptConfirmed: z.boolean(),
       skippedSteps: z.array(z.enum(["purpose", "documents", "conversation", "directives_or_routines", "notify_destination", "credential"])),
       shouldShowFirstRun: z.boolean(),
       hasDirectivesOrRoutines: z.boolean(),

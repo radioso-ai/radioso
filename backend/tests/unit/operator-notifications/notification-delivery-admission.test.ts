@@ -16,7 +16,7 @@ describe("NotificationDeliveryAdmissionService", () => {
     });
     const record = vi.fn().mockResolvedValue(undefined);
     const service = new NotificationDeliveryAdmissionService(
-      { reserve },
+      { reserve, readDailyUsage: vi.fn() },
       new NoopUsageLimitPolicy(),
       { record },
       undefined,
@@ -69,7 +69,7 @@ describe("NotificationDeliveryAdmissionService", () => {
 
   it("fails closed without workspace and conversation context", async () => {
     const reserve = vi.fn<NotificationDeliveryOutcomeRepositoryPort["reserve"]>();
-    const service = new NotificationDeliveryAdmissionService({ reserve }, new NoopUsageLimitPolicy());
+    const service = new NotificationDeliveryAdmissionService({ reserve, readDailyUsage: vi.fn() }, new NoopUsageLimitPolicy());
 
     await expect(service.admit({
       requestId: "request-1",
@@ -91,7 +91,7 @@ describe("NotificationDeliveryAdmissionService", () => {
     });
     const record = vi.fn().mockResolvedValue(undefined);
     const service = new NotificationDeliveryAdmissionService(
-      { reserve },
+      { reserve, readDailyUsage: vi.fn() },
       new NoopUsageLimitPolicy(),
       { record },
     );
@@ -115,7 +115,7 @@ describe("NotificationDeliveryAdmissionService", () => {
       reason: null,
       newlyRecorded: true,
     });
-    const service = new NotificationDeliveryAdmissionService({ reserve }, new NoopUsageLimitPolicy());
+    const service = new NotificationDeliveryAdmissionService({ reserve, readDailyUsage: vi.fn() }, new NoopUsageLimitPolicy());
     const admission = {
       requestId: "request-1",
       workspaceId: "workspace-1",

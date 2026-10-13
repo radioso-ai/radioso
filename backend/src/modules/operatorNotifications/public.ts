@@ -29,12 +29,11 @@ export {
   type RoutineEndingNotificationSubject,
 } from "./routineEndingNotificationFromAction.js";
 export {
-  NOTIFICATION_CONFIRMATION_LIMITS,
   NotificationRecipientPolicyService,
   type NotificationRecipientDescription,
   type NotificationRecipientPolicyPort,
 } from "./notificationRecipientPolicy.js";
-export { planNotificationEmail, type NotificationEmailPlan } from "./notificationEmailPlan.js";
+export { planNotificationEmail } from "./notificationEmailPlan.js";
 export { NotificationRecipientConfirmationMailer } from "./notificationRecipientConfirmationMailer.js";
 export { NotificationRecipientTokenSigner } from "./notificationRecipientToken.js";
 export { notificationProviderSuppressionReason } from "./providerSuppression.js";

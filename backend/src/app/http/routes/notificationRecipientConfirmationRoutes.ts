@@ -36,8 +36,9 @@ export const createNotificationRecipientConfirmationRoutes = (dependencies: Depe
     return { recipientId: subject.recipientId };
   };
 
-  const formUrl = (token: string, action?: "resume"): string => `${action ?? ""}?token=${encodeURIComponent(token)}`;
-  const stopForm = (revokeToken: string) => ({ url: formUrl(revokeToken), label: "Stop sending me these notifications" });
+  // Relative to the page's own path, so the links work behind the dashboard's /backend proxy too.
+  const formUrl = (token: string, action?: "revoke" | "resume"): string => `${action ?? ""}?token=${encodeURIComponent(token)}`;
+  const stopForm = (revokeToken: string) => ({ url: formUrl(revokeToken, "revoke"), label: "Stop sending me these notifications" });
   const publicRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,

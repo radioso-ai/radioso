@@ -367,9 +367,9 @@ allowance is exhausted, Radioso skips email but still calls the configured
 webhook. When the conversation allowance is exhausted, it skips both. Each skip
 records `workspace_daily_email_cap` or `conversation_dispatch_cap` for the
 operator without recording an address. Once the daily allowance stops an email,
-the routine editor shows **Daily email limit reached** under the notice's
-destination, and the destinations endpoint and the Operator MCP
-`operator_notice_destinations` tool report `dailyEmailAllowance.reachedToday`.
+the routine editor says so under the notice's destination, and the destinations
+endpoint and the Operator MCP `operator_notice_destinations` tool report
+`dailyEmailAllowance.reachedToday`.
 
 Resend hard-bounce and complaint events add the address to the deployment-wide notification suppression list. Suppression applies to contact messages, operator notices, and recipient confirmations. Authentication mail such as password resets and login-address verification keeps its separate delivery path. Delivery outcomes use `notification_recipient_unconfirmed` or `notification_recipient_suppressed` when every email recipient is skipped; logs and metrics carry only the reason and recipient count.
 

@@ -2,7 +2,6 @@
 
 import { FileText, Globe, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
@@ -217,6 +216,7 @@ export function DocumentList({
   onOpenCreate,
   onDelete,
   onRetry,
+  onResumeSetup,
 }: {
   isLoading: boolean
   totalDocuments: number
@@ -239,8 +239,8 @@ export function DocumentList({
   onOpenCreate: () => void
   onDelete: (document: DocumentSummary) => void
   onRetry: (documentId: string) => void
+  onResumeSetup: () => void
 }) {
-  const router = useRouter()
   const totalPages = Math.max(1, Math.ceil(totalDocuments / pageSize))
   const safeCurrentPage = Math.min(currentPage, totalPages)
   const pageStart = totalDocuments === 0 ? 0 : (safeCurrentPage - 1) * pageSize
@@ -284,11 +284,7 @@ export function DocumentList({
               href={buildDashboardHref(accountId, { ...routeState, section: 'agents', agentTab: 'chat' })}
               onClick={(event) => {
                 event.preventDefault()
-                void onboarding.markActive().then((persisted) => {
-                  if (persisted) {
-                    router.push(buildDashboardHref(accountId, { ...routeState, section: 'agents', agentTab: 'chat' }))
-                  }
-                })
+                onResumeSetup()
               }}
             >
               Resume setup

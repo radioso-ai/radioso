@@ -15,6 +15,7 @@ import { WorkspaceSessionService } from "../../../modules/auth/services/workspac
 import {
   type WorkspaceProviderCredentialsRepositoryPort,
 } from "../../../db/repositories/workspaceProviderCredentialsRepository.js";
+import type { DocumentProcessingJobRepositoryPort } from "../../../db/repositories/documentProcessingJobRepository.js";
 import {
   WorkspaceProviderCredentialsService,
 } from "../../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
@@ -160,13 +161,14 @@ export const buildWorkspaceProviderCredentialsService = (input: {
   auditService: AuditPort;
   env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY">;
   logger: Pick<AppLogger, "warn">;
-  repositories: { workspaceProviderCredentialsRepository: WorkspaceProviderCredentialsRepositoryPort };
+  repositories: { workspaceProviderCredentialsRepository: WorkspaceProviderCredentialsRepositoryPort; documentProcessingJobRepository: DocumentProcessingJobRepositoryPort };
 }): WorkspaceProviderCredentialsService => {
   const service = new WorkspaceProviderCredentialsService(
     input.repositories.workspaceProviderCredentialsRepository,
     input.auditService,
     { key: input.env.CONNECTOR_ENCRYPTION_KEY },
     input.logger,
+    input.repositories.documentProcessingJobRepository,
   );
   service.onDecryptError((error, provider) => {
     input.logger.warn(

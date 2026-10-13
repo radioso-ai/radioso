@@ -2292,6 +2292,7 @@ CREATE TABLE public.document_processing_jobs (
     kind text DEFAULT 'vectorize'::text NOT NULL,
     embedding_space_id uuid,
     workspace_profile_generation bigint,
+    last_error_code text,
     CONSTRAINT document_processing_jobs_embedding_profile_fence_check CHECK ((((kind = 'embedding_profile'::text) AND (embedding_space_id IS NOT NULL) AND (workspace_profile_generation IS NOT NULL)) OR ((kind <> 'embedding_profile'::text) AND (embedding_space_id IS NULL) AND (workspace_profile_generation IS NULL)))),
     CONSTRAINT document_processing_jobs_workspace_profile_generation_check CHECK ((workspace_profile_generation >= 1))
 );

@@ -754,6 +754,7 @@ export interface DocumentProcessingJobs {
   id: string;
   kind: Generated<string>;
   last_error: string | null;
+  last_error_code: string | null;
   options: Json | null;
   status: string;
   updated_at: Generated<Timestamp>;

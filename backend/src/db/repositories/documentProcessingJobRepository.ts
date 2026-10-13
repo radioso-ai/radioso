@@ -31,6 +31,7 @@ export interface DocumentProcessingJobRecord {
   status: DocumentProcessingJobStatus;
   attemptCount: number;
   lastError: string | null;
+  lastErrorCode: string | null;
   availableAt: Date;
   claimedAt: Date | null;
   completedAt: Date | null;
@@ -101,14 +102,16 @@ export interface DocumentProcessingJobRepositoryPort {
   getQueueSnapshot(now?: Date): Promise<DocumentProcessingQueueSnapshot>;
   markCompleted(jobId: string): Promise<void>;
   markSkipped(jobId: string, reason: string): Promise<void>;
-  markFailed(jobId: string, errorMessage: string): Promise<void>;
+  markFailed(jobId: string, errorMessage: string, errorCode?: string | null): Promise<void>;
   markFailedIfDocumentMatches(input: {
     jobId: string;
     documentId: string;
     workspaceId: string;
     revision: number;
     errorMessage: string;
+    errorCode?: string | null;
   }): Promise<boolean>;
+  requeueProviderCredentialFailures(workspaceId: string): Promise<number>;
   reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void>;
   releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
 }
@@ -310,6 +313,7 @@ interface DocumentProcessingJobRow {
   status: DocumentProcessingJobStatus;
   attempt_count: number;
   last_error: string | null;
+  last_error_code: string | null;
   available_at: Date;
   claimed_at: Date | null;
   completed_at: Date | null;
@@ -329,6 +333,7 @@ const mapJob = (row: DocumentProcessingJobRow): DocumentProcessingJobRecord => (
   status: row.status,
   attemptCount: row.attempt_count,
   lastError: row.last_error,
+  lastErrorCode: row.last_error_code,
   availableAt: new Date(row.available_at),
   claimedAt: row.claimed_at ? new Date(row.claimed_at) : null,
   completedAt: row.completed_at ? new Date(row.completed_at) : null,
@@ -364,6 +369,7 @@ const documentProcessingJobColumns = [
   "status",
   "attempt_count",
   "last_error",
+  "last_error_code",
   "available_at",
   "claimed_at",
   "completed_at",
@@ -912,12 +918,13 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       .execute();
   }
 
-  async markFailed(jobId: string, errorMessage: string): Promise<void> {
+  async markFailed(jobId: string, errorMessage: string, errorCode: string | null = null): Promise<void> {
     await this.db
       .updateTable("document_processing_jobs")
       .set({
         status: "failed",
         last_error: errorMessage,
+        last_error_code: errorCode,
         completed_at: currentTimestamp(),
         updated_at: currentTimestamp(),
       })
@@ -931,6 +938,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     workspaceId: string;
     revision: number;
     errorMessage: string;
+    errorCode?: string | null;
   }): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
       const document = await trx
@@ -956,6 +964,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         .set({
           status: "failed",
           last_error: input.errorMessage,
+          last_error_code: input.errorCode ?? null,
           completed_at: currentTimestamp(),
           updated_at: currentTimestamp(),
         })
@@ -963,6 +972,29 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         .execute();
 
       return true;
+    });
+  }
+
+  async requeueProviderCredentialFailures(workspaceId: string): Promise<number> {
+    return this.db.transaction().execute(async (trx) => {
+      const failed = await trx
+        .selectFrom("document_processing_jobs")
+        .select(["id", "document_id"])
+        .where("workspace_id", "=", workspaceId)
+        .where("status", "=", "failed")
+        .where("last_error_code", "=", "provider_misconfigured")
+        .execute();
+      if (failed.length === 0) return 0;
+      const ids = failed.map((job) => job.id);
+      const documentIds = failed.map((job) => job.document_id);
+      await trx.updateTable("document_processing_jobs").set({
+        status: "queued", last_error: null, last_error_code: null, completed_at: null,
+        claimed_at: null, available_at: currentTimestamp(), updated_at: currentTimestamp(),
+      }).where("id", "in", ids).execute();
+      await trx.updateTable("documents").set({
+        status: "queued", failure_reason: null, failed_at: null, updated_at: currentTimestamp(),
+      }).where("workspace_id", "=", workspaceId).where("id", "in", documentIds).where("status", "=", "failed").execute();
+      return ids.length;
     });
   }
 

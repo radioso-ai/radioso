@@ -105,6 +105,20 @@ describe("WorkspaceProviderCredentialsService", () => {
       expect(decryptField(stored!.ciphertext, TEST_KEY)).toBe("sk-test-1234567890");
     });
 
+    it("requeues only document work recorded with the provider configuration failure code", async () => {
+      const recovery = { requeueProviderCredentialFailures: vi.fn(async () => 2) };
+      const recoveringService = new WorkspaceProviderCredentialsService(repo, audit, configWithKey, undefined, recovery);
+
+      await recoveringService.setApiKey({
+        workspaceId: WORKSPACE_ID,
+        provider: "openai",
+        apiKey: "sk-test-1234567890",
+        actor: { accountId: "acc-1" },
+      });
+
+      expect(recovery.requeueProviderCredentialFailures).toHaveBeenCalledWith(WORKSPACE_ID);
+    });
+
     it("retrieves and decrypts a stored api key", async () => {
       await service.setApiKey({
         workspaceId: WORKSPACE_ID,

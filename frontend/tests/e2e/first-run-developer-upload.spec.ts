@@ -8,6 +8,31 @@ import {
 
 test.describe.configure({ mode: "serial" });
 
+const freshWorkspaceSummary = () => ({
+  documentCount: 0,
+  readyDocumentCount: 0,
+  pendingDocumentCount: 0,
+  sampleDocumentCount: 0,
+  sampleDocumentSlugs: [],
+  conversationCount: 0,
+  hasDocuments: false,
+  hasPendingDocuments: false,
+  hasReadyDocuments: false,
+  hasCompletedChat: false,
+  sampleDocumentsImported: false,
+  websiteCrawlerEnabled: true,
+  setup: {
+    purpose: null,
+    dismissed: false,
+    skippedSteps: [],
+    shouldShowFirstRun: true,
+    hasDirectivesOrRoutines: false,
+    hasNotifyDestination: false,
+    hasNotifyDeliveryConfirmed: false,
+    hasCredential: false,
+  },
+});
+
 test("first-run developer paths expose separate upload and chat instructions", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
@@ -17,6 +42,7 @@ test("first-run developer paths expose separate upload and chat instructions", a
       nextCursor: null,
       hasMore: false,
     },
+    workspaceSummary: freshWorkspaceSummary(),
   });
 
   // First-run onboarding is scoped to the Agents chat view (dashboard-shell.tsx's
@@ -63,6 +89,7 @@ test("first-run onboarding can be skipped and stays hidden", async ({ page }) =>
       nextCursor: null,
       hasMore: false,
     },
+    workspaceSummary: freshWorkspaceSummary(),
   });
 
   // First-run onboarding is scoped to the Agents chat view (dashboard-shell.tsx's
@@ -80,15 +107,7 @@ test("first-run onboarding can be skipped and stays hidden", async ({ page }) =>
 });
 
 test("first-run dismissal follows server state into a fresh browser context", async ({ page, browser }) => {
-  const workspaceSummary = {
-    documentCount: 0, readyDocumentCount: 0, pendingDocumentCount: 0, sampleDocumentCount: 0, sampleDocumentSlugs: [],
-    conversationCount: 0, hasDocuments: false, hasPendingDocuments: false, hasReadyDocuments: false,
-    hasCompletedChat: false, sampleDocumentsImported: false, websiteCrawlerEnabled: true,
-    setup: {
-      purpose: null, dismissed: false, skippedSteps: [], shouldShowFirstRun: true,
-      hasDirectivesOrRoutines: false, hasNotifyDestination: false, hasNotifyDeliveryConfirmed: false, hasCredential: false,
-    },
-  };
+  const workspaceSummary = freshWorkspaceSummary();
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { workspaceSummary });
   await page.goto(`/w/${workspaceKey}/agents`);

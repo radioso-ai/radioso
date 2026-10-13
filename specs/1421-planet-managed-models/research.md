@@ -34,7 +34,7 @@ One policy lookup per capability resolution avoids a second database query on ma
 
 ### Catalog units and inference rate
 
-`priceCents` and `annualPriceCents` are integer euro cents. Satellite is €149/month for 1,000 conversations and includes managed models. Its managed inference allowance is economically €0.05 per conversation; the Planet premium is the same rate multiplied by 5,000 conversations: €250/month. The catalog does not currently store a separate per-conversation inference field or bill a metered inference line item. The rate is expressed through the fixed plan price and conversation allowance, so `planet_managed` mirrors that structure at 74,900 cents monthly and 749,000 cents annually.
+`priceCents` and `annualPriceCents` are integer euro cents. Satellite includes managed models inside its fixed plan price; the catalog does not store a separate per-conversation inference field or bill a metered inference line item. The approved Planet premium expresses the pass-through rate through the fixed plan price and conversation allowance: €250 divided by 5,000 included conversations is €0.05 per conversation. `planet_managed` mirrors Satellite's catalog structure at 74,900 cents monthly and 749,000 cents annually.
 
 ### Decision
 
@@ -69,4 +69,3 @@ Add `planet_managed` directly after `planet` in catalog order with managed model
 ## Observability Review
 
 No new log, metric, audit event, or span is needed. This change closes an authorization branch before provider invocation and reuses the existing structured `provider_misconfigured` error and Ray availability state. The shared resolver already emits content-free capability-selection debug fields, and provider calls retain existing usage/latency telemetry. Logging plan ids or credential-source detail on every call would add noise without improving the operator-visible remediation.
-

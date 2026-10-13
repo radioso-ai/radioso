@@ -77,8 +77,10 @@ per UTC month and an equal number of stored documents across all workspaces in
 the account.
 
 The module seeds one profile per plan in `@radioso/plan-catalog`
-(`comet`, `satellite`, `planet`) with that plan's conversation, document, and
-storage limits. Console edits to a seeded profile always win: the seed only
+(`comet`, `satellite`, `planet`, `planet_managed`) with that plan's conversation,
+document, and storage limits. `planet` uses workspace provider credentials;
+`planet_managed` carries the same allowances and uses Radioso-managed models.
+Console edits to a seeded profile always win: the seed only
 ever inserts, never overwrites. New accounts are assigned the catalog's
 `defaultPlanId` (`comet`) by default. `GET /api/v1/plans` serves the same
 catalog publicly, unauthenticated, for the website pricing page and signup

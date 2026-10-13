@@ -152,6 +152,20 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
   const largestKind = largestPlanUsageKind(monthlyConversations.byKind)
   // The backend derives the next self-serve plan from the catalog; the card never names plans.
   const upgradePlanId = billing.upgradePlanId
+  const upgradePlan = plans.plans.find((entry) => entry.id === upgradePlanId)
+  const managedModelUpgrade = plan?.models === 'byok'
+    && upgradePlan?.models === 'managed'
+    && plan.monthlyConversations === upgradePlan.monthlyConversations
+    && plan.storedBytes === upgradePlan.storedBytes
+    && plan.monthlyIndexedBytes === upgradePlan.monthlyIndexedBytes
+    && plan.documents === upgradePlan.documents
+    && plan.support === upgradePlan.support
+  const managedModelPremium = managedModelUpgrade
+    ? upgradePlan.priceCents - plan.priceCents
+    : null
+  const upgradeLabel = managedModelPremium !== null && managedModelPremium > 0
+    ? `Use Radioso's models (+${formatPlanPriceCents(managedModelPremium, plans.currency)}/month)`
+    : 'Upgrade'
 
   const priceLabel = plan
     ? plan.priceCents === 0
@@ -190,7 +204,7 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
             onClick={() => void runCheckout({ plan: upgradePlanId, interval: checkoutInterval, returnPath: pathname }, 'upgrade')}
             disabled={pendingAction !== null}
           >
-            Upgrade
+            {upgradeLabel}
           </Button>
         </>
       ) : null}

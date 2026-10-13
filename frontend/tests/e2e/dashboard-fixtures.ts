@@ -988,9 +988,10 @@ export const basePlanCatalog = () => ({
     { id: "comet", name: "Comet", priceCents: 0, annualPriceCents: null, interval: "month" as const, monthlyConversations: 50, storedBytes: 10485760, monthlyIndexedBytes: 20971520, documents: 2000, models: "managed" as const, support: "community" as const, stripe: null },
     { id: "satellite", name: "Satellite", priceCents: 14900, annualPriceCents: 149000, interval: "month" as const, monthlyConversations: 1000, storedBytes: 20971520, monthlyIndexedBytes: 41943040, documents: 10000, models: "managed" as const, support: "email" as const, stripe: { monthLookupKey: "satellite_month", yearLookupKey: "satellite_year" } },
     { id: "planet", name: "Planet", priceCents: 49900, annualPriceCents: 499000, interval: "month" as const, monthlyConversations: 5000, storedBytes: 104857600, monthlyIndexedBytes: 209715200, documents: 50000, models: "byok" as const, support: "priority" as const, stripe: { monthLookupKey: "planet_month", yearLookupKey: "planet_year" } },
+    { id: "planet_managed", name: "Planet + managed models", priceCents: 74900, annualPriceCents: 749000, interval: "month" as const, monthlyConversations: 5000, storedBytes: 104857600, monthlyIndexedBytes: 209715200, documents: 50000, models: "managed" as const, support: "priority" as const, stripe: { monthLookupKey: "planet_managed_month", yearLookupKey: "planet_managed_year" } },
   ],
   defaultPlanId: "comet",
-  selfServeCeilingPlanId: "planet",
+  selfServeCeilingPlanId: "planet_managed",
   topUp: { conversations: 300, priceCents: 5000, stripeLookupKey: "topup_300" },
 });
 

@@ -34,6 +34,17 @@ describe("profileSeedFromPlan", () => {
     expect(seed.monthlyIndexedByteLimit).toBe(41943040);
   });
 
+  it("seeds the managed Planet variant with Planet's allowances", () => {
+    const planet = PLAN_CATALOG.plans.find((plan) => plan.id === "planet")!;
+    const managedPlanet = PLAN_CATALOG.plans.find((plan) => plan.id === "planet_managed")!;
+
+    expect(profileSeedFromPlan(managedPlanet, PLAN_CATALOG.repliesPerConversation)).toEqual({
+      ...profileSeedFromPlan(planet, PLAN_CATALOG.repliesPerConversation),
+      key: "planet_managed",
+      displayName: "Planet + managed models",
+    });
+  });
+
   it("always leaves the legacy per-answer limit null, since catalog plans meter conversations", () => {
     for (const plan of PLAN_CATALOG.plans) {
       const seed = profileSeedFromPlan(plan, PLAN_CATALOG.repliesPerConversation);

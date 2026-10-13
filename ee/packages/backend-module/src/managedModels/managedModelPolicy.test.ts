@@ -10,6 +10,7 @@ const lookup = (planId: string | null): WorkspacePlanLookup => ({
 
 const managedPlan = PLAN_CATALOG.plans.find((plan) => plan.models === "managed")!;
 const byokPlan = PLAN_CATALOG.plans.find((plan) => plan.models === "byok")!;
+const managedPlanetPlan = PLAN_CATALOG.plans.find((plan) => plan.id === "planet_managed")!;
 
 describe("EnterpriseManagedModelPolicy", () => {
   it.each(["chat", "embeddings"] as const)(
@@ -26,6 +27,15 @@ describe("EnterpriseManagedModelPolicy", () => {
 
   it("runs the catalog's chat selection for chat on a managed plan", async () => {
     const policy = new EnterpriseManagedModelPolicy(lookup(managedPlan.id));
+
+    await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "chat" })).resolves.toEqual({
+      managedModel: PLAN_CATALOG.managedModels.chat,
+      platformCredentials: "allowed",
+    });
+  });
+
+  it("treats the managed Planet variant as a managed plan", async () => {
+    const policy = new EnterpriseManagedModelPolicy(lookup(managedPlanetPlan.id));
 
     await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "chat" })).resolves.toEqual({
       managedModel: PLAN_CATALOG.managedModels.chat,

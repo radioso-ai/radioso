@@ -199,7 +199,12 @@ imports from `services/`.
   identity instead of borrowing a retrieval outcome. Every `no_support`
   presentation must supply a typed decline reason, either directly on the verdict
   or through its grounding summary; `ChatAnswerPresenter` rejects the call when
-  neither is present. `chatService`'s
+  neither is present. A grounded envelope that commits `no_support` or
+  `out_of_scope` but leaves `answer` empty is answered with the focused decline
+  that commitment promised (usage attempt `blank_decline` / `stream_blank_decline`,
+  counted as `chat_grounding_assertion_outcomes_total{reason="blank_decline"}`); on
+  the page-context paths it reads as no page answer. An empty `answer` commitment
+  still fails the turn with `BlankChatAnswerError`. `chatService`'s
   retrieval-miss handoff and the Slack gap escalation both key off the outcome and
   therefore escalate only content gaps, leaving out-of-scope and unavailable
   declines alone. A valid in-range `[[n]]`

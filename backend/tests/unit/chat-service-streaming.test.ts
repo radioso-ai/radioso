@@ -5392,6 +5392,89 @@ describe("chat service streaming", () => {
     );
   });
 
+  it("delivers the focused decline when the grounded answer commits no_support with an empty answer", async () => {
+    // The grounded answer model can commit a decline in the envelope head and leave
+    // `answer` empty. The turn answers with the decline that outcome promised, streamed
+    // and not, rather than failing with a blank answer (HTTP 500 on the voice door).
+    const blankDecline = JSON.stringify({
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "what the page does",
+      outcome: "no_support",
+      answer: "",
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [{ chunkId: "chunk-1", documentId: "doc-1", title: "Intro", content: "unrelated text" }],
+          prompt: "prompt text",
+          citations: [],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: { semanticQuery: "page do", lexicalQuery: "page do" },
+          },
+          responseSettings: { citationDisplayEnabled: true },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return blankDecline;
+      },
+      async *streamAnswer() {
+        for (let offset = 0; offset < blankDecline.length; offset += 11) {
+          yield blankDecline.slice(offset, offset + 11);
+        }
+      },
+    };
+
+    for (const stream of [true, false]) {
+      const conversationRepository = new InMemoryConversationRepository();
+      const messageRepository = new InMemoryMessageRepository();
+      const service = makeChatService(
+        conversationRepository,
+        messageRepository,
+        new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
+        chatGateway,
+        createAuditService(),
+        fallbackReplyComposer,
+      );
+
+      let answer: string;
+      if (stream) {
+        const events: ChatStreamEvent[] = [];
+        for await (const event of service.streamAnswer({ workspaceId: "workspace-1", query: "What does this page do?", stream: true })) {
+          events.push(event);
+        }
+        const done = events.find((event): event is Extract<ChatStreamEvent, { type: "done" }> => event.type === "done");
+        expect(events.flatMap((event) => (event.type === "chunk" ? [event.text] : [])).join("")).toBe(focusedGroundedMiss);
+        answer = done?.answer ?? "";
+      } else {
+        answer = (await service.answer({ workspaceId: "workspace-1", query: "What does this page do?", stream: false })).answer;
+      }
+
+      expect(answer).toBe(focusedGroundedMiss);
+      const [conversationId] = conversationRepository.items.keys();
+      const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
+      expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
+        { role: "user", content: "What does this page do?" },
+        { role: "assistant", content: focusedGroundedMiss },
+      ]);
+    }
+  });
+
   it("rejects a well-formed envelope whose answer is blank in the non-streaming path", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

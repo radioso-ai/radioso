@@ -889,3 +889,99 @@ describe("retrieval answer envelope v2", () => {
     expect(step.value.hasStreamedAnswer).toBe(true);
   });
 });
+
+/**
+ * The grounded answer model can commit a decline in the envelope head and still leave
+ * `answer` empty (gpt-5.4-nano does this on roughly one turn in four when retrieval finds
+ * nothing on the question). The head already says what the turn is, so the turn delivers
+ * the focused decline that outcome promised instead of failing with a blank answer.
+ */
+describe("a decline the grounded answer commits without text", () => {
+  const blankEnvelope = (outcome: "answer" | "no_support" | "out_of_scope"): string =>
+    JSON.stringify({
+      coverage: outcome === "answer" ? "answered_sufficient_evidence" : "unanswered_insufficient_evidence",
+      requestFocus: "the product price",
+      outcome,
+      answer: "",
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+
+  it.each(["no_support", "out_of_scope"] as const)(
+    "composes the focused decline for a %s commitment with an empty answer",
+    async (outcome) => {
+      const { composer, counts, attemptKeys, metricWrites } = buildComposer(blankEnvelope(outcome));
+
+      const presented = await composer.composeAnswer(baseSession(), "How much does it cost?", undefined, undefined);
+
+      expect(presented.answer).toBe("FOCUSED GROUNDED MISS");
+      expect(presented.grounding).toBe("no_support");
+      expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 1 });
+      expect(attemptKeys).toEqual(["grounded", "blank_decline"]);
+      expect(metricWrites).toContainEqual({
+        name: "chat_grounding_assertion_outcomes_total",
+        labels: expect.objectContaining({ reason: "blank_decline", stream: "false", outcome }),
+      });
+    },
+  );
+
+  it.each(["no_support", "out_of_scope"] as const)(
+    "streams the focused decline for a %s commitment with an empty answer",
+    async (outcome) => {
+      const { composer, counts, attemptKeys, metricWrites } = buildComposer(blankEnvelope(outcome));
+
+      const { chunks, result } = await drain(
+        composer.streamAnswer(baseSession(), "How much does it cost?", undefined, undefined),
+      );
+
+      expect(chunks).toEqual([]);
+      expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
+      expect(result.finalPresentation.grounding).toBe("no_support");
+      expect(result.hasStreamedAnswer).toBe(false);
+      expect(counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 1 });
+      expect(attemptKeys).toEqual(["stream_grounded", "stream_blank_decline"]);
+      expect(metricWrites).toContainEqual({
+        name: "chat_grounding_assertion_outcomes_total",
+        labels: expect.objectContaining({ reason: "blank_decline", stream: "true", outcome }),
+      });
+    },
+  );
+
+  it("reads a page-context decline without text as no page answer and composes the decline", async () => {
+    const pageSession = () => {
+      const session = baseSession();
+      (session.retrieval as { contexts: unknown[] }).contexts = [];
+      session.resolvedContext.renderFragments = [{
+        kind: "page_context",
+        pageUrl: "https://example.test/workshop",
+        content: "Workshop page",
+      }];
+      return session;
+    };
+    const nonStreaming = buildComposer(blankEnvelope("no_support"));
+    const presented = await nonStreaming.composer.composeAnswer(pageSession(), "How much does it cost?", undefined, undefined);
+    expect(presented.answer).toBe("FOCUSED GROUNDED MISS");
+    expect(nonStreaming.counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 1 });
+
+    const streaming = buildComposer(blankEnvelope("no_support"));
+    const { result } = await drain(streaming.composer.streamAnswer(pageSession(), "How much does it cost?", undefined, undefined));
+    expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
+    expect(streaming.counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 1 });
+  });
+
+  it("still fails a turn whose answer commitment came back empty", async () => {
+    const nonStreaming = buildComposer(blankEnvelope("answer"));
+    await expect(
+      nonStreaming.composer.composeAnswer(baseSession(), "How much does it cost?", undefined, undefined),
+    ).rejects.toMatchObject({ name: "BlankChatAnswerError" });
+    expect(nonStreaming.counts().fallbackCalls).toBe(0);
+
+    const streaming = buildComposer(blankEnvelope("answer"));
+    await expect(
+      drain(streaming.composer.streamAnswer(baseSession(), "How much does it cost?", undefined, undefined)),
+    ).rejects.toMatchObject({ name: "BlankChatAnswerError" });
+    expect(streaming.counts().fallbackCalls).toBe(0);
+  });
+});

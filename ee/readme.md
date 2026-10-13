@@ -80,8 +80,9 @@ The module seeds one profile per plan in `@radioso/plan-catalog`
 (`comet`, `satellite`, `planet`, `planet_managed`) with that plan's conversation,
 document, and storage limits. `planet` uses workspace provider credentials and
 never falls back to deployment keys; `planet_managed` includes Radioso-managed
-models at the higher catalog price.
-`planet_managed` carries the same allowances and uses Radioso-managed models.
+models at the higher catalog price. Like every managed plan, a capability uses
+its selected provider through a stored workspace key when one is present;
+removing that key returns the capability to Radioso's managed model.
 Console edits to a seeded profile always win: the seed only
 ever inserts, never overwrites. New accounts are assigned the catalog's
 `defaultPlanId` (`comet`) by default. `GET /api/v1/plans` serves the same

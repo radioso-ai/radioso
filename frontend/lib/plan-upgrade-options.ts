@@ -1,4 +1,5 @@
 type PlanUpgradeOption = { planId: string; label: string; requiresWorkspaceKey: boolean }
+type BillingSubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'none'
 
 export const planUpgradeOptions = (currentPlanId: string, planIds: readonly string[]): PlanUpgradeOption[] =>
   planIds.map((planId) => ({
@@ -10,3 +11,8 @@ export const planUpgradeOptions = (currentPlanId: string, planIds: readonly stri
         : 'Upgrade',
     requiresWorkspaceKey: currentPlanId === 'satellite' && planId === 'planet',
   }))
+
+export const planUpgradeDestination = (
+  subscriptionStatus: BillingSubscriptionStatus,
+): 'portal' | 'checkout' =>
+  subscriptionStatus === 'active' || subscriptionStatus === 'past_due' ? 'portal' : 'checkout'

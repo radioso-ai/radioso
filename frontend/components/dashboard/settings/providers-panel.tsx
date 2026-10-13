@@ -166,6 +166,9 @@ export function ProvidersPanel({
   const [ingestionSettings, setIngestionSettings] = useState<IngestionSettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const effectiveEnvProviderAvailability = credentialSource === 'self_hosted'
+    ? envProviderAvailability
+    : emptyEnvProviderAvailability
 
   const emitSaveState = useCallback(
     (state: SaveState) => {
@@ -252,7 +255,7 @@ export function ProvidersPanel({
         encryptionConfigured={encryptionConfigured}
         credentials={credentials}
         credentialSource={credentialSource}
-        envProviderAvailability={envProviderAvailability}
+        envProviderAvailability={effectiveEnvProviderAvailability}
         onChange={reloadCredentials}
         emitSaveState={emitSaveState}
       />
@@ -260,7 +263,8 @@ export function ProvidersPanel({
         <ModelsCard
           models={models}
           credentials={credentials}
-          envProviderAvailability={envProviderAvailability}
+          credentialSource={credentialSource}
+          envProviderAvailability={effectiveEnvProviderAvailability}
           onChange={reloadModels}
           ingestionSettings={ingestionSettings}
           onIngestionSettingsChange={setIngestionSettings}
@@ -297,6 +301,12 @@ function CredentialsCard({
     return map
   }, [credentials])
 
+  const encryptionUnavailableCopy = credentialSource === 'byok'
+    ? 'before adding a workspace provider key. Deployment provider keys are not available on this plan.'
+    : credentialSource === 'managed'
+      ? "to store provider overrides. Without a readable workspace key, this workspace uses Radioso's managed models."
+      : 'to enable workspace API keys; this workspace uses deployment provider keys when available.'
+
   return (
     <SettingsCard
       id="provider-credentials"
@@ -313,8 +323,9 @@ function CredentialsCard({
           <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0" />
             <p>
-              Server-side secret encryption is not configured. Set <code className="rounded bg-amber-500/20 px-1 py-0.5 font-mono text-[0.8em]">CONNECTOR_ENCRYPTION_KEY</code> on the
-              backend to enable workspace API keys; this workspace currently uses the deployment defaults.
+              Server-side secret encryption is not configured. Set{' '}
+              <code className="rounded bg-amber-500/20 px-1 py-0.5 font-mono text-[0.8em]">CONNECTOR_ENCRYPTION_KEY</code>{' '}
+              on the backend {encryptionUnavailableCopy}
             </p>
           </div>
         ) : null}
@@ -510,6 +521,7 @@ function CredentialRow({
 function ModelsCard({
   models,
   credentials,
+  credentialSource,
   envProviderAvailability,
   onChange,
   ingestionSettings,
@@ -519,6 +531,7 @@ function ModelsCard({
 }: {
   models: WorkspaceLlmModels
   credentials: ProviderCredentialSummary[]
+  credentialSource: 'managed' | 'byok' | 'self_hosted'
   envProviderAvailability: EnvProviderAvailability
   onChange: () => Promise<unknown>
   ingestionSettings: IngestionSettings | null
@@ -539,13 +552,18 @@ function ModelsCard({
       ),
     [credentialProviders, envProviderAvailability],
   )
+  const description = credentialSource === 'byok'
+    ? 'Model assigned to each capability. Only providers with a workspace key are available; deployment provider keys never apply. Changing the embedding model re-indexes existing documents.'
+    : credentialSource === 'managed'
+      ? "Each capability uses Radioso's managed default unless its selected provider has a stored workspace key. Remove that key to return to the managed default. Changing the embedding model re-indexes existing documents."
+      : 'Model assigned to each capability. Workspace keys take precedence over deployment provider keys. Changing the embedding model re-indexes existing documents.'
 
   return (
     <SettingsCard
       id="provider-models"
       icon={<Cpu className="h-5 w-5 text-primary" />}
       title="Models"
-      description="Model assigned to each capability. Chat, rewrite, and rerank fall back to deployment defaults; changing the embedding model re-indexes existing documents."
+      description={description}
     >
       <div className="divide-y divide-border/60 rounded-xl border border-border/60 bg-background/40">
         {llmCapabilityNames.map((capability) => {
@@ -561,6 +579,7 @@ function ModelsCard({
               capability={capability}
               value={current}
               managed={managed}
+              credentialSource={credentialSource}
               credentialProviders={credentialProviders}
               availableProviders={availableProviders}
               knownModelsByProvider={models.knownModelsByProvider}
@@ -587,6 +606,7 @@ function ModelRow({
   capability,
   value,
   managed,
+  credentialSource,
   credentialProviders,
   availableProviders,
   knownModelsByProvider,
@@ -596,6 +616,7 @@ function ModelRow({
   capability: LlmCapabilityName
   value: LlmCapabilityPreference | null
   managed: LlmManagedModel | null
+  credentialSource: 'managed' | 'byok' | 'self_hosted'
   credentialProviders: Set<LlmProviderName>
   availableProviders: Set<LlmProviderName>
   knownModelsByProvider: KnownModelsByProvider
@@ -700,11 +721,18 @@ function ModelRow({
           <p className="text-xs leading-relaxed text-muted-foreground">{visual.description}</p>
           {locked ? (
             <p className="text-xs leading-relaxed text-foreground" data-testid={`llm-model-managed-${capability}`}>
-              Managed plans run on {managed.model}. Add your own keys, or move to Planet, to choose.
+              This capability uses Radioso&apos;s managed default, {managed.model}. Add a workspace key for{' '}
+              {providerDisplayName[value?.provider ?? managed.provider]} to use your own account; remove that key to return here.
             </p>
           ) : null}
           <p className="sr-only">
-            {locked ? 'Managed by plan' : hasValue ? 'Workspace override' : 'Using deployment default'}
+            {locked
+              ? 'Managed by plan'
+              : hasValue
+                ? 'Workspace override'
+                : credentialSource === 'self_hosted'
+                  ? 'Using deployment default'
+                  : 'Using workspace default'}
           </p>
         </div>
       </div>

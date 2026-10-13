@@ -1317,16 +1317,20 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
           stepId: "handoff",
         },
       }],
-      ownershipHandoff: { reason: "routine_handoff", routineId: "routine_1", stepId: "handoff" },
+      ownershipHandoff: { reason: "routine_handoff", routineId: "routine_1", stepId: "handoff", collectedSlotCount: 2 },
     });
 
     expect(completed.response.answer).toBe("A person will help you from here.");
+    // The channel delivering the reply learns why the turn handed off and how much the routine held.
+    expect(completed.response.ownership).toEqual({ state: "human_owned", suppressed: false });
+    expect(completed.response.handoff).toEqual({ reason: "routine_handoff", collectedSlotCount: 2 });
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
     const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.ownershipHandoff).toEqual({
       reason: "routine_handoff",
       routineId: "routine_1",
       stepId: "handoff",
+      collectedSlotCount: 2,
     });
     expect(persisted.actions?.[0]?.type).toBe(HANDOFF_NOTIFY_ACTION_TYPE);
     expect(persisted.ownershipAuditEvent).toMatchObject({
@@ -1343,6 +1347,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         stepId: "handoff",
       },
     });
+    expect(persisted.ownershipAuditEvent?.metadata).not.toHaveProperty("collectedSlotCount");
     expect(records.map((record) => record.eventType)).toEqual(["chat.answer"]);
   });
 

@@ -17,6 +17,11 @@ import { completionsRequestSchema, heardUntilFor, utteranceOf } from "./requestS
 
 const COMPLETIONS_PATH = "/:agentId/voice/:dialect/v1/chat/completions";
 const CONVERSATION_ID_HEADER = "X-Radioso-Conversation-Id";
+/**
+ * The turn's outcome kind, for a page or test reading the response; voice runtimes ignore it. A
+ * header on a whole completion; a trailer on a stream, whose headers leave before the outcome.
+ */
+const OUTCOME_FIELD = "X-Radioso-Voice-Outcome";
 const DEFAULT_MODEL_NAME = "radioso";
 // Matches the `voice_sessions.session_key` CHECK.
 const MAX_SESSION_KEY_LENGTH = 256;
@@ -110,6 +115,7 @@ const openEventStream = (res: Response, conversationId: string | null): void => 
   if (conversationId) {
     res.setHeader(CONVERSATION_ID_HEADER, conversationId);
   }
+  res.setHeader("Trailer", OUTCOME_FIELD);
   res.flushHeaders();
 };
 
@@ -215,6 +221,9 @@ const streamCompletion = async (
       writeFrames(render(event));
       if (event.type === "outcome") {
         keepAlive?.stop();
+        if (!res.writableEnded) {
+          res.addTrailers({ [OUTCOME_FIELD]: event.outcome.kind });
+        }
         res.end();
       }
     });
@@ -238,6 +247,10 @@ const sendCompletion = (res: Response, identity: CompletionIdentity, collected: 
   );
   if (conversation) {
     res.setHeader(CONVERSATION_ID_HEADER, conversation.conversationId);
+  }
+  const outcome = collected.find((seen): seen is Extract<VoiceTurnEvent, { type: "outcome" }> => seen.type === "outcome");
+  if (outcome) {
+    res.setHeader(OUTCOME_FIELD, outcome.outcome.kind);
   }
   res.status(200).json(renderCompletion(identity, collected));
 };

@@ -36,6 +36,16 @@ describe("OpenAI completions presenter", () => {
     ]);
   });
 
+  it("ends a turn that requests a callback the way it ends one that continues: stop and [DONE], no tool call", () => {
+    const callback: VoiceTurnEvent[] = [
+      ...turn.slice(0, -1),
+      { type: "outcome", outcome: { kind: "callback_requested", handoffReason: "routine_handoff" } },
+    ];
+
+    expect(callback.flatMap(createCompletionChunkRenderer(identity))).toEqual(turn.flatMap(createCompletionChunkRenderer(identity)));
+    expect(renderCompletion(identity, callback)).toEqual(renderCompletion(identity, turn));
+  });
+
   it("writes nothing for an empty final piece and still opens the reply with the role when nothing was spoken", () => {
     const render = createCompletionChunkRenderer(identity);
     const frames = [

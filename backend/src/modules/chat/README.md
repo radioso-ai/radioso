@@ -66,7 +66,12 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   turn-time outcomes (`started`, `reentered`, `declined`, `not_started`,
   `unknown_tool`) are counted. `presentChatPayload` strips `routine` and `invocation`
   from the human-facing routes; only `sendChatSse(..., { agentEnvelope: true })` and
-  the agent channel route publish them.
+  the agent channel route publish them. A handoff turn's response and `done` event
+  also carry `handoff` (`ChatTurnHandoff`: the reason, and `collectedSlotCount`, how
+  many declared slots the ending routine held a value for, 0 on a retrieval miss)
+  for a channel that delivers the reply in-process; the voice channel derives its
+  outcome from it. It is not part of the envelope core, and `presentChatPayload`
+  and `stripPublicChatCitationArtifacts` drop it from every HTTP response.
 - `services/agentTurnInput.ts` (exported through `contracts/`): `resolveAgentTurnInput`
   turns an agent-facing body into `{ kind: "message" }` or `{ kind: "routine_invocation" }`
   once, before any turn state exists. The REST agent chat route calls it with the

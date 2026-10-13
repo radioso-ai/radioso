@@ -16,12 +16,13 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   outcomes. It names no vendor and no wire.
 - `services/` runs the turn: `voiceTurnService.ts` resolves or binds the
   session's conversation, reads the agent's voice settings and the
-  conversation's routine state, starts the chat turn with
+  conversation's routine state and owner, starts the chat turn with
   `sourceChannel: "voice"` and a `voice` channel context, and maps the chat
-  stream to `VoiceTurnEvent`s; `speechSegmenter.ts` is the pure sentence cutter
-  (punctuation only, no words); `speechText.ts` turns text into what a caller
-  hears: it removes the composer's citation markers (`[1]`, `[?]`, `[[1]]`,
-  `[[?]]`) and markdown syntax (emphasis, inline code, line-start heading and
+  stream to `VoiceTurnEvent`s; `voiceTurnOutcome.ts` is the pure outcome
+  derivation from chat's closing `done` envelope; `speechSegmenter.ts` is the
+  pure sentence cutter (punctuation only, no words); `speechText.ts` turns
+  text into what a caller hears: it removes the composer's citation markers
+  (`[1]`, `[?]`, `[[1]]`, `[[?]]`) and markdown syntax (emphasis, inline code, line-start heading and
   list markers, link syntax) from everything spoken, by structure only, and
   compares a runtime's record of what was heard with what was spoken;
   while a reply streams, `speechSegmenter.ts`'s sentence cutter closes an
@@ -62,8 +63,9 @@ helpers and the shared chat message limit from `app/http`
   `registerOpenAiCompletionsRoute`.
 - `backend/src/app/composition/voiceChannel.ts` — builds the port over
   Postgres, `AssistantChatService.streamAnswer`, the agent repository (voice
-  settings and default locale), the routine state store and the audit service
-  (the `voice.reply_interrupted` and `voice.reply_replayed` notes); exposed as
+  settings and default locale), the routine state store, the conversation
+  ownership reader (`handoff/public.ts`) and the audit service (the
+  `voice.reply_interrupted` and `voice.reply_replayed` notes); exposed as
   `AppDependencies.voiceTurns`.
 - The agent's `voice` settings block belongs to the agents module
   (`agents/voiceSettings.ts`, stored in `behavior_settings.voice`, served on
@@ -95,9 +97,13 @@ helpers and the shared chat message limit from `app/http`
 - **Turn policy.** Runs only while the agent's `voice.enabled` is true; with
   voice off a turn runs exactly as a plain chat turn. The bridge fires when the
   turn starts searching, 400 ms after it starts composing without speech, or
-  after 1.8 s with no phase at all; the limit is 8 s into the turn
-  (`VOICE_BEHAVIOR` in `shared/domain/behaviorConfig.ts`). The turn service
-  turns chat `status` events into phase markers (`interpreting`, `searching`,
+  after 1.8 s with no phase at all; the limit is 10 s into the turn
+  (`VOICE_BEHAVIOR` in `shared/domain/behaviorConfig.ts`). Both cover only
+  turns the agent owns: when the conversation is human-owned at turn start
+  (one ownership read, beside the routine state read) the policy runs with
+  `bridge: null` and `turnLimitMs: null`, so chat's waiting message is neither
+  preceded by a bridge line nor talked over by the fallback line, and neither
+  is counted. The turn service turns chat `status` events into phase markers (`interpreting`, `searching`,
   `composing`) that only the policy reads; adapters never see them, and with
   voice off they are dropped. `interpreting` is where every turn starts, so
   it leaves the 1.8 s fallback armed. Everything stops at the first speech or
@@ -110,6 +116,29 @@ helpers and the shared chat message limit from `app/http`
   message, so the last reply's language is not a source. An agent with no line
   for the locale and style hears silence, and an agent with no fallback line
   keeps waiting past the limit.
+- **Outcomes (web column of the contract's table).** `voiceTurnOutcome.ts`
+  reads chat's closing `done` event. `ownership` human-owned and not
+  suppressed means this turn handed off: `callback_requested` (with
+  `handoffReason`) when `done.handoff.collectedSlotCount > 0`, else
+  `continue`. Suppressed means a person owned the conversation at turn start:
+  `continue`, and the speech is chat's waiting message as chat wrote it.
+  Anything else is `continue`. "Captured contact details" is structural: chat's
+  `handoff` report counts the declared slots the ending routine held a value
+  for (the keys of the engine's `handoff.collected`, counted in
+  `chat/services/handoffOwnership.ts`); a retrieval miss reports 0. No slot key
+  or value is read for meaning. The `handoff` report is chat's own reply field
+  for the delivering channel (`ChatTurnHandoff`); the HTTP presenters drop it
+  and the agent reply envelope does not carry it, so OpenAPI is unchanged. The
+  outcome the runtime received is the one the policy let through: a turn whose
+  limit spoke the fallback line ends `continue` even if the drained reply
+  later hands off. `transfer` and `end` stay in the contract; phone turns get
+  the same derivation, which matches the contract's phone rows only while no
+  transfer target exists.
+- **Outcome on the wire.** The completions adapter ends both outcomes with
+  `stop` and `[DONE]` and sends no tool call. The outcome kind travels as
+  `X-Radioso-Voice-Outcome`: a header on a non-streaming completion, and on a
+  stream a trailer (announced with `Trailer` when the stream opens), because a
+  stream's headers leave with its first frame.
 - **Bridge lines are not stored.** A bridge is a channel-level utterance, like
   a typing indicator: it reaches the caller, never the conversation history.
 - **After the limit.** The policy speaks the fallback line, ends the turn with
@@ -220,7 +249,8 @@ helpers and the shared chat message limit from `app/http`
 ## Observability
 
 One log per turn with `agentId`, `vendor`, `transport`, `conversationId`,
-`result`, `durationMs` and `speechPieceCount`, plus `bridged`,
+`result`, `durationMs` and `speechPieceCount`, `outcome` (the kind the runtime
+received) and `handoffReason` (when the turn handed off), plus `bridged`,
 `turnLimitReached` and `fallbackSpoken` when the voice policy ran: `Voice turn
 reached the turn limit` at warn when the limit fired, else `Voice turn finished` at info
 (`completed`, `replayed`, `superseded` with `supersededAt`: `before_speech` or
@@ -239,9 +269,11 @@ The policy records `voice_turn_first_speech_ms` (histogram, `bridged`),
 had no line, so nothing was spoken) and `voice_turn_limit_total`
 (`locale_resolved`: `no` when there was no fallback line and the turn kept
 waiting). The service records `voice_turn_superseded_total` (`stage`:
-`before_speech`, `after_speech`), `voice_turn_replayed_total` and
-`voice_reply_interrupted_total`. Labels are closed enums; no line text, locale
-tag or id. The chat registry's `chat_turn_cancellations_total` counts a voice
+`before_speech`, `after_speech`), `voice_turn_replayed_total`,
+`voice_reply_interrupted_total` and `voice_turn_outcome_total` (`kind`:
+`continue`, `callback_requested`; `handoff_reason`: `routine_handoff`,
+`routine_stuck`, `retrieval_miss`, `none`), once per turn that sent an
+outcome. Labels are closed enums; no line text, locale tag or id. The chat registry's `chat_turn_cancellations_total` counts a voice
 turn cancelled mid-reply with `stage: "persisting"`.
 
 ## Tests
@@ -250,7 +282,11 @@ turn cancelled mid-reply with `stage: "persisting"`.
   policy tests use fake timers)
 - `cd backend && pnpm exec vitest run tests/unit/conversation-turn-registry.test.ts tests/unit/chat-service-routine-reply-streaming.test.ts`
   (the chat side of `latest_input_wins`: cancelling after emission, and the
-  replaced turn's user message)
+  replaced turn's user message; and the `handoff` report on a streamed
+  routine hand-off)
+- `cd backend && pnpm exec vitest run tests/unit/routine-ending-effects.test.ts tests/unit/chat-turn-lifecycle.test.ts tests/unit/chat-presenter.test.ts tests/unit/public-chat-presenter.test.ts`
+  (the slot count on a hand-off, the reply's `handoff` report, and the
+  presenters that keep it out of HTTP responses)
 - `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts`
   (the settings round trip and the dashboard-save safety check)
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`

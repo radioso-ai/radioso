@@ -1,4 +1,4 @@
-import type { ChatStreamEvent, ConversationTurnSupersession } from "../../chat/contracts/index.js";
+import type { ChatStreamEvent, ChatTurnHandoffReason, ConversationTurnSupersession } from "../../chat/contracts/index.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { VOICE_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { VOICE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
@@ -8,6 +8,7 @@ import type {
   VoiceSessionRef,
   VoiceTurnEvent,
   VoiceTurnInput,
+  VoiceTurnOutcome,
   VoiceTurnPort,
 } from "../domain.js";
 import { chooseVoiceTurnLines, resolveVoiceTurnLocale } from "./voiceLines.js";
@@ -16,10 +17,12 @@ import {
   recordVoiceFirstSpeech,
   recordVoiceReplyInterrupted,
   recordVoiceTurnLimit,
+  recordVoiceTurnOutcome,
   recordVoiceTurnReplayed,
   recordVoiceTurnSuperseded,
   type VoiceTurnMetricsSink,
 } from "./voiceTurnMetrics.js";
+import { deriveVoiceTurnOutcome } from "./voiceTurnOutcome.js";
 import {
   applyVoiceTurnPolicy,
   withoutPhaseMarkers,
@@ -81,6 +84,11 @@ interface VoiceRoutineStateSource {
   isRoutineActive(conversationId: string): Promise<boolean>;
 }
 
+interface VoiceConversationOwnershipSource {
+  /** Whether a person owns the conversation, so chat answers the turn with its waiting message. */
+  isHumanOwned(conversationId: string): Promise<boolean>;
+}
+
 interface VoiceTurnTiming {
   bridgeAfterMs: number;
   bridgeAfterComposingIdleMs: number;
@@ -116,6 +124,7 @@ interface VoiceTurnServiceDependencies {
   chat: VoiceChatPort;
   agents: VoiceAgentProfileSource;
   routines: VoiceRoutineStateSource;
+  ownership: VoiceConversationOwnershipSource;
   logger: Pick<AppLogger, "info" | "warn">;
   metrics?: VoiceTurnMetricsSink | null;
   notes?: VoiceTurnNotes;
@@ -141,6 +150,10 @@ interface VoiceTurnRecord {
   reply: { messageId: string; text: string } | null;
   /** What left the turn for the caller: the bridge line, and every speech piece in order. */
   spoken: { bridge: string | null; speech: string[] };
+  /** The outcome the runtime received, once it left. */
+  outcome: VoiceTurnOutcome | null;
+  /** Why chat handed the conversation to a person on this turn; null when it did not. */
+  handoffReason: ChatTurnHandoffReason | null;
 }
 
 const emptyRecord = (): VoiceTurnRecord => ({
@@ -151,9 +164,12 @@ const emptyRecord = (): VoiceTurnRecord => ({
   chatReplied: false,
   reply: null,
   spoken: { bridge: null, speech: [] },
+  outcome: null,
+  handoffReason: null,
 });
 
-const CONTINUE: VoiceTurnEvent = { type: "outcome", outcome: { kind: "continue" } };
+const CONTINUE_OUTCOME: VoiceTurnOutcome = { kind: "continue" };
+const CONTINUE: VoiceTurnEvent = { type: "outcome", outcome: CONTINUE_OUTCOME };
 
 /** The end of a whole reply as speech: its remaining sentences, then the tail, which is the last piece. */
 function* lastSpeech(rest: { sentences: string[]; remainder: string }, record: VoiceTurnRecord): Generator<VoiceTurnEvent> {
@@ -261,6 +277,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       if (claim.supersededAt !== null) {
         // A newer request of the session arrived while this one was setting up; it owns the turn.
         record.result = "superseded";
+        record.outcome = CONTINUE_OUTCOME;
         yield CONTINUE;
         return;
       }
@@ -296,6 +313,7 @@ export class VoiceTurnService implements VoiceTurnPort {
         record.spoken.speech.push(event.text);
       } else if (event.type === "outcome") {
         claim.outcomeAt ??= this.now();
+        record.outcome = event.outcome;
       }
       yield event;
     }
@@ -374,6 +392,9 @@ export class VoiceTurnService implements VoiceTurnPort {
     if (record.result === "superseded") {
       recordVoiceTurnSuperseded(metrics, supersededAt);
     }
+    if (record.outcome) {
+      recordVoiceTurnOutcome(metrics, record.outcome.kind, record.handoffReason);
+    }
     const fields = {
       agentId: input.session.agentId,
       vendor: input.session.vendor,
@@ -383,6 +404,8 @@ export class VoiceTurnService implements VoiceTurnPort {
       ...(record.result === "superseded" ? { supersededAt } : {}),
       durationMs: this.now() - startedAt,
       speechPieceCount: record.speechPieceCount,
+      ...(record.outcome ? { outcome: record.outcome.kind } : {}),
+      ...(record.handoffReason ? { handoffReason: record.handoffReason } : {}),
       ...record.policy,
     };
     if (record.result === "failed") {
@@ -439,8 +462,10 @@ export class VoiceTurnService implements VoiceTurnPort {
           }
         } else if (event.type === "done") {
           record.reply = event.assistantMessageId ? { messageId: event.assistantMessageId, text: event.answer } : null;
+          const { outcome, handoffReason } = deriveVoiceTurnOutcome(event);
+          record.handoffReason = handoffReason;
           yield* lastSpeech(speech.finish(), record);
-          yield CONTINUE;
+          yield { type: "outcome", outcome };
           record.result = "completed";
           // What follows `done` is suggestion enrichment, which nobody hears.
           return;
@@ -457,8 +482,8 @@ export class VoiceTurnService implements VoiceTurnPort {
   }
 
   /**
-   * The bridge and the turn limit, when the agent has voice on. Two primary-key reads: the agent's
-   * settings, and the conversation's routine state (a session's first turn has no routine yet).
+   * The bridge and the turn limit, when the agent has voice on. Three primary-key reads: the agent's
+   * settings, and the conversation's routine state and owner (a session's first turn has neither).
    */
   private async policyFor(
     input: VoiceTurnInput,
@@ -467,9 +492,10 @@ export class VoiceTurnService implements VoiceTurnPort {
     record: VoiceTurnRecord,
     mayBridge: () => boolean,
   ): Promise<VoiceTurnPolicy | null> {
-    const [profile, routineActive] = await Promise.all([
+    const [profile, routineActive, humanOwned] = await Promise.all([
       this.dependencies.agents.findVoiceProfile(input.session),
       conversationId ? this.dependencies.routines.isRoutineActive(conversationId) : Promise.resolve(false),
+      conversationId ? this.dependencies.ownership.isHumanOwned(conversationId) : Promise.resolve(false),
     ]);
     if (!profile?.voice.enabled) {
       return null;
@@ -484,9 +510,13 @@ export class VoiceTurnService implements VoiceTurnPort {
     const { metrics } = this.dependencies;
     return {
       ...lines,
+      // The bridge and the limit cover the agent's own answers. When a person owns the
+      // conversation, chat answers with its short waiting message, and neither a bridge line
+      // before it nor a fallback line over it belongs on the call.
+      bridge: humanOwned ? null : lines.bridge,
       bridgeAfterMs: this.timing.bridgeAfterMs,
       bridgeAfterComposingIdleMs: this.timing.bridgeAfterComposingIdleMs,
-      turnLimitMs: this.timing.turnLimitMs,
+      turnLimitMs: humanOwned ? null : this.timing.turnLimitMs,
       startedAt,
       now: this.now,
       mayBridge,

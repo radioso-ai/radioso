@@ -12,7 +12,7 @@ import type { AppDependencies } from "../../src/app/server/types.js";
 import type { AccessGrant } from "../../src/modules/accessGrants/domain.js";
 import type { ChatStreamEvent } from "../../src/modules/chat/contracts/index.js";
 import { defaultAgentVoiceSettings } from "../../src/modules/agents/public.js";
-import type { VoiceTurnEvent, VoiceTurnInput } from "../../src/modules/voiceChannel/domain.js";
+import type { VoiceTurnEvent, VoiceTurnInput, VoiceTurnOutcome } from "../../src/modules/voiceChannel/domain.js";
 import { registerOpenAiCompletionsRoute, VoiceTurnService } from "../../src/modules/voiceChannel/public.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -778,6 +778,7 @@ describe("voice completions route when a newer utterance supersedes the turn", (
       chat,
       agents: { findVoiceProfile: async () => ({ voice: defaultAgentVoiceSettings(), defaultLocale: null }) },
       routines: { isRoutineActive: async () => false },
+      ownership: { isHumanOwned: async () => false },
       logger: { info: vi.fn(), warn: vi.fn() },
     });
 
@@ -855,3 +856,125 @@ describe("voice completions route hang-up signal", () => {
   });
 });
 
+
+describe("voice completions route outcomes", () => {
+  const outcomeTurn = (outcome: VoiceTurnOutcome): VoiceTurnEvent[] => [...spokenTurn.slice(0, -1), { type: "outcome", outcome }];
+  const outcomes: Array<[VoiceTurnOutcome["kind"], VoiceTurnOutcome]> = [
+    ["continue", { kind: "continue" }],
+    ["callback_requested", { kind: "callback_requested", handoffReason: "routine_handoff" }],
+  ];
+
+  /** Posts over a real socket, so the response's trailers can be read once the stream ends. */
+  const postOverHttp = async (dependencies: AppDependencies, body: unknown) => {
+    const server = createApp(dependencies).listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const { port } = server.address() as AddressInfo;
+      const client = http.request({
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: completionsPath(),
+        headers: { "content-type": "application/json", authorization: "Bearer voice-secret" },
+      });
+      client.end(JSON.stringify(body));
+      const [response] = await once(client, "response") as [http.IncomingMessage];
+      response.setEncoding("utf8");
+      let text = "";
+      response.on("data", (chunk: string) => { text += chunk; });
+      await once(response, "end");
+      return { headers: response.headers, trailers: response.trailers, text };
+    } finally {
+      server.close();
+    }
+  };
+
+  it.each(outcomes)("names a %s outcome in the response header of a non-streaming reply, which is otherwise unchanged", async (kind, outcome) => {
+    const response = await request(createApp(createDependencies({ voiceTurns: voiceTurns(outcomeTurn(outcome)) })))
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({ stream: false }))
+      .expect(200);
+
+    expect(response.headers["x-radioso-voice-outcome"]).toBe(kind);
+    expect(response.body).toMatchObject({
+      object: "chat.completion",
+      choices: [{ index: 0, message: { role: "assistant", content: "We open at nine. See you then!" }, finish_reason: "stop" }],
+    });
+    expect(JSON.stringify(response.body)).not.toContain("tool_calls");
+  });
+
+  it.each(outcomes)("ends a streamed %s turn with stop and [DONE] and names the outcome in a trailer", async (kind, outcome) => {
+    const response = await postOverHttp(createDependencies({ voiceTurns: voiceTurns(outcomeTurn(outcome)) }), elevenlabsBody());
+
+    const frames = dataFrames(response.text);
+    expect(frames.at(-1)).toBe("[DONE]");
+    expect(JSON.parse(frames.at(-2) ?? "{}")).toMatchObject({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
+    expect(response.text).not.toContain("tool_calls");
+    // The stream's headers leave with its first frame, before the turn has an outcome.
+    expect(response.headers.trailer).toBe("X-Radioso-Voice-Outcome");
+    expect(response.headers).not.toHaveProperty("x-radioso-voice-outcome");
+    expect(response.trailers["x-radioso-voice-outcome"]).toBe(kind);
+  });
+
+  describe("through the turn service", () => {
+    const handOffDone = (fields: Record<string, unknown>): ChatStreamEvent => ({
+      type: "done",
+      conversationId,
+      assistantMessageId: "66666666-6666-4666-8666-666666666666",
+      answer: "Thanks, Ada. A teammate will call you back.",
+      activitySummary: { stages: [] },
+      activityTrace: { events: [] },
+      route: { type: "direct", reason: "social_only" },
+      ...fields,
+    } as unknown as ChatStreamEvent);
+
+    const turnService = (events: ChatStreamEvent[], humanOwned = false) => new VoiceTurnService({
+      sessions: { findConversationId: async () => conversationId, bind: async (_session, id) => id },
+      chat: { streamTurn: () => (async function* () { for (const event of events) yield event; })() },
+      agents: { findVoiceProfile: async () => ({ voice: defaultAgentVoiceSettings(), defaultLocale: null }) },
+      routines: { isRoutineActive: async () => false },
+      ownership: { isHumanOwned: async () => humanOwned },
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    it("requests a callback when the turn's routine handed the caller to a person after collecting a slot", async () => {
+      const turns = turnService([
+        { type: "conversation", conversationId },
+        { type: "chunk", text: "Thanks, Ada. A teammate will call you back." },
+        handOffDone({
+          ownership: { state: "human_owned", suppressed: false },
+          handoff: { reason: "routine_handoff", collectedSlotCount: 2 },
+        }),
+      ]);
+
+      const response = await request(createApp(createDependencies({ voiceTurns: turns })))
+        .post(completionsPath())
+        .set("Authorization", "Bearer voice-secret")
+        .send(elevenlabsBody({ stream: false }))
+        .expect(200);
+
+      expect(response.headers["x-radioso-voice-outcome"]).toBe("callback_requested");
+      expect(response.body.choices[0].message.content).toBe("Thanks, Ada. A teammate will call you back.");
+    });
+
+    it("speaks chat's waiting message and continues when a person already owns the conversation", async () => {
+      const waiting = "Thanks for waiting. A teammate has your message.";
+      const turns = turnService([
+        { type: "status", stage: "interpreting" },
+        { type: "status", stage: "composing" },
+        { type: "chunk", text: waiting },
+        handOffDone({ assistantMessageId: "", answer: waiting, ownership: { state: "human_owned", suppressed: true } }),
+      ], true);
+
+      const response = await request(createApp(createDependencies({ voiceTurns: turns })))
+        .post(completionsPath())
+        .set("Authorization", "Bearer voice-secret")
+        .send(elevenlabsBody({ stream: false }))
+        .expect(200);
+
+      expect(response.headers["x-radioso-voice-outcome"]).toBe("continue");
+      expect(response.body.choices[0].message.content).toBe(waiting);
+    });
+  });
+});

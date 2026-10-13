@@ -26,8 +26,14 @@ export interface VoiceTurnInput {
   heardUntil?: string;
 }
 
-/** How the session goes on after the turn. */
-export type VoiceTurnOutcome = { kind: "continue" };
+/**
+ * How the session goes on after the turn. `callback_requested`: the turn handed the conversation
+ * to a person after its routine collected something from the caller, so the team follows up;
+ * `handoffReason` says why it handed off. The runtime keeps the line open either way.
+ */
+export type VoiceTurnOutcome =
+  | { kind: "continue" }
+  | { kind: "callback_requested"; handoffReason?: string };
 
 export type VoiceTurnEvent =
   /** The conversation the turn runs in, before any speech. A bridge can precede it on a session's first turn. */

@@ -113,7 +113,7 @@ describe("copilot routine readers", () => {
   it("shows which endings notify operators and the notice text each one carries", async () => {
     const ports = dependencies([routine({
       terminals: [
-        { stableStepId: "done", kind: "complete", instruction: null, operatorNotice: { subject: "Booking: {{slot.name}}", intro: null, includeAiSummary: true }, ordinal: 0 },
+        { stableStepId: "done", kind: "complete", instruction: null, operatorNotice: { subject: "Booking: {{slot.name}}", intro: null }, ordinal: 0 },
         { stableStepId: "human", kind: "handoff", instruction: null, ordinal: 1 },
       ],
     })]);
@@ -123,7 +123,7 @@ describe("copilot routine readers", () => {
       .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { endings: unknown[] } } };
 
     expect(result.routine.editable.endings).toEqual([
-      { stableStepId: "done", kind: "complete", instruction: null, notifiesOperators: true, operatorNotice: { subject: "Booking: {{slot.name}}", intro: null, skillName: null, replyToSlot: null, includeAiSummary: true } },
+      { stableStepId: "done", kind: "complete", instruction: null, notifiesOperators: true, operatorNotice: { subject: "Booking: {{slot.name}}", intro: null, skillName: null, replyToSlot: null } },
       { stableStepId: "human", kind: "handoff", instruction: null, notifiesOperators: true, operatorNotice: null },
     ]);
   });

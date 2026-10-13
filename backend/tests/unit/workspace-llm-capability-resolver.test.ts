@@ -45,7 +45,7 @@ const managedPolicy = (
   async resolveModelPolicy({ capability }) {
     return {
       managedModel: selections[capability] ?? null,
-      platformCredentials: "allowed",
+      credentialSource: "managed",
     };
   },
 });
@@ -61,7 +61,7 @@ const managedForAll = managedPolicy({
 
 const byokPolicy = {
   async resolveModelPolicy() {
-    return { managedModel: null, platformCredentials: "denied" as const };
+    return { managedModel: null, credentialSource: "byok" as const };
   },
 } satisfies ManagedModelPolicy;
 
@@ -390,11 +390,11 @@ describe("WorkspaceLlmCapabilityResolver managed plans", () => {
     expect(rerank).toMatchObject({ provider: "claude", model: "claude-haiku-4-5", resolvedBy: "managed_plan" });
   });
 
-  it("lets a managed workspace that holds its own key for the candidate provider resolve as today", async () => {
+  it("uses the managed model and platform credential even when a workspace key and preference exist", async () => {
     const resolver = new WorkspaceLlmCapabilityResolver({
       defaults: envConfig,
       settings: buildSettings([chatPreference]),
-      credentials: buildCredentials({ "ws-1:openai": "ws-openai" }),
+      credentials: buildCredentials({ "ws-1:openai": "ws-openai", "ws-1:claude": "ws-claude" }),
       envKeys: envKeyResolver({ claude: "env-claude" }),
       managedModelPolicy: managedForAll,
     });
@@ -402,10 +402,10 @@ describe("WorkspaceLlmCapabilityResolver managed plans", () => {
     const config = await resolver.resolve("chat", { workspaceId: "ws-1" });
 
     expect(config).toMatchObject({
-      provider: "openai",
-      model: "gpt-5.2",
-      apiKey: "ws-openai",
-      resolvedBy: "workspace_preference",
+      provider: "claude",
+      model: "claude-sonnet-5",
+      apiKey: "env-claude",
+      resolvedBy: "managed_plan",
     });
   });
 
@@ -465,7 +465,7 @@ describe("WorkspaceLlmCapabilityResolver managed plans", () => {
   it("never locks embeddings, even when the policy would answer for them", async () => {
     const resolveModelPolicy = vi.fn(async () => ({
       managedModel: managedDefault,
-      platformCredentials: "allowed" as const,
+      credentialSource: "self_hosted" as const,
     }));
     const policy: ManagedModelPolicy = { resolveModelPolicy };
     const resolver = new WorkspaceLlmCapabilityResolver({

@@ -8,7 +8,7 @@ include VAT (`taxBehavior`). `src/plans.json` holds the data; `src/index.ts` exp
 (`PLAN_CATALOG`, `findPlan`, `formatPrice`) and no runtime validation library, so a change here is
 a data edit plus the invariants in `tests/planCatalog.test.ts`.
 
-Stripe prices are referenced by `lookup_key` (`satellite_month`, `topup_300`, …), never by price
+Stripe prices are referenced by `lookup_key` (`satellite_month`, `planet_managed_month`, `topup_300`, …), never by price
 id. A price change is a new Stripe price with the key transferred to it; the app needs no config
 change. Webhooks resolve a price back to its plan through the Stripe product's `plan` metadata, so
 customers grandfathered on an older price still map to the right plan.

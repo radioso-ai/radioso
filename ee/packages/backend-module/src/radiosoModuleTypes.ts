@@ -701,7 +701,7 @@ export interface ManagedModelSelection {
 
 export interface ManagedModelPolicyDecision {
   managedModel: ManagedModelSelection | null;
-  platformCredentials: "allowed" | "denied";
+  credentialSource: "managed" | "byok" | "self_hosted";
 }
 
 export interface ManagedModelPolicy {

@@ -52,6 +52,10 @@ Dry run: nothing changed. Re-run with --apply to make these changes.
 
 The script builds the plan catalog and the backend module before it runs, so it always reads the catalog in your working tree.
 
+### Publishing a new catalog price
+
+Deploy the catalog-aware application revision to every region and drain older revisions before exposing a new live Stripe price. An older webhook consumer cannot map that price; it returns a retryable response so Stripe retains the event until the rollout completes. After every serving revision recognizes the catalog entry, run the live sync with the owner-provided live key.
+
 When the plan looks right, apply it and create the webhook endpoint in the same run:
 
 ```bash

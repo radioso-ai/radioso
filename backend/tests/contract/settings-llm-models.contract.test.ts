@@ -10,7 +10,7 @@ const managedEverywhere: ManagedModelPolicy = {
       managedModel: capability === "chat"
         ? { provider: "claude", model: "claude-sonnet-5" }
         : { provider: "claude", model: "claude-haiku-4-5" },
-      platformCredentials: "allowed",
+      credentialSource: "self_hosted",
     };
   },
 };

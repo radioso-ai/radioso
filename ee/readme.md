@@ -78,7 +78,9 @@ the account.
 
 The module seeds one profile per plan in `@radioso/plan-catalog`
 (`comet`, `satellite`, `planet`, `planet_managed`) with that plan's conversation,
-document, and storage limits. `planet` uses workspace provider credentials;
+document, and storage limits. `planet` uses workspace provider credentials and
+never falls back to deployment keys; `planet_managed` includes Radioso-managed
+models at the higher catalog price.
 `planet_managed` carries the same allowances and uses Radioso-managed models.
 Console edits to a seeded profile always win: the seed only
 ever inserts, never overwrites. New accounts are assigned the catalog's

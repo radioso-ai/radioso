@@ -526,6 +526,23 @@ describe("PUT /api/v1/ee/billing/auto-top-up", () => {
 });
 
 describe("POST /api/v1/ee/billing/checkout", () => {
+  it.each(["planet", "planet_managed"])("uses the subscription portal for an active subscriber selecting %s", async (plan) => {
+    const repository = new FakeBillingCustomerRepository();
+    const gateway = createFakeGateway();
+    repository.rows.set(sessionAccountId, {
+      accountId: sessionAccountId, stripeCustomerId: "cus_active", stripeSubscriptionId: "sub_active", priceId: "price_old",
+      interval: "month", status: "active", billingEmail: null, currentPeriodEnd: null, createdAt: new Date(), updatedAt: new Date(),
+    });
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig, { gateway, repository }))
+        .post("/api/v1/ee/billing/checkout")
+        .send({ plan, interval: "month", returnPath: "/billing" }),
+    );
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ mode: "portal" });
+    expect(gateway.createCheckoutSession).not.toHaveBeenCalled();
+    expect(gateway.createPortalSession).toHaveBeenCalledWith({ customerId: "cus_active", returnUrl: "https://app.example.com/billing" });
+  });
   it("returns 503 when billing is unconfigured", async () => {
     await withSessionCookie(
       request(createApp(unconfiguredConfig))

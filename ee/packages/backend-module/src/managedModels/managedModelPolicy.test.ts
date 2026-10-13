@@ -20,7 +20,7 @@ describe("EnterpriseManagedModelPolicy", () => {
 
       await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability })).resolves.toEqual({
         managedModel: null,
-        platformCredentials: "denied",
+        credentialSource: "byok",
       });
     },
   );
@@ -30,7 +30,7 @@ describe("EnterpriseManagedModelPolicy", () => {
 
     await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "chat" })).resolves.toEqual({
       managedModel: PLAN_CATALOG.managedModels.chat,
-      platformCredentials: "allowed",
+      credentialSource: "managed",
     });
   });
 
@@ -39,7 +39,7 @@ describe("EnterpriseManagedModelPolicy", () => {
 
     await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "chat" })).resolves.toEqual({
       managedModel: PLAN_CATALOG.managedModels.chat,
-      platformCredentials: "allowed",
+      credentialSource: "managed",
     });
   });
 
@@ -48,11 +48,11 @@ describe("EnterpriseManagedModelPolicy", () => {
 
     await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "rewrite" })).resolves.toEqual({
       managedModel: PLAN_CATALOG.managedModels.default,
-      platformCredentials: "allowed",
+      credentialSource: "managed",
     });
     await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "rerank" })).resolves.toEqual({
       managedModel: PLAN_CATALOG.managedModels.default,
-      platformCredentials: "allowed",
+      credentialSource: "managed",
     });
   });
 
@@ -61,7 +61,7 @@ describe("EnterpriseManagedModelPolicy", () => {
 
     await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "embeddings" })).resolves.toEqual({
       managedModel: null,
-      platformCredentials: "allowed",
+      credentialSource: "managed",
     });
   });
 
@@ -70,17 +70,17 @@ describe("EnterpriseManagedModelPolicy", () => {
 
     await expect(policy.resolveModelPolicy({ workspaceId: "ws-1", capability: "chat" })).resolves.toEqual({
       managedModel: null,
-      platformCredentials: "denied",
+      credentialSource: "byok",
     });
   });
 
   it("treats an unassigned or unknown account like self-host", async () => {
     await expect(
       new EnterpriseManagedModelPolicy(lookup(null)).resolveModelPolicy({ workspaceId: "ws-1", capability: "chat" }),
-    ).resolves.toEqual({ managedModel: null, platformCredentials: "allowed" });
+    ).resolves.toEqual({ managedModel: null, credentialSource: "self_hosted" });
     await expect(
       new EnterpriseManagedModelPolicy(lookup("not-in-catalog")).resolveModelPolicy({ workspaceId: "ws-1", capability: "chat" }),
-    ).resolves.toEqual({ managedModel: null, platformCredentials: "allowed" });
+    ).resolves.toEqual({ managedModel: null, credentialSource: "self_hosted" });
   });
 
   it("asks the plan lookup with the workspace it was given", async () => {

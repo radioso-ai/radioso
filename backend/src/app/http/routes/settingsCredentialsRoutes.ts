@@ -15,7 +15,7 @@ export const setProviderCredentialSchema = z.object({
 });
 
 type CredentialsRouteDependencies = WorkspaceSessionDependencies &
-  Pick<AppDependencies, "workspaceProviderCredentialsService" | "accountAccessService" | "env">;
+  Pick<AppDependencies, "workspaceProviderCredentialsService" | "accountAccessService" | "env" | "managedModelPolicy">;
 
 const computeEnvProviderAvailability = (
   env: AppDependencies["env"],
@@ -45,14 +45,20 @@ export const createSettingsCredentialsRoutes = (
   router.get("/", workspaceSession, settingsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const configured = await dependencies.workspaceProviderCredentialsService.listConfigured(workspaceId);
+      const [configured, policy] = await Promise.all([
+        dependencies.workspaceProviderCredentialsService.listConfigured(workspaceId),
+        dependencies.managedModelPolicy.resolveModelPolicy({ workspaceId, capability: "chat" }),
+      ]);
       res.status(200).json({
         encryptionConfigured: dependencies.workspaceProviderCredentialsService.isEncryptionConfigured(),
         credentials: configured.map((entry) => ({
           provider: entry.provider,
           updatedAt: entry.updatedAt.toISOString(),
         })),
-        envProviderAvailability: computeEnvProviderAvailability(dependencies.env),
+        credentialSource: policy.credentialSource,
+        envProviderAvailability: policy.credentialSource === "byok"
+          ? { openai: false, "openai-compatible": false, gemini: false, claude: false }
+          : computeEnvProviderAvailability(dependencies.env),
       });
     } catch (error) {
       next(error);

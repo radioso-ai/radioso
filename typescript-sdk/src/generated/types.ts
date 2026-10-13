@@ -5131,6 +5131,8 @@ export interface components {
         };
         WorkspaceProviderCredentialsResponse: {
             encryptionConfigured: boolean;
+            /** @enum {string} */
+            credentialSource: "managed" | "byok" | "self_hosted";
             credentials: components["schemas"]["WorkspaceProviderCredentialSummary"][];
             envProviderAvailability: {
                 openai: boolean;

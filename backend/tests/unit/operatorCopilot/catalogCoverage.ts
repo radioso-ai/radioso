@@ -234,6 +234,9 @@ export const internalRuntimeCoverageExclusions = {
   activityCallerKindFilter: permanent(
     "Permanent exclusion: caller kind is a read-only Activity view control. conversation_history_search already reads the underlying conversation data, including caller kind; Ray cannot operate a dashboard filter.",
   ),
+  needsYouQueueFilters: permanent(
+    "Permanent exclusion: Needs-you escalation, agent, and channel filters are read-only Inbox view controls. Ray's needs-attention reader already composes the same work queue; it cannot operate a dashboard filter.",
+  ),
 } as const;
 
 /** Every OpenAPI operation is deliberately reachable through a family reader or explicitly planned/excluded. */

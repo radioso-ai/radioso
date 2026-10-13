@@ -35,6 +35,7 @@ const NEEDS_ATTENTION_FEEDBACK_PAGE_SIZE = 25
 const ATTENTION_SOURCE_MAX_PAGES = 20
 
 type CursorPage<T> = { items: T[]; nextCursor: string | null }
+type HumanOwnedCursorPage = CursorPage<ChatConversationSummary> & { total: number }
 
 const uniqueById = <T extends { id: string }>(items: Iterable<T>): T[] => {
   const byId = new Map<string, T>()
@@ -109,7 +110,7 @@ type AttentionRefetchSource<T> = {
 }
 
 type DecisionsPage = { decisions: PendingApprovalDecision[] }
-type HumanOwnedPage = { conversations: ChatConversationSummary[] }
+type HumanOwnedPage = { conversations: ChatConversationSummary[]; total: number; nextCursor: string | null }
 type HumanOwnedConversation = ChatConversationSummary & {
   ownership: NonNullable<ChatConversationSummary['ownership']>
 }
@@ -275,13 +276,31 @@ export const useAttentionRailQueries = (workspaceId: string) => {
     enabled: Boolean(workspaceId) && policy.queriesEnabled,
     refetchInterval: policy.intervalFor(decisionsKey),
   })
-  const humanOwned = useQuery({
+  const humanOwned = useInfiniteQuery({
     queryKey: humanOwnedKey,
-    queryFn: ({ signal }) => chatApi.listChatHistory({
-      limit: NEEDS_ATTENTION_PAGE_SIZE,
-      offset: 0,
-      ownership: 'human_owned',
-    }, signal),
+    queryFn: async ({ pageParam, signal }): Promise<HumanOwnedCursorPage> => {
+      let total = 0
+      const page = await readAllCursorPages(async (cursor) => {
+        const response = await chatApi.listChatHistory({
+          limit: NEEDS_ATTENTION_PAGE_SIZE,
+          ownership: 'human_owned',
+          ...cursorQuery(cursor),
+        }, signal)
+        total = response.total
+        return { items: response.conversations, nextCursor: response.nextCursor ?? null }
+      }, ATTENTION_SOURCE_MAX_PAGES, pageParam)
+      return { ...page, total }
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: nextChunkCursor,
+    select: (chunks): HumanOwnedPage => {
+      const page = flattenAttentionChunks(chunks)
+      return {
+        conversations: page.items,
+        nextCursor: page.nextCursor,
+        total: chunks.pages[0]?.total ?? 0,
+      }
+    },
     enabled: Boolean(workspaceId) && policy.queriesEnabled,
     refetchInterval: policy.intervalFor(humanOwnedKey),
   })
@@ -312,16 +331,21 @@ export const useAttentionRailQueries = (workspaceId: string) => {
     refetchInterval: policy.intervalFor(heldRepliesKey),
     retry: retryReplyReview,
   })
+  const { hasNextPage: olderHumanOwned, isFetchingNextPage: loadingOlderHumanOwned, fetchNextPage: loadOlderHumanOwned } = humanOwned
   const { hasNextPage: olderFailures, isFetchingNextPage: loadingOlderFailures, fetchNextPage: loadOlderFailures } = deliveryFailures
   const { hasNextPage: olderHeldReplies, isFetchingNextPage: loadingOlderHeldReplies, fetchNextPage: loadOlderHeldReplies } = heldReplies
   // One control reads on in every source that stopped short of its oldest item.
   const loadOlder = useCallback(() => {
+    if (olderHumanOwned && !loadingOlderHumanOwned) void loadOlderHumanOwned()
     if (olderFailures && !loadingOlderFailures) void loadOlderFailures()
     if (olderHeldReplies && !loadingOlderHeldReplies) void loadOlderHeldReplies()
-  }, [loadOlderFailures, loadOlderHeldReplies, loadingOlderFailures, loadingOlderHeldReplies, olderFailures, olderHeldReplies])
+  }, [loadOlderFailures, loadOlderHeldReplies, loadOlderHumanOwned, loadingOlderFailures, loadingOlderHeldReplies, loadingOlderHumanOwned, olderFailures, olderHeldReplies, olderHumanOwned])
   const olderAttention = {
-    available: olderFailures || olderHeldReplies,
-    loading: loadingOlderFailures || loadingOlderHeldReplies,
+    available: olderHumanOwned || olderFailures || olderHeldReplies,
+    loading: loadingOlderHumanOwned || loadingOlderFailures || loadingOlderHeldReplies,
+    humanOwnedRemaining: olderHumanOwned
+      ? Math.max(0, (humanOwned.data?.total ?? 0) - (humanOwned.data?.conversations.length ?? 0))
+      : 0,
     load: loadOlder,
   }
   return { decisions, humanOwned, deliveryFailures, heldReplies, olderAttention, policy }

@@ -51,6 +51,7 @@ export const buildDeliveryFailureRows = (
       agentId: conversation?.agentId,
       agentName: conversation?.agentName,
       agentInternalName: conversation?.agentInternalName,
+      channel: conversation?.sourceChannel,
       anonymousSessionId: conversation?.anonymousSessionId,
       deliveryFailure: failure,
     }
@@ -189,6 +190,7 @@ export const buildHeldReplyRows = (
         agentId: heldReply.agentId ?? conversation?.agentId,
         agentName: conversation?.agentName,
         agentInternalName: conversation?.agentInternalName,
+        channel: conversation?.sourceChannel,
         anonymousSessionId: conversation?.anonymousSessionId,
       }
     })

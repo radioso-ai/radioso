@@ -125,9 +125,12 @@ describe('Needs Attention query state', () => {
     expect(client.getQueryData(dashboardQueryKeys.attention.deliveryFailures('workspace-1', { limit: NEEDS_ATTENTION_PAGE_SIZE })))
       .toEqual({ pages: [noDeliveryFailures], pageParams: [null] })
     expect(hitlApi.listPendingDecisions).toHaveBeenCalledTimes(1)
-    expect(chatApi.listChatHistory).toHaveBeenCalledWith({ limit: 50, offset: 0, ownership: 'human_owned' }, expect.any(AbortSignal))
+    expect(chatApi.listChatHistory).toHaveBeenCalledWith({ limit: 50, ownership: 'human_owned' }, expect.any(AbortSignal))
     expect(client.getQueryData(dashboardQueryKeys.attention.decisions('workspace-1'))).toEqual({ decisions: [] })
-    expect(client.getQueryData(dashboardQueryKeys.attention.humanOwned('workspace-1', { pageSize: NEEDS_ATTENTION_PAGE_SIZE }))).toEqual({ conversations: [], total: 0 })
+    expect(client.getQueryData(dashboardQueryKeys.attention.humanOwned('workspace-1', { pageSize: NEEDS_ATTENTION_PAGE_SIZE }))).toEqual({
+      pages: [{ items: [], nextCursor: null, total: 0 }],
+      pageParams: [null],
+    })
     expect(qualityApi.listTurns).toHaveBeenNthCalledWith(1, expect.objectContaining({ feedback: ['down'], limit: 25, offset: 0 }), expect.any(AbortSignal))
     expect(qualityApi.listTurns).toHaveBeenNthCalledWith(2, expect.objectContaining({ signal: ['grounding_gaps', 'negative_feedback', 'skill_failures'], triageStates: ['acknowledged', 'open'], limit: 1, offset: 0 }), expect.any(AbortSignal))
   })

@@ -3,7 +3,7 @@ import { findPlan, PLAN_CATALOG } from "@radioso/plan-catalog";
 import type {
   ManagedModelCapability,
   ManagedModelPolicy,
-  ManagedModelSelection,
+  ManagedModelPolicyDecision,
 } from "../radiosoModuleTypes.js";
 
 export interface WorkspacePlanLookup {
@@ -11,25 +11,33 @@ export interface WorkspacePlanLookup {
 }
 
 /**
- * Workspace → account's assigned plan → the catalog's managed model set. Only
- * plans with `models: "managed"` lock; everything else, including an account
- * with no assignment, resolves like self-host.
+ * Workspace → account's assigned plan → the catalog's model and credential
+ * policy. Managed plans may use deployment credentials; BYOK plans never may.
+ * An account with no assignment or an unknown profile resolves like self-host.
  */
 export class EnterpriseManagedModelPolicy implements ManagedModelPolicy {
   constructor(private readonly plans: WorkspacePlanLookup) {}
 
-  async resolveManagedModel(input: {
+  async resolveModelPolicy(input: {
     workspaceId: string;
     capability: ManagedModelCapability;
-  }): Promise<ManagedModelSelection | null> {
-    if (input.capability === "embeddings") {
-      return null;
-    }
+  }): Promise<ManagedModelPolicyDecision> {
     const profileKey = await this.plans.findProfileKeyForWorkspace(input.workspaceId);
-    if (!profileKey || findPlan(profileKey)?.models !== "managed") {
-      return null;
+    const plan = profileKey ? findPlan(profileKey) : undefined;
+    if (plan?.models === "byok") {
+      return { managedModel: null, platformCredentials: "denied" };
     }
-    const selection = input.capability === "chat" ? PLAN_CATALOG.managedModels.chat : PLAN_CATALOG.managedModels.default;
-    return { provider: selection.provider, model: selection.model };
+    if (plan?.models !== "managed") {
+      return { managedModel: null, platformCredentials: "allowed" };
+    }
+    const selection = input.capability === "chat"
+      ? PLAN_CATALOG.managedModels.chat
+      : PLAN_CATALOG.managedModels.default;
+    return {
+      managedModel: input.capability === "embeddings"
+        ? null
+        : { provider: selection.provider, model: selection.model },
+      platformCredentials: "allowed",
+    };
   }
 }

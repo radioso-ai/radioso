@@ -16,7 +16,11 @@ import type {
   WorkspaceLlmCapabilityPreference,
 } from "../../modules/settings/contracts/llmCapability.js";
 import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
-import type { ManagedModelPolicy } from "../../shared/domain/managedModelPolicy.js";
+import type {
+  ManagedModelPolicy,
+  ManagedModelPolicyDecision,
+  ManagedModelSelection,
+} from "../../shared/domain/managedModelPolicy.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 
 interface WorkspaceCapabilityPreferencePort {
@@ -59,6 +63,16 @@ interface CandidateSelection {
   resolvedBy: UnmanagedResolvedBy;
 }
 
+interface PolicyAwareSelection {
+  selection: LlmCapabilitySelection;
+  platformCredentials: ManagedModelPolicyDecision["platformCredentials"];
+}
+
+const unrestrictedModelPolicy: ManagedModelPolicyDecision = {
+  managedModel: null,
+  platformCredentials: "allowed",
+};
+
 export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   constructor(private readonly deps: WorkspaceLlmCapabilityResolverDependencies) {}
 
@@ -68,9 +82,17 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   ): Promise<LlmCapabilityConfig> {
     const envDefault = this.deps.defaults[capability];
 
-    const { provider, model, resolvedBy } = await this.resolveSelection(capability, input);
+    const {
+      selection: { provider, model, resolvedBy },
+      platformCredentials,
+    } = await this.resolvePolicyAwareSelection(capability, input);
 
-    const apiKey = await this.resolveApiKey(input.workspaceId, provider, capability);
+    const apiKey = await this.resolveApiKey(
+      input.workspaceId,
+      provider,
+      capability,
+      platformCredentials,
+    );
     const baseUrl = this.resolveBaseUrl(
       provider,
       capability,
@@ -92,8 +114,21 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     capability: LlmCapabilityName,
     input: LlmCapabilityResolveInput,
   ): Promise<LlmCapabilitySelection> {
+    return (await this.resolvePolicyAwareSelection(capability, input)).selection;
+  }
+
+  private async resolvePolicyAwareSelection(
+    capability: LlmCapabilityName,
+    input: LlmCapabilityResolveInput,
+  ): Promise<PolicyAwareSelection> {
     const candidate = await this.resolveCandidate(capability, input);
-    const managed = await this.resolveManaged(capability, input.workspaceId, candidate.provider);
+    const policy = this.deps.managedModelPolicy
+      ? await this.deps.managedModelPolicy.resolveModelPolicy({
+          workspaceId: input.workspaceId,
+          capability,
+        })
+      : unrestrictedModelPolicy;
+    const managed = await this.resolveManaged(capability, input.workspaceId, candidate.provider, policy.managedModel);
     const selection: LlmCapabilitySelection = managed
       ? { provider: managed.provider, model: managed.model, resolvedBy: "managed_plan" }
       : candidate;
@@ -117,7 +152,7 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
         "Managed plan replaced the requested LLM model",
       );
     }
-    return selection;
+    return { selection, platformCredentials: policy.platformCredentials };
   }
 
   private async resolveCandidate(
@@ -151,12 +186,9 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     capability: LlmCapabilityName,
     workspaceId: string,
     candidateProvider: LlmProviderName,
+    managed: ManagedModelSelection | null,
   ) {
-    if (!this.deps.managedModelPolicy || !isWorkspaceCapability(capability)) {
-      return null;
-    }
-    const managed = await this.deps.managedModelPolicy.resolveManagedModel({ workspaceId, capability });
-    if (!managed) {
+    if (!managed || !isWorkspaceCapability(capability)) {
       return null;
     }
     const ownsCandidateKey = await this.deps.credentials.hasCredentials(workspaceId, candidateProvider);
@@ -167,22 +199,29 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     workspaceId: string,
     provider: LlmProviderName,
     capability: LlmCapabilityName,
+    platformCredentials: ManagedModelPolicyDecision["platformCredentials"],
   ): Promise<string> {
     const workspaceKey = await this.deps.credentials.getApiKey(workspaceId, provider);
     if (workspaceKey) {
       return workspaceKey;
     }
-    const envKey = this.deps.envKeys.resolveEnvApiKey(provider);
-    if (envKey) {
-      return envKey;
+    if (platformCredentials === "allowed") {
+      const envKey = this.deps.envKeys.resolveEnvApiKey(provider);
+      if (envKey) {
+        return envKey;
+      }
     }
+    const workspaceCredentialOnly = platformCredentials === "denied";
+    const remediation = workspaceCredentialOnly
+      ? "Add a workspace credential at Settings → Credentials."
+      : "Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.";
     throw new ProviderConfigurationError(
-      `No API key configured for provider "${provider}". Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.`,
+      `No API key configured for provider "${provider}". ${remediation}`,
       {
         kind: "missing_api_key",
         provider,
         capability,
-        remediation: "Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.",
+        remediation,
       },
     );
   }

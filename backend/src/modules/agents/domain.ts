@@ -17,6 +17,11 @@ import {
   defaultAgentVoiceSettings,
   type AgentVoiceSettings,
 } from "./voiceSettings.js";
+import {
+  agentMechanicsRepliesSchema,
+  defaultAgentMechanicsReplies,
+  type AgentMechanicsReplies,
+} from "./mechanicsReplies.js";
 
 const AGENT_PROVIDER_NAMES: readonly LlmProviderName[] = [
   "openai",
@@ -283,6 +288,11 @@ export const unpublishedAgentPublicIdentity = (): AgentPublicIdentity => ({
 export interface ConversationAgent extends Agent, AgentBehaviorSettings, AgentGreetingSettings, AgentPublicIdentity {
   /** How the agent sounds on the voice channel. Live, like the greeting settings: not part of a revision. */
   voice: AgentVoiceSettings;
+  /**
+   * What the agent says, word for word, to a greeting, thanks, farewell, or acknowledgement.
+   * Live, like the greeting settings: not part of a revision.
+   */
+  mechanicsReplies: AgentMechanicsReplies;
   sourceScope: AgentSourceScope;
   surfaceSettings: ConversationAgentSurfaceSettings;
   skillSettings: Record<string, unknown>;
@@ -316,6 +326,7 @@ export type AgentInput = Partial<
     | keyof AgentGreetingSettings
     | keyof AgentPublicIdentity
     | "voice"
+    | "mechanicsReplies"
     | "sourceScope"
     | "skillSettings"
     | "chatModelOverride"
@@ -419,6 +430,18 @@ const normalizeVoiceSettings = (value: unknown): AgentVoiceSettings => {
   const parsed = agentVoiceSettingsSchema.safeParse(value);
   if (!parsed.success) {
     throw badRequest("voice settings are invalid", parsed.error.flatten());
+  }
+  return parsed.data;
+};
+
+/** The block is replaced whole; an absent one reads as nothing authored. */
+const normalizeMechanicsReplies = (value: unknown): AgentMechanicsReplies => {
+  if (value === undefined || value === null) {
+    return defaultAgentMechanicsReplies();
+  }
+  const parsed = agentMechanicsRepliesSchema.safeParse(value);
+  if (!parsed.success) {
+    throw badRequest("mechanics replies are invalid", parsed.error.flatten());
   }
   return parsed.data;
 };
@@ -890,6 +913,7 @@ export const validateAgentInput = (
     assistantDefaultLocale: normalizeLocaleTag(input.assistantDefaultLocale),
     proactiveGreetingEnabled: Boolean(input.proactiveGreetingEnabled),
     voice: normalizeVoiceSettings(input.voice),
+    mechanicsReplies: normalizeMechanicsReplies(input.mechanicsReplies),
     chatModelOverride: normalizeChatModelOverride(input.chatModelOverride),
     surfaceSettings: {
       authenticatedChat: {

@@ -66,6 +66,7 @@ describe("settings services", () => {
     greetingInstruction: workspace.greetingInstruction,
     assistantDefaultLocale: workspace.assistantDefaultLocale,
     proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
+    mechanicsReplies: {},
     suggestedQuestionsEnabled: true,
     assistantLinkUtmEnabled: true,
     citationDisplayEnabled: true,

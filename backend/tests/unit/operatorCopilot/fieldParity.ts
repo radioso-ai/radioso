@@ -18,10 +18,13 @@ const documentSearchUnreviewedMetadataFilter = deferred(
 );
 
 const agentSettingGenericKeyValue = permanent(
-  "propose_agent_setting changes one agent setting at a time through a generic settingKey/value pair rather than one schema field per settable property. settingKey is validated against agentInputFieldSchemas (modules/agents/agentInputSchema.ts), which covers every one of updateAgent's fields but `voice`, so each is reachable by name through value rather than through a same-named top-level input field.",
+  "propose_agent_setting changes one agent setting at a time through a generic settingKey/value pair rather than one schema field per settable property. settingKey is validated against agentInputFieldSchemas (modules/agents/agentInputSchema.ts), which covers every one of updateAgent's fields but `voice` and `mechanicsReplies`, so each is reachable by name through value rather than through a same-named top-level input field.",
 );
 const voiceSettingsNotRayAuthored = deferred(
   "voice settings are authored through the settings API until the voice settings UI and Ray descriptor arrive. agentInputFieldSchemas leaves `voice` out, so propose_agent_setting refuses it by name, and the reviewed prepare_agent_settings patch does not carry it.",
+);
+const mechanicsRepliesNotRayAuthored = deferred(
+  "authored mechanics replies are written through the settings API until a settings UI and a reviewed Ray descriptor exist. agentInputFieldSchemas leaves `mechanicsReplies` out, so propose_agent_setting refuses it by name, and the reviewed prepare_agent_settings patch does not carry it.",
 );
 const reviewedAgentSettingsPatch = permanent(
   "Carried under the owner-approved `patch` object. The agent service validates and normalizes the named fields together before it persists a digest-bound review.",
@@ -179,6 +182,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
       "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour",
     ], agentSettingGenericKeyValue),
     ...fields(["voice"], voiceSettingsNotRayAuthored),
+    ...fields(["mechanicsReplies"], mechanicsRepliesNotRayAuthored),
   },
   propose_context_variable: {
     ...fields(["source", "resolverSkillId", "maxAgeSeconds", "resolverTimeoutMs", "surfacing", "enabled"], contextVariableEnablementNesting),
@@ -257,6 +261,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ...fields(["name", "internalName", "customInstruction", "assistantLinkUtmEnabled", "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss", "contactRequestDelivery", "theme", "branding", "greetingInstruction", "assistantDefaultLocale", "proactiveGreetingEnabled", "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour"], reviewedAgentSettingsPatch),
     ...fields(["suggestedQuestionsEnabled", "retrievalEnabled", "sourceScope", "chatModelOverride", "skillSettings", "surfaceSettings"], reviewedAgentSettingsDedicatedOwnerFlow),
     ...fields(["voice"], voiceSettingsNotRayAuthored),
+    ...fields(["mechanicsReplies"], mechanicsRepliesNotRayAuthored),
   },
   send_test_chat_message: {
     ...fields(["expectedDraftGeneration"], testChatDraftFenceIsReadFresh),
@@ -284,4 +289,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
 //            recorded field by field rather than retired with the operation.
 //   11 -> 13 updateAgent gained the agent's `voice` block, which neither propose_agent_setting nor
 //            prepare_agent_settings carries until a voice settings UI and a reviewed Ray descriptor exist.
-export const maxDeferredFieldParityExclusions = 13;
+//   13 -> 15 updateAgent gained the agent's `mechanicsReplies` block, which neither
+//            propose_agent_setting nor prepare_agent_settings carries until a settings UI and a
+//            reviewed Ray descriptor exist.
+export const maxDeferredFieldParityExclusions = 15;

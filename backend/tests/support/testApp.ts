@@ -453,6 +453,7 @@ export const createTestEnv = (): Env => ({
   PUBLIC_MCP_CONVERSE_URL: "https://mcp.radioso.test/mcp",
   RADIOSO_EDITION: "oss",
   RADIOSO_APPLICATION_MODULES: undefined,
+  CHAT_QUICK_REPLY_LANE: "on",
 });
 
 interface TestRepositories {

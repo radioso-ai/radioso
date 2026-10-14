@@ -23,8 +23,19 @@ and stays out of `agentInputFieldSchemas`, so Ray's `propose_agent_setting`
 cannot reach it. The voice channel reads it through type-only imports from
 `public.ts`; nothing here loads the voice runtime.
 
+Agents also store and serve the `mechanicsReplies` block (`mechanicsReplies.ts`): the
+lines an agent says, word for word, to a greeting, thanks, farewell, or
+acknowledgement, keyed by language tag. It lives in `behavior_settings.mechanicsReplies`,
+travels on `GET`/`PUT /api/v1/agents/:agentId` (an update replaces the block whole; a
+body that leaves it out leaves the stored one alone), and is a portable field of the
+agent config, so Test Chat, eval replay, and bundle import speak the same lines as live
+chat. It stays out of `agentInputFieldSchemas`, so Ray's `propose_agent_setting` cannot
+write it; Ray reads it through `agent_configuration`. The chat module's quick-reply lane
+reads it (`modules/chat/services/quickReplyWording.ts`).
+
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/agent-revision-service.test.ts tests/unit/agent-revision-routes.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/agent-revision-runtime-resolver.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/agent-voice-settings.test.ts tests/contract/agent-voice-settings.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/agent-mechanics-replies.test.ts`

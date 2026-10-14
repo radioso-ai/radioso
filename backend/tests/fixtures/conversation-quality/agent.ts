@@ -37,6 +37,7 @@ export const conversationQualityAgent: ConversationAgent = {
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
   voice: defaultAgentVoiceSettings(),
+  mechanicsReplies: {},
   chatModelOverride: null,
   surfaceSettings: {
     authenticatedChat: { enabled: true },

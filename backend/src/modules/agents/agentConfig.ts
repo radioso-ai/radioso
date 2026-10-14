@@ -1,5 +1,6 @@
 import { GENERATION_SURFACE, type GenerationSurface } from "../../shared/domain/generationSurface.js";
 import { unpublishedAgentPublicIdentity } from "./domain.js";
+import { readStoredAgentMechanicsReplies, type AgentMechanicsReplies } from "./mechanicsReplies.js";
 import type {
   AgentLogo,
   AgentSourceScope,
@@ -166,6 +167,12 @@ export interface AgentConfig {
   greetingInstruction: string;
   assistantDefaultLocale: string | null;
   proactiveGreetingEnabled: boolean;
+  /**
+   * Authored lines for conversational mechanics. Portable, so a replayed or imported agent
+   * speaks the same lines the live one does; a config serialized before the field existed
+   * reads as nothing authored.
+   */
+  mechanicsReplies: AgentMechanicsReplies;
   surfaceSettings: AgentSurfaceConfig;
   skillSettings: AgentSkillSettingsConfig;
   chatModelOverride: ConversationAgent["chatModelOverride"];
@@ -728,6 +735,10 @@ export const AGENT_CONFIG_FIELD_DESCRIPTORS = {
     portability: "portable",
     serialize: (agent) => agent.proactiveGreetingEnabled,
   }),
+  mechanicsReplies: descriptor({
+    portability: "portable",
+    serialize: (agent) => cloneJson(agent.mechanicsReplies),
+  }),
   surfaceSettings: descriptor({
     portability: "portable",
     nestedPortability: [
@@ -808,6 +819,7 @@ export const projectInternalAgentConfig = (
   greetingInstruction: agent.greetingInstruction,
   assistantDefaultLocale: agent.assistantDefaultLocale,
   proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
+  mechanicsReplies: cloneJson(agent.mechanicsReplies),
   surfaceSettings: cloneJson(agent.surfaceSettings),
   skillSettings: projectInternalSkillSettings(agent, cloneJson(agent.sourceScope)),
   chatModelOverride: agent.chatModelOverride ? cloneJson(agent.chatModelOverride) : null,
@@ -895,6 +907,7 @@ export const materializeAgentFromConfig = (
     proactiveGreetingEnabled: config.proactiveGreetingEnabled,
     // Voice settings are not part of the portable config, so a materialized agent starts with voice off.
     voice: defaultAgentVoiceSettings(),
+    mechanicsReplies: readStoredAgentMechanicsReplies(config.mechanicsReplies),
     sourceScope: cloneJson(retrievalAnswer.sourceScope),
     surfaceSettings: cloneJson(config.surfaceSettings),
     skillSettings: retrievalAnswer.skillSettings,

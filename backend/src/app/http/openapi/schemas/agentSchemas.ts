@@ -10,6 +10,8 @@ import {
 } from "../../schemas/agentChannelSchemas.js";
 import {
   AGENT_CONFIG_SCHEMA_VERSION,
+  AGENT_MECHANICS_REPLIES_MAX_LOCALES,
+  agentMechanicsRepliesSchema,
   agentSurfacePositions,
   agentVoiceSettingsSchema,
   authoredDirectiveRouteValues,
@@ -24,6 +26,7 @@ import {
 } from "../../../../modules/routines/public.js";
 import { skillDisplayMetadataSchema, skillOutcomeStatusSchema } from "../../../../modules/skills/public.js";
 import { exactContentItemSchema } from "../../../../shared/domain/exactContent.js";
+import { LOCALE_TAG_PATTERN } from "../../../../shared/domain/locale.js";
 import { AGENT_BUNDLE_SCHEMA_VERSION } from "../../../../modules/agentBundle/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
@@ -122,6 +125,26 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  // The record's key and locale-count refinements are runtime checks the generator cannot see, so
+  // both are stated for generated clients and MCP callers. OpenAPI 3.1 schemas are JSON Schema
+  // 2020-12, which has `propertyNames`; the generator's metadata type omits that keyword, so the
+  // bounds are spread in rather than written inline.
+  const mechanicsRepliesKeyBounds: { propertyNames: { type: "string"; pattern: string }; maxProperties: number } = {
+    propertyNames: { type: "string", pattern: LOCALE_TAG_PATTERN.source },
+    maxProperties: AGENT_MECHANICS_REPLIES_MAX_LOCALES,
+  };
+  const AgentMechanicsRepliesSchema = registry.register(
+    "AgentMechanicsReplies",
+    agentMechanicsRepliesSchema.openapi({
+      description:
+        "What the agent says, word for word, to a greeting, thanks, farewell, or acknowledgement, keyed by language tag "
+        + "(at most 10). Each locale entry holds every mechanic, each with at most 5 lines of 1 to 200 characters. "
+        + "When a turn is one of these mechanics and the agent has a line for it in the turn's language, the reply is an "
+        + "authored line, rotated per conversation. An update replaces the block whole.",
+      ...mechanicsRepliesKeyBounds,
+    }),
+  );
+
   const ConversationAgentSchema = registry.register(
     "ConversationAgent",
     AgentSchema.extend({
@@ -151,6 +174,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       assistantDefaultLocale: z.string().nullable(),
       proactiveGreetingEnabled: z.boolean(),
       voice: AgentVoiceSettingsSchema,
+      mechanicsReplies: AgentMechanicsRepliesSchema,
       assistantBootstrapActive: z.boolean(),
       publicId: z.string().nullable().openapi({
         description: "Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller.",
@@ -218,6 +242,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       assistantDefaultLocale: z.string().max(35).nullable().optional(),
       proactiveGreetingEnabled: z.boolean().optional(),
       voice: AgentVoiceSettingsSchema.optional(),
+      mechanicsReplies: AgentMechanicsRepliesSchema.optional(),
       publicDescription: z.string().max(500).optional(),
       agentCardEnabled: z.boolean().optional(),
       publicAgentAccessEnabled: z.boolean().optional(),
@@ -859,6 +884,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       greetingInstruction: z.string(),
       assistantDefaultLocale: z.string().nullable(),
       proactiveGreetingEnabled: z.boolean(),
+      mechanicsReplies: AgentMechanicsRepliesSchema.optional().openapi({
+        description: "Absent from bundles exported before the field existed; an import reads that as nothing authored.",
+      }),
       surfaceSettings: z.object({
         authenticatedChat: z.object({ enabled: z.boolean() }),
         anonymousChat: z.object({

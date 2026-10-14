@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-06T22:55:05.112Z",
+  "generatedAt": "2026-10-14T10:05:31.416Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -143,6 +143,91 @@
       "samples": 5
     },
     "email-review-uncovered-nonprofit-discount": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-greeting-en": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-thanks-en": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-farewell-en": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-acknowledgement-en": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-greeting-it": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-thanks-it": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-farewell-it": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-acknowledgement-it": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-not-greeting-with-question": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-not-thanks-with-question": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-not-ack-pending-clarification": {
+      "status": "fail",
+      "passRate": 0.8,
+      "samples": 5
+    },
+    "quick-reply-not-capabilities": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-not-price": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-not-repeat": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-not-yes-after-options": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-not-greeting-with-request": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "quick-reply-unlisted-language-standing-directive": {
       "status": "pass",
       "passRate": 1,
       "samples": 5

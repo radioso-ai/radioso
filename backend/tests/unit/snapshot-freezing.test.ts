@@ -83,6 +83,7 @@ describe("freezeAgent", () => {
       greetingInstruction: "Welcome!",
       assistantDefaultLocale: "en",
       proactiveGreetingEnabled: true,
+      mechanicsReplies: {},
       sourceScope: { mode: "all" },
       skillSettings: {},
       surfaceSettings: {} as never,
@@ -124,6 +125,7 @@ describe("freezeAgent", () => {
       greetingInstruction: "Welcome!",
       assistantDefaultLocale: "en",
       proactiveGreetingEnabled: true,
+      mechanicsReplies: {},
       sourceScope: { mode: "selected", sourceIds: ["source-1"] },
       skillSettings: {
         "retrieval.answer": {

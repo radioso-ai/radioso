@@ -63,10 +63,14 @@ interface VoiceSessionMemoryWindows {
 const sameUtterance = (left: string, right: string): boolean =>
   left.replace(/\s+/gu, " ").trim() === right.replace(/\s+/gu, " ").trim();
 
-/** When the turn lost its caller before its outcome left: overtaken or hung up on; null when delivered. */
+/**
+ * When the turn lost its caller before its outcome left: overtaken or hung up on; null when delivered.
+ * A loss on the outcome's own millisecond still counts: the route reports a hang-up only before the
+ * outcome left, so equal clock readings mean the loss came first.
+ */
 export const cutOffAt = (claim: VoiceTurnClaim): number | null => {
   const lost = [claim.supersededAt, claim.hungUpAt]
-    .filter((at): at is number => at !== null && (claim.outcomeAt === null || at < claim.outcomeAt));
+    .filter((at): at is number => at !== null && (claim.outcomeAt === null || at <= claim.outcomeAt));
   return lost.length > 0 ? Math.min(...lost) : null;
 };
 

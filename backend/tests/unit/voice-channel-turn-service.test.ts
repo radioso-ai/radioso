@@ -1029,6 +1029,26 @@ describe("VoiceTurnService", () => {
         );
       });
 
+      it("replays the stored answer when the hang-up and the outcome fall in the same millisecond", async () => {
+        const chat = supersedingChat([answered("We open at nine.")]);
+        // A frozen clock: the hang-up, the stored reply and its outcome all read the same instant.
+        const turns = service(chat, { now: () => 5_000 });
+        const hangUp = new AbortController();
+
+        const first = start(turns, input({ utterance }), hangUp.signal);
+        await vi.advanceTimersByTimeAsync(100);
+        hangUp.abort();
+        await vi.runAllTimersAsync();
+        await first;
+        const replayed = start(turns, input({ utterance }));
+        await vi.runAllTimersAsync();
+
+        expect((await replayed).filter((event) => event.type === "speech")).toEqual([
+          { type: "speech", text: "We open at nine.", last: true },
+        ]);
+        expect(chat.requests).toHaveLength(1);
+      });
+
       it("runs a new turn when the earlier reply reached the runtime whole", async () => {
         const chat = supersedingChat([answered("We open at nine."), answered("We open at nine, every day.")]);
         const turns = service(chat);

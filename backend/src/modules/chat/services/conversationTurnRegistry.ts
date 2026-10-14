@@ -76,6 +76,13 @@ export interface ConversationTurnLease {
   setStage(stage: ConversationTurnStage): void;
   throwIfCancelled(): void;
   beginEmission(): void;
+  /**
+   * Latches the turn for the commit of its stored reply, as the commit's last step: throws when
+   * a newer turn already cancelled it, and from then on no newer turn cancels it, even one that
+   * supersedes after emission; a newer turn waits for it instead. The latch a `latest_input_wins`
+   * turn needs, since emission alone does not protect it.
+   */
+  beginCommit(): void;
   complete(): void;
   /**
    * Externally cancel this turn because the client disconnected and the
@@ -132,6 +139,7 @@ interface ActiveTurn {
   controller: AbortController;
   conversationId: string;
   emissionStarted: boolean;
+  commitStarted: boolean;
   supersedeAfterEmission: boolean;
   finished: Promise<void>;
   finish: () => void;
@@ -147,6 +155,7 @@ const createActiveTurn = (conversationId: string, options: ConversationTurnLease
     controller: new AbortController(),
     conversationId,
     emissionStarted: false,
+    commitStarted: false,
     supersedeAfterEmission: options.supersedeAfterEmission === true,
     finished,
     finish,
@@ -154,9 +163,13 @@ const createActiveTurn = (conversationId: string, options: ConversationTurnLease
   };
 };
 
-/** A newer turn cancels its predecessor until it starts emitting, or at any point when both agree. */
+/**
+ * A newer turn cancels its predecessor until it starts emitting, or, when both agree, until it
+ * begins committing its reply.
+ */
 const supersedes = (predecessor: ActiveTurn, successor: ActiveTurn): boolean =>
   !predecessor.controller.signal.aborted
+  && !predecessor.commitStarted
   && (!predecessor.emissionStarted || (predecessor.supersedeAfterEmission && successor.supersedeAfterEmission));
 
 const throwSignalReason = (turn: ActiveTurn): void => {
@@ -218,6 +231,10 @@ export class InMemoryConversationTurnRegistry implements ConversationTurnRegistr
         throwSignalReason(turn);
         turn.emissionStarted = true;
         turn.stage = "persisting";
+      },
+      beginCommit() {
+        throwSignalReason(turn);
+        turn.commitStarted = true;
       },
       complete,
       cancelAfterDisconnect: () => {

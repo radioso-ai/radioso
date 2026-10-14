@@ -213,10 +213,12 @@ helpers and the shared chat message limit from `app/http`
   service ends it with `continue`, and the route closes its stream with `stop`
   and `[DONE]`. A turn cancelled after it started emitting keeps its user
   message and stores no reply. That holds while its reply is being stored too:
-  chat checks the lease once more right before the store and as the storing
-  transaction's last step, so the newer utterance and the stored reply have one
-  winner, and a reply the caller never received (a whole reply, written only
-  once stored) counts as replaced before emission.
+  chat checks the lease once more right before the store and latches it for
+  the commit as the storing transaction's last step, so the newer utterance and
+  the stored reply have one winner: before the latch the newer utterance
+  cancels the turn, and a reply the caller never received (a whole reply,
+  written only once stored) counts as replaced before emission; after it the
+  newer utterance waits for the stored turn.
 - **A replaced turn leaves no trace.** A turn cancelled before it emitted
   anything by a newer turn that is also `latest_input_wins`
   (`ChatTurnSupersededError.replacedByNewerInput`) has its user message

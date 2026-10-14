@@ -108,6 +108,29 @@ describe("NotificationDeliveryAdmissionService", () => {
     expect(record).not.toHaveBeenCalled();
   });
 
+  it("keeps one admission per notice when a retry can email more of the same configured list", async () => {
+    const reserve = vi.fn<NotificationDeliveryOutcomeRepositoryPort["reserve"]>().mockResolvedValue({
+      dispatchAllowed: true,
+      emailAllowed: true,
+      reason: null,
+      newlyRecorded: true,
+    });
+    const service = new NotificationDeliveryAdmissionService({ reserve, readDailyUsage: vi.fn() }, new NoopUsageLimitPolicy());
+    const admission = {
+      requestId: "request-1",
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      recipientEmails: ["ready@example.com", "confirms-later@example.com"],
+    };
+
+    await service.admit({ ...admission, requestedEmailCount: 1 });
+    await service.admit({ ...admission, requestedEmailCount: 2 });
+
+    const [first, retry] = reserve.mock.calls.map(([input]) => input);
+    expect(retry.recipientDigest).toBe(first.recipientDigest);
+  });
+
   it("binds a replay admission to the recipient set resolved for that attempt", async () => {
     const reserve = vi.fn<NotificationDeliveryOutcomeRepositoryPort["reserve"]>().mockResolvedValue({
       dispatchAllowed: true,

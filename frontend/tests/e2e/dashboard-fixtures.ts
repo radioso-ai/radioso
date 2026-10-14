@@ -2594,6 +2594,14 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    const notifySkillRecipientsMatch = path.match(new RegExp(`^/agents/${defaultAgentId}/skills/([^/]+)/notification-recipients$`));
+    if (notifySkillRecipientsMatch && request.method() === "GET") {
+      const skill = agentSkills.find((item) => item.id === notifySkillRecipientsMatch[1]);
+      const delivery = skill?.config?.delivery as { recipientEmails?: string[] } | undefined;
+      await json(route, { recipients: (delivery?.recipientEmails ?? []).map((email) => ({ email, state: "confirmed" })) });
+      return;
+    }
+
     if (path === `/workspaces/${workspaceId}/email-skill-activity` && request.method() === "GET") {
       await json(route, { activities: emailActivity });
       return;

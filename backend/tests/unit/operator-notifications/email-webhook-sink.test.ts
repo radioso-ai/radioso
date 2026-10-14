@@ -22,7 +22,7 @@ const allowedRecipientPolicy = {
   prepareDelivery: async (input: { emails: readonly string[] }) => ({
     eligibleEmails: [...input.emails],
     eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
-    skipped: { unconfirmed: 0, suppressed: 0 },
+    skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
   }),
 };
 
@@ -185,7 +185,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
             email: "ready@example.com",
             listUnsubscribeUrl: "https://api.example.com/revoke?token=signed",
           }],
-          skipped: { unconfirmed: 1, suppressed: 0 },
+          skipped: { unconfirmed: 1, suppressed: 0, revoked: 0 },
         }),
       },
     );

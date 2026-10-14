@@ -20,6 +20,7 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   getAgentTestExecution: ["workspace.agents.manage"],
   updateAgentSkill: ["workspace.agents.manage"],
   listOperatorNoticeDestinations: ["workspace.agents.read"],
+  listNotifySkillRecipients: ["workspace.agents.read"],
   resendNotificationRecipientConfirmation: ["workspace.notification_recipients.manage"],
   updateAgent: ["workspace.agents.manage"],
   updateAgentGreetingDraft: ["workspace.agents.manage"],

@@ -36,4 +36,4 @@ export {
 export { planNotificationEmail } from "./notificationEmailPlan.js";
 export { NotificationRecipientConfirmationMailer } from "./notificationRecipientConfirmationMailer.js";
 export { NotificationRecipientTokenSigner } from "./notificationRecipientToken.js";
-export { notificationProviderSuppressionReason } from "./providerSuppression.js";
+export { recordNotificationSuppression, type NotificationSuppressionStore } from "./providerSuppression.js";

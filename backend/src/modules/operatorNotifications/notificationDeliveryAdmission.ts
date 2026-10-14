@@ -102,7 +102,7 @@ export class NotificationDeliveryAdmissionService implements NotificationDeliver
     });
     const outcome = await this.outcomes.reserve({
       requestId: input.requestId,
-      recipientDigest: recipientEmailDeliveryDigest(input.recipientEmails, input.requestedEmailCount),
+      recipientDigest: recipientEmailDeliveryDigest(input.recipientEmails),
       workspaceId: input.workspaceId,
       conversationId: input.conversationId,
       usageDate: utcDate(this.now()),

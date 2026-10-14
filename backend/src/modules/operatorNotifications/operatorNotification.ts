@@ -85,6 +85,7 @@ export type OperatorNotificationSinkOutcome =
         | "conversation_dispatch_cap"
         | "missing_context"
         | "notification_recipient_unconfirmed"
+        | "notification_recipient_revoked"
         | "notification_recipient_suppressed"
         | "operator_notification_no_sink"
         | `mail_not_dispatched:driver=${string}`;

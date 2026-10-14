@@ -17,13 +17,22 @@ interface NotificationRecipientStateView {
 }
 
 /**
- * How often one workspace may ask strangers to confirm. The daily cap stops confirmation mail from
- * becoming the relay itself; the per-address spacing stops an operator from re-asking one inbox.
+ * How often strangers may be asked to confirm. The workspace and account caps stop confirmation mail
+ * from becoming the relay itself, and an account cannot multiply its allowance by adding
+ * workspaces; the per-address spacing stops an operator from re-asking one inbox.
  */
 export const NOTIFICATION_CONFIRMATION_LIMITS = {
   dailySends: 25,
+  accountDailySends: 50,
   resendCooldownMs: 24 * 60 * 60 * 1000,
 } as const;
+
+interface ConfirmationReservation {
+  recipientId: string;
+  generation: number;
+  reservedAt: Date;
+  previousSentAt: Date | null;
+}
 
 interface NotificationRecipientStateStore {
   read(input: {
@@ -37,9 +46,9 @@ interface NotificationRecipientStateStore {
     email: string;
     now: Date;
     force: boolean;
-    limits: { dailySends: number; resendCooldownMs: number };
-  }): Promise<{ recipientId: string; generation: number } | null>;
-  releaseConfirmationSend(recipientId: string, generation: number, reservedAt: Date): Promise<void>;
+    limits: { dailySends: number; accountDailySends: number; resendCooldownMs: number };
+  }): Promise<ConfirmationReservation | null>;
+  releaseConfirmationSend(reservation: ConfirmationReservation, outcome: "not_dispatched" | "failed"): Promise<void>;
   confirm(recipientId: string, generation: number, now: Date): Promise<boolean>;
   revoke(recipientId: string, now: Date): Promise<boolean>;
   resume(recipientId: string, now: Date): Promise<boolean>;
@@ -57,19 +66,25 @@ interface ConfirmationEmailRequest {
 
 type ConfirmationEmailSender = (input: ConfirmationEmailRequest) => Promise<{ dispatched: boolean }>;
 
+interface RecipientIdentity {
+  workspaceName: string;
+  agentName: string;
+}
+
+interface ConfirmationRequestContext {
+  workspaceId: string;
+  workspaceName?: string;
+  agentName?: string;
+  agentId?: string | null;
+  conversationId?: string | null;
+  idempotencyKey: string;
+}
+
 export interface NotificationRecipientPolicyPort {
-  prepareDelivery(input: {
-    workspaceId: string;
-    workspaceName?: string;
-    agentName?: string;
-    agentId?: string | null;
-    conversationId?: string | null;
-    emails: readonly string[];
-    idempotencyKey: string;
-  }): Promise<{
+  prepareDelivery(input: ConfirmationRequestContext & { emails: readonly string[] }): Promise<{
     eligibleEmails: string[];
     eligibleRecipients: Array<{ email: string; listUnsubscribeUrl: string }>;
-    skipped: { unconfirmed: number; suppressed: number };
+    skipped: { unconfirmed: number; suppressed: number; revoked: number };
   }>;
   describe(workspaceId: string, emails: readonly string[]): Promise<NotificationRecipientDescription[]>;
   requestConfirmations(input: {
@@ -78,15 +93,7 @@ export interface NotificationRecipientPolicyPort {
     emails: readonly string[];
     idempotencyKey: string;
   }): Promise<void>;
-  resendConfirmation(input: {
-    workspaceId: string;
-    email: string;
-    idempotencyKey: string;
-    workspaceName?: string;
-    agentName?: string;
-    agentId?: string | null;
-    conversationId?: string | null;
-  }): Promise<boolean>;
+  resendConfirmation(input: ConfirmationRequestContext & { email: string }): Promise<boolean>;
   confirm(subject: { recipientId: string; generation: number }): Promise<boolean>;
   revoke(subject: { recipientId: string }): Promise<boolean>;
   resume(subject: { recipientId: string }): Promise<boolean>;
@@ -95,6 +102,10 @@ export interface NotificationRecipientPolicyPort {
 export interface NotificationRecipientDescription {
   email: string;
   state: NotificationRecipientState;
+}
+
+interface EffectiveRecipient extends NotificationRecipientDescription {
+  recipientId: string | null;
 }
 
 const normalizeEmail = (email: string): string => email.trim().toLowerCase();
@@ -109,6 +120,21 @@ const effectiveState = (view: NotificationRecipientStateView, now: Date): Stored
     ? "waiting_for_confirmation"
     : view.state;
 
+const awaitingConfirmation = (state: NotificationRecipientState): boolean =>
+  state === "grandfathered" || state === "waiting_for_confirmation";
+
+const deliverable = (state: NotificationRecipientState): boolean =>
+  state === "confirmed" || state === "grandfathered" || state === "confirmation_not_required";
+
+/** Resolves the names a confirmation shows at most once per call, and only when one is sent. */
+const lazyIdentity = (resolve: () => Promise<RecipientIdentity>): (() => Promise<RecipientIdentity>) => {
+  let pending: Promise<RecipientIdentity> | null = null;
+  return () => {
+    pending ??= resolve();
+    return pending;
+  };
+};
+
 export class NotificationRecipientPolicyService implements NotificationRecipientPolicyPort {
   constructor(private readonly options: {
     enabled: boolean;
@@ -116,10 +142,7 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
     sendConfirmation: ConfirmationEmailSender;
     revocationUrl?: (recipientId: string) => string;
     identity?: {
-      resolve(input: { workspaceId: string; agentId?: string | null; conversationId?: string | null }): Promise<{
-        workspaceName: string;
-        agentName: string;
-      }>;
+      resolve(input: { workspaceId: string; agentId?: string | null; conversationId?: string | null }): Promise<RecipientIdentity>;
     };
     now?: () => Date;
     logger?: { info(payload: Record<string, unknown>, message: string): void };
@@ -129,67 +152,47 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
   }) {}
 
   async describe(workspaceId: string, emails: readonly string[]): Promise<NotificationRecipientDescription[]> {
-    const normalized = uniqueNormalizedEmails(emails);
-    const now = this.options.now?.() ?? new Date();
-    const stored = await this.options.states.read({ workspaceId, emails: normalized, now });
-    const byEmail = new Map(stored.map((view) => [view.email, effectiveState(view, now)]));
-    return normalized.map((email) => {
-      const state = byEmail.get(email) ?? "waiting_for_confirmation";
-      return {
-        email,
-        state: !this.options.enabled && state !== "suppressed" && state !== "revoked"
-          ? "confirmation_not_required"
-          : state,
-      };
-    });
+    const recipients = await this.effectiveRecipients(workspaceId, emails);
+    return recipients.map(({ email, state }) => ({ email, state }));
   }
 
-  async prepareDelivery(input: {
-    workspaceId: string;
-    workspaceName?: string;
-    agentName?: string;
-    agentId?: string | null;
-    conversationId?: string | null;
-    emails: readonly string[];
-    idempotencyKey: string;
-  }): Promise<{
+  async prepareDelivery(input: ConfirmationRequestContext & { emails: readonly string[] }): Promise<{
     eligibleEmails: string[];
     eligibleRecipients: Array<{ email: string; listUnsubscribeUrl: string }>;
-    skipped: { unconfirmed: number; suppressed: number };
+    skipped: { unconfirmed: number; suppressed: number; revoked: number };
   }> {
-    const recipients = await this.describe(input.workspaceId, input.emails);
-    const eligibleEmails: string[] = [];
+    const recipients = await this.effectiveRecipients(input.workspaceId, input.emails);
+    const identity = lazyIdentity(() => this.identityFor(input));
     const eligibleRecipients: Array<{ email: string; listUnsubscribeUrl: string }> = [];
-    let unconfirmed = 0;
-    let suppressed = 0;
+    const skipped = { unconfirmed: 0, suppressed: 0, revoked: 0 };
 
     for (const recipient of recipients) {
-      if (recipient.state === "suppressed") {
-        suppressed += 1;
-        continue;
-      }
-      if (recipient.state === "confirmed"
-        || recipient.state === "grandfathered"
-        || recipient.state === "confirmation_not_required") {
-        eligibleEmails.push(recipient.email);
-        const ensured = await this.options.states.ensure(input.workspaceId, recipient.email);
+      if (deliverable(recipient.state)) {
+        const recipientId = recipient.recipientId
+          ?? (await this.options.states.ensure(input.workspaceId, recipient.email)).recipientId;
         eligibleRecipients.push({
           email: recipient.email,
-          listUnsubscribeUrl: this.options.revocationUrl?.(ensured.recipientId) ?? "",
+          listUnsubscribeUrl: this.options.revocationUrl?.(recipientId) ?? "",
         });
+      } else if (recipient.state === "suppressed") {
+        skipped.suppressed += 1;
+      } else if (recipient.state === "revoked") {
+        skipped.revoked += 1;
       } else {
-        unconfirmed += 1;
+        skipped.unconfirmed += 1;
       }
 
-      if (this.options.enabled
-        && (recipient.state === "grandfathered" || recipient.state === "waiting_for_confirmation")) {
-        await this.requestConfirmation(input, recipient.email, false);
+      if (this.options.enabled && awaitingConfirmation(recipient.state)) {
+        await this.requestConfirmation(input, recipient.email, false, identity);
       }
     }
 
-    this.recordSkipped(input.workspaceId, "unconfirmed", unconfirmed);
-    this.recordSkipped(input.workspaceId, "suppressed", suppressed);
-    return { eligibleEmails, eligibleRecipients, skipped: { unconfirmed, suppressed } };
+    this.recordSkipped(input.workspaceId, skipped);
+    return {
+      eligibleEmails: eligibleRecipients.map((recipient) => recipient.email),
+      eligibleRecipients,
+      skipped,
+    };
   }
 
   /** Asks newly configured addresses to confirm before any notice is due, so the first one is not lost. */
@@ -201,76 +204,123 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
   }): Promise<void> {
     if (!this.options.enabled) return;
     // A settings save never fails on this: an address that misses it is asked at its first notice.
-    let recipients: NotificationRecipientDescription[];
+    let recipients: EffectiveRecipient[];
     try {
-      recipients = await this.describe(input.workspaceId, input.emails);
+      recipients = await this.effectiveRecipients(input.workspaceId, input.emails);
     } catch {
       this.recordConfirmationFailure(input.workspaceId);
       return;
     }
+    const identity = lazyIdentity(() => this.identityFor(input));
     for (const recipient of recipients) {
-      if (recipient.state === "waiting_for_confirmation" || recipient.state === "grandfathered") {
-        await this.requestConfirmation(input, recipient.email, false);
+      if (awaitingConfirmation(recipient.state)) {
+        await this.requestConfirmation(input, recipient.email, false, identity);
       }
     }
   }
 
-  async resendConfirmation(input: {
-    workspaceId: string;
-    email: string;
-    idempotencyKey: string;
-    workspaceName?: string;
-    agentName?: string;
-    agentId?: string | null;
-    conversationId?: string | null;
-  }): Promise<boolean> {
+  async resendConfirmation(input: ConfirmationRequestContext & { email: string }): Promise<boolean> {
     if (!this.options.enabled) return false;
-    const identity = await this.identityFor(input);
-    return this.sendConfirmationWhenReserved({ ...input, ...identity }, true);
+    return this.sendConfirmationWhenReserved(input, input.email, true, lazyIdentity(() => this.identityFor(input)));
   }
 
   async confirm(subject: { recipientId: string; generation: number }): Promise<boolean> {
-    const confirmed = await this.options.states.confirm(subject.recipientId, subject.generation, this.options.now?.() ?? new Date());
+    const confirmed = await this.options.states.confirm(subject.recipientId, subject.generation, this.now());
     if (confirmed) this.recordLifecycle("confirmed");
     return confirmed;
   }
 
   async revoke(subject: { recipientId: string }): Promise<boolean> {
-    const revoked = await this.options.states.revoke(subject.recipientId, this.options.now?.() ?? new Date());
+    const revoked = await this.options.states.revoke(subject.recipientId, this.now());
     if (revoked) this.recordLifecycle("revoked");
     return revoked;
   }
 
   async resume(subject: { recipientId: string }): Promise<boolean> {
-    const resumed = await this.options.states.resume(subject.recipientId, this.options.now?.() ?? new Date());
+    const resumed = await this.options.states.resume(subject.recipientId, this.now());
     if (resumed) this.recordLifecycle("resumed");
     return resumed;
   }
 
-  private async sendConfirmationWhenReserved(input: ConfirmationEmailRequest, force: boolean): Promise<boolean> {
-    const now = this.options.now?.() ?? new Date();
-    let reservation: { recipientId: string; generation: number } | null;
+  private now(): Date {
+    return this.options.now?.() ?? new Date();
+  }
+
+  private async effectiveRecipients(workspaceId: string, emails: readonly string[]): Promise<EffectiveRecipient[]> {
+    const normalized = uniqueNormalizedEmails(emails);
+    const now = this.now();
+    const stored = await this.options.states.read({ workspaceId, emails: normalized, now });
+    const byEmail = new Map(stored.map((view) => [view.email, view]));
+    return normalized.map((email) => {
+      const view = byEmail.get(email);
+      const state = view ? effectiveState(view, now) : "waiting_for_confirmation";
+      return {
+        email,
+        recipientId: view?.recipientId ?? null,
+        state: !this.options.enabled && state !== "suppressed" && state !== "revoked"
+          ? "confirmation_not_required"
+          : state,
+      };
+    });
+  }
+
+  private async requestConfirmation(
+    context: ConfirmationRequestContext,
+    email: string,
+    force: boolean,
+    identity: () => Promise<RecipientIdentity>,
+  ): Promise<void> {
+    try {
+      await this.sendConfirmationWhenReserved(context, email, force, identity);
+    } catch {
+      this.recordConfirmationFailure(context.workspaceId);
+    }
+  }
+
+  private async sendConfirmationWhenReserved(
+    context: ConfirmationRequestContext,
+    email: string,
+    force: boolean,
+    identity: () => Promise<RecipientIdentity>,
+  ): Promise<boolean> {
+    let reservation: ConfirmationReservation | null;
     try {
       reservation = await this.options.states.reserveConfirmationSend({
-        workspaceId: input.workspaceId,
-        email: input.email,
-        now,
+        workspaceId: context.workspaceId,
+        email,
+        now: this.now(),
         force,
         limits: NOTIFICATION_CONFIRMATION_LIMITS,
       });
     } catch {
-      this.recordConfirmationFailure(input.workspaceId);
+      this.recordConfirmationFailure(context.workspaceId);
       return false;
     }
     if (!reservation) return false;
+
+    let names: RecipientIdentity;
     try {
-      const result = await this.options.sendConfirmation({ ...input, recipientId: reservation.recipientId, generation: reservation.generation });
+      names = await identity();
+    } catch {
+      await this.releaseConfirmationReservation(context.workspaceId, reservation, "not_dispatched");
+      return false;
+    }
+    try {
+      const result = await this.options.sendConfirmation({
+        workspaceId: context.workspaceId,
+        workspaceName: names.workspaceName,
+        agentName: names.agentName,
+        email,
+        idempotencyKey: context.idempotencyKey,
+        recipientId: reservation.recipientId,
+        generation: reservation.generation,
+      });
       if (!result.dispatched) {
-        await this.releaseConfirmationReservation(input.workspaceId, reservation, now);
+        await this.releaseConfirmationReservation(context.workspaceId, reservation, "not_dispatched");
         return false;
       }
     } catch {
-      await this.releaseConfirmationReservation(input.workspaceId, reservation, now);
+      await this.releaseConfirmationReservation(context.workspaceId, reservation, "failed");
       return false;
     }
     return true;
@@ -278,11 +328,27 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
 
   private async releaseConfirmationReservation(
     workspaceId: string,
-    reservation: { recipientId: string; generation: number },
-    reservedAt: Date,
+    reservation: ConfirmationReservation,
+    outcome: "not_dispatched" | "failed",
   ): Promise<void> {
-    await this.options.states.releaseConfirmationSend(reservation.recipientId, reservation.generation, reservedAt).catch(() => undefined);
+    await this.options.states.releaseConfirmationSend(reservation, outcome).catch(() => undefined);
     this.recordConfirmationFailure(workspaceId);
+  }
+
+  private async identityFor(input: {
+    workspaceId: string;
+    workspaceName?: string;
+    agentName?: string;
+    agentId?: string | null;
+    conversationId?: string | null;
+  }): Promise<RecipientIdentity> {
+    if (input.workspaceName && input.agentName) {
+      return { workspaceName: input.workspaceName, agentName: input.agentName };
+    }
+    if (this.options.identity) {
+      return this.options.identity.resolve(input);
+    }
+    return { workspaceName: input.workspaceName ?? "Your workspace", agentName: input.agentName ?? "your agent" };
   }
 
   private recordConfirmationFailure(workspaceId: string): void {
@@ -296,48 +362,6 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
     }, "Notification recipient confirmation send failed");
   }
 
-  private async requestConfirmation(
-    input: {
-      workspaceId: string;
-      workspaceName?: string;
-      agentName?: string;
-      agentId?: string | null;
-      conversationId?: string | null;
-      idempotencyKey: string;
-    },
-    email: string,
-    force: boolean,
-  ): Promise<void> {
-    try {
-      const identity = await this.identityFor(input);
-      await this.sendConfirmationWhenReserved({
-        workspaceId: input.workspaceId,
-        workspaceName: identity.workspaceName,
-        agentName: identity.agentName,
-        email,
-        idempotencyKey: input.idempotencyKey,
-      }, force);
-    } catch {
-      this.recordConfirmationFailure(input.workspaceId);
-    }
-  }
-
-  private async identityFor(input: {
-    workspaceId: string;
-    workspaceName?: string;
-    agentName?: string;
-    agentId?: string | null;
-    conversationId?: string | null;
-  }): Promise<{ workspaceName: string; agentName: string }> {
-    if (input.workspaceName && input.agentName) {
-      return { workspaceName: input.workspaceName, agentName: input.agentName };
-    }
-    if (this.options.identity) {
-      return this.options.identity.resolve(input);
-    }
-    return { workspaceName: input.workspaceName ?? "Your workspace", agentName: input.agentName ?? "your agent" };
-  }
-
   private recordLifecycle(event: "confirmed" | "revoked" | "resumed"): void {
     this.options.metrics?.incrementCounter("notification_recipient_confirmation_events_total", {
       help: "Notification recipient confirmation lifecycle events.",
@@ -346,18 +370,20 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
     this.options.logger?.info({ event: `notification_recipient_${event}` }, `Notification recipient ${event}`);
   }
 
-  private recordSkipped(workspaceId: string, reason: "unconfirmed" | "suppressed", count: number): void {
-    if (count === 0) return;
-    this.options.metrics?.incrementCounter("notification_recipient_delivery_skipped_total", {
-      help: "Notification recipients skipped by confirmation and suppression policy.",
-      labels: { reason },
-      value: count,
-    });
-    this.options.logger?.info({
-      event: "notification_recipient_delivery_skipped",
-      workspaceId,
-      reason,
-      recipientCount: count,
-    }, "Notification recipient delivery skipped");
+  private recordSkipped(workspaceId: string, skipped: { unconfirmed: number; suppressed: number; revoked: number }): void {
+    for (const [reason, count] of Object.entries(skipped)) {
+      if (count === 0) continue;
+      this.options.metrics?.incrementCounter("notification_recipient_delivery_skipped_total", {
+        help: "Notification recipients skipped by confirmation and suppression policy.",
+        labels: { reason },
+        value: count,
+      });
+      this.options.logger?.info({
+        event: "notification_recipient_delivery_skipped",
+        workspaceId,
+        reason,
+        recipientCount: count,
+      }, "Notification recipient delivery skipped");
+    }
   }
 }

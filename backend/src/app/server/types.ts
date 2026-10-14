@@ -112,7 +112,7 @@ import type { AgentWizardService } from "../../modules/agentWizard/service.js";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 import type { LlmCapabilityResolver } from "../../shared/infra/llm/capabilityResolver.js";
 import type { EmailService } from "../../modules/mail/public.js";
-import type { NotificationRecipientPolicyPort } from "../../modules/operatorNotifications/public.js";
+import type { NotificationRecipientPolicyPort, NotificationSuppressionStore } from "../../modules/operatorNotifications/public.js";
 import type {
   EvalCaseService,
   EvalMessageCaseService,
@@ -331,14 +331,7 @@ export interface AppDependencies {
   /** Where routine ending notices go; names recipient emails, so it serves workspace sessions only. */
   operatorNoticeDestinations: Pick<OperatorNoticeDestinationsReader, "read">;
   notificationRecipientPolicy: NotificationRecipientPolicyPort;
-  notificationRecipientSuppressions: {
-    suppress(input: {
-      email: string;
-      reason: "hard_bounce" | "complaint";
-      provider: string;
-      providerEventId: string;
-    }): Promise<void>;
-  };
+  notificationRecipientSuppressions: NotificationSuppressionStore;
   agentService: AgentService;
   agentRevisionService: AgentRevisionService;
   agentBundleExportService: AgentBundleExportService;

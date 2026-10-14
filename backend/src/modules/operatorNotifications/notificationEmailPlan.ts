@@ -3,7 +3,10 @@ import type { NotificationRecipientPolicyPort } from "./notificationRecipientPol
 
 type RecipientDecision = Awaited<ReturnType<NotificationRecipientPolicyPort["prepareDelivery"]>>;
 type AdmissionReason = NonNullable<NotificationDeliveryAdmission["reason"]>;
-type RecipientSkipReason = "notification_recipient_unconfirmed" | "notification_recipient_suppressed";
+type RecipientSkipReason =
+  | "notification_recipient_unconfirmed"
+  | "notification_recipient_revoked"
+  | "notification_recipient_suppressed";
 
 type NotificationEmailPlan =
   | {
@@ -21,13 +24,15 @@ type NotificationEmailPlan =
 const NO_ELIGIBLE_RECIPIENTS: RecipientDecision = {
   eligibleEmails: [],
   eligibleRecipients: [],
-  skipped: { unconfirmed: 0, suppressed: 0 },
+  skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
 };
 
-const recipientSkipReason = (decision: RecipientDecision): RecipientSkipReason =>
-  decision.skipped.suppressed > 0 && decision.skipped.unconfirmed === 0
-    ? "notification_recipient_suppressed"
-    : "notification_recipient_unconfirmed";
+// An unconfirmed address is the one an operator can still act on, so it names the skip first.
+const recipientSkipReason = (decision: RecipientDecision): RecipientSkipReason => {
+  if (decision.skipped.unconfirmed > 0) return "notification_recipient_unconfirmed";
+  if (decision.skipped.revoked > 0) return "notification_recipient_revoked";
+  return "notification_recipient_suppressed";
+};
 
 /**
  * Decides who receives a contact or operator-notice email, in the order the anti-abuse rules need:
@@ -66,12 +71,14 @@ export const planNotificationEmail = async (input: {
     decision = NO_ELIGIBLE_RECIPIENTS;
   }
 
+  // Admission is keyed on the configured list, which a retry sees unchanged even when an address
+  // confirmed or lapsed in between; only the email count reserved follows confirmation.
   const admission = await input.admission?.admit({
     requestId: request.requestId,
     workspaceId: request.workspaceId,
     accountId: request.accountId,
     conversationId: request.conversationId,
-    recipientEmails: decision.eligibleEmails,
+    recipientEmails: request.emails,
     requestedEmailCount: decision.eligibleEmails.length,
   });
   if (admission && !admission.dispatchAllowed) {

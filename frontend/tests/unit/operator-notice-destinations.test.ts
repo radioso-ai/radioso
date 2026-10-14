@@ -4,6 +4,7 @@ import {
   defaultNoticeDestinationLabel,
   describeDailyEmailAllowance,
   describeNoticeDestination,
+  parseNotificationRecipients,
   parseOperatorNoticeDestinations,
   type OperatorNoticeDestination,
   type OperatorNoticeDestinations,
@@ -105,5 +106,14 @@ describe('recipient states in the Sends to line', () => {
       default: destination({ recipients: [{ email: 'owner@ananda.it', state: 'confirmation_not_required' }] }),
     }
     expect(describeNoticeDestination(unconfirmedDeployment, undefined)).toBe('Sends to owner@ananda.it (workspace owner)')
+  })
+})
+
+describe('parseNotificationRecipients', () => {
+  it('reads a notify skill\'s recipient states and rejects an unknown state', () => {
+    expect(parseNotificationRecipients({ recipients: [{ email: 'sales@example.com', state: 'revoked' }] }))
+      .toEqual([{ email: 'sales@example.com', state: 'revoked' }])
+    expect(() => parseNotificationRecipients({ recipients: [{ email: 'sales@example.com', state: 'snoozed' }] })).toThrow()
+    expect(() => parseNotificationRecipients({})).toThrow()
   })
 })

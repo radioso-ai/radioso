@@ -3,7 +3,7 @@ import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
 import { ResendWebhookVerifier } from "../../../modules/mail/public.js";
-import { notificationProviderSuppressionReason } from "../../../modules/operatorNotifications/public.js";
+import { recordNotificationSuppression } from "../../../modules/operatorNotifications/public.js";
 
 type Dependencies = Pick<
   AppDependencies,
@@ -58,39 +58,16 @@ export const createNotificationDeliveryWebhookRoutes = (dependencies: Dependenci
       res.sendStatus(200);
       return;
     }
-    const reason = notificationProviderSuppressionReason(event);
-    if (!reason || event.recipients.length === 0) {
-      res.sendStatus(200);
-      return;
-    }
-
     try {
-      await Promise.all(event.recipients.map((email) => dependencies.notificationRecipientSuppressions.suppress({
-        email,
-        reason,
+      await recordNotificationSuppression({
+        event,
         provider: "resend",
-        providerEventId: event.providerEventId,
-      })));
-      dependencies.metricsRegistry?.incrementCounter("notification_recipient_suppression_events_total", {
-        help: "Notification recipient suppressions recorded from provider events.",
-        labels: { reason },
-        value: event.recipients.length,
+        store: dependencies.notificationRecipientSuppressions,
+        logger: dependencies.logger,
+        metrics: dependencies.metricsRegistry,
       });
-      dependencies.logger.info({
-        event: "notification_recipient_suppressed",
-        provider: "resend",
-        reason,
-        recipientCount: event.recipients.length,
-      }, "Notification recipients suppressed");
       res.sendStatus(200);
-    } catch (error) {
-      dependencies.logger.error({
-        event: "notification_recipient_suppression_failed",
-        provider: "resend",
-        reason,
-        recipientCount: event.recipients.length,
-        errorName: error instanceof Error ? error.name : "unknown",
-      }, "Notification recipient suppression could not be recorded");
+    } catch {
       res.sendStatus(503);
     }
   });

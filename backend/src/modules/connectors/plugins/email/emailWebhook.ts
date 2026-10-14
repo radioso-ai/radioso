@@ -9,7 +9,7 @@ import {
 import type { InboundEmailReceiver, InboundVerification, VerifiedInboundEvent } from "../../../mail/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../../../shared/observability/tracing/operations.js";
-import { notificationProviderSuppressionReason } from "../../../operatorNotifications/public.js";
+import { recordNotificationSuppression, type NotificationSuppressionStore } from "../../../operatorNotifications/public.js";
 
 /**
  * The inbound provider webhook (FR-007). Inline it only verifies the signature over the raw
@@ -25,14 +25,7 @@ export interface EmailWebhookRouterOptions {
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
   logger: ConnectorLogger;
   clock?: () => Date;
-  recipientSuppressions?: {
-    suppress(input: {
-      email: string;
-      reason: "hard_bounce" | "complaint";
-      provider: string;
-      providerEventId: string;
-    }): Promise<void>;
-  };
+  recipientSuppressions?: NotificationSuppressionStore;
 }
 
 type WebhookResult = "persisted" | "duplicate" | "bad_signature" | "stale_timestamp" | "malformed" | "db_unavailable" | "suppression_unavailable";
@@ -53,11 +46,6 @@ const REJECTION: Readonly<Record<Exclude<InboundVerification, { ok: true }>["rea
 };
 
 const errorName = (error: unknown): string => (error instanceof Error ? error.name : "unknown");
-
-const suppressionOf = (event: VerifiedInboundEvent): "hard_bounce" | "complaint" | null => {
-  if (event.kind !== "delivery_status") return null;
-  return notificationProviderSuppressionReason(event);
-};
 
 const headersOf = (req: Request): Record<string, string | undefined> =>
   Object.fromEntries(Object.entries(req.headers).map(([name, value]) => [name, Array.isArray(value) ? value[0] : value]));
@@ -134,34 +122,16 @@ export const createEmailWebhookRouter = (options: EmailWebhookRouterOptions): Ro
       return;
     }
 
-    const suppressionReason = suppressionOf(event);
-    if (suppressionReason && event.kind === "delivery_status" && options.recipientSuppressions) {
+    if (event.kind === "delivery_status" && options.recipientSuppressions) {
       try {
-        await Promise.all(event.recipients.map((email) => options.recipientSuppressions!.suppress({
-          email,
-          reason: suppressionReason,
+        await recordNotificationSuppression({
+          event,
           provider,
-          providerEventId: event.providerEventId,
-        })));
-        options.metrics?.incrementCounter("notification_recipient_suppression_events_total", {
-          help: "Notification recipient suppressions recorded from provider events.",
-          labels: { reason: suppressionReason },
-          value: event.recipients.length,
+          store: options.recipientSuppressions,
+          logger: options.logger,
+          metrics: options.metrics,
         });
-        options.logger.info({
-          event: "notification_recipient_suppressed",
-          provider,
-          reason: suppressionReason,
-          recipientCount: event.recipients.length,
-        }, "Notification recipients suppressed");
-      } catch (error) {
-        options.logger.error({
-          event: "notification_recipient_suppression_failed",
-          provider,
-          reason: suppressionReason,
-          recipientCount: event.recipients.length,
-          errorName: errorName(error),
-        }, "Notification recipient suppression could not be recorded");
+      } catch {
         respond(res, startedAt, { status: 503, result: "suppression_unavailable", kind: event.kind });
         return;
       }

@@ -1327,11 +1327,11 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(completed.response.handoff).toEqual({ reason: "routine_handoff", collectedSlotCount: 2 });
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
     const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
-    expect(persisted.ownershipHandoff).toEqual({
+    // The slot count is the reply's to report; the hand-off that is stored carries none of it.
+    expect(persisted.ownershipHandoff).toStrictEqual({
       reason: "routine_handoff",
       routineId: "routine_1",
       stepId: "handoff",
-      collectedSlotCount: 2,
     });
     expect(persisted.actions?.[0]?.type).toBe(HANDOFF_NOTIFY_ACTION_TYPE);
     expect(persisted.ownershipAuditEvent).toMatchObject({

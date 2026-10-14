@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 
 import { buildContactDeliveryResolver } from "../../../src/app/composition/contactDelivery.js";
 import { ActionRequestRepository } from "../../../src/db/repositories/actionRequestRepository.js";
-import { EmailWebhookOperatorNotificationSink } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
+import { EmailWebhookOperatorNotificationSink as EmailWebhookOperatorNotificationSinkBase } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
 import { ActionDispatcher, ActionHandlerRegistry } from "../../../src/modules/chat/services/actions/actionDispatcher.js";
 import { RoutineEndingNotifyActionHandler } from "../../../src/modules/chat/services/actions/routineEndingNotifyActionHandler.js";
 import { buildHandoffNotifyAction } from "../../../src/modules/chat/services/handoffOwnership.js";
@@ -16,6 +16,18 @@ import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
+
+const allowedRecipientPolicy = {
+  prepareDelivery: async (input: { emails: readonly string[] }) => ({
+    eligibleEmails: [...input.emails], eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })), skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
+  }),
+};
+class EmailWebhookOperatorNotificationSink extends EmailWebhookOperatorNotificationSinkBase {
+  constructor(...args: unknown[]) {
+    const [mailer, recipients, logger, webhookClient, conversationLinks, admission, recipientPolicy] = args as Partial<ConstructorParameters<typeof EmailWebhookOperatorNotificationSinkBase>>;
+    super(mailer!, recipients!, logger, webhookClient, conversationLinks, admission, recipientPolicy ?? allowedRecipientPolicy);
+  }
+}
 
 describeIntegration("handoff notify delivery through the action outbox (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);

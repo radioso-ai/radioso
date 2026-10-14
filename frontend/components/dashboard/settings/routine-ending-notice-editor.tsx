@@ -9,7 +9,7 @@ import { RoutineSkillCatalogContext } from '@/components/dashboard/settings/rout
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { defaultNoticeDestinationLabel, describeNoticeDestination } from '@/lib/operator-notice-destinations'
+import { defaultNoticeDestinationLabel, describeDailyEmailAllowance, describeNoticeDestination } from '@/lib/operator-notice-destinations'
 import { instructionToProseParagraphs, proseParagraphsToInstruction } from '@/lib/routine-document'
 import { newEndingNotice, type EndingNotice } from '@/lib/routine-document-edits'
 import { blockSegmentsToInstruction, instructionToBlockSegments, type ChipDocVariable, type ProseParagraph, type RoutineBlockEnding } from '@/lib/routine-prose'
@@ -67,6 +67,7 @@ function NoticeSenderField({ id, skillName, onChange }: {
   // Only a loaded catalog can say a skill is gone; while it loads, or if it failed, the name just shows.
   const catalogLoaded = !catalog.isLoading && !catalog.error
   const destination = describeNoticeDestination(catalog.noticeDestinations, skillName)
+  const emailAllowance = describeDailyEmailAllowance(catalog.noticeDestinations)
   return (
     <div className="space-y-1">
       <Label htmlFor={`${id}-sender`} className="text-xs font-medium">Send with</Label>
@@ -81,6 +82,7 @@ function NoticeSenderField({ id, skillName, onChange }: {
         </SelectContent>
       </Select>
       {destination ? <p className="text-xs text-muted-foreground">{destination}</p> : null}
+      {emailAllowance ? <p className="text-xs text-destructive">{emailAllowance}</p> : null}
     </div>
   )
 }

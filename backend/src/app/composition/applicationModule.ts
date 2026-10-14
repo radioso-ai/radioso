@@ -137,6 +137,7 @@ export interface MailTransportPort {
     html?: string;
     metadata?: Record<string, string>;
     idempotencyKey?: string | null;
+    listUnsubscribeUrl?: string | null;
   }): Promise<{
     /**
      * True only when a mail provider accepted the message. Deployments without a configured

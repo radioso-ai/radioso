@@ -3049,6 +3049,58 @@ CREATE TABLE public.notification_delivery_outcomes (
 
 
 --
+-- Name: notification_email_suppressions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_email_suppressions (
+    normalized_email text NOT NULL,
+    reason text NOT NULL,
+    provider text NOT NULL,
+    provider_event_id text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_email_suppressions_normalized_email_check CHECK (((normalized_email = lower(btrim(normalized_email))) AND (normalized_email <> ''::text))),
+    CONSTRAINT notification_email_suppressions_reason_check CHECK ((reason = ANY (ARRAY['hard_bounce'::text, 'complaint'::text])))
+);
+
+
+--
+-- Name: notification_recipient_confirmation_daily_usage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_recipient_confirmation_daily_usage (
+    workspace_id uuid NOT NULL,
+    usage_date date NOT NULL,
+    send_count integer NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_recipient_confirmation_daily_usag_send_count_check CHECK ((send_count >= 0))
+);
+
+
+--
+-- Name: notification_recipient_confirmations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_recipient_confirmations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    normalized_email text NOT NULL,
+    state text NOT NULL,
+    grandfathered_until timestamp with time zone,
+    confirmation_sent_at timestamp with time zone,
+    confirmed_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    confirmation_generation integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_recipient_confirmati_confirmation_generation_check CHECK ((confirmation_generation >= 0)),
+    CONSTRAINT notification_recipient_confirmations_check CHECK (((state = 'grandfathered'::text) = (grandfathered_until IS NOT NULL))),
+    CONSTRAINT notification_recipient_confirmations_normalized_email_check CHECK (((normalized_email = lower(btrim(normalized_email))) AND (normalized_email <> ''::text))),
+    CONSTRAINT notification_recipient_confirmations_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'confirmed'::text, 'grandfathered'::text, 'revoked'::text])))
+);
+
+
+--
 -- Name: operator_mcp_access_credentials; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5645,6 +5697,38 @@ ALTER TABLE ONLY public.messages
 
 ALTER TABLE ONLY public.notification_delivery_outcomes
     ADD CONSTRAINT notification_delivery_outcomes_pkey PRIMARY KEY (request_id, recipient_digest);
+
+
+--
+-- Name: notification_email_suppressions notification_email_suppressions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_email_suppressions
+    ADD CONSTRAINT notification_email_suppressions_pkey PRIMARY KEY (normalized_email);
+
+
+--
+-- Name: notification_recipient_confirmations notification_recipient_confir_workspace_id_normalized_email_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_recipient_confirmations
+    ADD CONSTRAINT notification_recipient_confir_workspace_id_normalized_email_key UNIQUE (workspace_id, normalized_email);
+
+
+--
+-- Name: notification_recipient_confirmation_daily_usage notification_recipient_confirmation_daily_usage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_recipient_confirmation_daily_usage
+    ADD CONSTRAINT notification_recipient_confirmation_daily_usage_pkey PRIMARY KEY (workspace_id, usage_date);
+
+
+--
+-- Name: notification_recipient_confirmations notification_recipient_confirmations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_recipient_confirmations
+    ADD CONSTRAINT notification_recipient_confirmations_pkey PRIMARY KEY (id);
 
 
 --
@@ -8659,6 +8743,13 @@ CREATE INDEX notification_delivery_outcomes_workspace_day_idx ON public.notifica
 
 
 --
+-- Name: notification_recipient_confirmations_workspace_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_recipient_confirmations_workspace_idx ON public.notification_recipient_confirmations USING btree (workspace_id, state);
+
+
+--
 -- Name: operator_mcp_access_credentials_expiry_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -11442,6 +11533,22 @@ ALTER TABLE ONLY public.messages
 
 ALTER TABLE ONLY public.messages
     ADD CONSTRAINT messages_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notification_recipient_confirmation_daily_usage notification_recipient_confirmation_daily_usa_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_recipient_confirmation_daily_usage
+    ADD CONSTRAINT notification_recipient_confirmation_daily_usa_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notification_recipient_confirmations notification_recipient_confirmations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_recipient_confirmations
+    ADD CONSTRAINT notification_recipient_confirmations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

@@ -606,8 +606,10 @@ imports from `services/`.
   the turn, retrieval rewrite guidance/rolling summary resolve through the same
   interpretation-context seam as the staged path, and the directive matcher resolves precomputed
   classifications through `matchAndResolveWithClassifications`.
-  Pre-retrieval planning never receives response identity or answer instructions,
-  and any model-proposed scope fields are ignored. Retrieved evidence decides
+  Pre-retrieval planning never receives response identity, and its one answer
+  instruction is the agent's custom instruction, rendered only inside the quick-reply
+  standing instructions, which govern the planner's own reply and no decision. Any
+  model-proposed scope fields are ignored. Retrieved evidence decides
   whether the grounded answer has support.
   The request has three parts so providers can reuse its stable prefix
   (`docs/input-token-caching.md`): `prompts/chat/turn-planning.md` renders the
@@ -626,10 +628,34 @@ imports from `services/`.
   coverage, and envelope blocks form its reusable prefix, and turn steering,
   offers, follow-up rules, and the lead-back follow.
   `chat_turn_planning_outcomes_total` records fast-path, fallback, and every typed
-  gate/state/candidate/prompt bypass without forcing lazy prompt construction. Tests:
+  gate/state/candidate/prompt bypass without forcing lazy prompt construction.
+  The plan's last fields are `requestPresent`, `openQuestion`, and the quick reply
+  (`quickReply: { kind, language, text }`): on a turn of pure conversational mechanics
+  the planner writes the reply, and the direct skill (`directTurnSkill.ts`) sends it
+  instead of calling its composer. They are the one part of the plan outside
+  all-or-nothing parsing (an unusable lane, including a reply without a BCP 47
+  `language` tag, reads as `none`, flagged `quickReplyDiscarded`). The planner follows the agent's custom instruction and the
+  direct route's always-on answer directives itself (`standingInstructions` in
+  `turnPlanCoordinator.ts`, rendered by `prompts/chat/turn-planning-standing-instructions.md`
+  in the stable prefix; when they alone overflow the prompt budget the lane is off for
+  the turn), and `turnPlanQuickReply.ts` owns the host's eligibility rule: a resolved
+  direct plan, no request and no open question, no identity question, no routine yield,
+  no retrieval rewrite written, and answer steering equal to those always-on
+  directives (so any applying conditional directive goes to the composer).
+  The words (`quickReplyWording.ts`): the agent's authored `mechanicsReplies` line for
+  the kind in the planner's language tag (full tag, then primary subtag; rotated by the
+  conversation's reply count) when it has one, which is the guarantee; otherwise the
+  planner's own text, sent only when it carries no digit, currency symbol, URL, or email
+  address (a format gate, not a guarantee). Dispatch settles the outcome with those
+  words; rendering presents them as committed text; `conversationEngineChatTurn.ts`
+  marks the compose stage `source: "turn_planning"` with `quickReplyWording`.
+  `CHAT_QUICK_REPLY_LANE=off` is the rollback lever: composition passes
+  `quickReplyLaneEnabled: false` to the coordinator (no lane, so no quick-reply prompt
+  wording or schema fields) and the direct skill (always composes). Tests:
   `tests/unit/turn-plan-service.test.ts`,
   `tests/unit/turn-plan-coordinator.test.ts`,
-  `tests/unit/chat-service-turn-planning.test.ts`.
+  `tests/unit/chat-service-turn-planning.test.ts`, and the `quick-reply` cases in
+  `tests/unit/eval-suite/suite-runner.test.ts`.
 - Reusable turn engine: `conversationContractMappers.ts`,
   `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`,
   `chatTurnAssembly.ts`, and

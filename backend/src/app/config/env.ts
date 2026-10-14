@@ -338,6 +338,9 @@ const envSchema = z.object({
   // agrees with the answer envelope head. Defaults on for the window; flip off
   // to stop the shadow call entirely once its cost is no longer wanted.
   ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: booleanish(true),
+  // The quick-reply lane's rollback lever. "off" plans every turn without the lane, so
+  // the planner prompt carries no quick-reply wording and every direct turn is composed.
+  CHAT_QUICK_REPLY_LANE: emptyStringToDefault(z.enum(["on", "off"]), "on"),
   APP_BASE_URL: emptyStringToUndefined(z.string().url()),
   GOOGLE_MAIL_OAUTH_CLIENT_ID: emptyStringToUndefined(z.string().min(1)),
   GOOGLE_MAIL_OAUTH_CLIENT_SECRET: emptyStringToUndefined(z.string().min(1)),

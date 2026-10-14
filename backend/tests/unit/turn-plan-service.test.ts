@@ -995,3 +995,339 @@ describe("TurnPlanService", () => {
     expect(observedSignal?.aborted).toBe(true);
   });
 });
+
+describe("quick reply", () => {
+  const sameCandidates = {
+    ...candidates,
+    quickReplyLane: { standingInstructions: { directives: [] } },
+  };
+  const OMIT = Symbol("omit");
+  const directPlanJson = (quickReply?: unknown, openQuestion: unknown = false, requestPresent: unknown = false): string => {
+    const plan = JSON.parse(validPlanJson({ route: "direct", rewrite: null })) as Record<string, unknown>;
+    if (requestPresent !== OMIT) {
+      plan.requestPresent = requestPresent;
+    }
+    if (openQuestion !== OMIT) {
+      plan.openQuestion = openQuestion;
+    }
+    if (quickReply !== undefined) {
+      plan.quickReply = quickReply;
+    }
+    return JSON.stringify(plan);
+  };
+
+  describe("parseTurnPlan", () => {
+    it("keeps a valid quick reply, trimmed, beside the rest of the plan", () => {
+      const plan = parseTurnPlan(directPlanJson({ kind: "greeting", language: "en", text: "  Hello! How can I help today?  " }), sameCandidates);
+
+      expect(plan?.route).toBe("direct");
+      expect(plan?.directiveClassifications).toEqual([{ name: "refund-tone", matched: true, confidence: 0.8 }]);
+      expect(plan?.quickReply).toEqual({
+        kind: "greeting",
+        language: "en",
+        text: "Hello! How can I help today?",
+        standingDirectiveNames: [],
+      });
+      expect(plan?.quickReplyDiscarded).toBeUndefined();
+    });
+
+    it("names the always-on directives the reply was written under", () => {
+      const plan = parseTurnPlan(directPlanJson({ kind: "thanks", language: "en", text: "You're welcome." }), {
+        ...candidates,
+        quickReplyLane: {
+          standingInstructions: {
+            customInstruction: "You are Acme's assistant.",
+            directives: [
+              { name: "sign-off", action: "Sign as the Acme team." },
+              { name: "formal", action: "Use a formal register." },
+            ],
+          },
+        },
+      });
+
+      expect(plan?.quickReply).toEqual({
+        kind: "thanks",
+        language: "en",
+        text: "You're welcome.",
+        standingDirectiveNames: ["formal", "sign-off"],
+      });
+    });
+
+    it.each([
+      ["a language tag", "it-IT", "it-IT"],
+      ["a padded language tag", "  it  ", "it"],
+    ])("keeps the quick reply with %s as its language", (_label, language, expected) => {
+      const plan = parseTurnPlan(directPlanJson({ kind: "greeting", language, text: "Ciao!" }), sameCandidates);
+
+      expect(plan?.quickReply).toEqual({ kind: "greeting", language: expected, text: "Ciao!", standingDirectiveNames: [] });
+      expect(plan?.quickReplyDiscarded).toBeUndefined();
+    });
+
+    it("reads kind none as no quick reply without marking it discarded", () => {
+      const plan = parseTurnPlan(directPlanJson({ kind: "none", text: "" }), sameCandidates);
+
+      expect(plan?.quickReply).toEqual({ kind: "none", text: "" });
+      expect(plan?.quickReplyDiscarded).toBeUndefined();
+    });
+
+    it.each([
+      ["missing", undefined],
+      ["not an object", "Hello!"],
+      ["of an unknown kind", { kind: "compliment", text: "Nice question!" }],
+      ["carrying an extra field", { kind: "greeting", language: "en", text: "Hi!", tone: "warm" }],
+      ["blank", { kind: "thanks", language: "en", text: "   " }],
+      ["longer than the limit", { kind: "farewell", language: "en", text: "x".repeat(CHAT_BEHAVIOR.turnPlanning.maxQuickReplyCharacters + 1) }],
+      ["without a language", { kind: "greeting", text: "Hi!" }],
+      ["with a null language", { kind: "greeting", language: null, text: "Hi!" }],
+      ["with a blank language", { kind: "greeting", language: "  ", text: "Hi!" }],
+      ["with a language name instead of a tag", { kind: "greeting", language: "English", text: "Hi!" }],
+    ])("discards a quick reply that is %s and keeps the rest of the plan", (_label, quickReply) => {
+      const plan = parseTurnPlan(directPlanJson(quickReply), sameCandidates);
+
+      expect(plan).not.toBeNull();
+      expect(plan?.route).toBe("direct");
+      expect(plan?.responseLanguage).toBe("English");
+      expect(plan?.directiveClassifications).toEqual([{ name: "refund-tone", matched: true, confidence: 0.8 }]);
+      expect(plan?.quickReply).toEqual({ kind: "none", text: "" });
+      expect(plan?.quickReplyDiscarded).toBe(true);
+    });
+
+    it("measures the limit after trimming, in characters rather than UTF-16 units", () => {
+      const limit = CHAT_BEHAVIOR.turnPlanning.maxQuickReplyCharacters;
+      const atLimit = "😀".repeat(limit);
+      const plan = parseTurnPlan(directPlanJson({ kind: "greeting", language: "en", text: `  ${atLimit}  ` }), sameCandidates);
+
+      expect(plan?.quickReply).toEqual({ kind: "greeting", language: "en", text: atLimit, standingDirectiveNames: [] });
+    });
+
+    it("carries the planner's openQuestion verdict beside a kept quick reply", () => {
+      const plan = parseTurnPlan(directPlanJson({ kind: "acknowledgement", language: "en", text: "Got it." }, true), sameCandidates);
+
+      expect(plan?.openQuestion).toBe(true);
+      expect(plan?.quickReply).toEqual({ kind: "acknowledgement", language: "en", text: "Got it.", standingDirectiveNames: [] });
+      expect(plan?.quickReplyDiscarded).toBeUndefined();
+    });
+
+    it.each([
+      ["missing", OMIT],
+      ["not a boolean", "no"],
+    ])("discards the quick reply and reads the question as open when openQuestion is %s", (_label, openQuestion) => {
+      const plan = parseTurnPlan(directPlanJson({ kind: "greeting", language: "en", text: "Hello!" }, openQuestion), sameCandidates);
+
+      expect(plan).not.toBeNull();
+      expect(plan?.route).toBe("direct");
+      expect(plan?.openQuestion).toBe(true);
+      expect(plan?.quickReply).toEqual({ kind: "none", text: "" });
+      expect(plan?.quickReplyDiscarded).toBe(true);
+    });
+
+    it("carries the planner's requestPresent verdict and whether it wrote a retrieval rewrite", () => {
+      const plan = parseTurnPlan(directPlanJson({ kind: "greeting", language: "en", text: "Hello!" }, false, true), sameCandidates);
+      expect(plan?.requestPresent).toBe(true);
+      expect(plan?.rewritePresent).toBe(false);
+      expect(plan?.quickReply).toMatchObject({ kind: "greeting" });
+
+      const withRewrite = JSON.parse(validPlanJson({ route: "direct" })) as Record<string, unknown>;
+      withRewrite.requestPresent = false;
+      withRewrite.openQuestion = false;
+      withRewrite.quickReply = { kind: "greeting", language: "en", text: "Hello!" };
+      const contradictory = parseTurnPlan(JSON.stringify(withRewrite), sameCandidates);
+      // A direct plan's rewrite is dropped, but the plan still records that one was written.
+      expect(contradictory?.rewriteProposal).toBeUndefined();
+      expect(contradictory?.rewritePresent).toBe(true);
+    });
+
+    it.each([
+      ["missing", OMIT],
+      ["not a boolean", 1],
+    ])("discards the quick reply and reads a request as present when requestPresent is %s", (_label, requestPresent) => {
+      const plan = parseTurnPlan(directPlanJson({ kind: "greeting", language: "en", text: "Hello!" }, false, requestPresent), sameCandidates);
+
+      expect(plan?.route).toBe("direct");
+      expect(plan?.requestPresent).toBe(true);
+      expect(plan?.quickReply).toEqual({ kind: "none", text: "" });
+      expect(plan?.quickReplyDiscarded).toBe(true);
+    });
+
+    it("forces kind none when the turn's quick-reply lane is off", () => {
+      const plan = parseTurnPlan(directPlanJson({ kind: "greeting", language: "en", text: "Hello!" }), candidates);
+
+      expect(plan?.route).toBe("direct");
+      expect(plan?.quickReply).toEqual({ kind: "none", text: "" });
+      expect(plan?.quickReplyDiscarded).toBeUndefined();
+    });
+
+    it("reads a plan without any quick-reply fields as no quick reply, undiscarded, when the lane is off", () => {
+      const plan = parseTurnPlan(validPlanJson({ route: "direct", rewrite: null }), candidates);
+
+      expect(plan?.route).toBe("direct");
+      expect(plan?.quickReply).toEqual({ kind: "none", text: "" });
+      expect(plan?.quickReplyDiscarded).toBeUndefined();
+    });
+
+    it("still rejects the whole plan when a field other than quickReply is malformed", () => {
+      const plan = JSON.parse(directPlanJson({ kind: "greeting", language: "en", text: "Hello!" })) as Record<string, unknown>;
+      plan.isIdentityQuestion = "no";
+
+      expect(parseTurnPlan(JSON.stringify(plan), sameCandidates)).toBeNull();
+    });
+  });
+
+  describe("buildTurnPlanResponseFormat", () => {
+    it("leaves requestPresent, openQuestion, and quickReply out of the schema when the lane is off", () => {
+      const format = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [], quickReplyLaneEnabled: false });
+
+      expect(Object.keys(format.schema.properties ?? {})).not.toEqual(expect.arrayContaining(["requestPresent"]));
+      for (const field of ["requestPresent", "openQuestion", "quickReply"]) {
+        expect(format.schema.properties ?? {}).not.toHaveProperty(field);
+        expect(format.schema.required).not.toContain(field);
+      }
+      expect(Object.keys(format.schema.properties ?? {}).at(-1)).toBe("responseLanguage");
+    });
+
+    it("requires requestPresent, openQuestion, then a strict quickReply object as the last fields, after every derivation field", () => {
+      const format = buildTurnPlanResponseFormat({
+        routineIds: ["book-call"],
+        directiveNames: ["refund-tone"],
+        pageReadCapability,
+        quickReplyLaneEnabled: true,
+      });
+
+      expect(Object.keys(format.schema.properties ?? {}).slice(-3)).toEqual(["requestPresent", "openQuestion", "quickReply"]);
+      expect((format.schema.required as string[]).slice(-3)).toEqual(["requestPresent", "openQuestion", "quickReply"]);
+      expect(schemaProperty(format, "requestPresent")).toMatchObject({ type: "boolean" });
+      expect(schemaProperty(format, "openQuestion")).toMatchObject({ type: "boolean" });
+      expect(schemaProperty(format, "quickReply")).toEqual({
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "language", "text"],
+        properties: {
+          kind: { type: "string", enum: ["greeting", "thanks", "farewell", "acknowledgement", "none"] },
+          language: { type: ["string", "null"] },
+          text: { type: "string" },
+        },
+      });
+    });
+  });
+
+  describe("buildTurnPlanningPrompt", () => {
+    const promptInput = (overrides: Partial<Parameters<typeof buildTurnPlanningPrompt>[0]> = {}) => ({
+      query: "Hi there!",
+      history,
+      routineCandidates: [],
+      directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
+      ...overrides,
+    });
+
+    it("plans without any quick-reply wording when the lane is off", () => {
+      const prompt = buildTurnPlanningPrompt(promptInput());
+
+      for (const text of ["Quick Reply Rules", "Standing Instructions For Any Reply You Write", "quickReply", "requestPresent", "openQuestion", "write the reply yourself"]) {
+        expect(prompt.systemPrompt).not.toContain(text);
+      }
+      expect(prompt.systemPrompt.split("\n")[0]).toBe(
+        "Plan the assistant's next turn in a single pass. Produce independent decisions about how to route it, how to rewrite it for retrieval, and which language to answer in.",
+      );
+      expect(prompt.systemPrompt).toMatch(/"responseLanguage":"string\|null","directiveClassifications":\[\{"name":"string","matched":false,"confidence":0\.0\}\]\}/);
+      expect(prompt.systemPrompt).not.toMatch(/\n\n\n/);
+    });
+
+    it("states the quick-reply rules in the stable prefix and asks for the field in the output shape", () => {
+      const prompt = buildTurnPlanningPrompt(promptInput({ quickReplyLane: { standingInstructions: { directives: [] } } }));
+      const boundary = prompt.reusableInputBoundary!;
+
+      expect(boundary.stableSystemPrefix).toContain("Quick Reply Rules");
+      expect(boundary.stableSystemPrefix).toContain("openQuestion");
+      expect(boundary.stableSystemPrefix).toContain("requestPresent");
+      expect(boundary.dynamicSystemSuffix).toContain(
+        '"requestPresent":false,"openQuestion":false,"quickReply":{"kind":"greeting|thanks|farewell|acknowledgement|none","language":"string|null","text":"string"}',
+      );
+      expect(prompt.systemPrompt).not.toMatch(/\n\n\n/);
+    });
+
+    it("renders the custom instruction, then the always-on answer directives, in the stable prefix as rules for the planner's own reply", () => {
+      const directives = [
+        { name: "sign-off", action: "Sign every reply as the Acme team." },
+        { name: "formal", action: "Address the visitor formally." },
+      ];
+      const customInstruction = "You are Acme's cheerful support assistant.";
+      const first = buildTurnPlanningPrompt(promptInput({ quickReplyLane: { standingInstructions: { customInstruction, directives } } }));
+      const second = buildTurnPlanningPrompt(promptInput({
+        query: "Thanks a lot",
+        quickReplyLane: { standingInstructions: { customInstruction, directives: [...directives].reverse() } },
+      }));
+      const stable = first.reusableInputBoundary!.stableSystemPrefix;
+      const standingBlock = stable.slice(stable.indexOf("Standing Instructions For Any Reply You Write"));
+
+      expect(stable).toContain("Standing Instructions For Any Reply You Write");
+      expect(standingBlock).toContain(customInstruction);
+      expect(standingBlock.indexOf(customInstruction)).toBeLessThan(standingBlock.indexOf("Sign every reply as the Acme team."));
+      expect(standingBlock).toContain("Address the visitor formally.");
+      expect(standingBlock.indexOf('"formal"')).toBeLessThan(standingBlock.indexOf('"sign-off"'));
+      // The instructions steer only the planner's own reply, never its decisions.
+      expect(standingBlock).toContain("never change route, rewrite, responseLanguage, routineRankings, directiveClassifications");
+      expect(standingBlock).toContain("unless a standing instruction above supplies it word for word");
+      expect(stable.slice(0, stable.indexOf("Standing Instructions For Any Reply You Write"))).not.toContain(customInstruction);
+      // Conditional directives stay classification candidates; their conditions are never
+      // offered to the planner as rules for its own reply.
+      expect(standingBlock).not.toContain("refund-tone");
+      expect(second.reusableInputBoundary?.stableSystemPrefix).toBe(stable);
+      for (const volatilePart of [first.reusableInputBoundary!.dynamicSystemSuffix, first.prompt]) {
+        expect(volatilePart).not.toContain("Sign every reply");
+        expect(volatilePart).not.toContain(customInstruction);
+      }
+      expect(first.systemPrompt).not.toMatch(/\n\n\n/);
+    });
+
+    it("omits the standing-instruction block when the lane has none or is off", () => {
+      for (const quickReplyLane of [
+        { standingInstructions: { directives: [] } },
+        { standingInstructions: { customInstruction: "   ", directives: [] } },
+        undefined,
+      ]) {
+        const prompt = buildTurnPlanningPrompt(promptInput({ quickReplyLane }));
+        expect(prompt.systemPrompt).not.toContain("Standing Instructions For Any Reply You Write");
+      }
+    });
+
+    it("renders a custom instruction alone, with no always-on directives", () => {
+      const prompt = buildTurnPlanningPrompt(promptInput({
+        quickReplyLane: { standingInstructions: { customInstruction: "Speak like a ship's captain.", directives: [] } },
+      }));
+
+      expect(prompt.systemPrompt).toContain("Standing Instructions For Any Reply You Write");
+      expect(prompt.systemPrompt).toContain("Speak like a ship's captain.");
+      expect(prompt.systemPrompt).not.toMatch(/\n\n\n/);
+    });
+  });
+
+  it("leaves the output budget room for a maximal plan carrying a quick reply at the length limit", () => {
+    const routineAliases = ROUTINE_ALIASES;
+    const directiveNames = Array.from(
+      { length: CHAT_BEHAVIOR.turnPlanning.maxDirectiveCandidates },
+      (_value, index) => `standing-directive-${String(index).padStart(2, "0")}`,
+    );
+    const maximalDirectPlan = JSON.stringify({
+      route: "direct",
+      isIdentityQuestion: false,
+      intentTopic: "greeting",
+      rewrite: null,
+      responseLanguage: "English",
+      routineRankings: routineAliases.map((routineId) => ({
+        routineId,
+        confidence: 0.12,
+        variables: [{ field: "company", value: "Acme" }],
+      })),
+      directiveClassifications: directiveNames.map((name) => ({ name, matched: false, confidence: 0.05 })),
+      pageRead: { required: false, operation: null, resolvedRequest: null },
+      requestPresent: false,
+      openQuestion: false,
+      quickReply: { kind: "greeting", language: "en", text: "x".repeat(CHAT_BEHAVIOR.turnPlanning.maxQuickReplyCharacters) },
+    });
+    // JSON with short keys and numbers tokenizes at roughly three characters a token;
+    // the estimate is deliberately pessimistic next to the usual four.
+    const estimatedOutputTokens = Math.ceil(maximalDirectPlan.length / 3);
+
+    expect(estimatedOutputTokens).toBeLessThan(CHAT_BEHAVIOR.turnPlanning.maxOutputTokens);
+  });
+});

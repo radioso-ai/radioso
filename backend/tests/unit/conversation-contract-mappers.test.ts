@@ -53,6 +53,7 @@ const agent = (overrides: Partial<AgentRecord> = {}): AgentRecord => ({
   greetingInstruction: "",
   assistantDefaultLocale: "en",
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   chatModelOverride: { provider: "openai", model: "gpt-test" },
   surfaceSettings: {
     authenticatedChat: { enabled: true },

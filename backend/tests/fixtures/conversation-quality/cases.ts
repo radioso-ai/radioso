@@ -1,11 +1,11 @@
-import type { ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
+import { ZERO_TOLERANCE_JUDGE_TAG, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
 import { seedDirectiveConfigWith } from "./agent.js";
 import {
   PRICING_DOC_ID,
   REFUND_POLICY_DOC_ID,
   SECURITY_DOC_ID,
 } from "./corpus.js";
-import { contactFormOnlyDirective } from "./directives.js";
+import { contactFormOnlyDirective, listedLanguagesDirective } from "./directives.js";
 import {
   BOOK_DEMO_ROUTINE_ID,
   BOOK_RETREAT_ROUTINE_ID,
@@ -22,6 +22,49 @@ const contentPageReadCapabilities: ConversationQualityCase["clientContextCapabil
     supportedOperations: ["metadata", "lookup", "summarize"],
   },
 };
+
+const refundExchangeEnglish: NonNullable<ConversationQualityCase["history"]> = [
+  { role: "user", content: "How long do I have to get a refund?" },
+  { role: "assistant", content: "You can request a full refund within 30 days of purchase." },
+];
+
+const refundExchangeItalian: NonNullable<ConversationQualityCase["history"]> = [
+  { role: "user", content: "Quanto tempo ho per chiedere un rimborso?" },
+  { role: "assistant", content: "Puoi richiedere un rimborso completo entro 30 giorni dall'acquisto." },
+];
+
+/**
+ * The rubric every quick reply is graded on: no factual proposition at all, except what a
+ * standing instruction supplies word for word.
+ */
+const NO_FACTUAL_PROPOSITION_RUBRIC =
+  "The reply contains no factual proposition about anything (the organisation, its products, plans, prices, policies, or people, the assistant's abilities, or the world), except text a standing instruction supplies word for word. A greeting, thanks, a farewell, or a generic invitation to ask is not a factual proposition.";
+
+/** The judge criterion for a quick-reply case whose reference describes the expected reply. */
+const quickReplyCriteria = (language: string): string =>
+  `The reference describes the expected reply rather than quoting it: judge whether the observed reply fits that description, not whether it repeats its words or includes its optional parts. The reply is one or two short sentences in ${language}. ${NO_FACTUAL_PROPOSITION_RUBRIC}`;
+
+const quickReplyCase = (input: {
+  id: string;
+  name: string;
+  kind: "greeting" | "thanks" | "farewell" | "acknowledgement";
+  language: string;
+  query: string;
+  history?: ConversationQualityCase["history"];
+  expectedAnswer: string;
+}): ConversationQualityCase => ({
+  id: input.id,
+  name: input.name,
+  description: `Pure conversational mechanics (${input.kind}): the turn planner writes the reply itself, so the turn makes one model call and the composer never runs.`,
+  tags: ["quick-reply", "direct", ZERO_TOLERANCE_JUDGE_TAG],
+  ...(input.history ? { history: input.history } : {}),
+  query: input.query,
+  assertions: [
+    { type: "turn_route", route: "direct" },
+    { type: "turn_reply_source", source: "turn_planning" },
+    { type: "llm_judge", expectedAnswer: input.expectedAnswer, criteria: quickReplyCriteria(input.language) },
+  ],
+});
 
 const metadataPageReadCapabilities: ConversationQualityCase["clientContextCapabilities"] = {
   "page.read": {
@@ -526,6 +569,195 @@ export const conversationQualityCases: ConversationQualityCase[] = [
         criteria:
           "The answer must not invent page content. It should clearly state that the current page cannot be summarized because only metadata is available.",
       },
+    ],
+  },
+  quickReplyCase({
+    id: "quick-reply-greeting-en",
+    name: "An English greeting is answered by the planner's own reply",
+    kind: "greeting",
+    language: "English",
+    query: "Hello!",
+    expectedAnswer: "A greeting in English, optionally followed by a generic invitation to ask something. It states no facts.",
+  }),
+  quickReplyCase({
+    id: "quick-reply-thanks-en",
+    name: "English thanks after an answer is answered by the planner's own reply",
+    kind: "thanks",
+    language: "English",
+    history: refundExchangeEnglish,
+    query: "Thanks, that's really helpful!",
+    expectedAnswer: "A reply to the customer's thanks in English (for example, that they are welcome), optionally with a generic invitation to ask anything else. It states no facts.",
+  }),
+  quickReplyCase({
+    id: "quick-reply-farewell-en",
+    name: "An English farewell is answered by the planner's own reply",
+    kind: "farewell",
+    language: "English",
+    history: refundExchangeEnglish,
+    query: "That's all I needed. Bye!",
+    expectedAnswer: "A farewell in English, optionally wishing the customer well. It states no facts.",
+  }),
+  quickReplyCase({
+    id: "quick-reply-acknowledgement-en",
+    name: "An English acknowledgement of a plain answer is answered by the planner's own reply",
+    kind: "acknowledgement",
+    language: "English",
+    history: refundExchangeEnglish,
+    query: "Ok, got it.",
+    expectedAnswer: "A brief acknowledgement in English that the customer has what they needed, optionally with a generic invitation to ask anything else. It states no facts.",
+  }),
+  quickReplyCase({
+    id: "quick-reply-greeting-it",
+    name: "An Italian greeting is answered by the planner's own reply, in Italian",
+    kind: "greeting",
+    language: "Italian",
+    query: "Ciao!",
+    expectedAnswer: "A greeting in Italian, optionally followed by a generic invitation to ask something. It states no facts.",
+  }),
+  quickReplyCase({
+    id: "quick-reply-thanks-it",
+    name: "Italian thanks after an answer is answered by the planner's own reply, in Italian",
+    kind: "thanks",
+    language: "Italian",
+    history: refundExchangeItalian,
+    query: "Grazie mille, molto gentile!",
+    expectedAnswer: "A reply to the customer's thanks in Italian (for example, prego), optionally with a generic invitation to ask anything else. It states no facts.",
+  }),
+  quickReplyCase({
+    id: "quick-reply-farewell-it",
+    name: "An Italian farewell is answered by the planner's own reply, in Italian",
+    kind: "farewell",
+    language: "Italian",
+    history: refundExchangeItalian,
+    query: "Perfetto, è tutto. Arrivederci!",
+    expectedAnswer: "A farewell in Italian, optionally wishing the customer well. It states no facts.",
+  }),
+  quickReplyCase({
+    id: "quick-reply-acknowledgement-it",
+    name: "An Italian acknowledgement of a plain answer is answered by the planner's own reply, in Italian",
+    kind: "acknowledgement",
+    language: "Italian",
+    history: refundExchangeItalian,
+    query: "Va bene, capito.",
+    expectedAnswer: "A brief acknowledgement in Italian that the customer has what they needed, optionally with a generic invitation to ask anything else. It states no facts.",
+  }),
+  {
+    id: "quick-reply-not-greeting-with-question",
+    name: "A greeting that carries a question is retrieved and composed, not a quick reply",
+    tags: ["quick-reply", "routing"],
+    query: "Hi, are you open on Sunday?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "turn_reply_source", source: "composer" },
+    ],
+  },
+  {
+    id: "quick-reply-not-thanks-with-question",
+    name: "Thanks that carries a price question is retrieved and composed, not a quick reply",
+    tags: ["quick-reply", "routing"],
+    history: refundExchangeEnglish,
+    query: "Thanks! And how much is the Pro plan?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "turn_reply_source", source: "composer" },
+    ],
+  },
+  {
+    id: "quick-reply-not-ack-pending-clarification",
+    name: "An acknowledgement while the assistant's question is still open is composed, not a quick reply",
+    description:
+      "The assistant asked which plan the customer means; a bare \"ok\" leaves that question open, so the composer answers it rather than the planner closing the exchange.",
+    tags: ["quick-reply", "clarification"],
+    history: [
+      { role: "user", content: "How much does a plan cost?" },
+      { role: "assistant", content: "Do you mean the Pro plan or the Team plan?" },
+    ],
+    query: "ok",
+    assertions: [
+      { type: "turn_route", route: "direct" },
+      { type: "turn_reply_source", source: "composer" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Asks again which plan the customer means, the Pro plan or the Team plan.",
+        criteria: "The reply keeps the open question moving (asks which plan, or offers both) and does not treat the conversation as finished. It does not invent a price.",
+      },
+    ],
+  },
+  {
+    id: "quick-reply-not-greeting-with-request",
+    name: "A greeting that carries a request is retrieved and composed, not a quick reply",
+    tags: ["quick-reply", "routing"],
+    query: "Good morning! I'd like to cancel my subscription.",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "turn_reply_source", source: "composer" },
+    ],
+  },
+  {
+    id: "quick-reply-not-capabilities",
+    name: "A question about what the assistant can do is composed, not a quick reply",
+    tags: ["quick-reply", "identity"],
+    query: "What can you help me with?",
+    assertions: [
+      { type: "turn_route", route: "direct" },
+      { type: "turn_reply_source", source: "composer" },
+    ],
+  },
+  {
+    id: "quick-reply-not-price",
+    name: "A price request is retrieved and composed, not a quick reply",
+    tags: ["quick-reply", "retrieval"],
+    query: "How much is the Pro plan?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "turn_reply_source", source: "composer" },
+    ],
+  },
+  {
+    id: "quick-reply-unlisted-language-standing-directive",
+    name: "A greeting in a language the agent does not answer in follows the always-on language directive",
+    description:
+      "An always-on directive names English and Italian as the agent's only languages. A standing directive is operator-authored truth, so the planner may repeat what it says word for word in a quick reply, or the composer may answer; either way the reply is in a listed language and claims nothing beyond the directive's wording.",
+    tags: ["quick-reply", "directive", "language", ZERO_TOLERANCE_JUDGE_TAG],
+    agentConfigOverride: { authoredDirectives: seedDirectiveConfigWith(listedLanguagesDirective) },
+    query: "こんにちは！",
+    assertions: [
+      { type: "turn_route", route: "direct" },
+      // Hiragana, katakana, and CJK ideographs: a script check, not a vocabulary list.
+      { type: "answer_does_not_contain", pattern: "[\\u3040-\\u30ff\\u4e00-\\u9fff]", matchMode: "regex" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "A greeting written in English or Italian, optionally saying the assistant can help in English or Italian. It states no other facts.",
+        criteria: `The reply is written in English or Italian, not Japanese. The agent's always-on directive supplies "I can help in English or Italian", so saying that is allowed. ${NO_FACTUAL_PROPOSITION_RUBRIC}`,
+      },
+    ],
+  },
+  {
+    id: "quick-reply-not-repeat",
+    name: "A request to repeat the previous answer is composed, not a quick reply",
+    tags: ["quick-reply", "routing"],
+    history: refundExchangeEnglish,
+    query: "Can you repeat that?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "turn_reply_source", source: "composer" },
+    ],
+  },
+  {
+    id: "quick-reply-not-yes-after-options",
+    name: "A bare yes after the assistant offered two options is composed, not a quick reply",
+    tags: ["quick-reply", "routing"],
+    history: [
+      { role: "user", content: "I'm thinking about upgrading." },
+      {
+        role: "assistant",
+        content: "I can explain what the Pro plan costs, or walk you through how refunds work if it doesn't suit you. Which would you like?",
+      },
+    ],
+    query: "yes",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "turn_reply_source", source: "composer" },
     ],
   },
   {

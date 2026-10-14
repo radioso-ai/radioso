@@ -14,9 +14,9 @@ repo-committed regression suite you run from the CLI.
 |------|------------|
 | `corpus.ts` | 4 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II) |
 | `routines.ts` | 2 seed `RoutineDefinition`s: `contact-support`, `book-demo` |
-| `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, through `agentConfigOverride` |
+| `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, and `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, both through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 29 seed cases |
+| `cases.ts` | the 46 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary
@@ -25,10 +25,35 @@ Two layers (see `src/modules/eval/suite/`):
 
 - **Deterministic (no LLM, gate every run):** `turn_route`, `turn_uses_skill`,
   `turn_activates_routine`, `routine_step_reached`, `routine_yielded`, `turn_asks_clarification`,
-  `turn_grounding_verdict`, `turn_answer_coverage`, `turn_persists_no_reply`, plus the product
-  `retrieval_*`, `answer_cites_document`, `answer_contains` / `answer_does_not_contain`.
+  `turn_grounding_verdict`, `turn_answer_coverage`, `turn_persists_no_reply`, `turn_reply_source`,
+  plus the product `retrieval_*`, `answer_cites_document`, `answer_contains` /
+  `answer_does_not_contain`.
 - **Semantic (LLM judge, paid/non-deterministic):** `llm_judge` — reserved for empathy,
-  refusal, precision. Run these on-demand/nightly, not on every PR.
+  refusal, precision, and the quick-reply "no factual proposition" checks. The live runner
+  drops them unless a case carries a tag passed with `--judge-tag`; those are graded on the
+  cheapest text model the configuration resolves (the rerank tier, or `--judge-model`).
+  `evals`, `evals:ci`, `evals:update-baseline`, and the nightly workflow all pass
+  `--judge-tag quick-reply`, so the quick-reply judge assertions gate every run and the
+  baseline is recorded the way the gate runs.
+
+## Quick-reply cases
+
+The `quick-reply`-tagged cases cover the turn planner's quick-reply lane. On a turn of pure
+conversational mechanics (a greeting, thanks, a farewell, an acknowledgement) the planner
+writes the reply itself and the composer never runs; `turn_reply_source` reads that from the
+compose stage, which records `source: "turn_planning"` for a planner-written answer. The
+positive cases, in English and Italian, assert `turn_planning`; the adversarial cases (mechanics
+mixed with a question or a request, an open question or offer in the conversation, a capability
+or price question, a request to repeat) assert `composer`. The unlisted-language case accepts
+either source: an always-on directive names the agent's languages, and the reply may repeat it
+word for word but claim nothing more. The judge rubric allows no factual proposition about
+anything except text a standing instruction supplies word for word, and the positive cases'
+references describe the expected reply (kind, language, no facts) rather than quoting one.
+Run only these cases with:
+
+```bash
+pnpm run evals -- --tag quick-reply
+```
 
 ## Review cases
 
@@ -74,6 +99,17 @@ not fail the run. A run that
 samples less deeply than its baseline also fails, because it cannot make a reliable comparison.
 The current `--pass-threshold` must equal the recorded threshold; changing it requires a full
 baseline re-recording rather than comparing statuses reduced under different rules.
+
+A case tagged `judge-zero-tolerance` (`ZERO_TOLERANCE_JUDGE_TAG`) holds its `llm_judge`
+assertions to zero tolerance: the share of samples in which no judge verdict failed must stay
+at the case's recorded pass rate, so a case recorded at 5/5 fails the run on the first sample
+whose judge fails, at any sampling depth, even while its case rate stays within the general
+tolerance. The quick-reply positive cases and the unlisted-language case carry it, because one
+reply that states a fact is the defect their "no factual proposition" judge exists to catch. A
+judge error is not a failed verdict and counts only against the case rate. Every other
+assertion, and every other case, keeps the general tolerance; that includes
+`quick-reply-not-ack-pending-clarification`, whose judge grades the composer's wording of
+the re-asked question.
 
 **Because an empty baseline can't gate, the runner fails loudly in run mode until you
 initialize it** — run `pnpm run evals:update-baseline` once against a known-good run first.

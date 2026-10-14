@@ -95,6 +95,12 @@ describe("operator copilot catalog coverage", () => {
       reason: expect.stringContaining("authored through the settings API"),
     });
   });
+  it("keeps the agent's authored mechanics replies outside Ray's write reach until it has a descriptor", () => {
+    expect(internalRuntimeCoverageExclusions.mechanicsRepliesBlock).toMatchObject({
+      disposition: "deferred",
+      reason: expect.stringContaining("written through the settings API"),
+    });
+  });
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
     // legitimate work or forces a permanent -> covered flip. Both have happened. Pin the grounds

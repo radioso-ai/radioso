@@ -5395,6 +5395,15 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** @description What the agent says, word for word, to a greeting, thanks, farewell, or acknowledgement, keyed by language tag (at most 10). Each locale entry holds every mechanic, each with at most 5 lines of 1 to 200 characters. When a turn is one of these mechanics and the agent has a line for it in the turn's language, the reply is an authored line, rotated per conversation. An update replaces the block whole. */
+        AgentMechanicsReplies: {
+            [key: string]: {
+                greeting: string[];
+                thanks: string[];
+                farewell: string[];
+                acknowledgement: string[];
+            };
+        };
         ConversationAgent: components["schemas"]["Agent"] & {
             isDefault: boolean;
             customInstruction: string;
@@ -5429,6 +5438,7 @@ export interface components {
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
             voice: components["schemas"]["AgentVoiceSettings"];
+            mechanicsReplies: components["schemas"]["AgentMechanicsReplies"];
             assistantBootstrapActive: boolean;
             /** @description Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller. */
             publicId: string | null;
@@ -5486,6 +5496,7 @@ export interface components {
             assistantDefaultLocale?: string | null;
             proactiveGreetingEnabled?: boolean;
             voice?: components["schemas"]["AgentVoiceSettings"];
+            mechanicsReplies?: components["schemas"]["AgentMechanicsReplies"];
             publicDescription?: string;
             agentCardEnabled?: boolean;
             publicAgentAccessEnabled?: boolean;
@@ -6566,6 +6577,7 @@ export interface components {
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
+            mechanicsReplies?: components["schemas"]["AgentMechanicsReplies"] & unknown;
             surfaceSettings: {
                 authenticatedChat: {
                     enabled: boolean;
@@ -6831,6 +6843,7 @@ export interface components {
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
+            mechanicsReplies?: components["schemas"]["AgentMechanicsReplies"] & unknown;
             surfaceSettings: {
                 authenticatedChat: {
                     enabled: boolean;

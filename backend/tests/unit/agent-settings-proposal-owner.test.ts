@@ -4,7 +4,7 @@ import { AgentService, defaultAgentVoiceSettings, unpublishedAgentPublicIdentity
 import { reviewedConfirmationRequirement } from "../../src/modules/operatorCopilot/reviewedOperation.js";
 
 const agent = (): AgentRecord => ({
-  ...unpublishedAgentPublicIdentity(), voice: defaultAgentVoiceSettings(), id: "agent-1", workspaceId: "workspace-1", name: "Support", internalName: "support",
+  ...unpublishedAgentPublicIdentity(), voice: defaultAgentVoiceSettings(), mechanicsReplies: {}, id: "agent-1", workspaceId: "workspace-1", name: "Support", internalName: "support",
   greetingInstruction: "Hello", assistantDefaultLocale: null, proactiveGreetingEnabled: false,
   suggestedQuestionsEnabled: true, assistantLinkUtmEnabled: true, citationDisplayEnabled: true,
   contactRequestsEnabled: false, webhookExportsEnabled: false, handoffOnRetrievalMiss: false,

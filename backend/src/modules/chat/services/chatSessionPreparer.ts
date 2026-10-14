@@ -1259,6 +1259,7 @@ export class ChatSessionPreparer {
         assistantDefaultLocale: null,
         proactiveGreetingEnabled: false,
         voice: defaultAgentVoiceSettings(),
+        mechanicsReplies: {},
         chatModelOverride: null,
         surfaceSettings: {
           authenticatedChat: {
@@ -1313,6 +1314,7 @@ export class ChatSessionPreparer {
       assistantDefaultLocale: workspace.assistantDefaultLocale,
       proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
       voice: defaultAgentVoiceSettings(),
+      mechanicsReplies: {},
       chatModelOverride: null,
       surfaceSettings: {
         authenticatedChat: {

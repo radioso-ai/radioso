@@ -1,5 +1,9 @@
 import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
-import type { GroundedAnswerEnvelope, GroundingEnvelopeParseStatus } from "./groundedAnswerEnvelope.js";
+import type {
+  GroundedAnswerEnvelope,
+  GroundingEnvelopeOutcome,
+  GroundingEnvelopeParseStatus,
+} from "./groundedAnswerEnvelope.js";
 import type { GroundingVerdict } from "../../../shared/domain/groundingDiagnostic.js";
 
 /**
@@ -22,7 +26,14 @@ export interface GroundingSummary {
   declineReason?: TurnDeclineReason;
 }
 
-export interface ParsedInlineAssertions {
+/** A decline outcome a grounded answer can commit in its head. */
+export type CommittedDeclineOutcome = Exclude<GroundingEnvelopeOutcome, "answer">;
+
+/** Why the turn declined, read off the decline outcome the grounded answer committed. */
+export const declineReasonForCommittedOutcome = (outcome: CommittedDeclineOutcome): TurnDeclineReason =>
+  outcome === "out_of_scope" ? "out_of_scope" : "content_gap";
+
+interface ParsedInlineAssertions {
   groups: number[][];
   invalidSourceCount: number;
 }
@@ -156,7 +167,7 @@ export const computeGroundingSummary = (input: {
       && input.envelope.suggestions.length === 0
     ) {
       verdict = "no_support";
-      declineReason = input.envelope.outcome === "out_of_scope" ? "out_of_scope" : "content_gap";
+      declineReason = declineReasonForCommittedOutcome(input.envelope.outcome);
     } else if (
       input.envelope.outcome === "answer"
       && claimCount > 0

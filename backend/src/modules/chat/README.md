@@ -199,7 +199,24 @@ imports from `services/`.
   identity instead of borrowing a retrieval outcome. Every `no_support`
   presentation must supply a typed decline reason, either directly on the verdict
   or through its grounding summary; `ChatAnswerPresenter` rejects the call when
-  neither is present. `chatService`'s
+  neither is present. A grounded envelope whose valid v2 head commits `no_support`
+  or `out_of_scope` but leaves `answer` empty or whitespace-only is answered with the
+  focused decline that commitment promised (usage attempt `blank_decline` /
+  `stream_blank_decline`, counted as
+  `chat_grounding_assertion_outcomes_total{reason="blank_decline"}`); on the
+  page-context paths the no-page decline words it (usage attempt `grounded_miss` /
+  `stream_grounded_miss`, counted the same way). Either decline keeps the reason the
+  head committed (`out_of_scope` stays out of scope; `no_support` is a content gap):
+  the grounded-miss composer only words it, unless it cannot generate at all
+  (`generation_unavailable`). The streamed paths hold leading
+  whitespace until text follows it, so a blank decline streams nothing ahead of the
+  composed one. The head is valid when its three fields are
+  (`headOfCompletedEnvelope`), whatever became of `claims` or `suggestions` after
+  it, and the non-streamed coverage report reads it the same way. A blank
+  commitment relies on those fields preceding `answer`, as the prompt instructs:
+  the streamed coverage report reads the head only from fields that come before
+  it. An empty `answer` commitment, or a decline outcome on a head that did not
+  parse, still fails the turn with `BlankChatAnswerError`. `chatService`'s
   retrieval-miss handoff and the Slack gap escalation both key off the outcome and
   therefore escalate only content gaps, leaving out-of-scope and unavailable
   declines alone. A valid in-range `[[n]]`
@@ -279,7 +296,10 @@ imports from `services/`.
 - Turn interruption: `services/conversationTurnRegistry.ts` coordinates one
   in-flight turn per conversation. `ChatService` cancels a pre-emission turn,
   waits for its cleanup, and latches immediately before assistant persistence or
-  the first assistant chunk. The default registry is process-local; strict
+  the first assistant chunk. The turn's signal reaches the skill renderer on the
+  whole (non-streamed) path as on the streamed one, so a superseded turn's pending
+  model calls, a composed decline included, are cancelled rather than waited out.
+  The default registry is process-local; strict
   multi-instance behavior requires conversation-affine routing. A superseded turn
   is still accountable: `chatTurnLifecycle.recordSupersession` records a
   `chat.answer` audit event with `eventStatus: "cancelled"` (never `"failure"` —

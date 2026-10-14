@@ -228,6 +228,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
           query: input.query,
           userExpectedLocale: input.userExpectedLocale,
           accountId: input.accountId,
+          signal: input.signal,
           coverageVerdict: input.coverageVerdictWrapper && coverageVerdict
             ? input.coverageVerdictWrapper(coverageVerdict)
             : coverageVerdict,

@@ -517,12 +517,19 @@ that session key starts a new conversation.
   Radioso instances can each start a conversation. The session follows the
   one bound first, and the other turn's exchange stays in a conversation of
   its own. On one instance, a second first turn waits for the first to bind
-  the session and joins its conversation.
+  the session and joins its conversation. One conversation per session is
+  therefore guaranteed within an instance; across instances, only the
+  session's binding is shared.
 - `400` means the body is not a chat-completions request, it has no `user`
   message with text, the utterance is longer than 4,000 characters, or the
   dialect found no session key. Check that the runtime sends the field the
   dialect table names.
 - `404` means the dialect in the path is not one of the dialects above.
+- Whether a turn gets a bridge line and the 10-second limit depends on who owns
+  the conversation when the turn starts, and the voice channel reads that a few
+  milliseconds before the agent does. A hand-off or takeover that lands in
+  between can give that one turn a bridge line before the waiting line, or
+  leave a slow agent answer without a bridge line or a limit.
 - After a turn limit, the conversation stores the agent's full reply while the
   caller heard the fallback line. Read the reply in Activity to see what the
   caller missed.

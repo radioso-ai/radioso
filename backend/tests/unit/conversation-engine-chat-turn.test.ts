@@ -1426,6 +1426,40 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     ]);
   });
 
+  it("hands the turn's cancel signal to a non-streamed render", async () => {
+    const controller = new AbortController();
+    const renderSignals: Array<AbortSignal | undefined> = [];
+    const retrievalSkill: TurnSkill = {
+      definition: { name: RETRIEVAL_TURN_SKILL, outcomeKinds: [RETRIEVAL_OUTCOME_KIND] },
+      selects: () => true,
+      dispatch: (s) => buildRetrievalTurnOutcome(s),
+      renderer: {
+        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
+        render: async (_outcome, ctx) => {
+          renderSignals.push(ctx.signal);
+          return {
+            answer: "rendered",
+            skillName: RETRIEVAL_TURN_SKILL,
+            skillOutcome: "completed",
+            skillStatus: "completed",
+          };
+        },
+      },
+    };
+
+    await runPreparedChatTurnWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: session(),
+      chatAnswerPresenter,
+      turnSkillSelector: new ChatTurnSkillSelector([retrievalSkill], new DefaultTurnSelectionStrategy()),
+      turnSkills: [retrievalSkill],
+      query: "Where is my order?",
+      signal: controller.signal,
+    });
+
+    expect(renderSignals).toEqual([controller.signal]);
+  });
+
   // F1: `buildDirectiveTurnWiring`'s matcher adapter (`conversationProcessTurnInput.ts`)
   // overwrites `session.directiveSteering` as a side effect on every `match()` call. The
   // engine calls the matcher twice per retrieval turn with a coverage directive present

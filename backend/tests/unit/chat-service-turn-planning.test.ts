@@ -32,6 +32,9 @@ import {
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
+import type { ChatGateway } from "../../src/modules/chat/contracts/chatGateway.js";
+import { SKILL_TURN_OUTCOME } from "../../src/modules/chat/services/assistantTurnOutcomeTypes.js";
+import { HANDOFF_NOTIFY_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import {
   createAuditService,
@@ -370,6 +373,8 @@ const buildService = (input: {
     clarifier: NonNullable<ChatServiceOptions["clarifier"]>;
     clarificationStore: NonNullable<ChatServiceOptions["clarificationStore"]>;
   };
+  fallbackReplyComposer?: FallbackReplyComposer;
+  assistantTurnPersistence?: ChatServiceOptions["assistantTurnPersistence"];
 }): ChatService =>
   new ChatService({
     conversationRepository: new InMemoryConversationRepository(),
@@ -379,7 +384,7 @@ const buildService = (input: {
     auditService: createAuditService(),
     turnRuntime: buildChatTurnRuntime({
       chatGateway: input.chatGateway,
-      fallbackReplyComposer,
+      fallbackReplyComposer: input.fallbackReplyComposer ?? fallbackReplyComposer,
       skillOutcomeCapabilities: { supportsGroundedAnswer: () => true },
     }),
     turnRouter: input.staged.turnRouter,
@@ -403,6 +408,7 @@ const buildService = (input: {
       : undefined,
     turnPlanInterpretationContextSettings: input.turnPlanInterpretationContextSettings,
     contextVariableRepository: input.contextVariableRepository,
+    assistantTurnPersistence: input.assistantTurnPersistence,
     ...(input.planner
       ? {
           turnPlanCoordinator: new TurnPlanCoordinator(new TurnPlanService(input.planner)),
@@ -1460,6 +1466,114 @@ describe("chat service fused turn planning", () => {
 
     expect(response.answer).toContain("Hi there!");
     expect(receivedPreviewRoutineIds).toEqual([draftRoutineId]);
+  });
+});
+
+/**
+ * A page-context answer whose envelope commits a decline but writes no text is worded by
+ * the grounded-miss composer; the reason stays the one the page envelope committed, so
+ * only a content gap hands the visitor to a person (#1499 review round 3).
+ */
+describe("a page-context decline committed without text", () => {
+  const blankPageDeclineGateway = (outcome: "no_support" | "out_of_scope", attempts: string[]): ChatGateway => {
+    const raw = JSON.stringify({
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "the plan prices",
+      outcome,
+      answer: "",
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    return {
+      async answer(input) {
+        attempts.push(input.usageContext.attemptKey);
+        return raw;
+      },
+      async *streamAnswer(input) {
+        attempts.push(input.usageContext.attemptKey);
+        yield raw;
+      },
+    };
+  };
+
+  const capturingAssistantTurnPersistence = () => ({
+    completeAssistantTurn: vi.fn(async (input) => ({ message: {
+      id: input.assistantMessage.id!,
+      conversationId: input.assistantMessage.conversationId,
+      workspaceId: input.assistantMessage.workspaceId,
+      role: "assistant" as const,
+      content: input.assistantMessage.content,
+      metadata: input.assistantMessage.metadata,
+      skillName: input.assistantMessage.skillName,
+      skillOutcome: input.assistantMessage.skillOutcome,
+      skillStatus: input.assistantMessage.skillStatus,
+      createdAt: new Date(),
+    }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
+  } satisfies NonNullable<ChatServiceOptions["assistantTurnPersistence"]>);
+
+  it.each([
+    {
+      committed: "out_of_scope",
+      composedReason: "content_gap",
+      skillOutcome: SKILL_TURN_OUTCOME.RETRIEVAL_OUT_OF_SCOPE.outcome,
+      handsOff: false,
+    },
+    {
+      committed: "no_support",
+      composedReason: "out_of_scope",
+      skillOutcome: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome,
+      handsOff: true,
+    },
+  ] as const)("keeps a committed $committed when the decline model calls it $composedReason", async (testCase) => {
+    for (const stream of [false, true]) {
+      const attempts: string[] = [];
+      const assistantTurnPersistence = capturingAssistantTurnPersistence();
+      const service = buildService({
+        planner: plannerFactory({ completions: [planJson({
+          route: "retrieval",
+          pageRead: { required: true, operation: "lookup", resolvedRequest: "the plan prices" },
+        })] }),
+        pipeline: retrievalPipeline([]),
+        chatGateway: blankPageDeclineGateway(testCase.committed, attempts),
+        staged: countingStagedPorts(),
+        agentService: { resolve: async () => ({ ...baseAgentRecord(), handoffOnRetrievalMiss: true }) },
+        fallbackReplyComposer: {
+          async composeNoContext() {
+            return { text: "Prices are not on this page.", declineReason: testCase.composedReason };
+          },
+        },
+        assistantTurnPersistence,
+      });
+      const request = {
+        workspaceId: "workspace-1",
+        query: "How much does the Pro plan cost?",
+        stream,
+        pageContext: { pageUrl: "https://example.com/pricing", content: "Plans and features, without prices." },
+      };
+
+      if (stream) {
+        for await (const _event of service.streamAnswer(request)) {
+          // Drain the public stream to its lifecycle boundary.
+        }
+      } else {
+        await service.answer(request);
+      }
+
+      // The answer came from the visitor's page: nothing was retrieved, the page was read.
+      expect(attempts).toEqual([stream ? "stream_page_context" : "page_context"]);
+      const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+      expect(persisted.assistantMessage.content).toBe("Prices are not on this page.");
+      expect(persisted.assistantMessage.skillOutcome).toBe(testCase.skillOutcome);
+      if (testCase.handsOff) {
+        expect(persisted.ownershipHandoff).toEqual({ reason: "retrieval_miss" });
+        expect(persisted.actions).toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
+      } else {
+        expect(persisted.ownershipHandoff).toBeNull();
+        expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
+      }
+    }
   });
 });
 

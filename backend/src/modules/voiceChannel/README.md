@@ -105,7 +105,11 @@ helpers and the shared chat message limit from `app/http`
   (one ownership read, beside the routine state read) the policy runs with
   `bridge: null` and `turnLimitMs: null`, so chat's waiting message is neither
   preceded by a bridge line nor talked over by the fallback line, and neither
-  is counted. The turn service turns chat `status` events into phase markers
+  is counted. That ownership read is a snapshot: chat makes its own,
+  authoritative read a few milliseconds later, and a hand-off or takeover that
+  lands between the two gives that one turn the other policy (a bridge before
+  the waiting message, or no bridge and no limit on an agent answer). The
+  turn service turns chat `status` events into phase markers
   (`interpreting`, `searching`, `composing`) that only the policy reads; adapters never see them, and with
   voice off they are dropped. `interpreting` is where every turn starts, so
   it leaves the 2.5 s fallback armed. Everything stops at the first speech or
@@ -185,7 +189,9 @@ helpers and the shared chat message limit from `app/http`
   first turn waits until the first binds the session, then joins its
   conversation. Across instances the race remains: both turns start a
   conversation, `bind` keeps the session on the first, and the losing turn's
-  exchange stays in an orphaned conversation (logged as a warn).
+  exchange stays in an orphaned conversation (logged as a warn). This stays an
+  in-process guarantee until a database-level session claim lands with
+  Phase 0.
 - **Operator takeover reaches no one.** `customerReplyDelivery.ts` has no
   `voice` deliverer, so an operator's Inbox reply never reaches the caller; the
   Inbox offers no Send on a voice conversation

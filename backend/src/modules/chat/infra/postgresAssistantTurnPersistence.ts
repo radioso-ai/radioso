@@ -4,7 +4,7 @@ import { sql } from "kysely";
 import type { RoutineState } from "@radioso/conversation-contract";
 
 import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineStateRepository.js";
-import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import { MessageRepository, type MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { ConversationActivityRecorder } from "../../conversationActivity/contracts/index.js";
@@ -389,6 +389,25 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
 
     await this.requestActionDrain(input.actions);
     return result;
+  }
+
+  async discardReplacedUserMessage(input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+    auditEvent: CompleteAssistantTurnInput["auditEvent"];
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const deleted = await new MessageRepository(trx).deleteUserMessage({
+        workspaceId: input.workspaceId,
+        conversationId: input.conversationId,
+        messageId: input.messageId,
+      });
+      if (deleted) {
+        await insertAuditEvent(trx, input.auditEvent);
+      }
+      return deleted;
+    });
   }
 
   /**

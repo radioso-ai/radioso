@@ -35,6 +35,7 @@ import {
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 import { sendChatSse } from "../../src/app/http/presenters/chatPresenter.js";
 import type { AssistantTurnPersistencePort } from "../../src/modules/chat/services/chatTurnLifecycle.js";
+import { InMemoryConversationTurnRegistry } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
@@ -140,6 +141,8 @@ const chatService = async (input: {
   failAssistantMessage?: Error;
   /** The transactional persistence production wires; absent, the turn runs the lifecycle's fallback. */
   persistence?: (messageRepository: InMemoryMessageRepository) => AssistantTurnPersistencePort;
+  /** Observes the turn registry's cancellations. */
+  turnCancelled?: (cancellation: { conversationId: string; reason: string; stage: string }) => void;
 }) => {
   // The built-in contact routine runs only for an agent that takes contact requests somewhere.
   const agent = await new InMemoryAgentRepository().create("workspace-1", {
@@ -205,6 +208,9 @@ const chatService = async (input: {
     routineProvider: input.routineProvider,
     actionOutbox: { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) },
     assistantTurnPersistence: input.persistence?.(messageRepository),
+    conversationTurnRegistry: new InMemoryConversationTurnRegistry(
+      input.turnCancelled ? { turnCancelled: input.turnCancelled } : undefined,
+    ),
     logger,
   });
   /** An existing conversation with this agent, for turns that must share one. */
@@ -252,22 +258,27 @@ const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 5));
 
 /**
  * The production persistence port's shape over the in-memory stores: each turn's writes form one
- * unit that settles once its hold resolves, with the commit fence as its last step, so a fence that
- * throws leaves nothing of the turn stored. `holds[n]` holds the n-th turn's commit.
+ * unit, with the commit fence as its last step before the commit, so a fence that throws leaves
+ * nothing of the turn stored. `holds[n]` holds the n-th turn before its fence (its writes still
+ * running); `committing[n]` holds it after the fence passed (its COMMIT in flight).
  */
-const transactionalPersistence = (holds: Array<Promise<void>>) => {
+const transactionalPersistence = (holds: Array<Promise<void>>, committing: Array<Promise<void>> = []) => {
+  let started = 0;
+  let fenced = 0;
   const port = (messageRepository: InMemoryMessageRepository): AssistantTurnPersistencePort => ({
     completeAssistantTurn: vi.fn(async (turn: Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0]) => {
-      await holds[started++];
+      const call = started++;
+      await holds[call];
       turn.commitFence?.();
+      fenced += 1;
+      await committing[call];
       return {
         message: await messageRepository.create(turn.assistantMessage),
         committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false },
       };
     }),
   });
-  let started = 0;
-  return { port, started: () => started };
+  return { port, started: () => started, fenced: () => fenced };
 };
 
 /** A reply the routine renders whole, so nothing of it shows before the turn is stored. */
@@ -1246,6 +1257,43 @@ describe("ChatService streams a routine reply that reports no completed action",
       expect(await storedMessages(harness)).toEqual(["user: contact me", "user: a@b.c", "assistant: Thanks."]);
       expect(cancelledAudits(harness)[0]?.metadata).not.toHaveProperty("userMessageDiscarded");
       expect(harness.reservation.commit).toHaveBeenCalledTimes(1);
+    });
+
+    it("lets a turn whose commit is in flight stand, and answers the newer input after it", async () => {
+      const commitInFlight = deferred();
+      const persistence = transactionalPersistence([], [commitInFlight.promise]);
+      const turnCancelled = vi.fn();
+      const { routineProvider } = claimingRoutine([
+        { reply: wholeReply("First reply.") },
+        { reply: wholeReply("Second reply.") },
+      ]);
+      const first: Observed = { order: [], events: [] };
+      const second: Observed = { order: [], events: [] };
+      const harness = await chatService({ routineProvider, chatGateway: unusedGateway, order: [], persistence: persistence.port, turnCancelled });
+      const conversationId = harness.existingConversationId;
+
+      const firstTurn = drainTurn(harness.service.streamAnswer(request("contact me", { conversationId, ...latest })), first);
+      await vi.waitFor(() => expect(persistence.fenced()).toBe(1));
+      const secondTurn = drainTurn(harness.service.streamAnswer(request("contact me please", { conversationId, ...latest })), second);
+      await tick();
+
+      // The first turn sealed its commit, so the newer one waits for it instead of cancelling it.
+      expect(turnCancelled).not.toHaveBeenCalled();
+      expect(second.events).toEqual([]);
+      commitInFlight.resolve();
+      expect(await firstTurn).toBeUndefined();
+      expect(await secondTurn).toBeUndefined();
+
+      expect(first.events.at(-1)).toMatchObject({ type: "done", answer: "First reply." });
+      expect(second.events.at(-1)).toMatchObject({ type: "done", answer: "Second reply." });
+      expect(await storedMessages(harness)).toEqual([
+        "user: contact me",
+        "assistant: First reply.",
+        "user: contact me please",
+        "assistant: Second reply.",
+      ]);
+      expect(cancelledAudits(harness)).toEqual([]);
+      expect(harness.reservation.commit).toHaveBeenCalledTimes(2);
     });
 
     it("lets a default-mode turn that is being stored finish before the newer turn runs", async () => {

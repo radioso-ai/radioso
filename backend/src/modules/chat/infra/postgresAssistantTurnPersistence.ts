@@ -365,7 +365,8 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       if (input.additionalAuditEvent) {
         await insertAuditEvent(db, input.additionalAuditEvent);
       }
-      // Last, inside the transaction: a turn the fence refuses rolls back whole.
+      // Last, inside the transaction: a turn the fence refuses rolls back whole, and one it admits
+      // stays latched against a newer turn while COMMIT runs.
       input.commitFence?.();
 
       return {

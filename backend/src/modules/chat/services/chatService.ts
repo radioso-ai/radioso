@@ -630,18 +630,19 @@ export class ChatService {
   }
 
   /**
-   * For a turn a newer input may cut off even mid-reply (`latest_input_wins`): the check that
-   * gives a newer input and this turn's stored reply one winner. Called once right before the
-   * turn is stored and again as the storing transaction's last step, it stores none of a turn
-   * cancelled meanwhile. Turns in the other modes keep a reply once it started, so they have none.
+   * For a turn a newer input may cut off even mid-reply (`latest_input_wins`): what gives a newer
+   * input and this turn's stored reply one winner. Checks the lease right before the turn is
+   * stored, and returns the fence the storing transaction runs as its last step: it latches the
+   * lease for the commit (`beginCommit`), throwing when a newer input won first, so that turn
+   * stores nothing; once latched, a newer input waits for the stored reply instead of cancelling
+   * it. Turns in the other modes keep a reply once it started, so they have none.
    */
   private latestInputCommitFence(coordination: TurnCoordinationState): (() => void) | undefined {
     if (!coordination.leaseOptions?.supersedeAfterEmission) {
       return undefined;
     }
-    const fence = (): void => coordination.lease?.throwIfCancelled();
-    fence();
-    return fence;
+    coordination.lease?.throwIfCancelled();
+    return () => coordination.lease?.beginCommit();
   }
 
   private turnAssemblyCoordination(

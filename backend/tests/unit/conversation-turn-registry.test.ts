@@ -141,6 +141,40 @@ describe("InMemoryConversationTurnRegistry", () => {
       expect(first.signal.aborted).toBe(false);
     });
 
+    it("lets a speech-like turn that began committing finish, holding the newer one until it completes", async () => {
+      const cancelled = vi.fn();
+      const registry = new InMemoryConversationTurnRegistry({ turnCancelled: cancelled });
+      const first = registry.start("conversation-1", speechLike);
+      first.beginEmission();
+      first.beginCommit();
+
+      const second = registry.start("conversation-1", speechLike);
+
+      expect(first.signal.aborted).toBe(false);
+      expect(() => first.throwIfCancelled()).not.toThrow();
+      expect(cancelled).not.toHaveBeenCalled();
+      let ready = false;
+      void second.waitForPredecessor().then(() => {
+        ready = true;
+      });
+      await Promise.resolve();
+      expect(ready).toBe(false);
+      first.complete();
+      await second.waitForPredecessor();
+      expect(ready).toBe(true);
+    });
+
+    it("atomically refuses to begin committing a turn a newer one already superseded", () => {
+      const registry = new InMemoryConversationTurnRegistry();
+      const first = registry.start("conversation-1", speechLike);
+      first.beginEmission();
+      registry.start("conversation-1", speechLike);
+
+      expect(() => first.beginCommit()).toThrowError(
+        expect.objectContaining({ name: "ChatTurnSupersededError", afterEmission: true, replacedByNewerInput: true }),
+      );
+    });
+
     it("lets an emitting speech-like turn finish when the newer turn is a default chat turn", () => {
       const registry = new InMemoryConversationTurnRegistry();
       const first = registry.start("conversation-1", speechLike);

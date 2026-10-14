@@ -311,12 +311,14 @@ imports from `services/`.
   a user typing a follow-up is not an assistant error) keyed to the turn's
   `userMessageId`, since no assistant message exists yet for it. A
   `latest_input_wins` turn (the voice channel's) can be cancelled even after it
-  began emitting, so it carries a commit fence (`latestInputCommitFence`) that
-  runs right before the turn is stored and again as the storing transaction's
-  last step (`AssistantTurnPersistencePort.commitFence`): a turn cancelled by
-  then stores no reply or effects, commits no usage and emits no `done`, and
-  one whose reply never reached the client counts as superseded before
-  emission. Past the fence the stored turn has won and finishes as usual. The
+  began emitting, so it carries a commit fence (`latestInputCommitFence`): a
+  lease check right before the turn is stored, and, as the storing
+  transaction's last step (`AssistantTurnPersistencePort.commitFence`), the
+  lease's commit latch (`ConversationTurnLease.beginCommit`). A turn cancelled
+  before the latch stores no reply or effects, commits no usage and emits no
+  `done`, and one whose reply never reached the client counts as superseded
+  before emission. Once latched, no newer turn cancels it while its COMMIT
+  runs: a newer input waits for it, and it finishes as usual. The
   waiting message of a human-owned turn is generated on the lease's signal, so
   a newer turn cancels a stalled generation instead of waiting behind it.
 - Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,

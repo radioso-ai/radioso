@@ -10,8 +10,10 @@ import {
   CONTACT_MESSAGE_MAX_LENGTH,
   CONTACT_NAME_MAX_LENGTH,
   REPLY_TO_MAX_LENGTH,
+  planNotificationEmail,
   validVisitorReplyTo,
   type NotificationDeliveryAdmissionPort,
+  type NotificationRecipientPolicyPort,
 } from "../../../operatorNotifications/public.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
@@ -32,6 +34,7 @@ export interface ContactNotificationMailer {
     subject: string;
     text: string;
     idempotencyKey?: string | null;
+    listUnsubscribeUrl?: string | null;
     // The result is deliberately unconstrained: this handler needs the send to happen and
     // does not read what the transport reports back.
   }): Promise<unknown>;
@@ -253,11 +256,12 @@ export class ContactSendActionHandler implements ActionHandler {
   constructor(
     private readonly mailer: ContactNotificationMailer,
     private readonly recipients: ContactRecipientResolver,
-    private readonly logger?: { warn(payload: Record<string, unknown>, message: string): void },
-    private readonly webhookClient?: ContactWebhookHttpClient,
+    private readonly logger: { warn(payload: Record<string, unknown>, message: string): void } | undefined,
+    private readonly webhookClient: ContactWebhookHttpClient | undefined,
     // Terminal (retry-budget-exhausted) failures are alertable — see recordFailureOutcome.
-    private readonly errorReporter?: ErrorReporter,
-    private readonly admission?: NotificationDeliveryAdmissionPort,
+    private readonly errorReporter: ErrorReporter | undefined,
+    private readonly admission: NotificationDeliveryAdmissionPort | undefined,
+    private readonly recipientPolicy: Pick<NotificationRecipientPolicyPort, "prepareDelivery">,
   ) {}
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
@@ -269,19 +273,11 @@ export class ContactSendActionHandler implements ActionHandler {
       );
       return;
     }
-
-    const admission = await this.admission?.admit({
-      requestId: input.context.requestId,
-      workspaceId: input.context.workspaceId,
-      accountId: input.context.accountId,
-      conversationId: input.context.conversationId,
-      recipientEmails: target.emails,
-      requestedEmailCount: target.emails.length,
-    });
-    if (admission && !admission.dispatchAllowed) {
-      throw new ActionDispatchSkippedError(admission.reason ?? "conversation_dispatch_cap");
+    if (!input.context.workspaceId) {
+      throw new ActionDispatchSkippedError("contact_destination_not_configured");
     }
 
+    const baseIdempotencyKey = input.context.idempotencyKey ?? input.context.requestId;
     const email = boundedVisitorText(input.payload.email, REPLY_TO_MAX_LENGTH);
     const replyTo = validVisitorReplyTo(input.payload.email);
     const message = boundedVisitorText(input.payload.message, CONTACT_MESSAGE_MAX_LENGTH) ?? "";
@@ -293,17 +289,37 @@ export class ContactSendActionHandler implements ActionHandler {
       "",
       message,
     ].filter((line): line is string => line !== null);
+    const plan = await planNotificationEmail({
+      recipientPolicy: this.recipientPolicy,
+      admission: this.admission,
+      webhookConfigured: target.webhook !== null,
+      onPreparationFailure: (error) => this.logger?.warn(
+        { workspaceId: input.context.workspaceId, errorName: error instanceof Error ? error.name : "unknown" },
+        "contact.send: recipient state unavailable; email skipped, webhook still posted",
+      ),
+      request: {
+        requestId: input.context.requestId,
+        workspaceId: input.context.workspaceId,
+        accountId: input.context.accountId,
+        conversationId: input.context.conversationId,
+        emails: target.emails,
+        idempotencyKey: baseIdempotencyKey,
+      },
+    });
+    if (!plan.dispatchAllowed) {
+      throw new ActionDispatchSkippedError(plan.reason);
+    }
 
-    const baseIdempotencyKey = input.context.idempotencyKey ?? input.context.requestId;
     const [emailResults] = await Promise.all([
-      Promise.all((admission?.emailAllowed === false ? [] : target.emails).map((to) =>
+      Promise.all(plan.recipients.map((recipient) =>
         this.mailer.send({
-          to,
+          to: recipient.email,
           kind: "contact_notification",
           replyTo,
           subject: "New contact request",
           text: lines.join("\n"),
-          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(to)}`,
+          ...(recipient.listUnsubscribeUrl ? { listUnsubscribeUrl: recipient.listUnsubscribeUrl } : {}),
+          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
         })),
       ),
       target.webhook ? this.postWebhook({
@@ -320,9 +336,7 @@ export class ContactSendActionHandler implements ActionHandler {
       }) : Promise.resolve(),
     ]);
     if (!target.webhook) {
-      const skipReason = admission?.emailAllowed === false
-        ? admission.reason
-        : mailDeliverySkipReason(emailResults);
+      const skipReason = plan.emailSkipReason ?? mailDeliverySkipReason(emailResults);
       if (skipReason) {
         throw new ActionDispatchSkippedError(skipReason);
       }

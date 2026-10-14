@@ -57,6 +57,7 @@ import { EmailSkillDefinitionService } from "../../../modules/customerEmail/publ
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/contracts/index.js";
 import { MCP_OAUTH_CALLBACK_PATH } from "../../../modules/externalSkills/domain.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
+import type { RecipientConfirmationRequester } from "../../../shared/domain/recipientConfirmationRequests.js";
 
 
 
@@ -179,6 +180,7 @@ export const buildIntegrationServices = (input: {
   env: Env;
   infrastructure: ReturnType<typeof buildInfrastructure>;
   logger: AppLogger;
+  recipientConfirmations: RecipientConfirmationRequester;
   repositories: ReturnType<typeof buildRepositories>;
 }) => {
   const slackInstallationService = new SlackInstallationService({
@@ -310,6 +312,7 @@ export const buildIntegrationServices = (input: {
     capabilities: skillCapabilityRegistry,
     logger: input.logger,
     audit: input.infrastructure.auditService,
+    recipientConfirmations: input.recipientConfirmations,
   });
   return {
     agentSkillRepository,

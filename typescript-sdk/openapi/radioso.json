@@ -46477,6 +46477,112 @@
         }
       }
     },
+    "/api/v1/agents/{agentId}/notification-recipient-confirmations/resend": {
+      "post": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "Resend recipient confirmation",
+        "description": "Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap. An address is asked at most once a day, and never after it stops notifications.",
+        "operationId": "resendNotificationRecipientConfirmation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 320,
+                    "format": "email"
+                  }
+                },
+                "required": [
+                  "email"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Confirmation send admitted or skipped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sent": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "sent"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Recipient is not configured for the agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner or admin permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agents/{agentId}/skills": {
       "get": {
         "tags": [
@@ -46916,6 +47022,115 @@
         }
       }
     },
+    "/api/v1/agents/{agentId}/skills/{skillId}/notification-recipients": {
+      "get": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "Show a notify skill's recipient states",
+        "description": "Each recipient address configured on one notify skill, whatever its invocation mode, with its confirmation or suppression state. A skill of another capability returns no recipients. Recipient emails are personal data, so this route accepts workspace sessions only.",
+        "operationId": "listNotifySkillRecipients",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notify skill recipients",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "recipients": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "email": {
+                            "type": "string",
+                            "format": "email"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "confirmed",
+                              "grandfathered",
+                              "waiting_for_confirmation",
+                              "revoked",
+                              "suppressed",
+                              "confirmation_not_required"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "email",
+                          "state"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "recipients"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agents/{agentId}/operator-notice-destinations": {
       "get": {
         "tags": [
@@ -46976,6 +47191,34 @@
                             "type": "string"
                           }
                         },
+                        "recipients": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "email": {
+                                "type": "string",
+                                "format": "email"
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "confirmed",
+                                  "grandfathered",
+                                  "waiting_for_confirmation",
+                                  "revoked",
+                                  "suppressed",
+                                  "confirmation_not_required"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "email",
+                              "state"
+                            ]
+                          },
+                          "description": "Recipient addresses with their effective confirmation or suppression state."
+                        },
                         "recipientsFromWorkspaceOwner": {
                           "type": "boolean",
                           "description": "The emails are the workspace owner's because the route lists no recipients of its own."
@@ -46989,6 +47232,7 @@
                         "skillName",
                         "via",
                         "recipientEmails",
+                        "recipients",
                         "recipientsFromWorkspaceOwner",
                         "webhookConfigured"
                       ]
@@ -47023,6 +47267,34 @@
                               "type": "string"
                             }
                           },
+                          "recipients": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "email": {
+                                  "type": "string",
+                                  "format": "email"
+                                },
+                                "state": {
+                                  "type": "string",
+                                  "enum": [
+                                    "confirmed",
+                                    "grandfathered",
+                                    "waiting_for_confirmation",
+                                    "revoked",
+                                    "suppressed",
+                                    "confirmation_not_required"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "email",
+                                "state"
+                              ]
+                            },
+                            "description": "Recipient addresses with their effective confirmation or suppression state."
+                          },
                           "recipientsFromWorkspaceOwner": {
                             "type": "boolean",
                             "description": "The emails are the workspace owner's because the route lists no recipients of its own."
@@ -47036,15 +47308,42 @@
                           "skillName",
                           "via",
                           "recipientEmails",
+                          "recipients",
                           "recipientsFromWorkspaceOwner",
                           "webhookConfigured"
                         ]
                       }
+                    },
+                    "dailyEmailAllowance": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "limit": {
+                          "type": "integer",
+                          "description": "Recipient emails the workspace may send per UTC day across contact and notice delivery."
+                        },
+                        "sentToday": {
+                          "type": "integer",
+                          "description": "Recipient emails sent so far today."
+                        },
+                        "reachedToday": {
+                          "type": "boolean",
+                          "description": "The allowance is used up or has already stopped a send today; further emails wait until tomorrow (UTC), while webhooks still post."
+                        }
+                      },
+                      "required": [
+                        "limit",
+                        "sentToday",
+                        "reachedToday"
+                      ]
                     }
                   },
                   "required": [
                     "default",
-                    "skills"
+                    "skills",
+                    "dailyEmailAllowance"
                   ]
                 }
               }

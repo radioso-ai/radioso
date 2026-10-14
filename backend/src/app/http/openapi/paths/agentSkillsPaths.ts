@@ -96,11 +96,25 @@ const CapabilitySchema = z.object({
   unavailableReason: z.literal("no_connection").nullable(),
 });
 
+const NotificationRecipientSchema = z.object({
+  email: z.string().email(),
+  state: z.enum([
+    "confirmed",
+    "grandfathered",
+    "waiting_for_confirmation",
+    "revoked",
+    "suppressed",
+    "confirmation_not_required",
+  ]),
+});
+
 const OperatorNoticeDestinationSchema = z.object({
   skillName: z.string().nullable().describe("The notify skill that sends the notice; null for the default destination."),
   via: z.enum(contactDeliveryRoutes)
     .describe("Which rule picked the recipients."),
   recipientEmails: z.array(z.string()),
+  recipients: z.array(NotificationRecipientSchema)
+    .describe("Recipient addresses with their effective confirmation or suppression state."),
   recipientsFromWorkspaceOwner: z.boolean()
     .describe("The emails are the workspace owner's because the route lists no recipients of its own."),
   webhookConfigured: z.boolean().describe("A webhook also receives the notice. Its URL is never returned."),
@@ -109,6 +123,11 @@ const OperatorNoticeDestinationSchema = z.object({
 const OperatorNoticeDestinationsResponseSchema = z.object({
   default: OperatorNoticeDestinationSchema,
   skills: z.array(OperatorNoticeDestinationSchema),
+  dailyEmailAllowance: z.object({
+    limit: z.number().int().describe("Recipient emails the workspace may send per UTC day across contact and notice delivery."),
+    sentToday: z.number().int().describe("Recipient emails sent so far today."),
+    reachedToday: z.boolean().describe("The allowance is used up or has already stopped a send today; further emails wait until tomorrow (UTC), while webhooks still post."),
+  }).nullable(),
 });
 
 export const registerAgentSkillsPaths = (
@@ -144,6 +163,27 @@ export const registerAgentSkillsPaths = (
   });
 
   registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/notification-recipient-confirmations/resend",
+    tags: ["Agent Skills"],
+    summary: "Resend recipient confirmation",
+    description: "Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap. An address is asked at most once a day, and never after it stops notifications.",
+    operationId: "resendNotificationRecipientConfirmation",
+    security: sec,
+    request: {
+      params: AgentParams,
+      body: { required: true, content: json(z.object({ email: z.string().email().max(320) })) },
+    },
+    responses: {
+      202: { description: "Confirmation send admitted or skipped", content: json(z.object({ sent: z.boolean() })) },
+      400: errorResponse("Recipient is not configured for the agent"),
+      401: errorResponse("Authentication required"),
+      403: errorResponse("Owner or admin permission required"),
+      404: errorResponse("Agent not found"),
+    },
+  });
+
+  registry.registerPath({
     method: "get",
     path: "/api/v1/agents/{agentId}/skills",
     tags: ["Agent Skills"],
@@ -159,6 +199,23 @@ export const registerAgentSkillsPaths = (
       401: errorResponse("Authentication required"),
       403: errorResponse("Agent read permission required"),
       404: errorResponse("Agent not found"),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/skills/{skillId}/notification-recipients",
+    tags: ["Agent Skills"],
+    summary: "Show a notify skill's recipient states",
+    description: "Each recipient address configured on one notify skill, whatever its invocation mode, with its confirmation or suppression state. A skill of another capability returns no recipients. Recipient emails are personal data, so this route accepts workspace sessions only.",
+    operationId: "listNotifySkillRecipients",
+    security: sec,
+    request: { params: AgentParams.extend({ skillId: z.string().uuid() }) },
+    responses: {
+      200: { description: "Notify skill recipients", content: json(z.object({ recipients: z.array(NotificationRecipientSchema) })) },
+      401: errorResponse("Authentication required"),
+      403: errorResponse("Agent read permission required"),
+      404: errorResponse("Agent or skill not found"),
     },
   });
 

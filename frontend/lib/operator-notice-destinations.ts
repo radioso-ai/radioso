@@ -5,21 +5,51 @@ const operatorNoticeRoutes = ['named_skill', 'contact_human', 'contact_human_off
 
 type OperatorNoticeRoute = (typeof operatorNoticeRoutes)[number]
 
+const recipientStates = ['confirmed', 'grandfathered', 'waiting_for_confirmation', 'revoked', 'suppressed', 'confirmation_not_required'] as const
+
+export interface NotificationRecipient {
+  email: string
+  state: (typeof recipientStates)[number]
+}
+
 export interface OperatorNoticeDestination {
   skillName: string | null
   via: OperatorNoticeRoute
   recipientEmails: string[]
+  recipients: NotificationRecipient[]
   recipientsFromWorkspaceOwner: boolean
   webhookConfigured: boolean
+}
+
+interface DailyEmailAllowance {
+  limit: number
+  sentToday: number
+  reachedToday: boolean
 }
 
 export interface OperatorNoticeDestinations {
   default: OperatorNoticeDestination
   skills: OperatorNoticeDestination[]
+  dailyEmailAllowance: DailyEmailAllowance | null
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+const parseRecipientList = (value: unknown): NotificationRecipient[] => {
+  if (!Array.isArray(value) || !value.every((recipient) => isRecord(recipient)
+    && typeof recipient.email === 'string'
+    && recipientStates.includes(recipient.state as NotificationRecipient['state']))) {
+    throw new Error('Recipient states are malformed.')
+  }
+  return value as NotificationRecipient[]
+}
+
+/** GET /agents/{agentId}/skills/{skillId}/notification-recipients. */
+export const parseNotificationRecipients = (payload: unknown): NotificationRecipient[] => {
+  if (!isRecord(payload)) throw new Error('Notification recipients must be an object.')
+  return parseRecipientList(payload.recipients)
+}
 
 const parseDestination = (value: unknown): OperatorNoticeDestination => {
   if (!isRecord(value)) throw new Error('A notice destination must be an object.')
@@ -32,18 +62,49 @@ const parseDestination = (value: unknown): OperatorNoticeDestination => {
   if (typeof recipientsFromWorkspaceOwner !== 'boolean' || typeof webhookConfigured !== 'boolean') {
     throw new Error('A notice destination is missing its flags.')
   }
-  return { skillName, via: via as OperatorNoticeRoute, recipientEmails, recipientsFromWorkspaceOwner, webhookConfigured }
+  const recipients = parseRecipientList(value.recipients)
+  return {
+    skillName,
+    via: via as OperatorNoticeRoute,
+    recipientEmails,
+    recipients,
+    recipientsFromWorkspaceOwner,
+    webhookConfigured,
+  }
+}
+
+const parseDailyEmailAllowance = (value: unknown): DailyEmailAllowance | null => {
+  if (value === null || value === undefined) return null
+  if (!isRecord(value)
+    || typeof value.limit !== 'number'
+    || typeof value.sentToday !== 'number'
+    || typeof value.reachedToday !== 'boolean') {
+    throw new Error('The daily email allowance is malformed.')
+  }
+  return { limit: value.limit, sentToday: value.sentToday, reachedToday: value.reachedToday }
 }
 
 export const parseOperatorNoticeDestinations = (payload: unknown): OperatorNoticeDestinations => {
   if (!isRecord(payload) || !Array.isArray(payload.skills)) throw new Error('Notice destinations must include skills.')
-  return { default: parseDestination(payload.default), skills: payload.skills.map(parseDestination) }
+  return {
+    default: parseDestination(payload.default),
+    skills: payload.skills.map(parseDestination),
+    dailyEmailAllowance: parseDailyEmailAllowance(payload.dailyEmailAllowance),
+  }
 }
 
 // Who receives a notice sent this way, or why nothing is sent.
 const destinationTarget = (destination: OperatorNoticeDestination): { sent: true; to: string } | { sent: false; reason: string } => {
   if (destination.via === 'contact_human_off') return { sent: false, reason: 'contact_human is turned off' }
-  const emails = destination.recipientEmails.join(', ')
+  const stateSuffix: Record<NotificationRecipient['state'], string> = {
+    confirmed: '',
+    grandfathered: ' (confirmation grace period)',
+    waiting_for_confirmation: ' (waiting for confirmation)',
+    revoked: ' (notifications stopped)',
+    suppressed: ' (suppressed)',
+    confirmation_not_required: '',
+  }
+  const emails = destination.recipients.map((recipient) => `${recipient.email}${stateSuffix[recipient.state]}`).join(', ')
   const owner = destination.recipientsFromWorkspaceOwner ? ' (workspace owner)' : ''
   if (emails && destination.webhookConfigured) return { sent: true, to: `${emails}${owner} and a webhook` }
   if (emails) return { sent: true, to: `${emails}${owner}` }
@@ -68,6 +129,13 @@ export const describeNoticeDestination = (
   return fallback.sent
     ? `Unavailable, so it sends to the default: ${fallback.to}`
     : `Unavailable, and the default is not sent: ${fallback.reason}`
+}
+
+/** Shown under the destination once the daily email limit has stopped mail, because nothing else says why it stopped. */
+export const describeDailyEmailAllowance = (destinations: OperatorNoticeDestinations | null): string | null => {
+  const allowance = destinations?.dailyEmailAllowance
+  if (!allowance?.reachedToday) return null
+  return `The daily email limit stopped a notice email today (${allowance.sentToday} of ${allowance.limit} sent). It resets at midnight UTC.`
 }
 
 const DEFAULT_ROUTE_LABELS: Partial<Record<OperatorNoticeRoute, string>> = {

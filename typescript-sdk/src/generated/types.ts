@@ -2674,6 +2674,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/notification-recipient-confirmations/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend recipient confirmation
+         * @description Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap. An address is asked at most once a day, and never after it stops notifications.
+         */
+        post: operations["resendNotificationRecipientConfirmation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/skills": {
         parameters: {
             query?: never;
@@ -2686,6 +2706,26 @@ export interface paths {
         put?: never;
         /** Create an agent skill */
         post: operations["createAgentSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/skills/{skillId}/notification-recipients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a notify skill's recipient states
+         * @description Each recipient address configured on one notify skill, whatever its invocation mode, with its confirmation or suppression state. A skill of another capability returns no recipients. Recipient emails are personal data, so this route accepts workspace sessions only.
+         */
+        get: operations["listNotifySkillRecipients"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -22673,6 +22713,73 @@ export interface operations {
             };
         };
     };
+    resendNotificationRecipientConfirmation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: email */
+                    email: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Confirmation send admitted or skipped */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sent: boolean;
+                    };
+                };
+            };
+            /** @description Recipient is not configured for the agent */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Owner or admin permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listAgentSkills: {
         parameters: {
             query?: never;
@@ -22872,6 +22979,63 @@ export interface operations {
             };
         };
     };
+    listNotifySkillRecipients: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Notify skill recipients */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        recipients: {
+                            /** Format: email */
+                            email: string;
+                            /** @enum {string} */
+                            state: "confirmed" | "grandfathered" | "waiting_for_confirmation" | "revoked" | "suppressed" | "confirmation_not_required";
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listOperatorNoticeDestinations: {
         parameters: {
             query?: never;
@@ -22899,6 +23063,13 @@ export interface operations {
                              */
                             via: "named_skill" | "contact_human" | "contact_human_off" | "agent_setting" | "workspace_owner" | "none";
                             recipientEmails: string[];
+                            /** @description Recipient addresses with their effective confirmation or suppression state. */
+                            recipients: {
+                                /** Format: email */
+                                email: string;
+                                /** @enum {string} */
+                                state: "confirmed" | "grandfathered" | "waiting_for_confirmation" | "revoked" | "suppressed" | "confirmation_not_required";
+                            }[];
                             /** @description The emails are the workspace owner's because the route lists no recipients of its own. */
                             recipientsFromWorkspaceOwner: boolean;
                             /** @description A webhook also receives the notice. Its URL is never returned. */
@@ -22913,11 +23084,26 @@ export interface operations {
                              */
                             via: "named_skill" | "contact_human" | "contact_human_off" | "agent_setting" | "workspace_owner" | "none";
                             recipientEmails: string[];
+                            /** @description Recipient addresses with their effective confirmation or suppression state. */
+                            recipients: {
+                                /** Format: email */
+                                email: string;
+                                /** @enum {string} */
+                                state: "confirmed" | "grandfathered" | "waiting_for_confirmation" | "revoked" | "suppressed" | "confirmation_not_required";
+                            }[];
                             /** @description The emails are the workspace owner's because the route lists no recipients of its own. */
                             recipientsFromWorkspaceOwner: boolean;
                             /** @description A webhook also receives the notice. Its URL is never returned. */
                             webhookConfigured: boolean;
                         }[];
+                        dailyEmailAllowance: {
+                            /** @description Recipient emails the workspace may send per UTC day across contact and notice delivery. */
+                            limit: number;
+                            /** @description Recipient emails sent so far today. */
+                            sentToday: number;
+                            /** @description The allowance is used up or has already stopped a send today; further emails wait until tomorrow (UTC), while webhooks still post. */
+                            reachedToday: boolean;
+                        } | null;
                     };
                 };
             };

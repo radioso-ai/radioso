@@ -369,6 +369,10 @@ export const createTestEnv = (): Env => ({
   OPS_EVENT_WEBHOOK_EVENTS: undefined,
   OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY: "error",
   OPS_EVENT_WEBHOOK_QUEUE_LIMIT: 500,
+  NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED: true,
+  SLACK_INBOUND_EVENT_RETENTION_DAYS: 30,
+  EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS: 30_000,
+  ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: true,
   GOOGLE_CLOUD_PROJECT: "radioso-test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   DB_POOL_MAX: 10,
@@ -1682,6 +1686,30 @@ export const createTestDependencies = (overrides: {
     capabilities: skillCapabilityRegistry,
     logger,
   });
+  const notificationRecipientPolicy = {
+    describe: async (_workspaceId: string, emails: readonly string[]) => emails.map((email) => ({
+      email: email.trim().toLowerCase(),
+      state: "confirmation_not_required" as const,
+    })),
+    prepareDelivery: async (input: { emails: readonly string[] }) => ({
+      eligibleEmails: [...input.emails],
+      eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
+      skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
+    }),
+    resendConfirmation: async () => false,
+    requestConfirmations: async () => undefined,
+    confirm: async () => true,
+    revoke: async () => true,
+    resume: async () => true,
+  };
+  const notificationRecipientSuppressions = {
+    suppress: async (_input: {
+      email: string;
+      reason: "hard_bounce" | "complaint";
+      provider: string;
+      providerEventId: string;
+    }) => undefined,
+  };
   const operatorNoticeDestinations = new OperatorNoticeDestinationsReader({
     skills: agentSkillRepository,
     resolver: new ConfiguredContactDeliveryResolver(
@@ -1690,6 +1718,7 @@ export const createTestDependencies = (overrides: {
       new WorkspaceOwnerContactRecipientResolver(workspaceRepository, accountMembershipRepository),
       agentSkillRepository,
     ),
+    recipientPolicy: notificationRecipientPolicy,
   });
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
@@ -2464,7 +2493,14 @@ export const createTestDependencies = (overrides: {
         return operatorCopilotService.cancelMcpReviewedProposal(input);
       },
     },
+    proposalDetail: {
+      getProposalDetail: async () => { throw notFound("Proposal not found"); },
+    },
     retrievalAuthoring,
+    agentSettings: agentService,
+    ingestionSettings: ingestionSettingsService,
+    directiveAuthor: directiveAuthorService,
+    directives: authoredDirectiveService,
     documents: new DocumentReviewedOperationService(
       documentRepository,
       documentIngestionService,
@@ -2608,6 +2644,8 @@ export const createTestDependencies = (overrides: {
     }),
     auditService,
     mailService: createMailService({ MAIL_DRIVER: "noop" }),
+    noticeMail: { send: async () => ({ dispatched: false }) },
+    accountAdministrators: { list: async () => [] },
     accountAccessService,
     accountInvitationService,
     workspaceSessionService,
@@ -2623,6 +2661,8 @@ export const createTestDependencies = (overrides: {
     skillCapabilityRegistry,
     agentSkillsService,
     operatorNoticeDestinations,
+    notificationRecipientPolicy,
+    notificationRecipientSuppressions,
     emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,

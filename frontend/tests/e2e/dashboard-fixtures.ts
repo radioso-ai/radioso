@@ -1206,8 +1206,9 @@ export const installDashboardApiMocks = async (
   ];
   const routineSkillCatalog = options.routineSkillCatalog ?? [];
   const operatorNoticeDestinations: OperatorNoticeDestinations = options.operatorNoticeDestinations ?? {
-    default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@example.com"], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
+    default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@example.com"], recipients: [{ email: "owner@example.com", state: "confirmed" }], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
     skills: [],
+    dailyEmailAllowance: null,
   };
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
@@ -2590,6 +2591,14 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}/operator-notice-destinations` && request.method() === "GET") {
       await json(route, operatorNoticeDestinations);
+      return;
+    }
+
+    const notifySkillRecipientsMatch = path.match(new RegExp(`^/agents/${defaultAgentId}/skills/([^/]+)/notification-recipients$`));
+    if (notifySkillRecipientsMatch && request.method() === "GET") {
+      const skill = agentSkills.find((item) => item.id === notifySkillRecipientsMatch[1]);
+      const delivery = skill?.config?.delivery as { recipientEmails?: string[] } | undefined;
+      await json(route, { recipients: (delivery?.recipientEmails ?? []).map((email) => ({ email, state: "confirmed" })) });
       return;
     }
 

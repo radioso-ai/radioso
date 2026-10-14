@@ -170,6 +170,12 @@ const emailConnectionRemoval = deferred(
 const emailConnectionHealthProbe = deferred(
   "Deferred: the health check is a probe — no persisted change, real work against the mail server — and it lands with the channel tools rather than ahead of them.",
 );
+const notifySkillRecipientStatesRead = permanent(
+  "Permanent exclusion: the Skills form's per-skill recipient states. Ray reads recipient states for every destination an ending can name through operator_notice_destinations, and reads each notify skill's recipient list through agent_skills.",
+);
+const notificationConfirmationResendIsOperatorInitiated = permanent(
+  "Permanent exclusion: re-sending a recipient confirmation is an owner/admin-initiated external email with a workspace daily cap. Ray reads recipient state through operator_notice_destinations but does not spend that anti-abuse allowance.",
+);
 const emailChannelConfiguration = deferred(
   "Deferred (FR-047): mailboxes, sending domains, the forwarding setup check and inbound retries decide which customer mail reaches which agent and from which domain it is answered, which is customer-visible routing and needs a proposal card. Ray reads the channel through email_channel_configuration and email_channel_events.",
 );
@@ -376,6 +382,8 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ], channelConnectionStatusRead),
   ...coverage(["getWorkspaceSlackManifest"], slackSelfHostManifest),
   ...coverage(["listWorkspaceEmailSkillActivity"], emailSkillActivityRead),
+  ...coverage(["resendNotificationRecipientConfirmation"], notificationConfirmationResendIsOperatorInitiated),
+  ...coverage(["listNotifySkillRecipients"], notifySkillRecipientStatesRead),
   ...coverage(["createWorkspaceEmailConnection", "updateWorkspaceEmailConnection"], emailConnectionConfiguration),
   ...coverage(["deleteWorkspaceEmailConnection"], emailConnectionRemoval),
   ...coverage(["checkWorkspaceEmailConnectionHealth"], emailConnectionHealthProbe),

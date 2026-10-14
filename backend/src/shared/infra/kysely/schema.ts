@@ -1286,6 +1286,36 @@ export interface NotificationDeliveryOutcomes {
   workspace_id: string;
 }
 
+export interface NotificationEmailSuppressions {
+  created_at: Generated<Timestamp>;
+  normalized_email: string;
+  provider: string;
+  provider_event_id: string;
+  reason: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface NotificationRecipientConfirmationDailyUsage {
+  send_count: number;
+  updated_at: Generated<Timestamp>;
+  usage_date: Timestamp;
+  workspace_id: string;
+}
+
+export interface NotificationRecipientConfirmations {
+  confirmation_generation: Generated<number>;
+  confirmation_sent_at: Timestamp | null;
+  confirmed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  grandfathered_until: Timestamp | null;
+  id: Generated<string>;
+  normalized_email: string;
+  revoked_at: Timestamp | null;
+  state: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface OperatorMcpAccessCredentials {
   created_at: Generated<Timestamp>;
   expires_at: Timestamp;
@@ -2087,6 +2117,9 @@ export interface DB {
   message_facets: MessageFacets;
   messages: Messages;
   notification_delivery_outcomes: NotificationDeliveryOutcomes;
+  notification_email_suppressions: NotificationEmailSuppressions;
+  notification_recipient_confirmation_daily_usage: NotificationRecipientConfirmationDailyUsage;
+  notification_recipient_confirmations: NotificationRecipientConfirmations;
   operator_mcp_access_credentials: OperatorMcpAccessCredentials;
   operator_mcp_authorization_transactions: OperatorMcpAuthorizationTransactions;
   operator_mcp_client_metadata_snapshots: OperatorMcpClientMetadataSnapshots;

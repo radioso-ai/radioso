@@ -10,7 +10,7 @@ The voice channel is a Radioso-owned domain with a narrow port. Vendors are adap
 |---|---|---|
 | **Voice channel domain** (`backend/src/modules/voiceChannel/`) | a session is a call or browser voice session tied to one conversation; an utterance is one finished transcript; a reply is speakable text delivered in sentence-sized pieces; a turn can be bridged, time-limited, interrupted, and ends in a typed outcome; the agent's voice settings | any vendor's field names, tool names, SSE or WebSocket framing, audio |
 | **Vendor adapters** (`voiceChannel/adapters/*`) | one wire protocol and its dialects: where the session key travels, how tools are named, how the vendor signals interruption | planning, retrieval, routines, settings semantics, persistence |
-| **Chat service** | nothing new except the `sourceChannel` literal and, for interruption, a cancellation mode on the turn lease | that voice exists |
+| **Chat service** | nothing new except the `sourceChannel` literal and the `latest_input_wins` supersession mode: the turn lease cancels a turn after emission when both turns ask for it, and the lifecycle deletes the user message of a turn a newer input replaced before it emitted | that voice exists |
 
 Dependency direction: `adapter → voice domain port → chat service`. Composition wires adapters to the port. The domain never imports an adapter.
 
@@ -34,16 +34,14 @@ interface VoiceTurnInput {
   utterance: string;              // the final transcript of one caller turn
   locale?: string;                // BCP 47 when the vendor detected it
   callerId?: string;              // E.164 when the transport is phone; becomes a context variable
-  interruptsPrevious?: boolean;   // the caller spoke over the agent; cancel the in-flight turn
-  heardUntil?: string;            // the agent text the caller actually heard before interrupting, when the vendor reports it
+  heardUntil?: string;            // the previous reply as far as the caller heard it before speaking over it, when the vendor reports it; recorded as an audit note
 }
 
 type VoiceTurnEvent =
   | { type: "conversation"; conversationId: string } // first, so adapters can name the conversation before any speech
   | { type: "bridge"; text: string }                 // authored line, emitted by policy while the brain works
   | { type: "speech"; text: string; last: boolean }  // speakable piece of the agent's reply, verbatim
-  | { type: "outcome"; outcome: VoiceTurnOutcome }   // exactly one, always last
-  | { type: "interrupted"; deliveredText: string };  // the turn was cancelled; what history will store
+  | { type: "outcome"; outcome: VoiceTurnOutcome };  // exactly one, always last; a superseded turn ends with `continue`
 
 type VoiceTurnOutcome =
   | { kind: "continue" }
@@ -52,11 +50,12 @@ type VoiceTurnOutcome =
   | { kind: "callback_requested" };
 
 interface VoiceTurnPort {
-  runTurn(input: VoiceTurnInput, signal: AbortSignal): AsyncIterable<VoiceTurnEvent>;
+  // hungUp: the runtime closed the request before the outcome reached it; the turn runs on and is stored
+  runTurn(input: VoiceTurnInput, signal: AbortSignal, hungUp?: AbortSignal): AsyncIterable<VoiceTurnEvent>;
 }
 ```
 
-What the port does inside, in order: resolve or create the conversation for `(agentId, vendor, sessionKey)`; reserve usage with `surface: "voice"`; start the chat turn with `sourceChannel: "voice"` and a `channelContext` of provider `voice`; apply the turn policy (section 4) over the chat event stream; derive the outcome from the reply envelope (section 5); persist the interruption marker when cancelled.
+What the port does inside, in order: resolve or create the conversation for `(agentId, vendor, sessionKey)`; reserve usage with `surface: "voice"`; start the chat turn with `sourceChannel: "voice"` and a `channelContext` of provider `voice`; apply the turn policy (section 4) over the chat event stream; derive the outcome from the reply envelope (section 5). A newer request of the same session is the interruption: the newest utterance wins, the turn in flight is superseded even mid-reply, and one superseded before its reply started leaves no user message. An identical utterance after a reply the caller lost hears the stored answer again, and `heardUntil` is recorded as a `voice.reply_interrupted` audit note on the stored reply.
 
 ## 3. The adapter contract
 
@@ -69,7 +68,7 @@ interface VoiceVendorAdapter {
 
 An adapter translates in both directions and nothing else:
 
-- **Inbound**: authenticate with the existing agent-channel grant; extract `sessionKey`, `utterance`, `locale`, `callerId`, interruption signals; build `VoiceTurnInput`.
+- **Inbound**: authenticate with the existing agent-channel grant; extract `sessionKey`, `utterance`, `locale`, `callerId` and `heardUntil`; build `VoiceTurnInput`; fire the port's `hungUp` signal when the runtime closes the request before the outcome was sent.
 - **Outbound**: render `bridge` and `speech` events on the vendor's wire; render `outcome` as the vendor's command or tool call; honour the vendor's abort as `signal` cancellation.
 
 Adapters are registered in composition. Promoting the contract into `packages/connector-api` beside `ConnectorPlugin` is a Phase 0 decision; the demo keeps it in the module.
@@ -98,7 +97,7 @@ Implemented as wrappers over `AsyncIterable<ChatStreamEvent>`, like the existing
 | Sentence pieces | `chunk` text is re-cut at sentence boundaries into `speech` events; the final piece carries `last: true` | composition constant |
 | Bridge | one `bridge` event from the agent's authored lines when the turn starts searching, 400 ms after it starts composing with no speech yet, or after 1.8 s with no phase at all (so a planner quick reply never gets a bridge); style by routine state (acknowledgement inside a routine, check outside), locale from the input or the agent default | agent settings `voice.bridgeLines`; composition constants |
 | Turn limit | no `speech` within 8 s → `speech` with the authored fallback line, then `outcome: callback_requested` if the agent has a callback path, else `continue` | agent settings `voice.fallbackLine`; composition constant |
-| Interruption | `interruptsPrevious` (a new utterance for a session whose turn is still in flight, or an explicit vendor signal) or `signal` aborted → cancel the in-flight turn even after emission started; emit `interrupted` with `heardUntil` when the adapter can derive it (vendor signal, or the truncated reply in replayed history), else the text delivered so far | turn lease cancellation mode (PR 4) |
+| Interruption | a new request for a session whose turn is still in flight cancels that turn even after emission started (the chat lease's `latest_input_wins` mode); one still setting up ends before its chat turn starts; a turn cancelled before emission leaves no user message, one cancelled after keeps it and stores no reply; a bridge never follows a superseded turn's bridge within `bridgeAfterMs`; an identical utterance within 30 s of a hung-up or overtaken turn with a stored answer replays that answer; `heardUntil` (the truncated reply in replayed history) is recorded against the stored reply as `voice.reply_interrupted` | turn lease cancellation mode, in-process session memory (PR 4) |
 | Governance gates | unchanged; the coverage head and grounding gate run before any `speech` | chat service |
 
 ## 5. Outcome derivation
@@ -138,7 +137,7 @@ Bridge delay and turn limit are composition constants, not settings. The block i
 - `sourceChannel: "voice"`, `callerKind: "human"`.
 - `channelContext: { provider: "voice", vendor, sessionKey, transport, callerId? }` as a new member of the `ConversationChannelContext` union, following the `email` precedent.
 - `voice_sessions (agent_id, vendor, session_key) → conversation_id`, unique on the triple, mirroring the email thread table.
-- Interrupted replies are stored as delivered with an `interrupted` marker that history rendering shows.
+- A reply the caller spoke over is stored whole once it finished; how much of it the caller heard is a `voice.reply_interrupted` audit note on that reply. A reply cut off while it was still streaming is not stored: the conversation keeps the caller's message without a reply. A message marker for interrupted replies, shown in history, is the open item listed in plan.md section 0.
 
 ## 8. Vendor matrix
 

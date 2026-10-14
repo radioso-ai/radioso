@@ -47,6 +47,7 @@ const harness = (metrics?: { incrementCounter: MetricsRegistry["incrementCounter
   } as unknown as ConversationRepositoryPort;
   const messageRepository = {
     create: vi.fn(async () => ({ id: "assistant_msg_1" })),
+    deleteUserMessage: vi.fn(async () => true),
   } as unknown as MessageRepositoryPort;
 
   const lifecycle = new ChatTurnLifecycle(
@@ -1937,6 +1938,42 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         supersededStage: "persisting",
         stream: true,
       });
+    });
+
+    it("deletes the user message a newer input replaced before the turn emitted, and still names it in the audit", async () => {
+      const { lifecycle, records, messageRepository } = harness();
+      const supersededBy = new ChatTurnSupersededError("conv_1", "routing", { replacedByNewerInput: true });
+
+      await lifecycle.recordSupersession({ workspaceId: "workspace_1", stream: true }, session(), undefined, supersededBy);
+
+      expect(messageRepository.deleteUserMessage).toHaveBeenCalledWith({
+        workspaceId: "workspace_1",
+        conversationId: "conv_1",
+        messageId: "msg_1",
+      });
+      expect(records[0].metadata).toMatchObject({ userMessageId: "msg_1", userMessageDiscarded: true });
+    });
+
+    it("keeps the user message when the newer turn does not replace the input, or the turn had started emitting", async () => {
+      const { lifecycle, records, messageRepository } = harness();
+
+      // An operator approving a routine gate starts a default-mode turn on the same conversation.
+      await lifecycle.recordSupersession(
+        { workspaceId: "workspace_1", stream: true },
+        session(),
+        undefined,
+        new ChatTurnSupersededError("conv_1", "routing", { replacedByNewerInput: false }),
+      );
+      await lifecycle.recordSupersession(
+        { workspaceId: "workspace_1", stream: true },
+        session(),
+        undefined,
+        new ChatTurnSupersededError("conv_1", "persisting", { afterEmission: true, replacedByNewerInput: true }),
+      );
+
+      expect(messageRepository.deleteUserMessage).not.toHaveBeenCalled();
+      expect(records.map((record) => record.metadata.userMessageDiscarded)).toEqual([undefined, undefined]);
+      expect(records.map((record) => record.metadata.userMessageId)).toEqual(["msg_1", "msg_1"]);
     });
 
     it("falls back to the input conversationId when no turn was prepared yet", async () => {

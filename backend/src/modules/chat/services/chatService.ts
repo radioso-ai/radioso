@@ -165,9 +165,11 @@ import {
   ChatTurnSupersededError,
   InMemoryConversationTurnRegistry,
   type ConversationTurnLease,
+  type ConversationTurnLeaseOptions,
   type ConversationTurnRegistry,
   type ConversationTurnStage,
 } from "./conversationTurnRegistry.js";
+import type { ConversationTurnSupersession } from "../contracts/interruption.js";
 import { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
 import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
@@ -284,8 +286,14 @@ export interface ChatServiceOptions {
 
 interface TurnCoordinationState {
   lease?: ConversationTurnLease;
+  /** What the lease asks the registry for; absent for the default `until_emission` mode. */
+  leaseOptions?: ConversationTurnLeaseOptions;
   disconnectSignal?: AbortSignal;
 }
+
+/** The registry mode a turn's supersession asks for: only `latest_input_wins` supersedes after emission. */
+const leaseOptionsFor = (supersession: ConversationTurnSupersession | undefined): ConversationTurnLeaseOptions | undefined =>
+  supersession === "latest_input_wins" ? { supersedeAfterEmission: true } : undefined;
 
 interface ChatAnswerInput {
   workspaceId: string;
@@ -675,7 +683,7 @@ export class ChatService {
     conversationId: string,
   ): Promise<void> {
     if (!coordination.lease) {
-      coordination.lease = this.conversationTurnRegistry.start(conversationId);
+      coordination.lease = this.conversationTurnRegistry.start(conversationId, coordination.leaseOptions);
       if (coordination.disconnectSignal?.aborted) {
         coordination.lease.cancelAfterDisconnect();
       }
@@ -1382,6 +1390,8 @@ export class ChatService {
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
     routineInvocation?: RoutineInvocation;
+    /** How a newer turn on the conversation cuts this one off; `until_emission` when absent. */
+    supersession?: ConversationTurnSupersession;
     /**
      * Caller-owned abort signal (#885), independent of the registry's own
      * supersession signal. The HTTP presenter fires this once the client has
@@ -1393,10 +1403,12 @@ export class ChatService {
     signal?: AbortSignal;
   }): AsyncIterable<ChatStreamEvent> {
     const requestReceivedAt = Date.now();
+    const leaseOptions = leaseOptionsFor(input.supersession);
     const coordination: TurnCoordinationState = {
       lease: input.conversationId
-        ? this.conversationTurnRegistry.start(input.conversationId)
+        ? this.conversationTurnRegistry.start(input.conversationId, leaseOptions)
         : undefined,
+      leaseOptions,
       disconnectSignal: input.signal,
     };
     const abortLeaseForDisconnect = () => coordination.lease?.cancelAfterDisconnect();
@@ -1500,6 +1512,11 @@ export class ChatService {
       });
     };
     try {
+      const cancellation: unknown = coordination.lease?.signal.reason;
+      if (cancellation instanceof ChatTurnSupersededError && cancellation.replacedByNewerInput) {
+        // A newer input replaced this turn while it waited: store nothing for it.
+        throw cancellation;
+      }
       this.setTurnStage(coordination, "preparing");
       session = await this.chatSessionPreparer.prepare({
         ...input,

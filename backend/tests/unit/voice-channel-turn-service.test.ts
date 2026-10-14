@@ -113,6 +113,7 @@ describe("VoiceTurnService", () => {
       message: "When do you open?",
       sourceChannel: "voice",
       channelContext: { provider: "voice", vendor: "elevenlabs", sessionKey: "conv_abc", transport: "web" },
+      supersession: "latest_input_wins",
       signal: expect.any(AbortSignal),
     }]);
     expect(chat.requests[0]).not.toHaveProperty("conversationId");
@@ -156,6 +157,20 @@ describe("VoiceTurnService", () => {
       { type: "speech", text: "I can't confirm the cost from this information. ", last: false },
       { type: "speech", text: "If you mean the monthly plan, ask me about that instead.", last: true },
     ]);
+  });
+
+  it("closes an emphasis left open at the end of the reply once the reply is whole", async () => {
+    const chat = fakeChat([
+      { type: "conversation", conversationId },
+      { type: "chunk", text: "È *davvero" },
+      { type: "chunk", text: "*" },
+      done(),
+    ]);
+    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
+
+    const events = await collect(service.runTurn(input(), new AbortController().signal));
+
+    expect(events.filter((event) => event.type === "speech")).toEqual([{ type: "speech", text: "È davvero", last: true }]);
   });
 
   it("hands the caller's abort signal to the chat turn", async () => {
@@ -235,12 +250,13 @@ describe("VoiceTurnService", () => {
       done(),
     ]);
     const logger = fakeLogger();
-    let clock = 1_000;
+    // The turn starts at 1,000 and everything after happens at 1,250.
+    let clockReads = 0;
     const service = new VoiceTurnService({ ...voiceOff,
       sessions: fakeSessions(conversationId),
       chat,
       logger,
-      now: () => (clock += 250),
+      now: () => (clockReads++ === 0 ? 1_000 : 1_250),
     });
 
     await collect(service.runTurn(input(), new AbortController().signal));
@@ -301,6 +317,8 @@ describe("VoiceTurnService", () => {
       return { opened, open };
     };
 
+    const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 5));
+
     it("runs the second turn in the conversation the first one binds, once it is bound", async () => {
       const named = gate();
       const finished = gate();
@@ -329,8 +347,11 @@ describe("VoiceTurnService", () => {
       });
 
       const first = collect(service.runTurn(input(), new AbortController().signal));
-      const second = collect(service.runTurn(input(), new AbortController().signal));
+      // The first turn's chat turn is running when the second request arrives.
       await vi.waitFor(() => expect(requests).toHaveLength(1));
+      const second = collect(service.runTurn(input(), new AbortController().signal));
+      await tick();
+      expect(requests).toHaveLength(1);
       named.open();
       // The second turn waits only for the binding, not for the first reply.
       await vi.waitFor(() => expect(requests).toHaveLength(2));
@@ -365,8 +386,8 @@ describe("VoiceTurnService", () => {
       });
 
       const first = collect(service.runTurn(input(), new AbortController().signal));
-      const second = collect(service.runTurn(input(), new AbortController().signal));
       await vi.waitFor(() => expect(requests).toHaveLength(1));
+      const second = collect(service.runTurn(input(), new AbortController().signal));
       failure.open();
 
       await expect(first).rejects.toThrow("prepare failed");
@@ -616,6 +637,362 @@ describe("VoiceTurnService", () => {
         labels: { bridged: "no" },
         value: 2_000,
       }));
+    });
+  });
+
+  describe("when requests of one session overlap", () => {
+    const voiceOn: AgentVoiceSettings = {
+      enabled: true,
+      bridgeLines: { en: { acknowledge: ["Got it."], check: ["Let me check that for you."] } },
+      fallbackLine: { en: "Sorry, could you ask me again?" },
+    };
+    const assistantMessageId = "66666666-6666-4666-8666-666666666666";
+
+    type Step = { atMs: number; event: ChatStreamEvent };
+
+    /**
+     * Chat as the turn registry runs it for `latest_input_wins` turns: a newer turn on the
+     * conversation cancels the one in flight, which ends with `cancelled` at its next step.
+     */
+    const supersedingChat = (scripts: Step[][]) => {
+      const requests: VoiceChatTurnRequest[] = [];
+      let newest = -1;
+      return {
+        requests,
+        streamTurn: (request: VoiceChatTurnRequest) => {
+          requests.push(request);
+          const index = requests.length - 1;
+          newest = index;
+          const steps = scripts[index] ?? [];
+          return (async function* (): AsyncGenerator<ChatStreamEvent> {
+            const startedAt = Date.now();
+            for (const step of steps) {
+              const wait = startedAt + step.atMs - Date.now();
+              if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+              if (newest !== index) {
+                yield { type: "cancelled", conversationId, reason: "superseded", stage: "rendering" };
+                return;
+              }
+              yield step.event;
+            }
+          })();
+        },
+      };
+    };
+
+    const answered = (text: string, atMs = 300): Step[] => [
+      { atMs: 0, event: { type: "conversation", conversationId } },
+      { atMs, event: { type: "chunk", text } },
+      { atMs, event: { ...done(), answer: text } as ChatStreamEvent },
+    ];
+
+    const fakeNotes = () => ({ replyInterrupted: vi.fn().mockResolvedValue(undefined), replyReplayed: vi.fn().mockResolvedValue(undefined) });
+    const fakeMetrics = () => ({ observeHistogram: vi.fn(), incrementCounter: vi.fn() });
+
+    const service = (chat: { streamTurn: (request: VoiceChatTurnRequest) => AsyncIterable<ChatStreamEvent> }, overrides: Partial<ConstructorParameters<typeof VoiceTurnService>[0]> = {}) =>
+      new VoiceTurnService({
+        agents: voiceProfiles(voiceOn),
+        routines: routineStates(false),
+        sessions: fakeSessions(conversationId),
+        chat,
+        logger: fakeLogger(),
+        ...overrides,
+      });
+
+    /** Starts a turn now and collects its events as the fake clock runs. */
+    const start = (turns: VoiceTurnService, turn: VoiceTurnInput = input(), hungUp?: AbortSignal) =>
+      collect(turns.runTurn(turn, new AbortController().signal, hungUp));
+
+    const counted = (metrics: ReturnType<typeof fakeMetrics>, name: string) =>
+      metrics.incrementCounter.mock.calls.filter(([metric]) => metric === name).map(([, options]) => (options as { labels?: unknown }).labels ?? {});
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("lets only the newest of three requests 100 ms apart start a chat turn while the session is still being looked up", async () => {
+      const chat = supersedingChat([answered("Hatha yoga is on Sundays at nine.")]);
+      // Each request's session lookup takes 150 ms.
+      const sessions: VoiceSessionStore = {
+        findConversationId: () => new Promise<string>((resolve) => {
+          setTimeout(() => resolve(conversationId), 150);
+        }),
+        bind: async (_session, id) => id,
+      };
+      const metrics = fakeMetrics();
+      const logger = fakeLogger();
+      const turns = service(chat, { sessions, metrics, logger });
+
+      const first = start(turns, input({ utterance: "Do you have Hatha?" }));
+      await vi.advanceTimersByTimeAsync(100);
+      const second = start(turns, input({ utterance: "Do you have hatter?" }));
+      await vi.advanceTimersByTimeAsync(100);
+      const third = start(turns, input({ utterance: "Do you have Hatha yoga?" }));
+      await vi.runAllTimersAsync();
+
+      expect(await first).toEqual([{ type: "outcome", outcome: { kind: "continue" } }]);
+      expect(await second).toEqual([{ type: "outcome", outcome: { kind: "continue" } }]);
+      expect((await third).filter((event) => event.type === "speech")).toEqual([
+        { type: "speech", text: "Hatha yoga is on Sundays at nine.", last: true },
+      ]);
+      expect(chat.requests.map((request) => request.message)).toEqual(["Do you have Hatha yoga?"]);
+      expect(counted(metrics, "voice_turn_superseded_total")).toEqual([{ stage: "before_speech" }, { stage: "before_speech" }]);
+      const superseded = logger.info.mock.calls.filter(([fields]) => (fields as { result?: string }).result === "superseded");
+      expect(superseded).toHaveLength(2);
+      expect(superseded[0]?.[0]).toEqual({
+        agentId, vendor: "elevenlabs", transport: "web", conversationId, result: "superseded",
+        supersededAt: "before_speech", durationMs: 150, speechPieceCount: 0,
+      });
+    });
+
+    it("counts a turn cut off after it spoke as superseded after speech", async () => {
+      const chat = supersedingChat([
+        [
+          { atMs: 0, event: { type: "conversation", conversationId } },
+          { atMs: 100, event: { type: "chunk", text: "We open at nine. See" } },
+          { atMs: 2_000, event: { type: "chunk", text: " you then!" } },
+        ],
+        answered("Yes, on Sundays too."),
+      ]);
+      const metrics = fakeMetrics();
+      const turns = service(chat, { metrics });
+
+      const first = start(turns, input({ utterance: "When do you open?" }));
+      await vi.advanceTimersByTimeAsync(500);
+      const second = start(turns, input({ utterance: "And on Sundays?" }));
+      await vi.runAllTimersAsync();
+
+      expect(await first).toEqual([
+        { type: "conversation", conversationId },
+        { type: "speech", text: "We open at nine. ", last: false },
+        { type: "outcome", outcome: { kind: "continue" } },
+      ]);
+      expect((await second).filter((event) => event.type === "speech")).toEqual([
+        { type: "speech", text: "Yes, on Sundays too.", last: true },
+      ]);
+      expect(counted(metrics, "voice_turn_superseded_total")).toEqual([{ stage: "after_speech" }]);
+    });
+
+    it("speaks no second bridge when the turn it superseded bridged moments ago", async () => {
+      const searching = (atMs: number): Step => ({ atMs, event: { type: "status", stage: "searching" } });
+      const chat = supersedingChat([
+        [{ atMs: 0, event: { type: "conversation", conversationId } }, searching(50), { atMs: 3_000, event: { type: "chunk", text: "Stale." } }],
+        [{ atMs: 0, event: { type: "conversation", conversationId } }, searching(50), ...answered("We open at nine.", 2_500).slice(1)],
+      ]);
+      const turns = service(chat);
+
+      const first = start(turns, input({ utterance: "When do you open?" }));
+      await vi.advanceTimersByTimeAsync(600);
+      const second = start(turns, input({ utterance: "When do you open on Sunday?" }));
+      await vi.runAllTimersAsync();
+
+      expect(await first).toEqual([
+        { type: "conversation", conversationId },
+        { type: "bridge", text: "Let me check that for you." },
+        { type: "outcome", outcome: { kind: "continue" } },
+      ]);
+      expect((await second).map((event) => event.type)).toEqual(["conversation", "speech", "outcome"]);
+    });
+
+    it("bridges again once the superseded turn's bridge is older than the bridge delay", async () => {
+      const searching = (atMs: number): Step => ({ atMs, event: { type: "status", stage: "searching" } });
+      const chat = supersedingChat([
+        [{ atMs: 0, event: { type: "conversation", conversationId } }, searching(50), { atMs: 5_000, event: { type: "chunk", text: "Stale." } }],
+        [{ atMs: 0, event: { type: "conversation", conversationId } }, searching(50), ...answered("We open at nine.", 2_500).slice(1)],
+      ]);
+      const turns = service(chat);
+
+      const first = start(turns, input({ utterance: "When do you open?" }));
+      await vi.advanceTimersByTimeAsync(2_000);
+      const second = start(turns, input({ utterance: "When do you open on Sunday?" }));
+      await vi.runAllTimersAsync();
+      await first;
+
+      expect((await second).map((event) => event.type)).toEqual(["conversation", "bridge", "speech", "outcome"]);
+    });
+
+    describe("an identical re-request", () => {
+      const utterance = "When do you open?";
+
+      it("replays the stored answer after the runtime hung up, with no chat turn and no bridge", async () => {
+        const chat = supersedingChat([[
+          { atMs: 0, event: { type: "conversation", conversationId } },
+          { atMs: 0, event: { type: "status", stage: "searching" } },
+          { atMs: 3_000, event: { type: "chunk", text: "We open at **nine**. See you!" } },
+          { atMs: 3_000, event: { ...done(), answer: "We open at **nine**. See you!" } as ChatStreamEvent },
+        ]]);
+        const notes = fakeNotes();
+        const metrics = fakeMetrics();
+        const logger = fakeLogger();
+        const turns = service(chat, { notes, metrics, logger });
+        const hangUp = new AbortController();
+
+        const first = start(turns, input({ utterance }), hangUp.signal);
+        await vi.advanceTimersByTimeAsync(1_000);
+        hangUp.abort();
+        await vi.advanceTimersByTimeAsync(3_000);
+        await first;
+        const replayed = start(turns, input({ utterance: ` ${utterance}` }));
+        await vi.runAllTimersAsync();
+
+        expect(await replayed).toEqual([
+          { type: "conversation", conversationId },
+          { type: "speech", text: "We open at nine. ", last: false },
+          { type: "speech", text: "See you!", last: true },
+          { type: "outcome", outcome: { kind: "continue" } },
+        ]);
+        expect(chat.requests).toHaveLength(1);
+        expect(notes.replyReplayed).toHaveBeenCalledWith({ workspaceId, conversationId, assistantMessageId });
+        expect(counted(metrics, "voice_turn_replayed_total")).toEqual([{}]);
+        expect(logger.info).toHaveBeenLastCalledWith(
+          expect.objectContaining({ conversationId, result: "replayed", speechPieceCount: 2 }),
+          "Voice turn finished",
+        );
+      });
+
+      it("runs a new turn when the earlier reply reached the runtime whole", async () => {
+        const chat = supersedingChat([answered("We open at nine."), answered("We open at nine, every day.")]);
+        const turns = service(chat);
+
+        await (async () => {
+          const first = start(turns, input({ utterance }));
+          await vi.runAllTimersAsync();
+          await first;
+        })();
+        const second = start(turns, input({ utterance }));
+        await vi.runAllTimersAsync();
+
+        expect((await second).filter((event) => event.type === "speech")).toEqual([
+          { type: "speech", text: "We open at nine, every day.", last: true },
+        ]);
+        expect(chat.requests).toHaveLength(2);
+      });
+
+      it("runs a new turn once the replay window has passed", async () => {
+        const chat = supersedingChat([answered("We open at nine.", 1_000), answered("We open at nine, every day.")]);
+        const turns = service(chat);
+        const hangUp = new AbortController();
+
+        const first = start(turns, input({ utterance }), hangUp.signal);
+        await vi.advanceTimersByTimeAsync(500);
+        hangUp.abort();
+        await vi.advanceTimersByTimeAsync(1_000);
+        await first;
+        await vi.advanceTimersByTimeAsync(30_500);
+        const second = start(turns, input({ utterance }));
+        await vi.runAllTimersAsync();
+        await second;
+
+        expect(chat.requests).toHaveLength(2);
+      });
+
+      it("runs a new turn, superseding the first, while no answer is stored yet", async () => {
+        const chat = supersedingChat([
+          [{ atMs: 0, event: { type: "conversation", conversationId } }, { atMs: 6_000, event: { type: "chunk", text: "Stale." } }],
+          answered("We open at nine."),
+        ]);
+        const turns = service(chat);
+        const hangUp = new AbortController();
+
+        const first = start(turns, input({ utterance }), hangUp.signal);
+        await vi.advanceTimersByTimeAsync(4_000);
+        hangUp.abort();
+        const second = start(turns, input({ utterance }));
+        await vi.runAllTimersAsync();
+
+        expect((await first).at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+        expect((await second).filter((event) => event.type === "speech")).toEqual([
+          { type: "speech", text: "We open at nine.", last: true },
+        ]);
+        expect(chat.requests).toHaveLength(2);
+      });
+    });
+
+    describe("a reply the caller interrupted", () => {
+      const reply = "We open at nine. See you then!";
+
+      const answerOnce = async (turns: VoiceTurnService) => {
+        const first = start(turns, input({ utterance: "When do you open?" }));
+        await vi.runAllTimersAsync();
+        return first;
+      };
+
+      it("records how much of the stored reply the caller heard, once, when the vendor replays it cut off", async () => {
+        const chat = supersedingChat([answered(reply), answered("Yes."), answered("Sure.")]);
+        const notes = fakeNotes();
+        const metrics = fakeMetrics();
+        const logger = fakeLogger();
+        const turns = service(chat, { notes, metrics, logger });
+
+        await answerOnce(turns);
+        const next = start(turns, input({ utterance: "Sorry, on Sundays?", heardUntil: "We open at nine.  \u200BSee" }));
+        await vi.runAllTimersAsync();
+        await next;
+        const again = start(turns, input({ utterance: "Sundays?", heardUntil: "We open at nine.  \u200BSee" }));
+        await vi.runAllTimersAsync();
+        await again;
+
+        expect(notes.replyInterrupted).toHaveBeenCalledTimes(1);
+        expect(notes.replyInterrupted).toHaveBeenCalledWith({
+          workspaceId, conversationId, assistantMessageId, heardCharacterCount: 20, spokenCharacterCount: 30,
+        });
+        expect(counted(metrics, "voice_reply_interrupted_total")).toEqual([{}]);
+        expect(logger.info).toHaveBeenCalledWith(
+          { agentId, vendor: "elevenlabs", conversationId, assistantMessageId, heardCharacterCount: 20, spokenCharacterCount: 30 },
+          "Voice reply was interrupted",
+        );
+        expect(JSON.stringify(logger.info.mock.calls)).not.toMatch(/nine|Sundays/u);
+      });
+
+      it("counts only the reply's characters when a bridge line was spoken before it", async () => {
+        const chat = supersedingChat([
+          [
+            { atMs: 0, event: { type: "conversation", conversationId } },
+            { atMs: 0, event: { type: "status", stage: "searching" } },
+            ...answered(reply, 2_000).slice(1),
+          ],
+          answered("Yes."),
+        ]);
+        const notes = fakeNotes();
+        const turns = service(chat, { notes });
+
+        await answerOnce(turns);
+        const next = start(turns, input({ utterance: "Sundays?", heardUntil: "Let me check that for you. We open" }));
+        await vi.runAllTimersAsync();
+        await next;
+
+        expect(notes.replyInterrupted).toHaveBeenCalledWith(expect.objectContaining({ heardCharacterCount: 7, spokenCharacterCount: 30 }));
+      });
+
+      it("records nothing when the reply ends in an ellipsis of its own and was heard whole", async () => {
+        const chat = supersedingChat([answered("Let me think about that..."), answered("Yes.")]);
+        const notes = fakeNotes();
+        const turns = service(chat, { notes });
+
+        await answerOnce(turns);
+        const next = start(turns, input({ utterance: "Sure?", heardUntil: "Let me think about that" }));
+        await vi.runAllTimersAsync();
+        await next;
+
+        expect(notes.replyInterrupted).not.toHaveBeenCalled();
+      });
+
+      it("records nothing when the replayed text is not a prefix of what was spoken", async () => {
+        const chat = supersedingChat([answered(reply), answered("Yes.")]);
+        const notes = fakeNotes();
+        const turns = service(chat, { notes });
+
+        await answerOnce(turns);
+        const next = start(turns, input({ utterance: "Sundays?", heardUntil: "We close at" }));
+        await vi.runAllTimersAsync();
+        await next;
+
+        expect(notes.replyInterrupted).not.toHaveBeenCalled();
+      });
     });
   });
 });

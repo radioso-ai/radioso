@@ -19,6 +19,11 @@ export interface VoiceTurnInput {
   utterance: string;
   /** The caller's language as a BCP 47 tag, when the vendor or the page that started the session names it. */
   locale?: string;
+  /**
+   * The agent's previous reply as far as the caller heard it before speaking over it, when the
+   * vendor reports it (ElevenLabs replays it cut short in the request's history).
+   */
+  heardUntil?: string;
 }
 
 /** How the session goes on after the turn. */
@@ -35,7 +40,12 @@ export type VoiceTurnEvent =
   | { type: "outcome"; outcome: VoiceTurnOutcome };
 
 export interface VoiceTurnPort {
-  runTurn(input: VoiceTurnInput, signal: AbortSignal): AsyncIterable<VoiceTurnEvent>;
+  /**
+   * Runs one caller turn. `signal` aborts it. `hungUp`, when the adapter observes it, fires when
+   * the runtime closes the request before the turn's outcome reached it: the turn runs on and its
+   * reply is stored, and the session remembers that the caller did not hear it.
+   */
+  runTurn(input: VoiceTurnInput, signal: AbortSignal, hungUp?: AbortSignal): AsyncIterable<VoiceTurnEvent>;
 }
 
 export type VoiceChannelContext = Extract<ConversationChannelContext, { provider: "voice" }>;

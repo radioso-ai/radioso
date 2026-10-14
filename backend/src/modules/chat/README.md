@@ -309,7 +309,14 @@ imports from `services/`.
   is still accountable: `chatTurnLifecycle.recordSupersession` records a
   `chat.answer` audit event with `eventStatus: "cancelled"` (never `"failure"` —
   a user typing a follow-up is not an assistant error) keyed to the turn's
-  `userMessageId`, since no assistant message exists yet for it.
+  `userMessageId`, since no assistant message exists yet for it. A
+  `latest_input_wins` turn (the voice channel's) can be cancelled even after it
+  began emitting, so it carries a commit fence (`latestInputCommitFence`) that
+  runs right before the turn is stored and again as the storing transaction's
+  last step (`AssistantTurnPersistencePort.commitFence`): a turn cancelled by
+  then stores no reply or effects, commits no usage and emits no `done`, and
+  one whose reply never reached the client counts as superseded before
+  emission. Past the fence the stored turn has won and finishes as usual.
 - Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,
   `chat-action` tests.
 - History: `assistantHistoryService.ts`, `chatHistoryService.ts`,

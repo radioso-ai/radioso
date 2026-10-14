@@ -270,6 +270,8 @@ export interface AssistantTurnPersistencePort {
     ownershipAuditEvent?: AuditEventInput | null;
     additionalAuditEvent?: AuditEventInput | null;
     transaction?: Db;
+    /** Runs as the transaction's last step; a throw rolls the whole turn back. */
+    commitFence?: () => void;
   }): Promise<AssistantTurnPersistenceReceipt>;
 }
 
@@ -612,6 +614,12 @@ interface CompleteAssistantTurnInput {
   clarificationTransition?: CapturedClarificationTransition | null;
   /** The skill effects the turn's execution mode suppressed; a draft reports them. */
   suppressedEffects?: readonly SuppressedSkillEffect[];
+  /**
+   * Decides, at the last moment the turn can still store nothing, whether it may commit; throwing
+   * stores none of the reply or its effects. It runs as the persistence transaction's last step,
+   * and on the fallback path before the first write.
+   */
+  commitFence?: () => void;
 }
 
 const ROUTINE_INVOCATIONS_TOTAL = "routine_invocations_total";
@@ -826,6 +834,7 @@ export class ChatTurnLifecycle {
         ownershipAuditEvent,
         additionalAuditEvent,
         transaction: input.transaction,
+        commitFence: input.commitFence,
       });
       assistantMessage = persisted.message;
       postCommitReceipt = this.createPostCommitReceipt(input.workspaceId, persisted.committedFacts);
@@ -839,6 +848,8 @@ export class ChatTurnLifecycle {
     } else {
       // Fallback for tests and non-DB hosts. Production wires a transaction port so
       // outbox enqueue, routine state, assistant message, touch, and audit commit together.
+      // With no transaction to roll back, the fence runs before the first write.
+      input.commitFence?.();
       const insertedActionTypes = await this.enqueueTurnActions({
         actions,
         workspaceId: input.workspaceId,

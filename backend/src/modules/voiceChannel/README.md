@@ -263,8 +263,10 @@ helpers and the shared chat message limit from `app/http`
   `VOICE_BEHAVIOR.replayWindowMs` (30 s): an identical utterance (whitespace
   aside) for the session, with no chat turn running, is answered with the
   stored answer as speech, with no chat turn, no bridge and no user message.
-  The replayed turn sends its outcome once its `voice.reply_replayed` note is
-  written; a note that fails logs a warn and the turn still ends.
+  The replayed turn writes its `voice.reply_replayed` note once its outcome
+  has left, off the response's path: the response and the session's settling
+  never wait for the audit write, and a note that fails or takes longer than
+  5 s logs a warn.
   While no answer is stored, the identical utterance runs as a new turn and
   supersedes the running one. In-process only.
 - **Interrupted replies.** The `elevenlabs` dialect reads an assistant message
@@ -298,8 +300,8 @@ reached the turn limit` at warn when the limit fired, else `Voice turn finished`
 `after_speech`, `abandoned`), or `Voice turn failed` at warn with
 `errorClass`. `Voice reply was interrupted` at info names the conversation,
 the reply's message id and the two character counts, once the note is
-recorded; a note that fails to record logs `Voice turn note could not be
-recorded` at warn. A warn when a concurrent first turn bound the session to another
+recorded; a note that fails to record, or (the replay note) takes longer than
+5 s, logs `Voice turn note could not be recorded` at warn. A warn when a concurrent first turn bound the session to another
 conversation, and a warn naming only `dialect` and `agentId` when a request
 carries no usable session key (a 400). Once per agent per process, when a
 turn's bridge line is below the dialect's minimum, `Voice bridge line is

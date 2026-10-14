@@ -42,7 +42,7 @@ type VoiceTurnEvent =
   | { type: "conversation"; conversationId: string } // first, so adapters can name the conversation before any speech
   | { type: "bridge"; text: string }                 // authored line, emitted by policy while the brain works
   | { type: "speech"; text: string; last: boolean }  // speakable piece of the agent's reply, verbatim
-  | { type: "outcome"; outcome: VoiceTurnOutcome };  // exactly one, always last; a superseded turn ends with `continue`
+  | { type: "outcome"; outcome: VoiceTurnOutcome };  // exactly one, always last, and the events end with it; a superseded turn ends with `continue`
 
 type VoiceTurnOutcome =
   | { kind: "continue" }

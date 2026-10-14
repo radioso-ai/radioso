@@ -130,29 +130,35 @@ const openEventStream = (res: Response, conversationId: string | null): void => 
 };
 
 /**
- * The turn's events, held to the port's contract: exactly one outcome. A turn that ends without
- * one, or sends a second, fails like any other turn, so the runtime never reads it as a finished
- * reply. The check sits on the iterator, which the drain keeps pulling after the response ended.
+ * The turn's events, held to the port's contract: exactly one outcome, and the turn ends with it.
+ * The outcome is passed on only once the turn has ended, so a turn that ends without one, sends
+ * anything after it, or fails after it still fails like any other turn, before the runtime reads
+ * a finished reply.
  */
 async function* withOneOutcome(events: AsyncIterable<VoiceTurnEvent>): AsyncGenerator<VoiceTurnEvent> {
-  let outcomes = 0;
+  let outcome: VoiceTurnEvent | null = null;
   for await (const event of events) {
-    if (event.type === "outcome" && ++outcomes > 1) {
-      throw new VoiceTurnProtocolError("second_outcome");
+    if (outcome) {
+      throw new VoiceTurnProtocolError(event.type === "outcome" ? "second_outcome" : "event_after_outcome");
     }
-    yield event;
+    if (event.type === "outcome") {
+      outcome = event;
+    } else {
+      yield event;
+    }
   }
-  if (outcomes === 0) {
+  if (!outcome) {
     throw new VoiceTurnIncompleteError();
   }
+  yield outcome;
 }
 
 /**
  * Drains the turn the way the REST agent channel does: after a disconnect the turn may still
  * finish and persist, and it is aborted only once the post-disconnect ceiling passes. The
- * response itself ends at the turn's outcome, which is always last; a turn whose limit spoke the
- * fallback line keeps draining behind it, on the same ceiling. A disconnect before the outcome
- * was sent fires `hangUp`, so the turn knows its caller did not get the reply.
+ * response ends at the turn's outcome, which ends the turn's events; a reply drained after the
+ * turn limit finishes inside the turn service. A disconnect before the outcome was sent fires
+ * `hangUp`, so the turn knows its caller did not get the reply.
  */
 interface TurnDrain {
   res: Response;

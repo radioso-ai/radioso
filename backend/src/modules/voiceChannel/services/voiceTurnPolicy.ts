@@ -10,7 +10,30 @@ export interface VoiceTurnPolicyObserver {
   turnLimitReached(spoken: boolean): void;
   /** The first speech left the policy, `elapsedMs` after the turn started. */
   firstSpeech(elapsedMs: number, bridged: boolean): void;
+  /**
+   * The limit ended the turn's events while its reply still runs: `drained` settles once the
+   * reply has finished unheard, with its failure if it failed. Called before the outcome leaves.
+   */
+  drainingAfterLimit(drained: Promise<VoiceTurnDrain>): void;
 }
+
+/** How a reply drained after the turn limit ended. */
+export type VoiceTurnDrain = { failed: false } | { failed: true; error: unknown };
+
+/** Pulls a reply nobody hears any more to its end, so the chat turn still finishes and is stored. */
+const drainUnheard = async (
+  iterator: AsyncIterator<VoiceReplyEvent>,
+  pending: Promise<IteratorResult<VoiceReplyEvent>>,
+): Promise<VoiceTurnDrain> => {
+  try {
+    for (let step = await pending; !step.done; step = await iterator.next()) {
+      // Drained unheard: the reply finishes and persists, but the caller has moved on.
+    }
+    return { failed: false };
+  } catch (error) {
+    return { failed: true, error };
+  }
+};
 
 /** Where the chat turn is: every turn starts interpreting, then searches (retrieval) or composes. */
 export type VoiceTurnPhase = "interpreting" | "searching" | "composing";
@@ -61,10 +84,10 @@ const waitFor = (pull: Promise<IteratorResult<VoiceReplyEvent>>, deadline: Deadl
  * bridge line at most once, on a turn that has one, decided by the turn's phase: at once when the
  * turn starts searching, `bridgeAfterComposingIdleMs` after it starts composing without speech, or
  * `bridgeAfterMs` into a turn that has done neither. Past `turnLimitMs`, on a turn that has one, it speaks the fallback
- * line and closes the turn with `continue`. An outcome disarms both. After the limit it forwards
- * nothing more but keeps draining the reply, so the chat turn still finishes and is stored as
- * usual — the stored answer is then not what the caller heard. Phase markers are dropped;
- * everything else passes through.
+ * line and closes the turn with `continue`. An outcome disarms both. After the limit its events
+ * end with the outcome, and the reply drains behind them (`observer.drainingAfterLimit`), so the
+ * chat turn still finishes and is stored as usual — the stored answer is then not what the
+ * caller heard. Phase markers are dropped; everything else passes through.
  */
 export async function* applyVoiceTurnPolicy(
   events: AsyncIterable<VoiceReplyEvent>,
@@ -129,11 +152,10 @@ export async function* applyVoiceTurnPolicy(
         spoken = true;
         policy.observer.firstSpeech(elapsed(), bridged);
         yield { type: "speech", text: policy.fallbackLine, last: true };
-        yield { type: "outcome", outcome: { kind: "continue" } };
-        for (let step = await pending; !step.done; step = await iterator.next()) {
-          // Drained unheard: the reply finishes and persists, but the caller has moved on.
-        }
+        // The reply is handed on before the outcome leaves, so the events can end with it.
         finished = true;
+        policy.observer.drainingAfterLimit(drainUnheard(iterator, pending ?? iterator.next()));
+        yield { type: "outcome", outcome: { kind: "continue" } };
         return;
       }
 

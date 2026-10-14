@@ -310,41 +310,6 @@ describe("voice completions route", () => {
     expect(inputs[3]).toMatchObject({ locale: "de-AT" });
   });
 
-  it("finishes the response at the outcome while the turn behind it is still draining", async () => {
-    let release!: () => void;
-    const released = new Promise<void>((resolve) => { release = resolve; });
-    const drained = vi.fn();
-    const turns = {
-      runTurn: vi.fn(() => (async function* (): AsyncGenerator<VoiceTurnEvent> {
-        yield { type: "conversation", conversationId };
-        yield { type: "speech", text: "Sorry, could you ask me again?", last: true };
-        yield { type: "outcome", outcome: { kind: "continue" } };
-        await released;
-        drained();
-      })()),
-    };
-
-    try {
-      const streamed = await request(createApp(createDependencies({ voiceTurns: turns })))
-        .post(completionsPath())
-        .set("Authorization", "Bearer voice-secret")
-        .send(elevenlabsBody())
-        .expect(200);
-      const answered = await request(createApp(createDependencies({ voiceTurns: turns })))
-        .post(completionsPath())
-        .set("Authorization", "Bearer voice-secret")
-        .send(elevenlabsBody({ stream: false }))
-        .expect(200);
-
-      expect(dataFrames(streamed.text).at(-1)).toBe("[DONE]");
-      expect(answered.body.choices[0].message.content).toBe("Sorry, could you ask me again?");
-      expect(drained).not.toHaveBeenCalled();
-    } finally {
-      release();
-    }
-    await vi.waitFor(() => expect(drained).toHaveBeenCalledTimes(2));
-  });
-
   it("reads the generic dialect's session key from its header", async () => {
     const dependencies = createDependencies();
 
@@ -610,13 +575,12 @@ describe("voice completions route keep-alive", () => {
   };
 
   /** A turn that names its conversation, says nothing for `silenceMs`, answers, then drains for `drainMs`. */
-  const silentTurn = (silenceMs: number, drainMs = 0) => ({
+  const silentTurn = (silenceMs: number) => ({
     runTurn: (_input: VoiceTurnInput, _signal: AbortSignal) => (async function* (): AsyncGenerator<VoiceTurnEvent> {
       yield { type: "conversation", conversationId };
       await new Promise((resolve) => setTimeout(resolve, silenceMs));
       yield { type: "speech", text: "We open at nine.", last: true };
       yield { type: "outcome", outcome: { kind: "continue" } };
-      if (drainMs > 0) await new Promise((resolve) => setTimeout(resolve, drainMs));
     })(),
   });
 
@@ -724,10 +688,10 @@ describe("voice completions route keep-alive", () => {
     ]);
   });
 
-  it("sends no keep-alive after the stop frame while the turn behind it drains", async () => {
+  it("sends no keep-alive after the stop frame", async () => {
     const { arrivals, writesAfterClose } = await streamOnFakeClock({
       dialect: "elevenlabs",
-      turns: silentTurn(100, 10_000),
+      turns: silentTurn(100),
       runForMs: 11_000,
     });
 
@@ -942,16 +906,18 @@ describe("voice completions route outcomes", () => {
       expect(response.trailers).not.toHaveProperty("x-radioso-voice-outcome");
     });
 
-    it("stops draining a turn that sends a second outcome", async () => {
-      let pulledPastSecondOutcome = false;
+    const trailing: Array<[string, VoiceTurnEvent]> = [
+      ["a second outcome", { type: "outcome", outcome: { kind: "callback_requested", handoffReason: "routine_handoff" } }],
+      ["speech after the outcome", { type: "speech", text: "Stale.", last: true }],
+    ];
+
+    it.each(trailing)("ends a stream with the error frame, not stop and [DONE], when the turn sends %s", async (_label, extra) => {
       let closed = false;
       const turns = {
         runTurn: vi.fn(() => (async function* (): AsyncGenerator<VoiceTurnEvent> {
           try {
             yield* spokenTurn;
-            yield { type: "outcome", outcome: { kind: "continue" } };
-            pulledPastSecondOutcome = true;
-            yield { type: "speech", text: "Stale.", last: true };
+            yield extra;
           } finally {
             closed = true;
           }
@@ -960,11 +926,23 @@ describe("voice completions route outcomes", () => {
 
       const response = await postOverHttp(createDependencies({ voiceTurns: turns }), elevenlabsBody());
 
-      // The first outcome reached the runtime whole; the second one only ends the drain.
-      expect(dataFrames(response.text).at(-1)).toBe("[DONE]");
-      expect(response.trailers["x-radioso-voice-outcome"]).toBe("continue");
-      await vi.waitFor(() => expect(closed).toBe(true));
-      expect(pulledPastSecondOutcome).toBe(false);
+      const frames = dataFrames(response.text);
+      expect(frames.at(-1)).toBe(JSON.stringify({ error: { message: "The agent could not finish this reply.", type: "server_error" } }));
+      expect(frames).not.toContain("[DONE]");
+      expect(response.text).not.toContain('"finish_reason":"stop"');
+      expect(response.trailers).not.toHaveProperty("x-radioso-voice-outcome");
+      expect(closed).toBe(true);
+    });
+
+    it.each(trailing)("answers an HTTP error, never a completion, when a non-streaming turn sends %s", async (_label, extra) => {
+      const response = await request(createApp(createDependencies({ voiceTurns: voiceTurns([...spokenTurn, extra]) })))
+        .post(completionsPath())
+        .set("Authorization", "Bearer voice-secret")
+        .send(elevenlabsBody({ stream: false }))
+        .expect(500);
+
+      expect(response.headers).not.toHaveProperty("x-radioso-voice-outcome");
+      expect(response.text).not.toContain("chat.completion");
     });
   });
 
@@ -987,6 +965,61 @@ describe("voice completions route outcomes", () => {
       routines: { isRoutineActive: async () => false },
       ownership: { isHumanOwned: async () => humanOwned },
       logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    it("finishes the response at the turn limit's outcome while the reply behind it is still draining", async () => {
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => { release = resolve; });
+      const drained = vi.fn();
+      const fallback = "Sorry, this is taking much longer than it should, could you ask me again?";
+      const logger = { info: vi.fn(), warn: vi.fn() };
+      // A fresh service per request, so each one is a session's only turn.
+      const limitedTurns = () => new VoiceTurnService({
+        sessions: { findConversationId: async () => conversationId, bind: async (_session, id) => id },
+        chat: {
+          streamTurn: () => (async function* (): AsyncGenerator<ChatStreamEvent> {
+            yield { type: "conversation", conversationId };
+            await released;
+            yield { type: "chunk", text: "We open at nine." };
+            drained();
+            yield handOffDone({});
+          })(),
+        },
+        agents: {
+          findVoiceProfile: async () => ({
+            voice: { enabled: true, bridgeLines: {}, fallbackLine: { en: fallback } },
+            defaultLocale: null,
+          }),
+        },
+        routines: { isRoutineActive: async () => false },
+        ownership: { isHumanOwned: async () => false },
+        logger,
+        timing: { bridgeAfterMs: 10_000, bridgeAfterComposingIdleMs: 10_000, turnLimitMs: 20, replayWindowMs: 30_000 },
+      });
+
+      try {
+        const streamed = await postOverHttp(createDependencies({ voiceTurns: limitedTurns() }), elevenlabsBody());
+        const answered = await request(createApp(createDependencies({ voiceTurns: limitedTurns() })))
+          .post(completionsPath())
+          .set("Authorization", "Bearer voice-secret")
+          .send(elevenlabsBody({ stream: false }))
+          .expect(200);
+
+        expect(dataFrames(streamed.text).at(-1)).toBe("[DONE]");
+        expect(streamed.trailers["x-radioso-voice-outcome"]).toBe("continue");
+        expect(answered.body.choices[0].message.content).toBe(fallback);
+        expect(drained).not.toHaveBeenCalled();
+        // The turn is logged once its reply has drained, not when the response ended.
+        expect(logger.warn).not.toHaveBeenCalled();
+      } finally {
+        release();
+      }
+      await vi.waitFor(() => expect(drained).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledTimes(2));
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ result: "completed", turnLimitReached: true, fallbackSpoken: true }),
+        "Voice turn reached the turn limit",
+      );
     });
 
     it("requests a callback when the turn's routine handed the caller to a person after collecting a slot", async () => {

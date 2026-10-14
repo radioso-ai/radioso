@@ -47,7 +47,7 @@ export type VoiceTurnEvent =
   | { type: "bridge"; text: string }
   /** A speakable piece of the agent's reply, verbatim; the final piece carries `last: true`. */
   | { type: "speech"; text: string; last: boolean }
-  /** Exactly one, always last. */
+  /** Exactly one, always last: the turn's events end with it. */
   | { type: "outcome"; outcome: VoiceTurnOutcome };
 
 /**
@@ -55,7 +55,7 @@ export type VoiceTurnEvent =
  * adapter answers it like any failed turn, so the runtime never reads it as a finished reply.
  */
 export class VoiceTurnProtocolError extends Error {
-  constructor(readonly violation: "missing_outcome" | "second_outcome") {
+  constructor(readonly violation: "missing_outcome" | "second_outcome" | "event_after_outcome") {
     super(`Voice turn broke the port contract: ${violation}`);
     this.name = new.target.name;
   }

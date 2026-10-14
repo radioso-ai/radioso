@@ -151,18 +151,23 @@ helpers and the shared chat message limit from `app/http`
   stream's headers leave with its first frame. A turn ends with exactly one
   outcome or fails: the service raises `VoiceTurnIncompleteError` when the chat
   stream stops without `done` or `cancelled`, and the adapter holds every port
-  stream to the same rule (`withOneOutcome`: no outcome is
-  `VoiceTurnIncompleteError`, a second is `VoiceTurnProtocolError`). The
-  failure answers with an HTTP error before the first frame, or the generic
-  error frame after it, never `stop`, `[DONE]` or an outcome field; a
-  non-streaming request never gets a completion for it.
+  stream to the same rule: the outcome ends the port's events, and
+  `withOneOutcome` passes it on only once they have ended (no outcome is
+  `VoiceTurnIncompleteError`; a second outcome, or anything after it, is
+  `VoiceTurnProtocolError`). The failure answers with an HTTP error before
+  the first frame, or the generic error frame after it, never `stop`,
+  `[DONE]` or an outcome field; a non-streaming request never gets a
+  completion for it.
 - **Bridge lines are not stored.** A bridge is a channel-level utterance, like
   a typing indicator: it reaches the caller, never the conversation history.
-- **After the limit.** The policy speaks the fallback line, ends the turn with
-  `continue`, and drains the reply unheard so the chat turn still finishes and
-  is stored. The stored answer is then not what the caller heard, and nothing in
-  history marks that. The route ends the HTTP response at the outcome in both
-  modes, so the runtime never waits for the drain.
+- **After the limit.** The policy speaks the fallback line, ends its events
+  with `continue`, and hands the reply's drain to the service
+  (`observer.drainingAfterLimit`), so the chat turn still finishes and is
+  stored; the service settles and logs the turn once the drain has ended. The
+  stored answer is then not what the caller heard, and nothing in history
+  marks that. The port's events end at the outcome, so the route ends the
+  HTTP response there in both modes and the runtime never waits for the
+  drain; the drained chat turn runs past the route's post-disconnect ceiling.
 - **Flush delta.** ElevenLabs hands a sentence to speech once the terminator
   is followed by whitespace and a later non-blank delta arrives (observed
   2026-10-13). Pieces end on the terminator, so the `elevenlabs` dialect's

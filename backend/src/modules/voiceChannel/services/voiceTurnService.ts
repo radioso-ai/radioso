@@ -28,6 +28,7 @@ import {
   applyVoiceTurnPolicy,
   withoutPhaseMarkers,
   type VoiceReplyEvent,
+  type VoiceTurnDrain,
   type VoiceTurnPhase,
   type VoiceTurnPolicy,
 } from "./voiceTurnPolicy.js";
@@ -155,6 +156,8 @@ interface VoiceTurnRecord {
   outcome: VoiceTurnOutcome | null;
   /** Why chat handed the conversation to a person on this turn; null when it did not. */
   handoffReason: ChatTurnHandoffReason | null;
+  /** The reply still draining after the turn limit ended the turn's events; the turn ends with it. */
+  drain?: Promise<VoiceTurnDrain>;
 }
 
 const emptyRecord = (): VoiceTurnRecord => ({
@@ -295,9 +298,24 @@ export class VoiceTurnService implements VoiceTurnPort {
       throw error;
     } finally {
       hungUp?.removeEventListener("abort", onHangUp);
-      this.releaseFirstTurn(input.session, firstTurn);
-      this.memory.settle(sessionKey, claim, this.now(), this.exchangeOf(input, record, claim));
-      this.logTurn(input, record, startedAt, failure);
+      const finish = (): void => {
+        this.releaseFirstTurn(input.session, firstTurn);
+        this.memory.settle(sessionKey, claim, this.now(), this.exchangeOf(input, record, claim));
+        this.logTurn(input, record, startedAt, failure);
+      };
+      // The events end with the outcome; a reply the limit cut off drains behind them, and the
+      // turn is settled and logged once it has finished.
+      if (record.drain && failure === undefined) {
+        void record.drain.then((drained) => {
+          if (drained.failed) {
+            record.result = "failed";
+            failure = drained.error;
+          }
+          finish();
+        });
+      } else {
+        finish();
+      }
     }
   }
 
@@ -558,6 +576,9 @@ export class VoiceTurnService implements VoiceTurnPort {
           outcome.turnLimitReached = true;
           outcome.fallbackSpoken = spoken;
           recordVoiceTurnLimit(metrics, spoken);
+        },
+        drainingAfterLimit: (drained) => {
+          record.drain = drained;
         },
         firstSpeech: (elapsedMs, bridged) => recordVoiceFirstSpeech(metrics, elapsedMs, bridged),
       },

@@ -4,6 +4,7 @@ import { VOICE_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import type { VoiceTurnEvent } from "../../src/modules/voiceChannel/domain.js";
 import {
   applyVoiceTurnPolicy,
+  type VoiceTurnDrain,
   type VoiceReplyEvent,
   type VoiceTurnPhase,
   type VoiceTurnPolicy,
@@ -43,12 +44,14 @@ const timedReply = (steps: TimedStep[]) => {
 
 const recordingObserver = () => {
   const calls: Array<[string, ...unknown[]]> = [];
+  const drains: Array<Promise<VoiceTurnDrain>> = [];
   const observer: VoiceTurnPolicyObserver = {
     bridgeDue: (style, spoken) => calls.push(["bridgeDue", style, spoken]),
     turnLimitReached: (spoken) => calls.push(["turnLimitReached", spoken]),
     firstSpeech: (elapsedMs, bridged) => calls.push(["firstSpeech", elapsedMs, bridged]),
+    drainingAfterLimit: (drained) => drains.push(drained),
   };
-  return { observer, calls };
+  return { observer, calls, drains };
 };
 
 const policy = (overrides: Partial<VoiceTurnPolicy> = {}): VoiceTurnPolicy => ({
@@ -147,16 +150,30 @@ describe("voice turn policy", () => {
     expect(calls).toEqual([["bridgeDue", "acknowledge", false], ["firstSpeech", 3_000, false]]);
   });
 
-  it("speaks the fallback line at 10 s, ends the turn, and still drains the reply so it persists", async () => {
-    const { observer, calls } = recordingObserver();
+  it("speaks the fallback line at 10 s, ends its events there, and hands on the reply's drain so it persists", async () => {
+    const { observer, calls, drains } = recordingObserver();
     const reply = timedReply([
       { atMs: 0, event: conversation },
       { atMs: 12_000, event: speech("We open at nine.", true) },
       { atMs: 12_000, event: outcome },
     ]);
+    const startedAt = Date.now();
+    const seen: TimedEvent[] = [];
+    let endedAtMs: number | null = null;
 
-    const seen = await run(reply.events, policy({ observer }));
+    const consumer = (async () => {
+      for await (const event of applyVoiceTurnPolicy(reply.events, policy({ observer }))) {
+        seen.push({ atMs: Date.now() - startedAt, event });
+      }
+      endedAtMs = Date.now() - startedAt;
+    })();
+    await vi.runAllTimersAsync();
+    await consumer;
 
+    // The events end with the outcome at the limit; the reply finishes behind them.
+    expect(endedAtMs).toBe(10_000);
+    expect(drains).toHaveLength(1);
+    await expect(drains[0]).resolves.toEqual({ failed: false });
     expect(seen).toEqual([
       { atMs: 0, event: conversation },
       { atMs: 2_500, event: { type: "bridge", text: "Let me check." } },
@@ -169,6 +186,20 @@ describe("voice turn policy", () => {
       ["turnLimitReached", true],
       ["firstSpeech", 10_000, true],
     ]);
+  });
+
+  it("reports a reply that fails while it drains after the limit through the drain, not the events", async () => {
+    const { observer, drains } = recordingObserver();
+    const failing = (async function* (): AsyncGenerator<VoiceTurnEvent> {
+      yield conversation;
+      await new Promise((resolve) => setTimeout(resolve, 12_000));
+      throw new Error("provider down");
+    })();
+
+    const seen = await run(failing, policy({ observer }));
+
+    expect(seen.map(({ event }) => event.type)).toEqual(["conversation", "bridge", "speech", "outcome"]);
+    await expect(drains[0]).resolves.toEqual({ failed: true, error: new Error("provider down") });
   });
 
   it("keeps waiting for the reply past the limit when the agent has no fallback line", async () => {

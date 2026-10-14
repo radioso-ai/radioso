@@ -408,14 +408,16 @@ With `stream: false`, the response is one `chat.completion` object whose
 turn limit. It never contains a bridge line.
 
 If the turn fails after the first frame, the stream ends with one error frame
-in place of `stop` and `[DONE]`:
+in place of `stop`, `[DONE]` and the outcome trailer:
 
 ```text
 data: {"error":{"message":"The agent could not finish this reply.","type":"server_error"}}
 ```
 
 A turn that fails before its first frame answers with an HTTP error status
-instead.
+instead, and so does a failed turn with `stream: false`. A reply that stops
+before the turn has its outcome counts as a failed turn, whatever it had
+already said.
 
 Both carry an `X-Radioso-Conversation-Id` header with the conversation the
 turn ran in, so you can open the call in Activity. On a session's first turn,

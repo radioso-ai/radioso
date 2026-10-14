@@ -45,6 +45,24 @@ export type VoiceTurnEvent =
   /** Exactly one, always last. */
   | { type: "outcome"; outcome: VoiceTurnOutcome };
 
+/**
+ * A turn whose events broke the port's contract: they must end with exactly one outcome. The
+ * adapter answers it like any failed turn, so the runtime never reads it as a finished reply.
+ */
+export class VoiceTurnProtocolError extends Error {
+  constructor(readonly violation: "missing_outcome" | "second_outcome") {
+    super(`Voice turn broke the port contract: ${violation}`);
+    this.name = new.target.name;
+  }
+}
+
+/** A turn that ended without its outcome, such as one whose chat stream ended without `done` or `cancelled`. */
+export class VoiceTurnIncompleteError extends VoiceTurnProtocolError {
+  constructor() {
+    super("missing_outcome");
+  }
+}
+
 export interface VoiceTurnPort {
   /**
    * Runs one caller turn. `signal` aborts it. `hungUp`, when the adapter observes it, fires when

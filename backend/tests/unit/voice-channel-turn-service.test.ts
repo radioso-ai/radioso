@@ -5,7 +5,7 @@ import {
   defaultAgentVoiceSettings,
   type AgentVoiceSettings,
 } from "../../src/modules/agents/public.js";
-import type { VoiceTurnEvent, VoiceTurnInput } from "../../src/modules/voiceChannel/domain.js";
+import { VoiceTurnIncompleteError, type VoiceTurnEvent, type VoiceTurnInput } from "../../src/modules/voiceChannel/domain.js";
 import {
   VoiceTurnService,
   type VoiceChatTurnRequest,
@@ -314,6 +314,33 @@ describe("VoiceTurnService", () => {
     const [fields] = logger.warn.mock.calls[0];
     expect(fields).toMatchObject({ result: "failed", conversationId, errorClass: "ProviderDownError" });
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("secret detail");
+  });
+
+  it.each([
+    ["off", defaultAgentVoiceSettings()],
+    ["on", { enabled: true, bridgeLines: {}, fallbackLine: {} }],
+  ])("fails a turn whose chat stream ends without done or cancelled, with voice %s", async (_label, voice) => {
+    const logger = fakeLogger();
+    const service = new VoiceTurnService({ ...voiceOff,
+      agents: voiceProfiles(voice),
+      sessions: fakeSessions(conversationId),
+      chat: fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "We open at nine. See" }]),
+      logger,
+    });
+    const events: VoiceTurnEvent[] = [];
+
+    await expect((async () => {
+      for await (const event of service.runTurn(input(), new AbortController().signal)) events.push(event);
+    })()).rejects.toBeInstanceOf(VoiceTurnIncompleteError);
+    // The sentence that was whole went out; the outcome never does.
+    expect(events).toEqual([
+      { type: "conversation", conversationId },
+      { type: "speech", text: "We open at nine. ", last: false },
+    ]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ result: "failed", conversationId, errorClass: "VoiceTurnIncompleteError" }),
+      "Voice turn failed",
+    );
   });
 
   describe("the outcome a turn ends with", () => {

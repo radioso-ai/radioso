@@ -3,13 +3,14 @@ import type { AppLogger } from "../../../shared/observability/logger.js";
 import { VOICE_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { VOICE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
 import type { AgentVoiceSettings } from "../../agents/public.js";
-import type {
-  VoiceChannelContext,
-  VoiceSessionRef,
-  VoiceTurnEvent,
-  VoiceTurnInput,
-  VoiceTurnOutcome,
-  VoiceTurnPort,
+import {
+  VoiceTurnIncompleteError,
+  type VoiceChannelContext,
+  type VoiceSessionRef,
+  type VoiceTurnEvent,
+  type VoiceTurnInput,
+  type VoiceTurnOutcome,
+  type VoiceTurnPort,
 } from "../domain.js";
 import { chooseVoiceTurnLines, resolveVoiceTurnLocale } from "./voiceLines.js";
 import {
@@ -476,6 +477,8 @@ export class VoiceTurnService implements VoiceTurnPort {
           return;
         }
       }
+      // Chat ends every turn with `done` or `cancelled`; a stream that simply stops has no outcome to give.
+      throw new VoiceTurnIncompleteError();
     } finally {
       this.memory.chatTurnEnded(sessionKey, this.now());
     }

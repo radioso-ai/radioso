@@ -342,24 +342,6 @@ describe("voice completions route", () => {
     await vi.waitFor(() => expect(drained).toHaveBeenCalledTimes(2));
   });
 
-  it("still answers a non-streaming request whose turn ends without an outcome", async () => {
-    const dependencies = createDependencies({
-      voiceTurns: voiceTurns([
-        { type: "conversation", conversationId },
-        { type: "speech", text: "We open at nine.", last: false },
-      ]),
-    });
-
-    const response = await request(createApp(dependencies))
-      .post(completionsPath())
-      .set("Authorization", "Bearer voice-secret")
-      .send(elevenlabsBody({ stream: false }))
-      .expect(200);
-
-    expect(response.headers["x-radioso-conversation-id"]).toBe(conversationId);
-    expect(response.body.choices[0].message.content).toBe("We open at nine.");
-  });
-
   it("reads the generic dialect's session key from its header", async () => {
     const dependencies = createDependencies();
 
@@ -915,6 +897,72 @@ describe("voice completions route outcomes", () => {
     expect(response.headers.trailer).toBe("X-Radioso-Voice-Outcome");
     expect(response.headers).not.toHaveProperty("x-radioso-voice-outcome");
     expect(response.trailers["x-radioso-voice-outcome"]).toBe(kind);
+  });
+
+  describe("a turn that breaks the one-outcome rule", () => {
+    const unfinished: VoiceTurnEvent[] = [
+      { type: "conversation", conversationId },
+      { type: "speech", text: "We open at nine. ", last: false },
+    ];
+
+    it.each([true, false])("answers an HTTP error when the turn ends without an outcome or a frame (stream %s)", async (stream) => {
+      const response = await request(createApp(createDependencies({ voiceTurns: voiceTurns([{ type: "conversation", conversationId }]) })))
+        .post(completionsPath())
+        .set("Authorization", "Bearer voice-secret")
+        .send(elevenlabsBody({ stream }))
+        .expect(500);
+
+      expect(response.headers["content-type"]).toMatch(/^application\/json/u);
+      expect(response.headers).not.toHaveProperty("x-radioso-voice-outcome");
+      expect(response.text).not.toContain("chat.completion");
+    });
+
+    it("answers an HTTP error, never a completion, when a non-streaming turn ends without an outcome after speaking", async () => {
+      const response = await request(createApp(createDependencies({ voiceTurns: voiceTurns(unfinished) })))
+        .post(completionsPath())
+        .set("Authorization", "Bearer voice-secret")
+        .send(elevenlabsBody({ stream: false }))
+        .expect(500);
+
+      expect(response.headers).not.toHaveProperty("x-radioso-voice-outcome");
+      expect(response.text).not.toContain("We open at nine.");
+    });
+
+    it("ends a stream that spoke and then stopped without an outcome with the error frame alone", async () => {
+      const response = await postOverHttp(createDependencies({ voiceTurns: voiceTurns(unfinished) }), elevenlabsBody());
+
+      const frames = dataFrames(response.text);
+      expect(JSON.parse(frames[0] ?? "{}")).toMatchObject({ choices: [{ delta: { content: "We open at nine. " } }] });
+      expect(frames.at(-1)).toBe(JSON.stringify({ error: { message: "The agent could not finish this reply.", type: "server_error" } }));
+      expect(frames).not.toContain("[DONE]");
+      expect(response.text).not.toContain('"finish_reason":"stop"');
+      expect(response.trailers).not.toHaveProperty("x-radioso-voice-outcome");
+    });
+
+    it("stops draining a turn that sends a second outcome", async () => {
+      let pulledPastSecondOutcome = false;
+      let closed = false;
+      const turns = {
+        runTurn: vi.fn(() => (async function* (): AsyncGenerator<VoiceTurnEvent> {
+          try {
+            yield* spokenTurn;
+            yield { type: "outcome", outcome: { kind: "continue" } };
+            pulledPastSecondOutcome = true;
+            yield { type: "speech", text: "Stale.", last: true };
+          } finally {
+            closed = true;
+          }
+        })()),
+      };
+
+      const response = await postOverHttp(createDependencies({ voiceTurns: turns }), elevenlabsBody());
+
+      // The first outcome reached the runtime whole; the second one only ends the drain.
+      expect(dataFrames(response.text).at(-1)).toBe("[DONE]");
+      expect(response.trailers["x-radioso-voice-outcome"]).toBe("continue");
+      await vi.waitFor(() => expect(closed).toBe(true));
+      expect(pulledPastSecondOutcome).toBe(false);
+    });
   });
 
   describe("through the turn service", () => {

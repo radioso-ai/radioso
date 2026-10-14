@@ -140,7 +140,14 @@ helpers and the shared chat message limit from `app/http`
   `stop` and `[DONE]` and sends no tool call. The outcome kind travels as
   `X-Radioso-Voice-Outcome`: a header on a non-streaming completion, and on a
   stream a trailer (announced with `Trailer` when the stream opens), because a
-  stream's headers leave with its first frame.
+  stream's headers leave with its first frame. A turn ends with exactly one
+  outcome or fails: the service raises `VoiceTurnIncompleteError` when the chat
+  stream stops without `done` or `cancelled`, and the adapter holds every port
+  stream to the same rule (`withOneOutcome`: no outcome is
+  `VoiceTurnIncompleteError`, a second is `VoiceTurnProtocolError`). The
+  failure answers with an HTTP error before the first frame, or the generic
+  error frame after it, never `stop`, `[DONE]` or an outcome field; a
+  non-streaming request never gets a completion for it.
 - **Bridge lines are not stored.** A bridge is a channel-level utterance, like
   a typing indicator: it reaches the caller, never the conversation history.
 - **After the limit.** The policy speaks the fallback line, ends the turn with

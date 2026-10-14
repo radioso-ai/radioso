@@ -112,7 +112,11 @@ helpers and the shared chat message limit from `app/http`
   the outcome, and at most one bridge is spoken. The bridge
   style is `acknowledge` while a routine is active in the conversation at turn
   start and `check` otherwise; a session's first turn has no routine. Lines
-  rotate per policy turn within the process. The locale is the request's
+  rotate per policy turn within the process. A runtime that holds a first
+  sentence shorter than some length (`minReleasableSentenceChars` on the
+  dialect, 45 on `elevenlabs`, carried on `VoiceTurnInput`) gets only the
+  style's lines that reach it; when none does, the shorter line is spoken and
+  the service warns once per agent per process. The locale is the request's
   (`VoiceTurnInput.locale`, read by the dialect), else the agent's
   `assistantDefaultLocale`, else `en`; chat stores no response language per
   message, so the last reply's language is not a source. An agent with no line
@@ -282,7 +286,11 @@ the reply's message id and the two character counts, once the note is
 recorded; a note that fails to record logs `Voice turn note could not be
 recorded` at warn. A warn when a concurrent first turn bound the session to another
 conversation, and a warn naming only `dialect` and `agentId` when a request
-carries no usable session key (a 400). A stream that fails after its first
+carries no usable session key (a 400). Once per agent per process, when a
+turn's bridge line is below the dialect's minimum, `Voice bridge line is
+shorter than the runtime speaks on its own` at warn with
+`event: "voice.bridge_line_below_vendor_minimum"`, `agentId`, `vendor`,
+`lineCharacterCount` and `minimumCharacterCount`. A stream that fails after its first
 frame ends with one generic OpenAI error frame. Never the utterance, the reply
 or an internal error message. Chat-side spans, metrics and failure logs cover the
 turn itself.

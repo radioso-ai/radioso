@@ -137,17 +137,29 @@ the agent's `voice` settings block:
     "enabled": true,
     "bridgeLines": {
       "en": {
-        "acknowledge": ["Got it.", "Thanks, noted."],
-        "check": ["Let me check that for you.", "One moment, I'm looking it up."]
+        "acknowledge": [
+          "Got it, thank you, just give me a second to note that down.",
+          "Thanks, I've noted that, so let me take the next step."
+        ],
+        "check": [
+          "Let me check that for you, it only takes a moment.",
+          "One moment please while I look that up in our documents."
+        ]
       },
       "it": {
-        "acknowledge": ["Perfetto.", "Grazie, preso nota."],
-        "check": ["Controllo subito.", "Un attimo, sto verificando."]
+        "acknowledge": [
+          "Perfetto, ho preso nota e ora passo al punto successivo.",
+          "Grazie, l'ho annotato, dammi solo un secondo per proseguire."
+        ],
+        "check": [
+          "Controllo subito per te, ci vorrà solo un momento.",
+          "Un attimo per favore, sto cercando nei nostri documenti."
+        ]
       }
     },
     "fallbackLine": {
-      "en": "Sorry, that is taking longer than it should. Could you ask me again?",
-      "it": "Scusa, ci sto mettendo troppo. Puoi ripetere la domanda?"
+      "en": "Sorry, this is taking much longer than it should, could you ask me again?",
+      "it": "Scusa, ci sto mettendo troppo, puoi ripetere la domanda per favore?"
     }
   }
 }
@@ -173,7 +185,9 @@ The block is replaced whole: a request that carries `voice` must carry
 keeps the stored one. To turn voice off, send the block back with
 `"enabled": false`. Keys are language tags such as `en`, `it` or `pt-BR`, up
 to 10 for each map. Each style holds up to 5 lines, and every line is 1 to 200
-characters. A new agent starts with `"enabled": false` and empty maps.
+characters. For the `elevenlabs` dialect, write each line as one sentence of at
+least 45 characters, like the lines above (see [Dialects](#dialects)). A new
+agent starts with `"enabled": false` and empty maps.
 
 What happens on a turn while `enabled` is true:
 
@@ -349,7 +363,11 @@ ElevenLabs also holds the first sentence of a reply until it has about 45
 characters of text (observed 2026-10-13: 26 characters waited for the next
 sentence, 46 and 57 did not; invisible padding and two short sentences do not
 count). Write every bridge line and fallback line as a full sentence of at
-least 45 characters, or the caller hears it only together with the answer.
+least 45 characters, or the caller hears it only together with the answer. On
+this dialect, a style that has lines of both lengths speaks only its lines of
+45 characters or more. A style with none that long still speaks its shorter
+line, and the server logs `voice.bridge_line_below_vendor_minimum` at warn once
+per agent, naming the agent and the two lengths.
 
 The session key must name one call. A value that spans calls, such as a
 user id, would run every call of that user in one conversation, so no dialect

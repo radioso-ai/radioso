@@ -58,6 +58,25 @@ describe("voice turn lines", () => {
     expect(chooseVoiceTurnLines(marked, { locale: "en", routineActive: true, rotation: 0 }).bridge.text).toBeNull();
   });
 
+  it("prefers the lines the runtime speaks on their own, and still speaks a short one when the style has no other", () => {
+    const long = "Let me check that for you, it only takes a moment.";
+    const mixed: AgentVoiceSettings = {
+      enabled: true,
+      bridgeLines: { en: { acknowledge: ["Got it."], check: ["One moment.", long, "Looking into it."] } },
+      fallbackLine: {},
+    };
+    const turn = { locale: "en", routineActive: false, minReleasableChars: 45 };
+
+    expect([0, 1, 2].map((rotation) => chooseVoiceTurnLines(mixed, { ...turn, rotation }).bridge.text)).toEqual([long, long, long]);
+    expect(chooseVoiceTurnLines(mixed, { ...turn, rotation: 0 })).not.toHaveProperty("shortBridge");
+    expect(chooseVoiceTurnLines(mixed, { ...turn, routineActive: true, rotation: 0 })).toMatchObject({
+      bridge: { style: "acknowledge", text: "Got it." },
+      shortBridge: { characterCount: 7, minimumCharacterCount: 45 },
+    });
+    // A runtime with no minimum takes every line as authored.
+    expect(chooseVoiceTurnLines(mixed, { locale: "en", routineActive: false, rotation: 0 }).bridge.text).toBe("One moment.");
+  });
+
   it("takes the turn's locale from the request, then the agent default, then English", () => {
     expect(resolveVoiceTurnLocale({ requested: "it-IT", agentDefault: "de" })).toBe("it-IT");
     expect(resolveVoiceTurnLocale({ agentDefault: "de" })).toBe("de");

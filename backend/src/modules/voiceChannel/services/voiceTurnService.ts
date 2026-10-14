@@ -229,6 +229,8 @@ export class VoiceTurnService implements VoiceTurnPort {
   private readonly firstTurns = new Map<string, FirstTurn>();
   /** The newest request, the last bridge and the last exchange of each session, in this process. */
   private readonly memory: VoiceSessionMemory;
+  /** Agents already warned about a bridge line shorter than their runtime speaks on its own. */
+  private readonly shortBridgeWarned = new Set<string>();
 
   constructor(private readonly dependencies: VoiceTurnServiceDependencies) {
     this.now = dependencies.now ?? Date.now;
@@ -523,11 +525,15 @@ export class VoiceTurnService implements VoiceTurnPort {
     if (!profile?.voice.enabled) {
       return null;
     }
-    const lines = chooseVoiceTurnLines(profile.voice, {
+    const { shortBridge, ...lines } = chooseVoiceTurnLines(profile.voice, {
       locale: resolveVoiceTurnLocale({ requested: input.locale, agentDefault: profile.defaultLocale }),
       routineActive,
       rotation: this.policyTurns++,
+      ...(input.minReleasableSentenceChars === undefined ? {} : { minReleasableChars: input.minReleasableSentenceChars }),
     });
+    if (shortBridge && !humanOwned) {
+      this.warnShortBridgeOnce(input, shortBridge);
+    }
     const outcome = { bridged: false, turnLimitReached: false, fallbackSpoken: false };
     record.policy = outcome;
     const { metrics } = this.dependencies;
@@ -556,6 +562,28 @@ export class VoiceTurnService implements VoiceTurnPort {
         firstSpeech: (elapsedMs, bridged) => recordVoiceFirstSpeech(metrics, elapsedMs, bridged),
       },
     };
+  }
+
+  /**
+   * The line is still spoken; the runtime holds it until the answer's text arrives, so the bridge
+   * covers less of the wait. Once per agent per process, with lengths only.
+   */
+  private warnShortBridgeOnce(
+    input: VoiceTurnInput,
+    shortBridge: { characterCount: number; minimumCharacterCount: number },
+  ): void {
+    const agentKey = JSON.stringify([input.session.workspaceId, input.session.agentId]);
+    if (this.shortBridgeWarned.has(agentKey)) {
+      return;
+    }
+    this.shortBridgeWarned.add(agentKey);
+    this.dependencies.logger.warn({
+      event: "voice.bridge_line_below_vendor_minimum",
+      agentId: input.session.agentId,
+      vendor: input.session.vendor,
+      lineCharacterCount: shortBridge.characterCount,
+      minimumCharacterCount: shortBridge.minimumCharacterCount,
+    }, "Voice bridge line is shorter than the runtime speaks on its own");
   }
 
   private async claimSession(session: VoiceSessionRef): Promise<SessionClaim> {

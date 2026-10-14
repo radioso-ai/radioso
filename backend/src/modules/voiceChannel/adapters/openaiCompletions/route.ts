@@ -5,7 +5,14 @@ import { markHttpResponseFailed } from "../../../../app/http/middleware/httpResp
 import { consumeSseWithDisconnectCeiling } from "../../../../app/http/shared/sseDisconnectCeiling.js";
 import { badRequest, notFound } from "../../../../shared/domain/errors.js";
 import type { AppLogger } from "../../../../shared/observability/logger.js";
-import type { VoiceTurnEvent, VoiceTurnInput, VoiceTurnPort } from "../../domain.js";
+import {
+  VoiceTurnIncompleteError,
+  VoiceTurnProtocolError,
+  type VoiceTurnEvent,
+  type VoiceTurnInput,
+  type VoiceTurnOutcome,
+  type VoiceTurnPort,
+} from "../../domain.js";
 import {
   COMPLETION_ERROR_FRAME,
   createCompletionChunkRenderer,
@@ -120,6 +127,24 @@ const openEventStream = (res: Response, conversationId: string | null): void => 
 };
 
 /**
+ * The turn's events, held to the port's contract: exactly one outcome. A turn that ends without
+ * one, or sends a second, fails like any other turn, so the runtime never reads it as a finished
+ * reply. The check sits on the iterator, which the drain keeps pulling after the response ended.
+ */
+async function* withOneOutcome(events: AsyncIterable<VoiceTurnEvent>): AsyncGenerator<VoiceTurnEvent> {
+  let outcomes = 0;
+  for await (const event of events) {
+    if (event.type === "outcome" && ++outcomes > 1) {
+      throw new VoiceTurnProtocolError("second_outcome");
+    }
+    yield event;
+  }
+  if (outcomes === 0) {
+    throw new VoiceTurnIncompleteError();
+  }
+}
+
+/**
  * Drains the turn the way the REST agent channel does: after a disconnect the turn may still
  * finish and persist, and it is aborted only once the post-disconnect ceiling passes. The
  * response itself ends at the turn's outcome, which is always last; a turn whose limit spoke the
@@ -137,13 +162,13 @@ interface TurnDrain {
 const drainTurn = async (
   drain: TurnDrain,
   onEvent: (event: VoiceTurnEvent) => void,
-): Promise<{ disconnected: boolean }> => {
+): Promise<void> => {
   const { res } = drain;
   let outcomeSent = false;
   try {
     const result = await consumeSseWithDisconnectCeiling({
       response: res,
-      events: drain.events,
+      events: withOneOutcome(drain.events),
       onEvent: (event) => {
         outcomeSent ||= event.type === "outcome";
         onEvent(event);
@@ -159,7 +184,6 @@ const drainTurn = async (
     if (result.ceilingExceeded) {
       markHttpResponseFailed(res);
     }
-    return { disconnected: result.disconnected };
   } catch (error) {
     markHttpResponseFailed(res);
     throw error;
@@ -241,33 +265,32 @@ const streamCompletion = async (
   }
 };
 
-const sendCompletion = (res: Response, identity: CompletionIdentity, collected: readonly VoiceTurnEvent[]): void => {
+/** The whole turn as one completion, sent at its outcome. */
+const sendCompletion = (
+  res: Response,
+  identity: CompletionIdentity,
+  collected: readonly VoiceTurnEvent[],
+  outcome: VoiceTurnOutcome,
+): void => {
   const conversation = collected.find(
     (seen): seen is Extract<VoiceTurnEvent, { type: "conversation" }> => seen.type === "conversation",
   );
   if (conversation) {
     res.setHeader(CONVERSATION_ID_HEADER, conversation.conversationId);
   }
-  const outcome = collected.find((seen): seen is Extract<VoiceTurnEvent, { type: "outcome" }> => seen.type === "outcome");
-  if (outcome) {
-    res.setHeader(OUTCOME_FIELD, outcome.outcome.kind);
-  }
+  res.setHeader(OUTCOME_FIELD, outcome.kind);
   res.status(200).json(renderCompletion(identity, collected));
 };
 
 const answerCompletion = async (drain: TurnDrain, identity: CompletionIdentity): Promise<void> => {
   const { res } = drain;
   const collected: VoiceTurnEvent[] = [];
-  const { disconnected } = await drainTurn(drain, (event) => {
+  await drainTurn(drain, (event) => {
     collected.push(event);
     if (event.type === "outcome") {
-      sendCompletion(res, identity, collected);
+      sendCompletion(res, identity, collected, event.outcome);
     }
   });
-  // A turn that ended without an outcome still owes the caller what it said.
-  if (!res.headersSent && !disconnected) {
-    sendCompletion(res, identity, collected);
-  }
 };
 
 /**

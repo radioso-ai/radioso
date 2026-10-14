@@ -94,6 +94,27 @@ describeIntegration("NotificationDeliveryOutcomeRepository (Postgres)", () => {
       .resolves.toEqual({ reservedEmails: 0, cappedRequests: 0 });
   });
 
+  it("reserves the extra emails a replay can now send, and caps a replay that would exceed the day", async () => {
+    const workspaceId = randomUUID();
+    const conversationId = randomUUID();
+    const requestId = randomUUID();
+    const first = await reserve({ requestId, workspaceId, conversationId, requestedEmailCount: 0, dailyEmailLimit: 4 });
+    const toppedUp = await reserve({ requestId, workspaceId, conversationId, requestedEmailCount: 3, dailyEmailLimit: 4 });
+
+    expect(first).toMatchObject({ emailAllowed: true, newlyRecorded: true });
+    expect(toppedUp).toMatchObject({ dispatchAllowed: true, emailAllowed: true, newlyRecorded: false });
+    await expect(repository.readDailyUsage({ workspaceId, usageDate: new Date("2026-10-11T00:00:00.000Z") }))
+      .resolves.toMatchObject({ reservedEmails: 3 });
+
+    const otherRequest = randomUUID();
+    await reserve({ requestId: otherRequest, workspaceId, conversationId: randomUUID(), requestedEmailCount: 0, dailyEmailLimit: 4 });
+    const overLimit = await reserve({ requestId: otherRequest, workspaceId, conversationId: randomUUID(), requestedEmailCount: 2, dailyEmailLimit: 4 });
+
+    expect(overLimit).toMatchObject({ dispatchAllowed: true, emailAllowed: false, reason: "workspace_daily_email_cap" });
+    await expect(repository.readDailyUsage({ workspaceId, usageDate: new Date("2026-10-11T00:00:00.000Z") }))
+      .resolves.toMatchObject({ reservedEmails: 3 });
+  });
+
   it("reserves recipient attempts atomically and replays the same request without double counting", async () => {
     const workspaceId = randomUUID();
     const conversationId = randomUUID();

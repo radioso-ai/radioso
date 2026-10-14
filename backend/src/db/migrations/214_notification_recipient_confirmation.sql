@@ -1,6 +1,7 @@
 -- Per-workspace recipient confirmation and deployment-wide deliverability suppression.
 -- The grandfather deadline is data stamped when this migration runs, so mixed revisions and
--- later policy changes never reinterpret when an existing recipient's grace period began.
+-- later policy changes never reinterpret when an existing recipient's grace period began. A
+-- grandfathered address also keeps 14 days from its confirmation_sent_at (see the policy).
 CREATE TABLE notification_recipient_confirmations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

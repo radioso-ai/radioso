@@ -30,8 +30,11 @@ export {
 } from "./routineEndingNotificationFromAction.js";
 export {
   NotificationRecipientPolicyService,
+  type ConfirmationReservation,
   type NotificationRecipientDescription,
   type NotificationRecipientPolicyPort,
+  type NotificationRecipientStateStore,
+  type NotificationRecipientStateView,
 } from "./notificationRecipientPolicy.js";
 export { planNotificationEmail } from "./notificationEmailPlan.js";
 export { NotificationRecipientConfirmationMailer } from "./notificationRecipientConfirmationMailer.js";

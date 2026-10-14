@@ -238,9 +238,10 @@ attempts also count against the workspace's daily plan allowance; reaching it
 records `workspace_daily_email_cap` and leaves a configured webhook active.
 An external address must confirm within its workspace before it receives a
 notice. Adding it to a notify skill sends the confirmation message right away,
-so Francesco can confirm before the first booking arrives. A configured address
-in its recorded 14-day grace period still receives the notice and gets a
-confirmation message on its first delivery attempt. Every notice carries a
+so Francesco can confirm before the first booking arrives. An address configured
+before confirmation existed keeps receiving notices and gets the confirmation
+message with its first one; it has 14 days from that message, and at least
+until its recorded deadline, to confirm. Every notice carries a
 one-click unsubscribe link, and a hard bounce or complaint suppresses
 notification mail to that address across the deployment. When the workspace's
 daily email allowance stops a notice, a line under the destination says so; the

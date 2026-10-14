@@ -135,7 +135,7 @@ export const describeNoticeDestination = (
 export const describeDailyEmailAllowance = (destinations: OperatorNoticeDestinations | null): string | null => {
   const allowance = destinations?.dailyEmailAllowance
   if (!allowance?.reachedToday) return null
-  return `The daily email limit is stopping notice emails (${allowance.sentToday} of ${allowance.limit} sent today). It resets at midnight UTC.`
+  return `The daily email limit stopped a notice email today (${allowance.sentToday} of ${allowance.limit} sent). It resets at midnight UTC.`
 }
 
 const DEFAULT_ROUTE_LABELS: Partial<Record<OperatorNoticeRoute, string>> = {

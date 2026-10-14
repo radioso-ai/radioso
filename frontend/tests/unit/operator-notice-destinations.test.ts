@@ -95,7 +95,7 @@ describe('describeDailyEmailAllowance', () => {
 
   it('says when the daily limit has stopped notice emails', () => {
     expect(describeDailyEmailAllowance({ ...destinations, dailyEmailAllowance: { limit: 100, sentToday: 100, reachedToday: true } }))
-      .toBe('The daily email limit is stopping notice emails (100 of 100 sent today). It resets at midnight UTC.')
+      .toBe('The daily email limit stopped a notice email today (100 of 100 sent). It resets at midnight UTC.')
   })
 })
 

@@ -1022,6 +1022,50 @@ describe("voice completions route outcomes", () => {
       );
     });
 
+    it("ends a replay with stop, [DONE] and its outcome, and settles the session, while the replay's audit note hangs", async () => {
+      const answer = "We open at nine. See you then!";
+      const logger = { info: vi.fn(), warn: vi.fn() };
+      const streamTurn = vi.fn(() => (async function* (): AsyncGenerator<ChatStreamEvent> {
+        yield { type: "conversation", conversationId };
+        yield { type: "chunk", text: answer };
+        yield handOffDone({ answer });
+      })());
+      const turns = new VoiceTurnService({
+        sessions: { findConversationId: async () => conversationId, bind: async (_session, id) => id },
+        chat: { streamTurn },
+        agents: { findVoiceProfile: async () => ({ voice: defaultAgentVoiceSettings(), defaultLocale: null }) },
+        routines: { isRoutineActive: async () => false },
+        ownership: { isHumanOwned: async () => false },
+        logger,
+        // The audit store never answers the replay's note.
+        notes: { replyInterrupted: vi.fn(async () => {}), replyReplayed: vi.fn(() => new Promise<void>(() => {})) },
+      });
+      // The runtime hung up on the session's first turn before its outcome, so its stored answer is replayable.
+      const hungUp = new AbortController();
+      hungUp.abort();
+      const firstTurn: VoiceTurnInput = {
+        session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey: "conv_abc" },
+        transport: "web",
+        utterance: "When do you open?",
+      };
+      for await (const _event of turns.runTurn(firstTurn, new AbortController().signal, hungUp.signal)) {
+        // Drained like the runtime that went away.
+      }
+
+      const replayed = await postOverHttp(createDependencies({ voiceTurns: turns }), elevenlabsBody());
+
+      const frames = dataFrames(replayed.text);
+      expect(frames.at(-1)).toBe("[DONE]");
+      expect(JSON.parse(frames.at(-2) ?? "{}")).toMatchObject({ choices: [{ delta: {}, finish_reason: "stop" }] });
+      expect(replayed.trailers["x-radioso-voice-outcome"]).toBe("continue");
+      expect(streamTurn).toHaveBeenCalledTimes(1);
+      expect(logger.info).toHaveBeenLastCalledWith(expect.objectContaining({ result: "replayed" }), "Voice turn finished");
+
+      // The replay settled as delivered, so the same utterance again runs a new turn.
+      await postOverHttp(createDependencies({ voiceTurns: turns }), elevenlabsBody());
+      expect(streamTurn).toHaveBeenCalledTimes(2);
+    });
+
     it("requests a callback when the turn's routine handed the caller to a person after collecting a slot", async () => {
       const turns = turnService([
         { type: "conversation", conversationId },

@@ -173,6 +173,25 @@ const emptyRecord = (): VoiceTurnRecord => ({
 });
 
 const CONTINUE_OUTCOME: VoiceTurnOutcome = { kind: "continue" };
+
+/** How long a turn's audit note may take before it is reported as not recorded. */
+const NOTE_TIMEOUT_MS = 5_000;
+
+class VoiceTurnNoteTimeoutError extends Error {
+  constructor() {
+    super(`Voice turn note took longer than ${NOTE_TIMEOUT_MS} ms`);
+    this.name = "VoiceTurnNoteTimeoutError";
+  }
+}
+
+/** The note, or a timeout error once it has taken too long; the write itself goes on either way. */
+const withinNoteTimeout = (note: Promise<void>): Promise<void> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new VoiceTurnNoteTimeoutError()), NOTE_TIMEOUT_MS);
+  });
+  return Promise.race([note, timeout]).finally(() => clearTimeout(timer));
+};
 const CONTINUE: VoiceTurnEvent = { type: "outcome", outcome: CONTINUE_OUTCOME };
 
 /** The end of a whole reply as speech: its remaining sentences, then the tail, which is the last piece. */
@@ -352,18 +371,26 @@ export class VoiceTurnService implements VoiceTurnPort {
     yield* lastSpeech(splitCompleteSentences(exchange.reply.text, { startsLine: true, final: true }), record);
     record.result = "replayed";
     recordVoiceTurnReplayed(this.dependencies.metrics);
+    try {
+      yield CONTINUE;
+    } finally {
+      // Written once the outcome has left, off the response's path: the turn neither waits for
+      // the audit write nor depends on it to settle.
+      this.noteReplayed(input, exchange);
+    }
+  }
+
+  private noteReplayed(input: VoiceTurnInput, exchange: ReplayableVoiceExchange): void {
+    const { notes } = this.dependencies;
+    if (!notes) {
+      return;
+    }
     const note = {
       workspaceId: input.session.workspaceId,
       conversationId: exchange.conversationId,
       assistantMessageId: exchange.reply.messageId,
     };
-    // The turn reports itself delivered only once its audit note is durable.
-    try {
-      await this.dependencies.notes?.replyReplayed(note);
-    } catch (error) {
-      this.warnNoteFailed(input, note.conversationId, error);
-    }
-    yield CONTINUE;
+    withinNoteTimeout(notes.replyReplayed(note)).catch((error: unknown) => this.warnNoteFailed(input, note.conversationId, error));
   }
 
   /**

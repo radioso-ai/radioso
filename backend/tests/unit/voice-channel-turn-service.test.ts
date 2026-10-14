@@ -1115,46 +1115,48 @@ describe("VoiceTurnService", () => {
         await first;
       };
 
-      /** The replayed turn's events up to its last speech piece, and its outcome still to come. */
-      const replayUntilLastSpeech = async (turns: VoiceTurnService) => {
-        const iterator = turns.runTurn(input({ utterance }), new AbortController().signal)[Symbol.asyncIterator]();
-        for (let step = await iterator.next(); !step.done; step = await iterator.next()) {
-          if (step.value.type === "speech" && step.value.last) break;
-        }
-        let settled = false;
-        const outcome = iterator.next().finally(() => { settled = true; });
-        await vi.advanceTimersByTimeAsync(0);
-        return { outcome, settled: () => settled };
-      };
-
-      it("ends a replayed turn only once its note is recorded", async () => {
+      it("ends a replayed turn without waiting for its note, and writes the note after the outcome", async () => {
         const notes = fakeNotes();
-        let recordNote!: () => void;
-        notes.replyReplayed.mockReturnValueOnce(new Promise<void>((resolve) => { recordNote = resolve; }));
-        const turns = service(supersedingChat([answered("We open at nine.")]), { notes });
-        await hungUpAnswer(turns);
-
-        const replay = await replayUntilLastSpeech(turns);
-
-        expect(replay.settled()).toBe(false);
-        recordNote();
-        await expect(replay.outcome).resolves.toEqual({ done: false, value: { type: "outcome", outcome: { kind: "continue" } } });
-      });
-
-      it("still ends a replayed turn, with a warning, when its note cannot be recorded", async () => {
-        const notes = fakeNotes();
-        notes.replyReplayed.mockRejectedValueOnce(new Error("audit store unavailable"));
+        notes.replyReplayed.mockReturnValue(new Promise<void>(() => {}));
         const logger = fakeLogger();
         const turns = service(supersedingChat([answered("We open at nine.")]), { notes, logger });
         await hungUpAnswer(turns);
+        const events: VoiceTurnEvent[] = [];
 
-        const replay = await replayUntilLastSpeech(turns);
+        for await (const event of turns.runTurn(input({ utterance }), new AbortController().signal)) {
+          // The note is not written before the outcome has left.
+          if (event.type === "outcome") expect(notes.replyReplayed).not.toHaveBeenCalled();
+          events.push(event);
+        }
 
-        await expect(replay.outcome).resolves.toEqual({ done: false, value: { type: "outcome", outcome: { kind: "continue" } } });
-        expect(logger.warn).toHaveBeenCalledWith(
-          expect.objectContaining({ conversationId, errorClass: "Error" }),
-          "Voice turn note could not be recorded",
-        );
+        expect(events.at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+        expect(notes.replyReplayed).toHaveBeenCalledWith({ workspaceId, conversationId, assistantMessageId });
+        // The session settled the replay, whatever became of the note.
+        expect(logger.info).toHaveBeenLastCalledWith(expect.objectContaining({ result: "replayed" }), "Voice turn finished");
+      });
+
+      it("warns when the replay's note fails, or does not finish within its time", async () => {
+        const notes = fakeNotes();
+        notes.replyReplayed.mockRejectedValueOnce(new Error("audit store unavailable"));
+        notes.replyReplayed.mockReturnValueOnce(new Promise<void>(() => {}));
+        const logger = fakeLogger();
+        const turns = service(supersedingChat([answered("We open at nine."), answered("We open at nine.")]), { notes, logger });
+        const noteWarnings = () => logger.warn.mock.calls
+          .filter(([, message]) => message === "Voice turn note could not be recorded")
+          .map(([fields]) => (fields as { errorClass?: string }).errorClass);
+
+        await hungUpAnswer(turns);
+        await start(turns, input({ utterance }));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(noteWarnings()).toEqual(["Error"]);
+
+        // The replay settled with its outcome delivered, so the next identical request runs a new turn.
+        await hungUpAnswer(turns);
+        await start(turns, input({ utterance }));
+        await vi.advanceTimersByTimeAsync(4_999);
+        expect(noteWarnings()).toEqual(["Error"]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(noteWarnings()).toEqual(["Error", "VoiceTurnNoteTimeoutError"]);
       });
 
       it("runs a new turn when the earlier reply reached the runtime whole", async () => {

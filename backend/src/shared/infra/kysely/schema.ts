@@ -1919,6 +1919,16 @@ export interface Visitors {
   workspace_id: string;
 }
 
+export interface VoiceSessions {
+  agent_id: string;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  session_key: string;
+  vendor: string;
+  workspace_id: string;
+}
+
 export interface WebsiteCrawlJobs {
   account_id: string | null;
   attempt_count: Generated<number>;
@@ -2161,6 +2171,7 @@ export interface DB {
   vector_index_checkpoints: VectorIndexCheckpoints;
   vector_index_work: VectorIndexWork;
   visitors: Visitors;
+  voice_sessions: VoiceSessions;
   website_crawl_jobs: WebsiteCrawlJobs;
   workspace_embedding_profiles: WorkspaceEmbeddingProfiles;
   workspace_embedding_transitions: WorkspaceEmbeddingTransitions;

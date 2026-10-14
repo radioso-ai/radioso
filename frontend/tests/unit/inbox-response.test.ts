@@ -86,6 +86,11 @@ describe('visitorIdentityLabel', () => {
     expect(visitorIdentityLabel({ anonymousSessionId: undefined })).toBe('Visitor')
   })
 
+  it('labels a voice caller as a caller, never as verified: a voice session has no browser session', () => {
+    expect(visitorIdentityLabel({ anonymousSessionId: null, channel: 'voice' })).toBe('Caller')
+    expect(visitorIdentityLabel({ anonymousSessionId: undefined, channel: 'voice' })).toBe('Caller')
+  })
+
   it('never calls an email sender verified: a session does not apply to email, so none proves nothing', () => {
     expect(visitorIdentityLabel({ anonymousSessionId: null, channel: 'email' })).toBe('Email sender')
     expect(visitorIdentityLabel({ anonymousSessionId: undefined, channel: 'email' })).toBe('Email sender')
@@ -140,6 +145,15 @@ describe('informativeChannelLabel', () => {
       threadKey: '8b3c1f4e-1d2a-4c5b-9e7f-0a1b2c3d4e5f',
       participant: { address: 'ana@example.test' },
     })).toBe('Email')
+  })
+
+  it('labels a voice session', () => {
+    expect(informativeChannelLabel({
+      provider: 'voice',
+      vendor: 'elevenlabs',
+      sessionKey: 'conv_abc',
+      transport: 'web',
+    })).toBe('Voice')
   })
 
   it('does not label the default web embed', () => {

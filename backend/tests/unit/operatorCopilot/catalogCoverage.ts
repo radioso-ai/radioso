@@ -240,6 +240,11 @@ export const internalRuntimeCoverageExclusions = {
   activityCallerKindFilter: permanent(
     "Permanent exclusion: caller kind is a read-only Activity view control. conversation_history_search already reads the underlying conversation data, including caller kind; Ray cannot operate a dashboard filter.",
   ),
+  // `POST /api/v1/agents/:agentId/voice/:dialect/v1/chat/completions` speaks a vendor-owned OpenAI wire
+  // format, not Radioso's API contract, so it has no OpenAPI operation for the catalog map above.
+  voiceCompletionsAdapter: deferred(
+    "Deferred exclusion: vendor-facing wire adapter; operator configuration arrives with the voice settings block in a later change.",
+  ),
 } as const;
 
 /** Every OpenAPI operation is deliberately reachable through a family reader or explicitly planned/excluded. */

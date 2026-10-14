@@ -351,6 +351,14 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
           address: z.string(),
         }),
       }),
+      // `vendor` names the voice runtime that issued the opaque `sessionKey`.
+      z.object({
+        provider: z.literal("voice"),
+        vendor: z.string(),
+        sessionKey: z.string(),
+        transport: z.enum(["phone", "web"]),
+        callerId: z.string().optional(),
+      }),
     ]),
   );
 

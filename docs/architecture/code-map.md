@@ -385,12 +385,14 @@ conversation), the vendor-neutral turn port that runs one caller utterance as
 a streaming chat turn and re-cuts the reply into sentence-sized speech, the
 turn policy that covers the wait with the agent's authored bridge and fallback
 lines read from the agent's `voice` settings block (which the agents module
-owns, stores and serves), and the vendor adapters that bind that port to a
-wire.
+owns, stores and serves), the turn's outcome (`continue`, or
+`callback_requested` after a hand-off whose routine collected something), and
+the vendor adapters that bind that port to a wire.
 Voice enters the chat path as `sourceChannel: "voice"` with a `voice` channel
 context and the `latest_input_wins` supersession mode, which the chat turn
-registry and lifecycle implement (`chat/contracts/interruption.ts`); the chat
-turn is otherwise unchanged.
+registry and lifecycle implement (`chat/contracts/interruption.ts`), and reads
+the `handoff` report (`ChatTurnHandoff`) chat puts on a hand-off turn's `done`
+event; the chat turn is otherwise unchanged.
 
 Should not own planning, retrieval, routines, or any vendor's field names
 outside `adapters/`. The domain names no vendor.
@@ -399,7 +401,7 @@ Public surfaces and key files:
 
 - `backend/src/modules/voiceChannel/public.ts`
 - `backend/src/modules/voiceChannel/domain.ts` — `VoiceTurnPort`, `VoiceTurnInput`, `VoiceTurnEvent`, `VoiceTurnOutcome`
-- `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`, `speechText.ts`, `voiceTurnPolicy.ts` (bridge and turn limit, `VOICE_BEHAVIOR`) and `voiceLines.ts`; `voiceSessionMemory.ts` (in-process per-session memory: newest request, last bridge, replayable exchange)
+- `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`, `speechText.ts`, `voiceTurnPolicy.ts` (bridge and turn limit, `VOICE_BEHAVIOR`), `voiceTurnOutcome.ts` (outcome from chat's `done` event) and `voiceLines.ts`; `voiceSessionMemory.ts` (in-process per-session memory: newest request, last bridge, replayable exchange)
 - `backend/src/modules/agents/voiceSettings.ts` — the agent's `voice` block on `GET`/`PUT /api/v1/agents/:agentId`, read by the voice services as types from `agents/public.ts`
 - `backend/src/modules/voiceChannel/persistence/voiceSessionRepository.ts` (`voice_sessions`, migration `214_voice_sessions.sql`)
 - `backend/src/modules/voiceChannel/adapters/openaiCompletions/` — dialects as data, request schema, SSE presenter, route

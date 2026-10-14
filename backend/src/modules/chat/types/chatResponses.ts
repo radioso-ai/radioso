@@ -44,6 +44,21 @@ export interface ChatOwnershipAck {
   suppressed: boolean;
 }
 
+/**
+ * Why a turn handed its conversation to a person: a routine reached an authored hand-off end, a
+ * routine's visitor got stuck, or a grounded miss on an agent that hands those off.
+ */
+export type ChatTurnHandoffReason = "routine_handoff" | "routine_stuck" | "retrieval_miss";
+
+/**
+ * The hand-off a turn applied, for the channel that delivers its reply. `collectedSlotCount` is how
+ * many of the ending routine's declared slots held a value; a retrieval miss has no routine, so 0.
+ */
+export interface ChatTurnHandoff {
+  reason: ChatTurnHandoffReason;
+  collectedSlotCount: number;
+}
+
 export interface ChatResponse {
   conversationId: string;
   agentId?: string;
@@ -59,6 +74,11 @@ export interface ChatResponse {
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;
   ownership?: ChatOwnershipAck;
+  /**
+   * Present when this turn handed the conversation to a person. Channel-facing: the HTTP
+   * presenters leave it out of every response, and the agent reply envelope does not carry it.
+   */
+  handoff?: ChatTurnHandoff;
   /** Where this turn left the routine it touched; absent when no routine ran. */
   routine?: ChatRoutineTurnState;
   /** What became of the tool call this turn carried; absent on a message turn. */

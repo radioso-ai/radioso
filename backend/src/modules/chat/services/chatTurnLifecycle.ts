@@ -43,7 +43,7 @@ import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
-import type { ChatResponse, ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
+import type { ChatResponse, ChatRoute, ChatSuggestion, ChatTurnHandoff, ChatTurnHandoffReason } from "../types/chatResponses.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { appendDirectiveSteeringStage } from "./directiveTracePresenter.js";
@@ -270,7 +270,20 @@ export interface AssistantTurnPersistencePort {
     ownershipAuditEvent?: AuditEventInput | null;
     additionalAuditEvent?: AuditEventInput | null;
     transaction?: Db;
+    /** Runs as the transaction's last step; a throw rolls the whole turn back. */
+    commitFence?: () => void;
   }): Promise<AssistantTurnPersistenceReceipt>;
+  /**
+   * Deletes the user message of a turn a newer input replaced and records `auditEvent`, its
+   * cancelled `chat.answer` event, in one transaction. Resolves false, recording nothing, when the
+   * conversation holds no such user message.
+   */
+  discardReplacedUserMessage?(input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+    auditEvent: AuditEventInput;
+  }): Promise<boolean>;
 }
 
 interface PendingDecisionWriterPort {
@@ -286,6 +299,23 @@ export interface OwnershipHandoffInput {
   routineId?: string;
   stepId?: string;
 }
+
+/** The hand-off a turn applies, by one of the reasons a turn can raise. */
+export interface TurnHandoffInput extends OwnershipHandoffInput {
+  reason: ChatTurnHandoffReason;
+  /** How many of the ending routine's declared slots held a value; the reply reports it, nothing stores it. */
+  collectedSlotCount?: number;
+}
+
+/** The hand-off as it is stored: the reply-only slot count does not cross the persistence port. */
+const storedHandoff = (handoff: TurnHandoffInput | null | undefined): OwnershipHandoffInput | null | undefined =>
+  handoff ? { reason: handoff.reason, routineId: handoff.routineId, stepId: handoff.stepId } : handoff;
+
+/** What the reply tells its delivering channel about the hand-off the turn applied. */
+const turnHandoffReport = (handoff: TurnHandoffInput): ChatTurnHandoff => ({
+  reason: handoff.reason,
+  collectedSlotCount: handoff.collectedSlotCount ?? 0,
+});
 
 interface AssistantTurnSuccessInput {
   workspaceId: string;
@@ -591,7 +621,7 @@ interface CompleteAssistantTurnInput {
   /** Names and describes the routine state above for the reply envelope; absent when no routine ran. */
   routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: PendingDecisionCreateInput | null;
-  ownershipHandoff?: OwnershipHandoffInput | null;
+  ownershipHandoff?: TurnHandoffInput | null;
   suspended?: boolean;
   additionalAuditEvent?: AuditEventInput | null;
   transaction?: Db;
@@ -599,6 +629,12 @@ interface CompleteAssistantTurnInput {
   clarificationTransition?: CapturedClarificationTransition | null;
   /** The skill effects the turn's execution mode suppressed; a draft reports them. */
   suppressedEffects?: readonly SuppressedSkillEffect[];
+  /**
+   * Decides, at the last moment the turn can still store nothing, whether it may commit; throwing
+   * stores none of the reply or its effects. It runs as the persistence transaction's last step,
+   * and on the fallback path before the first write.
+   */
+  commitFence?: () => void;
 }
 
 const ROUTINE_INVOCATIONS_TOTAL = "routine_invocations_total";
@@ -809,10 +845,11 @@ export class ChatTurnLifecycle {
         answerCoverageRequestMessageId: input.session.userMessage.id,
         assistantMessage: presentation.assistantMessage,
         auditEvent,
-        ownershipHandoff,
+        ownershipHandoff: storedHandoff(ownershipHandoff),
         ownershipAuditEvent,
         additionalAuditEvent,
         transaction: input.transaction,
+        commitFence: input.commitFence,
       });
       assistantMessage = persisted.message;
       postCommitReceipt = this.createPostCommitReceipt(input.workspaceId, persisted.committedFacts);
@@ -826,6 +863,8 @@ export class ChatTurnLifecycle {
     } else {
       // Fallback for tests and non-DB hosts. Production wires a transaction port so
       // outbox enqueue, routine state, assistant message, touch, and audit commit together.
+      // With no transaction to roll back, the fence runs before the first write.
+      input.commitFence?.();
       const insertedActionTypes = await this.enqueueTurnActions({
         actions,
         workspaceId: input.workspaceId,
@@ -945,7 +984,9 @@ export class ChatTurnLifecycle {
           : {}),
         // A handoff this turn leaves the conversation human-owned; the reply itself
         // was still generated, so it is not suppressed. Safe-test turns never hand off.
-        ...(ownershipHandoff ? { ownership: { state: "human_owned", suppressed: false } } : {}),
+        ...(ownershipHandoff
+          ? { ownership: { state: "human_owned", suppressed: false }, handoff: turnHandoffReport(ownershipHandoff) }
+          : {}),
         ...(routineTurnState ? { routine: routineTurnState } : {}),
         ...(invocationReport ? { invocation: invocationReport } : {}),
       },
@@ -1127,9 +1168,7 @@ export class ChatTurnLifecycle {
     if (session && existingAssistantMessageId) {
       await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
     }
-    const userMessageDiscarded = await this.discardReplacedUserMessage(input, session, existingAssistantMessageId, supersededBy);
-
-    await this.auditService.record({
+    const cancelledEvent = (userMessageDiscarded: boolean): AuditEventInput => ({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       eventType: "chat.answer",
@@ -1147,35 +1186,49 @@ export class ChatTurnLifecycle {
         ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
       },
     });
+    const replaced = supersededBy.replacedByNewerInput && !supersededBy.afterEmission && !existingAssistantMessageId;
+    const discard = replaced && session
+      ? await this.discardReplacedUserMessage(input, session, cancelledEvent(true))
+      : { userMessageDiscarded: false, recorded: false };
+    if (!discard.recorded) {
+      await this.auditService.record(cancelledEvent(discard.userMessageDiscarded));
+    }
   }
 
   /**
    * Deletes the user message of a turn a newer input replaced before it emitted anything; a
    * turn any other newer turn cancelled keeps it. Usage events the turn recorded keep its spend
-   * with the message link cleared. A failed delete keeps the message.
+   * with the message link cleared. Through the transactional persistence port the deletion and
+   * `auditEvent` commit together, so the message never goes without the record that says so; the
+   * fallback path (tests, non-DB hosts) deletes first and leaves the event to the caller. A failed
+   * discard keeps the message.
    */
   private async discardReplacedUserMessage(
     input: { workspaceId: string },
-    session: PreparedSession | null,
-    existingAssistantMessageId: string | undefined,
-    supersededBy: ChatTurnSupersededError,
-  ): Promise<boolean> {
-    if (!supersededBy.replacedByNewerInput || supersededBy.afterEmission || !session || existingAssistantMessageId) {
-      return false;
-    }
+    session: PreparedSession,
+    auditEvent: AuditEventInput,
+  ): Promise<{ userMessageDiscarded: boolean; recorded: boolean }> {
+    const target = {
+      workspaceId: input.workspaceId,
+      conversationId: session.conversation.id,
+      messageId: session.userMessage.id,
+    };
     try {
-      return await this.messageRepository.deleteUserMessage({
-        workspaceId: input.workspaceId,
-        conversationId: session.conversation.id,
-        messageId: session.userMessage.id,
-      });
+      if (this.assistantTurnPersistence?.discardReplacedUserMessage) {
+        const discarded = await this.assistantTurnPersistence.discardReplacedUserMessage({ ...target, auditEvent });
+        if (discarded) {
+          this.auditService.logRecorded?.(auditEvent);
+        }
+        return { userMessageDiscarded: discarded, recorded: discarded };
+      }
+      return { userMessageDiscarded: await this.messageRepository.deleteUserMessage(target), recorded: false };
     } catch (error) {
       this.logger?.warn({
         workspaceId: input.workspaceId,
         conversationId: session.conversation.id,
         errorType: error instanceof Error ? error.name : typeof error,
       }, "Superseded user message could not be discarded");
-      return false;
+      return { userMessageDiscarded: false, recorded: false };
     }
   }
 

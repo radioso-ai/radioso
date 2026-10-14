@@ -10,7 +10,30 @@ export interface VoiceTurnPolicyObserver {
   turnLimitReached(spoken: boolean): void;
   /** The first speech left the policy, `elapsedMs` after the turn started. */
   firstSpeech(elapsedMs: number, bridged: boolean): void;
+  /**
+   * The limit ended the turn's events while its reply still runs: `drained` settles once the
+   * reply has finished unheard, with its failure if it failed. Called before the outcome leaves.
+   */
+  drainingAfterLimit(drained: Promise<VoiceTurnDrain>): void;
 }
+
+/** How a reply drained after the turn limit ended. */
+export type VoiceTurnDrain = { failed: false } | { failed: true; error: unknown };
+
+/** Pulls a reply nobody hears any more to its end, so the chat turn still finishes and is stored. */
+const drainUnheard = async (
+  iterator: AsyncIterator<VoiceReplyEvent>,
+  pending: Promise<IteratorResult<VoiceReplyEvent>>,
+): Promise<VoiceTurnDrain> => {
+  try {
+    for (let step = await pending; !step.done; step = await iterator.next()) {
+      // Drained unheard: the reply finishes and persists, but the caller has moved on.
+    }
+    return { failed: false };
+  } catch (error) {
+    return { failed: true, error };
+  }
+};
 
 /** Where the chat turn is: every turn starts interpreting, then searches (retrieval) or composes. */
 export type VoiceTurnPhase = "interpreting" | "searching" | "composing";
@@ -21,7 +44,9 @@ export type VoiceTurnPhase = "interpreting" | "searching" | "composing";
  */
 export type VoiceReplyEvent = VoiceTurnEvent | { type: "phase"; phase: VoiceTurnPhase };
 
-export interface VoiceTurnPolicy extends VoiceTurnLines {
+export interface VoiceTurnPolicy extends Omit<VoiceTurnLines, "bridge"> {
+  /** The line that covers the wait; null: the turn has no bridge. */
+  bridge: VoiceTurnLines["bridge"] | null;
   /** When the turn started on `now`'s clock; the fallback bridge and the limit count from here. */
   startedAt: number;
   now: () => number;
@@ -29,7 +54,8 @@ export interface VoiceTurnPolicy extends VoiceTurnLines {
   bridgeAfterMs: number;
   /** Bridge when this long has passed since the turn started composing and nothing was spoken. */
   bridgeAfterComposingIdleMs: number;
-  turnLimitMs: number;
+  /** Past this with nothing spoken, the fallback line ends the turn; null: the turn has no limit. */
+  turnLimitMs: number | null;
   /**
    * Asked when the bridge falls due; false holds the line back for the rest of the turn (a newer
    * request owns the session, or a turn this one superseded spoke a bridge moments ago). Absent: true.
@@ -55,12 +81,13 @@ const waitFor = (pull: Promise<IteratorResult<VoiceReplyEvent>>, deadline: Deadl
 
 /**
  * The vendor-neutral turn policy over a voice turn's events. Until the first speech it speaks the
- * bridge line at most once, decided by the turn's phase: at once when the turn starts searching,
- * `bridgeAfterComposingIdleMs` after it starts composing without speech, or `bridgeAfterMs` into a
- * turn that has done neither. Past `turnLimitMs` it speaks the fallback line and closes the turn
- * with `continue`. An outcome disarms both. After the limit it forwards nothing more but keeps
- * draining the reply, so the chat turn still finishes and is stored as usual — the stored answer
- * is then not what the caller heard. Phase markers are dropped; everything else passes through.
+ * bridge line at most once, on a turn that has one, decided by the turn's phase: at once when the
+ * turn starts searching, `bridgeAfterComposingIdleMs` after it starts composing without speech, or
+ * `bridgeAfterMs` into a turn that has done neither. Past `turnLimitMs`, on a turn that has one, it speaks the fallback
+ * line and closes the turn with `continue`. An outcome disarms both. After the limit its events
+ * end with the outcome, and the reply drains behind them (`observer.drainingAfterLimit`), so the
+ * chat turn still finishes and is stored as usual — the stored answer is then not what the
+ * caller heard. Phase markers are dropped; everything else passes through.
  */
 export async function* applyVoiceTurnPolicy(
   events: AsyncIterable<VoiceReplyEvent>,
@@ -85,8 +112,8 @@ export async function* applyVoiceTurnPolicy(
   const nextDeadline = (): { deadline: Deadline; delayMs: number } | null => {
     if (spoken || ended) return null;
     const armed: Array<{ deadline: Deadline; atMs: number }> = [
-      ...(bridgeHandled ? [] : [{ deadline: "bridge" as const, atMs: bridgeAt() }]),
-      ...(limitHandled ? [] : [{ deadline: "limit" as const, atMs: policy.turnLimitMs }]),
+      ...(bridgeHandled || policy.bridge === null ? [] : [{ deadline: "bridge" as const, atMs: bridgeAt() }]),
+      ...(limitHandled || policy.turnLimitMs === null ? [] : [{ deadline: "limit" as const, atMs: policy.turnLimitMs }]),
     ];
     const first = armed.reduce<{ deadline: Deadline; atMs: number } | null>(
       (earliest, candidate) => (earliest === null || candidate.atMs < earliest.atMs ? candidate : earliest),
@@ -98,11 +125,12 @@ export async function* applyVoiceTurnPolicy(
   /** Settles the bridge once; the line when the agent has one for the turn and the session may hear it. */
   const bridgeNow = (): VoiceTurnEvent | null => {
     bridgeHandled = true;
-    if (policy.mayBridge && !policy.mayBridge()) return null;
-    policy.observer.bridgeDue(policy.bridge.style, policy.bridge.text !== null);
-    if (policy.bridge.text === null) return null;
+    const { bridge } = policy;
+    if (bridge === null || (policy.mayBridge && !policy.mayBridge())) return null;
+    policy.observer.bridgeDue(bridge.style, bridge.text !== null);
+    if (bridge.text === null) return null;
     bridged = true;
-    return { type: "bridge", text: policy.bridge.text };
+    return { type: "bridge", text: bridge.text };
   };
 
   try {
@@ -124,11 +152,10 @@ export async function* applyVoiceTurnPolicy(
         spoken = true;
         policy.observer.firstSpeech(elapsed(), bridged);
         yield { type: "speech", text: policy.fallbackLine, last: true };
-        yield { type: "outcome", outcome: { kind: "continue" } };
-        for (let step = await pending; !step.done; step = await iterator.next()) {
-          // Drained unheard: the reply finishes and persists, but the caller has moved on.
-        }
+        // The reply is handed on before the outcome leaves, so the events can end with it.
         finished = true;
+        policy.observer.drainingAfterLimit(drainUnheard(iterator, pending ?? iterator.next()));
+        yield { type: "outcome", outcome: { kind: "continue" } };
         return;
       }
 

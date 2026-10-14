@@ -5,7 +5,14 @@ import { markHttpResponseFailed } from "../../../../app/http/middleware/httpResp
 import { consumeSseWithDisconnectCeiling } from "../../../../app/http/shared/sseDisconnectCeiling.js";
 import { badRequest, notFound } from "../../../../shared/domain/errors.js";
 import type { AppLogger } from "../../../../shared/observability/logger.js";
-import type { VoiceTurnEvent, VoiceTurnInput, VoiceTurnPort } from "../../domain.js";
+import {
+  VoiceTurnIncompleteError,
+  VoiceTurnProtocolError,
+  type VoiceTurnEvent,
+  type VoiceTurnInput,
+  type VoiceTurnOutcome,
+  type VoiceTurnPort,
+} from "../../domain.js";
 import {
   COMPLETION_ERROR_FRAME,
   createCompletionChunkRenderer,
@@ -17,6 +24,11 @@ import { completionsRequestSchema, heardUntilFor, utteranceOf } from "./requestS
 
 const COMPLETIONS_PATH = "/:agentId/voice/:dialect/v1/chat/completions";
 const CONVERSATION_ID_HEADER = "X-Radioso-Conversation-Id";
+/**
+ * The turn's outcome kind, for a page or test reading the response; voice runtimes ignore it. A
+ * header on a whole completion; a trailer on a stream, whose headers leave before the outcome.
+ */
+const OUTCOME_FIELD = "X-Radioso-Voice-Outcome";
 const DEFAULT_MODEL_NAME = "radioso";
 // Matches the `voice_sessions.session_key` CHECK.
 const MAX_SESSION_KEY_LENGTH = 256;
@@ -95,6 +107,9 @@ const turnInputFor = (
       utterance,
       ...(locale ? { locale } : {}),
       ...(heardUntil === undefined ? {} : { heardUntil }),
+      ...(dialect.minReleasableSentenceChars === undefined
+        ? {}
+        : { minReleasableSentenceChars: dialect.minReleasableSentenceChars }),
     },
     model: parsed.data.model ?? DEFAULT_MODEL_NAME,
     stream: parsed.data.stream ?? false,
@@ -110,15 +125,40 @@ const openEventStream = (res: Response, conversationId: string | null): void => 
   if (conversationId) {
     res.setHeader(CONVERSATION_ID_HEADER, conversationId);
   }
+  res.setHeader("Trailer", OUTCOME_FIELD);
   res.flushHeaders();
 };
 
 /**
+ * The turn's events, held to the port's contract: exactly one outcome, and the turn ends with it.
+ * The outcome is passed on only once the turn has ended, so a turn that ends without one, sends
+ * anything after it, or fails after it still fails like any other turn, before the runtime reads
+ * a finished reply.
+ */
+async function* withOneOutcome(events: AsyncIterable<VoiceTurnEvent>): AsyncGenerator<VoiceTurnEvent> {
+  let outcome: VoiceTurnEvent | null = null;
+  for await (const event of events) {
+    if (outcome) {
+      throw new VoiceTurnProtocolError(event.type === "outcome" ? "second_outcome" : "event_after_outcome");
+    }
+    if (event.type === "outcome") {
+      outcome = event;
+    } else {
+      yield event;
+    }
+  }
+  if (!outcome) {
+    throw new VoiceTurnIncompleteError();
+  }
+  yield outcome;
+}
+
+/**
  * Drains the turn the way the REST agent channel does: after a disconnect the turn may still
  * finish and persist, and it is aborted only once the post-disconnect ceiling passes. The
- * response itself ends at the turn's outcome, which is always last; a turn whose limit spoke the
- * fallback line keeps draining behind it, on the same ceiling. A disconnect before the outcome
- * was sent fires `hangUp`, so the turn knows its caller did not get the reply.
+ * response ends at the turn's outcome, which ends the turn's events; a reply drained after the
+ * turn limit finishes inside the turn service. A disconnect before the outcome was sent fires
+ * `hangUp`, so the turn knows its caller did not get the reply.
  */
 interface TurnDrain {
   res: Response;
@@ -131,13 +171,13 @@ interface TurnDrain {
 const drainTurn = async (
   drain: TurnDrain,
   onEvent: (event: VoiceTurnEvent) => void,
-): Promise<{ disconnected: boolean }> => {
+): Promise<void> => {
   const { res } = drain;
   let outcomeSent = false;
   try {
     const result = await consumeSseWithDisconnectCeiling({
       response: res,
-      events: drain.events,
+      events: withOneOutcome(drain.events),
       onEvent: (event) => {
         outcomeSent ||= event.type === "outcome";
         onEvent(event);
@@ -153,7 +193,6 @@ const drainTurn = async (
     if (result.ceilingExceeded) {
       markHttpResponseFailed(res);
     }
-    return { disconnected: result.disconnected };
   } catch (error) {
     markHttpResponseFailed(res);
     throw error;
@@ -215,6 +254,9 @@ const streamCompletion = async (
       writeFrames(render(event));
       if (event.type === "outcome") {
         keepAlive?.stop();
+        if (!res.writableEnded) {
+          res.addTrailers({ [OUTCOME_FIELD]: event.outcome.kind });
+        }
         res.end();
       }
     });
@@ -232,29 +274,32 @@ const streamCompletion = async (
   }
 };
 
-const sendCompletion = (res: Response, identity: CompletionIdentity, collected: readonly VoiceTurnEvent[]): void => {
+/** The whole turn as one completion, sent at its outcome. */
+const sendCompletion = (
+  res: Response,
+  identity: CompletionIdentity,
+  collected: readonly VoiceTurnEvent[],
+  outcome: VoiceTurnOutcome,
+): void => {
   const conversation = collected.find(
     (seen): seen is Extract<VoiceTurnEvent, { type: "conversation" }> => seen.type === "conversation",
   );
   if (conversation) {
     res.setHeader(CONVERSATION_ID_HEADER, conversation.conversationId);
   }
+  res.setHeader(OUTCOME_FIELD, outcome.kind);
   res.status(200).json(renderCompletion(identity, collected));
 };
 
 const answerCompletion = async (drain: TurnDrain, identity: CompletionIdentity): Promise<void> => {
   const { res } = drain;
   const collected: VoiceTurnEvent[] = [];
-  const { disconnected } = await drainTurn(drain, (event) => {
+  await drainTurn(drain, (event) => {
     collected.push(event);
     if (event.type === "outcome") {
-      sendCompletion(res, identity, collected);
+      sendCompletion(res, identity, collected, event.outcome);
     }
   });
-  // A turn that ended without an outcome still owes the caller what it said.
-  if (!res.headersSent && !disconnected) {
-    sendCompletion(res, identity, collected);
-  }
 };
 
 /**

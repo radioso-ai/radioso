@@ -35,19 +35,21 @@ interface VoiceTurnInput {
   locale?: string;                // BCP 47 when the vendor detected it
   callerId?: string;              // E.164 when the transport is phone; becomes a context variable
   heardUntil?: string;            // the previous reply as far as the caller heard it before speaking over it, when the vendor reports it; recorded as an audit note
+  minReleasableSentenceChars?: number; // from the dialect: the shortest first sentence the runtime speaks before more text arrives; bridge lines that reach it are preferred
 }
 
 type VoiceTurnEvent =
   | { type: "conversation"; conversationId: string } // first, so adapters can name the conversation before any speech
   | { type: "bridge"; text: string }                 // authored line, emitted by policy while the brain works
   | { type: "speech"; text: string; last: boolean }  // speakable piece of the agent's reply, verbatim
-  | { type: "outcome"; outcome: VoiceTurnOutcome };  // exactly one, always last; a superseded turn ends with `continue`
+  | { type: "outcome"; outcome: VoiceTurnOutcome };  // exactly one, always last, and the events end with it; a superseded turn ends with `continue`
 
 type VoiceTurnOutcome =
   | { kind: "continue" }
   | { kind: "transfer"; target: string }   // from agent settings only, never from the model
   | { kind: "end" }
-  | { kind: "callback_requested" };
+  | { kind: "callback_requested"; handoffReason?: string };
+// domain.ts implements `continue | callback_requested`; `transfer` and `end` arrive with the phone column (Phase 0).
 
 interface VoiceTurnPort {
   // hungUp: the runtime closed the request before the outcome reached it; the turn runs on and is stored
@@ -95,8 +97,8 @@ Implemented as wrappers over `AsyncIterable<ChatStreamEvent>`, like the existing
 | Rule | Behaviour | Source of truth |
 |---|---|---|
 | Sentence pieces | `chunk` text is re-cut at sentence boundaries into `speech` events; the final piece carries `last: true` | composition constant |
-| Bridge | one `bridge` event from the agent's authored lines when the turn starts searching, 400 ms after it starts composing with no speech yet, or after 1.8 s with no phase at all (so a planner quick reply never gets a bridge); style by routine state (acknowledgement inside a routine, check outside), locale from the input or the agent default | agent settings `voice.bridgeLines`; composition constants |
-| Turn limit | no `speech` within 8 s → `speech` with the authored fallback line, then `outcome: callback_requested` if the agent has a callback path, else `continue` | agent settings `voice.fallbackLine`; composition constant |
+| Bridge | one `bridge` event from the agent's authored lines when the turn starts searching, 400 ms after it starts composing with no speech yet, or after 2.5 s with no phase at all (so a planner quick reply, up to about 2 s, never gets a bridge; only a stalled planner reaches it); style by routine state (acknowledgement inside a routine, check outside), locale from the input or the agent default; none on a turn whose conversation is human-owned at turn start, so chat's waiting message comes alone | agent settings `voice.bridgeLines`; composition constants |
+| Turn limit | on a turn the agent owns, no `speech` within 10 s → `speech` with the authored fallback line, then `outcome: continue` (`callback_requested` after the limit needs a callback path, Phase 0); a turn whose conversation is human-owned at turn start has no limit, so chat's waiting message is never talked over. 10 s, not 8: at 8 s the limit cut off about one grounded turn in fifteen in local sessions, and the `elevenlabs` keep-alive holds the stream through the wait | agent settings `voice.fallbackLine`; composition constant |
 | Interruption | a new request for a session whose turn is still in flight cancels that turn even after emission started (the chat lease's `latest_input_wins` mode); one still setting up ends before its chat turn starts; a turn cancelled before emission leaves no user message, one cancelled after keeps it and stores no reply; a bridge never follows a superseded turn's bridge within `bridgeAfterMs`; an identical utterance within 30 s of a hung-up or overtaken turn with a stored answer replays that answer; `heardUntil` (the truncated reply in replayed history) is recorded against the stored reply as `voice.reply_interrupted` | turn lease cancellation mode, in-process session memory (PR 4) |
 | Governance gates | unchanged; the coverage head and grounding gate run before any `speech` | chat service |
 
@@ -104,7 +106,13 @@ Implemented as wrappers over `AsyncIterable<ChatStreamEvent>`, like the existing
 
 Outcomes depend on the transport, because a hand-off means different things on a phone line and in a browser.
 
-| Reply envelope | `phone` | `web` |
+Implemented: the `web` column (PR 3), for every transport. `phone` gets the same derivation, which matches its rows only while no transfer target exists; the `phone` column's `transfer` rows, `voice.transfer.target` and the `tool_calls` transfer frame are Phase 0.
+
+"Contact details were captured" is structural: chat's `done` event carries `handoff: { reason, collectedSlotCount }` on a turn that handed off, where `collectedSlotCount` counts the declared slots the ending routine held a value for (the keys of the engine's `handoff.collected`); `callback_requested` needs at least one. No slot key or value is read for meaning. The agent reply envelope (`AgentReplyEnvelopeCore`) exposes no captured slots, so the count is a chat reply field the HTTP presenters drop; OpenAPI is unchanged. `handoffReason` is the hand-off's reason (`routine_handoff`, `routine_stuck`, `retrieval_miss`).
+
+The completions adapter ends both web outcomes with `stop` and `[DONE]`, with no tool call, and names the outcome kind in `X-Radioso-Voice-Outcome`: a response header without streaming, an HTTP trailer on a stream.
+
+| Reply envelope | `phone` | `web` (implemented) |
 |---|---|---|
 | `ownership.state === "human_owned"` and not suppressed, transfer target configured | `transfer` | `callback_requested` when contact details were captured, else `continue`; the conversation is human-owned and the operator continues it in text from the inbox |
 | same, no target configured | `callback_requested` when contact details were captured, else `continue` | same as above |

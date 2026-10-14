@@ -162,6 +162,7 @@ import {
 } from "./routines/routineReplyDelivery.js";
 import { routineReplyFor } from "./routines/routineReplyFor.js";
 import {
+  ChatTurnDisconnectAbortError,
   ChatTurnSupersededError,
   InMemoryConversationTurnRegistry,
   type ConversationTurnLease,
@@ -294,6 +295,16 @@ interface TurnCoordinationState {
 /** The registry mode a turn's supersession asks for: only `latest_input_wins` supersedes after emission. */
 const leaseOptionsFor = (supersession: ConversationTurnSupersession | undefined): ConversationTurnLeaseOptions | undefined =>
   supersession === "latest_input_wins" ? { supersedeAfterEmission: true } : undefined;
+
+/**
+ * The same supersession, for a turn the registry saw emitting (its reply was being stored) whose
+ * reply never reached the client: the newer input replaces it whole.
+ */
+const supersededBeforeEmission = (error: ChatTurnSupersededError): ChatTurnSupersededError =>
+  new ChatTurnSupersededError(error.conversationId, error.stage, { replacedByNewerInput: error.replacedByNewerInput });
+
+const isTurnCancellation = (error: unknown): boolean =>
+  error instanceof ChatTurnSupersededError || error instanceof ChatTurnDisconnectAbortError;
 
 interface ChatAnswerInput {
   workspaceId: string;
@@ -618,6 +629,22 @@ export class ChatService {
     coordination.lease?.beginEmission();
   }
 
+  /**
+   * For a turn a newer input may cut off even mid-reply (`latest_input_wins`): what gives a newer
+   * input and this turn's stored reply one winner. Checks the lease right before the turn is
+   * stored, and returns the fence the storing transaction runs as its last step: it latches the
+   * lease for the commit (`beginCommit`), throwing when a newer input won first, so that turn
+   * stores nothing; once latched, a newer input waits for the stored reply instead of cancelling
+   * it. Turns in the other modes keep a reply once it started, so they have none.
+   */
+  private latestInputCommitFence(coordination: TurnCoordinationState): (() => void) | undefined {
+    if (!coordination.leaseOptions?.supersedeAfterEmission) {
+      return undefined;
+    }
+    coordination.lease?.throwIfCancelled();
+    return () => coordination.lease?.beginCommit();
+  }
+
   private turnAssemblyCoordination(
     coordination: TurnCoordinationState,
   ): ChatTurnAssemblyCoordinationHook {
@@ -911,6 +938,7 @@ export class ChatService {
       query: string;
     },
     session: PreparedSession,
+    signal: AbortSignal | undefined,
   ): Promise<string> {
     if (!this.handoffWaitingMessageGenerator) {
       return "";
@@ -925,6 +953,7 @@ export class ChatService {
       const message = await this.handoffWaitingMessageGenerator.generate({
         query: input.query,
         history: session.history,
+        signal,
         workspaceContext: { workspaceId: input.workspaceId },
         usageContext: {
           accountId: input.accountId,
@@ -1052,7 +1081,7 @@ export class ChatService {
       this.checkTurnCancellation(coordination, "routing");
       if (isHumanOwned(ownership)) {
         const waitingMessage = capabilities.humanOwnedWaitingMessage === "generate"
-          ? await this.generateHandoffWaitingMessage(input, session)
+          ? await this.generateHandoffWaitingMessage(input, session, coordination.lease?.signal)
           : "";
         this.checkTurnCancellation(coordination, "rendering");
         this.beginTurnEmission(coordination);
@@ -1484,6 +1513,8 @@ export class ChatService {
     };
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
+    /** Some of the reply reached the client, so a newer input can no longer replace the turn whole. */
+    let replyReachedClient = false;
     let lazySuggestionsPromise:
       | Promise<Pick<ChatPresentedAnswer, "suggestions">>
       | undefined;
@@ -1548,7 +1579,9 @@ export class ChatService {
           this.checkTurnCancellation(coordination, "rendering");
         }
         await releaseUsageReservation();
-        const waitingMessage = await this.generateHandoffWaitingMessage(input, session);
+        // The lease's signal stops the generation when a newer turn supersedes this one, so the
+        // newer turn, which waits for this one to finish, is never held behind a stalled provider.
+        const waitingMessage = await this.generateHandoffWaitingMessage(input, session, coordination.lease?.signal);
         this.checkTurnCancellation(coordination, "rendering");
         this.beginTurnEmission(coordination);
         for (const text of committedAnswerChunks(waitingMessage)) {
@@ -1623,6 +1656,7 @@ export class ChatService {
             if (!replyShown) {
               this.beginTurnEmission(coordination);
               replyShown = true;
+              replyReachedClient = true;
             }
             observeFirstAnswerChunk("routine", "live");
             yield { type: "chunk", text: step.value };
@@ -1647,6 +1681,7 @@ export class ChatService {
         if (!replyShown) {
           this.beginTurnEmission(coordination);
         }
+        const commitFence = this.latestInputCommitFence(coordination);
         let completedTurn: Awaited<ReturnType<ChatTurnLifecycle["completeAssistantTurn"]>>;
         try {
           completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
@@ -1668,9 +1703,11 @@ export class ChatService {
             commitRoutineState: routineTurn.commitRoutineState,
             clarificationTransition: routineTurn.clarificationTransition,
             commitClarificationState: routineTurn.commitClarificationState,
+            commitFence,
           });
         } catch (error) {
-          if (replyShown) {
+          // A cancelled turn is not a failed write: the newer turn or the disconnect owns the outcome.
+          if (replyShown && !isTurnCancellation(error)) {
             this.reportRoutineReplyPersistFailure({
               workspaceId: input.workspaceId,
               conversationId: session.conversation.id,
@@ -1788,6 +1825,7 @@ export class ChatService {
             modelCallTrace,
             clarificationTransition: clarification.store?.getTransition(),
             commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
+            commitFence: this.latestInputCommitFence(coordination),
           });
           assistantMessageId = completedTurn.assistantMessageId;
           await usageReservation.commit();
@@ -1837,6 +1875,7 @@ export class ChatService {
           this.beginTurnEmission(coordination);
           emissionStarted = true;
         }
+        replyReachedClient = true;
         return heldChunks.map((held) => {
           observeFirstAnswerChunk(held.route, held.deliveryMode);
           return { type: "chunk" as const, text: held.text };
@@ -1880,6 +1919,7 @@ export class ChatService {
               this.beginTurnEmission(coordination);
               emissionStarted = true;
             }
+            replyReachedClient = true;
             observeFirstAnswerChunk(event.route, event.deliveryMode);
             yield {
               type: "chunk",
@@ -1971,6 +2011,7 @@ export class ChatService {
       if (!emissionStarted) {
         this.beginTurnEmission(coordination);
       }
+      const commitFence = this.latestInputCommitFence(coordination);
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
@@ -1992,6 +2033,7 @@ export class ChatService {
         clarificationTransition: coverageRoutineEffects.clarificationTransition ?? clarification.store?.getTransition(),
         commitClarificationState: coverageRoutineEffects.commitClarificationState
           ?? (clarification.store ? () => clarification.store!.commit() : undefined),
+        commitFence,
       });
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
@@ -2036,6 +2078,9 @@ export class ChatService {
         this.checkTurnCancellation(coordination);
       } catch (cancellationError) {
         preferredError = cancellationError;
+      }
+      if (preferredError instanceof ChatTurnSupersededError && preferredError.afterEmission && !replyReachedClient) {
+        preferredError = supersededBeforeEmission(preferredError);
       }
       await releaseUsageReservation();
       if (preferredError instanceof ChatTurnSupersededError) {

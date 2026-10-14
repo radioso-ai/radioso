@@ -72,6 +72,8 @@ export type {
   ChatResponse,
   ChatRoute,
   ChatSuggestion,
+  ChatTurnHandoff,
+  ChatTurnHandoffReason,
 } from "../types/chatResponses.js";
 export type {
   ChatAnswerCoverageAssessment,

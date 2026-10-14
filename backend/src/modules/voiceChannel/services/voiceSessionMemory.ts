@@ -42,6 +42,19 @@ interface VoiceReplyInterruption {
   spokenCharacterCount: number;
 }
 
+/**
+ * An interruption held for one request while its note is written: `recorded` once the note is
+ * durable, so no later report repeats it; `failed` hands it back, so the next report records it.
+ */
+interface VoiceReplyInterruptionReservation {
+  interruption: VoiceReplyInterruption;
+  recorded(): void;
+  failed(): void;
+}
+
+/** Where an exchange's interruption note stands: none yet, being written, or durable. */
+type InterruptionNote = "none" | "pending" | "recorded";
+
 interface SessionState {
   newest: VoiceTurnClaim | null;
   /** Requests not yet settled. */
@@ -49,7 +62,7 @@ interface SessionState {
   /** Chat turns still running for the session's requests. */
   chatTurns: number;
   lastBridge: { at: number; claim: VoiceTurnClaim } | null;
-  lastExchange: { exchange: VoiceExchange; sequence: number; interruptionNoted: boolean } | null;
+  lastExchange: { exchange: VoiceExchange; sequence: number; interruptionNote: InterruptionNote } | null;
   touchedAt: number;
 }
 
@@ -63,10 +76,14 @@ interface VoiceSessionMemoryWindows {
 const sameUtterance = (left: string, right: string): boolean =>
   left.replace(/\s+/gu, " ").trim() === right.replace(/\s+/gu, " ").trim();
 
-/** When the turn lost its caller before its outcome left: overtaken or hung up on; null when delivered. */
+/**
+ * When the turn lost its caller before its outcome left: overtaken or hung up on; null when delivered.
+ * A loss on the outcome's own millisecond still counts: the route reports a hang-up only before the
+ * outcome left, so equal clock readings mean the loss came first.
+ */
 export const cutOffAt = (claim: VoiceTurnClaim): number | null => {
   const lost = [claim.supersededAt, claim.hungUpAt]
-    .filter((at): at is number => at !== null && (claim.outcomeAt === null || at < claim.outcomeAt));
+    .filter((at): at is number => at !== null && (claim.outcomeAt === null || at <= claim.outcomeAt));
   return lost.length > 0 ? Math.min(...lost) : null;
 };
 
@@ -112,7 +129,7 @@ export class VoiceSessionMemory {
       state.newest = null;
     }
     if (exchange && (state.lastExchange === null || state.lastExchange.sequence < claim.sequence)) {
-      state.lastExchange = { exchange, sequence: claim.sequence, interruptionNoted: false };
+      state.lastExchange = { exchange, sequence: claim.sequence, interruptionNote: "none" };
     }
   }
 
@@ -156,13 +173,14 @@ export class VoiceSessionMemory {
   }
 
   /**
-   * The newest exchange's reply as far as the caller heard it, the first time the vendor reports
-   * it cut short; null when the report is no strict prefix of what was spoken.
+   * Reserves the newest exchange's reply as far as the caller heard it, while the vendor reports it
+   * cut short and no note of it is recorded or being written; null when the report is no strict
+   * prefix of what was spoken.
    */
-  interruptionOf(sessionKey: string, heardUntil: string): VoiceReplyInterruption | null {
+  reserveInterruption(sessionKey: string, heardUntil: string): VoiceReplyInterruptionReservation | null {
     const last = this.sessions.get(sessionKey)?.lastExchange;
     const { reply, spoken, conversationId } = last?.exchange ?? {};
-    if (!last || last.interruptionNoted || !reply || !spoken || !conversationId) {
+    if (!last || last.interruptionNote !== "none" || !reply || !spoken || !conversationId) {
       return null;
     }
     const whole = spoken.bridge === null ? spoken.reply : `${spoken.bridge} ${spoken.reply}`;
@@ -170,13 +188,21 @@ export class VoiceSessionMemory {
     if (heard === null) {
       return null;
     }
-    last.interruptionNoted = true;
+    last.interruptionNote = "pending";
     const beforeReply = spoken.bridge === null ? 0 : spokenLength(spoken.bridge) + 1;
     return {
-      conversationId,
-      assistantMessageId: reply.messageId,
-      heardCharacterCount: Math.max(0, heard - beforeReply),
-      spokenCharacterCount: spokenLength(spoken.reply),
+      interruption: {
+        conversationId,
+        assistantMessageId: reply.messageId,
+        heardCharacterCount: Math.max(0, heard - beforeReply),
+        spokenCharacterCount: spokenLength(spoken.reply),
+      },
+      recorded: () => {
+        last.interruptionNote = "recorded";
+      },
+      failed: () => {
+        last.interruptionNote = "none";
+      },
     };
   }
 

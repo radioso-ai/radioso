@@ -1,7 +1,7 @@
 import type { ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
 import type { SkillDisplayMetadata } from "../../skills/public.js";
 import type { AnswerSegment, ChatCitation } from "./answerTypes.js";
-import type { ChatOwnershipAck, ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
+import type { ChatOwnershipAck, ChatRoute, ChatSuggestion, ChatTurnHandoff } from "../types/chatResponses.js";
 import type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
 import type { ConversationTurnStage } from "./interruption.js";
 import type {
@@ -63,6 +63,7 @@ export type ChatStreamEvent =
       activitySummary: ActivitySummary;
       activityTrace: ActivityTrace;
       ownership?: ChatOwnershipAck;
+      handoff?: ChatTurnHandoff;
       routine?: ChatRoutineTurnState;
       invocation?: ChatRoutineInvocationReport;
       turnTrace?: TurnTraceEnvelope;

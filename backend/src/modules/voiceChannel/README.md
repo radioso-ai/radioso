@@ -16,12 +16,13 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   outcomes. It names no vendor and no wire.
 - `services/` runs the turn: `voiceTurnService.ts` resolves or binds the
   session's conversation, reads the agent's voice settings and the
-  conversation's routine state, starts the chat turn with
+  conversation's routine state and owner, starts the chat turn with
   `sourceChannel: "voice"` and a `voice` channel context, and maps the chat
-  stream to `VoiceTurnEvent`s; `speechSegmenter.ts` is the pure sentence cutter
-  (punctuation only, no words); `speechText.ts` turns text into what a caller
-  hears: it removes the composer's citation markers (`[1]`, `[?]`, `[[1]]`,
-  `[[?]]`) and markdown syntax (emphasis, inline code, line-start heading and
+  stream to `VoiceTurnEvent`s; `voiceTurnOutcome.ts` is the pure outcome
+  derivation from chat's closing `done` envelope; `speechSegmenter.ts` is the
+  pure sentence cutter (punctuation only, no words); `speechText.ts` turns
+  text into what a caller hears: it removes the composer's citation markers
+  (`[1]`, `[?]`, `[[1]]`, `[[?]]`) and markdown syntax (emphasis, inline code, line-start heading and
   list markers, link syntax) from everything spoken, by structure only, and
   compares a runtime's record of what was heard with what was spoken;
   while a reply streams, `speechSegmenter.ts`'s sentence cutter closes an
@@ -62,8 +63,9 @@ helpers and the shared chat message limit from `app/http`
   `registerOpenAiCompletionsRoute`.
 - `backend/src/app/composition/voiceChannel.ts` — builds the port over
   Postgres, `AssistantChatService.streamAnswer`, the agent repository (voice
-  settings and default locale), the routine state store and the audit service
-  (the `voice.reply_interrupted` and `voice.reply_replayed` notes); exposed as
+  settings and default locale), the routine state store, the conversation
+  ownership reader (`handoff/public.ts`) and the audit service (the
+  `voice.reply_interrupted` and `voice.reply_replayed` notes); exposed as
   `AppDependencies.voiceTurns`.
 - The agent's `voice` settings block belongs to the agents module
   (`agents/voiceSettings.ts`, stored in `behavior_settings.voice`, served on
@@ -95,28 +97,77 @@ helpers and the shared chat message limit from `app/http`
 - **Turn policy.** Runs only while the agent's `voice.enabled` is true; with
   voice off a turn runs exactly as a plain chat turn. The bridge fires when the
   turn starts searching, 400 ms after it starts composing without speech, or
-  after 1.8 s with no phase at all; the limit is 8 s into the turn
-  (`VOICE_BEHAVIOR` in `shared/domain/behaviorConfig.ts`). The turn service
-  turns chat `status` events into phase markers (`interpreting`, `searching`,
-  `composing`) that only the policy reads; adapters never see them, and with
+  after 2.5 s with no phase at all (only a stalled planner gets there: a
+  planner quick reply takes up to about 2 s, and a knowledge turn bridges on
+  `searching`); the limit is 10 s into the turn
+  (`VOICE_BEHAVIOR` in `shared/domain/behaviorConfig.ts`). Both cover only
+  turns the agent owns: when the conversation is human-owned at turn start
+  (one ownership read, beside the routine state read) the policy runs with
+  `bridge: null` and `turnLimitMs: null`, so chat's waiting message is neither
+  preceded by a bridge line nor talked over by the fallback line, and neither
+  is counted. That ownership read is a snapshot: chat makes its own,
+  authoritative read a few milliseconds later, and a hand-off or takeover that
+  lands between the two gives that one turn the other policy (a bridge before
+  the waiting message, or no bridge and no limit on an agent answer). The
+  turn service turns chat `status` events into phase markers
+  (`interpreting`, `searching`, `composing`) that only the policy reads; adapters never see them, and with
   voice off they are dropped. `interpreting` is where every turn starts, so
-  it leaves the 1.8 s fallback armed. Everything stops at the first speech or
+  it leaves the 2.5 s fallback armed. Everything stops at the first speech or
   the outcome, and at most one bridge is spoken. The bridge
   style is `acknowledge` while a routine is active in the conversation at turn
   start and `check` otherwise; a session's first turn has no routine. Lines
-  rotate per policy turn within the process. The locale is the request's
+  rotate per policy turn within the process. A runtime that holds a first
+  sentence shorter than some length (`minReleasableSentenceChars` on the
+  dialect, 45 on `elevenlabs`, carried on `VoiceTurnInput`) gets only the
+  style's lines that reach it; when none does, the shorter line is spoken and
+  the service warns once per agent per process. The locale is the request's
   (`VoiceTurnInput.locale`, read by the dialect), else the agent's
   `assistantDefaultLocale`, else `en`; chat stores no response language per
   message, so the last reply's language is not a source. An agent with no line
   for the locale and style hears silence, and an agent with no fallback line
   keeps waiting past the limit.
+- **Outcomes (web column of the contract's table).** `voiceTurnOutcome.ts`
+  reads chat's closing `done` event. `ownership` human-owned and not
+  suppressed means this turn handed off: `callback_requested` (with
+  `handoffReason`) when `done.handoff.collectedSlotCount > 0`, else
+  `continue`. Suppressed means a person owned the conversation at turn start:
+  `continue`, and the speech is chat's waiting message as chat wrote it.
+  Anything else is `continue`. "Captured contact details" is structural: chat's
+  `handoff` report counts the declared slots the ending routine held a value
+  for (the keys of the engine's `handoff.collected`, counted in
+  `chat/services/handoffOwnership.ts`); a retrieval miss reports 0. No slot key
+  or value is read for meaning. The `handoff` report is chat's own reply field
+  for the delivering channel (`ChatTurnHandoff`); the HTTP presenters drop it
+  and the agent reply envelope does not carry it, so OpenAPI is unchanged. The
+  outcome the runtime received is the one the policy let through: a turn whose
+  limit spoke the fallback line ends `continue` even if the drained reply
+  later hands off. `transfer` and `end` stay in the contract; phone turns get
+  the same derivation, which matches the contract's phone rows only while no
+  transfer target exists.
+- **Outcome on the wire.** The completions adapter ends both outcomes with
+  `stop` and `[DONE]` and sends no tool call. The outcome kind travels as
+  `X-Radioso-Voice-Outcome`: a header on a non-streaming completion, and on a
+  stream a trailer (announced with `Trailer` when the stream opens), because a
+  stream's headers leave with its first frame. A turn ends with exactly one
+  outcome or fails: the service raises `VoiceTurnIncompleteError` when the chat
+  stream stops without `done` or `cancelled`, and the adapter holds every port
+  stream to the same rule: the outcome ends the port's events, and
+  `withOneOutcome` passes it on only once they have ended (no outcome is
+  `VoiceTurnIncompleteError`; a second outcome, or anything after it, is
+  `VoiceTurnProtocolError`). The failure answers with an HTTP error before
+  the first frame, or the generic error frame after it, never `stop`,
+  `[DONE]` or an outcome field; a non-streaming request never gets a
+  completion for it.
 - **Bridge lines are not stored.** A bridge is a channel-level utterance, like
   a typing indicator: it reaches the caller, never the conversation history.
-- **After the limit.** The policy speaks the fallback line, ends the turn with
-  `continue`, and drains the reply unheard so the chat turn still finishes and
-  is stored. The stored answer is then not what the caller heard, and nothing in
-  history marks that. The route ends the HTTP response at the outcome in both
-  modes, so the runtime never waits for the drain.
+- **After the limit.** The policy speaks the fallback line, ends its events
+  with `continue`, and hands the reply's drain to the service
+  (`observer.drainingAfterLimit`), so the chat turn still finishes and is
+  stored; the service settles and logs the turn once the drain has ended. The
+  stored answer is then not what the caller heard, and nothing in history
+  marks that. The port's events end at the outcome, so the route ends the
+  HTTP response there in both modes and the runtime never waits for the
+  drain; the drained chat turn runs past the route's post-disconnect ceiling.
 - **Flush delta.** ElevenLabs hands a sentence to speech once the terminator
   is followed by whitespace and a later non-blank delta arrives (observed
   2026-10-13). Pieces end on the terminator, so the `elevenlabs` dialect's
@@ -143,7 +194,9 @@ helpers and the shared chat message limit from `app/http`
   first turn waits until the first binds the session, then joins its
   conversation. Across instances the race remains: both turns start a
   conversation, `bind` keeps the session on the first, and the losing turn's
-  exchange stays in an orphaned conversation (logged as a warn).
+  exchange stays in an orphaned conversation (logged as a warn). This stays an
+  in-process guarantee until a database-level session claim lands with
+  Phase 0.
 - **Operator takeover reaches no one.** `customerReplyDelivery.ts` has no
   `voice` deliverer, so an operator's Inbox reply never reaches the caller; the
   Inbox offers no Send on a voice conversation
@@ -159,13 +212,22 @@ helpers and the shared chat message limit from `app/http`
   runs to completion). The cancelled turn yields chat's `cancelled` event, the
   service ends it with `continue`, and the route closes its stream with `stop`
   and `[DONE]`. A turn cancelled after it started emitting keeps its user
-  message and stores no reply.
+  message and stores no reply. That holds while its reply is being stored too:
+  chat checks the lease once more right before the store and latches it for
+  the commit as the storing transaction's last step, so the newer utterance and
+  the stored reply have one winner: before the latch the newer utterance
+  cancels the turn, and a reply the caller never received (a whole reply,
+  written only once stored) counts as replaced before emission; after it the
+  newer utterance waits for the stored turn.
 - **A replaced turn leaves no trace.** A turn cancelled before it emitted
   anything by a newer turn that is also `latest_input_wins`
   (`ChatTurnSupersededError.replacedByNewerInput`) has its user message
   deleted by the chat turn lifecycle (`recordSupersession` →
-  `MessageRepositoryPort.deleteUserMessage`); the cancelled `chat.answer`
-  audit event keeps `userMessageId` and adds `userMessageDiscarded: true`. Any
+  `AssistantTurnPersistencePort.discardReplacedUserMessage`); the cancelled
+  `chat.answer` audit event keeps `userMessageId` and adds
+  `userMessageDiscarded: true`. The deletion and the event commit in one
+  transaction; when it fails, the message stays and the event is recorded
+  without the flag, so no message is lost without its record. Any
   other newer turn, such as an approval resuming a routine, only cancels it,
   and the message stays. The message is deleted rather than written late
   because model-call usage events, coverage assessments and the facet job
@@ -186,7 +248,9 @@ helpers and the shared chat message limit from `app/http`
   two. `VoiceSessionMemory.arrive` marks the previous request of the session
   superseded; one still setting up (session lookup, voice profile) ends with
   `continue` before its chat turn starts, and one already in chat is cancelled
-  by the registry when the newer turn starts. The conversation keeps the last
+  by the registry when the newer turn starts. `arrive` runs as the request
+  enters, before any read, so arrival order decides whichever request's reads
+  finish first. The conversation keeps the last
   transcript and one answer. In-process only: a burst split across API
   instances can store two user messages.
 - **Bridges never stack.** The policy asks `mayBridge` when the bridge falls
@@ -199,6 +263,10 @@ helpers and the shared chat message limit from `app/http`
   `VOICE_BEHAVIOR.replayWindowMs` (30 s): an identical utterance (whitespace
   aside) for the session, with no chat turn running, is answered with the
   stored answer as speech, with no chat turn, no bridge and no user message.
+  The replayed turn writes its `voice.reply_replayed` note once its outcome
+  has left, off the response's path: the response and the session's settling
+  never wait for the audit write, and a note that fails or takes longer than
+  5 s logs a warn.
   While no answer is stored, the identical utterance runs as a new turn and
   supersedes the running one. In-process only.
 - **Interrupted replies.** The `elevenlabs` dialect reads an assistant message
@@ -208,8 +276,12 @@ helpers and the shared chat message limit from `app/http`
   out holds words, not only punctuation, the service logs
   `Voice reply was interrupted` and records `voice.reply_interrupted` against
   the stored reply with `heardCharacterCount` (reply characters only) and
-  `spokenCharacterCount`, once per reply. The stored reply stays the full text;
-  no message column records the cut.
+  `spokenCharacterCount`, once per reply. The note is written off the turn's
+  path, and the session counts it recorded only once the write succeeds
+  (`VoiceSessionMemory.reserveInterruption`): a failed write is retried on the
+  next report of the same reply, and the log line and the metric follow the
+  recorded note. The stored reply stays the full text; no message column
+  records the cut.
 - **ElevenLabs session key.** ElevenLabs sends no conversation id; the page
   that starts the session mints `session_key` and passes it as the custom LLM
   extra body, which arrives as `elevenlabs_extra_body.session_key`. Dynamic
@@ -220,16 +292,22 @@ helpers and the shared chat message limit from `app/http`
 ## Observability
 
 One log per turn with `agentId`, `vendor`, `transport`, `conversationId`,
-`result`, `durationMs` and `speechPieceCount`, plus `bridged`,
+`result`, `durationMs` and `speechPieceCount`, `outcome` (the kind the runtime
+received) and `handoffReason` (when the turn handed off), plus `bridged`,
 `turnLimitReached` and `fallbackSpoken` when the voice policy ran: `Voice turn
 reached the turn limit` at warn when the limit fired, else `Voice turn finished` at info
 (`completed`, `replayed`, `superseded` with `supersededAt`: `before_speech` or
 `after_speech`, `abandoned`), or `Voice turn failed` at warn with
 `errorClass`. `Voice reply was interrupted` at info names the conversation,
-the reply's message id and the two character counts; a note that fails to
-record logs `Voice turn note could not be recorded` at warn. A warn when a concurrent first turn bound the session to another
+the reply's message id and the two character counts, once the note is
+recorded; a note that fails to record, or (the replay note) takes longer than
+5 s, logs `Voice turn note could not be recorded` at warn. A warn when a concurrent first turn bound the session to another
 conversation, and a warn naming only `dialect` and `agentId` when a request
-carries no usable session key (a 400). A stream that fails after its first
+carries no usable session key (a 400). Once per agent per process, when a
+turn's bridge line is below the dialect's minimum, `Voice bridge line is
+shorter than the runtime speaks on its own` at warn with
+`event: "voice.bridge_line_below_vendor_minimum"`, `agentId`, `vendor`,
+`lineCharacterCount` and `minimumCharacterCount`. A stream that fails after its first
 frame ends with one generic OpenAI error frame. Never the utterance, the reply
 or an internal error message. Chat-side spans, metrics and failure logs cover the
 turn itself.
@@ -239,9 +317,11 @@ The policy records `voice_turn_first_speech_ms` (histogram, `bridged`),
 had no line, so nothing was spoken) and `voice_turn_limit_total`
 (`locale_resolved`: `no` when there was no fallback line and the turn kept
 waiting). The service records `voice_turn_superseded_total` (`stage`:
-`before_speech`, `after_speech`), `voice_turn_replayed_total` and
-`voice_reply_interrupted_total`. Labels are closed enums; no line text, locale
-tag or id. The chat registry's `chat_turn_cancellations_total` counts a voice
+`before_speech`, `after_speech`), `voice_turn_replayed_total`,
+`voice_reply_interrupted_total` and `voice_turn_outcome_total` (`kind`:
+`continue`, `callback_requested`; `handoff_reason`: `routine_handoff`,
+`routine_stuck`, `retrieval_miss`, `none`), once per turn that sent an
+outcome. Labels are closed enums; no line text, locale tag or id. The chat registry's `chat_turn_cancellations_total` counts a voice
 turn cancelled mid-reply with `stage: "persisting"`.
 
 ## Tests
@@ -250,7 +330,11 @@ turn cancelled mid-reply with `stage: "persisting"`.
   policy tests use fake timers)
 - `cd backend && pnpm exec vitest run tests/unit/conversation-turn-registry.test.ts tests/unit/chat-service-routine-reply-streaming.test.ts`
   (the chat side of `latest_input_wins`: cancelling after emission, and the
-  replaced turn's user message)
+  replaced turn's user message; and the `handoff` report on a streamed
+  routine hand-off)
+- `cd backend && pnpm exec vitest run tests/unit/routine-ending-effects.test.ts tests/unit/chat-turn-lifecycle.test.ts tests/unit/chat-presenter.test.ts tests/unit/public-chat-presenter.test.ts`
+  (the slot count on a hand-off, the reply's `handoff` report, and the
+  presenters that keep it out of HTTP responses)
 - `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts`
   (the settings round trip and the dashboard-save safety check)
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`

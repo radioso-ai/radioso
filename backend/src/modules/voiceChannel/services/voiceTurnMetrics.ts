@@ -1,9 +1,11 @@
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { VoiceBridgeStyle } from "../../agents/public.js";
+import type { ChatTurnHandoffReason } from "../../chat/contracts/index.js";
+import type { VoiceTurnOutcome } from "../domain.js";
 
 export type VoiceTurnMetricsSink = Pick<MetricsRegistry, "observeHistogram" | "incrementCounter">;
 
-const FIRST_SPEECH_BUCKETS_MS = [250, 500, 900, 1_200, 1_500, 2_000, 3_000, 5_000, 8_000, 12_000];
+const FIRST_SPEECH_BUCKETS_MS = [250, 500, 900, 1_200, 1_500, 2_000, 3_000, 5_000, 8_000, 10_000, 12_000];
 
 const yesNo = (value: boolean): string => (value ? "yes" : "no");
 
@@ -57,5 +59,16 @@ export const recordVoiceTurnReplayed = (metrics: VoiceTurnMetricsSink | null | u
 export const recordVoiceReplyInterrupted = (metrics: VoiceTurnMetricsSink | null | undefined): void => {
   metrics?.incrementCounter("voice_reply_interrupted_total", {
     help: "Stored voice replies the vendor reported cut short because the caller spoke over them",
+  });
+};
+
+export const recordVoiceTurnOutcome = (
+  metrics: VoiceTurnMetricsSink | null | undefined,
+  kind: VoiceTurnOutcome["kind"],
+  handoffReason: ChatTurnHandoffReason | null,
+): void => {
+  metrics?.incrementCounter("voice_turn_outcome_total", {
+    help: "Voice turns by the outcome the runtime received; handoff_reason says why the turn handed the conversation to a person, none when it did not",
+    labels: { kind, handoff_reason: handoffReason ?? "none" },
   });
 };

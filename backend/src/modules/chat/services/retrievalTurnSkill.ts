@@ -10,7 +10,6 @@ import {
   GroundedAnswerEnvelopeReader,
   parseGroundedAnswerEnvelope,
   type GroundedAnswerEnvelope,
-  type GroundingEnvelopeOutcome,
   type PlannedEnvelopeSuggestion,
 } from "./groundedAnswerEnvelope.js";
 import type {
@@ -134,16 +133,19 @@ const declinePendingRoutineStep = (session: PreparedSession): RoutinePendingStep
   session.agent.handoffOnRetrievalMiss === true ? undefined : session.routineYield?.pendingStep;
 
 /**
- * The decline (`no_support` or `out_of_scope`) the grounded answer committed in its head
- * without writing any text for it, or `null` when it did not. The commitment is still a
- * valid verdict, so the turn delivers the focused decline that outcome promised instead
- * of failing as a blank generation. An empty `answer` commitment stays a generation failure.
+ * The decline (`no_support` or `out_of_scope`) the grounded answer committed in a valid
+ * head without writing any text for it, or `null` when it did not. The commitment is
+ * still a valid verdict, so the turn delivers the focused decline that outcome promised
+ * instead of failing as a blank generation. An empty `answer` commitment, or a decline
+ * outcome on a head that did not parse, stays a generation failure.
  */
 const blankDeclineCommitment = (
-  envelope: { outcome: GroundingEnvelopeOutcome | null },
+  envelope: Pick<GroundedAnswerEnvelope, "parseStatus" | "outcome">,
   answer: string,
 ): CommittedDeclineOutcome | null =>
-  !answer.trim() && (envelope.outcome === "no_support" || envelope.outcome === "out_of_scope")
+  !answer.trim()
+  && envelope.parseStatus === "valid_v2"
+  && (envelope.outcome === "no_support" || envelope.outcome === "out_of_scope")
     ? envelope.outcome
     : null;
 

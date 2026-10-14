@@ -1123,6 +1123,49 @@ describe("a decline the grounded answer commits without text", () => {
     expect(declineSignals).toEqual([controller.signal]);
   });
 
+  // A decline outcome on a head that did not parse is no commitment: the turn fails as a
+  // blank generation, as the streamed head reader already judged it invalid.
+  const malformedHeads = [
+    ["an unknown coverage", { coverage: "somewhat_covered", requestFocus: "the product price" }],
+    ["no requestFocus", { coverage: "unanswered_insufficient_evidence" }],
+  ] as const;
+
+  it.each(malformedHeads)("still fails a blank no_support envelope with %s, streamed and not", async (_label, head) => {
+    const raw = JSON.stringify({
+      ...head,
+      outcome: "no_support",
+      answer: "",
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    const pageSession = () => {
+      const session = baseSession();
+      (session.retrieval as { contexts: unknown[] }).contexts = [];
+      session.resolvedContext.renderFragments = [{
+        kind: "page_context",
+        pageUrl: "https://example.test/workshop",
+        content: "Workshop page",
+      }];
+      return session;
+    };
+
+    for (const session of [baseSession, pageSession]) {
+      const nonStreaming = buildComposer(raw);
+      await expect(
+        nonStreaming.composer.composeAnswer(session(), "How much does it cost?", undefined, undefined),
+      ).rejects.toMatchObject({ name: "BlankChatAnswerError" });
+      expect(nonStreaming.counts().fallbackCalls).toBe(0);
+
+      const streaming = buildComposer(raw);
+      await expect(
+        drain(streaming.composer.streamAnswer(session(), "How much does it cost?", undefined, undefined)),
+      ).rejects.toMatchObject({ name: "BlankChatAnswerError" });
+      expect(streaming.counts().fallbackCalls).toBe(0);
+    }
+  });
+
   it("still fails a turn whose answer commitment came back empty", async () => {
     const nonStreaming = buildComposer(blankEnvelope("answer"));
     await expect(

@@ -307,6 +307,10 @@ interface TurnHandoffInput extends OwnershipHandoffInput {
   collectedSlotCount?: number;
 }
 
+/** The hand-off as it is stored: the reply-only slot count does not cross the persistence port. */
+const storedHandoff = (handoff: TurnHandoffInput | null | undefined): OwnershipHandoffInput | null | undefined =>
+  handoff ? { reason: handoff.reason, routineId: handoff.routineId, stepId: handoff.stepId } : handoff;
+
 /** What the reply tells its delivering channel about the hand-off the turn applied. */
 const turnHandoffReport = (handoff: TurnHandoffInput): ChatTurnHandoff => ({
   reason: handoff.reason,
@@ -841,7 +845,7 @@ export class ChatTurnLifecycle {
         answerCoverageRequestMessageId: input.session.userMessage.id,
         assistantMessage: presentation.assistantMessage,
         auditEvent,
-        ownershipHandoff,
+        ownershipHandoff: storedHandoff(ownershipHandoff),
         ownershipAuditEvent,
         additionalAuditEvent,
         transaction: input.transaction,

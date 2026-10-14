@@ -3,7 +3,7 @@ import type { ConversationAgent } from "../../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig, type InternalAgentConfig } from "../../../src/modules/agents/agentConfig.js";
 import { conversationQualityDirectives } from "./directives.js";
 import { CQ_AGENT_ID } from "./routines.js";
-import { unpublishedAgentPublicIdentity } from "../../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../../src/modules/agents/public.js";
 
 export const CQ_WORKSPACE_ID = "cq-workspace";
 
@@ -36,6 +36,7 @@ export const conversationQualityAgent: ConversationAgent = {
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
+  voice: defaultAgentVoiceSettings(),
   chatModelOverride: null,
   surfaceSettings: {
     authenticatedChat: { enabled: true },

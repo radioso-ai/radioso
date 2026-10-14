@@ -9,6 +9,11 @@ import type { VoiceTurnEvent } from "../../src/modules/voiceChannel/domain.js";
 
 const identity = { id: "chatcmpl-test", created: 1_760_000_000, model: "radioso-voice" };
 
+const deltaOf = (frame: string): unknown => {
+  const data = frame.slice("data: ".length).trim();
+  return data === "[DONE]" ? data : (JSON.parse(data) as { choices: [{ delta: unknown }] }).choices[0].delta;
+};
+
 const turn: VoiceTurnEvent[] = [
   { type: "conversation", conversationId: "55555555-5555-4555-8555-555555555555" },
   { type: "speech", text: "We open at nine. ", last: false },
@@ -48,6 +53,61 @@ describe("OpenAI completions presenter", () => {
     expect(frames[2]).toBe("data: [DONE]\n\n");
   });
 
+  it("speaks a bridge line as a content delta, like any other speech", () => {
+    const render = createCompletionChunkRenderer(identity);
+    const frames = [
+      { type: "bridge", text: "Let me check." },
+      { type: "speech", text: "We open at nine.", last: true },
+      { type: "outcome", outcome: { kind: "continue" } },
+    ].flatMap((event) => render(event as VoiceTurnEvent));
+
+    expect(frames.map(deltaOf)).toEqual([
+      { role: "assistant", content: "Let me check." },
+      { content: "We open at nine." },
+      {},
+      "[DONE]",
+    ]);
+  });
+
+  it("follows every bridge line and sentence with the dialect's flush delta", () => {
+    const render = createCompletionChunkRenderer(identity, { sentenceFlushDelta: " \u200B" });
+    const frames = [
+      { type: "conversation", conversationId: "55555555-5555-4555-8555-555555555555" },
+      { type: "bridge", text: "Let me check." },
+      { type: "speech", text: "We open at nine. ", last: false },
+      { type: "speech", text: "See you then!", last: true },
+      { type: "outcome", outcome: { kind: "continue" } },
+    ].flatMap((event) => render(event as VoiceTurnEvent));
+
+    expect(frames.map(deltaOf)).toEqual([
+      { role: "assistant", content: "Let me check." },
+      { content: " \u200B" },
+      { content: "We open at nine. " },
+      { content: " \u200B" },
+      { content: "See you then!" },
+      { content: " \u200B" },
+      {},
+      "[DONE]",
+    ]);
+  });
+
+  it("renders a keep-alive as a content delta, sending the role first when nothing has been written", () => {
+    const render = createCompletionChunkRenderer(identity);
+
+    expect([...render({ type: "keep_alive", delta: " \u200B" }), ...render({ type: "keep_alive", delta: " \u200B" })]
+      .map(deltaOf)).toEqual([
+      { role: "assistant", content: "" },
+      { content: " \u200B" },
+      { content: " \u200B" },
+    ]);
+  });
+
+  it("sends no flush delta after an empty final piece", () => {
+    const render = createCompletionChunkRenderer(identity, { sentenceFlushDelta: " \u200B" });
+
+    expect(render({ type: "speech", text: "", last: true })).toEqual([]);
+  });
+
   it("ends a failed stream with one generic OpenAI error frame", () => {
     expect(COMPLETION_ERROR_FRAME).toBe(
       'data: {"error":{"message":"The agent could not finish this reply.","type":"server_error"}}\n\n',
@@ -55,7 +115,7 @@ describe("OpenAI completions presenter", () => {
   });
 
   it("renders a whole turn as one chat.completion object for a non-streaming request", () => {
-    expect(renderCompletion(identity, turn)).toEqual({
+    expect(renderCompletion(identity, [{ type: "bridge", text: "Let me check." }, ...turn])).toEqual({
       id: "chatcmpl-test",
       object: "chat.completion",
       created: 1_760_000_000,

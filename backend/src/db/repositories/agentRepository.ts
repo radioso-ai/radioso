@@ -26,6 +26,7 @@ import {
   type AuthoredDirectiveInput,
   type NormalizedAuthoredDirectiveInput,
   type AgentGreetingSnapshot,
+  readStoredAgentVoiceSettings,
 } from "../../modules/agents/public.js";
 import { parseDirectiveLifecycle } from "../../modules/directives/public.js";
 import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
@@ -429,6 +430,7 @@ const toBehaviorSettings = (agent: NormalizedAgentInput): Record<string, unknown
   logo: agent.logo,
   theme: agent.theme,
   branding: agent.branding,
+  voice: agent.voice,
 });
 
 const toGreetingSettings = (agent: NormalizedAgentInput): Record<string, unknown> => ({
@@ -547,6 +549,7 @@ const mapAgent = (
     greetingInstruction: readString(greeting, "greetingInstruction"),
     assistantDefaultLocale: readString(greeting, "assistantDefaultLocale") ?? null,
     proactiveGreetingEnabled: readBoolean(greeting, "proactiveGreetingEnabled"),
+    voice: readStoredAgentVoiceSettings(behavior.voice),
     chatModelOverride: chatOverride,
     publicId: row.public_id,
     publicDescription: row.public_description,

@@ -471,6 +471,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   greetingInstruction: settings.assistant.greetingInstruction,
   assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
   proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
+  voice: { enabled: false, bridgeLines: {}, fallbackLine: {} },
   assistantBootstrapActive: settings.assistant.assistantBootstrapActive,
   logo: null,
   retrievalEnabled: true,

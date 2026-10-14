@@ -39,7 +39,7 @@ import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capability
 import type { ResponseLanguageDetectorInput } from "../../src/shared/services/responseLanguageDetector.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import { createAuditService } from "../support/fakes.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 import type { ChatRoutineTurnReporter } from "../../src/modules/chat/contracts/routineTurnState.js";
 import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
 import type { RoutineRegistration } from "@radioso/conversation-defaults";
@@ -145,6 +145,7 @@ const recordingChatGateway = (answer: string) => {
 
 const agent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent-1",
   workspaceId: "ws-1",
   name: "Support",

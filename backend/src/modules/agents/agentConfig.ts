@@ -16,6 +16,7 @@ import type {
 import type { ChatTurnRoute } from "../../shared/domain/chatTurnRoute.js";
 import type { AnswerCoverageCriteria } from "../answerCoverage/public.js";
 import type { RetrieveSkillConfig } from "../retrieval/public.js";
+import { defaultAgentVoiceSettings } from "./voiceSettings.js";
 import {
   refPlaceholder,
   secretPlaceholder,
@@ -892,6 +893,8 @@ export const materializeAgentFromConfig = (
     greetingInstruction: config.greetingInstruction,
     assistantDefaultLocale: config.assistantDefaultLocale,
     proactiveGreetingEnabled: config.proactiveGreetingEnabled,
+    // Voice settings are not part of the portable config, so a materialized agent starts with voice off.
+    voice: defaultAgentVoiceSettings(),
     sourceScope: cloneJson(retrievalAnswer.sourceScope),
     surfaceSettings: cloneJson(config.surfaceSettings),
     skillSettings: retrievalAnswer.skillSettings,

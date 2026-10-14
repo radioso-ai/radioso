@@ -18,7 +18,10 @@ const documentSearchUnreviewedMetadataFilter = deferred(
 );
 
 const agentSettingGenericKeyValue = permanent(
-  "propose_agent_setting changes one agent setting at a time through a generic settingKey/value pair rather than one schema field per settable property. settingKey is validated against agentInputFieldSchemas (modules/agents/agentInputSchema.ts), which covers every one of updateAgent's fields, so each is reachable by name through value rather than through a same-named top-level input field.",
+  "propose_agent_setting changes one agent setting at a time through a generic settingKey/value pair rather than one schema field per settable property. settingKey is validated against agentInputFieldSchemas (modules/agents/agentInputSchema.ts), which covers every one of updateAgent's fields but `voice`, so each is reachable by name through value rather than through a same-named top-level input field.",
+);
+const voiceSettingsNotRayAuthored = deferred(
+  "voice settings are authored through the settings API until the voice settings UI and Ray descriptor arrive. agentInputFieldSchemas leaves `voice` out, so propose_agent_setting refuses it by name, and the reviewed prepare_agent_settings patch does not carry it.",
 );
 const reviewedAgentSettingsPatch = permanent(
   "Carried under the owner-approved `patch` object. The agent service validates and normalizes the named fields together before it persists a digest-bound review.",
@@ -175,6 +178,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
       "assistantDefaultLocale", "proactiveGreetingEnabled", "chatModelOverride", "skillSettings", "surfaceSettings",
       "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour",
     ], agentSettingGenericKeyValue),
+    ...fields(["voice"], voiceSettingsNotRayAuthored),
   },
   propose_context_variable: {
     ...fields(["source", "resolverSkillId", "maxAgeSeconds", "resolverTimeoutMs", "surfacing", "enabled"], contextVariableEnablementNesting),
@@ -252,6 +256,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
   prepare_agent_settings: {
     ...fields(["name", "internalName", "customInstruction", "assistantLinkUtmEnabled", "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss", "contactRequestDelivery", "theme", "branding", "greetingInstruction", "assistantDefaultLocale", "proactiveGreetingEnabled", "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour"], reviewedAgentSettingsPatch),
     ...fields(["suggestedQuestionsEnabled", "retrievalEnabled", "sourceScope", "chatModelOverride", "skillSettings", "surfaceSettings"], reviewedAgentSettingsDedicatedOwnerFlow),
+    ...fields(["voice"], voiceSettingsNotRayAuthored),
   },
   send_test_chat_message: {
     ...fields(["expectedDraftGeneration"], testChatDraftFenceIsReadFresh),
@@ -277,4 +282,6 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
 //            list, where the whole operation had been uncovered. Its three unreached fields
 //            (mode, testValues, seedConversationId) are the part of that deferral still open, now
 //            recorded field by field rather than retired with the operation.
-export const maxDeferredFieldParityExclusions = 11;
+//   11 -> 13 updateAgent gained the agent's `voice` block, which neither propose_agent_setting nor
+//            prepare_agent_settings carries until a voice settings UI and a reviewed Ray descriptor exist.
+export const maxDeferredFieldParityExclusions = 13;

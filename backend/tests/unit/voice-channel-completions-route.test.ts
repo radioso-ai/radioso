@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 
 import express, { Router } from "express";
 import request from "supertest";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { admittedAbuseControlDecision } from "../support/fakes.js";
 import { createAgentRoutes } from "../../src/app/http/routes/agentRoutes.js";
@@ -128,9 +128,12 @@ describe("voice completions route", () => {
       model: string;
       choices: Array<{ index: number; delta: Record<string, string>; finish_reason: string | null }>;
     });
+    // ElevenLabs speaks a sentence once its terminator is followed by whitespace and a later non-blank delta.
     expect(chunks.map((chunk) => chunk.choices[0])).toEqual([
       { index: 0, delta: { role: "assistant", content: "We open at nine. " }, finish_reason: null },
+      { index: 0, delta: { content: " \u200B" }, finish_reason: null },
       { index: 0, delta: { content: "See you then!" }, finish_reason: null },
+      { index: 0, delta: { content: " \u200B" }, finish_reason: null },
       { index: 0, delta: {}, finish_reason: "stop" },
     ]);
     expect(new Set(chunks.map((chunk) => chunk.id)).size).toBe(1);
@@ -214,6 +217,144 @@ describe("voice completions route", () => {
       model: "radioso-voice",
       choices: [{ index: 0, message: { role: "assistant", content: "We open at nine. See you then!" }, finish_reason: "stop" }],
     });
+  });
+
+  it("streams the generic dialect's reply without flush deltas", async () => {
+    const dependencies = createDependencies({
+      voiceTurns: voiceTurns([
+        { type: "conversation", conversationId },
+        { type: "bridge", text: "Let me check." },
+        { type: "speech", text: "We open at nine.", last: true },
+        { type: "outcome", outcome: { kind: "continue" } },
+      ]),
+    });
+
+    const response = await request(createApp(dependencies))
+      .post(completionsPath("generic"))
+      .set("Authorization", "Bearer voice-secret")
+      .set("X-Radioso-Voice-Session", "room-7")
+      .send({ stream: true, messages: [{ role: "user", content: "When do you open?" }] })
+      .expect(200);
+
+    const deltas = dataFrames(response.text).slice(0, -1).map((frame) =>
+      (JSON.parse(frame) as { choices: [{ delta: Record<string, string> }] }).choices[0].delta);
+    expect(deltas).toEqual([
+      { role: "assistant", content: "Let me check." },
+      { content: "We open at nine." },
+      {},
+    ]);
+  });
+
+  it("follows an ElevenLabs bridge line with a flush delta so it is spoken at once", async () => {
+    const dependencies = createDependencies({
+      voiceTurns: voiceTurns([
+        { type: "conversation", conversationId },
+        { type: "bridge", text: "Let me check." },
+        { type: "speech", text: "We open at nine.", last: true },
+        { type: "outcome", outcome: { kind: "continue" } },
+      ]),
+    });
+
+    const response = await request(createApp(dependencies))
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody())
+      .expect(200);
+
+    const contents = dataFrames(response.text).slice(0, -1).map((frame) =>
+      (JSON.parse(frame) as { choices: [{ delta: { content?: string } }] }).choices[0].delta.content);
+    expect(contents).toEqual(["Let me check.", " \u200B", "We open at nine.", " \u200B", undefined]);
+  });
+
+  it("passes on the caller's locale where the dialect reads it, and ignores one that is not a language tag", async () => {
+    const dependencies = createDependencies();
+    const app = createApp(dependencies);
+
+    await request(app)
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({ elevenlabs_extra_body: { session_key: "conv_abc", locale: "it-IT" } }))
+      .expect(200);
+    await request(app)
+      .post(completionsPath("generic"))
+      .set("Authorization", "Bearer voice-secret")
+      .set("X-Radioso-Voice-Session", "room-7")
+      .set("X-Radioso-Voice-Locale", "de")
+      .send({ messages: [{ role: "user", content: "Hallo" }] })
+      .expect(200);
+    await request(app)
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({ elevenlabs_extra_body: { session_key: "conv_abc", locale: "Italian" } }))
+      .expect(200);
+
+    await request(app)
+      .post(completionsPath("generic"))
+      .set("Authorization", "Bearer voice-secret")
+      .set("X-Radioso-Voice-Session", "room-7")
+      .set("X-Radioso-Voice-Locale", "German")
+      .send({ messages: [{ role: "user", content: "Hallo" }], metadata: { locale: "de-AT" } })
+      .expect(200);
+
+    const inputs = vi.mocked(dependencies.voiceTurns.runTurn).mock.calls.map(([turn]) => turn);
+    expect(inputs[0]).toMatchObject({ locale: "it-IT" });
+    expect(inputs[1]).toMatchObject({ locale: "de" });
+    expect(inputs[2]).not.toHaveProperty("locale");
+    // A malformed header falls through to the next source.
+    expect(inputs[3]).toMatchObject({ locale: "de-AT" });
+  });
+
+  it("finishes the response at the outcome while the turn behind it is still draining", async () => {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const drained = vi.fn();
+    const turns = {
+      runTurn: vi.fn(() => (async function* (): AsyncGenerator<VoiceTurnEvent> {
+        yield { type: "conversation", conversationId };
+        yield { type: "speech", text: "Sorry, could you ask me again?", last: true };
+        yield { type: "outcome", outcome: { kind: "continue" } };
+        await released;
+        drained();
+      })()),
+    };
+
+    try {
+      const streamed = await request(createApp(createDependencies({ voiceTurns: turns })))
+        .post(completionsPath())
+        .set("Authorization", "Bearer voice-secret")
+        .send(elevenlabsBody())
+        .expect(200);
+      const answered = await request(createApp(createDependencies({ voiceTurns: turns })))
+        .post(completionsPath())
+        .set("Authorization", "Bearer voice-secret")
+        .send(elevenlabsBody({ stream: false }))
+        .expect(200);
+
+      expect(dataFrames(streamed.text).at(-1)).toBe("[DONE]");
+      expect(answered.body.choices[0].message.content).toBe("Sorry, could you ask me again?");
+      expect(drained).not.toHaveBeenCalled();
+    } finally {
+      release();
+    }
+    await vi.waitFor(() => expect(drained).toHaveBeenCalledTimes(2));
+  });
+
+  it("still answers a non-streaming request whose turn ends without an outcome", async () => {
+    const dependencies = createDependencies({
+      voiceTurns: voiceTurns([
+        { type: "conversation", conversationId },
+        { type: "speech", text: "We open at nine.", last: false },
+      ]),
+    });
+
+    const response = await request(createApp(dependencies))
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({ stream: false }))
+      .expect(200);
+
+    expect(response.headers["x-radioso-conversation-id"]).toBe(conversationId);
+    expect(response.body.choices[0].message.content).toBe("We open at nine.");
   });
 
   it("reads the generic dialect's session key from its header", async () => {
@@ -364,11 +505,11 @@ describe("voice completions route", () => {
       .expect(200);
 
     const frames = dataFrames(response.text);
-    expect(frames).toHaveLength(2);
+    expect(frames).toHaveLength(3);
     expect(JSON.parse(frames[0] ?? "")).toMatchObject({
       choices: [{ index: 0, delta: { role: "assistant", content: "We open at nine. " }, finish_reason: null }],
     });
-    expect(frames[1]).toBe('{"error":{"message":"The agent could not finish this reply.","type":"server_error"}}');
+    expect(frames[2]).toBe('{"error":{"message":"The agent could not finish this reply.","type":"server_error"}}');
     expect(response.text).not.toContain("internal detail");
     expect(response.text).not.toContain("[DONE]");
   });
@@ -463,5 +604,159 @@ describe("voice completions route when the vendor disconnects mid-reply", () => 
       release();
       server.close();
     }
+  });
+});
+
+describe("voice completions route keep-alive", () => {
+  // Only the clock is fake: sockets and setImmediate stay real so frames can travel.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const flushIo = async (): Promise<void> => {
+    for (let tick = 0; tick < 20; tick += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+  };
+
+  /** A turn that names its conversation, says nothing for `silenceMs`, answers, then drains for `drainMs`. */
+  const silentTurn = (silenceMs: number, drainMs = 0) => ({
+    runTurn: (_input: VoiceTurnInput, _signal: AbortSignal) => (async function* (): AsyncGenerator<VoiceTurnEvent> {
+      yield { type: "conversation", conversationId };
+      await new Promise((resolve) => setTimeout(resolve, silenceMs));
+      yield { type: "speech", text: "We open at nine.", last: true };
+      yield { type: "outcome", outcome: { kind: "continue" } };
+      if (drainMs > 0) await new Promise((resolve) => setTimeout(resolve, drainMs));
+    })(),
+  });
+
+  interface Arrival { atMs: number; delta: unknown }
+
+  const streamOnFakeClock = async (options: {
+    dialect: "elevenlabs" | "generic";
+    turns: ReturnType<typeof silentTurn>;
+    runForMs: number;
+    hangUpAfterFirstFrame?: boolean;
+  }) => {
+    const writesAfterClose: unknown[] = [];
+    const app = express();
+    app.use(express.json());
+    app.use((_req, res, next) => {
+      let closed = false;
+      res.on("close", () => { closed = true; });
+      const write = res.write.bind(res) as (...args: unknown[]) => boolean;
+      res.write = ((...args: unknown[]) => {
+        if (closed) writesAfterClose.push(args[0]);
+        return write(...args);
+      }) as typeof res.write;
+      next();
+    });
+    let turnStarted = false;
+    const router = Router();
+    registerOpenAiCompletionsRoute(router, {
+      turns: {
+        runTurn: (input, signal) => {
+          turnStarted = true;
+          return options.turns.runTurn(input, signal);
+        },
+      },
+      admission: { handlers: [], callerOf: () => ({ workspaceId, agentId }), onTurnAccepted: () => undefined },
+      logger: { warn: vi.fn() },
+    });
+    app.use("/api/v1/agents", router);
+    const server = app.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const startedAt = Date.now();
+    const arrivals: Arrival[] = [];
+
+    try {
+      const { port } = server.address() as AddressInfo;
+      const client = http.request({
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: completionsPath(options.dialect),
+        headers: { "content-type": "application/json", "x-radioso-voice-session": "room-7" },
+      });
+      client.on("error", () => undefined);
+      client.on("response", (response) => {
+        response.on("error", () => undefined);
+        response.on("data", (chunk: Buffer) => {
+          for (const frame of dataFrames(chunk.toString("utf8"))) {
+            arrivals.push({
+              atMs: Date.now() - startedAt,
+              delta: frame === "[DONE]" ? frame : (JSON.parse(frame) as { choices: [{ delta: unknown }] }).choices[0].delta,
+            });
+          }
+          if (options.hangUpAfterFirstFrame) client.destroy();
+        });
+      });
+      client.end(JSON.stringify(options.dialect === "elevenlabs"
+        ? elevenlabsBody()
+        : { stream: true, messages: [{ role: "user", content: "When do you open?" }] }));
+
+      // The turn starts once the request has crossed the socket, at fake time zero.
+      for (let attempt = 0; attempt < 100 && !turnStarted; attempt += 1) await flushIo();
+      expect(turnStarted).toBe(true);
+      for (let elapsed = 0; elapsed < options.runForMs; elapsed += 100) {
+        await vi.advanceTimersByTimeAsync(100);
+        await flushIo();
+      }
+      client.destroy();
+      return { arrivals, writesAfterClose };
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  };
+
+  it("sends an invisible keep-alive delta at 2.5 s and 5 s of an ElevenLabs turn's silence", async () => {
+    const { arrivals } = await streamOnFakeClock({ dialect: "elevenlabs", turns: silentTurn(6_000), runForMs: 7_000 });
+
+    expect(arrivals).toEqual([
+      { atMs: 2_500, delta: { role: "assistant", content: "" } },
+      { atMs: 2_500, delta: { content: " \u200B" } },
+      { atMs: 5_000, delta: { content: " \u200B" } },
+      { atMs: 6_000, delta: { content: "We open at nine." } },
+      { atMs: 6_000, delta: { content: " \u200B" } },
+      { atMs: 6_000, delta: {} },
+      { atMs: 6_000, delta: "[DONE]" },
+    ]);
+  });
+
+  it("sends no keep-alive on the generic dialect", async () => {
+    const { arrivals } = await streamOnFakeClock({ dialect: "generic", turns: silentTurn(6_000), runForMs: 7_000 });
+
+    expect(arrivals).toEqual([
+      { atMs: 6_000, delta: { role: "assistant", content: "We open at nine." } },
+      { atMs: 6_000, delta: {} },
+      { atMs: 6_000, delta: "[DONE]" },
+    ]);
+  });
+
+  it("sends no keep-alive after the stop frame while the turn behind it drains", async () => {
+    const { arrivals, writesAfterClose } = await streamOnFakeClock({
+      dialect: "elevenlabs",
+      turns: silentTurn(100, 10_000),
+      runForMs: 11_000,
+    });
+
+    expect(arrivals.at(-1)).toEqual({ atMs: 100, delta: "[DONE]" });
+    expect(arrivals.filter(({ atMs }) => atMs > 100)).toEqual([]);
+    expect(writesAfterClose).toEqual([]);
+  });
+
+  it("sends no keep-alive after the runtime hangs up", async () => {
+    const { arrivals, writesAfterClose } = await streamOnFakeClock({
+      dialect: "elevenlabs",
+      turns: silentTurn(9_000),
+      runForMs: 10_000,
+      hangUpAfterFirstFrame: true,
+    });
+
+    expect(arrivals.every(({ atMs }) => atMs === 2_500)).toBe(true);
+    expect(writesAfterClose).toEqual([]);
   });
 });

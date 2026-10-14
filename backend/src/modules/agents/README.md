@@ -16,7 +16,15 @@ the mutable draft directly. `AgentRevisionService.resolveDefaultTestRevision`
 decides which revision a test runs when the operator names none. Writer modules continue to own their resource
 validation and use the shared draft-mutation boundary.
 
+Agents also store and serve the `voice` settings block (`voiceSettings.ts`):
+its schema, the voice-off default, and a tolerant reader for stored blocks. It
+lives in `behavior_settings.voice`, travels on `GET`/`PUT /api/v1/agents/:agentId`,
+and stays out of `agentInputFieldSchemas`, so Ray's `propose_agent_setting`
+cannot reach it. The voice channel reads it through type-only imports from
+`public.ts`; nothing here loads the voice runtime.
+
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/agent-revision-service.test.ts tests/unit/agent-revision-routes.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/agent-revision-runtime-resolver.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/agent-voice-settings.test.ts tests/contract/agent-voice-settings.contract.test.ts`

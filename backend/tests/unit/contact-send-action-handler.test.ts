@@ -136,6 +136,7 @@ describe("ContactSendActionHandler", () => {
         email,
         state: email === "ready@example.com" ? "confirmed" as const : "waiting_for_confirmation" as const,
         grandfatheredUntil: null,
+        confirmationSentAt: null,
       })),
       ensure: async (_workspaceId: string, email: string) => ({ recipientId: `recipient:${email}`, generation: 0 }),
       reserveConfirmationSend: async () => ({ recipientId: "recipient:waiting@example.com", generation: 1, reservedAt: new Date(), previousSentAt: null }),

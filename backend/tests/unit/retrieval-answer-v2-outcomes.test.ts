@@ -1058,27 +1058,44 @@ describe("a decline the grounded answer commits without text", () => {
     expect(counts().fallbackCalls).toBe(0);
   });
 
-  it("reads a page-context decline without text as no page answer and composes the decline", async () => {
-    const pageSession = () => {
-      const session = baseSession();
-      (session.retrieval as { contexts: unknown[] }).contexts = [];
-      session.resolvedContext.renderFragments = [{
-        kind: "page_context",
-        pageUrl: "https://example.test/workshop",
-        content: "Workshop page",
-      }];
-      return session;
-    };
-    const nonStreaming = buildComposer(blankEnvelope("no_support"));
-    const presented = await nonStreaming.composer.composeAnswer(pageSession(), "How much does it cost?", undefined, undefined);
-    expect(presented.answer).toBe("FOCUSED GROUNDED MISS");
-    expect(nonStreaming.counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 1 });
+  it.each(committedDeclines)(
+    "composes the no-page decline for a page-context $outcome commitment without text, keeping its reason",
+    async ({ outcome, composedReason, decline, skillOutcome }) => {
+      const pageSession = () => {
+        const session = baseSession();
+        (session.retrieval as { contexts: unknown[] }).contexts = [];
+        session.resolvedContext.renderFragments = [{
+          kind: "page_context",
+          pageUrl: "https://example.test/workshop",
+          content: "Workshop page",
+        }];
+        return session;
+      };
+      const composedDecline = { text: "FOCUSED GROUNDED MISS", declineReason: composedReason };
 
-    const streaming = buildComposer(blankEnvelope("no_support"));
-    const { result } = await drain(streaming.composer.streamAnswer(pageSession(), "How much does it cost?", undefined, undefined));
-    expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
-    expect(streaming.counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 1 });
-  });
+      const nonStreaming = buildComposer(blankEnvelope(outcome), composedDecline);
+      const presented = await nonStreaming.composer.composeAnswer(pageSession(), "How much does it cost?", undefined, undefined);
+      expect(presented.answer).toBe("FOCUSED GROUNDED MISS");
+      expect(presented.skillOutcome).toBe(skillOutcome);
+      expect(nonStreaming.counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 1 });
+      expect(nonStreaming.attemptKeys).toEqual(["page_context", "grounded_miss"]);
+      expect(nonStreaming.metricWrites).toContainEqual({
+        name: "chat_grounding_assertion_outcomes_total",
+        labels: expect.objectContaining({ reason: "blank_decline", stream: "false", outcome, decline }),
+      });
+
+      const streaming = buildComposer(blankEnvelope(outcome), composedDecline);
+      const { result } = await drain(streaming.composer.streamAnswer(pageSession(), "How much does it cost?", undefined, undefined));
+      expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
+      expect(result.finalPresentation.skillOutcome).toBe(skillOutcome);
+      expect(streaming.counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 1 });
+      expect(streaming.attemptKeys).toEqual(["stream_page_context", "stream_grounded_miss"]);
+      expect(streaming.metricWrites).toContainEqual({
+        name: "chat_grounding_assertion_outcomes_total",
+        labels: expect.objectContaining({ reason: "blank_decline", stream: "true", outcome, decline }),
+      });
+    },
+  );
 
   it("cancels the non-streamed decline composition when the turn's signal aborts", async () => {
     const controller = new AbortController();

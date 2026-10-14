@@ -161,6 +161,17 @@ const blankDeclineReason = (committed: CommittedDeclineOutcome, composed: Compos
     : declineReasonForCommittedOutcome(committed);
 
 /**
+ * What a grounded envelope call answered with: text, or a decline its head committed
+ * without writing any, whose wording the caller composes.
+ */
+type EnvelopeAnswer =
+  | { kind: "answer"; envelope: GroundedAnswerEnvelope }
+  | { kind: "blank_decline"; committed: CommittedDeclineOutcome };
+
+/** What the page-context call produced; `no_page` when the turn carries no page to answer from. */
+type PageContextAnswer = EnvelopeAnswer | { kind: "no_page" };
+
+/**
  * Composes a grounded answer for a retrieval turn: the grounded system prompt, the
  * envelope call, the page-context fallback, and computed grounding presentation.
  * Grounding is retrieval's *private* business — this only
@@ -321,6 +332,24 @@ export class RetrievalAnswerComposer {
     });
   }
 
+  /**
+   * Why a zero-evidence turn declined. With no page to answer from, the composed decline
+   * says; when the page envelope committed a decline without text, that commitment does,
+   * exactly as on the grounded path.
+   */
+  private zeroEvidenceDeclineReason(
+    pageAnswer: PageContextAnswer,
+    decline: ComposedDecline,
+    stream: boolean,
+  ): TurnDeclineReason {
+    if (pageAnswer.kind !== "blank_decline") {
+      return decline.declineReason;
+    }
+    const declineReason = blankDeclineReason(pageAnswer.committed, decline);
+    this.recordBlankDecline(pageAnswer.committed, declineReason, stream);
+    return declineReason;
+  }
+
   private recordUnsupportedAnswerDecline(declineReason: TurnDeclineReason, stream: boolean): void {
     this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
       help: "Computed chat grounding assertion outcomes",
@@ -477,10 +506,10 @@ export class RetrievalAnswerComposer {
     accountId: string | undefined,
     signal?: AbortSignal,
     knownAssessment?: AnswerCoverageAssessment,
-  ): Promise<GroundedAnswerEnvelope | null> {
+  ): Promise<PageContextAnswer> {
     const prompt = this.support.buildPromptWithContext(session.retrieval.prompt, session);
     if (prompt === session.retrieval.prompt) {
-      return null;
+      return { kind: "no_page" };
     }
 
     const envelope = await this.generateGroundedAnswerEnvelope(
@@ -492,10 +521,10 @@ export class RetrievalAnswerComposer {
       signal,
       knownAssessment,
     );
-    const answer = envelope.answer.trim();
-    // A decline committed without text leaves the page with nothing to say; the caller
-    // composes its own decline, as it does when there is no page at all.
-    return answer ? { ...envelope, answer } : null;
+    const committed = blankDeclineCommitment(envelope, envelope.answer);
+    return committed
+      ? { kind: "blank_decline", committed }
+      : { kind: "answer", envelope: { ...envelope, answer: envelope.answer.trim() } };
   }
 
   /**
@@ -515,7 +544,7 @@ export class RetrievalAnswerComposer {
     attemptKey: string,
     signal?: AbortSignal,
     knownAssessment?: AnswerCoverageAssessment,
-  ): AsyncGenerator<string, GroundedAnswerEnvelope | null> {
+  ): AsyncGenerator<string, EnvelopeAnswer> {
     const groundedPrompt = this.promptWithConversationContext(prompt, session, knownAssessment);
     const reader = new GroundedAnswerEnvelopeReader();
     const citationSanitizer = new CitationAnchorSanitizer();
@@ -551,12 +580,13 @@ export class RetrievalAnswerComposer {
     const finalized = reader.finalize();
     const fullAnswer = finalized.fullAnswer.trim();
     if (!fullAnswer) {
-      if (blankDeclineCommitment(finalized, fullAnswer)) {
-        return null;
+      const committed = blankDeclineCommitment(finalized, fullAnswer);
+      if (committed) {
+        return { kind: "blank_decline", committed };
       }
       throw new BlankChatAnswerError();
     }
-    return { ...finalized, answer: fullAnswer };
+    return { kind: "answer", envelope: { ...finalized, answer: fullAnswer } };
   }
 
   /**
@@ -571,10 +601,10 @@ export class RetrievalAnswerComposer {
     accountId: string | undefined,
     signal?: AbortSignal,
     knownAssessment?: AnswerCoverageAssessment,
-  ): AsyncGenerator<string, GroundedAnswerEnvelope | null> {
+  ): AsyncGenerator<string, PageContextAnswer> {
     const prompt = this.support.buildPromptWithContext(session.retrieval.prompt, session);
     if (prompt === session.retrieval.prompt) {
-      return null;
+      return { kind: "no_page" };
     }
 
     return yield* this.streamGroundedAnswerEnvelope(
@@ -617,14 +647,15 @@ export class RetrievalAnswerComposer {
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedPresentedAnswer();
       }
-      const fallback = await this.generateAnswerWithPageContext(
+      const pageAnswer = await this.generateAnswerWithPageContext(
         session,
         query,
         accountId,
         signal,
         zeroEvidenceAssessment,
       );
-      if (fallback) {
+      if (pageAnswer.kind === "answer") {
+        const fallback = pageAnswer.envelope;
         answer = fallback.answer;
         plannedSuggestions = fallback.suggestions;
         metadataPatch = this.sideChannel(session, zeroEvidenceAssessment)?.resolve(fallback.extras);
@@ -646,7 +677,7 @@ export class RetrievalAnswerComposer {
           ...(signal ? { signal } : {}),
         });
         answer = decline.text;
-        declineReason = decline.declineReason;
+        declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, false);
       }
     } else {
       const envelope = await this.generateGroundedAnswerEnvelope(
@@ -813,7 +844,8 @@ export class RetrievalAnswerComposer {
         }
         pageContextStep = await pageContextStream.next();
       }
-      const fallbackEnvelope = pageContextStep.value;
+      const pageAnswer = pageContextStep.value;
+      const fallbackEnvelope = pageAnswer.kind === "answer" ? pageAnswer.envelope : null;
       if (fallbackEnvelope) {
         rawAnswer = fallbackEnvelope.answer;
       } else {
@@ -828,7 +860,7 @@ export class RetrievalAnswerComposer {
           ...(signal ? { signal } : {}),
         });
         rawAnswer = decline.text;
-        declineReason = decline.declineReason;
+        declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, true);
       }
       plannedSuggestions = fallbackEnvelope?.suggestions ?? [];
       metadataPatch = this.sideChannel(session, zeroEvidenceAssessment)?.resolve(fallbackEnvelope?.extras);

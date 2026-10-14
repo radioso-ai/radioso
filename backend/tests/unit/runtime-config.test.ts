@@ -282,6 +282,13 @@ describe("runtime configuration", () => {
     expect(stamped.RADIOSO_COMMIT).toBe("5434e0e");
   });
 
+  it("keeps the quick-reply lane on unless CHAT_QUICK_REPLY_LANE turns it off", () => {
+    expect(getEnv({ ...baseEnv }).CHAT_QUICK_REPLY_LANE).toBe("on");
+    expect(getEnv({ ...baseEnv, CHAT_QUICK_REPLY_LANE: "" }).CHAT_QUICK_REPLY_LANE).toBe("on");
+    expect(getEnv({ ...baseEnv, CHAT_QUICK_REPLY_LANE: "off" }).CHAT_QUICK_REPLY_LANE).toBe("off");
+    expect(() => getEnv({ ...baseEnv, CHAT_QUICK_REPLY_LANE: "disabled" })).toThrow();
+  });
+
   it("provides default observability configuration without extra vendor settings", () => {
     const env = getEnv({
       ...baseEnv,

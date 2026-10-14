@@ -64,6 +64,7 @@ const agent = (): ConversationAgent => ({
   greetingInstruction: "Greet briefly.",
   assistantDefaultLocale: "en-US",
   proactiveGreetingEnabled: true,
+  mechanicsReplies: {},
   sourceScope: { mode: "selected", sourceIds: ["source-1", "source-2"] },
   surfaceSettings: {
     authenticatedChat: { enabled: true },

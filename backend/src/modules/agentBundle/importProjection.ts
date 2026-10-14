@@ -1,5 +1,5 @@
 import { badRequest } from "../../shared/domain/errors.js";
-import { splitRetrievalAnswerEnvelope } from "../agents/public.js";
+import { readStoredAgentMechanicsReplies, splitRetrievalAnswerEnvelope } from "../agents/public.js";
 import type { AgentConfig, AgentInput } from "../agents/public.js";
 import type { AgentBundleUnresolvedReference } from "./domain.js";
 
@@ -29,7 +29,7 @@ const isPlaceholder = (value: unknown): boolean =>
   && ("__ref" in (value as Record<string, unknown>) || "__redacted" in (value as Record<string, unknown>));
 
 
-export interface AgentConfigImportProjection {
+interface AgentConfigImportProjection {
   input: AgentInput;
   unresolved: AgentBundleUnresolvedReference[];
 }
@@ -106,6 +106,7 @@ export const projectAgentConfigForImport = (config: AgentConfig): AgentConfigImp
       greetingInstruction: config.greetingInstruction,
       assistantDefaultLocale: config.assistantDefaultLocale,
       proactiveGreetingEnabled: config.proactiveGreetingEnabled,
+      mechanicsReplies: readStoredAgentMechanicsReplies(config.mechanicsReplies),
       sourceScope,
       skillSettings: retrieval.skillSettings,
       chatModelOverride: config.chatModelOverride,

@@ -18,6 +18,7 @@ import {
   runConversationQualitySuiteSampled,
   scoreObservedOutput,
   summarizeRun,
+  ZERO_TOLERANCE_JUDGE_TAG,
   type CaseReport,
   type ConversationQualityCase,
   type ConversationQualityObservedOutput,
@@ -64,6 +65,31 @@ describe("trace assertions", () => {
   it("errors turn_route when no trace was captured", () => {
     const verdict = evaluateTraceAssertion({ type: "turn_route", route: "retrieval" }, observed());
     expect(verdict.status).toBe("error");
+  });
+
+  it("reads turn_reply_source from the compose stage: the planner's reply or the composer's", () => {
+    const planned = observed({
+      turnTrace: trace([{ id: "compose", kind: "compose", status: "applied", outputs: { source: "turn_planning", quickReplyKind: "thanks" } }]),
+    });
+    const composed = observed({
+      turnTrace: trace([{ id: "compose", kind: "compose", status: "applied", outputs: { answerLength: 42 } }]),
+    });
+
+    expect(evaluateTraceAssertion({ type: "turn_reply_source", source: "turn_planning" }, planned).status).toBe("pass");
+    const plannedAsComposer = evaluateTraceAssertion({ type: "turn_reply_source", source: "composer" }, planned);
+    expect(plannedAsComposer.status).toBe("fail");
+    expect(plannedAsComposer.reason).toContain("turn_planning");
+    expect(evaluateTraceAssertion({ type: "turn_reply_source", source: "composer" }, composed).status).toBe("pass");
+    expect(evaluateTraceAssertion({ type: "turn_reply_source", source: "turn_planning" }, composed).status).toBe("fail");
+  });
+
+  it("fails turn_reply_source when no answer was composed, and errors without a trace", () => {
+    const routineReply = observed({
+      turnTrace: trace([{ id: "routine:book-demo", kind: "routine", status: "applied", outputs: {} }]),
+    });
+
+    expect(evaluateTraceAssertion({ type: "turn_reply_source", source: "composer" }, routineReply).status).toBe("fail");
+    expect(evaluateTraceAssertion({ type: "turn_reply_source", source: "turn_planning" }, observed()).status).toBe("error");
   });
 
   it("passes turn_uses_skill on a matching dispatch stage", () => {
@@ -552,6 +578,42 @@ describe("baseline diff", () => {
     expect(diff.rateRegressions).toEqual([{ caseId: "flaky", name: "Flaky", from: 0.8, to: 0 }]);
     expect(hasBaselineGateFailures(diff)).toBe(true);
   });
+
+  it("holds a zero-tolerance judge to the recorded rate even while the case stays within the general tolerance", () => {
+    // Recorded at five in five, the judge now fails two samples: a reply made a claim twice. The case
+    // rate moved within the tolerance, so only the judge's own rate can fail the run.
+    const diff = diffAgainstBaseline(
+      [{ caseId: "qr", name: "QR", status: "fail", passRate: 0.6, samples: 5, zeroToleranceJudgePassRate: 0.6 }],
+      { passThreshold: 1, cases: { qr: { status: "pass", passRate: 1, samples: 5 } } },
+      { passThreshold: 1 },
+    );
+
+    expect(diff.withinTolerance).toEqual([{ caseId: "qr", name: "QR", from: 1, to: 0.6 }]);
+    expect(diff.judgeRegressions).toEqual([{ caseId: "qr", name: "QR", from: 1, to: 0.6 }]);
+    expect(hasBaselineGateFailures(diff)).toBe(true);
+  });
+
+  it("keeps the general tolerance for a zero-tolerance case whose judge passed every sample it graded", () => {
+    const diff = diffAgainstBaseline(
+      [{ caseId: "qr", name: "QR", status: "fail", passRate: 0.8, samples: 5, zeroToleranceJudgePassRate: 1 }],
+      { passThreshold: 1, cases: { qr: { status: "pass", passRate: 1, samples: 5 } } },
+      { passThreshold: 1 },
+    );
+
+    expect(diff.judgeRegressions).toEqual([]);
+    expect(diff.withinTolerance.map((entry) => entry.caseId)).toEqual(["qr"]);
+    expect(hasBaselineGateFailures(diff)).toBe(false);
+  });
+
+  it("counts a failed zero-tolerance judge verdict at any sampling depth", () => {
+    const diff = diffAgainstBaseline(
+      [{ caseId: "qr", name: "QR", status: "fail", passRate: 0, samples: 1, zeroToleranceJudgePassRate: 0 }],
+      { cases: { qr: { status: "pass", passRate: 1, samples: 5 } } },
+    );
+
+    expect(diff.judgeRegressions).toEqual([{ caseId: "qr", name: "QR", from: 1, to: 0 }]);
+    expect(hasBaselineGateFailures(diff)).toBe(true);
+  });
 });
 
 describe("eval command defaults", () => {
@@ -794,6 +856,35 @@ describe("runConversationQualitySuiteSampled", () => {
     expect(reports[0]?.flaky).toBe(true);
     expect(outcomes[0]?.status).toBe("fail");
   });
+
+  it("measures a zero-tolerance case's judge on every graded sample, leaving judge errors to the case rate", async () => {
+    const judged = (id: string, tags?: string[]): ConversationQualityCase => ({
+      id,
+      name: id,
+      query: "hi",
+      ...(tags ? { tags } : {}),
+      assertions: [{ type: "llm_judge", expectedAnswer: "A short greeting." }],
+    });
+    const verdicts: AssertionVerdict["status"][] = ["pass", "fail", "pass", "error", "fail"];
+    let call = 0;
+    const judge: EvalLlmJudgePort = {
+      async judge({ assertion }) {
+        const status = verdicts[call++ % verdicts.length] ?? "pass";
+        return { assertion, status, reason: status } satisfies AssertionVerdict;
+      },
+    };
+    const runner: ConversationQualityRunnerPort = { run: async () => observed({ answer: "Hello!" }) };
+
+    const { outcomes } = await runConversationQualitySuiteSampled(
+      [judged("strict", [ZERO_TOLERANCE_JUDGE_TAG]), judged("general")],
+      runner,
+      { workspaceId: "ws", samples: 5, passThreshold: 1, judge },
+    );
+
+    expect(outcomes[0]).toMatchObject({ caseId: "strict", passRate: 0.4, zeroToleranceJudgePassRate: 0.6 });
+    expect(outcomes[1]).toMatchObject({ caseId: "general", passRate: 0.4 });
+    expect(outcomes[1]).not.toHaveProperty("zeroToleranceJudgePassRate");
+  });
 });
 
 describe("report", () => {
@@ -842,6 +933,20 @@ describe("report", () => {
     expect(text).toContain("UNDER-SAMPLED REGRESSIONS (1) — these fail the run:");
     expect(text).toContain("BASELINE THRESHOLD MISMATCH — these fail the run:");
   });
+
+  it("reports a zero-tolerance judge regression as a gate failure", () => {
+    const reports: CaseReport[] = [
+      { caseId: "qr", name: "QR", status: "fail", reason: "claim", verdicts: [], samples: 5, passRate: 0.6 },
+    ];
+    const diff = diffAgainstBaseline(
+      [{ caseId: "qr", name: "QR", status: "fail", passRate: 0.6, samples: 5, zeroToleranceJudgePassRate: 0.6 }],
+      { cases: { qr: { status: "pass", passRate: 1, samples: 5 } } },
+    );
+
+    const text = formatReport(reports, diff, summarizeRun([{ caseId: "qr", name: "QR", status: "fail" }]));
+    expect(text).toContain("ZERO-TOLERANCE JUDGE REGRESSIONS (1) — these fail the run:");
+    expect(text).toContain('qr "QR": 100% → 60% judge pass rate');
+  });
 });
 
 describe("seed fixtures", () => {
@@ -860,14 +965,31 @@ describe("seed fixtures", () => {
     ]);
   });
 
-  it("adds the #1351 hand-off directive only to its own case, never to the seeded agent", () => {
+  it("holds the quick-reply no-facts judge to zero tolerance and leaves the clarification judge on the general tolerance", () => {
+    const strict = conversationQualityCases
+      .filter((evalCase) => evalCase.tags?.includes(ZERO_TOLERANCE_JUDGE_TAG))
+      .map((evalCase) => evalCase.id);
+    const quickReplyJudged = conversationQualityCases
+      .filter((evalCase) => evalCase.tags?.includes("quick-reply") && evalCase.assertions.some((assertion) => assertion.type === "llm_judge"))
+      .map((evalCase) => evalCase.id);
+
+    expect(strict.every((id) => quickReplyJudged.includes(id))).toBe(true);
+    expect(quickReplyJudged.filter((id) => !strict.includes(id))).toEqual(["quick-reply-not-ack-pending-clarification"]);
+    expect(strict).toContain("quick-reply-unlisted-language-standing-directive");
+  });
+
+  it("adds each probe directive only to its own case, never to the seeded agent", () => {
     const overridden = conversationQualityCases.filter((evalCase) => evalCase.agentConfigOverride?.authoredDirectives);
-    expect(overridden.map((evalCase) => evalCase.id)).toEqual(["routine-step-outranks-always-on-handoff-directive"]);
-    expect(overridden[0]?.agentConfigOverride?.authoredDirectives?.map((directive) => directive.name)).toEqual([
-      ...conversationQualityAgentConfig.authoredDirectives.map((directive) => directive.name),
-      "contact-form-only",
-    ]);
-    expect(conversationQualityAgentConfig.authoredDirectives.map((directive) => directive.name)).not.toContain("contact-form-only");
+    const seededNames = conversationQualityAgentConfig.authoredDirectives.map((directive) => directive.name);
+    expect(Object.fromEntries(overridden.map((evalCase) => [
+      evalCase.id,
+      evalCase.agentConfigOverride?.authoredDirectives?.map((directive) => directive.name),
+    ]))).toEqual({
+      "routine-step-outranks-always-on-handoff-directive": [...seededNames, "contact-form-only"],
+      "quick-reply-unlisted-language-standing-directive": [...seededNames, "listed-languages"],
+    });
+    expect(seededNames).not.toContain("contact-form-only");
+    expect(seededNames).not.toContain("listed-languages");
   });
 
   it("validates the seed cases against the schema with unique ids", () => {

@@ -125,10 +125,11 @@ import {
   contextualDirectiveCandidates,
   lazyPromise,
   planAwareResponseLanguage,
+  standingInstructions,
   startTurnPlan,
   type TurnPlanCoordinator,
+  type TurnPlanInputs,
 } from "./turnPlanCoordinator.js";
-import type { TurnPlanDirectiveCandidate } from "./turnPlanService.js";
 import { detectTurnResponseLanguage } from "./turnResponseLanguage.js";
 import { steeringDirectivesFromAuthored } from "../../agents/public.js";
 import {
@@ -836,27 +837,37 @@ export class ChatService {
   }
 
   /**
-   * The union-of-routes contextual directive candidates for the fused planner:
-   * direct + retrieval + the turn's provisional route. Candidate identities
-   * preserve route scope so same-named directives are classified independently;
-   * lifecycle narrowing remains owned by the directive runtime.
+   * The directive inputs for the fused planner: the union-of-routes contextual
+   * candidates (direct + retrieval + the turn's provisional route), whose identities
+   * preserve route scope so same-named directives are classified independently, and
+   * the standing instructions a planner-written quick reply must follow.
+   * Lifecycle narrowing remains owned by the directive runtime.
    */
-  private buildTurnPlanDirectiveCandidates(
+  private buildTurnPlanDirectiveInputs(
     session: PreparedSession,
     accountId: string | undefined,
-  ): TurnPlanDirectiveCandidate[] {
+  ): Pick<TurnPlanInputs, "directiveCandidates" | "standingInstructions"> {
     const additionalDirectives = steeringDirectivesFromAuthored(session.agent.authoredDirectives);
     const query = session.effectiveQuery ?? session.userMessage.content;
-    return contextualDirectiveCandidates({
-      routes: [session.turnRoute, CHAT_TURN_ROUTE.DIRECT, CHAT_TURN_ROUTE.RETRIEVAL],
-      directivesForRoute: (route) =>
-        this.directiveRuntime.directivesFor({
-          workspaceId: session.agent.workspaceId,
-          accountId,
-          additionalDirectives,
-          turnContext: { query, route },
-        }),
-    });
+    const directivesForRoute = (route: string) =>
+      this.directiveRuntime.directivesFor({
+        workspaceId: session.agent.workspaceId,
+        accountId,
+        additionalDirectives,
+        turnContext: { query, route },
+      });
+    return {
+      directiveCandidates: contextualDirectiveCandidates({
+        routes: [session.turnRoute, CHAT_TURN_ROUTE.DIRECT, CHAT_TURN_ROUTE.RETRIEVAL],
+        directivesForRoute,
+      }),
+      // A quick reply is a direct answer, so it follows the agent's custom instruction and
+      // the direct route's always-on rules.
+      standingInstructions: standingInstructions({
+        customInstruction: session.agent.customInstruction,
+        directives: directivesForRoute(CHAT_TURN_ROUTE.DIRECT),
+      }),
+    };
   }
 
   /**
@@ -906,8 +917,9 @@ export class ChatService {
           conversationSummary: session.conversationSummary,
         }, this.turnPlanInterpretationContextSettings),
         pageReadCapability: session.pageReadCapability,
-        directiveCandidates: this.buildTurnPlanDirectiveCandidates(session, input.accountId),
+        ...this.buildTurnPlanDirectiveInputs(session, input.accountId),
         visitorContext: this.planVisitorContext(session),
+        agentId: session.agent.id,
         workspaceContext: buildAgentChatWorkspaceContext(session.agent),
         usageContext: {
           accountId: input.accountId,

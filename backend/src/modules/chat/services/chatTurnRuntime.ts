@@ -23,6 +23,8 @@ export interface ChatTurnRuntimeDependencies {
   skillOutcomeCapabilities: SkillOutcomeCapabilityProvider;
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
   logger?: Pick<AppLogger, "debug">;
+  /** Composition's quick-reply kill switch (default true): false, every direct turn is composed. */
+  quickReplyLaneEnabled?: boolean;
 }
 
 /**
@@ -78,6 +80,12 @@ export const buildChatTurnRuntime = (
         deps.fallbackReplyComposer,
         DIRECT_REPLY_CONFIG,
       ),
+      {
+        presenter: chatAnswerPresenter,
+        logger: deps.logger,
+        metrics: deps.metrics,
+        quickReplyLaneEnabled: deps.quickReplyLaneEnabled ?? true,
+      },
     ),
   ];
   return {

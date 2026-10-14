@@ -58,6 +58,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
   greetingInstruction: "Welcome the visitor by role.",
   assistantDefaultLocale: "en-US",
   proactiveGreetingEnabled: true,
+  mechanicsReplies: {},
   sourceScope: {
     mode: "selected",
     sourceIds: ["raw-source-1", "raw-source-2"],

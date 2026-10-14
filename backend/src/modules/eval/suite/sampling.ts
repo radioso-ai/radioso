@@ -1,7 +1,11 @@
 import type { EvalLlmJudgePort } from "../services/evalJudge.js";
 import type { EvalRunStatus } from "../domain/types.js";
 import type { CaseOutcome } from "./baseline.js";
-import { conversationQualityCaseTurnText, type ConversationQualityCase } from "./caseSchema.js";
+import {
+  conversationQualityCaseTurnText,
+  ZERO_TOLERANCE_JUDGE_TAG,
+  type ConversationQualityCase,
+} from "./caseSchema.js";
 import type { CaseReport } from "./report.js";
 import { observeCase, type ConversationQualityRunnerPort } from "./runnerPort.js";
 import { scoreObservedOutput, type SuiteAssertionVerdict } from "./scoring.js";
@@ -99,6 +103,28 @@ export const reduceSamples = <TVerdict>(
   };
 };
 
+const judgeFailed = (score: SampleScore): boolean =>
+  score.verdicts.some((verdict) => verdict.assertion.type === "llm_judge" && verdict.status === "fail");
+
+/**
+ * For a case tagged {@link ZERO_TOLERANCE_JUDGE_TAG}: the fraction of scored samples in which no
+ * `llm_judge` verdict failed. Only a judge that read the reply and failed it counts; a judge or
+ * run error measures nothing about the reply and stays with the case's own pass rate.
+ */
+const zeroToleranceJudgePassRate = (
+  evalCase: ConversationQualityCase,
+  scores: readonly SampleScore[],
+): number | undefined => {
+  if (!evalCase.tags?.includes(ZERO_TOLERANCE_JUDGE_TAG)) {
+    return undefined;
+  }
+  const scored = scores.filter((score) => score.status !== "recorded");
+  if (scored.length === 0) {
+    return undefined;
+  }
+  return 1 - scored.filter(judgeFailed).length / scored.length;
+};
+
 interface SampledSuiteResult {
   reports: CaseReport[];
   outcomes: CaseOutcome[];
@@ -118,6 +144,7 @@ export const runConversationQualitySuiteSampled = async (
 ): Promise<SampledSuiteResult> => {
   const samples = Math.max(1, Math.floor(options.samples));
   const reports: CaseReport[] = [];
+  const judgeRates = new Map<string, number>();
 
   for (const evalCase of cases) {
     const sampleScores: SampleScore[] = [];
@@ -133,6 +160,10 @@ export const runConversationQualitySuiteSampled = async (
     }
 
     const reduced = reduceSamples(sampleScores, options.passThreshold);
+    const judgeRate = zeroToleranceJudgePassRate(evalCase, sampleScores);
+    if (judgeRate !== undefined) {
+      judgeRates.set(evalCase.id, judgeRate);
+    }
     reports.push({
       caseId: evalCase.id,
       name: evalCase.name,
@@ -146,12 +177,16 @@ export const runConversationQualitySuiteSampled = async (
     });
   }
 
-  const outcomes: CaseOutcome[] = reports.map(({ caseId, name, status, passRate, samples }) => ({
-    caseId,
-    name,
-    status,
-    passRate,
-    samples,
-  }));
+  const outcomes: CaseOutcome[] = reports.map(({ caseId, name, status, passRate, samples }) => {
+    const judgeRate = judgeRates.get(caseId);
+    return {
+      caseId,
+      name,
+      status,
+      passRate,
+      samples,
+      ...(judgeRate === undefined ? {} : { zeroToleranceJudgePassRate: judgeRate }),
+    };
+  });
   return { reports, outcomes };
 };

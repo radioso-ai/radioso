@@ -420,6 +420,40 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     expect(messageCount.count).toBe("0");
   });
 
+  it("stores none of a turn, reply or audit event, whose commit fence refuses it", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const assistantMessageId = randomUUID();
+
+    await expect(persistence.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      assistantMessage: {
+        id: assistantMessageId,
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "A reply a newer input overtook.",
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: workspace.id,
+        metadata: { conversationId: conversation.id },
+      },
+      commitFence: () => {
+        throw new Error("superseded while stored");
+      },
+    })).rejects.toThrow("superseded while stored");
+
+    const stored = await database.queryOne<{ messages: string; audits: string }>(
+      `SELECT
+         (SELECT COUNT(*)::text FROM messages WHERE id = $1) AS messages,
+         (SELECT COUNT(*)::text FROM audit_events WHERE metadata_json->>'conversationId' = $2) AS audits`,
+      [assistantMessageId, conversation.id],
+    );
+    expect(stored).toEqual({ messages: "0", audits: "0" });
+  });
+
   it("returns facts to a caller-owned transaction while leaving a later rollback silent and durable-state free", async () => {
     const { accountId, workspace, conversation } = await seedConversation();
     const assistantMessageId = randomUUID();

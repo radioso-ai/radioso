@@ -240,7 +240,8 @@ What the conversation keeps depends on how far the cancelled turn got:
   the end of a sentence too early and re-sends the longer transcript. Only a
   newer voice request removes the message; any other turn that starts on the
   conversation, such as an operator approving a routine step, cancels the
-  turn and keeps it.
+  turn and keeps it. A reply that was still being saved when the newer request
+  arrived, with none of it sent yet, counts as not started.
 - **Cancelled after its reply started:** the caller's message stays and the
   part of the reply the caller heard is not stored. The next turn answers the
   newer utterance with that message in its history.

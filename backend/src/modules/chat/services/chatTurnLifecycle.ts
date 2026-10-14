@@ -301,7 +301,7 @@ export interface OwnershipHandoffInput {
 }
 
 /** The hand-off a turn applies, by one of the reasons a turn can raise. */
-interface TurnHandoffInput extends OwnershipHandoffInput {
+export interface TurnHandoffInput extends OwnershipHandoffInput {
   reason: ChatTurnHandoffReason;
   /** How many of the ending routine's declared slots held a value; the reply reports it, nothing stores it. */
   collectedSlotCount?: number;

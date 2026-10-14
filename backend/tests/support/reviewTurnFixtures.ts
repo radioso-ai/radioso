@@ -14,7 +14,7 @@ import { ChatService, type ChatServiceOptions } from "../../src/modules/chat/ser
 import {
   ChatTurnLifecycle,
   type AssistantTurnPersistencePort,
-  type OwnershipHandoffInput,
+  type TurnHandoffInput,
 } from "../../src/modules/chat/services/chatTurnLifecycle.js";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { MissingFallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
@@ -283,7 +283,7 @@ export const reviewLifecycleHarness = () => {
 export interface ReviewedTurnFixtureInput {
   presentation?: Partial<ChatPresentedAnswer>;
   answerCoverage?: ChatAnswerCoverageAssessment;
-  ownershipHandoff?: OwnershipHandoffInput;
+  ownershipHandoff?: TurnHandoffInput;
   suppressedEffects?: readonly SuppressedSkillEffect[];
   ownershipVersion?: number;
 }

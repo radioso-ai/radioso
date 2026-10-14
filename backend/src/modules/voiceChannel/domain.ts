@@ -24,6 +24,11 @@ export interface VoiceTurnInput {
    * vendor reports it (ElevenLabs replays it cut short in the request's history).
    */
   heardUntil?: string;
+  /**
+   * The shortest first sentence the runtime speaks before more text arrives, when it holds shorter
+   * ones back; the turn prefers bridge lines at least this long.
+   */
+  minReleasableSentenceChars?: number;
 }
 
 /**

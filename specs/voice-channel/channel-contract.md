@@ -35,6 +35,7 @@ interface VoiceTurnInput {
   locale?: string;                // BCP 47 when the vendor detected it
   callerId?: string;              // E.164 when the transport is phone; becomes a context variable
   heardUntil?: string;            // the previous reply as far as the caller heard it before speaking over it, when the vendor reports it; recorded as an audit note
+  minReleasableSentenceChars?: number; // from the dialect: the shortest first sentence the runtime speaks before more text arrives; bridge lines that reach it are preferred
 }
 
 type VoiceTurnEvent =

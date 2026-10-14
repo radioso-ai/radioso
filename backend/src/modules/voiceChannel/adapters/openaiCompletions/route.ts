@@ -107,6 +107,9 @@ const turnInputFor = (
       utterance,
       ...(locale ? { locale } : {}),
       ...(heardUntil === undefined ? {} : { heardUntil }),
+      ...(dialect.minReleasableSentenceChars === undefined
+        ? {}
+        : { minReleasableSentenceChars: dialect.minReleasableSentenceChars }),
     },
     model: parsed.data.model ?? DEFAULT_MODEL_NAME,
     stream: parsed.data.stream ?? false,

@@ -146,6 +146,7 @@ describe("voice completions route", () => {
       session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey: "conv_abc" },
       transport: "web",
       utterance: "When do you open?",
+      minReleasableSentenceChars: 45,
     }, expect.any(AbortSignal), expect.any(AbortSignal));
     expect(dependencies.accessGrantService.recordAgentChannelChatSucceeded).toHaveBeenCalledWith({
       grant: expect.objectContaining({ id: grant().id, agentId }),
@@ -184,6 +185,7 @@ describe("voice completions route", () => {
       transport: "web",
       utterance: "And on Saturdays?",
       heardUntil: "Thanks for asking, let me",
+      minReleasableSentenceChars: 45,
     }, expect.any(AbortSignal), expect.any(AbortSignal));
   });
 
@@ -300,8 +302,9 @@ describe("voice completions route", () => {
       .expect(200);
 
     const inputs = vi.mocked(dependencies.voiceTurns.runTurn).mock.calls.map(([turn]) => turn);
-    expect(inputs[0]).toMatchObject({ locale: "it-IT" });
+    expect(inputs[0]).toMatchObject({ locale: "it-IT", minReleasableSentenceChars: 45 });
     expect(inputs[1]).toMatchObject({ locale: "de" });
+    expect(inputs[1]).not.toHaveProperty("minReleasableSentenceChars");
     expect(inputs[2]).not.toHaveProperty("locale");
     // A malformed header falls through to the next source.
     expect(inputs[3]).toMatchObject({ locale: "de-AT" });

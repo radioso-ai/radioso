@@ -615,6 +615,36 @@ describe("VoiceTurnService", () => {
       ]);
     });
 
+    it("still speaks a bridge line shorter than the runtime speaks on its own, and warns once per agent", async () => {
+      const logger = fakeLogger();
+      const status = (stage: "searching"): ChatStreamEvent => ({ type: "status", stage });
+      const service = new VoiceTurnService({
+        agents: voiceProfiles(voiceOn),
+        routines: routineStates(false),
+        ownership: conversationOwnership(false),
+        sessions: fakeSessions(conversationId),
+        chat: timedChat([
+          { atMs: 0, event: { type: "conversation", conversationId } },
+          { atMs: 100, event: status("searching") },
+          { atMs: 2_000, event: { type: "chunk", text: "We open at nine." } },
+          { atMs: 2_000, event: done() },
+        ]),
+        logger,
+      });
+      const turn = input({ minReleasableSentenceChars: 45 });
+
+      const first = await runWithClock(service, turn);
+      await runWithClock(service, turn);
+
+      expect(first).toContainEqual({ type: "bridge", text: "Let me check." });
+      const warnings = logger.warn.mock.calls.filter(([fields]) =>
+        (fields as { event?: string }).event === "voice.bridge_line_below_vendor_minimum");
+      expect(warnings).toEqual([[
+        { event: "voice.bridge_line_below_vendor_minimum", agentId, vendor: "elevenlabs", lineCharacterCount: 13, minimumCharacterCount: 45 },
+        "Voice bridge line is shorter than the runtime speaks on its own",
+      ]]);
+    });
+
     it("runs the turn without a bridge or a limit while voice is off", async () => {
       const agents = voiceProfiles({ ...voiceOn, enabled: false });
       const service = new VoiceTurnService({

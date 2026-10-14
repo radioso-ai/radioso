@@ -337,27 +337,47 @@ export class VoiceTurnService implements VoiceTurnPort {
       conversationId: exchange.conversationId,
       assistantMessageId: exchange.reply.messageId,
     };
-    this.dependencies.notes?.replyReplayed(note).catch((error: unknown) => this.warnNoteFailed(input, note.conversationId, error));
+    // The turn reports itself delivered only once its audit note is durable.
+    try {
+      await this.dependencies.notes?.replyReplayed(note);
+    } catch (error) {
+      this.warnNoteFailed(input, note.conversationId, error);
+    }
     yield CONTINUE;
   }
 
-  /** Records, once, how much of the session's last stored reply the caller heard before speaking over it. */
+  /**
+   * Records, once, how much of the session's last stored reply the caller heard before speaking
+   * over it. The note is written off the turn's path; the session counts it recorded only once the
+   * write succeeds, so a failed one is written again on the next report.
+   */
   private noteInterruptedReply(input: VoiceTurnInput, sessionKey: string): void {
     if (input.heardUntil === undefined) {
       return;
     }
-    const interruption = this.memory.interruptionOf(sessionKey, input.heardUntil);
-    if (!interruption) {
+    const reservation = this.memory.reserveInterruption(sessionKey, input.heardUntil);
+    if (!reservation) {
       return;
     }
-    recordVoiceReplyInterrupted(this.dependencies.metrics);
-    this.dependencies.logger.info({
-      agentId: input.session.agentId,
-      vendor: input.session.vendor,
-      ...interruption,
-    }, "Voice reply was interrupted");
-    this.dependencies.notes?.replyInterrupted({ workspaceId: input.session.workspaceId, ...interruption })
-      .catch((error: unknown) => this.warnNoteFailed(input, interruption.conversationId, error));
+    const { interruption } = reservation;
+    const recorded = (): void => {
+      reservation.recorded();
+      recordVoiceReplyInterrupted(this.dependencies.metrics);
+      this.dependencies.logger.info({
+        agentId: input.session.agentId,
+        vendor: input.session.vendor,
+        ...interruption,
+      }, "Voice reply was interrupted");
+    };
+    const notes = this.dependencies.notes;
+    if (!notes) {
+      recorded();
+      return;
+    }
+    notes.replyInterrupted({ workspaceId: input.session.workspaceId, ...interruption }).then(recorded, (error: unknown) => {
+      reservation.failed();
+      this.warnNoteFailed(input, interruption.conversationId, error);
+    });
   }
 
   private warnNoteFailed(input: VoiceTurnInput, conversationId: string, error: unknown): void {

@@ -235,7 +235,9 @@ helpers and the shared chat message limit from `app/http`
   two. `VoiceSessionMemory.arrive` marks the previous request of the session
   superseded; one still setting up (session lookup, voice profile) ends with
   `continue` before its chat turn starts, and one already in chat is cancelled
-  by the registry when the newer turn starts. The conversation keeps the last
+  by the registry when the newer turn starts. `arrive` runs as the request
+  enters, before any read, so arrival order decides whichever request's reads
+  finish first. The conversation keeps the last
   transcript and one answer. In-process only: a burst split across API
   instances can store two user messages.
 - **Bridges never stack.** The policy asks `mayBridge` when the bridge falls

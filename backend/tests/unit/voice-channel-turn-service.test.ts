@@ -954,6 +954,33 @@ describe("VoiceTurnService", () => {
       });
     });
 
+    it("lets the later request win when the earlier one's voice profile read finishes after it", async () => {
+      const chat = supersedingChat([answered("Yes, on Sundays from ten.")]);
+      // The first request's profile read resolves only once the second request's turn is in chat.
+      let releaseFirstRead!: () => void;
+      const firstRead = new Promise<void>((resolve) => { releaseFirstRead = resolve; });
+      const agents = {
+        findVoiceProfile: vi.fn(async () => {
+          if (agents.findVoiceProfile.mock.calls.length === 1) await firstRead;
+          return { voice: voiceOn, defaultLocale: null };
+        }),
+      };
+      const turns = service(chat, { agents });
+
+      const first = start(turns, input({ utterance: "Are you open on Saturdays?" }));
+      await vi.waitFor(() => expect(agents.findVoiceProfile).toHaveBeenCalledTimes(1));
+      const second = start(turns, input({ utterance: "Are you open on Sundays?" }));
+      await vi.waitFor(() => expect(chat.requests).toHaveLength(1));
+      releaseFirstRead();
+      await vi.runAllTimersAsync();
+
+      expect(await first).toEqual([{ type: "outcome", outcome: { kind: "continue" } }]);
+      expect((await second).filter((event) => event.type === "speech")).toEqual([
+        { type: "speech", text: "Yes, on Sundays from ten.", last: true },
+      ]);
+      expect(chat.requests.map((request) => request.message)).toEqual(["Are you open on Sundays?"]);
+    });
+
     it("counts a turn cut off after it spoke as superseded after speech", async () => {
       const chat = supersedingChat([
         [

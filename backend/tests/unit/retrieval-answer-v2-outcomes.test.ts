@@ -1080,6 +1080,49 @@ describe("a decline the grounded answer commits without text", () => {
     expect(streaming.counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 1 });
   });
 
+  it("cancels the non-streamed decline composition when the turn's signal aborts", async () => {
+    const controller = new AbortController();
+    const superseded = new Error("superseded_while_declining");
+    const answerSignals: Array<AbortSignal | undefined> = [];
+    const declineSignals: Array<AbortSignal | undefined> = [];
+    const gateway: ChatGateway = {
+      async answer(input) {
+        answerSignals.push(input.signal);
+        return blankEnvelope("no_support");
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    // The decline call settles only when the turn cancels it; one without a signal
+    // returns at once so the assertions below fail instead of the test hanging.
+    const fallback: FallbackReplyComposer = {
+      composeNoContext(input) {
+        declineSignals.push(input.signal);
+        const { signal } = input;
+        if (!signal) {
+          return Promise.resolve({ text: "UNCANCELLABLE DECLINE", declineReason: "content_gap" });
+        }
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
+          queueMicrotask(() => controller.abort(superseded));
+        });
+      },
+    };
+    const composer = new RetrievalAnswerComposer(new ChatAnswerSupport(), gateway, presenter(), fallback);
+
+    await expect(composer.composeAnswer(
+      baseSession(),
+      "How much does it cost?",
+      undefined,
+      undefined,
+      undefined,
+      controller.signal,
+    )).rejects.toBe(superseded);
+    expect(answerSignals).toEqual([controller.signal]);
+    expect(declineSignals).toEqual([controller.signal]);
+  });
+
   it("still fails a turn whose answer commitment came back empty", async () => {
     const nonStreaming = buildComposer(blankEnvelope("answer"));
     await expect(

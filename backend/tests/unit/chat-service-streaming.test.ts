@@ -1034,6 +1034,97 @@ describe("chat service streaming", () => {
     expect(messages.some((message) => message.role === "assistant")).toBe(false);
   });
 
+  it("cancels a non-streamed blank decline's composition when a newer turn supersedes it", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const usageEvents: ModelUsageEvent[] = [];
+    const usageRecorder: UsageEventRecorder = {
+      async recordEmbedding() {},
+      async recordModelCall(event) {
+        usageEvents.push(event);
+      },
+    };
+    const declineSignals: Array<AbortSignal | undefined> = [];
+    let declineStarted!: () => void;
+    const declinePending = new Promise<void>((resolve) => {
+      declineStarted = resolve;
+    });
+    // The provider settles the decline call only when its turn cancels it, and reports
+    // no usage for it. A call without a signal fails at once rather than hanging.
+    const declineClient: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-decline" },
+      complete(request) {
+        declineSignals.push(request.signal);
+        declineStarted();
+        const { signal } = request;
+        if (!signal) {
+          return Promise.reject(new Error("decline call carries no cancel signal"));
+        }
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
+        });
+      },
+      stream: vi.fn(),
+    };
+    const blankDecline = JSON.stringify({
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "the known topic",
+      outcome: "no_support",
+      answer: "",
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    let groundedCalls = 0;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        groundedCalls += 1;
+        return groundedCalls === 1
+          ? blankDecline
+          : groundingEnvelope("The guide covers known topic details.[[1]]", "grounded");
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(createGroundedPipeline()) as never),
+      chatGateway,
+      createAuditService(),
+      new ModelFallbackReplyComposer(new ModelInferencePipelineService(declineClient, usageRecorder)),
+    );
+
+    const first = service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: conversation.id,
+      query: "known topic",
+      stream: false,
+    });
+    await declinePending;
+    const latest = service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: conversation.id,
+      query: "known topic again",
+      stream: false,
+    });
+
+    await expect(first).rejects.toBeInstanceOf(ChatTurnSupersededError);
+    await expect(latest).resolves.toMatchObject({ answer: expect.stringContaining("known topic details") });
+    expect(declineSignals).toHaveLength(1);
+    expect(declineSignals[0]?.aborted).toBe(true);
+    // The abandoned call is not retried, and carries no usage beyond what the provider reported.
+    expect(usageEvents).toEqual([
+      expect.objectContaining({ status: "failed", outputTokens: 0, usageQuality: "estimated" }),
+    ]);
+    expect(usageEvents[0]?.idempotencyKey).toContain("blank_decline:attempt:1");
+  });
+
   it("records both the aborted gate-bound candidate and focused decline in usage and the turn rollup", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

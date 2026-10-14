@@ -16,7 +16,10 @@ import {
 } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import { createDirectiveAdherenceSideChannel } from "../../src/shared/domain/directiveAdherence.js";
 import { RetrievalAnswerComposer } from "../../src/modules/chat/services/retrievalTurnSkill.js";
-import type { TurnStreamResult } from "../../src/modules/chat/services/turnOutcome.js";
+import {
+  getUnstreamedFinalAnswerRemainder,
+  type TurnStreamResult,
+} from "../../src/modules/chat/services/turnOutcome.js";
 import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import {
@@ -897,12 +900,12 @@ describe("retrieval answer envelope v2", () => {
  * the focused decline that outcome promised instead of failing with a blank answer.
  */
 describe("a decline the grounded answer commits without text", () => {
-  const blankEnvelope = (outcome: "answer" | "no_support" | "out_of_scope"): string =>
+  const blankEnvelope = (outcome: "answer" | "no_support" | "out_of_scope", answer = ""): string =>
     JSON.stringify({
       coverage: outcome === "answer" ? "answered_sufficient_evidence" : "unanswered_insufficient_evidence",
       requestFocus: "the product price",
       outcome,
-      answer: "",
+      answer,
       v: 2,
       claims: [],
       suggestions: [],
@@ -948,6 +951,80 @@ describe("a decline the grounded answer commits without text", () => {
       });
     },
   );
+
+  // A whitespace-only answer is no text either. Streamed, it must not reach the client
+  // ahead of the composed decline: the host re-emits only what extends the streamed prefix.
+  const whitespaceAnswers = [
+    ["an escaped newline", "\n"],
+    ["spaces", "   "],
+    ["mixed whitespace", " \n\t \r\n "],
+  ] as const;
+
+  it.each(whitespaceAnswers)(
+    "streams nothing for a decline committed with %s and delivers the composed decline",
+    async (_label, answer) => {
+      const { composer, attemptKeys } = buildComposer(blankEnvelope("no_support", answer));
+
+      const { chunks, result } = await drain(
+        composer.streamAnswer(baseSession(), "How much does it cost?", undefined, undefined),
+      );
+
+      expect(chunks).toEqual([]);
+      expect(result.hasStreamedAnswer).toBe(false);
+      expect(result.streamedAnswer).toBe("");
+      expect(result.deliveryMode).toBe("committed");
+      expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
+      expect(getUnstreamedFinalAnswerRemainder(result)).toBe("FOCUSED GROUNDED MISS");
+      expect(attemptKeys).toEqual(["stream_grounded", "stream_blank_decline"]);
+    },
+  );
+
+  it.each(whitespaceAnswers)(
+    "composes the focused decline for a non-streamed decline committed with %s",
+    async (_label, answer) => {
+      const { composer, attemptKeys } = buildComposer(blankEnvelope("no_support", answer));
+
+      const presented = await composer.composeAnswer(baseSession(), "How much does it cost?", undefined, undefined);
+
+      expect(presented.answer).toBe("FOCUSED GROUNDED MISS");
+      expect(attemptKeys).toEqual(["grounded", "blank_decline"]);
+    },
+  );
+
+  it.each(whitespaceAnswers)(
+    "streams nothing for a page-context decline committed with %s",
+    async (_label, answer) => {
+      const session = baseSession();
+      (session.retrieval as { contexts: unknown[] }).contexts = [];
+      session.resolvedContext.renderFragments = [{
+        kind: "page_context",
+        pageUrl: "https://example.test/workshop",
+        content: "Workshop page",
+      }];
+      const { composer } = buildComposer(blankEnvelope("no_support", answer));
+
+      const { chunks, result } = await drain(
+        composer.streamAnswer(session, "How much does it cost?", undefined, undefined),
+      );
+
+      expect(chunks).toEqual([]);
+      expect(result.hasStreamedAnswer).toBe(false);
+      expect(getUnstreamedFinalAnswerRemainder(result)).toBe("FOCUSED GROUNDED MISS");
+    },
+  );
+
+  it("still streams leading whitespace once the decline it opens carries text", async () => {
+    const answer = "\n\nI can't find the price in the workshop guides.";
+    const { composer, counts } = buildComposer(blankEnvelope("no_support", answer));
+
+    const { chunks, result } = await drain(
+      composer.streamAnswer(baseSession(), "How much does it cost?", undefined, undefined),
+    );
+
+    expect(chunks.join("")).toBe(answer);
+    expect(result.hasStreamedAnswer).toBe(true);
+    expect(counts().fallbackCalls).toBe(0);
+  });
 
   it("reads a page-context decline without text as no page answer and composes the decline", async () => {
     const pageSession = () => {

@@ -67,6 +67,31 @@ class CoverageVerdictYieldedError extends Error {
   }
 }
 
+/**
+ * Holds streamed answer text until it carries more than whitespace. A decline committed
+ * with a blank answer is replaced by a composed one once the stream ends, so whitespace
+ * alone must neither reach the client ahead of that decline nor mark the turn as
+ * already answering. Held whitespace is released with the first text that follows it.
+ */
+class LeadingWhitespaceHold {
+  private held = "";
+  private releasing = false;
+
+  push(text: string): string {
+    if (this.releasing) {
+      return text;
+    }
+    this.held += text;
+    if (!this.held.trim()) {
+      return "";
+    }
+    this.releasing = true;
+    const released = this.held;
+    this.held = "";
+    return released;
+  }
+}
+
 const combineAbortSignals = (turnSignal: AbortSignal | undefined, gateSignal: AbortSignal): AbortSignal =>
   turnSignal ? AbortSignal.any([turnSignal, gateSignal]) : gateSignal;
 
@@ -474,6 +499,7 @@ export class RetrievalAnswerComposer {
     const groundedPrompt = this.promptWithConversationContext(prompt, session, knownAssessment);
     const reader = new GroundedAnswerEnvelopeReader();
     const citationSanitizer = new CitationAnchorSanitizer();
+    const leadingWhitespace = new LeadingWhitespaceHold();
     const candidateStream = this.chatGateway.streamAnswer({
       query,
       history: session.history,
@@ -494,7 +520,7 @@ export class RetrievalAnswerComposer {
       if (!text) {
         continue;
       }
-      const cleanChunk = citationSanitizer.push(reader.push(text));
+      const cleanChunk = leadingWhitespace.push(citationSanitizer.push(reader.push(text)));
       if (cleanChunk) {
         yield cleanChunk;
       }
@@ -787,6 +813,7 @@ export class RetrievalAnswerComposer {
     } else {
       const reader = new GroundedAnswerEnvelopeReader();
       const citationSanitizer = new CitationAnchorSanitizer();
+      const leadingWhitespace = new LeadingWhitespaceHold();
       const gate = new BoundedGroundingStreamGate({
         contextCount: session.retrieval.contexts.length,
         maxRetainedCodePoints: RETRIEVAL_BEHAVIOR.groundingStreamGateMaxRetainedCodePoints,
@@ -895,7 +922,7 @@ export class RetrievalAnswerComposer {
         const releaseText = releasesImmediately
           ? parsedText
           : (decision?.kind === "release" ? decision.text : "");
-        const cleanChunk = citationSanitizer.push(releaseText);
+        const cleanChunk = leadingWhitespace.push(citationSanitizer.push(releaseText));
         if (cleanChunk) {
           streamedAnswer += cleanChunk;
           yield cleanChunk;

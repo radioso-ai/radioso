@@ -5392,15 +5392,20 @@ describe("chat service streaming", () => {
     );
   });
 
-  it("delivers the focused decline when the grounded answer commits no_support with an empty answer", async () => {
+  it.each([
+    ["an empty answer", ""],
+    ["a newline answer", "\n"],
+    ["a whitespace-only answer", " \n\t "],
+  ])("delivers the focused decline when the grounded answer commits no_support with %s", async (_label, blankAnswer) => {
     // The grounded answer model can commit a decline in the envelope head and leave
-    // `answer` empty. The turn answers with the decline that outcome promised, streamed
-    // and not, rather than failing with a blank answer (HTTP 500 on the voice door).
+    // `answer` blank. The turn answers with the decline that outcome promised, streamed
+    // and not, rather than failing with a blank answer (HTTP 500 on the voice door) or
+    // streaming the whitespace and leaving the client with nothing else to show.
     const blankDecline = JSON.stringify({
       coverage: "unanswered_insufficient_evidence",
       requestFocus: "what the page does",
       outcome: "no_support",
-      answer: "",
+      answer: blankAnswer,
       v: 2,
       claims: [],
       suggestions: [],

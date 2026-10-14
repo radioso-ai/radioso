@@ -6,7 +6,7 @@ const SUPPRESSIBLE_EMAIL_KINDS = new Set([
 
 type SuppressionReason = "hard_bounce" | "complaint";
 
-export const notificationProviderSuppressionReason = (input: {
+const notificationProviderSuppressionReason = (input: {
   emailKind: string | null;
   status: { type: string; bounce?: { type: string } | null };
 }): SuppressionReason | null => {

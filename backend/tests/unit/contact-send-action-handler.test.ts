@@ -138,7 +138,7 @@ describe("ContactSendActionHandler", () => {
         grandfatheredUntil: null,
       })),
       ensure: async (_workspaceId: string, email: string) => ({ recipientId: `recipient:${email}`, generation: 0 }),
-      reserveConfirmationSend: async () => ({ recipientId: "recipient:waiting@example.com", generation: 1 }),
+      reserveConfirmationSend: async () => ({ recipientId: "recipient:waiting@example.com", generation: 1, reservedAt: new Date(), previousSentAt: null }),
       releaseConfirmationSend: vi.fn(async () => undefined),
       confirm: async () => false,
       revoke: async () => false,

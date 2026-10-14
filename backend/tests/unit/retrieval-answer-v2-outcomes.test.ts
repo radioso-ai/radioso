@@ -912,28 +912,42 @@ describe("a decline the grounded answer commits without text", () => {
       grounding: "degraded",
     });
 
-  it.each(["no_support", "out_of_scope"] as const)(
-    "composes the focused decline for a %s commitment with an empty answer",
-    async (outcome) => {
-      const { composer, counts, attemptKeys, metricWrites } = buildComposer(blankEnvelope(outcome));
+  // The composed decline only words the reply. Why the turn declined is what the head
+  // committed, so each case has the decline model classify it the other way.
+  const committedDeclines = [
+    { outcome: "no_support", composedReason: "out_of_scope", decline: "content_gap", skillOutcome: "no_context" },
+    { outcome: "out_of_scope", composedReason: "content_gap", decline: "out_of_scope", skillOutcome: "out_of_scope" },
+  ] as const;
+
+  it.each(committedDeclines)(
+    "composes the focused decline for a $outcome commitment with an empty answer",
+    async ({ outcome, composedReason, decline, skillOutcome }) => {
+      const { composer, counts, attemptKeys, metricWrites } = buildComposer(
+        blankEnvelope(outcome),
+        { text: "FOCUSED GROUNDED MISS", declineReason: composedReason },
+      );
 
       const presented = await composer.composeAnswer(baseSession(), "How much does it cost?", undefined, undefined);
 
       expect(presented.answer).toBe("FOCUSED GROUNDED MISS");
       expect(presented.grounding).toBe("no_support");
+      expect(presented.skillOutcome).toBe(skillOutcome);
       expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 1 });
       expect(attemptKeys).toEqual(["grounded", "blank_decline"]);
       expect(metricWrites).toContainEqual({
         name: "chat_grounding_assertion_outcomes_total",
-        labels: expect.objectContaining({ reason: "blank_decline", stream: "false", outcome }),
+        labels: expect.objectContaining({ reason: "blank_decline", stream: "false", outcome, decline }),
       });
     },
   );
 
-  it.each(["no_support", "out_of_scope"] as const)(
-    "streams the focused decline for a %s commitment with an empty answer",
-    async (outcome) => {
-      const { composer, counts, attemptKeys, metricWrites } = buildComposer(blankEnvelope(outcome));
+  it.each(committedDeclines)(
+    "streams the focused decline for a $outcome commitment with an empty answer",
+    async ({ outcome, composedReason, decline, skillOutcome }) => {
+      const { composer, counts, attemptKeys, metricWrites } = buildComposer(
+        blankEnvelope(outcome),
+        { text: "FOCUSED GROUNDED MISS", declineReason: composedReason },
+      );
 
       const { chunks, result } = await drain(
         composer.streamAnswer(baseSession(), "How much does it cost?", undefined, undefined),
@@ -942,13 +956,31 @@ describe("a decline the grounded answer commits without text", () => {
       expect(chunks).toEqual([]);
       expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
       expect(result.finalPresentation.grounding).toBe("no_support");
+      expect(result.finalPresentation.skillOutcome).toBe(skillOutcome);
       expect(result.hasStreamedAnswer).toBe(false);
       expect(counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 1 });
       expect(attemptKeys).toEqual(["stream_grounded", "stream_blank_decline"]);
       expect(metricWrites).toContainEqual({
         name: "chat_grounding_assertion_outcomes_total",
-        labels: expect.objectContaining({ reason: "blank_decline", stream: "true", outcome }),
+        labels: expect.objectContaining({ reason: "blank_decline", stream: "true", outcome, decline }),
       });
+    },
+  );
+
+  it.each(["no_support", "out_of_scope"] as const)(
+    "reports a %s commitment the decline model could not word as unavailable generation",
+    async (outcome) => {
+      const unavailable = { text: "I can't respond right now.", declineReason: "generation_unavailable" } as const;
+
+      const nonStreaming = buildComposer(blankEnvelope(outcome), unavailable);
+      const presented = await nonStreaming.composer.composeAnswer(baseSession(), "How much does it cost?", undefined, undefined);
+      expect(presented.skillOutcome).toBe("unavailable");
+
+      const streaming = buildComposer(blankEnvelope(outcome), unavailable);
+      const { result } = await drain(
+        streaming.composer.streamAnswer(baseSession(), "How much does it cost?", undefined, undefined),
+      );
+      expect(result.finalPresentation.skillOutcome).toBe("unavailable");
     },
   );
 

@@ -4118,6 +4118,71 @@ describe("chat service streaming", () => {
     expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
   });
 
+  const blankDeclineGateway = (outcome: "no_support" | "out_of_scope"): ChatGateway => {
+    const raw = JSON.stringify({
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "the known topic",
+      outcome,
+      answer: "",
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    return {
+      async answer() {
+        return raw;
+      },
+      async *streamAnswer() {
+        yield raw;
+      },
+    };
+  };
+
+  const persistBlankDeclineTurn = async (input: {
+    outcome: "no_support" | "out_of_scope";
+    fallbackComposer: FallbackReplyComposer;
+    stream: boolean;
+  }) => {
+    const { service, assistantTurnPersistence } = await createRetrievalHandoffTestService({
+      handoffOnRetrievalMiss: true,
+      retrievalPipeline: createGroundedPipeline(),
+      chatGateway: blankDeclineGateway(input.outcome),
+      fallbackComposer: input.fallbackComposer,
+    });
+    const request = { workspaceId: "workspace-1", query: "known topic", stream: input.stream };
+    if (input.stream) {
+      for await (const _event of service.streamAnswer(request)) {
+        // Drain the public stream to its lifecycle boundary.
+      }
+    } else {
+      await service.answer(request);
+    }
+    return vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+  };
+
+  it.each([false, true])(
+    "does not hand off an out_of_scope decline committed without text when the decline model calls it a content gap (stream %s)",
+    async (stream) => {
+      const persisted = await persistBlankDeclineTurn({ outcome: "out_of_scope", fallbackComposer: fallbackReplyComposer, stream });
+
+      expect(persisted.assistantMessage.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_OUT_OF_SCOPE.outcome);
+      expect(persisted.ownershipHandoff).toBeNull();
+      expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
+    },
+  );
+
+  it.each([false, true])(
+    "hands off a no_support decline committed without text when the decline model calls it out of scope (stream %s)",
+    async (stream) => {
+      const persisted = await persistBlankDeclineTurn({ outcome: "no_support", fallbackComposer: outOfScopeReplyComposer, stream });
+
+      expect(persisted.assistantMessage.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome);
+      expect(persisted.ownershipHandoff).toEqual({ reason: "retrieval_miss" });
+      expect(persisted.actions).toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
+    },
+  );
+
   it("does not request ownership or notify operators for non-streaming retrieval misses when the agent is not opted in", async () => {
     const { service, assistantTurnPersistence } = await createRetrievalHandoffTestService({
       handoffOnRetrievalMiss: false,

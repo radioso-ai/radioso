@@ -204,7 +204,10 @@ imports from `services/`.
   focused decline that commitment promised (usage attempt `blank_decline` /
   `stream_blank_decline`, counted as
   `chat_grounding_assertion_outcomes_total{reason="blank_decline"}`); on the
-  page-context paths it reads as no page answer. The streamed paths hold leading
+  page-context paths it reads as no page answer. That decline keeps the reason the
+  head committed (`out_of_scope` stays out of scope; `no_support` is a content gap):
+  the grounded-miss composer only words it, unless it cannot generate at all
+  (`generation_unavailable`). The streamed paths hold leading
   whitespace until text follows it, so a blank decline streams nothing ahead of the
   composed one. An empty `answer` commitment still fails the turn with
   `BlankChatAnswerError`. `chatService`'s

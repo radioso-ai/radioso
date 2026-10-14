@@ -210,8 +210,13 @@ imports from `services/`.
   the grounded-miss composer only words it, unless it cannot generate at all
   (`generation_unavailable`). The streamed paths hold leading
   whitespace until text follows it, so a blank decline streams nothing ahead of the
-  composed one. An empty `answer` commitment, or a decline outcome on a head that
-  did not parse, still fails the turn with `BlankChatAnswerError`. `chatService`'s
+  composed one. The head is valid when its three fields are
+  (`headOfCompletedEnvelope`), whatever became of `claims` or `suggestions` after
+  it, and the non-streamed coverage report reads it the same way. A blank
+  commitment relies on those fields preceding `answer`, as the prompt instructs:
+  the streamed coverage report reads the head only from fields that come before
+  it. An empty `answer` commitment, or a decline outcome on a head that did not
+  parse, still fails the turn with `BlankChatAnswerError`. `chatService`'s
   retrieval-miss handoff and the Slack gap escalation both key off the outcome and
   therefore escalate only content gaps, leaving out-of-scope and unavailable
   declines alone. A valid in-range `[[n]]`

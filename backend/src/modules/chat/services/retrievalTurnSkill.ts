@@ -39,7 +39,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
 import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
-import { GroundedAnswerHeadReader } from "./groundedAnswerHeadReader.js";
+import { GroundedAnswerHeadReader, headOfCompletedEnvelope } from "./groundedAnswerHeadReader.js";
 import {
   answerCoverageHeadParseOutcome,
   steeringForKnownVerdict,
@@ -136,18 +136,20 @@ const declinePendingRoutineStep = (session: PreparedSession): RoutinePendingStep
  * The decline (`no_support` or `out_of_scope`) the grounded answer committed in a valid
  * head without writing any text for it, or `null` when it did not. The commitment is
  * still a valid verdict, so the turn delivers the focused decline that outcome promised
- * instead of failing as a blank generation. An empty `answer` commitment, or a decline
- * outcome on a head that did not parse, stays a generation failure.
+ * instead of failing as a blank generation; a tail that failed to parse after the head
+ * does not take it back. An empty `answer` commitment, or a decline outcome on a head
+ * that did not parse, stays a generation failure.
  */
 const blankDeclineCommitment = (
-  envelope: Pick<GroundedAnswerEnvelope, "parseStatus" | "outcome">,
+  envelope: Pick<GroundedAnswerEnvelope, "protocolVersion" | "coverage" | "requestFocus" | "outcome">,
   answer: string,
-): CommittedDeclineOutcome | null =>
-  !answer.trim()
-  && envelope.parseStatus === "valid_v2"
-  && (envelope.outcome === "no_support" || envelope.outcome === "out_of_scope")
-    ? envelope.outcome
-    : null;
+): CommittedDeclineOutcome | null => {
+  if (answer.trim()) {
+    return null;
+  }
+  const outcome = headOfCompletedEnvelope(envelope)?.outcome;
+  return outcome === "no_support" || outcome === "out_of_scope" ? outcome : null;
+};
 
 /**
  * The reason a blank decline is presented with. The composed decline only words the
@@ -196,17 +198,12 @@ export class RetrievalAnswerComposer {
    * Maps a completed envelope's head to the coverage verdict sink's assessment
    * shape (#1260). `invalid` covers every way a completed envelope can fail to
    * carry a usable head — a legacy/non-v2 parse, or any of the three head
-   * fields missing — never a failed turn (FR-004).
+   * fields missing — never a failed turn (FR-004). A tail that failed after a
+   * valid head does not void it, the same as on the streamed path.
    */
   private assessmentFromEnvelope(envelope: GroundedAnswerEnvelope): AnswerCoverageAssessment {
-    if (envelope.parseStatus !== "valid_v2" || !envelope.coverage || !envelope.requestFocus || !envelope.outcome) {
-      return buildInvalidHeadAssessment();
-    }
-    return buildAnswerCoverageAssessmentFromHead({
-      coverage: envelope.coverage,
-      requestFocus: envelope.requestFocus,
-      outcome: envelope.outcome,
-    });
+    const head = headOfCompletedEnvelope(envelope);
+    return head ? buildAnswerCoverageAssessmentFromHead(head) : buildInvalidHeadAssessment();
   }
 
   /**

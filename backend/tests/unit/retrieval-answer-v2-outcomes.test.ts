@@ -16,6 +16,7 @@ import {
 } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import { createDirectiveAdherenceSideChannel } from "../../src/shared/domain/directiveAdherence.js";
 import { RetrievalAnswerComposer } from "../../src/modules/chat/services/retrievalTurnSkill.js";
+import { buildAnswerCoverageAssessmentFromHead } from "../../src/modules/chat/services/answerCoverageFromHead.js";
 import {
   getUnstreamedFinalAnswerRemainder,
   type TurnStreamResult,
@@ -1182,6 +1183,78 @@ describe("a decline the grounded answer commits without text", () => {
       expect(streaming.counts().fallbackCalls).toBe(0);
     }
   });
+
+  // The head commits the verdict before `answer`; a tail field that fails to parse after
+  // it (here an unreadable suggestion) does not take that commitment back.
+  it.each(committedDeclines)(
+    "answers a $outcome commitment without text whose tail is malformed, streamed and not, grounded and from the page",
+    async ({ outcome, composedReason, skillOutcome }) => {
+      const raw = JSON.stringify({
+        coverage: "unanswered_insufficient_evidence",
+        requestFocus: "the product price",
+        outcome,
+        answer: "",
+        v: 2,
+        claims: [],
+        suggestions: [{ text: "", kind: "deeper", contextIndex: 0 }],
+        grounding: "degraded",
+      });
+      const composedDecline = { text: "FOCUSED GROUNDED MISS", declineReason: composedReason };
+      const pageSession = () => {
+        const session = baseSession();
+        (session.retrieval as { contexts: unknown[] }).contexts = [];
+        session.resolvedContext.renderFragments = [{
+          kind: "page_context",
+          pageUrl: "https://example.test/workshop",
+          content: "Workshop page",
+        }];
+        return session;
+      };
+      const cases = [
+        { session: baseSession, nonStreamed: ["grounded", "blank_decline"], streamed: ["stream_grounded", "stream_blank_decline"] },
+        { session: pageSession, nonStreamed: ["page_context", "grounded_miss"], streamed: ["stream_page_context", "stream_grounded_miss"] },
+      ];
+
+      for (const { session, nonStreamed, streamed } of cases) {
+        const reports: unknown[] = [];
+        const sink = {
+          async report(input: { assessment: unknown }) {
+            reports.push(input.assessment);
+            return { decision: "proceed" as const };
+          },
+        };
+        const nonStreaming = buildComposer(raw, composedDecline);
+        const presented = await nonStreaming.composer.composeAnswer(
+          session(),
+          "How much does it cost?",
+          undefined,
+          undefined,
+          sink,
+        );
+        expect(presented.answer).toBe("FOCUSED GROUNDED MISS");
+        expect(presented.skillOutcome).toBe(skillOutcome);
+        expect(nonStreaming.attemptKeys).toEqual(nonStreamed);
+
+        const streaming = buildComposer(raw, composedDecline);
+        const { result } = await drain(
+          streaming.composer.streamAnswer(session(), "How much does it cost?", undefined, undefined, undefined, sink),
+        );
+        expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
+        expect(result.finalPresentation.skillOutcome).toBe(skillOutcome);
+        expect(streaming.attemptKeys).toEqual(streamed);
+
+        // On the grounded paths the sink heard the head the turn was answered by, streamed or not.
+        if (session === baseSession) {
+          const head = buildAnswerCoverageAssessmentFromHead({
+            coverage: "unanswered_insufficient_evidence",
+            requestFocus: "the product price",
+            outcome,
+          });
+          expect(reports).toEqual([head, head]);
+        }
+      }
+    },
+  );
 
   it("still fails a turn whose answer commitment came back empty", async () => {
     const nonStreaming = buildComposer(blankEnvelope("answer"));

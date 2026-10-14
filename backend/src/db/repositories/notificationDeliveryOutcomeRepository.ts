@@ -35,12 +35,26 @@ export class NotificationDeliveryOutcomeRepository implements NotificationDelive
 
       const existing = await transaction
         .selectFrom("notification_delivery_outcomes")
-        .select("outcome")
+        .select(["outcome", "reserved_email_count"])
         .where("request_id", "=", input.requestId)
         .where("recipient_digest", "=", input.recipientDigest)
         .executeTakeFirst();
       if (existing) {
-        return mapOutcome(existing.outcome as Outcome, false);
+        // A replay of the same list can email more of it once addresses have confirmed; those extra
+        // emails are reserved now, or the replay's email is capped when the day cannot take them.
+        const extraEmails = input.requestedEmailCount - existing.reserved_email_count;
+        if (existing.outcome !== "allowed" || extraEmails <= 0) {
+          return mapOutcome(existing.outcome as Outcome, false);
+        }
+        if (await this.dailyEmailsUsed(transaction, input) + extraEmails > input.dailyEmailLimit) {
+          return mapOutcome("workspace_daily_email_cap", false);
+        }
+        await transaction.updateTable("notification_delivery_outcomes")
+          .set({ reserved_email_count: input.requestedEmailCount, requested_email_count: input.requestedEmailCount })
+          .where("request_id", "=", input.requestId)
+          .where("recipient_digest", "=", input.recipientDigest)
+          .execute();
+        return mapOutcome("allowed", false);
       }
 
       const conversationCount = await transaction
@@ -56,13 +70,7 @@ export class NotificationDeliveryOutcomeRepository implements NotificationDelive
       if (Number(conversationCount.count) >= input.conversationDispatchLimit) {
         outcome = "conversation_dispatch_cap";
       } else {
-        const dailyUsage = await transaction
-          .selectFrom("notification_delivery_outcomes")
-          .select((expression) => expression.fn.coalesce(expression.fn.sum<number>("reserved_email_count"), expression.val(0)).as("count"))
-          .where("workspace_id", "=", input.workspaceId)
-          .where("usage_date", "=", input.usageDate)
-          .executeTakeFirstOrThrow();
-        if (Number(dailyUsage.count) + input.requestedEmailCount > input.dailyEmailLimit) {
+        if (await this.dailyEmailsUsed(transaction, input) + input.requestedEmailCount > input.dailyEmailLimit) {
           outcome = "workspace_daily_email_cap";
         } else {
           outcome = "allowed";
@@ -85,6 +93,16 @@ export class NotificationDeliveryOutcomeRepository implements NotificationDelive
 
       return mapOutcome(outcome, true);
     });
+  }
+
+  private async dailyEmailsUsed(db: Db, input: { workspaceId: string; usageDate: Date }): Promise<number> {
+    const usage = await db
+      .selectFrom("notification_delivery_outcomes")
+      .select((expression) => expression.fn.coalesce(expression.fn.sum<number>("reserved_email_count"), expression.val(0)).as("count"))
+      .where("workspace_id", "=", input.workspaceId)
+      .where("usage_date", "=", input.usageDate)
+      .executeTakeFirstOrThrow();
+    return Number(usage.count);
   }
 
   async readDailyUsage(input: { workspaceId: string; usageDate: Date }): Promise<{ reservedEmails: number; cappedRequests: number }> {

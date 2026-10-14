@@ -2,27 +2,17 @@ import { sql } from "kysely";
 
 import { transactionAdvisoryLock, currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
-
-const normalizeEmail = (email: string): string => email.trim().toLowerCase();
+import { normalizeRecipientEmail } from "../../shared/domain/recipientEmailAudit.js";
+import type {
+  ConfirmationReservation,
+  NotificationRecipientStateStore,
+  NotificationRecipientStateView,
+  NotificationSuppressionStore,
+} from "../../modules/operatorNotifications/public.js";
 
 const usageDateOf = (at: Date): Date => new Date(`${at.toISOString().slice(0, 10)}T00:00:00.000Z`);
 
-interface ConfirmationReservation {
-  recipientId: string;
-  generation: number;
-  reservedAt: Date;
-  previousSentAt: Date | null;
-}
-
-type NotificationRecipientStateView = {
-  email: string;
-  state: "confirmed" | "grandfathered" | "waiting_for_confirmation" | "revoked" | "suppressed";
-  grandfatheredUntil: Date | null;
-  recipientId?: string | null;
-  generation?: number | null;
-};
-
-export class NotificationRecipientStateRepository {
+export class NotificationRecipientStateRepository implements NotificationRecipientStateStore, NotificationSuppressionStore {
   constructor(private readonly db: Db) {}
 
   async read(input: {
@@ -30,12 +20,12 @@ export class NotificationRecipientStateRepository {
     emails: readonly string[];
     now: Date;
   }): Promise<NotificationRecipientStateView[]> {
-    const emails = [...new Set(input.emails.map(normalizeEmail).filter(Boolean))];
+    const emails = [...new Set(input.emails.map(normalizeRecipientEmail).filter(Boolean))];
     if (emails.length === 0) return [];
 
     const [stored, suppressions, verifiedMembers] = await Promise.all([
       this.db.selectFrom("notification_recipient_confirmations")
-        .select(["id", "normalized_email", "state", "grandfathered_until", "confirmation_generation"])
+        .select(["id", "normalized_email", "state", "grandfathered_until", "confirmation_sent_at", "confirmation_generation"])
         .where("workspace_id", "=", input.workspaceId)
         .where("normalized_email", "in", emails)
         .execute(),
@@ -59,35 +49,39 @@ export class NotificationRecipientStateRepository {
     const suppressed = new Set(suppressions.map((row) => row.normalized_email));
     const confirmedMembers = new Set(verifiedMembers.map((row) => row.normalized_email));
 
-    return emails.map((email) => {
-      if (suppressed.has(email)) {
-        return { email, state: "suppressed", grandfatheredUntil: null };
-      }
+    return emails.map((email): NotificationRecipientStateView => {
       const row = storedByEmail.get(email);
+      const stored = row
+        ? {
+            recipientId: row.id,
+            generation: row.confirmation_generation,
+            confirmationSentAt: row.confirmation_sent_at ? new Date(row.confirmation_sent_at) : null,
+          }
+        : { confirmationSentAt: null };
+      if (suppressed.has(email)) {
+        return { email, state: "suppressed", grandfatheredUntil: null, confirmationSentAt: null };
+      }
       if (row?.state === "revoked") {
-        return { email, state: "revoked", grandfatheredUntil: null, recipientId: row.id, generation: row.confirmation_generation };
+        return { email, state: "revoked", grandfatheredUntil: null, ...stored };
       }
       // Membership is re-derived on every read, so an address that leaves the workspace has to confirm.
       if (confirmedMembers.has(email)) {
-        return row
-          ? { email, state: "confirmed", grandfatheredUntil: null, recipientId: row.id, generation: row.confirmation_generation }
-          : { email, state: "confirmed", grandfatheredUntil: null };
+        return { email, state: "confirmed", grandfatheredUntil: null, ...stored };
       }
       if (!row) {
-        return { email, state: "waiting_for_confirmation", grandfatheredUntil: null };
+        return { email, state: "waiting_for_confirmation", grandfatheredUntil: null, ...stored };
       }
       return {
         email,
-        state: row.state === "pending" ? "waiting_for_confirmation" : row.state as "confirmed" | "grandfathered" | "revoked",
+        state: row.state === "pending" ? "waiting_for_confirmation" : row.state as "confirmed" | "grandfathered",
         grandfatheredUntil: row.grandfathered_until ? new Date(row.grandfathered_until) : null,
-        recipientId: row.id,
-        generation: row.confirmation_generation,
+        ...stored,
       };
     });
   }
 
   async ensure(workspaceId: string, rawEmail: string): Promise<{ recipientId: string; generation: number }> {
-    const email = normalizeEmail(rawEmail);
+    const email = normalizeRecipientEmail(rawEmail);
     const inserted = await this.db.insertInto("notification_recipient_confirmations").values({
       workspace_id: workspaceId,
       normalized_email: email,
@@ -117,7 +111,7 @@ export class NotificationRecipientStateRepository {
     force: boolean;
     limits: { dailySends: number; accountDailySends: number; resendCooldownMs: number };
   }): Promise<ConfirmationReservation | null> {
-    const email = normalizeEmail(input.email);
+    const email = normalizeRecipientEmail(input.email);
     const usageDate = usageDateOf(input.now);
     return this.db.transaction().execute(async (transaction) => {
       const workspace = await transaction.selectFrom("workspaces")
@@ -157,7 +151,7 @@ export class NotificationRecipientStateRepository {
       }).onConflict((conflict) => conflict.columns(["workspace_id", "normalized_email"]).doNothing()).execute();
 
       const recipient = await transaction.selectFrom("notification_recipient_confirmations")
-        .select(["id", "state", "grandfathered_until", "confirmation_sent_at", "confirmation_generation"])
+        .select(["id", "state", "confirmation_sent_at", "confirmation_generation"])
         .where("workspace_id", "=", input.workspaceId)
         .where("normalized_email", "=", email)
         .forUpdate()
@@ -192,14 +186,11 @@ export class NotificationRecipientStateRepository {
         .executeTakeFirst();
       if (!usage) return null;
 
-      const grandfatheringExpired = recipient.state === "grandfathered"
-        && recipient.grandfathered_until !== null
-        && new Date(recipient.grandfathered_until).getTime() <= input.now.getTime();
+      // A grandfathered address stays grandfathered: its answer window runs from this send.
       const reserved = await transaction.updateTable("notification_recipient_confirmations")
         .set({
           confirmation_sent_at: input.now,
           confirmation_generation: sql`confirmation_generation + 1`,
-          ...(grandfatheringExpired ? { state: "pending", grandfathered_until: null } : {}),
           updated_at: input.now,
         })
         .where("id", "=", recipient.id)
@@ -295,7 +286,7 @@ export class NotificationRecipientStateRepository {
     provider: string;
     providerEventId: string;
   }): Promise<void> {
-    const email = normalizeEmail(input.email);
+    const email = normalizeRecipientEmail(input.email);
     await this.db.insertInto("notification_email_suppressions").values({
       normalized_email: email,
       reason: input.reason,

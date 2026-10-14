@@ -9,6 +9,7 @@ import { resolveRetrievalSkillSettings } from "../../../modules/retrieval/public
 import type { SkillCapabilityDescriptor } from "../../../modules/skills/public.js";
 import { badRequest, notFound, forbidden } from "../../../shared/domain/errors.js";
 import {
+  normalizeRecipientEmail,
   recipientEmailChangeMetadata,
   recipientEmailsFromDeliveryConfig,
 } from "../../../shared/domain/recipientEmailAudit.js";
@@ -191,9 +192,9 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
       try {
         const { workspaceId, agentId } = await resolveAgent(req, res);
         await requireRecipientManagement(dependencies, res);
-        const normalizedEmail = req.body.email.trim().toLowerCase();
+        const normalizedEmail = normalizeRecipientEmail(req.body.email);
         const configured = (await configuredRecipientEmails(workspaceId, agentId))
-          .some((email) => email.trim().toLowerCase() === normalizedEmail);
+          .some((email) => normalizeRecipientEmail(email) === normalizedEmail);
         if (!configured) throw badRequest("The recipient is not configured for this agent");
         const sent = await dependencies.notificationRecipientPolicy.resendConfirmation({
           workspaceId,

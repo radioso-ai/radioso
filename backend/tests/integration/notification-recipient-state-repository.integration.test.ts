@@ -73,7 +73,7 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
     );
 
     await expect(repository.read({ workspaceId, emails: ["member@example.com"], now: new Date() }))
-      .resolves.toEqual([{ email: "member@example.com", state: "confirmed", grandfatheredUntil: null }]);
+      .resolves.toEqual([{ email: "member@example.com", state: "confirmed", grandfatheredUntil: null, confirmationSentAt: null }]);
     await expect(repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
       workspaceId,
       email: "member@example.com",
@@ -261,35 +261,59 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
       .toBe(true);
   });
 
-  it("moves expired grandfathered recipients to pending while keeping in-window grace deliverable", async () => {
-    const beforeDeadline = new Date("2026-11-01T12:00:00.000Z");
-    const atDeadline = new Date("2026-11-02T12:00:00.000Z");
-    const afterDeadline = new Date("2026-11-03T12:00:00.000Z");
-    const seed = async (email: string, deadline: Date, sentAt: Date | null = null) => {
-      await database.query(
-        "INSERT INTO notification_recipient_confirmations (workspace_id, normalized_email, state, grandfathered_until, confirmation_sent_at) VALUES ($1, $2, 'grandfathered', $3, $4)",
-        [workspaceId, email, deadline, sentAt],
-      );
-    };
-    await seed("before-grandfather@example.com", atDeadline);
-    await seed("at-grandfather@example.com", atDeadline);
-    await seed("after-grandfather@example.com", atDeadline);
-    await seed("resent-grandfather@example.com", atDeadline, beforeDeadline);
+  it("keeps a grandfathered recipient grandfathered when it is asked, and records when", async () => {
+    const deadline = new Date("2026-11-02T12:00:00.000Z");
+    await database.query(
+      "INSERT INTO notification_recipient_confirmations (workspace_id, normalized_email, state, grandfathered_until) VALUES ($1, $2, 'grandfathered', $3)",
+      [workspaceId, "asked-grandfather@example.com", deadline],
+    );
+    const askedAt = new Date(deadline.getTime() + DAY_MS);
 
-    const before = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "before-grandfather@example.com", now: beforeDeadline, force: false });
-    const at = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "at-grandfather@example.com", now: atDeadline, force: false });
-    const after = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "after-grandfather@example.com", now: afterDeadline, force: false });
-    const withoutResend = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "resent-grandfather@example.com", now: afterDeadline, force: false });
-    const withResend = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS, workspaceId, email: "resent-grandfather@example.com", now: afterDeadline, force: true });
+    const reservation = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "asked-grandfather@example.com", now: askedAt, force: false,
+    });
 
-    expect((await repository.read({ workspaceId, emails: ["before-grandfather@example.com"], now: beforeDeadline }))[0]?.state).toBe("grandfathered");
-    expect((await repository.read({ workspaceId, emails: ["at-grandfather@example.com", "after-grandfather@example.com"], now: afterDeadline })).map((row) => row.state))
-      .toEqual(["waiting_for_confirmation", "waiting_for_confirmation"]);
-    expect(withoutResend).toBeNull();
-    expect(await repository.confirm(at!.recipientId, at!.generation, atDeadline)).toBe(true);
-    expect(await repository.confirm(after!.recipientId, after!.generation, afterDeadline)).toBe(true);
-    expect(await repository.confirm(withResend!.recipientId, withResend!.generation, afterDeadline)).toBe(true);
-    expect(before).not.toBeNull();
+    expect(reservation).not.toBeNull();
+    expect((await repository.read({ workspaceId, emails: ["asked-grandfather@example.com"], now: askedAt }))[0])
+      .toMatchObject({ state: "grandfathered", confirmationSentAt: askedAt });
+    await expect(repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "asked-grandfather@example.com", now: new Date(askedAt.getTime() + 1), force: false,
+    })).resolves.toBeNull();
+    expect(await repository.confirm(reservation!.recipientId, reservation!.generation, new Date(askedAt.getTime() + 20 * DAY_MS)))
+      .toBe(true);
+  });
+
+  it("gives a grandfathered recipient fourteen days from the confirmation it was actually sent", async () => {
+    const deadline = new Date("2026-11-03T12:00:00.000Z");
+    await database.query(
+      "INSERT INTO notification_recipient_confirmations (workspace_id, normalized_email, state, grandfathered_until) VALUES ($1, $2, 'grandfathered', $3)",
+      [workspaceId, "quiet-agent@example.com", deadline],
+    );
+    let now = new Date(deadline.getTime() + 30 * DAY_MS);
+    const asked: string[] = [];
+    const policy = new NotificationRecipientPolicyService({
+      enabled: true,
+      states: repository,
+      sendConfirmation: async ({ email }) => {
+        asked.push(email);
+        return { dispatched: true };
+      },
+      now: () => now,
+    });
+    const deliver = () => policy.prepareDelivery({
+      workspaceId, workspaceName: "Acme", agentName: "Desk", emails: ["quiet-agent@example.com"], idempotencyKey: randomUUID(),
+    });
+
+    // A month past the recorded deadline, but never asked: this notice still arrives, with the confirmation.
+    await expect(deliver()).resolves.toMatchObject({ eligibleEmails: ["quiet-agent@example.com"] });
+    expect(asked).toEqual(["quiet-agent@example.com"]);
+
+    now = new Date(now.getTime() + 13 * DAY_MS);
+    await expect(deliver()).resolves.toMatchObject({ eligibleEmails: ["quiet-agent@example.com"] });
+
+    now = new Date(now.getTime() + 2 * DAY_MS);
+    await expect(deliver()).resolves.toMatchObject({ eligibleEmails: [], skipped: { unconfirmed: 1 } });
+    expect(asked).toEqual(["quiet-agent@example.com"]);
   });
 
   it("keeps an earlier unsubscribe token effective after a resend changes confirmation generation", async () => {

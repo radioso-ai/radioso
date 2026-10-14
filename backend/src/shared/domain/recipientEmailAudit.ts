@@ -7,8 +7,11 @@ interface RecipientEmailChangeMetadata extends Record<string, unknown> {
   recipientHashes: string[];
 }
 
+/** One recipient address as every notification check compares it: trimmed and lower-cased. */
+export const normalizeRecipientEmail = (email: string): string => email.trim().toLowerCase();
+
 export const normalizeRecipientEmails = (emails: readonly string[]): string[] =>
-  [...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))].sort();
+  [...new Set(emails.map(normalizeRecipientEmail).filter(Boolean))].sort();
 
 const hashes = (emails: readonly string[]): string[] =>
   emails.map((email) => createHash("sha256").update(email).digest("hex"));

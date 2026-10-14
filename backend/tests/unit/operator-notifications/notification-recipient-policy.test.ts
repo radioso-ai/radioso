@@ -14,6 +14,7 @@ const store = (states: Record<string, "confirmed" | "grandfathered" | "revoked" 
     email,
     state: states[email] ?? "waiting_for_confirmation",
     grandfatheredUntil: states[email] === "grandfathered" ? new Date("2026-10-20T00:00:00.000Z") : null,
+    confirmationSentAt: null,
   }))),
   ensure: vi.fn(async (_workspaceId: string, email: string) => ({ recipientId: `recipient:${email}`, generation: 0 })),
   reserveConfirmationSend: vi.fn(async ({ email }: { email: string }) => states[email] !== "revoked" && states[email] !== "suppressed"
@@ -147,10 +148,27 @@ describe("NotificationRecipientPolicyService", () => {
     expect(resolve).toHaveBeenCalledTimes(1);
   });
 
+  it("does not ask an address again on every notice once it has been asked", async () => {
+    const states = store({});
+    vi.mocked(states.read).mockResolvedValue([{
+      email: "legacy@example.com",
+      state: "grandfathered",
+      grandfatheredUntil: new Date("2026-10-20T00:00:00.000Z"),
+      confirmationSentAt: new Date("2026-10-12T00:00:00.000Z"),
+      recipientId: "stored-id",
+      generation: 1,
+    }]);
+    const service = new NotificationRecipientPolicyService({ enabled: true, states, sendConfirmation: vi.fn(async () => ({ dispatched: true })), now: () => NOW });
+
+    await expect(service.prepareDelivery({ workspaceId: "workspace-id", emails: ["legacy@example.com"], idempotencyKey: "request-id" }))
+      .resolves.toMatchObject({ eligibleEmails: ["legacy@example.com"] });
+    expect(states.reserveConfirmationSend).not.toHaveBeenCalled();
+  });
+
   it("reuses a stored recipient id for the unsubscribe link instead of writing one", async () => {
     const states = store({ "member@example.com": "confirmed" });
     vi.mocked(states.read).mockResolvedValue([
-      { email: "member@example.com", state: "confirmed", grandfatheredUntil: null, recipientId: "stored-id", generation: 0 },
+      { email: "member@example.com", state: "confirmed", grandfatheredUntil: null, confirmationSentAt: null, recipientId: "stored-id", generation: 0 },
     ]);
     const service = new NotificationRecipientPolicyService({
       enabled: true, states, sendConfirmation: vi.fn(async () => ({ dispatched: true })), now: () => NOW,

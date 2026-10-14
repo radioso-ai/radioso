@@ -1,3 +1,5 @@
+import { normalizeRecipientEmail } from "../../shared/domain/recipientEmailAudit.js";
+
 type NotificationRecipientState =
   | "confirmed"
   | "grandfathered"
@@ -8,10 +10,12 @@ type NotificationRecipientState =
 
 type StoredNotificationRecipientState = Exclude<NotificationRecipientState, "confirmation_not_required">;
 
-interface NotificationRecipientStateView {
+export interface NotificationRecipientStateView {
   email: string;
   state: StoredNotificationRecipientState;
   grandfatheredUntil: Date | null;
+  /** When this address was last sent a confirmation link, if ever. */
+  confirmationSentAt: Date | null;
   recipientId?: string | null;
   generation?: number | null;
 }
@@ -27,14 +31,21 @@ export const NOTIFICATION_CONFIRMATION_LIMITS = {
   resendCooldownMs: 24 * 60 * 60 * 1000,
 } as const;
 
-interface ConfirmationReservation {
+/**
+ * An address configured before confirmation existed keeps receiving notices until it confirms or until
+ * both its recorded deadline and this long after its confirmation link have passed, so no address
+ * is cut off before it was asked.
+ */
+const GRANDFATHERED_ANSWER_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+export interface ConfirmationReservation {
   recipientId: string;
   generation: number;
   reservedAt: Date;
   previousSentAt: Date | null;
 }
 
-interface NotificationRecipientStateStore {
+export interface NotificationRecipientStateStore {
   read(input: {
     workspaceId: string;
     emails: readonly string[];
@@ -106,19 +117,21 @@ export interface NotificationRecipientDescription {
 
 interface EffectiveRecipient extends NotificationRecipientDescription {
   recipientId: string | null;
+  /** A confirmation link already went out, so a notice does not ask again; an operator resend can. */
+  alreadyAsked: boolean;
 }
 
-const normalizeEmail = (email: string): string => email.trim().toLowerCase();
-
 const uniqueNormalizedEmails = (emails: readonly string[]): string[] =>
-  [...new Set(emails.map(normalizeEmail).filter(Boolean))];
+  [...new Set(emails.map(normalizeRecipientEmail).filter(Boolean))];
 
-const effectiveState = (view: NotificationRecipientStateView, now: Date): StoredNotificationRecipientState =>
-  view.state === "grandfathered"
-    && view.grandfatheredUntil !== null
-    && view.grandfatheredUntil.getTime() <= now.getTime()
-    ? "waiting_for_confirmation"
-    : view.state;
+const effectiveState = (view: NotificationRecipientStateView, now: Date): StoredNotificationRecipientState => {
+  if (view.state !== "grandfathered") return view.state;
+  const answerDeadline = view.confirmationSentAt
+    ? view.confirmationSentAt.getTime() + GRANDFATHERED_ANSWER_WINDOW_MS
+    : Number.POSITIVE_INFINITY;
+  const deadline = Math.max(view.grandfatheredUntil?.getTime() ?? 0, answerDeadline);
+  return deadline > now.getTime() ? "grandfathered" : "waiting_for_confirmation";
+};
 
 const awaitingConfirmation = (state: NotificationRecipientState): boolean =>
   state === "grandfathered" || state === "waiting_for_confirmation";
@@ -182,7 +195,7 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
         skipped.unconfirmed += 1;
       }
 
-      if (this.options.enabled && awaitingConfirmation(recipient.state)) {
+      if (this.options.enabled && awaitingConfirmation(recipient.state) && !recipient.alreadyAsked) {
         await this.requestConfirmation(input, recipient.email, false, identity);
       }
     }
@@ -213,7 +226,7 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
     }
     const identity = lazyIdentity(() => this.identityFor(input));
     for (const recipient of recipients) {
-      if (awaitingConfirmation(recipient.state)) {
+      if (awaitingConfirmation(recipient.state) && !recipient.alreadyAsked) {
         await this.requestConfirmation(input, recipient.email, false, identity);
       }
     }
@@ -257,6 +270,7 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
       return {
         email,
         recipientId: view?.recipientId ?? null,
+        alreadyAsked: Boolean(view?.confirmationSentAt),
         state: !this.options.enabled && state !== "suppressed" && state !== "revoked"
           ? "confirmation_not_required"
           : state,

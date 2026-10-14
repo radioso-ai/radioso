@@ -54,7 +54,7 @@ const recordingObserver = () => {
 const policy = (overrides: Partial<VoiceTurnPolicy> = {}): VoiceTurnPolicy => ({
   startedAt: Date.now(),
   now: () => Date.now(),
-  bridgeAfterMs: 1_800,
+  bridgeAfterMs: VOICE_BEHAVIOR.bridgeAfterMs,
   bridgeAfterComposingIdleMs: 400,
   turnLimitMs: VOICE_BEHAVIOR.turnLimitMs,
   bridge: { style: "check", text: "Let me check." },
@@ -95,23 +95,23 @@ describe("voice turn policy", () => {
     }
   });
 
-  it("speaks the bridge line once when the turn shows no phase and no speech 1.8 s in", async () => {
+  it("speaks the bridge line once when the turn shows no phase and no speech 2.5 s in", async () => {
     const { observer, calls } = recordingObserver();
     const { events } = timedReply([
       { atMs: 0, event: conversation },
-      { atMs: 2_000, event: speech("We open at nine.", true) },
-      { atMs: 2_000, event: outcome },
+      { atMs: 3_000, event: speech("We open at nine.", true) },
+      { atMs: 3_000, event: outcome },
     ]);
 
     const seen = await run(events, policy({ observer }));
 
     expect(seen).toEqual([
       { atMs: 0, event: conversation },
-      { atMs: 1_800, event: { type: "bridge", text: "Let me check." } },
-      { atMs: 2_000, event: speech("We open at nine.", true) },
-      { atMs: 2_000, event: outcome },
+      { atMs: 2_500, event: { type: "bridge", text: "Let me check." } },
+      { atMs: 3_000, event: speech("We open at nine.", true) },
+      { atMs: 3_000, event: outcome },
     ]);
-    expect(calls).toEqual([["bridgeDue", "check", true], ["firstSpeech", 2_000, true]]);
+    expect(calls).toEqual([["bridgeDue", "check", true], ["firstSpeech", 3_000, true]]);
   });
 
   it("leaves a prompt reply untouched", async () => {
@@ -134,17 +134,17 @@ describe("voice turn policy", () => {
 
     const seen = await run(events, policy({ startedAt: Date.now() - 400 }));
 
-    expect(seen[0]).toEqual({ atMs: 1_400, event: { type: "bridge", text: "Let me check." } });
+    expect(seen[0]).toEqual({ atMs: 2_100, event: { type: "bridge", text: "Let me check." } });
   });
 
   it("speaks no bridge when the agent has no line for the turn, and says so to the observer", async () => {
     const { observer, calls } = recordingObserver();
-    const { events } = timedReply([{ atMs: 2_000, event: speech("Yes.", true) }, { atMs: 2_000, event: outcome }]);
+    const { events } = timedReply([{ atMs: 3_000, event: speech("Yes.", true) }, { atMs: 3_000, event: outcome }]);
 
     const seen = await run(events, policy({ bridge: { style: "acknowledge", text: null }, observer }));
 
     expect(seen.map(({ event }) => event.type)).toEqual(["speech", "outcome"]);
-    expect(calls).toEqual([["bridgeDue", "acknowledge", false], ["firstSpeech", 2_000, false]]);
+    expect(calls).toEqual([["bridgeDue", "acknowledge", false], ["firstSpeech", 3_000, false]]);
   });
 
   it("speaks the fallback line at 10 s, ends the turn, and still drains the reply so it persists", async () => {
@@ -159,7 +159,7 @@ describe("voice turn policy", () => {
 
     expect(seen).toEqual([
       { atMs: 0, event: conversation },
-      { atMs: 1_800, event: { type: "bridge", text: "Let me check." } },
+      { atMs: 2_500, event: { type: "bridge", text: "Let me check." } },
       { atMs: 10_000, event: speech("Sorry, that took too long. Could you ask me again?", true) },
       { atMs: 10_000, event: outcome },
     ]);
@@ -180,7 +180,7 @@ describe("voice turn policy", () => {
 
     const seen = await run(timedReply(reply).events, policy({ fallbackLine: null, observer }));
 
-    expect(seen).toEqual([{ atMs: 1_800, event: { type: "bridge", text: "Let me check." } }, ...reply]);
+    expect(seen).toEqual([{ atMs: 2_500, event: { type: "bridge", text: "Let me check." } }, ...reply]);
     expect(calls).toEqual([
       ["bridgeDue", "check", true],
       ["turnLimitReached", false],
@@ -197,7 +197,7 @@ describe("voice turn policy", () => {
 
     const seen = await run(timedReply(reply).events, policy({ turnLimitMs: null, observer }));
 
-    expect(seen).toEqual([{ atMs: 1_800, event: { type: "bridge", text: "Let me check." } }, ...reply]);
+    expect(seen).toEqual([{ atMs: 2_500, event: { type: "bridge", text: "Let me check." } }, ...reply]);
     expect(calls).toEqual([["bridgeDue", "check", true], ["firstSpeech", 15_000, true]]);
   });
 
@@ -339,7 +339,7 @@ describe("voice turn policy", () => {
       expect(calls).toEqual([["firstSpeech", 1_150, false]]);
     });
 
-    it("keeps the 1.8 s fallback armed while the turn is still interpreting", async () => {
+    it("keeps the 2.5 s fallback armed while the turn is still interpreting", async () => {
       const { events } = timedReply([
         { atMs: 0, event: phase("interpreting") },
         { atMs: 3_000, event: speech("We open at nine.", true) },
@@ -348,7 +348,7 @@ describe("voice turn policy", () => {
 
       const seen = await run(events, policy());
 
-      expect(seen[0]).toEqual({ atMs: 1_800, event: { type: "bridge", text: "Let me check." } });
+      expect(seen[0]).toEqual({ atMs: 2_500, event: { type: "bridge", text: "Let me check." } });
     });
 
     it("speaks no bridge when speech comes before any phase", async () => {

@@ -304,11 +304,15 @@ export const VOICE_BEHAVIOR = {
   // once when the turn starts searching (retrieval always has seconds of work
   // ahead); bridgeAfterComposingIdleMs after the turn starts composing with
   // nothing spoken (a quick reply's first sentence lands well inside that); and
-  // bridgeAfterMs into a turn that has neither searched nor composed (the
-  // planner is slower than usual). Latency is a property of the runtime, not of
+  // bridgeAfterMs into a turn that has neither searched nor composed, which
+  // only a stalled planner reaches: a knowledge turn bridges on searching as
+  // soon as the planner returns. A planner quick reply is the whole turn, and
+  // in a headset session (2026-10-14) it took 1.35 to 1.97 s on gpt-5.4-mini
+  // (p90 about 2 s), so at 1.8 s a greeting heard the long bridge line before
+  // "Hello!"; 2.5 s clears it. Latency is a property of the runtime, not of
   // an agent, so these are composition-owned rather than operator settings.
   bridgeAfterComposingIdleMs: 400,
-  bridgeAfterMs: 1_800,
+  bridgeAfterMs: 2_500,
   // When no speech has come this long into a voice turn the agent owns, the
   // channel speaks the agent's authored fallback line and ends the turn; the
   // reply still finishes and is stored. Long enough for a slow grounded answer,

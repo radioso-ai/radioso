@@ -616,7 +616,7 @@ describe("VoiceTurnService", () => {
         routines,
         ownership: conversationOwnership(false),
         sessions: fakeSessions(conversationId),
-        chat: timedChat(slowReply(2_000)),
+        chat: timedChat(slowReply(3_000)),
         logger: fakeLogger(),
       });
 
@@ -638,7 +638,7 @@ describe("VoiceTurnService", () => {
         routines,
         ownership: conversationOwnership(false),
         sessions: fakeSessions(null),
-        chat: timedChat(slowReply(2_000)),
+        chat: timedChat(slowReply(3_000)),
         logger: fakeLogger(),
       });
 
@@ -654,7 +654,7 @@ describe("VoiceTurnService", () => {
         routines: routineStates(false),
         ownership: conversationOwnership(false),
         sessions: fakeSessions(conversationId),
-        chat: timedChat(slowReply(2_000)),
+        chat: timedChat(slowReply(3_000)),
         logger: fakeLogger(),
       });
 
@@ -769,7 +769,7 @@ describe("VoiceTurnService", () => {
         routines: routineStates(false),
         ownership: conversationOwnership(false),
         sessions: fakeSessions(conversationId),
-        chat: timedChat(slowReply(2_000)),
+        chat: timedChat(slowReply(3_000)),
         logger: fakeLogger(),
         metrics,
       });
@@ -782,7 +782,7 @@ describe("VoiceTurnService", () => {
       }));
       expect(metrics.observeHistogram).toHaveBeenCalledWith("voice_turn_first_speech_ms", expect.objectContaining({
         labels: { bridged: "no" },
-        value: 2_000,
+        value: 3_000,
       }));
     });
   });
@@ -955,7 +955,7 @@ describe("VoiceTurnService", () => {
       const turns = service(chat);
 
       const first = start(turns, input({ utterance: "When do you open?" }));
-      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(2_700);
       const second = start(turns, input({ utterance: "When do you open on Sunday?" }));
       await vi.runAllTimersAsync();
       await first;

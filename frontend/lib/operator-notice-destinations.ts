@@ -5,14 +5,18 @@ const operatorNoticeRoutes = ['named_skill', 'contact_human', 'contact_human_off
 
 type OperatorNoticeRoute = (typeof operatorNoticeRoutes)[number]
 
+const recipientStates = ['confirmed', 'grandfathered', 'waiting_for_confirmation', 'revoked', 'suppressed', 'confirmation_not_required'] as const
+
+export interface NotificationRecipient {
+  email: string
+  state: (typeof recipientStates)[number]
+}
+
 export interface OperatorNoticeDestination {
   skillName: string | null
   via: OperatorNoticeRoute
   recipientEmails: string[]
-  recipients: Array<{
-    email: string
-    state: 'confirmed' | 'grandfathered' | 'waiting_for_confirmation' | 'revoked' | 'suppressed' | 'confirmation_not_required'
-  }>
+  recipients: NotificationRecipient[]
   recipientsFromWorkspaceOwner: boolean
   webhookConfigured: boolean
 }
@@ -32,6 +36,21 @@ export interface OperatorNoticeDestinations {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 
+const parseRecipientList = (value: unknown): NotificationRecipient[] => {
+  if (!Array.isArray(value) || !value.every((recipient) => isRecord(recipient)
+    && typeof recipient.email === 'string'
+    && recipientStates.includes(recipient.state as NotificationRecipient['state']))) {
+    throw new Error('Recipient states are malformed.')
+  }
+  return value as NotificationRecipient[]
+}
+
+/** GET /agents/{agentId}/skills/{skillId}/notification-recipients. */
+export const parseNotificationRecipients = (payload: unknown): NotificationRecipient[] => {
+  if (!isRecord(payload)) throw new Error('Notification recipients must be an object.')
+  return parseRecipientList(payload.recipients)
+}
+
 const parseDestination = (value: unknown): OperatorNoticeDestination => {
   if (!isRecord(value)) throw new Error('A notice destination must be an object.')
   const { skillName, via, recipientEmails, recipientsFromWorkspaceOwner, webhookConfigured } = value
@@ -43,18 +62,12 @@ const parseDestination = (value: unknown): OperatorNoticeDestination => {
   if (typeof recipientsFromWorkspaceOwner !== 'boolean' || typeof webhookConfigured !== 'boolean') {
     throw new Error('A notice destination is missing its flags.')
   }
-  const states = ['confirmed', 'grandfathered', 'waiting_for_confirmation', 'revoked', 'suppressed', 'confirmation_not_required'] as const
-  const recipients = value.recipients
-  if (!Array.isArray(recipients) || !recipients.every((recipient) => isRecord(recipient)
-    && typeof recipient.email === 'string'
-    && states.includes(recipient.state as typeof states[number]))) {
-    throw new Error('A notice destination has invalid recipient states.')
-  }
+  const recipients = parseRecipientList(value.recipients)
   return {
     skillName,
     via: via as OperatorNoticeRoute,
     recipientEmails,
-    recipients: recipients as OperatorNoticeDestination['recipients'],
+    recipients,
     recipientsFromWorkspaceOwner,
     webhookConfigured,
   }
@@ -83,7 +96,7 @@ export const parseOperatorNoticeDestinations = (payload: unknown): OperatorNotic
 // Who receives a notice sent this way, or why nothing is sent.
 const destinationTarget = (destination: OperatorNoticeDestination): { sent: true; to: string } | { sent: false; reason: string } => {
   if (destination.via === 'contact_human_off') return { sent: false, reason: 'contact_human is turned off' }
-  const stateSuffix: Record<OperatorNoticeDestination['recipients'][number]['state'], string> = {
+  const stateSuffix: Record<NotificationRecipient['state'], string> = {
     confirmed: '',
     grandfathered: ' (confirmation grace period)',
     waiting_for_confirmation: ' (waiting for confirmation)',

@@ -5,6 +5,15 @@ import type { Db } from "../../shared/infra/kysely/types.js";
 
 const normalizeEmail = (email: string): string => email.trim().toLowerCase();
 
+const usageDateOf = (at: Date): Date => new Date(`${at.toISOString().slice(0, 10)}T00:00:00.000Z`);
+
+interface ConfirmationReservation {
+  recipientId: string;
+  generation: number;
+  reservedAt: Date;
+  previousSentAt: Date | null;
+}
+
 type NotificationRecipientStateView = {
   email: string;
   state: "confirmed" | "grandfathered" | "waiting_for_confirmation" | "revoked" | "suppressed";
@@ -106,12 +115,18 @@ export class NotificationRecipientStateRepository {
     email: string;
     now: Date;
     force: boolean;
-    limits: { dailySends: number; resendCooldownMs: number };
-  }): Promise<{ recipientId: string; generation: number } | null> {
+    limits: { dailySends: number; accountDailySends: number; resendCooldownMs: number };
+  }): Promise<ConfirmationReservation | null> {
     const email = normalizeEmail(input.email);
-    const usageDate = new Date(`${input.now.toISOString().slice(0, 10)}T00:00:00.000Z`);
+    const usageDate = usageDateOf(input.now);
     return this.db.transaction().execute(async (transaction) => {
-      await transactionAdvisoryLock(`notification-confirmation:${input.workspaceId}:${usageDate.toISOString()}`).execute(transaction);
+      const workspace = await transaction.selectFrom("workspaces")
+        .select("account_id")
+        .where("id", "=", input.workspaceId)
+        .executeTakeFirst();
+      if (!workspace) return null;
+      // One lock per account and day, so the workspace and account allowances are checked together.
+      await transactionAdvisoryLock(`notification-confirmation:${workspace.account_id}:${usageDate.toISOString()}`).execute(transaction);
       await transactionAdvisoryLock(`notification-recipient:${input.workspaceId}:${email}`).execute(transaction);
 
       const suppression = await transaction.selectFrom("notification_email_suppressions")
@@ -155,6 +170,14 @@ export class NotificationRecipientStateRepository {
         if (sinceLastSend < input.limits.resendCooldownMs) return null;
       }
 
+      const accountUsage = await transaction.selectFrom("notification_recipient_confirmation_daily_usage as u")
+        .innerJoin("workspaces as w", "w.id", "u.workspace_id")
+        .select((expression) => expression.fn.coalesce(expression.fn.sum<number>("u.send_count"), expression.val(0)).as("sent"))
+        .where("w.account_id", "=", workspace.account_id)
+        .where("u.usage_date", "=", usageDate)
+        .executeTakeFirstOrThrow();
+      if (Number(accountUsage.sent) >= input.limits.accountDailySends) return null;
+
       await transaction.insertInto("notification_recipient_confirmation_daily_usage").values({
         workspace_id: input.workspaceId,
         usage_date: usageDate,
@@ -182,7 +205,12 @@ export class NotificationRecipientStateRepository {
         .where("id", "=", recipient.id)
         .returning("confirmation_generation")
         .executeTakeFirstOrThrow();
-      return { recipientId: recipient.id, generation: reserved.confirmation_generation };
+      return {
+        recipientId: recipient.id,
+        generation: reserved.confirmation_generation,
+        reservedAt: input.now,
+        previousSentAt: recipient.confirmation_sent_at ? new Date(recipient.confirmation_sent_at) : null,
+      };
     });
   }
 
@@ -204,14 +232,36 @@ export class NotificationRecipientStateRepository {
     });
   }
 
-  async releaseConfirmationSend(recipientId: string, generation: number, reservedAt: Date): Promise<void> {
-    await this.db.updateTable("notification_recipient_confirmations")
-      .set({ confirmation_sent_at: null, updated_at: currentTimestamp() })
-      .where("id", "=", recipientId)
-      .where("confirmation_generation", "=", generation)
-      .where("confirmation_sent_at", "=", reservedAt)
-      .where("state", "in", ["pending", "grandfathered"])
-      .execute();
+  /**
+   * Hands back a reservation whose mail did not go out. A send the transport never dispatched is
+   * undone outright: the earlier link stays valid and the daily slot is returned. A send that failed
+   * may still have reached the provider, so its slot stays spent and only the address is reopened
+   * for a later notice to ask again.
+   */
+  async releaseConfirmationSend(reservation: ConfirmationReservation, outcome: "not_dispatched" | "failed"): Promise<void> {
+    await this.db.transaction().execute(async (transaction) => {
+      const released = await transaction.updateTable("notification_recipient_confirmations")
+        .set(outcome === "not_dispatched"
+          ? {
+              confirmation_sent_at: reservation.previousSentAt,
+              confirmation_generation: reservation.generation - 1,
+              updated_at: currentTimestamp(),
+            }
+          : { confirmation_sent_at: null, updated_at: currentTimestamp() })
+        .where("id", "=", reservation.recipientId)
+        .where("confirmation_generation", "=", reservation.generation)
+        .where("confirmation_sent_at", "=", reservation.reservedAt)
+        .where("state", "in", ["pending", "grandfathered"])
+        .returning("workspace_id")
+        .executeTakeFirst();
+      if (!released || outcome !== "not_dispatched") return;
+      await transaction.updateTable("notification_recipient_confirmation_daily_usage")
+        .set({ send_count: sql`send_count - 1`, updated_at: currentTimestamp() })
+        .where("workspace_id", "=", released.workspace_id)
+        .where("usage_date", "=", usageDateOf(reservation.reservedAt))
+        .where("send_count", ">", 0)
+        .execute();
+    });
   }
 
   async revoke(recipientId: string, now: Date): Promise<boolean> {

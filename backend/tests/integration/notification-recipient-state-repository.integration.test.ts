@@ -115,6 +115,73 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
     expect(reservations.filter(Boolean)).toHaveLength(NOTIFICATION_CONFIRMATION_LIMITS.dailySends);
   });
 
+  it("bounds confirmation mail across all of an account's workspaces", async () => {
+    const otherAccountId = randomUUID();
+    const workspaces = [randomUUID(), randomUUID()];
+    await database.query(
+      "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)",
+      [otherAccountId, "Many workspaces", `account-${otherAccountId}@example.com`, "hash"],
+    );
+    for (const id of workspaces) {
+      await database.query(
+        "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)",
+        [id, otherAccountId, "Spread", `spread-${randomUUID()}`],
+      );
+    }
+    const limits = { ...NOTIFICATION_CONFIRMATION_LIMITS, dailySends: 25, accountDailySends: 3 };
+    const now = new Date("2026-10-13T12:00:00.000Z");
+
+    const reservations = await Promise.all(workspaces.flatMap((id) => Array.from({ length: 2 }, (_, index) =>
+      repository.reserveConfirmationSend({ limits, workspaceId: id, email: `spread-${index}@example.com`, now, force: false }))));
+
+    expect(reservations.filter(Boolean)).toHaveLength(3);
+  });
+
+  it("gives back a confirmation send the transport never dispatched, keeping the earlier link valid", async () => {
+    const day = new Date("2026-10-18T12:00:00.000Z");
+    const first = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "undispatched@example.com", now: day, force: false,
+    });
+    const resendAt = new Date(day.getTime() + DAY_MS);
+    const usageBefore = await database.query<{ send_count: number }>(
+      "SELECT send_count FROM notification_recipient_confirmation_daily_usage WHERE workspace_id = $1 AND usage_date = $2",
+      [workspaceId, "2026-10-19"],
+    );
+    const resend = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "undispatched@example.com", now: resendAt, force: true,
+    });
+
+    await repository.releaseConfirmationSend(resend!, "not_dispatched");
+
+    const usageAfter = await database.query<{ send_count: number }>(
+      "SELECT send_count FROM notification_recipient_confirmation_daily_usage WHERE workspace_id = $1 AND usage_date = $2",
+      [workspaceId, "2026-10-19"],
+    );
+    expect(usageAfter[0]?.send_count ?? 0).toBe(usageBefore[0]?.send_count ?? 0);
+    await expect(repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "undispatched@example.com", now: resendAt, force: false,
+    })).resolves.toBeNull();
+    expect(await repository.confirm(first!.recipientId, first!.generation, resendAt)).toBe(true);
+  });
+
+  it("keeps a send whose outcome is unknown counted, and lets a later notice ask again", async () => {
+    const day = new Date("2026-10-20T12:00:00.000Z");
+    const reservation = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "unknown-outcome@example.com", now: day, force: false,
+    });
+
+    await repository.releaseConfirmationSend(reservation!, "failed");
+
+    const usage = await database.query<{ send_count: number }>(
+      "SELECT send_count FROM notification_recipient_confirmation_daily_usage WHERE workspace_id = $1 AND usage_date = $2",
+      [workspaceId, "2026-10-20"],
+    );
+    expect(usage[0]?.send_count).toBe(1);
+    await expect(repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,
+      workspaceId, email: "unknown-outcome@example.com", now: day, force: false,
+    })).resolves.not.toBeNull();
+  });
+
   it("persists confirmation and revocation transitions", async () => {
     const nextDay = new Date("2026-10-14T12:00:00.000Z");
     const reservation = await repository.reserveConfirmationSend({ limits: NOTIFICATION_CONFIRMATION_LIMITS,

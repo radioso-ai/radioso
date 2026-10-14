@@ -14,7 +14,7 @@ const allowedRecipientPolicy = {
   prepareDelivery: async (input: { emails: readonly string[] }) => ({
     eligibleEmails: [...input.emails],
     eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
-    skipped: { unconfirmed: 0, suppressed: 0 },
+    skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
   }),
 };
 
@@ -117,7 +117,7 @@ describe("ContactSendActionHandler", () => {
         prepareDelivery: async () => ({
           eligibleEmails: [],
           eligibleRecipients: [],
-          skipped: { unconfirmed: 1, suppressed: 0 },
+          skipped: { unconfirmed: 1, suppressed: 0, revoked: 0 },
         }),
       },
     );

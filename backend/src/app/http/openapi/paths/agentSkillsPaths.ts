@@ -96,22 +96,25 @@ const CapabilitySchema = z.object({
   unavailableReason: z.literal("no_connection").nullable(),
 });
 
+const NotificationRecipientSchema = z.object({
+  email: z.string().email(),
+  state: z.enum([
+    "confirmed",
+    "grandfathered",
+    "waiting_for_confirmation",
+    "revoked",
+    "suppressed",
+    "confirmation_not_required",
+  ]),
+});
+
 const OperatorNoticeDestinationSchema = z.object({
   skillName: z.string().nullable().describe("The notify skill that sends the notice; null for the default destination."),
   via: z.enum(contactDeliveryRoutes)
     .describe("Which rule picked the recipients."),
   recipientEmails: z.array(z.string()),
-  recipients: z.array(z.object({
-    email: z.string().email(),
-    state: z.enum([
-      "confirmed",
-      "grandfathered",
-      "waiting_for_confirmation",
-      "revoked",
-      "suppressed",
-      "confirmation_not_required",
-    ]),
-  })).describe("Recipient addresses with their effective confirmation or suppression state."),
+  recipients: z.array(NotificationRecipientSchema)
+    .describe("Recipient addresses with their effective confirmation or suppression state."),
   recipientsFromWorkspaceOwner: z.boolean()
     .describe("The emails are the workspace owner's because the route lists no recipients of its own."),
   webhookConfigured: z.boolean().describe("A webhook also receives the notice. Its URL is never returned."),
@@ -196,6 +199,23 @@ export const registerAgentSkillsPaths = (
       401: errorResponse("Authentication required"),
       403: errorResponse("Agent read permission required"),
       404: errorResponse("Agent not found"),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/skills/{skillId}/notification-recipients",
+    tags: ["Agent Skills"],
+    summary: "Show a notify skill's recipient states",
+    description: "Each recipient address configured on one notify skill, whatever its invocation mode, with its confirmation or suppression state. A skill of another capability returns no recipients. Recipient emails are personal data, so this route accepts workspace sessions only.",
+    operationId: "listNotifySkillRecipients",
+    security: sec,
+    request: { params: AgentParams.extend({ skillId: z.string().uuid() }) },
+    responses: {
+      200: { description: "Notify skill recipients", content: json(z.object({ recipients: z.array(NotificationRecipientSchema) })) },
+      401: errorResponse("Authentication required"),
+      403: errorResponse("Agent read permission required"),
+      404: errorResponse("Agent or skill not found"),
     },
   });
 

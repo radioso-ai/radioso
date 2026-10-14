@@ -327,4 +327,41 @@ describe("unified agent skills contract", () => {
       .set("Authorization", `Bearer ${session.token}`);
     expect(machine.status).toBe(401);
   });
+
+  it("shows and re-asks the recipients of a notify skill the agent invokes itself", async () => {
+    const { app, dependencies } = createTestApp();
+    const session = await issueTestToken(app, "agent-invoked-notify-owner@example.com");
+    const headers = adminSessionHeaders(session);
+    const agentId = (await request(app).get("/api/v1/agents").set(headers)).body.agents[0].id as string;
+    const created = await request(app)
+      .post(`/api/v1/agents/${agentId}/skills`)
+      .set(headers)
+      .send({
+        name: "notify_sales",
+        capability: "notify",
+        target: { kind: "notify_delivery", id: null },
+        config: { delivery: { recipientEmails: ["sales@example.com"], webhook: null } },
+        invocationMode: "agent_selectable",
+        enabled: true,
+      });
+    expect(created.status).toBe(201);
+
+    const recipients = await request(app)
+      .get(`/api/v1/agents/${agentId}/skills/${created.body.skill.id}/notification-recipients`)
+      .set(headers);
+    expect(recipients.status).toBe(200);
+    expect(recipients.body).toEqual({ recipients: [{ email: "sales@example.com", state: "confirmation_not_required" }] });
+
+    vi.spyOn(dependencies.notificationRecipientPolicy, "resendConfirmation").mockResolvedValue(true);
+    const resend = await request(app)
+      .post(`/api/v1/agents/${agentId}/notification-recipient-confirmations/resend`)
+      .set(headers)
+      .send({ email: "sales@example.com" });
+    expect(resend.status).toBe(202);
+
+    const machine = await request(app)
+      .get(`/api/v1/agents/${agentId}/skills/${created.body.skill.id}/notification-recipients`)
+      .set("Authorization", `Bearer ${session.token}`);
+    expect(machine.status).toBe(401);
+  });
 });

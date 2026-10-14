@@ -1,5 +1,10 @@
 import { request } from './api-client'
-import { parseOperatorNoticeDestinations, type OperatorNoticeDestinations } from './operator-notice-destinations'
+import {
+  parseNotificationRecipients,
+  parseOperatorNoticeDestinations,
+  type NotificationRecipient,
+  type OperatorNoticeDestinations,
+} from './operator-notice-destinations'
 
 export type SkillAuthoringInputType = 'text' | 'number' | 'boolean' | 'email' | 'date' | 'phone' | 'enum'
 export type RoutineSkillCategory = 'retrieval' | 'built_in' | 'external_mcp' | 'customer_email' | 'webhook' | 'slack' | 'notify'
@@ -156,6 +161,12 @@ export const routineSkillCatalogApi = {
       method: 'GET',
     }, { withSession: true })
     return parseOperatorNoticeDestinations(payload)
+  },
+  async listNotifySkillRecipients(agentId: string, skillId: string): Promise<NotificationRecipient[]> {
+    const payload = await request<unknown>(`/agents/${agentId}/skills/${skillId}/notification-recipients`, {
+      method: 'GET',
+    }, { withSession: true })
+    return parseNotificationRecipients(payload)
   },
   async resendNotificationRecipientConfirmation(agentId: string, email: string): Promise<{ sent: boolean }> {
     return request<{ sent: boolean }>(`/agents/${agentId}/notification-recipient-confirmations/resend`, {

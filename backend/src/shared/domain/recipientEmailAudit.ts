@@ -14,15 +14,12 @@ const hashes = (emails: readonly string[]): string[] =>
   emails.map((email) => createHash("sha256").update(email).digest("hex"));
 
 /**
- * Stable, non-reversible identity for an admitted delivery recipient snapshot.
- * It binds an idempotent action replay to both the normalized set and the
- * recipient count without putting addresses into operational records.
+ * Stable, non-reversible identity for the configured recipient list a delivery was admitted for.
+ * It binds an idempotent action replay to that list without putting addresses into operational
+ * records, so an operator's edit between retries counts as a new delivery.
  */
-export const recipientEmailDeliveryDigest = (
-  emails: readonly string[],
-  recipientCount: number,
-): string => createHash("sha256")
-  .update(JSON.stringify({ recipientCount, recipients: normalizeRecipientEmails(emails) }))
+export const recipientEmailDeliveryDigest = (emails: readonly string[]): string => createHash("sha256")
+  .update(JSON.stringify({ recipients: normalizeRecipientEmails(emails) }))
   .digest("hex");
 
 export const recipientEmailsFromDeliveryConfig = (config: Record<string, unknown>): string[] => {

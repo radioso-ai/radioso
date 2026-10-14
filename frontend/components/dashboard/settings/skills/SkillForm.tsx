@@ -37,7 +37,7 @@ import type {
 import { getApiErrorMessage } from '@/lib/api-error'
 import { externalSkillsApi } from '@/lib/api-external-skills'
 import { routineSkillCatalogApi } from '@/lib/api-routine-skill-catalog'
-import type { OperatorNoticeDestination } from '@/lib/operator-notice-destinations'
+import type { NotificationRecipient } from '@/lib/operator-notice-destinations'
 import type { AgentSkill, AgentSkillCapabilityId, AgentSkillCreateInput, SkillCapabilityDescriptor, SkillCapabilitySettingsField } from '@/lib/api-skills'
 import type { DiscoveredMcpTool } from '@/lib/external-skills'
 import { cn } from '@/lib/utils'
@@ -154,7 +154,7 @@ const shouldShowGroupHeading = (
 ): boolean =>
   !(fields.length === 1 && fields[0]?.type === 'boolean' && fields[0].label === group)
 
-type RecipientState = OperatorNoticeDestination['recipients'][number]['state']
+type RecipientState = NotificationRecipient['state']
 
 const RECIPIENT_STATE_LABELS: Record<Exclude<RecipientState, 'confirmation_not_required'>, string> = {
   confirmed: 'Confirmed',
@@ -606,12 +606,9 @@ export function SkillForm({
       return
     }
     let active = true
-    void routineSkillCatalogApi.listOperatorNoticeDestinations(agentId).then((destinations) => {
+    void routineSkillCatalogApi.listNotifySkillRecipients(agentId, editingSkill.id).then((recipients) => {
       if (!active) return
-      const destination = editingSkill.name === 'contact_human' && destinations.default.via === 'contact_human'
-        ? destinations.default
-        : destinations.skills.find((item) => item.skillName === editingSkill.name)
-      setRecipientStates(new Map((destination?.recipients ?? []).map((recipient) => [recipient.email.toLowerCase(), recipient.state])))
+      setRecipientStates(new Map(recipients.map((recipient) => [recipient.email.toLowerCase(), recipient.state])))
     }).catch(() => {
       if (active) setRecipientStates(new Map())
     })
@@ -823,7 +820,7 @@ export function SkillForm({
                       ? async (email) => {
                           try {
                             const result = await routineSkillCatalogApi.resendNotificationRecipientConfirmation(agentId, email)
-                            return result.sent ? 'Confirmation sent' : 'Not sent: asked within the last day, or today\'s limit is reached'
+                            return result.sent ? 'Confirmation sent' : 'Not sent: asked recently, daily limit reached, or mail delivery unavailable'
                           } catch (resendError) {
                             return getApiErrorMessage(resendError, 'Could not resend the confirmation')
                           }

@@ -7,7 +7,7 @@ import { agentSkillCreateSchema, agentSkillUpdateSchema } from "../../../modules
 import { builtInAnswerSkillDefinitions } from "../../../modules/chat/public.js";
 import { resolveRetrievalSkillSettings } from "../../../modules/retrieval/public.js";
 import type { SkillCapabilityDescriptor } from "../../../modules/skills/public.js";
-import { badRequest, forbidden } from "../../../shared/domain/errors.js";
+import { badRequest, notFound, forbidden } from "../../../shared/domain/errors.js";
 import {
   recipientEmailChangeMetadata,
   recipientEmailsFromDeliveryConfig,
@@ -155,6 +155,33 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
     }
   });
 
+  // Every notify skill delivers contact requests whatever its invocation mode, so its recipients
+  // count as configured alongside the default destination's.
+  const configuredRecipientEmails = async (workspaceId: string, agentId: string): Promise<string[]> => {
+    const [destinations, skills] = await Promise.all([
+      dependencies.operatorNoticeDestinations.read({ workspaceId, agentId }),
+      dependencies.agentSkillsService.list(workspaceId, agentId),
+    ]);
+    return [
+      ...destinations.default.recipientEmails,
+      ...skills.filter((skill) => skill.capability === "notify").flatMap((skill) => recipientEmailsFromDeliveryConfig(skill.config)),
+    ];
+  };
+
+  // Names a notify skill's recipient emails, which are personal data: workspace sessions only.
+  router.get("/:agentId/skills/:skillId/notification-recipients", workspaceSession, agentRead, async (req, res, next) => {
+    try {
+      const { workspaceId, agentId } = await resolveAgent(req, res);
+      const skillId = parseUuid(req.params.skillId, "skillId");
+      const skill = (await dependencies.agentSkillsService.list(workspaceId, agentId)).find((candidate) => candidate.id === skillId);
+      if (!skill) throw notFound("Skill not found");
+      const emails = skill.capability === "notify" ? recipientEmailsFromDeliveryConfig(skill.config) : [];
+      res.status(200).json({ recipients: await dependencies.notificationRecipientPolicy.describe(workspaceId, emails) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post(
     "/:agentId/notification-recipient-confirmations/resend",
     workspaceSession,
@@ -164,10 +191,9 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
       try {
         const { workspaceId, agentId } = await resolveAgent(req, res);
         await requireRecipientManagement(dependencies, res);
-        const destinations = await dependencies.operatorNoticeDestinations.read({ workspaceId, agentId });
         const normalizedEmail = req.body.email.trim().toLowerCase();
-        const configured = [destinations.default, ...destinations.skills]
-          .some((destination) => destination.recipientEmails.some((email) => email.trim().toLowerCase() === normalizedEmail));
+        const configured = (await configuredRecipientEmails(workspaceId, agentId))
+          .some((email) => email.trim().toLowerCase() === normalizedEmail);
         if (!configured) throw badRequest("The recipient is not configured for this agent");
         const sent = await dependencies.notificationRecipientPolicy.resendConfirmation({
           workspaceId,

@@ -937,6 +937,7 @@ export class ChatService {
       query: string;
     },
     session: PreparedSession,
+    signal: AbortSignal | undefined,
   ): Promise<string> {
     if (!this.handoffWaitingMessageGenerator) {
       return "";
@@ -951,6 +952,7 @@ export class ChatService {
       const message = await this.handoffWaitingMessageGenerator.generate({
         query: input.query,
         history: session.history,
+        signal,
         workspaceContext: { workspaceId: input.workspaceId },
         usageContext: {
           accountId: input.accountId,
@@ -1078,7 +1080,7 @@ export class ChatService {
       this.checkTurnCancellation(coordination, "routing");
       if (isHumanOwned(ownership)) {
         const waitingMessage = capabilities.humanOwnedWaitingMessage === "generate"
-          ? await this.generateHandoffWaitingMessage(input, session)
+          ? await this.generateHandoffWaitingMessage(input, session, coordination.lease?.signal)
           : "";
         this.checkTurnCancellation(coordination, "rendering");
         this.beginTurnEmission(coordination);
@@ -1576,7 +1578,9 @@ export class ChatService {
           this.checkTurnCancellation(coordination, "rendering");
         }
         await releaseUsageReservation();
-        const waitingMessage = await this.generateHandoffWaitingMessage(input, session);
+        // The lease's signal stops the generation when a newer turn supersedes this one, so the
+        // newer turn, which waits for this one to finish, is never held behind a stalled provider.
+        const waitingMessage = await this.generateHandoffWaitingMessage(input, session, coordination.lease?.signal);
         this.checkTurnCancellation(coordination, "rendering");
         this.beginTurnEmission(coordination);
         for (const text of committedAnswerChunks(waitingMessage)) {

@@ -49,6 +49,7 @@ import {
 import type { PendingDecisionRecord } from "../../src/db/repositories/pendingDecisionRepository.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 import { LlmResponseLanguageDetector } from "../../src/shared/services/responseLanguageDetector.js";
+import { LlmHandoffWaitingMessageGenerator } from "../../src/shared/services/handoffWaitingMessageGenerator.js";
 import { ChatActionSuggestionRegistry } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionRegistry.js";
 import { ChatActionSuggestionService } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionService.js";
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
@@ -1720,6 +1721,71 @@ describe("chat service streaming", () => {
     expect(handoffWaitingMessageGenerator.generate).not.toHaveBeenCalled();
     expect(chatGateway.answer).not.toHaveBeenCalled();
     expect(reservation.commit).not.toHaveBeenCalled();
+  });
+
+  it("lets a newer turn cancel a waiting message whose generation stalls, instead of queueing behind it", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const { usageLimitPolicy } = createUsageLimitPolicy();
+    // The provider: the first call answers only once its signal aborts; any later call answers at once.
+    const inference = {
+      complete: vi.fn(async (request: { signal?: AbortSignal }) => {
+        if (inference.complete.mock.calls.length > 1) {
+          return { text: "A teammate is joining, please wait." };
+        }
+        return new Promise<{ text: string }>((resolve) => {
+          request.signal?.addEventListener("abort", () => resolve({ text: "Too late." }), { once: true });
+        });
+      }),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController({ interpret: vi.fn(), runInterpreted: vi.fn(), runWithoutRetrieval: vi.fn() } as never),
+      { answer: vi.fn(async () => "Normal answer."), streamAnswer: vi.fn(async function* () { yield "Normal answer."; }) },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      undefined,
+      undefined,
+      { load: vi.fn(async () => humanOwnedRecord(existingConversation.id)) },
+      new LlmHandoffWaitingMessageGenerator(inference as never),
+    );
+    const turn = async (query: string): Promise<ChatStreamEvent[]> => {
+      const events: ChatStreamEvent[] = [];
+      for await (const event of service.streamAnswer({
+        workspaceId: "workspace-1",
+        conversationId: existingConversation.id,
+        query,
+        stream: true,
+        supersession: "latest_input_wins",
+      })) {
+        events.push(event);
+      }
+      return events;
+    };
+
+    const first = turn("hello?");
+    await vi.waitFor(() => expect(inference.complete).toHaveBeenCalledTimes(1));
+    const second = turn("hello, is anyone there?");
+    const settled = await Promise.race([
+      second.then(() => "answered" as const),
+      new Promise<"blocked">((resolve) => setTimeout(() => resolve("blocked"), 500)),
+    ]);
+
+    expect(settled).toBe("answered");
+    expect((await first).at(-1)).toMatchObject({ type: "cancelled", reason: "superseded" });
+    expect((await second).at(-1)).toMatchObject({ type: "done", answer: "A teammate is joining, please wait." });
   });
 
   it("emits only a terminal ownership ack for streamed visitor turns while the conversation is human-owned", async () => {

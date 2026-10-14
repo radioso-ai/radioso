@@ -34,6 +34,7 @@ const minimalAgent = (): ConversationAgent => ({
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   sourceScope: { mode: "all" },
   surfaceSettings: {
     authenticatedChat: { enabled: true },

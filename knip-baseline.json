@@ -206,7 +206,6 @@
   "types|backend/src/modules/accessGrants/publicLaunchLifecycle.ts|PublicLaunchLifecycle",
   "types|backend/src/modules/accessGrants/services/accessGrantService.ts|AccessGrantIssueInput",
   "types|backend/src/modules/accessGrants/services/accessGrantService.ts|PublicLaunchMigrationInput",
-  "types|backend/src/modules/agentBundle/importProjection.ts|AgentConfigImportProjection",
   "types|backend/src/modules/agents/externalSkillsConfig.ts|ExternalSkillsRefResolution",
   "types|backend/src/modules/agents/externalSkillsConfig.ts|InternalAgentExternalSkillSources",
   "types|backend/src/modules/agents/externalSkillsConfig.ts|InternalMcpOauthClientConfig",

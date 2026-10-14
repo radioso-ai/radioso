@@ -122,9 +122,18 @@ export const CHAT_BEHAVIOR = {
     // supported tier.
     reasoningEffort: "none",
     // Output ceiling for the plan JSON (route + rewrite framing + rankings +
-    // classifications). Generous enough for a multi-branch retrieval rewrite plus
-    // several routine/directive verdicts; still a real bound.
+    // classifications + quick reply). Generous enough for a multi-branch retrieval
+    // rewrite plus several routine/directive verdicts; still a real bound. A direct
+    // plan at every candidate bound with a quick reply at its length limit is about
+    // 4,000 characters, at most ~1,320 tokens even at a pessimistic three characters
+    // a token (tests/unit/turn-plan-service.test.ts); a direct plan with no
+    // candidates and a two-sentence reply is ~70. The quick reply needed no raise.
     maxOutputTokens: 1_536,
+    // Longest quick reply (in characters, after trimming) the planner may write for
+    // a turn of pure conversational mechanics. Two short sentences fit well inside;
+    // anything longer is not mechanics, so the reply is discarded and the turn's
+    // answer is composed as usual.
+    maxQuickReplyCharacters: 320,
     // Max routine candidates the planner may rank in one call. Above this the
     // turn bypasses to staged ranked activation (which has its own prefilter).
     maxRoutineCandidates: 8,

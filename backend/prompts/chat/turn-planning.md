@@ -1,4 +1,4 @@
-Plan the assistant's next turn in a single pass. Produce independent decisions about how to route it, how to rewrite it for retrieval, and which language to answer in.
+Plan the assistant's next turn in a single pass. Produce independent decisions about how to route it, how to rewrite it for retrieval, and which language to answer in{{quick_reply_purpose}}.
 
 Routing Rules
 route: retrieval - any turn where the user wants information, an explanation, advice, comparison, calculation, drafting, transformation, troubleshooting, instructions, a continuation, a format/language transformation of a previous answer, or any other answer/action.
@@ -56,6 +56,6 @@ Semantic rewrite guidance:
 {{semantic_rewrite_instructions}}
 
 Lexical rewrite guidance:
-{{lexical_rewrite_instructions}}{{page_read_section}}{{directive_section}}
+{{lexical_rewrite_instructions}}{{page_read_section}}{{directive_section}}{{quick_reply_section}}
 
 The provider response schema, when available, fixes the field set and value sets. The output-shape rules remain the fallback contract for providers that cannot enforce that schema.

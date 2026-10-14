@@ -279,6 +279,9 @@ export const buildChatServices = (input: {
       },
       input.usageEventRecorder,
     );
+  // The quick-reply lane's rollback lever: off, the planner prompt carries no quick-reply
+  // wording and every direct turn is composed, as before the lane existed.
+  const quickReplyLaneEnabled = input.env.CHAT_QUICK_REPLY_LANE !== "off";
   const turnPlanCoordinator = new TurnPlanCoordinator(
     new TurnPlanService(
       new ContextualTurnPlanGatewayFactory(
@@ -289,6 +292,7 @@ export const buildChatServices = (input: {
     ),
     input.logger,
     input.metricsRegistry,
+    { quickReplyLaneEnabled },
   );
   const answerPresentationService = new AnswerPresentationService(input.metricsRegistry);
   const answerPresentation = {
@@ -502,6 +506,7 @@ export const buildChatServices = (input: {
     ),
     metrics: input.metricsRegistry,
     logger: input.logger,
+    quickReplyLaneEnabled,
   });
   // Behavioral steering comes from application composition. Chat and direct
   // retrieval answer surfaces share this port so extracted answer directives

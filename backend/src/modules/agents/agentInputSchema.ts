@@ -99,8 +99,11 @@ export const agentInputFieldSchemas = {
    *
    * `voice` is absent too: the PUT body takes it from the voice channel's own schema, and Ray has
    * no reviewed descriptor for it, so `propose_agent_setting` must not reach it by name.
+   * `mechanicsReplies` is absent too: the PUT body takes it from its own schema
+   * (`agentMechanicsRepliesSchema`), and Ray has no reviewed descriptor for it, so
+   * `propose_agent_setting` must not reach it by name.
    */
-} satisfies Record<Exclude<keyof AgentInput, "publicId" | "voice">, ZodType>;
+} satisfies Record<Exclude<keyof AgentInput, "publicId" | "voice" | "mechanicsReplies">, ZodType>;
 
 /** The reviewed-operation surface deliberately excludes channel, retrieval, model, asset, and
  * skill settings because those owners have dedicated authoring flows. */

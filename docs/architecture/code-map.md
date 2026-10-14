@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-08
+last_updated: 2026-10-13
 ---
 
 # Code Map
@@ -1182,6 +1182,9 @@ Primary internals:
 - `backend/src/modules/chat/services/clarification/` (host adapter for pending
   clarification resolution, deferred commit, and metrics)
 - `backend/src/modules/chat/services/directTurnSkill.ts`
+- `backend/src/modules/chat/services/turnPlanService.ts` and
+  `turnPlanCoordinator.ts` (fused turn planning), with `turnPlanQuickReply.ts`
+  (when the direct answer is the planner's own quick reply)
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
 - `backend/src/modules/answerCoverage/` (validated assessment producer,
   immutable assessment/reaction storage, and history/Pulse read ports)

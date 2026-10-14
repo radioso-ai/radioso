@@ -2265,6 +2265,49 @@ components:
         - bridgeLines
         - fallbackLine
       description: How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. An update replaces the block whole.
+    AgentMechanicsReplies:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          greeting:
+            type: array
+            items:
+              type: string
+              minLength: 1
+              maxLength: 200
+            maxItems: 5
+          thanks:
+            type: array
+            items:
+              type: string
+              minLength: 1
+              maxLength: 200
+            maxItems: 5
+          farewell:
+            type: array
+            items:
+              type: string
+              minLength: 1
+              maxLength: 200
+            maxItems: 5
+          acknowledgement:
+            type: array
+            items:
+              type: string
+              minLength: 1
+              maxLength: 200
+            maxItems: 5
+        required:
+          - greeting
+          - thanks
+          - farewell
+          - acknowledgement
+      description: What the agent says, word for word, to a greeting, thanks, farewell, or acknowledgement, keyed by language tag (at most 10). Each locale entry holds every mechanic, each with at most 5 lines of 1 to 200 characters. When a turn is one of these mechanics and the agent has a line for it in the turn's language, the reply is an authored line, rotated per conversation. An update replaces the block whole.
+      propertyNames:
+        type: string
+        pattern: ^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$
+      maxProperties: 10
     ConversationAgent:
       allOf:
         - $ref: "#/components/schemas/Agent"
@@ -2355,6 +2398,8 @@ components:
               type: boolean
             voice:
               $ref: "#/components/schemas/AgentVoiceSettings"
+            mechanicsReplies:
+              $ref: "#/components/schemas/AgentMechanicsReplies"
             assistantBootstrapActive:
               type: boolean
             publicId:
@@ -2416,6 +2461,7 @@ components:
             - assistantDefaultLocale
             - proactiveGreetingEnabled
             - voice
+            - mechanicsReplies
             - assistantBootstrapActive
             - publicId
             - publicDescription
@@ -2520,6 +2566,8 @@ components:
           type: boolean
         voice:
           $ref: "#/components/schemas/AgentVoiceSettings"
+        mechanicsReplies:
+          $ref: "#/components/schemas/AgentMechanicsReplies"
         publicDescription:
           type: string
           maxLength: 500
@@ -6027,6 +6075,10 @@ components:
             - "null"
         proactiveGreetingEnabled:
           type: boolean
+        mechanicsReplies:
+          allOf:
+            - $ref: "#/components/schemas/AgentMechanicsReplies"
+            - description: Absent from bundles exported before the field existed; an import reads that as nothing authored.
         surfaceSettings:
           type: object
           properties:
@@ -6828,6 +6880,10 @@ components:
             - "null"
         proactiveGreetingEnabled:
           type: boolean
+        mechanicsReplies:
+          allOf:
+            - $ref: "#/components/schemas/AgentMechanicsReplies"
+            - description: Absent from bundles exported before the field existed; an import reads that as nothing authored.
         surfaceSettings:
           type: object
           properties:

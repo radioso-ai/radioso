@@ -175,6 +175,7 @@ const agent = (): ConversationAgent => ({
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   chatModelOverride: {
     provider: "openai",
     model: "gpt-5-mini",
@@ -794,6 +795,40 @@ describe("WorkbenchReplayRunner", () => {
     expect(capturedRequests[0]?.responseLanguage).toBe("English");
     // The trace keeps the unchanged schedule shape.
     expect(result.turnTrace?.spine.stages.map((stage) => stage.kind)).toContain("turn_interpretation");
+  });
+
+  it("bypasses the planner on a replay seeded with a pending clarification, as live chat does", async () => {
+    const plannerComplete = vi.fn(async () => ({ text: "{}" }));
+    const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: { classify },
+      turnPlanCoordinator: new TurnPlanCoordinator(new TurnPlanService({ create: async () => ({ complete: plannerComplete }) })),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "ok",
+      history: [],
+      pendingClarificationStartState: {
+        source: "retrieval_sense",
+        candidates: [
+          { id: "pro", label: "Pro plan", confidence: 0.5, payload: {} },
+          { id: "team", label: "Team plan", confidence: 0.5, payload: {} },
+        ],
+        status: "pending",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    });
+
+    expect(plannerComplete).not.toHaveBeenCalled();
+    expect(classify).toHaveBeenCalledTimes(1);
   });
 
   it("restores staged response-language detection when the planner output is malformed", async () => {

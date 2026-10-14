@@ -36,6 +36,7 @@ const baseAgent = (): ConversationAgent => ({
   greetingInstruction: "Welcome the visitor.",
   assistantDefaultLocale: "en-US",
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   sourceScope: { mode: "all" },
   skillSettings: {},
   chatModelOverride: null,

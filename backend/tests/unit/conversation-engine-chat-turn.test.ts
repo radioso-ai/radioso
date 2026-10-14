@@ -122,6 +122,7 @@ const agent = (): AgentRecord => ({
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   chatModelOverride: null,
   surfaceSettings: {
     authenticatedChat: { enabled: true },

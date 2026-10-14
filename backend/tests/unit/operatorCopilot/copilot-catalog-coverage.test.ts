@@ -83,6 +83,12 @@ describe("operator copilot catalog coverage", () => {
       reason: expect.stringContaining("read-only Activity view control"),
     });
   });
+  it("keeps the voice completions adapter outside Ray's operation catalog until voice settings exist", () => {
+    expect(internalRuntimeCoverageExclusions.voiceCompletionsAdapter).toMatchObject({
+      disposition: "deferred",
+      reason: expect.stringContaining("vendor-facing wire adapter"),
+    });
+  });
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
     // legitimate work or forces a permanent -> covered flip. Both have happened. Pin the grounds

@@ -206,8 +206,11 @@ helpers and the shared chat message limit from `app/http`
   anything by a newer turn that is also `latest_input_wins`
   (`ChatTurnSupersededError.replacedByNewerInput`) has its user message
   deleted by the chat turn lifecycle (`recordSupersession` →
-  `MessageRepositoryPort.deleteUserMessage`); the cancelled `chat.answer`
-  audit event keeps `userMessageId` and adds `userMessageDiscarded: true`. Any
+  `AssistantTurnPersistencePort.discardReplacedUserMessage`); the cancelled
+  `chat.answer` audit event keeps `userMessageId` and adds
+  `userMessageDiscarded: true`. The deletion and the event commit in one
+  transaction; when it fails, the message stays and the event is recorded
+  without the flag, so no message is lost without its record. Any
   other newer turn, such as an approval resuming a routine, only cancels it,
   and the message stays. The message is deleted rather than written late
   because model-call usage events, coverage assessments and the facet job

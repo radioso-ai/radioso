@@ -273,6 +273,17 @@ export interface AssistantTurnPersistencePort {
     /** Runs as the transaction's last step; a throw rolls the whole turn back. */
     commitFence?: () => void;
   }): Promise<AssistantTurnPersistenceReceipt>;
+  /**
+   * Deletes the user message of a turn a newer input replaced and records `auditEvent`, its
+   * cancelled `chat.answer` event, in one transaction. Resolves false, recording nothing, when the
+   * conversation holds no such user message.
+   */
+  discardReplacedUserMessage?(input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+    auditEvent: AuditEventInput;
+  }): Promise<boolean>;
 }
 
 interface PendingDecisionWriterPort {
@@ -1153,9 +1164,7 @@ export class ChatTurnLifecycle {
     if (session && existingAssistantMessageId) {
       await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
     }
-    const userMessageDiscarded = await this.discardReplacedUserMessage(input, session, existingAssistantMessageId, supersededBy);
-
-    await this.auditService.record({
+    const cancelledEvent = (userMessageDiscarded: boolean): AuditEventInput => ({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       eventType: "chat.answer",
@@ -1173,35 +1182,49 @@ export class ChatTurnLifecycle {
         ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
       },
     });
+    const replaced = supersededBy.replacedByNewerInput && !supersededBy.afterEmission && !existingAssistantMessageId;
+    const discard = replaced && session
+      ? await this.discardReplacedUserMessage(input, session, cancelledEvent(true))
+      : { userMessageDiscarded: false, recorded: false };
+    if (!discard.recorded) {
+      await this.auditService.record(cancelledEvent(discard.userMessageDiscarded));
+    }
   }
 
   /**
    * Deletes the user message of a turn a newer input replaced before it emitted anything; a
    * turn any other newer turn cancelled keeps it. Usage events the turn recorded keep its spend
-   * with the message link cleared. A failed delete keeps the message.
+   * with the message link cleared. Through the transactional persistence port the deletion and
+   * `auditEvent` commit together, so the message never goes without the record that says so; the
+   * fallback path (tests, non-DB hosts) deletes first and leaves the event to the caller. A failed
+   * discard keeps the message.
    */
   private async discardReplacedUserMessage(
     input: { workspaceId: string },
-    session: PreparedSession | null,
-    existingAssistantMessageId: string | undefined,
-    supersededBy: ChatTurnSupersededError,
-  ): Promise<boolean> {
-    if (!supersededBy.replacedByNewerInput || supersededBy.afterEmission || !session || existingAssistantMessageId) {
-      return false;
-    }
+    session: PreparedSession,
+    auditEvent: AuditEventInput,
+  ): Promise<{ userMessageDiscarded: boolean; recorded: boolean }> {
+    const target = {
+      workspaceId: input.workspaceId,
+      conversationId: session.conversation.id,
+      messageId: session.userMessage.id,
+    };
     try {
-      return await this.messageRepository.deleteUserMessage({
-        workspaceId: input.workspaceId,
-        conversationId: session.conversation.id,
-        messageId: session.userMessage.id,
-      });
+      if (this.assistantTurnPersistence?.discardReplacedUserMessage) {
+        const discarded = await this.assistantTurnPersistence.discardReplacedUserMessage({ ...target, auditEvent });
+        if (discarded) {
+          this.auditService.logRecorded?.(auditEvent);
+        }
+        return { userMessageDiscarded: discarded, recorded: discarded };
+      }
+      return { userMessageDiscarded: await this.messageRepository.deleteUserMessage(target), recorded: false };
     } catch (error) {
       this.logger?.warn({
         workspaceId: input.workspaceId,
         conversationId: session.conversation.id,
         errorType: error instanceof Error ? error.name : typeof error,
       }, "Superseded user message could not be discarded");
-      return false;
+      return { userMessageDiscarded: false, recorded: false };
     }
   }
 

@@ -244,6 +244,8 @@ helpers and the shared chat message limit from `app/http`
   `VOICE_BEHAVIOR.replayWindowMs` (30 s): an identical utterance (whitespace
   aside) for the session, with no chat turn running, is answered with the
   stored answer as speech, with no chat turn, no bridge and no user message.
+  The replayed turn sends its outcome once its `voice.reply_replayed` note is
+  written; a note that fails logs a warn and the turn still ends.
   While no answer is stored, the identical utterance runs as a new turn and
   supersedes the running one. In-process only.
 - **Interrupted replies.** The `elevenlabs` dialect reads an assistant message
@@ -253,8 +255,12 @@ helpers and the shared chat message limit from `app/http`
   out holds words, not only punctuation, the service logs
   `Voice reply was interrupted` and records `voice.reply_interrupted` against
   the stored reply with `heardCharacterCount` (reply characters only) and
-  `spokenCharacterCount`, once per reply. The stored reply stays the full text;
-  no message column records the cut.
+  `spokenCharacterCount`, once per reply. The note is written off the turn's
+  path, and the session counts it recorded only once the write succeeds
+  (`VoiceSessionMemory.reserveInterruption`): a failed write is retried on the
+  next report of the same reply, and the log line and the metric follow the
+  recorded note. The stored reply stays the full text; no message column
+  records the cut.
 - **ElevenLabs session key.** ElevenLabs sends no conversation id; the page
   that starts the session mints `session_key` and passes it as the custom LLM
   extra body, which arrives as `elevenlabs_extra_body.session_key`. Dynamic
@@ -272,8 +278,9 @@ reached the turn limit` at warn when the limit fired, else `Voice turn finished`
 (`completed`, `replayed`, `superseded` with `supersededAt`: `before_speech` or
 `after_speech`, `abandoned`), or `Voice turn failed` at warn with
 `errorClass`. `Voice reply was interrupted` at info names the conversation,
-the reply's message id and the two character counts; a note that fails to
-record logs `Voice turn note could not be recorded` at warn. A warn when a concurrent first turn bound the session to another
+the reply's message id and the two character counts, once the note is
+recorded; a note that fails to record logs `Voice turn note could not be
+recorded` at warn. A warn when a concurrent first turn bound the session to another
 conversation, and a warn naming only `dialect` and `agentId` when a request
 carries no usable session key (a 400). A stream that fails after its first
 frame ends with one generic OpenAI error frame. Never the utterance, the reply

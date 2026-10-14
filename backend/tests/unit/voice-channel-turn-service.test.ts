@@ -1049,6 +1049,57 @@ describe("VoiceTurnService", () => {
         expect(chat.requests).toHaveLength(1);
       });
 
+      const hungUpAnswer = async (turns: VoiceTurnService) => {
+        const hangUp = new AbortController();
+        const first = start(turns, input({ utterance }), hangUp.signal);
+        await vi.advanceTimersByTimeAsync(100);
+        hangUp.abort();
+        await vi.runAllTimersAsync();
+        await first;
+      };
+
+      /** The replayed turn's events up to its last speech piece, and its outcome still to come. */
+      const replayUntilLastSpeech = async (turns: VoiceTurnService) => {
+        const iterator = turns.runTurn(input({ utterance }), new AbortController().signal)[Symbol.asyncIterator]();
+        for (let step = await iterator.next(); !step.done; step = await iterator.next()) {
+          if (step.value.type === "speech" && step.value.last) break;
+        }
+        let settled = false;
+        const outcome = iterator.next().finally(() => { settled = true; });
+        await vi.advanceTimersByTimeAsync(0);
+        return { outcome, settled: () => settled };
+      };
+
+      it("ends a replayed turn only once its note is recorded", async () => {
+        const notes = fakeNotes();
+        let recordNote!: () => void;
+        notes.replyReplayed.mockReturnValueOnce(new Promise<void>((resolve) => { recordNote = resolve; }));
+        const turns = service(supersedingChat([answered("We open at nine.")]), { notes });
+        await hungUpAnswer(turns);
+
+        const replay = await replayUntilLastSpeech(turns);
+
+        expect(replay.settled()).toBe(false);
+        recordNote();
+        await expect(replay.outcome).resolves.toEqual({ done: false, value: { type: "outcome", outcome: { kind: "continue" } } });
+      });
+
+      it("still ends a replayed turn, with a warning, when its note cannot be recorded", async () => {
+        const notes = fakeNotes();
+        notes.replyReplayed.mockRejectedValueOnce(new Error("audit store unavailable"));
+        const logger = fakeLogger();
+        const turns = service(supersedingChat([answered("We open at nine.")]), { notes, logger });
+        await hungUpAnswer(turns);
+
+        const replay = await replayUntilLastSpeech(turns);
+
+        await expect(replay.outcome).resolves.toEqual({ done: false, value: { type: "outcome", outcome: { kind: "continue" } } });
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({ conversationId, errorClass: "Error" }),
+          "Voice turn note could not be recorded",
+        );
+      });
+
       it("runs a new turn when the earlier reply reached the runtime whole", async () => {
         const chat = supersedingChat([answered("We open at nine."), answered("We open at nine, every day.")]);
         const turns = service(chat);
@@ -1141,6 +1192,37 @@ describe("VoiceTurnService", () => {
           "Voice reply was interrupted",
         );
         expect(JSON.stringify(logger.info.mock.calls)).not.toMatch(/nine|Sundays/u);
+      });
+
+      it("records the interruption on a later report when the first note could not be recorded", async () => {
+        const heardUntil = "We open at nine.  \u200BSee";
+        const chat = supersedingChat([
+          answered(reply),
+          // Replaced before it answers, so the session's last exchange stays the interrupted reply.
+          [{ atMs: 0, event: { type: "conversation", conversationId } }, { atMs: 3_000, event: { type: "chunk", text: "Stale." } }],
+          answered("Yes."),
+        ]);
+        const notes = fakeNotes();
+        notes.replyInterrupted.mockRejectedValueOnce(new Error("audit store unavailable"));
+        const metrics = fakeMetrics();
+        const logger = fakeLogger();
+        const turns = service(chat, { notes, metrics, logger });
+
+        await answerOnce(turns);
+        const replaced = start(turns, input({ utterance: "Sorry, on Sundays?", heardUntil }));
+        await vi.advanceTimersByTimeAsync(500);
+        const next = start(turns, input({ utterance: "Sorry, are you open on Sundays?", heardUntil }));
+        await vi.runAllTimersAsync();
+        await Promise.all([replaced, next]);
+
+        expect(notes.replyInterrupted).toHaveBeenCalledTimes(2);
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({ conversationId, errorClass: "Error" }),
+          "Voice turn note could not be recorded",
+        );
+        // Counted and logged once, for the note that was recorded.
+        expect(counted(metrics, "voice_reply_interrupted_total")).toEqual([{}]);
+        expect(logger.info.mock.calls.filter(([, message]) => message === "Voice reply was interrupted")).toHaveLength(1);
       });
 
       it("counts only the reply's characters when a bridge line was spoken before it", async () => {

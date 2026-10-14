@@ -290,7 +290,10 @@ imports from `services/`.
 - Turn interruption: `services/conversationTurnRegistry.ts` coordinates one
   in-flight turn per conversation. `ChatService` cancels a pre-emission turn,
   waits for its cleanup, and latches immediately before assistant persistence or
-  the first assistant chunk. The default registry is process-local; strict
+  the first assistant chunk. The turn's signal reaches the skill renderer on the
+  whole (non-streamed) path as on the streamed one, so a superseded turn's pending
+  model calls, a composed decline included, are cancelled rather than waited out.
+  The default registry is process-local; strict
   multi-instance behavior requires conversation-affine routing. A superseded turn
   is still accountable: `chatTurnLifecycle.recordSupersession` records a
   `chat.answer` audit event with `eventStatus: "cancelled"` (never `"failure"` —

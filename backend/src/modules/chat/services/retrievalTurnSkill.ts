@@ -592,6 +592,7 @@ export class RetrievalAnswerComposer {
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
     coverageVerdict?: RetrievalCoverageVerdictSink,
+    signal?: AbortSignal,
   ): Promise<ChatPresentedAnswer> {
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
@@ -618,7 +619,7 @@ export class RetrievalAnswerComposer {
         session,
         query,
         accountId,
-        undefined,
+        signal,
         zeroEvidenceAssessment,
       );
       if (fallback) {
@@ -640,6 +641,7 @@ export class RetrievalAnswerComposer {
           pendingRoutineStep: declinePendingRoutineStep(session),
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "grounded_miss"),
+          ...(signal ? { signal } : {}),
         });
         answer = decline.text;
         declineReason = decline.declineReason;
@@ -651,6 +653,7 @@ export class RetrievalAnswerComposer {
         this.support.buildPromptWithContext(session.retrieval.prompt, session),
         accountId,
         "grounded",
+        signal,
       );
       const envelopeAssessment = this.assessmentFromEnvelope(envelope);
       const headVerdict = await coverageVerdict?.report({ assessment: envelopeAssessment });
@@ -676,6 +679,7 @@ export class RetrievalAnswerComposer {
           accountId,
           "blank_decline",
           envelopeAssessment,
+          signal,
         );
         declineReason = blankDeclineReason(blankDecline, decline);
         this.recordBlankDecline(blankDecline, declineReason, false);
@@ -689,6 +693,7 @@ export class RetrievalAnswerComposer {
           accountId,
           "unsupported_answer",
           envelopeAssessment,
+          signal,
         );
         this.recordUnsupportedAnswerDecline(decline.declineReason, false);
         answer = decline.text;
@@ -1098,7 +1103,14 @@ export const createRetrievalTurnSkill = (composer: RetrievalAnswerComposer): Tur
   renderer: {
     supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
     render: (_outcome, ctx: TurnRenderContext) =>
-      composer.composeAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId, ctx.coverageVerdict),
+      composer.composeAnswer(
+        ctx.session,
+        ctx.query,
+        ctx.userExpectedLocale,
+        ctx.accountId,
+        ctx.coverageVerdict,
+        ctx.signal,
+      ),
     stream: (_outcome, ctx: TurnRenderContext) =>
       composer.streamAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId, ctx.signal, ctx.coverageVerdict),
   },

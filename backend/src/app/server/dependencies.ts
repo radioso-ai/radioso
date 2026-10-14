@@ -1313,6 +1313,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceTurns: createVoiceChannelComposition({
       db: infrastructure.database.kysely,
       assistantChatService: chat.assistantChatService,
+      agentRepository: repositories.agentRepository,
+      routineStates: new RoutineStateRepository(infrastructure.database.kysely),
+      metricsRegistry: infrastructure.metricsRegistry,
       logger,
     }),
     assistantHistoryService: chat.assistantHistoryService,

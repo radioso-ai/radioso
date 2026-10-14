@@ -12,10 +12,11 @@ import type {
 } from "../../src/modules/agentBundle/ports.js";
 import type { RoutineDefinition } from "../../src/modules/routines/public.js";
 import { notifyCapability } from "../../src/modules/skills/capabilities/notify.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const baseAgent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent-1",
   workspaceId: "workspace-1",
   name: "Support Bot",

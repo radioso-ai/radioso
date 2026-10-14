@@ -96,7 +96,7 @@ Implemented as wrappers over `AsyncIterable<ChatStreamEvent>`, like the existing
 | Rule | Behaviour | Source of truth |
 |---|---|---|
 | Sentence pieces | `chunk` text is re-cut at sentence boundaries into `speech` events; the final piece carries `last: true` | composition constant |
-| Bridge | no `speech` within 900 ms → one `bridge` event from the agent's authored lines, style by routine state (acknowledgement inside a routine, check outside), locale from the input or the agent default | agent settings `voice.bridgeLines` |
+| Bridge | one `bridge` event from the agent's authored lines when the turn starts searching, 400 ms after it starts composing with no speech yet, or after 1.8 s with no phase at all (so a planner quick reply never gets a bridge); style by routine state (acknowledgement inside a routine, check outside), locale from the input or the agent default | agent settings `voice.bridgeLines`; composition constants |
 | Turn limit | no `speech` within 8 s → `speech` with the authored fallback line, then `outcome: callback_requested` if the agent has a callback path, else `continue` | agent settings `voice.fallbackLine`; composition constant |
 | Interruption | `interruptsPrevious` (a new utterance for a session whose turn is still in flight, or an explicit vendor signal) or `signal` aborted → cancel the in-flight turn even after emission started; emit `interrupted` with `heardUntil` when the adapter can derive it (vendor signal, or the truncated reply in replayed history), else the text delivered so far | turn lease cancellation mode (PR 4) |
 | Governance gates | unchanged; the coverage head and grounding gate run before any `speech` | chat service |
@@ -144,7 +144,7 @@ Bridge delay and turn limit are composition constants, not settings. The block i
 
 | Vendor | Adapter | Session key | Interruption signal | Transfer | Confirm in vendor test |
 |---|---|---|---|---|---|
-| ElevenLabs Agents | `openai-completions`, dialect `elevenlabs` | `elevenlabs_extra_body.session_key`, minted by the client at session start | no HTTP abort; the next request for the same session arrives while the previous turn may still stream, and its replayed history carries the interrupted reply truncated to what was heard (source of `heardUntil`) | `transfer_to_number` tool call | confirmed 2026-10-12 in text mode; audio floor pending |
+| ElevenLabs Agents | `openai-completions`, dialect `elevenlabs` (sends a space plus a zero-width space after each sentence piece so speech starts without waiting for the next chunk) | `elevenlabs_extra_body.session_key`, minted by the client at session start | no HTTP abort; the next request for the same session arrives while the previous turn may still stream, and its replayed history carries the interrupted reply truncated to what was heard (source of `heardUntil`) | `transfer_to_number` tool call | confirmed 2026-10-12 in text mode; audio floor pending |
 | Vapi | `openai-completions`, dialect `vapi` | call object in the request body | HTTP abort | vendor transfer tool | body field names, tool names |
 | LiveKit Agents, Pipecat, Deepgram Voice Agent | `openai-completions`, dialect `generic` | header set by our own runtime config | HTTP abort | function we define | none; we control both ends |
 | Twilio ConversationRelay | `twilio-conversation-relay` (WebSocket) | `setup` message call sid | `interrupt` message with `utteranceUntilInterrupt` → `heardUntil` | end session with handoff data, then TwiML dial | message schema versions |

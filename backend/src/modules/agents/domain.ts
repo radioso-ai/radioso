@@ -12,6 +12,11 @@ import type { AgentSurfaceExtensionRegistry } from "./surfaceExtensions.js";
 import type { AgentSkillSettingsRegistry } from "./skillSettings.js";
 import type { AuthoredDirective } from "./authoredDirectives.js";
 import type { AgentSkillSpine } from "../agentSkills/public.js";
+import {
+  agentVoiceSettingsSchema,
+  defaultAgentVoiceSettings,
+  type AgentVoiceSettings,
+} from "./voiceSettings.js";
 
 const AGENT_PROVIDER_NAMES: readonly LlmProviderName[] = [
   "openai",
@@ -276,6 +281,8 @@ export const unpublishedAgentPublicIdentity = (): AgentPublicIdentity => ({
 });
 
 export interface ConversationAgent extends Agent, AgentBehaviorSettings, AgentGreetingSettings, AgentPublicIdentity {
+  /** How the agent sounds on the voice channel. Live, like the greeting settings: not part of a revision. */
+  voice: AgentVoiceSettings;
   sourceScope: AgentSourceScope;
   surfaceSettings: ConversationAgentSurfaceSettings;
   skillSettings: Record<string, unknown>;
@@ -308,6 +315,7 @@ export type AgentInput = Partial<
     | keyof AgentBehaviorSettings
     | keyof AgentGreetingSettings
     | keyof AgentPublicIdentity
+    | "voice"
     | "sourceScope"
     | "skillSettings"
     | "chatModelOverride"
@@ -401,6 +409,18 @@ const normalizeContactWebhook = (value: unknown): AgentContactWebhook | null => 
     throw badRequest("contactRequestDelivery.webhook.url must use http or https");
   }
   return { url };
+};
+
+/** The block is replaced whole; an absent one reads as voice off. */
+const normalizeVoiceSettings = (value: unknown): AgentVoiceSettings => {
+  if (value === undefined || value === null) {
+    return defaultAgentVoiceSettings();
+  }
+  const parsed = agentVoiceSettingsSchema.safeParse(value);
+  if (!parsed.success) {
+    throw badRequest("voice settings are invalid", parsed.error.flatten());
+  }
+  return parsed.data;
 };
 
 const normalizeContactRequestDelivery = (value: unknown): AgentContactRequestDelivery => {
@@ -869,6 +889,7 @@ export const validateAgentInput = (
     greetingInstruction: normalizeText(input.greetingInstruction, "greetingInstruction", 200),
     assistantDefaultLocale: normalizeLocaleTag(input.assistantDefaultLocale),
     proactiveGreetingEnabled: Boolean(input.proactiveGreetingEnabled),
+    voice: normalizeVoiceSettings(input.voice),
     chatModelOverride: normalizeChatModelOverride(input.chatModelOverride),
     surfaceSettings: {
       authenticatedChat: {

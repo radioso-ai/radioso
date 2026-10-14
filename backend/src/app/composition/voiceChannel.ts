@@ -5,22 +5,39 @@ import {
   type VoiceChatTurnRequest,
   type VoiceTurnPort,
 } from "../../modules/voiceChannel/public.js";
+import type { AgentRecord } from "../../modules/agents/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 /**
- * The voice channel's turn port: sessions over Postgres, and the same streaming chat turn the REST
- * agent channel runs. Vendor adapters mount over this port in the HTTP layer.
+ * The voice channel's turn port: sessions over Postgres, the same streaming chat turn the REST
+ * agent channel runs, and the agent's voice settings and routine state for the turn policy.
+ * Vendor adapters mount over this port in the HTTP layer.
  */
 export const createVoiceChannelComposition = (deps: {
   db: Db;
   assistantChatService: {
     streamAnswer(input: VoiceChatTurnRequest & { stream: true }): AsyncIterable<ChatStreamEvent>;
   };
+  agentRepository: {
+    findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<Pick<AgentRecord, "voice" | "assistantDefaultLocale"> | null>;
+  };
+  routineStates: { loadActive(input: { sessionId: string }): Promise<unknown> };
+  metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
 }): VoiceTurnPort =>
   new VoiceTurnService({
     sessions: new VoiceSessionRepository(deps.db),
     chat: { streamTurn: (request) => deps.assistantChatService.streamAnswer({ ...request, stream: true }) },
+    agents: {
+      findVoiceProfile: async ({ workspaceId, agentId }) => {
+        const agent = await deps.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+        return agent ? { voice: agent.voice, defaultLocale: agent.assistantDefaultLocale } : null;
+      },
+    },
+    // A conversation's routine state is keyed by the conversation id.
+    routines: { isRoutineActive: async (conversationId) => (await deps.routineStates.loadActive({ sessionId: conversationId })) !== null },
+    metrics: deps.metricsRegistry,
     logger: deps.logger,
   });

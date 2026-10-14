@@ -256,6 +256,31 @@ describeIntegration("AgentRepository (Postgres)", () => {
     expect(reread?.sourceScope).toEqual({ mode: "all" });
   });
 
+  it("stores the voice block with the agent and keeps it through updates that omit it", async () => {
+    const voice = {
+      enabled: true,
+      bridgeLines: { en: { acknowledge: ["Got it."], check: ["One moment."] } },
+      fallbackLine: { en: "Sorry, could you ask me again?" },
+    };
+    const created = await repository.create(workspaceId, { name: "Voice", voice });
+
+    // A dashboard save names its own fields; the stored behavior settings are rewritten whole.
+    await repository.update(created.id, workspaceId, {
+      name: "Voice renamed",
+      greetingInstruction: "Greet briefly.",
+      citationDisplayEnabled: false,
+      surfaceSettings: { anonymousChat: { enabled: false } },
+    });
+    await repository.update(created.id, workspaceId, { customInstruction: "Answer briefly." });
+    const reread = await repository.findByIdAndWorkspaceId(created.id, workspaceId);
+
+    expect(reread?.voice).toEqual(voice);
+    expect(reread?.name).toBe("Voice renamed");
+
+    const switchedOff = await repository.update(created.id, workspaceId, { voice: { ...voice, enabled: false } });
+    expect(switchedOff.voice).toEqual({ ...voice, enabled: false });
+  });
+
   it("does not rewrite source links when an unrelated patch follows source deletion", async () => {
     const deletedSourceId = randomUUID();
     await database.query(
@@ -468,6 +493,17 @@ describeIntegration("AgentRepository (Postgres)", () => {
       recipientEmails: [],
       webhook: null,
     });
+  });
+
+  it("reads voice as off when stored behavior predates the setting or holds an unreadable block", async () => {
+    const predates = await repository.findByIdAndWorkspaceId(await seedAgentRow(), workspaceId);
+    const unreadable = await repository.findByIdAndWorkspaceId(
+      await seedAgentRow({ behaviorSettings: { voice: { enabled: "yes", bridgeLines: [] } } }),
+      workspaceId,
+    );
+
+    expect(predates?.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {} });
+    expect(unreadable?.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {} });
   });
 
   it("parses retrieval-miss handoff behavior from behavior settings", async () => {

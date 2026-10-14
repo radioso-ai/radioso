@@ -1,3 +1,5 @@
+import { withoutAssertionMarkers } from "./speechText.js";
+
 /**
  * A sentence ends at a Unicode sentence terminator (`.`, `?`, `؟`, `।`, …) or an ellipsis, with any
  * closing quotes or brackets, once whitespace proves it ended (so "3.50" and an unfinished "nine."
@@ -13,8 +15,13 @@ interface SentenceSplit {
   remainder: string;
 }
 
-/** Cuts the complete sentences off the front of `buffer`; joined back together they are `buffer`. */
-export const splitCompleteSentences = (buffer: string): SentenceSplit => {
+/**
+ * Cuts the complete sentences off the front of `buffer` once its assertion markers are removed;
+ * joined back together they are that cleaned buffer. A marker still open at the end of the buffer
+ * stays in the remainder until the chunk that closes it arrives.
+ */
+export const splitCompleteSentences = (rawBuffer: string): SentenceSplit => {
+  const buffer = withoutAssertionMarkers(rawBuffer);
   const sentences: string[] = [];
   let start = 0;
   for (const match of buffer.matchAll(SENTENCE_BOUNDARY)) {

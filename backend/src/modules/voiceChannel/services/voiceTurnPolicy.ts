@@ -1,0 +1,169 @@
+import type { VoiceBridgeStyle } from "../../agents/public.js";
+import type { VoiceTurnEvent } from "../domain.js";
+import type { VoiceTurnLines } from "./voiceLines.js";
+
+/** What the policy reports as it acts, for metrics and the turn's log record. Never the lines' text. */
+export interface VoiceTurnPolicyObserver {
+  /** The bridge delay passed with nothing spoken; `spoken` is false when the agent has no line for the turn. */
+  bridgeDue(style: VoiceBridgeStyle, spoken: boolean): void;
+  /** The turn limit passed with nothing spoken; `spoken` is false when the agent has no fallback line. */
+  turnLimitReached(spoken: boolean): void;
+  /** The first speech left the policy, `elapsedMs` after the turn started. */
+  firstSpeech(elapsedMs: number, bridged: boolean): void;
+}
+
+/** Where the chat turn is: every turn starts interpreting, then searches (retrieval) or composes. */
+export type VoiceTurnPhase = "interpreting" | "searching" | "composing";
+
+/**
+ * What the policy reads: the turn's events, plus phase markers the turn service derives from the
+ * chat stream. Markers are internal to the voice services; the policy never passes one on.
+ */
+export type VoiceReplyEvent = VoiceTurnEvent | { type: "phase"; phase: VoiceTurnPhase };
+
+export interface VoiceTurnPolicy extends VoiceTurnLines {
+  /** When the turn started on `now`'s clock; the fallback bridge and the limit count from here. */
+  startedAt: number;
+  now: () => number;
+  /** Bridge when the turn has neither searched nor composed this long into it. */
+  bridgeAfterMs: number;
+  /** Bridge when this long has passed since the turn started composing and nothing was spoken. */
+  bridgeAfterComposingIdleMs: number;
+  turnLimitMs: number;
+  observer: VoiceTurnPolicyObserver;
+}
+
+type Deadline = "bridge" | "limit";
+
+type Pull =
+  | { kind: "event"; step: IteratorResult<VoiceReplyEvent> }
+  | { kind: "deadline"; deadline: Deadline };
+
+const waitFor = (pull: Promise<IteratorResult<VoiceReplyEvent>>, deadline: Deadline, delayMs: number): Promise<Pull> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const elapsed = new Promise<Pull>((resolve) => {
+    timer = setTimeout(() => resolve({ kind: "deadline", deadline }), Math.max(0, delayMs));
+  });
+  return Promise.race([pull.then((step): Pull => ({ kind: "event", step })), elapsed])
+    .finally(() => clearTimeout(timer));
+};
+
+/**
+ * The vendor-neutral turn policy over a voice turn's events. Until the first speech it speaks the
+ * bridge line at most once, decided by the turn's phase: at once when the turn starts searching,
+ * `bridgeAfterComposingIdleMs` after it starts composing without speech, or `bridgeAfterMs` into a
+ * turn that has done neither. Past `turnLimitMs` it speaks the fallback line and closes the turn
+ * with `continue`. An outcome disarms both. After the limit it forwards nothing more but keeps
+ * draining the reply, so the chat turn still finishes and is stored as usual — the stored answer
+ * is then not what the caller heard. Phase markers are dropped; everything else passes through.
+ */
+export async function* applyVoiceTurnPolicy(
+  events: AsyncIterable<VoiceReplyEvent>,
+  policy: VoiceTurnPolicy,
+): AsyncGenerator<VoiceTurnEvent> {
+  const iterator = events[Symbol.asyncIterator]();
+  const elapsed = () => policy.now() - policy.startedAt;
+  let spoken = false;
+  // A turn superseded before it spoke ends on an outcome alone; nothing may follow its outcome.
+  let ended = false;
+  let bridged = false;
+  let bridgeHandled = false;
+  let limitHandled = false;
+  let finished = false;
+  /** When the turn started composing, in ms since its start; null until it does. */
+  let composingAt: number | null = null;
+  let pending: Promise<IteratorResult<VoiceReplyEvent>> | undefined;
+
+  const bridgeAt = (): number => (composingAt === null ? policy.bridgeAfterMs : composingAt + policy.bridgeAfterComposingIdleMs);
+
+  /** The earlier of the armed deadlines. */
+  const nextDeadline = (): { deadline: Deadline; delayMs: number } | null => {
+    if (spoken || ended) return null;
+    const armed: Array<{ deadline: Deadline; atMs: number }> = [
+      ...(bridgeHandled ? [] : [{ deadline: "bridge" as const, atMs: bridgeAt() }]),
+      ...(limitHandled ? [] : [{ deadline: "limit" as const, atMs: policy.turnLimitMs }]),
+    ];
+    const first = armed.reduce<{ deadline: Deadline; atMs: number } | null>(
+      (earliest, candidate) => (earliest === null || candidate.atMs < earliest.atMs ? candidate : earliest),
+      null,
+    );
+    return first ? { deadline: first.deadline, delayMs: first.atMs - elapsed() } : null;
+  };
+
+  /** Settles the bridge once; the line when the agent has one for the turn. */
+  const bridgeNow = (): VoiceTurnEvent | null => {
+    bridgeHandled = true;
+    policy.observer.bridgeDue(policy.bridge.style, policy.bridge.text !== null);
+    if (policy.bridge.text === null) return null;
+    bridged = true;
+    return { type: "bridge", text: policy.bridge.text };
+  };
+
+  try {
+    for (;;) {
+      pending ??= iterator.next();
+      const due = nextDeadline();
+      const pull: Pull = due ? await waitFor(pending, due.deadline, due.delayMs) : { kind: "event", step: await pending };
+
+      if (pull.kind === "deadline" && pull.deadline === "bridge") {
+        const bridge = bridgeNow();
+        if (bridge) yield bridge;
+        continue;
+      }
+
+      if (pull.kind === "deadline") {
+        limitHandled = true;
+        policy.observer.turnLimitReached(policy.fallbackLine !== null);
+        if (policy.fallbackLine === null) continue;
+        spoken = true;
+        policy.observer.firstSpeech(elapsed(), bridged);
+        yield { type: "speech", text: policy.fallbackLine, last: true };
+        yield { type: "outcome", outcome: { kind: "continue" } };
+        for (let step = await pending; !step.done; step = await iterator.next()) {
+          // Drained unheard: the reply finishes and persists, but the caller has moved on.
+        }
+        finished = true;
+        return;
+      }
+
+      pending = undefined;
+      if (pull.step.done) {
+        finished = true;
+        return;
+      }
+      const event = pull.step.value;
+      if (event.type === "phase") {
+        const open = !bridgeHandled && !spoken && !ended;
+        if (open && event.phase === "searching") {
+          // A retrieval turn always has seconds of work ahead.
+          const bridge = bridgeNow();
+          if (bridge) yield bridge;
+        } else if (event.phase === "composing") {
+          composingAt ??= elapsed();
+        }
+        continue;
+      }
+      if (event.type === "speech" && !spoken) {
+        spoken = true;
+        policy.observer.firstSpeech(elapsed(), bridged);
+      }
+      if (event.type === "outcome") {
+        ended = true;
+      }
+      yield event;
+    }
+  } finally {
+    if (!finished) {
+      await iterator.return?.();
+    }
+  }
+}
+
+/** The reply without its phase markers, for a turn that runs without the policy. */
+export async function* withoutPhaseMarkers(events: AsyncIterable<VoiceReplyEvent>): AsyncGenerator<VoiceTurnEvent> {
+  for await (const event of events) {
+    if (event.type !== "phase") {
+      yield event;
+    }
+  }
+}

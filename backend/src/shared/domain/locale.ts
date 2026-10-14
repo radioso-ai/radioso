@@ -3,6 +3,9 @@ import { badRequest } from "./errors.js";
 const MAX_LOCALE_LENGTH = 35;
 const LOCALE_PATTERN = /^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$/;
 
+/** A BCP 47 language tag of the shape Radioso stores: language, optional script, optional region. */
+export const isLocaleTag = (value: string): boolean => LOCALE_PATTERN.test(value);
+
 export const normalizeLocaleTag = (
   value: unknown,
   fieldName = "assistantDefaultLocale",
@@ -21,7 +24,7 @@ export const normalizeLocaleTag = (
   if (trimmed.length > MAX_LOCALE_LENGTH) {
     throw badRequest(`${fieldName} must not exceed ${MAX_LOCALE_LENGTH} characters`);
   }
-  if (!LOCALE_PATTERN.test(trimmed)) {
+  if (!isLocaleTag(trimmed)) {
     throw badRequest(`${fieldName} must be a valid locale tag`);
   }
 

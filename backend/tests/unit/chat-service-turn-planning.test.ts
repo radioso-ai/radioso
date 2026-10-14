@@ -41,7 +41,7 @@ import {
   InMemoryConversationRepository,
   InMemoryMessageRepository,
 } from "../support/fakes.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 import {
   ApplicationModuleCoordinator,
   createApplicationExtensionRegistry,
@@ -313,6 +313,7 @@ const publishedRuntimeResolver = (
 /** A published agent with no override or authored behavior; spread and override per test. */
 const baseAgentRecord = (): AgentRecord => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent-1",
   workspaceId: "workspace-1",
   name: "Support",

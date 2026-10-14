@@ -37,7 +37,7 @@ import {
   routineDefinitionDraftUpdateInputSchema,
   routineDraftAssistRequestSchema,
 } from "../../../modules/routines/public.js";
-import { describePublicAccessChange, type AgentSettingsResource } from "../../../modules/agents/public.js";
+import { agentVoiceSettingsSchema, describePublicAccessChange, type AgentSettingsResource } from "../../../modules/agents/public.js";
 import { answerCoverageCriteriaSchema } from "../../../modules/answerCoverage/public.js";
 import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.js";
 import {
@@ -104,6 +104,9 @@ export const agentBodySchema = z.object({
   greetingInstruction: agentInputFieldSchemas.greetingInstruction.optional(),
   assistantDefaultLocale: agentInputFieldSchemas.assistantDefaultLocale.optional(),
   proactiveGreetingEnabled: agentInputFieldSchemas.proactiveGreetingEnabled.optional(),
+  // Optional with no default: `validateBody` replaces the body with this parse, and a default
+  // would reset the stored block on every save that leaves voice out.
+  voice: agentVoiceSettingsSchema.optional(),
   chatModelOverride: agentInputFieldSchemas.chatModelOverride.optional(),
   skillSettings: agentInputFieldSchemas.skillSettings.optional(),
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),

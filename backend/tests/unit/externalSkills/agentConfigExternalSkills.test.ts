@@ -10,10 +10,11 @@ import {
   serializeExternalSkills,
   type InternalAgentExternalSkillsConfig,
 } from "../../../src/modules/agents/externalSkillsConfig.js";
-import { unpublishedAgentPublicIdentity } from "../../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../../src/modules/agents/public.js";
 
 const minimalAgent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent-1",
   workspaceId: "workspace-1",
   createdAt: new Date(0),

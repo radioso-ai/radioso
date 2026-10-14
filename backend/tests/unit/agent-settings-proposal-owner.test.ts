@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { AgentService, unpublishedAgentPublicIdentity, type AgentRecord } from "../../src/modules/agents/public.js";
+import { AgentService, defaultAgentVoiceSettings, unpublishedAgentPublicIdentity, type AgentRecord } from "../../src/modules/agents/public.js";
 import { reviewedConfirmationRequirement } from "../../src/modules/operatorCopilot/reviewedOperation.js";
 
 const agent = (): AgentRecord => ({
-  ...unpublishedAgentPublicIdentity(), id: "agent-1", workspaceId: "workspace-1", name: "Support", internalName: "support",
+  ...unpublishedAgentPublicIdentity(), voice: defaultAgentVoiceSettings(), id: "agent-1", workspaceId: "workspace-1", name: "Support", internalName: "support",
   greetingInstruction: "Hello", assistantDefaultLocale: null, proactiveGreetingEnabled: false,
   suggestedQuestionsEnabled: true, assistantLinkUtmEnabled: true, citationDisplayEnabled: true,
   contactRequestsEnabled: false, webhookExportsEnabled: false, handoffOnRetrievalMiss: false,

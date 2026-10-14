@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { freezeAgent, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { freezeAgent, defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 import { freezeRetrievalSettings } from "../../src/modules/settings/contracts/retrieval.js";
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import type { RetrievalSettingsRecord } from "../../src/modules/settings/contracts/retrieval.js";
@@ -63,6 +63,7 @@ describe("freezeAgent", () => {
   it("captures the fields that affect chat behavior, not surface settings", () => {
     const agent: ConversationAgent = {
       ...unpublishedAgentPublicIdentity(),
+      voice: defaultAgentVoiceSettings(),
       id: "agent-1",
       workspaceId: "ws-1",
       name: "Support Bot",
@@ -103,6 +104,7 @@ describe("freezeAgent", () => {
   it("does not share nested skill settings or source scope references with the live agent", () => {
     const agent: ConversationAgent = {
       ...unpublishedAgentPublicIdentity(),
+      voice: defaultAgentVoiceSettings(),
       id: "agent-1",
       workspaceId: "ws-1",
       name: "Support Bot",

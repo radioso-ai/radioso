@@ -1,3 +1,4 @@
+import { isLocaleTag } from "../../../../shared/domain/locale.js";
 import type { VoiceTransport } from "../../domain.js";
 
 /** Where one value travels on a request: a header, or a path into the JSON body. */
@@ -12,7 +13,20 @@ type CompletionsFieldSource = { header: string } | { bodyPath: readonly string[]
 export interface CompletionsDialect {
   id: string;
   sessionKeyFrom: readonly CompletionsFieldSource[];
+  /** Where the caller's language tag travels, when the runtime or the page that starts the session sends one. */
+  localeFrom: readonly CompletionsFieldSource[];
   transportDefault: VoiceTransport;
+  /**
+   * A delta sent after each bridge line and speech piece, for a runtime that holds a finished
+   * sentence back from speech until the wire shows it ended. Wire-only: never part of the stored reply.
+   */
+  sentenceFlushDelta?: string;
+  /**
+   * For a runtime that abandons a stream after a stretch of silence: once no frame has been written
+   * for `afterIdleMs`, the route writes `delta` and keeps doing so while the turn stays silent.
+   * Wire-only, like the flush delta.
+   */
+  keepAlive?: { delta: string; afterIdleMs: number };
 }
 
 const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
@@ -21,11 +35,20 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
   ["elevenlabs", {
     id: "elevenlabs",
     sessionKeyFrom: [{ bodyPath: ["elevenlabs_extra_body", "session_key"] }],
+    localeFrom: [{ bodyPath: ["elevenlabs_extra_body", "locale"] }],
     transportDefault: "web",
+    // Observed 2026-10-13: ElevenLabs hands a sentence to speech once its terminator is followed by
+    // whitespace and a later non-blank delta arrives. Pieces end on the terminator, so the flush is
+    // a space (the whitespace) plus a zero-width space (the non-blank delta), sent as one chunk.
+    sentenceFlushDelta: " \u200B",
+    // Observed 2026-10-13: ElevenLabs drops a custom-LLM stream that is silent for about 4 s (4.0 s
+    // held, 4.5 s dropped) and re-asks with the same utterance; any invisible delta resets that.
+    keepAlive: { delta: " \u200B", afterIdleMs: 2_500 },
   }],
   ["generic", {
     id: "generic",
     sessionKeyFrom: [{ header: "x-radioso-voice-session" }, { bodyPath: ["metadata", "session_key"] }],
+    localeFrom: [{ header: "x-radioso-voice-locale" }, { bodyPath: ["metadata", "locale"] }],
     transportDefault: "web",
   }],
 ]);
@@ -63,13 +86,15 @@ const usableValue = (value: unknown): string | undefined => {
   return trimmed.length > 0 && !UNINTERPOLATED_PLACEHOLDER.test(trimmed) ? trimmed : undefined;
 };
 
+/** The first source whose value is usable and passes `accept`; a source that fails falls through to the next. */
 const firstValue = (
   sources: readonly CompletionsFieldSource[],
   request: CompletionsRequestParts,
+  accept: (value: string) => boolean = () => true,
 ): string | undefined => {
   for (const source of sources) {
     const value = usableValue(readSource(source, request));
-    if (value) {
+    if (value && accept(value)) {
       return value;
     }
   }
@@ -78,3 +103,7 @@ const firstValue = (
 
 export const sessionKeyFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): string | null =>
   firstValue(dialect.sessionKeyFrom, request) ?? null;
+
+/** The caller's language tag from the first source that carries a well-formed one. */
+export const localeFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): string | undefined =>
+  firstValue(dialect.localeFrom, request, isLocaleTag);

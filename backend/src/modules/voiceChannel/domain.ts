@@ -24,10 +24,21 @@ export interface VoiceTurnInput {
    * vendor reports it (ElevenLabs replays it cut short in the request's history).
    */
   heardUntil?: string;
+  /**
+   * The shortest first sentence the runtime speaks before more text arrives, when it holds shorter
+   * ones back; the turn prefers bridge lines at least this long.
+   */
+  minReleasableSentenceChars?: number;
 }
 
-/** How the session goes on after the turn. */
-export type VoiceTurnOutcome = { kind: "continue" };
+/**
+ * How the session goes on after the turn. `callback_requested`: the turn handed the conversation
+ * to a person after its routine collected something from the caller, so the team follows up;
+ * `handoffReason` says why it handed off. The runtime keeps the line open either way.
+ */
+export type VoiceTurnOutcome =
+  | { kind: "continue" }
+  | { kind: "callback_requested"; handoffReason?: string };
 
 export type VoiceTurnEvent =
   /** The conversation the turn runs in, before any speech. A bridge can precede it on a session's first turn. */
@@ -36,8 +47,26 @@ export type VoiceTurnEvent =
   | { type: "bridge"; text: string }
   /** A speakable piece of the agent's reply, verbatim; the final piece carries `last: true`. */
   | { type: "speech"; text: string; last: boolean }
-  /** Exactly one, always last. */
+  /** Exactly one, always last: the turn's events end with it. */
   | { type: "outcome"; outcome: VoiceTurnOutcome };
+
+/**
+ * A turn whose events broke the port's contract: they must end with exactly one outcome. The
+ * adapter answers it like any failed turn, so the runtime never reads it as a finished reply.
+ */
+export class VoiceTurnProtocolError extends Error {
+  constructor(readonly violation: "missing_outcome" | "second_outcome" | "event_after_outcome") {
+    super(`Voice turn broke the port contract: ${violation}`);
+    this.name = new.target.name;
+  }
+}
+
+/** A turn that ended without its outcome, such as one whose chat stream ended without `done` or `cancelled`. */
+export class VoiceTurnIncompleteError extends VoiceTurnProtocolError {
+  constructor() {
+    super("missing_outcome");
+  }
+}
 
 export interface VoiceTurnPort {
   /**

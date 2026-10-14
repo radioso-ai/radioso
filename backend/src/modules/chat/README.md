@@ -66,7 +66,12 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   turn-time outcomes (`started`, `reentered`, `declined`, `not_started`,
   `unknown_tool`) are counted. `presentChatPayload` strips `routine` and `invocation`
   from the human-facing routes; only `sendChatSse(..., { agentEnvelope: true })` and
-  the agent channel route publish them.
+  the agent channel route publish them. A handoff turn's response and `done` event
+  also carry `handoff` (`ChatTurnHandoff`: the reason, and `collectedSlotCount`, how
+  many declared slots the ending routine held a value for, 0 on a retrieval miss)
+  for a channel that delivers the reply in-process; the voice channel derives its
+  outcome from it. It is not part of the envelope core, and `presentChatPayload`
+  and `stripPublicChatCitationArtifacts` drop it from every HTTP response.
 - `services/agentTurnInput.ts` (exported through `contracts/`): `resolveAgentTurnInput`
   turns an agent-facing body into `{ kind: "message" }` or `{ kind: "routine_invocation" }`
   once, before any turn state exists. The REST agent chat route calls it with the
@@ -304,7 +309,18 @@ imports from `services/`.
   is still accountable: `chatTurnLifecycle.recordSupersession` records a
   `chat.answer` audit event with `eventStatus: "cancelled"` (never `"failure"` —
   a user typing a follow-up is not an assistant error) keyed to the turn's
-  `userMessageId`, since no assistant message exists yet for it.
+  `userMessageId`, since no assistant message exists yet for it. A
+  `latest_input_wins` turn (the voice channel's) can be cancelled even after it
+  began emitting, so it carries a commit fence (`latestInputCommitFence`): a
+  lease check right before the turn is stored, and, as the storing
+  transaction's last step (`AssistantTurnPersistencePort.commitFence`), the
+  lease's commit latch (`ConversationTurnLease.beginCommit`). A turn cancelled
+  before the latch stores no reply or effects, commits no usage and emits no
+  `done`, and one whose reply never reached the client counts as superseded
+  before emission. Once latched, no newer turn cancels it while its COMMIT
+  runs: a newer input waits for it, and it finishes as usual. The
+  waiting message of a human-owned turn is generated on the lease's signal, so
+  a newer turn cancels a stalled generation instead of waiting behind it.
 - Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,
   `chat-action` tests.
 - History: `assistantHistoryService.ts`, `chatHistoryService.ts`,

@@ -8,6 +8,7 @@ import { ConversationOwnershipRepository } from "../../../src/db/repositories/co
 import { RoutineStateRepository } from "../../../src/db/repositories/routineStateRepository.js";
 import { WorkspaceRepository, type WorkspaceRecord } from "../../../src/db/repositories/workspaceRepository.js";
 import { ConversationActivityRepository } from "../../../src/db/repositories/conversationActivityRepository.js";
+import { MessageRepository } from "../../../src/db/repositories/messageRepository.js";
 import { PostgresAssistantTurnPersistence } from "../../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { projectVisitorRequestFacts, resolveContextForTurn } from "../../../src/modules/context-variables/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
@@ -418,6 +419,98 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       [assistantMessageId],
     );
     expect(messageCount.count).toBe("0");
+  });
+
+  it("stores none of a turn, reply or audit event, whose commit fence refuses it", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const assistantMessageId = randomUUID();
+
+    await expect(persistence.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      assistantMessage: {
+        id: assistantMessageId,
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "A reply a newer input overtook.",
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: workspace.id,
+        metadata: { conversationId: conversation.id },
+      },
+      commitFence: () => {
+        throw new Error("superseded while stored");
+      },
+    })).rejects.toThrow("superseded while stored");
+
+    const stored = await database.queryOne<{ messages: string; audits: string }>(
+      `SELECT
+         (SELECT COUNT(*)::text FROM messages WHERE id = $1) AS messages,
+         (SELECT COUNT(*)::text FROM audit_events WHERE metadata_json->>'conversationId' = $2) AS audits`,
+      [assistantMessageId, conversation.id],
+    );
+    expect(stored).toEqual({ messages: "0", audits: "0" });
+  });
+
+  describe("discarding a replaced turn's user message", () => {
+    const seedUserMessage = async () => {
+      const seeded = await seedConversation();
+      const userMessage = await new MessageRepository(database.kysely).create({
+        conversationId: seeded.conversation.id,
+        workspaceId: seeded.workspace.id,
+        role: "user",
+        content: "Do you have hatter?",
+      });
+      const cancelledEvent = (accountId: string) => ({
+        accountId,
+        workspaceId: seeded.workspace.id,
+        eventType: "chat.answer",
+        eventStatus: "cancelled" as const,
+        metadata: { conversationId: seeded.conversation.id, userMessageId: userMessage.id, userMessageDiscarded: true },
+      });
+      return { ...seeded, userMessage, cancelledEvent };
+    };
+
+    const counts = async (messageId: string, conversationId: string) => database.queryOne<{ messages: string; audits: string }>(
+      `SELECT
+         (SELECT COUNT(*)::text FROM messages WHERE id = $1) AS messages,
+         (SELECT COUNT(*)::text FROM audit_events
+           WHERE metadata_json->>'conversationId' = $2 AND event_status = 'cancelled') AS audits`,
+      [messageId, conversationId],
+    );
+
+    it("deletes the message and records the cancelled audit event together, once", async () => {
+      const { accountId, workspace, conversation, userMessage, cancelledEvent } = await seedUserMessage();
+      const discard = () => persistence.discardReplacedUserMessage({
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        messageId: userMessage.id,
+        auditEvent: cancelledEvent(accountId),
+      });
+
+      await expect(discard()).resolves.toBe(true);
+      await expect(counts(userMessage.id, conversation.id)).resolves.toEqual({ messages: "0", audits: "1" });
+      // A message already gone records nothing more.
+      await expect(discard()).resolves.toBe(false);
+      await expect(counts(userMessage.id, conversation.id)).resolves.toEqual({ messages: "0", audits: "1" });
+    });
+
+    it("keeps the message when its cancelled audit event cannot be recorded", async () => {
+      const { workspace, conversation, userMessage, cancelledEvent } = await seedUserMessage();
+
+      // An account that does not exist fails the audit insert on its foreign key.
+      await expect(persistence.discardReplacedUserMessage({
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        messageId: userMessage.id,
+        auditEvent: cancelledEvent(randomUUID()),
+      })).rejects.toThrow();
+
+      await expect(counts(userMessage.id, conversation.id)).resolves.toEqual({ messages: "1", audits: "0" });
+    });
   });
 
   it("returns facts to a caller-owned transaction while leaving a later rollback silent and durable-state free", async () => {

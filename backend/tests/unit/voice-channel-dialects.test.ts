@@ -21,6 +21,9 @@ describe("completions dialects", () => {
   it("knows the elevenlabs and generic dialects and nothing else", () => {
     expect(dialect("elevenlabs")).toMatchObject({ id: "elevenlabs", transportDefault: "web" });
     expect(dialect("generic")).toMatchObject({ id: "generic" });
+    // ElevenLabs holds a first sentence shorter than about 45 characters until more text arrives.
+    expect(dialect("elevenlabs").minReleasableSentenceChars).toBe(45);
+    expect(dialect("generic")).not.toHaveProperty("minReleasableSentenceChars");
     expect(findCompletionsDialect("vapi")).toBeNull();
     expect(findCompletionsDialect("toString")).toBeNull();
   });

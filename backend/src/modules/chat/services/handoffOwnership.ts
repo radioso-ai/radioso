@@ -77,14 +77,16 @@ export const buildHandoffNotifyAction = (input: Parameters<typeof operatorNotice
 
 /**
  * The ownership record and its audit event name the routine and step; the collected
- * values travel only on the notify action, so they are picked off here on purpose.
+ * values travel only on the notify action, so they are picked off here on purpose. The
+ * turn's reply reports how many declared slots held a value, never which or what.
  */
 export const routineHandoffOwnership = (
   handoff: RoutineHandoffEffect,
-): { reason: RoutineHandoffReason; routineId: string; stepId: string } => ({
+): { reason: RoutineHandoffReason; routineId: string; stepId: string; collectedSlotCount: number } => ({
   reason: routineHandoffReason(handoff),
   routineId: handoff.routineId,
   stepId: handoff.stepId,
+  collectedSlotCount: Object.keys(handoff.collected ?? {}).length,
 });
 
 const shouldRequestRetrievalMissHandoff = (input: {

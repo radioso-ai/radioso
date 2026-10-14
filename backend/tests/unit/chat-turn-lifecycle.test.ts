@@ -40,6 +40,7 @@ const harness = (metrics?: { incrementCounter: MetricsRegistry["incrementCounter
     record: vi.fn(async (event: RecordedAudit) => {
       records.push(event);
     }),
+    logRecorded: vi.fn(),
     updateChatAnswerSuggestions: vi.fn(async () => {}),
   } as unknown as AuditService;
   const conversationRepository = {
@@ -1317,13 +1318,17 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
           stepId: "handoff",
         },
       }],
-      ownershipHandoff: { reason: "routine_handoff", routineId: "routine_1", stepId: "handoff" },
+      ownershipHandoff: { reason: "routine_handoff", routineId: "routine_1", stepId: "handoff", collectedSlotCount: 2 },
     });
 
     expect(completed.response.answer).toBe("A person will help you from here.");
+    // The channel delivering the reply learns why the turn handed off and how much the routine held.
+    expect(completed.response.ownership).toEqual({ state: "human_owned", suppressed: false });
+    expect(completed.response.handoff).toEqual({ reason: "routine_handoff", collectedSlotCount: 2 });
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
     const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
-    expect(persisted.ownershipHandoff).toEqual({
+    // The slot count is the reply's to report; the hand-off that is stored carries none of it.
+    expect(persisted.ownershipHandoff).toStrictEqual({
       reason: "routine_handoff",
       routineId: "routine_1",
       stepId: "handoff",
@@ -1343,6 +1348,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         stepId: "handoff",
       },
     });
+    expect(persisted.ownershipAuditEvent?.metadata).not.toHaveProperty("collectedSlotCount");
     expect(records.map((record) => record.eventType)).toEqual(["chat.answer"]);
   });
 
@@ -1974,6 +1980,77 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       expect(messageRepository.deleteUserMessage).not.toHaveBeenCalled();
       expect(records.map((record) => record.metadata.userMessageDiscarded)).toEqual([undefined, undefined]);
       expect(records.map((record) => record.metadata.userMessageId)).toEqual(["msg_1", "msg_1"]);
+    });
+
+    describe("through the transactional persistence port", () => {
+      const replaced = () => new ChatTurnSupersededError("conv_1", "routing", { replacedByNewerInput: true });
+
+      const withPort = (discard: NonNullable<AssistantTurnPersistencePort["discardReplacedUserMessage"]>) => {
+        const base = harness();
+        const logger = { warn: vi.fn() };
+        const port: AssistantTurnPersistencePort = {
+          completeAssistantTurn: vi.fn(),
+          discardReplacedUserMessage: vi.fn(discard),
+        };
+        const lifecycle = new ChatTurnLifecycle(
+          base.conversationRepository,
+          base.messageRepository,
+          base.auditService,
+          undefined,
+          undefined,
+          port,
+          undefined,
+          undefined,
+          logger,
+        );
+        return { ...base, lifecycle, port, logger };
+      };
+
+      it("deletes the replaced user message and records its cancelled event in one call", async () => {
+        const { lifecycle, port, auditService, messageRepository } = withPort(async () => true);
+
+        await lifecycle.recordSupersession({ workspaceId: "workspace_1", stream: true }, session(), undefined, replaced());
+
+        expect(port.discardReplacedUserMessage).toHaveBeenCalledWith({
+          workspaceId: "workspace_1",
+          conversationId: "conv_1",
+          messageId: "msg_1",
+          auditEvent: expect.objectContaining({
+            eventType: "chat.answer",
+            eventStatus: "cancelled",
+            metadata: expect.objectContaining({ userMessageId: "msg_1", userMessageDiscarded: true }),
+          }),
+        });
+        expect(messageRepository.deleteUserMessage).not.toHaveBeenCalled();
+        expect(auditService.record).not.toHaveBeenCalled();
+        expect(auditService.logRecorded).toHaveBeenCalledWith(expect.objectContaining({ eventStatus: "cancelled" }));
+      });
+
+      it("keeps the message and records the cancelled event alone when the discard transaction fails", async () => {
+        const { lifecycle, records, logger, messageRepository } = withPort(async () => {
+          throw new Error("audit insert failed");
+        });
+
+        await lifecycle.recordSupersession({ workspaceId: "workspace_1", stream: true }, session(), undefined, replaced());
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({ conversationId: "conv_1", errorType: "Error" }),
+          "Superseded user message could not be discarded",
+        );
+        expect(messageRepository.deleteUserMessage).not.toHaveBeenCalled();
+        expect(records).toHaveLength(1);
+        expect(records[0]).toMatchObject({ eventStatus: "cancelled", metadata: { userMessageId: "msg_1" } });
+        expect(records[0]?.metadata).not.toHaveProperty("userMessageDiscarded");
+      });
+
+      it("records the cancelled event alone when the message is already gone", async () => {
+        const { lifecycle, records } = withPort(async () => false);
+
+        await lifecycle.recordSupersession({ workspaceId: "workspace_1", stream: true }, session(), undefined, replaced());
+
+        expect(records).toHaveLength(1);
+        expect(records[0]?.metadata).not.toHaveProperty("userMessageDiscarded");
+      });
     });
 
     it("falls back to the input conversationId when no turn was prepared yet", async () => {

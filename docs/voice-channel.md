@@ -37,9 +37,12 @@ Activity and the Inbox.
    `data: [DONE]`.
 5. If you turned the agent's voice settings on, the wait is covered: when
    the agent starts looking something up, or is slow to start its answer, the
-   caller hears one of your bridge lines, and when nothing is ready at 8
+   caller hears one of your bridge lines, and when nothing is ready at 10
    seconds, they hear your fallback line and the turn ends. See
    [Bridge lines and the turn limit](#bridge-lines-and-the-turn-limit).
+6. The turn ends with an outcome: `continue`, or `callback_requested` when the
+   turn handed the caller to your team after a routine collected their
+   details. See [Outcomes](#outcomes).
 
 ## Set it up
 
@@ -134,17 +137,29 @@ the agent's `voice` settings block:
     "enabled": true,
     "bridgeLines": {
       "en": {
-        "acknowledge": ["Got it.", "Thanks, noted."],
-        "check": ["Let me check that for you.", "One moment, I'm looking it up."]
+        "acknowledge": [
+          "Got it, thank you, just give me a second to note that down.",
+          "Thanks, I've noted that, so let me take the next step."
+        ],
+        "check": [
+          "Let me check that for you, it only takes a moment.",
+          "One moment please while I look that up in our documents."
+        ]
       },
       "it": {
-        "acknowledge": ["Perfetto.", "Grazie, preso nota."],
-        "check": ["Controllo subito.", "Un attimo, sto verificando."]
+        "acknowledge": [
+          "Perfetto, ho preso nota e ora passo al punto successivo.",
+          "Grazie, l'ho annotato, dammi solo un secondo per proseguire."
+        ],
+        "check": [
+          "Controllo subito per te, ci vorrà solo un momento.",
+          "Un attimo per favore, sto cercando nei nostri documenti."
+        ]
       }
     },
     "fallbackLine": {
-      "en": "Sorry, that is taking longer than it should. Could you ask me again?",
-      "it": "Scusa, ci sto mettendo troppo. Puoi ripetere la domanda?"
+      "en": "Sorry, this is taking much longer than it should, could you ask me again?",
+      "it": "Scusa, ci sto mettendo troppo, puoi ripetere la domanda per favore?"
     }
   }
 }
@@ -170,17 +185,24 @@ The block is replaced whole: a request that carries `voice` must carry
 keeps the stored one. To turn voice off, send the block back with
 `"enabled": false`. Keys are language tags such as `en`, `it` or `pt-BR`, up
 to 10 for each map. Each style holds up to 5 lines, and every line is 1 to 200
-characters. A new agent starts with `"enabled": false` and empty maps.
+characters. For the `elevenlabs` dialect, write each line as one sentence of at
+least 45 characters, like the lines above (see [Dialects](#dialects)). A new
+agent starts with `"enabled": false` and empty maps.
 
 What happens on a turn while `enabled` is true:
 
 - **Bridge.** The bridge fires when the turn starts searching, 400 ms after
-  it starts composing without speech, or after 1.8 s with no phase at all.
+  it starts composing without speech, or after 2.5 s with no phase at all.
   Searching means the agent is looking the answer up in your documents, which
   always takes a few seconds; a short reply such as "Hi!" starts speaking well
-  inside the 400 ms, so it is never preceded by a bridge. The caller hears one
+  inside the 400 ms, so it is never preceded by a bridge. The 2.5 s case is
+  for a planner that stalls: a greeting the planner answers itself takes up
+  to about 2 seconds, and a knowledge question bridges as soon as the search
+  starts. The caller hears one
   bridge line per turn at most, and none once the reply has started speaking.
-  A turn that replaces one whose bridge line went out less than 1.8 s earlier
+  Once a person owns the conversation, no bridge line plays (see
+  [Outcomes](#outcomes)).
+  A turn that replaces one whose bridge line went out less than 2.5 s earlier
   speaks none, so bridges never stack.
   Inside a running routine (the
   agent has just asked the caller something and is taking in the answer) it
@@ -188,20 +210,25 @@ What happens on a turn while `enabled` is true:
   turns. The rotation is shared by every call one Radioso server handles, so
   when calls run at the same time a caller can hear the same line twice in a
   row. Then the reply follows as usual.
-- **Turn limit, at 8 seconds.** If the reply still has not started speaking 8
-  seconds into the turn, the caller hears the fallback line and the turn ends,
-  so the runtime listens for the caller again. The agent's reply finishes in
-  the background and is stored in the conversation.
+- **Turn limit, at 10 seconds.** If the agent's reply still has not started
+  speaking 10 seconds into the turn, the caller hears the fallback line and the
+  turn ends, so the runtime listens for the caller again. The agent's reply
+  finishes in the background and is stored in the conversation. The limit
+  covers the agent's own answers: once a person owns the conversation, the
+  caller hears the short waiting line however long it takes to write.
 - **Language.** The lines come in the caller's language: the locale the request
   carries (see the dialect table), else the agent's default locale, else `en`.
   A line keyed `it` serves `it-IT` and `it-CH`; an exact tag such as `pt-BR`
   wins over a bare `pt`. With no line for that language and style, the caller
   hears nothing extra. With no fallback line for the language, the turn keeps
-  waiting for the reply past 8 seconds.
+  waiting for the reply past 10 seconds.
 
-The 400 ms, 1.8 second and 8 second marks are the same for every agent. They follow from
+The 400 ms, 2.5 second and 10 second marks are the same for every agent. They follow from
 how long a caller tolerates silence, not from what an agent says, so they are
-not settings.
+not settings. The limit sits at 10 seconds because slow grounded answers
+reach 8 seconds on about one turn in fifteen, and by then the caller has heard
+a bridge line; on the `elevenlabs` dialect the keep-alive holds the stream open
+through the wait.
 
 Bridge lines are spoken, never stored: the conversation in Activity and the
 Inbox shows the caller's words and the agent's reply, the way a chat
@@ -227,7 +254,8 @@ What the conversation keeps depends on how far the cancelled turn got:
   the end of a sentence too early and re-sends the longer transcript. Only a
   newer voice request removes the message; any other turn that starts on the
   conversation, such as an operator approving a routine step, cancels the
-  turn and keeps it.
+  turn and keeps it. A reply that was still being saved when the newer request
+  arrived, with none of it sent yet, counts as not started.
 - **Cancelled after its reply started:** the caller's message stays and the
   part of the reply the caller heard is not stored. The next turn answers the
   newer utterance with that message in its history.
@@ -254,6 +282,56 @@ conversation keeps the full reply; the audit trail records
 heard (`heardCharacterCount`) and how long the spoken reply was
 (`spokenCharacterCount`). A bridge line spoken before the reply does not count
 toward either.
+
+## Outcomes
+
+Every turn ends with an outcome that says how the session goes on. On web
+voice there are two:
+
+- `continue`: the call goes on with the agent. Most turns end this way.
+- `callback_requested`: this turn handed the conversation to your team, and
+  the routine that handed off had collected at least one of its slots from the
+  caller. Your team has something to follow up with.
+
+Take a booth visitor who asks about pricing. The agent's lead-capture routine
+asks for their name and email, and its hand-off end passes the conversation to
+your team. That turn's reply is the routine's closing line, and the turn ends
+with `callback_requested`. A hand-off with nothing collected ends with
+`continue`: a routine whose hand-off end comes before any of its slots is
+filled, or a grounded miss on an agent with **Hand off on retrieval miss**
+turned on. Any filled slot counts, whatever it is called and whatever it holds,
+so the rule works the same in every language. The two hand-off reasons from a
+routine count alike: an authored hand-off end and a caller stuck on a step.
+See [How handoff is requested](human-takeover.md#how-handoff-is-requested).
+
+Both outcomes end the response the same way, with `finish_reason: "stop"` and
+`data: [DONE]`, and the runtime goes on listening. The outcome is for whoever
+reads the HTTP response: a page or a test that drives the endpoint itself, or
+you with curl. With `stream: false`, it is the `X-Radioso-Voice-Outcome`
+response header. A streamed response sends its headers with its first frame,
+before the turn has an outcome, so it announces
+`Trailer: X-Radioso-Voice-Outcome` and sends the field as an HTTP trailer
+after `[DONE]`; `curl -i` prints it below the body:
+
+```text
+data: [DONE]
+
+X-Radioso-Voice-Outcome: callback_requested
+```
+
+After a hand-off, the call stays open and the conversation is human-owned,
+like any other hand-off: it waits in the Inbox, and the hand-off's operator
+notice reaches your team. See [Human Takeover](human-takeover.md). What the
+caller hears from then on:
+
+- Each new utterance hears the agent's short waiting line, written in the
+  conversation's language, until a teammate writes in the conversation; after
+  that, the agent stays silent. These turns end with `continue`. No bridge
+  line comes before the waiting line and no fallback line cuts in on it:
+  both cover the agent's own answers.
+- A teammate's reply stays in the conversation and does not reach the call.
+  The Inbox offers no Send on a voice conversation, so the follow-up goes
+  through the details the routine collected.
 
 ## Dialects
 
@@ -285,7 +363,11 @@ ElevenLabs also holds the first sentence of a reply until it has about 45
 characters of text (observed 2026-10-13: 26 characters waited for the next
 sentence, 46 and 57 did not; invisible padding and two short sentences do not
 count). Write every bridge line and fallback line as a full sentence of at
-least 45 characters, or the caller hears it only together with the answer.
+least 45 characters, or the caller hears it only together with the answer. On
+this dialect, a style that has lines of both lengths speaks only its lines of
+45 characters or more. A style with none that long still speaks its shorter
+line, and the server logs `voice.bridge_line_below_vendor_minimum` at warn once
+per agent, naming the agent and the two lengths.
 
 The session key must name one call. A value that spans calls, such as a
 user id, would run every call of that user in one conversation, so no dialect
@@ -345,19 +427,23 @@ With `stream: false`, the response is one `chat.completion` object whose
 turn limit. It never contains a bridge line.
 
 If the turn fails after the first frame, the stream ends with one error frame
-in place of `stop` and `[DONE]`:
+in place of `stop`, `[DONE]` and the outcome trailer:
 
 ```text
 data: {"error":{"message":"The agent could not finish this reply.","type":"server_error"}}
 ```
 
 A turn that fails before its first frame answers with an HTTP error status
-instead.
+instead, and so does a failed turn with `stream: false`. A reply that stops
+before the turn has its outcome counts as a failed turn, whatever it had
+already said.
 
 Both carry an `X-Radioso-Conversation-Id` header with the conversation the
 turn ran in, so you can open the call in Activity. On a session's first turn,
 a bridge line can open the stream before the conversation exists; that one
-response then has no header, and the next turn's has it.
+response then has no header, and the next turn's has it. The turn's outcome
+travels as `X-Radioso-Voice-Outcome`: a header with `stream: false`, a trailer
+after `[DONE]` with `stream: true` (see [Outcomes](#outcomes)).
 
 Try it from a terminal with the `generic` dialect. curl gets the full path a
 runtime reaches after appending `/chat/completions` to the configured URL:
@@ -423,17 +509,27 @@ that session key starts a new conversation.
   A written reply has no way onto the call, so the Inbox offers no Send on a
   voice conversation. Until an operator writes in the conversation, each new
   utterance hears the agent's short waiting line; after that, the agent stays
-  silent.
+  silent. See [Outcomes](#outcomes).
+- Some proxies drop HTTP trailers, and browsers' `fetch` does not expose
+  them. When you need a turn's outcome on the client, send that request with
+  `stream: false` and read the header.
 - Two first turns of one session that arrive at the same moment on different
   Radioso instances can each start a conversation. The session follows the
   one bound first, and the other turn's exchange stays in a conversation of
   its own. On one instance, a second first turn waits for the first to bind
-  the session and joins its conversation.
+  the session and joins its conversation. One conversation per session is
+  therefore guaranteed within an instance; across instances, only the
+  session's binding is shared.
 - `400` means the body is not a chat-completions request, it has no `user`
   message with text, the utterance is longer than 4,000 characters, or the
   dialect found no session key. Check that the runtime sends the field the
   dialect table names.
 - `404` means the dialect in the path is not one of the dialects above.
+- Whether a turn gets a bridge line and the 10-second limit depends on who owns
+  the conversation when the turn starts, and the voice channel reads that a few
+  milliseconds before the agent does. A hand-off or takeover that lands in
+  between can give that one turn a bridge line before the waiting line, or
+  leave a slow agent answer without a bridge line or a limit.
 - After a turn limit, the conversation stores the agent's full reply while the
   caller heard the fallback line. Read the reply in Activity to see what the
   caller missed.

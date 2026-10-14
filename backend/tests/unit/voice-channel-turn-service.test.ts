@@ -5,7 +5,7 @@ import {
   defaultAgentVoiceSettings,
   type AgentVoiceSettings,
 } from "../../src/modules/agents/public.js";
-import type { VoiceTurnEvent, VoiceTurnInput } from "../../src/modules/voiceChannel/domain.js";
+import { VoiceTurnIncompleteError, type VoiceTurnEvent, type VoiceTurnInput } from "../../src/modules/voiceChannel/domain.js";
 import {
   VoiceTurnService,
   type VoiceChatTurnRequest,
@@ -76,14 +76,32 @@ const voiceProfiles = (voice: AgentVoiceSettings, defaultLocale: string | null =
 
 const routineStates = (active: boolean) => ({ isRoutineActive: vi.fn().mockResolvedValue(active) });
 
+const conversationOwnership = (humanOwned: boolean) => ({ isHumanOwned: vi.fn().mockResolvedValue(humanOwned) });
+
 /** The agent has voice turned off, so turns run as plain chat turns. */
-const voiceOff = { agents: voiceProfiles(defaultAgentVoiceSettings()), routines: routineStates(false) };
+const voiceOff = {
+  agents: voiceProfiles(defaultAgentVoiceSettings()),
+  routines: routineStates(false),
+  ownership: conversationOwnership(false),
+};
 
 const collect = async (events: AsyncIterable<VoiceTurnEvent>): Promise<VoiceTurnEvent[]> => {
   const collected: VoiceTurnEvent[] = [];
   for await (const event of events) collected.push(event);
   return collected;
 };
+
+/** Everything the caller heard of the reply, joined. */
+const spokenText = (events: VoiceTurnEvent[]): string =>
+  events.flatMap((event) => (event.type === "speech" ? [event.text] : [])).join("");
+
+/** Chat's answer on a turn that found the conversation already in a person's hands. */
+const waitingDone = (waiting: string): ChatStreamEvent => ({
+  ...done(),
+  assistantMessageId: "",
+  answer: waiting,
+  ownership: { state: "human_owned", suppressed: true },
+} as ChatStreamEvent);
 
 describe("VoiceTurnService", () => {
   it("starts a conversation for a new session, binds it, and speaks the reply sentence by sentence", async () => {
@@ -271,6 +289,7 @@ describe("VoiceTurnService", () => {
       result: "completed",
       durationMs: 250,
       speechPieceCount: 2,
+      outcome: "continue",
     });
     expect(JSON.stringify(logger.info.mock.calls)).not.toMatch(/open|nine/u);
   });
@@ -295,6 +314,118 @@ describe("VoiceTurnService", () => {
     const [fields] = logger.warn.mock.calls[0];
     expect(fields).toMatchObject({ result: "failed", conversationId, errorClass: "ProviderDownError" });
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("secret detail");
+  });
+
+  it.each([
+    ["off", defaultAgentVoiceSettings()],
+    ["on", { enabled: true, bridgeLines: {}, fallbackLine: {} }],
+  ])("fails a turn whose chat stream ends without done or cancelled, with voice %s", async (_label, voice) => {
+    const logger = fakeLogger();
+    const service = new VoiceTurnService({ ...voiceOff,
+      agents: voiceProfiles(voice),
+      sessions: fakeSessions(conversationId),
+      chat: fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "We open at nine. See" }]),
+      logger,
+    });
+    const events: VoiceTurnEvent[] = [];
+
+    await expect((async () => {
+      for await (const event of service.runTurn(input(), new AbortController().signal)) events.push(event);
+    })()).rejects.toBeInstanceOf(VoiceTurnIncompleteError);
+    // The sentence that was whole went out; the outcome never does.
+    expect(events).toEqual([
+      { type: "conversation", conversationId },
+      { type: "speech", text: "We open at nine. ", last: false },
+    ]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ result: "failed", conversationId, errorClass: "VoiceTurnIncompleteError" }),
+      "Voice turn failed",
+    );
+  });
+
+  describe("the outcome a turn ends with", () => {
+    const fakeMetrics = () => ({ observeHistogram: vi.fn(), incrementCounter: vi.fn() });
+    const outcomeLabels = (metrics: ReturnType<typeof fakeMetrics>) =>
+      metrics.incrementCounter.mock.calls
+        .filter(([name]) => name === "voice_turn_outcome_total")
+        .map(([, options]) => (options as { labels: unknown }).labels);
+    const reply = "Thanks, Ada. A teammate will call you back.";
+    /** Chat's answer on a turn that handed the conversation to a person. */
+    const handedOff = (handoff: { reason: "routine_handoff" | "routine_stuck" | "retrieval_miss"; collectedSlotCount: number }, answer = reply): ChatStreamEvent => ({
+      ...done(),
+      answer,
+      ownership: { state: "human_owned", suppressed: false },
+      handoff,
+    } as ChatStreamEvent);
+    const runOutcome = async (events: ChatStreamEvent[]) => {
+      const metrics = fakeMetrics();
+      const logger = fakeLogger();
+      const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat: fakeChat(events), logger, metrics });
+      const turn = await collect(service.runTurn(input(), new AbortController().signal));
+      return { turn, metrics, logger };
+    };
+
+    it.each(["routine_handoff", "routine_stuck"] as const)(
+      "requests a callback when the turn's routine handed the caller to a person holding slot values (%s)",
+      async (reason) => {
+        const { turn, metrics, logger } = await runOutcome([
+          { type: "conversation", conversationId },
+          { type: "chunk", text: reply },
+          handedOff({ reason, collectedSlotCount: 2 }),
+        ]);
+
+        expect(spokenText(turn)).toBe(reply);
+        expect(turn.at(-1)).toEqual({ type: "outcome", outcome: { kind: "callback_requested", handoffReason: reason } });
+        expect(outcomeLabels(metrics)).toEqual([{ kind: "callback_requested", handoff_reason: reason }]);
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.objectContaining({ result: "completed", outcome: "callback_requested", handoffReason: reason }),
+          "Voice turn finished",
+        );
+      },
+    );
+
+    it("continues when the hand-off held no slot value, and still records why the turn handed off", async () => {
+      const { turn, metrics, logger } = await runOutcome([
+        { type: "conversation", conversationId },
+        { type: "chunk", text: "Let me find a teammate for this." },
+        handedOff({ reason: "retrieval_miss", collectedSlotCount: 0 }, "Let me find a teammate for this."),
+      ]);
+
+      expect(turn.at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+      expect(outcomeLabels(metrics)).toEqual([{ kind: "continue", handoff_reason: "retrieval_miss" }]);
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "continue", handoffReason: "retrieval_miss" }),
+        "Voice turn finished",
+      );
+    });
+
+    it("continues with chat's waiting message, word for word, when a person already owned the conversation", async () => {
+      const waiting = "Thanks for waiting. A teammate has your message and will reply here.";
+      const { turn, metrics, logger } = await runOutcome([
+        { type: "status", stage: "interpreting" },
+        { type: "status", stage: "composing" },
+        { type: "chunk", text: waiting },
+        waitingDone(waiting),
+      ]);
+
+      expect(spokenText(turn)).toBe(waiting);
+      expect(turn.at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+      expect(outcomeLabels(metrics)).toEqual([{ kind: "continue", handoff_reason: "none" }]);
+      const [fields] = logger.info.mock.calls[0];
+      expect(fields).toMatchObject({ outcome: "continue" });
+      expect(fields).not.toHaveProperty("handoffReason");
+    });
+
+    it("continues a turn the agent answered and kept", async () => {
+      const { turn, metrics } = await runOutcome([
+        { type: "conversation", conversationId },
+        { type: "chunk", text: "We open at nine." },
+        done(),
+      ]);
+
+      expect(turn.at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+      expect(outcomeLabels(metrics)).toEqual([{ kind: "continue", handoff_reason: "none" }]);
+    });
   });
 
   describe("concurrent first turns of one session", () => {
@@ -454,6 +585,7 @@ describe("VoiceTurnService", () => {
       const turn = (steps: Array<{ atMs: number; event: ChatStreamEvent }>) => new VoiceTurnService({
         agents: voiceProfiles(voiceOn),
         routines: routineStates(false),
+        ownership: conversationOwnership(false),
         sessions: fakeSessions(conversationId),
         chat: timedChat(steps),
         logger: fakeLogger(),
@@ -483,13 +615,44 @@ describe("VoiceTurnService", () => {
       ]);
     });
 
+    it("still speaks a bridge line shorter than the runtime speaks on its own, and warns once per agent", async () => {
+      const logger = fakeLogger();
+      const status = (stage: "searching"): ChatStreamEvent => ({ type: "status", stage });
+      const service = new VoiceTurnService({
+        agents: voiceProfiles(voiceOn),
+        routines: routineStates(false),
+        ownership: conversationOwnership(false),
+        sessions: fakeSessions(conversationId),
+        chat: timedChat([
+          { atMs: 0, event: { type: "conversation", conversationId } },
+          { atMs: 100, event: status("searching") },
+          { atMs: 2_000, event: { type: "chunk", text: "We open at nine." } },
+          { atMs: 2_000, event: done() },
+        ]),
+        logger,
+      });
+      const turn = input({ minReleasableSentenceChars: 45 });
+
+      const first = await runWithClock(service, turn);
+      await runWithClock(service, turn);
+
+      expect(first).toContainEqual({ type: "bridge", text: "Let me check." });
+      const warnings = logger.warn.mock.calls.filter(([fields]) =>
+        (fields as { event?: string }).event === "voice.bridge_line_below_vendor_minimum");
+      expect(warnings).toEqual([[
+        { event: "voice.bridge_line_below_vendor_minimum", agentId, vendor: "elevenlabs", lineCharacterCount: 13, minimumCharacterCount: 45 },
+        "Voice bridge line is shorter than the runtime speaks on its own",
+      ]]);
+    });
+
     it("runs the turn without a bridge or a limit while voice is off", async () => {
       const agents = voiceProfiles({ ...voiceOn, enabled: false });
       const service = new VoiceTurnService({
         agents,
         routines: routineStates(false),
+        ownership: conversationOwnership(false),
         sessions: fakeSessions(conversationId),
-        chat: timedChat(slowReply(9_000)),
+        chat: timedChat(slowReply(11_000)),
         logger: fakeLogger(),
       });
 
@@ -508,8 +671,9 @@ describe("VoiceTurnService", () => {
       const service = new VoiceTurnService({
         agents: voiceProfiles(voiceOn),
         routines,
+        ownership: conversationOwnership(false),
         sessions: fakeSessions(conversationId),
-        chat: timedChat(slowReply(2_000)),
+        chat: timedChat(slowReply(3_000)),
         logger: fakeLogger(),
       });
 
@@ -529,8 +693,9 @@ describe("VoiceTurnService", () => {
       const service = new VoiceTurnService({
         agents: voiceProfiles(voiceOn),
         routines,
+        ownership: conversationOwnership(false),
         sessions: fakeSessions(null),
-        chat: timedChat(slowReply(2_000)),
+        chat: timedChat(slowReply(3_000)),
         logger: fakeLogger(),
       });
 
@@ -544,8 +709,9 @@ describe("VoiceTurnService", () => {
       const service = new VoiceTurnService({
         agents: voiceProfiles(voiceOn, "en"),
         routines: routineStates(false),
+        ownership: conversationOwnership(false),
         sessions: fakeSessions(conversationId),
-        chat: timedChat(slowReply(2_000)),
+        chat: timedChat(slowReply(3_000)),
         logger: fakeLogger(),
       });
 
@@ -561,6 +727,7 @@ describe("VoiceTurnService", () => {
       const service = new VoiceTurnService({
         agents: voiceProfiles(voiceOn),
         routines: routineStates(false),
+        ownership: conversationOwnership(false),
         sessions: fakeSessions(conversationId),
         chat,
         logger,
@@ -584,7 +751,7 @@ describe("VoiceTurnService", () => {
       }));
       expect(metrics.observeHistogram).toHaveBeenCalledWith("voice_turn_first_speech_ms", expect.objectContaining({
         labels: { bridged: "yes" },
-        value: 8_000,
+        value: 10_000,
       }));
       expect(logger.info).not.toHaveBeenCalled();
       expect(logger.warn).toHaveBeenCalledWith(
@@ -601,8 +768,9 @@ describe("VoiceTurnService", () => {
       const service = new VoiceTurnService({
         agents: voiceProfiles({ ...voiceOn, fallbackLine: {} }),
         routines: routineStates(false),
+        ownership: conversationOwnership(false),
         sessions: fakeSessions(conversationId),
-        chat: timedChat(slowReply(9_000)),
+        chat: timedChat(slowReply(11_000)),
         logger,
       });
 
@@ -610,9 +778,44 @@ describe("VoiceTurnService", () => {
 
       expect(events.at(-2)).toEqual({ type: "speech", text: "We open at nine.", last: true });
       expect(logger.warn).toHaveBeenCalledWith(
-        { agentId, vendor: "elevenlabs", transport: "web", conversationId, result: "completed", durationMs: 9_000,
-          speechPieceCount: 1, bridged: true, turnLimitReached: true, fallbackSpoken: false },
+        { agentId, vendor: "elevenlabs", transport: "web", conversationId, result: "completed", durationMs: 11_000,
+          speechPieceCount: 1, outcome: "continue", bridged: true, turnLimitReached: true, fallbackSpoken: false },
         "Voice turn reached the turn limit",
+      );
+    });
+
+    it("speaks neither a bridge before chat's waiting message nor a fallback line over it on a turn a person owns", async () => {
+      const waiting = "Thanks for waiting. A teammate has your message.";
+      const ownership = conversationOwnership(true);
+      const metrics = fakeMetrics();
+      const logger = fakeLogger();
+      const service = new VoiceTurnService({
+        agents: voiceProfiles(voiceOn),
+        routines: routineStates(false),
+        ownership,
+        sessions: fakeSessions(conversationId),
+        chat: timedChat([
+          { atMs: 0, event: { type: "status", stage: "interpreting" } },
+          { atMs: 0, event: { type: "status", stage: "composing" } },
+          { atMs: 11_000, event: { type: "chunk", text: waiting } },
+          { atMs: 11_000, event: waitingDone(waiting) },
+        ]),
+        logger,
+        metrics,
+      });
+
+      const events = await runWithClock(service);
+
+      expect(events.map((event) => event.type)).not.toContain("bridge");
+      expect(spokenText(events)).not.toContain("Sorry, could you ask me again?");
+      expect(spokenText(events)).toBe(waiting);
+      expect(events.at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+      expect(ownership.isHumanOwned).toHaveBeenCalledWith(conversationId);
+      expect(metrics.incrementCounter).not.toHaveBeenCalledWith("voice_bridge_emitted_total", expect.anything());
+      expect(metrics.incrementCounter).not.toHaveBeenCalledWith("voice_turn_limit_total", expect.anything());
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ bridged: false, turnLimitReached: false, fallbackSpoken: false }),
+        "Voice turn finished",
       );
     });
 
@@ -621,8 +824,9 @@ describe("VoiceTurnService", () => {
       const service = new VoiceTurnService({
         agents: voiceProfiles(voiceOn, "de"),
         routines: routineStates(false),
+        ownership: conversationOwnership(false),
         sessions: fakeSessions(conversationId),
-        chat: timedChat(slowReply(2_000)),
+        chat: timedChat(slowReply(3_000)),
         logger: fakeLogger(),
         metrics,
       });
@@ -635,7 +839,7 @@ describe("VoiceTurnService", () => {
       }));
       expect(metrics.observeHistogram).toHaveBeenCalledWith("voice_turn_first_speech_ms", expect.objectContaining({
         labels: { bridged: "no" },
-        value: 2_000,
+        value: 3_000,
       }));
     });
   });
@@ -693,6 +897,7 @@ describe("VoiceTurnService", () => {
       new VoiceTurnService({
         agents: voiceProfiles(voiceOn),
         routines: routineStates(false),
+        ownership: conversationOwnership(false),
         sessions: fakeSessions(conversationId),
         chat,
         logger: fakeLogger(),
@@ -745,8 +950,35 @@ describe("VoiceTurnService", () => {
       expect(superseded).toHaveLength(2);
       expect(superseded[0]?.[0]).toEqual({
         agentId, vendor: "elevenlabs", transport: "web", conversationId, result: "superseded",
-        supersededAt: "before_speech", durationMs: 150, speechPieceCount: 0,
+        supersededAt: "before_speech", durationMs: 150, speechPieceCount: 0, outcome: "continue",
       });
+    });
+
+    it("lets the later request win when the earlier one's voice profile read finishes after it", async () => {
+      const chat = supersedingChat([answered("Yes, on Sundays from ten.")]);
+      // The first request's profile read resolves only once the second request's turn is in chat.
+      let releaseFirstRead!: () => void;
+      const firstRead = new Promise<void>((resolve) => { releaseFirstRead = resolve; });
+      const agents = {
+        findVoiceProfile: vi.fn(async () => {
+          if (agents.findVoiceProfile.mock.calls.length === 1) await firstRead;
+          return { voice: voiceOn, defaultLocale: null };
+        }),
+      };
+      const turns = service(chat, { agents });
+
+      const first = start(turns, input({ utterance: "Are you open on Saturdays?" }));
+      await vi.waitFor(() => expect(agents.findVoiceProfile).toHaveBeenCalledTimes(1));
+      const second = start(turns, input({ utterance: "Are you open on Sundays?" }));
+      await vi.waitFor(() => expect(chat.requests).toHaveLength(1));
+      releaseFirstRead();
+      await vi.runAllTimersAsync();
+
+      expect(await first).toEqual([{ type: "outcome", outcome: { kind: "continue" } }]);
+      expect((await second).filter((event) => event.type === "speech")).toEqual([
+        { type: "speech", text: "Yes, on Sundays from ten.", last: true },
+      ]);
+      expect(chat.requests.map((request) => request.message)).toEqual(["Are you open on Sundays?"]);
     });
 
     it("counts a turn cut off after it spoke as superseded after speech", async () => {
@@ -807,7 +1039,7 @@ describe("VoiceTurnService", () => {
       const turns = service(chat);
 
       const first = start(turns, input({ utterance: "When do you open?" }));
-      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(2_700);
       const second = start(turns, input({ utterance: "When do you open on Sunday?" }));
       await vi.runAllTimersAsync();
       await first;
@@ -852,6 +1084,79 @@ describe("VoiceTurnService", () => {
           expect.objectContaining({ conversationId, result: "replayed", speechPieceCount: 2 }),
           "Voice turn finished",
         );
+      });
+
+      it("replays the stored answer when the hang-up and the outcome fall in the same millisecond", async () => {
+        const chat = supersedingChat([answered("We open at nine.")]);
+        // A frozen clock: the hang-up, the stored reply and its outcome all read the same instant.
+        const turns = service(chat, { now: () => 5_000 });
+        const hangUp = new AbortController();
+
+        const first = start(turns, input({ utterance }), hangUp.signal);
+        await vi.advanceTimersByTimeAsync(100);
+        hangUp.abort();
+        await vi.runAllTimersAsync();
+        await first;
+        const replayed = start(turns, input({ utterance }));
+        await vi.runAllTimersAsync();
+
+        expect((await replayed).filter((event) => event.type === "speech")).toEqual([
+          { type: "speech", text: "We open at nine.", last: true },
+        ]);
+        expect(chat.requests).toHaveLength(1);
+      });
+
+      const hungUpAnswer = async (turns: VoiceTurnService) => {
+        const hangUp = new AbortController();
+        const first = start(turns, input({ utterance }), hangUp.signal);
+        await vi.advanceTimersByTimeAsync(100);
+        hangUp.abort();
+        await vi.runAllTimersAsync();
+        await first;
+      };
+
+      it("ends a replayed turn without waiting for its note, and writes the note after the outcome", async () => {
+        const notes = fakeNotes();
+        notes.replyReplayed.mockReturnValue(new Promise<void>(() => {}));
+        const logger = fakeLogger();
+        const turns = service(supersedingChat([answered("We open at nine.")]), { notes, logger });
+        await hungUpAnswer(turns);
+        const events: VoiceTurnEvent[] = [];
+
+        for await (const event of turns.runTurn(input({ utterance }), new AbortController().signal)) {
+          // The note is not written before the outcome has left.
+          if (event.type === "outcome") expect(notes.replyReplayed).not.toHaveBeenCalled();
+          events.push(event);
+        }
+
+        expect(events.at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+        expect(notes.replyReplayed).toHaveBeenCalledWith({ workspaceId, conversationId, assistantMessageId });
+        // The session settled the replay, whatever became of the note.
+        expect(logger.info).toHaveBeenLastCalledWith(expect.objectContaining({ result: "replayed" }), "Voice turn finished");
+      });
+
+      it("warns when the replay's note fails, or does not finish within its time", async () => {
+        const notes = fakeNotes();
+        notes.replyReplayed.mockRejectedValueOnce(new Error("audit store unavailable"));
+        notes.replyReplayed.mockReturnValueOnce(new Promise<void>(() => {}));
+        const logger = fakeLogger();
+        const turns = service(supersedingChat([answered("We open at nine."), answered("We open at nine.")]), { notes, logger });
+        const noteWarnings = () => logger.warn.mock.calls
+          .filter(([, message]) => message === "Voice turn note could not be recorded")
+          .map(([fields]) => (fields as { errorClass?: string }).errorClass);
+
+        await hungUpAnswer(turns);
+        await start(turns, input({ utterance }));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(noteWarnings()).toEqual(["Error"]);
+
+        // The replay settled with its outcome delivered, so the next identical request runs a new turn.
+        await hungUpAnswer(turns);
+        await start(turns, input({ utterance }));
+        await vi.advanceTimersByTimeAsync(4_999);
+        expect(noteWarnings()).toEqual(["Error"]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(noteWarnings()).toEqual(["Error", "VoiceTurnNoteTimeoutError"]);
       });
 
       it("runs a new turn when the earlier reply reached the runtime whole", async () => {
@@ -946,6 +1251,37 @@ describe("VoiceTurnService", () => {
           "Voice reply was interrupted",
         );
         expect(JSON.stringify(logger.info.mock.calls)).not.toMatch(/nine|Sundays/u);
+      });
+
+      it("records the interruption on a later report when the first note could not be recorded", async () => {
+        const heardUntil = "We open at nine.  \u200BSee";
+        const chat = supersedingChat([
+          answered(reply),
+          // Replaced before it answers, so the session's last exchange stays the interrupted reply.
+          [{ atMs: 0, event: { type: "conversation", conversationId } }, { atMs: 3_000, event: { type: "chunk", text: "Stale." } }],
+          answered("Yes."),
+        ]);
+        const notes = fakeNotes();
+        notes.replyInterrupted.mockRejectedValueOnce(new Error("audit store unavailable"));
+        const metrics = fakeMetrics();
+        const logger = fakeLogger();
+        const turns = service(chat, { notes, metrics, logger });
+
+        await answerOnce(turns);
+        const replaced = start(turns, input({ utterance: "Sorry, on Sundays?", heardUntil }));
+        await vi.advanceTimersByTimeAsync(500);
+        const next = start(turns, input({ utterance: "Sorry, are you open on Sundays?", heardUntil }));
+        await vi.runAllTimersAsync();
+        await Promise.all([replaced, next]);
+
+        expect(notes.replyInterrupted).toHaveBeenCalledTimes(2);
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({ conversationId, errorClass: "Error" }),
+          "Voice turn note could not be recorded",
+        );
+        // Counted and logged once, for the note that was recorded.
+        expect(counted(metrics, "voice_reply_interrupted_total")).toEqual([{}]);
+        expect(logger.info.mock.calls.filter(([, message]) => message === "Voice reply was interrupted")).toHaveLength(1);
       });
 
       it("counts only the reply's characters when a bridge line was spoken before it", async () => {

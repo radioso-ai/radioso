@@ -109,6 +109,25 @@ describe("public chat presenter", () => {
     expect(operatorPayload.answerCoverage).toEqual(expect.objectContaining({ unresolvedRequest: "Private request" }));
   });
 
+  it("never forwards the hand-off report a turn gives its delivering channel to the visitor", async () => {
+    const operatorPayload = { ...payload(), handoff: { reason: "routine_handoff", collectedSlotCount: 2 } };
+    const json = stripPublicChatCitationArtifacts(operatorPayload, true) as Record<string, unknown>;
+    const events = await collect(stripPublicStreamCitationArtifacts((async function* () {
+      yield {
+        type: "done" as const,
+        conversationId: "c1",
+        assistantMessageId: "m1",
+        route: { type: "direct", reason: "social_only" },
+        activitySummary: {},
+        activityTrace: {},
+        ...operatorPayload,
+      } as unknown as ChatStreamEvent;
+    })(), true));
+
+    expect(json).not.toHaveProperty("handoff");
+    expect(events[0]).not.toHaveProperty("handoff");
+  });
+
   it("exposes labels and links but never internal identifiers when citation display is enabled", () => {
     const result = stripPublicChatCitationArtifacts(payload(), true) as Record<string, unknown>;
 

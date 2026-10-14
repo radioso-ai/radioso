@@ -316,7 +316,9 @@ imports from `services/`.
   last step (`AssistantTurnPersistencePort.commitFence`): a turn cancelled by
   then stores no reply or effects, commits no usage and emits no `done`, and
   one whose reply never reached the client counts as superseded before
-  emission. Past the fence the stored turn has won and finishes as usual.
+  emission. Past the fence the stored turn has won and finishes as usual. The
+  waiting message of a human-owned turn is generated on the lease's signal, so
+  a newer turn cancels a stalled generation instead of waiting behind it.
 - Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,
   `chat-action` tests.
 - History: `assistantHistoryService.ts`, `chatHistoryService.ts`,

@@ -9,6 +9,27 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.17.2] - 2026-10-14
+
+### Fixed
+
+- require confirmation for notification recipients ([#1494](https://github.com/radioso-ai/radioso/pull/1494))
+- **llm:** let OpenAI reuse cached prompt prefixes for turn planning and answers ([#1484](https://github.com/radioso-ai/radioso/pull/1484))
+- **db:** keep the process alive when Postgres ends an idle pooled connection ([#1482](https://github.com/radioso-ai/radioso/pull/1482))
+- **evals:** gate sampled cases on pass-rate drops, not unanimous-status flips ([#1481](https://github.com/radioso-ai/radioso/pull/1481))
+
+### Internal
+
+- **e2e:** select the routine chip itself before Backspace removes it ([#1483](https://github.com/radioso-ai/radioso/pull/1483))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `214_notification_recipient_confirmation.sql`
+
+[1.17.2]: https://github.com/radioso-ai/radioso/compare/v1.17.1...v1.17.2
+
 ## [1.17.1] - 2026-10-11
 
 ### Fixed

@@ -33,7 +33,7 @@ export type CommittedDeclineOutcome = Exclude<GroundingEnvelopeOutcome, "answer"
 export const declineReasonForCommittedOutcome = (outcome: CommittedDeclineOutcome): TurnDeclineReason =>
   outcome === "out_of_scope" ? "out_of_scope" : "content_gap";
 
-export interface ParsedInlineAssertions {
+interface ParsedInlineAssertions {
   groups: number[][];
   invalidSourceCount: number;
 }

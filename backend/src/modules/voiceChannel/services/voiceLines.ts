@@ -1,5 +1,5 @@
 import type { AgentVoiceSettings, VoiceBridgeStyle } from "../../agents/public.js";
-import { withoutAssertionMarkers } from "./speechText.js";
+import { spokenText } from "./speechText.js";
 
 /** The language a turn falls back to when neither the request nor the agent names one. */
 const FALLBACK_LOCALE = "en";
@@ -21,7 +21,7 @@ interface VoiceTurnLineContext {
 
 /** An authored line as the caller hears it; null when nothing is left to say. */
 const spoken = (line: string | undefined): string | null => {
-  const text = line === undefined ? "" : withoutAssertionMarkers(line).trim();
+  const text = line === undefined ? "" : spokenText(line).trim();
   return text.length > 0 ? text : null;
 };
 

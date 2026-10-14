@@ -37,3 +37,25 @@ export const recordVoiceTurnLimit = (metrics: VoiceTurnMetricsSink | null | unde
     labels: { locale_resolved: yesNo(spoken) },
   });
 };
+
+/** Whether a superseded turn had spoken anything (its reply or the fallback line) when it was cut off. */
+type VoiceSupersededStage = "before_speech" | "after_speech";
+
+export const recordVoiceTurnSuperseded = (metrics: VoiceTurnMetricsSink | null | undefined, stage: VoiceSupersededStage): void => {
+  metrics?.incrementCounter("voice_turn_superseded_total", {
+    help: "Voice turns a newer request of the same session cut off; stage says whether the turn had spoken yet",
+    labels: { stage },
+  });
+};
+
+export const recordVoiceTurnReplayed = (metrics: VoiceTurnMetricsSink | null | undefined): void => {
+  metrics?.incrementCounter("voice_turn_replayed_total", {
+    help: "Identical voice re-requests answered with the stored reply of a turn that lost its caller, without a new turn",
+  });
+};
+
+export const recordVoiceReplyInterrupted = (metrics: VoiceTurnMetricsSink | null | undefined): void => {
+  metrics?.incrementCounter("voice_reply_interrupted_total", {
+    help: "Stored voice replies the vendor reported cut short because the caller spoke over them",
+  });
+};

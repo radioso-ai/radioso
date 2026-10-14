@@ -30,6 +30,11 @@ export interface VoiceTurnPolicy extends VoiceTurnLines {
   /** Bridge when this long has passed since the turn started composing and nothing was spoken. */
   bridgeAfterComposingIdleMs: number;
   turnLimitMs: number;
+  /**
+   * Asked when the bridge falls due; false holds the line back for the rest of the turn (a newer
+   * request owns the session, or a turn this one superseded spoke a bridge moments ago). Absent: true.
+   */
+  mayBridge?: () => boolean;
   observer: VoiceTurnPolicyObserver;
 }
 
@@ -90,9 +95,10 @@ export async function* applyVoiceTurnPolicy(
     return first ? { deadline: first.deadline, delayMs: first.atMs - elapsed() } : null;
   };
 
-  /** Settles the bridge once; the line when the agent has one for the turn. */
+  /** Settles the bridge once; the line when the agent has one for the turn and the session may hear it. */
   const bridgeNow = (): VoiceTurnEvent | null => {
     bridgeHandled = true;
+    if (policy.mayBridge && !policy.mayBridge()) return null;
     policy.observer.bridgeDue(policy.bridge.style, policy.bridge.text !== null);
     if (policy.bridge.text === null) return null;
     bridged = true;

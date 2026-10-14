@@ -13,7 +13,7 @@ import {
   type CompletionIdentity,
 } from "./completionsPresenter.js";
 import { findCompletionsDialect, localeFor, sessionKeyFor, type CompletionsDialect } from "./dialects.js";
-import { completionsRequestSchema, utteranceOf } from "./requestSchema.js";
+import { completionsRequestSchema, heardUntilFor, utteranceOf } from "./requestSchema.js";
 
 const COMPLETIONS_PATH = "/:agentId/voice/:dialect/v1/chat/completions";
 const CONVERSATION_ID_HEADER = "X-Radioso-Conversation-Id";
@@ -87,12 +87,14 @@ const turnInputFor = (
     throw badRequest(`The request carries no usable voice session key for the ${dialect.id} dialect`);
   }
   const locale = localeFor(dialect, request);
+  const heardUntil = heardUntilFor(dialect, parsed.data);
   return {
     input: {
       session: { workspaceId: caller.workspaceId, agentId: caller.agentId, vendor: dialect.id, sessionKey },
       transport: dialect.transportDefault,
       utterance,
       ...(locale ? { locale } : {}),
+      ...(heardUntil === undefined ? {} : { heardUntil }),
     },
     model: parsed.data.model ?? DEFAULT_MODEL_NAME,
     stream: parsed.data.stream ?? false,
@@ -115,12 +117,14 @@ const openEventStream = (res: Response, conversationId: string | null): void => 
  * Drains the turn the way the REST agent channel does: after a disconnect the turn may still
  * finish and persist, and it is aborted only once the post-disconnect ceiling passes. The
  * response itself ends at the turn's outcome, which is always last; a turn whose limit spoke the
- * fallback line keeps draining behind it, on the same ceiling.
+ * fallback line keeps draining behind it, on the same ceiling. A disconnect before the outcome
+ * was sent fires `hangUp`, so the turn knows its caller did not get the reply.
  */
 interface TurnDrain {
   res: Response;
   events: AsyncIterable<VoiceTurnEvent>;
   abort: AbortController;
+  hangUp: AbortController;
   disconnectAbortCeilingMs?: number;
 }
 
@@ -129,11 +133,20 @@ const drainTurn = async (
   onEvent: (event: VoiceTurnEvent) => void,
 ): Promise<{ disconnected: boolean }> => {
   const { res } = drain;
+  let outcomeSent = false;
   try {
     const result = await consumeSseWithDisconnectCeiling({
       response: res,
       events: drain.events,
-      onEvent,
+      onEvent: (event) => {
+        outcomeSent ||= event.type === "outcome";
+        onEvent(event);
+      },
+      onDisconnect: () => {
+        if (!outcomeSent) {
+          drain.hangUp.abort();
+        }
+      },
       onDisconnectCeilingExceeded: () => drain.abort.abort(),
       disconnectAbortCeilingMs: drain.disconnectAbortCeilingMs,
     });
@@ -266,10 +279,12 @@ export const registerOpenAiCompletionsRoute = (router: Router, dependencies: Com
       };
       dependencies.admission.onTurnAccepted(res);
       const abort = new AbortController();
+      const hangUp = new AbortController();
       const drain: TurnDrain = {
         res,
-        events: dependencies.turns.runTurn(input, abort.signal),
+        events: dependencies.turns.runTurn(input, abort.signal, hangUp.signal),
         abort,
+        hangUp,
         disconnectAbortCeilingMs: dependencies.disconnectAbortCeilingMs,
       };
       await (stream ? streamCompletion(drain, identity, dialect) : answerCompletion(drain, identity));

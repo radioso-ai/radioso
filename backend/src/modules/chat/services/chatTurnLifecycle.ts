@@ -1107,6 +1107,9 @@ export class ChatTurnLifecycle {
    *
    * Kept deliberately lean next to `recordFailure`: a superseded turn never finished
    * enough of the pipeline to have a meaningful retrieval/activity trace to attach.
+   *
+   * A turn a newer input replaced before it emitted (both `latest_input_wins`) has its
+   * user message deleted; this event still names it and adds `userMessageDiscarded`.
    */
   async recordSupersession(
     input: {
@@ -1124,6 +1127,7 @@ export class ChatTurnLifecycle {
     if (session && existingAssistantMessageId) {
       await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
     }
+    const userMessageDiscarded = await this.discardReplacedUserMessage(input, session, existingAssistantMessageId, supersededBy);
 
     await this.auditService.record({
       accountId: input.accountId,
@@ -1136,12 +1140,43 @@ export class ChatTurnLifecycle {
         executionClass: workflowPolicy.executionClass,
         conversationId: session?.conversation.id ?? input.conversationId,
         userMessageId: session?.userMessage.id,
+        ...(userMessageDiscarded ? { userMessageDiscarded } : {}),
         assistantMessageId: existingAssistantMessageId,
         stream: input.stream,
         supersededStage: supersededBy.stage,
         ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
       },
     });
+  }
+
+  /**
+   * Deletes the user message of a turn a newer input replaced before it emitted anything; a
+   * turn any other newer turn cancelled keeps it. Usage events the turn recorded keep its spend
+   * with the message link cleared. A failed delete keeps the message.
+   */
+  private async discardReplacedUserMessage(
+    input: { workspaceId: string },
+    session: PreparedSession | null,
+    existingAssistantMessageId: string | undefined,
+    supersededBy: ChatTurnSupersededError,
+  ): Promise<boolean> {
+    if (!supersededBy.replacedByNewerInput || supersededBy.afterEmission || !session || existingAssistantMessageId) {
+      return false;
+    }
+    try {
+      return await this.messageRepository.deleteUserMessage({
+        workspaceId: input.workspaceId,
+        conversationId: session.conversation.id,
+        messageId: session.userMessage.id,
+      });
+    } catch (error) {
+      this.logger?.warn({
+        workspaceId: input.workspaceId,
+        conversationId: session.conversation.id,
+        errorType: error instanceof Error ? error.name : typeof error,
+      }, "Superseded user message could not be discarded");
+      return false;
+    }
   }
 
   private buildAssistantTurnSuccessAuditEvent(input: AssistantTurnSuccessInput): AuditEventInput {

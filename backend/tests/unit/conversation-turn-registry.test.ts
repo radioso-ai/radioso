@@ -69,6 +69,89 @@ describe("InMemoryConversationTurnRegistry", () => {
     expect(ready).toBe(true);
   });
 
+  describe("superseding after emission", () => {
+    const speechLike = { supersedeAfterEmission: true };
+
+    it("cancels a predecessor that started emitting when both turns supersede after emission", async () => {
+      const cancelled = vi.fn();
+      const registry = new InMemoryConversationTurnRegistry({ turnCancelled: cancelled });
+      const first = registry.start("conversation-1", speechLike);
+      first.beginEmission();
+
+      const second = registry.start("conversation-1", speechLike);
+
+      expect(first.signal.aborted).toBe(true);
+      expect(() => first.throwIfCancelled()).toThrowError(
+        expect.objectContaining({ name: "ChatTurnSupersededError", stage: "persisting", afterEmission: true, replacedByNewerInput: true }),
+      );
+      expect(cancelled).toHaveBeenCalledWith({ conversationId: "conversation-1", reason: "superseded", stage: "persisting" });
+
+      let ready = false;
+      void second.waitForPredecessor().then(() => {
+        ready = true;
+      });
+      await Promise.resolve();
+      expect(ready).toBe(false);
+      first.complete();
+      await second.waitForPredecessor();
+      expect(ready).toBe(true);
+    });
+
+    it("reports a speech-like turn cancelled before it emitted as cancelled before emission", () => {
+      const registry = new InMemoryConversationTurnRegistry();
+      const first = registry.start("conversation-1", speechLike);
+      first.setStage("routing");
+
+      registry.start("conversation-1", speechLike);
+
+      expect(() => first.throwIfCancelled()).toThrowError(
+        expect.objectContaining({ stage: "routing", afterEmission: false, replacedByNewerInput: true }),
+      );
+    });
+
+    it("cancels a speech-like turn that has not emitted for a newer default-mode turn without calling its input replaced", () => {
+      const registry = new InMemoryConversationTurnRegistry();
+      const first = registry.start("conversation-1", speechLike);
+      first.setStage("routing");
+
+      registry.start("conversation-1");
+
+      expect(first.signal.aborted).toBe(true);
+      expect(() => first.throwIfCancelled()).toThrowError(
+        expect.objectContaining({ stage: "routing", afterEmission: false, replacedByNewerInput: false }),
+      );
+    });
+
+    it("never calls a default-mode turn's input replaced", () => {
+      const registry = new InMemoryConversationTurnRegistry();
+      const first = registry.start("conversation-1");
+
+      registry.start("conversation-1", speechLike);
+
+      expect(() => first.throwIfCancelled()).toThrowError(expect.objectContaining({ replacedByNewerInput: false }));
+    });
+
+    it("lets an emitting chat turn finish when only the newer turn supersedes after emission", () => {
+      const registry = new InMemoryConversationTurnRegistry();
+      const first = registry.start("conversation-1");
+      first.beginEmission();
+
+      registry.start("conversation-1", speechLike);
+
+      expect(first.signal.aborted).toBe(false);
+    });
+
+    it("lets an emitting speech-like turn finish when the newer turn is a default chat turn", () => {
+      const registry = new InMemoryConversationTurnRegistry();
+      const first = registry.start("conversation-1", speechLike);
+      first.beginEmission();
+
+      registry.start("conversation-1");
+
+      expect(first.signal.aborted).toBe(false);
+    });
+  });
+
   it("keeps newer registry ownership when an older turn completes", () => {
     const registry = new InMemoryConversationTurnRegistry();
     const first = registry.start("conversation-1");

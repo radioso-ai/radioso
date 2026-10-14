@@ -58,6 +58,7 @@ export { buildAgentReplyEnvelope, isChatTurnResponse } from "../services/agentRe
 export { chatRequestInputFor, resolveAgentTurnInput, type AgentTurnInput } from "../services/agentTurnInput.js";
 export type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "./routineTurnState.js";
 export type { ChatStreamEvent } from "./streamEvents.js";
+export type { ConversationTurnSupersession } from "./interruption.js";
 export type {
   ActionHandler,
   ActionHandlerContext,

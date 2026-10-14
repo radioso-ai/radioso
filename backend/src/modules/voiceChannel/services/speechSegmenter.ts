@@ -1,4 +1,4 @@
-import { withoutAssertionMarkers } from "./speechText.js";
+import { spokenText, type SpeechPosition } from "./speechText.js";
 
 /**
  * A sentence ends at a Unicode sentence terminator (`.`, `?`, `؟`, `।`, …) or an ellipsis, with any
@@ -15,13 +15,16 @@ interface SentenceSplit {
   remainder: string;
 }
 
+const STREAMING_REPLY_START: SpeechPosition = { startsLine: true, final: false };
+
 /**
- * Cuts the complete sentences off the front of `buffer` once its assertion markers are removed;
- * joined back together they are that cleaned buffer. A marker still open at the end of the buffer
- * stays in the remainder until the chunk that closes it arrives.
+ * Cuts the complete sentences off the front of `buffer` once it is spoken text (assertion markers
+ * and markdown removed); joined back together they are that cleaned buffer. A marker or delimiter
+ * still open at the end of the buffer stays in the remainder until the chunk that closes it arrives.
+ * `position` places the buffer in its reply; by default it starts a reply that is still streaming.
  */
-export const splitCompleteSentences = (rawBuffer: string): SentenceSplit => {
-  const buffer = withoutAssertionMarkers(rawBuffer);
+export const splitCompleteSentences = (rawBuffer: string, position: SpeechPosition = STREAMING_REPLY_START): SentenceSplit => {
+  const buffer = spokenText(rawBuffer, position);
   const sentences: string[] = [];
   let start = 0;
   for (const match of buffer.matchAll(SENTENCE_BOUNDARY)) {
@@ -30,4 +33,35 @@ export const splitCompleteSentences = (rawBuffer: string): SentenceSplit => {
     start = end;
   }
   return { sentences, remainder: buffer.slice(start) };
+};
+
+/** A cut sentence ends its line when the whitespace after its terminator holds a line break. */
+const ENDS_LINE = /\n\s*$/u;
+
+/**
+ * A streamed reply cut into sentences as its chunks arrive. It remembers whether its unfinished
+ * tail starts a line of the reply, so a list marker is removed only at a real line start, and it
+ * closes an emphasis left open at the end only once the reply is whole.
+ */
+export const createSentenceCutter = (): {
+  /** The sentences `text` completes. */
+  push(text: string): string[];
+  /** The rest of the reply once no more text follows: any sentences, then the unterminated tail. */
+  finish(): SentenceSplit;
+} => {
+  let pending = "";
+  let startsLine = true;
+  const cut = (text: string, final: boolean): SentenceSplit => {
+    const split = splitCompleteSentences(pending + text, { startsLine, final });
+    const last = split.sentences.at(-1);
+    if (last !== undefined) {
+      startsLine = ENDS_LINE.test(last);
+    }
+    pending = final ? "" : split.remainder;
+    return split;
+  };
+  return {
+    push: (text) => cut(text, false).sentences,
+    finish: () => cut("", true),
+  };
 };

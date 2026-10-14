@@ -31,6 +31,8 @@ import { builtInAnswerSkills } from "./builtInAnswerSkills.js";
 import type { TurnOutcome, TurnRenderContext, TurnSkill, TurnStreamResult } from "./turnOutcome.js";
 import {
   computeGroundingSummary,
+  declineReasonForCommittedOutcome,
+  type CommittedDeclineOutcome,
   type GroundingSummary,
   type GroundingVerdict,
 } from "./groundingAssertions.js";
@@ -132,21 +134,37 @@ const declinePendingRoutineStep = (session: PreparedSession): RoutinePendingStep
   session.agent.handoffOnRetrievalMiss === true ? undefined : session.routineYield?.pendingStep;
 
 /**
+ * The decline (`no_support` or `out_of_scope`) the grounded answer committed in its head
+ * without writing any text for it, or `null` when it did not. The commitment is still a
+ * valid verdict, so the turn delivers the focused decline that outcome promised instead
+ * of failing as a blank generation. An empty `answer` commitment stays a generation failure.
+ */
+const blankDeclineCommitment = (
+  envelope: { outcome: GroundingEnvelopeOutcome | null },
+  answer: string,
+): CommittedDeclineOutcome | null =>
+  !answer.trim() && (envelope.outcome === "no_support" || envelope.outcome === "out_of_scope")
+    ? envelope.outcome
+    : null;
+
+/**
+ * The reason a blank decline is presented with. The composed decline only words the
+ * reply; why the turn declined is what the head committed, so an `out_of_scope`
+ * commitment never becomes a content gap that hands the visitor off. A decline model
+ * that could not generate at all leaves the turn unavailable instead.
+ */
+const blankDeclineReason = (committed: CommittedDeclineOutcome, composed: ComposedDecline): TurnDeclineReason =>
+  composed.declineReason === "generation_unavailable"
+    ? composed.declineReason
+    : declineReasonForCommittedOutcome(committed);
+
+/**
  * Composes a grounded answer for a retrieval turn: the grounded system prompt, the
  * envelope call, the page-context fallback, and computed grounding presentation.
  * Grounding is retrieval's *private* business — this only
  * ever runs for `RETRIEVAL` turns; social/identity turns are answered by their own
  * skills and never reach here.
  */
-/**
- * The grounded answer committed a decline (`no_support` or `out_of_scope`) in its head
- * and wrote no text for it. The commitment is still a valid verdict, so the turn
- * delivers the focused decline that outcome promised instead of failing as a blank
- * generation. An empty `answer` commitment stays a generation failure.
- */
-const commitsDeclineWithoutText = (envelope: { outcome: GroundingEnvelopeOutcome | null }, answer: string): boolean =>
-  !answer.trim() && (envelope.outcome === "no_support" || envelope.outcome === "out_of_scope");
-
 export class RetrievalAnswerComposer {
   constructor(
     private readonly support: ChatAnswerSupport,
@@ -284,7 +302,7 @@ export class RetrievalAnswerComposer {
   }
 
   private recordBlankDecline(
-    outcome: GroundingEnvelopeOutcome | null,
+    outcome: CommittedDeclineOutcome,
     declineReason: TurnDeclineReason,
     stream: boolean,
   ): void {
@@ -296,7 +314,7 @@ export class RetrievalAnswerComposer {
         reason: "blank_decline",
         stream: String(stream),
         decline: declineReason,
-        outcome: outcome ?? "none",
+        outcome,
       },
     });
   }
@@ -445,7 +463,7 @@ export class RetrievalAnswerComposer {
       ...(signal ? { signal } : {}),
     });
     const envelope = parseGroundedAnswerEnvelope(raw);
-    if (!envelope.answer.trim() && !commitsDeclineWithoutText(envelope, envelope.answer)) {
+    if (!envelope.answer.trim() && !blankDeclineCommitment(envelope, envelope.answer)) {
       throw new BlankChatAnswerError();
     }
     return envelope;
@@ -531,7 +549,7 @@ export class RetrievalAnswerComposer {
     const finalized = reader.finalize();
     const fullAnswer = finalized.fullAnswer.trim();
     if (!fullAnswer) {
-      if (commitsDeclineWithoutText(finalized, fullAnswer)) {
+      if (blankDeclineCommitment(finalized, fullAnswer)) {
         return null;
       }
       throw new BlankChatAnswerError();
@@ -649,7 +667,8 @@ export class RetrievalAnswerComposer {
         envelope,
         contextCount: session.retrieval.contexts.length,
       });
-      if (commitsDeclineWithoutText(envelope, envelope.answer)) {
+      const blankDecline = blankDeclineCommitment(envelope, envelope.answer);
+      if (blankDecline) {
         const decline = await this.composeFocusedDecline(
           session,
           query,
@@ -658,9 +677,9 @@ export class RetrievalAnswerComposer {
           "blank_decline",
           envelopeAssessment,
         );
-        this.recordBlankDecline(envelope.outcome, decline.declineReason, false);
+        declineReason = blankDeclineReason(blankDecline, decline);
+        this.recordBlankDecline(blankDecline, declineReason, false);
         answer = decline.text;
-        declineReason = decline.declineReason;
         grounding = "no_support";
       } else if (shouldSuppressUnsupportedDraft(session, envelope, summary)) {
         const decline = await this.composeFocusedDecline(
@@ -983,7 +1002,7 @@ export class RetrievalAnswerComposer {
       plannedSuggestions = finalized.suggestions;
       metadataPatch = this.sideChannel(session)?.resolve(finalized.extras);
       rawAnswer = finalized.fullAnswer;
-      const blankDecline = commitsDeclineWithoutText(finalized, rawAnswer);
+      const blankDecline = blankDeclineCommitment(finalized, rawAnswer);
       if (!rawAnswer.trim() && !blankDecline) {
         throw new BlankChatAnswerError();
       }
@@ -1005,9 +1024,9 @@ export class RetrievalAnswerComposer {
         if (signal?.aborted) {
           throw signal.reason ?? new Error("chat_turn_aborted");
         }
-        this.recordBlankDecline(finalized.outcome, decline.declineReason, true);
+        declineReason = blankDeclineReason(blankDecline, decline);
+        this.recordBlankDecline(blankDecline, declineReason, true);
         rawAnswer = decline.text;
-        declineReason = decline.declineReason;
         grounding = "no_support";
         plannedSuggestions = [];
         metadataPatch = undefined;

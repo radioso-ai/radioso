@@ -97,16 +97,18 @@ helpers and the shared chat message limit from `app/http`
 - **Turn policy.** Runs only while the agent's `voice.enabled` is true; with
   voice off a turn runs exactly as a plain chat turn. The bridge fires when the
   turn starts searching, 400 ms after it starts composing without speech, or
-  after 1.8 s with no phase at all; the limit is 10 s into the turn
+  after 2.5 s with no phase at all (only a stalled planner gets there: a
+  planner quick reply takes up to about 2 s, and a knowledge turn bridges on
+  `searching`); the limit is 10 s into the turn
   (`VOICE_BEHAVIOR` in `shared/domain/behaviorConfig.ts`). Both cover only
   turns the agent owns: when the conversation is human-owned at turn start
   (one ownership read, beside the routine state read) the policy runs with
   `bridge: null` and `turnLimitMs: null`, so chat's waiting message is neither
   preceded by a bridge line nor talked over by the fallback line, and neither
-  is counted. The turn service turns chat `status` events into phase markers (`interpreting`, `searching`,
-  `composing`) that only the policy reads; adapters never see them, and with
+  is counted. The turn service turns chat `status` events into phase markers
+  (`interpreting`, `searching`, `composing`) that only the policy reads; adapters never see them, and with
   voice off they are dropped. `interpreting` is where every turn starts, so
-  it leaves the 1.8 s fallback armed. Everything stops at the first speech or
+  it leaves the 2.5 s fallback armed. Everything stops at the first speech or
   the outcome, and at most one bridge is spoken. The bridge
   style is `acknowledge` while a routine is active in the conversation at turn
   start and `check` otherwise; a session's first turn has no routine. Lines

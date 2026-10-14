@@ -178,14 +178,17 @@ characters. A new agent starts with `"enabled": false` and empty maps.
 What happens on a turn while `enabled` is true:
 
 - **Bridge.** The bridge fires when the turn starts searching, 400 ms after
-  it starts composing without speech, or after 1.8 s with no phase at all.
+  it starts composing without speech, or after 2.5 s with no phase at all.
   Searching means the agent is looking the answer up in your documents, which
   always takes a few seconds; a short reply such as "Hi!" starts speaking well
-  inside the 400 ms, so it is never preceded by a bridge. The caller hears one
+  inside the 400 ms, so it is never preceded by a bridge. The 2.5 s case is
+  for a planner that stalls: a greeting the planner answers itself takes up
+  to about 2 seconds, and a knowledge question bridges as soon as the search
+  starts. The caller hears one
   bridge line per turn at most, and none once the reply has started speaking.
   Once a person owns the conversation, no bridge line plays (see
   [Outcomes](#outcomes)).
-  A turn that replaces one whose bridge line went out less than 1.8 s earlier
+  A turn that replaces one whose bridge line went out less than 2.5 s earlier
   speaks none, so bridges never stack.
   Inside a running routine (the
   agent has just asked the caller something and is taking in the answer) it
@@ -206,7 +209,7 @@ What happens on a turn while `enabled` is true:
   hears nothing extra. With no fallback line for the language, the turn keeps
   waiting for the reply past 10 seconds.
 
-The 400 ms, 1.8 second and 10 second marks are the same for every agent. They follow from
+The 400 ms, 2.5 second and 10 second marks are the same for every agent. They follow from
 how long a caller tolerates silence, not from what an agent says, so they are
 not settings. The limit sits at 10 seconds because slow grounded answers
 reach 8 seconds on about one turn in fifteen, and by then the caller has heard

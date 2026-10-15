@@ -127,7 +127,12 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
                 try {
                   await dependencies.connectorRegistry.shutdownAll();
                 } finally {
-                  await stopRuntimeTracing();
+                  try {
+                    // Last of the turn-running parts: connector work above may still finish a turn.
+                    await dependencies.conversationTurnCoordination.shutdown();
+                  } finally {
+                    await stopRuntimeTracing();
+                  }
                 }
               }
             }

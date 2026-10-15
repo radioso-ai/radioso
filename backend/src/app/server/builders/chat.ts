@@ -51,8 +51,6 @@ import {
   RevisionGreetingStarterPromptReader,
   ChatService,
   ChatTurnAssemblyFactory,
-  InMemoryConversationTurnRegistry,
-  LoggingConversationTurnInterruptionObserver,
   type ChatRoutineProvider,
   type PublicConversationEventBus,
   ChainedPublicChatActionAdvertiser,
@@ -157,6 +155,7 @@ import {
 } from "../../composition/agentConverseOrigins.js";
 import { createConverseVisitorIdentityVerifier } from "../../composition/converseVisitorIdentity.js";
 import { createConversationUpdatesComposition } from "../../composition/conversationUpdates.js";
+import { createConversationTurnCoordination } from "../../composition/conversationTurnCoordination.js";
 
 
 export const buildMcpConverseServices = (
@@ -781,6 +780,12 @@ export const buildChatServices = (input: {
     visitorRepository,
     input.metricsRegistry,
   );
+  const conversationTurnCoordination = createConversationTurnCoordination({
+    env: input.env,
+    db: input.database.kysely,
+    logger: input.logger,
+    metricsRegistry: input.metricsRegistry,
+  });
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -839,9 +844,7 @@ export const buildChatServices = (input: {
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,
     logger: input.logger,
-    conversationTurnRegistry: new InMemoryConversationTurnRegistry(
-      new LoggingConversationTurnInterruptionObserver(input.logger, input.metricsRegistry),
-    ),
+    conversationTurnRegistry: conversationTurnCoordination.registry,
     conversationOwnershipRepository: input.conversationOwnershipRepository,
     // Routine resume/activate per turn — present only when routines are registered.
     routineStore: routineStateRepository,
@@ -1017,5 +1020,6 @@ export const buildChatServices = (input: {
     actionDrainDispatcher,
     approvalDecisionService,
     closeApprovalResumeEffectJournal: () => approvalResumeEffectJournalDatabase.close(),
+    conversationTurnCoordination,
   };
 };

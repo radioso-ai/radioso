@@ -665,6 +665,22 @@ export interface ConversationSummaries {
   updated_at: Generated<Timestamp>;
 }
 
+export interface ConversationTurnHeads {
+  conversation_id: string;
+  previous_turn_id: Int8 | null;
+  turn_id: Int8;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface ConversationTurnLeases {
+  conversation_id: string;
+  lease_expires_at: Timestamp;
+  owner_instance_id: string;
+  started_at: Generated<Timestamp>;
+  supersede_after_emission: boolean;
+  turn_id: Int8;
+}
+
 export interface CopilotConversations {
   created_at: Generated<Timestamp>;
   id: string;
@@ -2091,6 +2107,8 @@ export interface DB {
   conversation_delivery_failures: ConversationDeliveryFailures;
   conversation_ownership: ConversationOwnership;
   conversation_summaries: ConversationSummaries;
+  conversation_turn_heads: ConversationTurnHeads;
+  conversation_turn_leases: ConversationTurnLeases;
   conversations: Conversations;
   copilot_conversations: CopilotConversations;
   copilot_messages: CopilotMessages;

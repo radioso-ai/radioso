@@ -152,4 +152,10 @@ export { ChatAnswerSupport } from "./services/chatAnswerSupport.js";
 export {
   InMemoryConversationTurnRegistry,
   LoggingConversationTurnInterruptionObserver,
+  type ConversationTurnRegistry,
 } from "./services/conversationTurnRegistry.js";
+export { CrossInstanceConversationTurnRegistry } from "./services/crossInstanceConversationTurnRegistry.js";
+export {
+  PostgresConversationTurnLeaseStore,
+  PostgresConversationTurnNotices,
+} from "./infra/postgresConversationTurnLeases.js";

@@ -1,7 +1,7 @@
 ---
 title: "Assistant Execution Model"
 description: "Design principle that live chat stays in the request path while background work like exports is deferred asynchronously."
-last_updated: 2026-10-07
+last_updated: 2026-10-15
 ---
 
 # Assistant Execution Model
@@ -85,9 +85,34 @@ For a successful stream, `done` marks completion of the core turn. Optional
 `suggestions` enrichment can follow, so clients that use suggestions should
 continue reading until the stream closes.
 
-Interruption coordination is process-local. Multi-instance deployments need
-conversation-affine routing for strict behavior across instances. Without it,
-cancellation remains best effort within each process.
+These rules hold across instances. Each turn takes a lease in Postgres when it
+starts, and the conversation's turns are ordered there. On one instance, a newer
+message applies the rules the moment its turn starts. When the reply in flight
+runs on a different instance, that instance hears about the newer turn through
+Postgres `LISTEN`/`NOTIFY`, typically a few milliseconds after the newer turn
+starts, and applies the same rules then. A reply that passes its point of no
+return inside that gap is kept, and the newer message runs after it. For chat,
+that point is the first streamed chunk or the start of persisting. For a voice
+turn, it is the commit of its stored reply. While an instance's `LISTEN`
+connection is reconnecting, the gap lasts until it reconnects and reads back the
+turns it missed.
+
+Each API or worker process holds one extra database connection for `LISTEN` while
+it has turns in flight. The connection closes once the process has had no turn in
+flight for the pool's idle timeout (`DB_POOL_IDLE_TIMEOUT_MS`). When you size the
+database's connection limit, count `DB_POOL_MAX + 1` per process.
+
+A newer turn runs once every older turn of the conversation has finished, on any
+instance. If an instance crashes mid-turn, its lease stops being renewed and
+expires after about 30 seconds, and newer turns stop waiting for it. They still
+wait for any older reply on another instance that is running.
+
+An instance that cannot renew its lease aborts its own turn about two seconds
+before the lease would expire. That covers a blocked event loop and a database
+connection that only that instance lost. The turn never runs alongside the turn
+that takes over. As with a disconnect, the abort stops provider calls that honor
+the turn's signal; a stage that ignores it runs until it returns, and the turn
+then stores nothing.
 
 ## A Disconnected Client Does Not Stop the Turn
 

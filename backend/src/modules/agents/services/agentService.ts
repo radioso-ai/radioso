@@ -1,3 +1,5 @@
+import type { ZodError } from "zod";
+
 import type {
   AgentGreetingUpdateOptions,
   AgentProposalCasGuard,
@@ -94,6 +96,17 @@ export interface AgentSettingsProposalPort {
   applyFieldProposal(workspaceId: string, prepared: AgentFieldProposalApplyInput, options?: { readonly onCommitted?: OwnerCommitHook<{ readonly agentId: string }> }): Promise<AgentFieldProposalApplyOutcome>;
 }
 
+/**
+ * Where a proposed value first fails its schema, as a dot-path into the value. A nested block such
+ * as `voice` is replaced whole, so the author needs the failing line, not only the setting's name.
+ */
+const settingValueIssue = (error: ZodError): string => {
+  const issue = error.issues[0];
+  if (!issue) return "";
+  const path = issue.path.join(".");
+  return path ? ` at ${path}: ${issue.message}` : `: ${issue.message}`;
+};
+
 const proposalSettingPatch = (settingKey: string, value: unknown): AgentInput => {
   if (settingKey === "surfaceSettings") {
     throw badRequest("Public channel and embed settings are proposed with propose_workspace_setting, which names each field and states on the card when a change alters who can reach the agent");
@@ -101,7 +114,7 @@ const proposalSettingPatch = (settingKey: string, value: unknown): AgentInput =>
   const schema = agentInputFieldSchemas[settingKey as keyof typeof agentInputFieldSchemas];
   if (!schema) throw badRequest(`Unknown agent setting: ${settingKey}`);
   const parsed = schema.safeParse(value);
-  if (!parsed.success) throw badRequest(`Invalid ${settingKey} setting value`);
+  if (!parsed.success) throw badRequest(`Invalid ${settingKey} setting value${settingValueIssue(parsed.error)}`);
   return { [settingKey]: parsed.data };
 };
 const proposalSettingValue = (settings: object, settingKey: string): unknown =>

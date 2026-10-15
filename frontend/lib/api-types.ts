@@ -479,6 +479,7 @@ export type HandBackConversationRequest =
   operations['handBackConversation']['requestBody']['content']['application/json']
 export type ConversationOwnershipResponse = ApiSchemas['ConversationOwnershipResponse']
 export type ChatConversationTurnDebug = ApiSchemas['ChatConversationMessageDebug']
+export type ReplyInterruption = ApiSchemas['ReplyInterruption']
 export type ChatConversationTurn = ApiSchemas['ChatConversationMessage'] & {
   answerFeedbackEntries?: AnswerFeedbackEntry[]
 }

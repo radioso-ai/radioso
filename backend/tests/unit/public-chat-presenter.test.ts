@@ -164,6 +164,29 @@ describe("public chat presenter", () => {
     }
   });
 
+  it("hands the visitor the interruption marker on a reply they cut short, and on no other message", () => {
+    const reply = (id: string, content: string): ChatConversationTurn => ({
+      id,
+      role: "assistant",
+      source: "ai_agent",
+      content,
+      createdAt: "2026-09-30T10:00:00.000Z",
+    });
+    const cutReply = { ...reply("m1", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } };
+    const fullReply = reply("m2", "And at ten on Saturdays.");
+    const tail = stripPublicConversationTailCitationArtifacts({ messages: [cutReply, fullReply], cursor: null }, true);
+    const detail = stripPublicConversationCitationArtifacts(
+      { messages: [cutReply, fullReply] } as unknown as ChatConversationDetail,
+      "anonymous-session-1",
+      true,
+    );
+
+    for (const messages of [tail.messages, detail.messages]) {
+      expect(messages[0]).toMatchObject({ id: "m1", interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } });
+      expect(messages[1]).not.toHaveProperty("interruption");
+    }
+  });
+
   it("never forwards a conversation's ownership to the visitor, AI-owned included, even when a read carried it", () => {
     // Operator reads carry the ownership record whenever one exists; it names the teammate
     // handling the conversation, so a mis-wired read must still not hand it to the visitor.

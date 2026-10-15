@@ -142,6 +142,27 @@ describe("grounded miss response composer", () => {
     expect(properties.declineReason?.enum).toEqual(["content_gap", "out_of_scope"]);
   });
 
+  it("strips a single-bracket assertion marker from the model's decline text (#1502)", async () => {
+    const composer = new ModelFallbackReplyComposer(pipeline({
+      metadata: { capability: "chat", provider: "openai", model: "test-model" },
+      async complete() {
+        return textResult(JSON.stringify({
+          reply: "That's outside what I can help with[?], but I can help with our courses.",
+          declineReason: "out_of_scope",
+        }));
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }));
+
+    await expect(composer.composeNoContext({ query: "What is the capital of Mars?", usageContext }))
+      .resolves.toEqual({
+        text: "That's outside what I can help with, but I can help with our courses.",
+        declineReason: "out_of_scope",
+      });
+  });
+
   it("classifies an in-remit decline as a content gap", async () => {
     const composer = new ModelFallbackReplyComposer(pipeline({
       metadata: { capability: "chat", provider: "openai", model: "test-model" },

@@ -215,7 +215,10 @@ describe("answer presentation service", () => {
     ]);
   });
 
-  it("preserves natural single-bracket numeric text", () => {
+  // #1502: a single-bracket `[n]`/`[?]` is now treated as a possible stray assertion
+  // marker, the same trade-off the voice channel's speech renderer already makes. The
+  // one shape still protected is a markdown link whose label is a bare number.
+  it("preserves a markdown link whose label is a bare number, but strips other bracketed numeric text", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
@@ -224,7 +227,7 @@ describe("answer presentation service", () => {
     });
 
     expect(result).toEqual({
-      answer: "Read [1](https://example.com), inspect arr[0], and keep the [2024] label.",
+      answer: "Read [1](https://example.com), inspect arr, and keep the  label.",
     });
   });
 
@@ -355,6 +358,40 @@ describe("answer presentation service", () => {
 
     expect(result.answer).toBe("Malformed claim.");
     expect(result.citations).toBeUndefined();
+  });
+
+  // #1502: the model sometimes writes the single-bracket form (`[n]`, `[?]`) instead of
+  // the prompted `[[n]]`/`[[?]]`. It carries no citation attribution of its own — unlike
+  // `[[n]]`, it is never parsed into an anchor group — but the stray marker text itself
+  // must not reach the visible answer.
+  it("strips a single-bracket unsupported-claim marker mid-sentence", () => {
+    const service = new AnswerPresentationService();
+    const result = service.present({
+      answer: "Kriya is not [?] documented here.",
+      citations: [],
+    });
+
+    expect(result.answer).toBe("Kriya is not  documented here.");
+  });
+
+  it("strips a single-bracket numeric marker at the end of a sentence", () => {
+    const service = new AnswerPresentationService();
+    const result = service.present({
+      answer: "Arudra is a leader[1].",
+      citations: [],
+    });
+
+    expect(result.answer).toBe("Arudra is a leader.");
+  });
+
+  it("preserves a markdown link whose label is a bare number", () => {
+    const service = new AnswerPresentationService();
+    const result = service.present({
+      answer: "See [1](https://example.com) for details.",
+      citations: [],
+    });
+
+    expect(result.answer).toBe("See [1](https://example.com) for details.");
   });
 
   it("collapses consecutive claims that cite the same document into one visible citation", () => {

@@ -1,4 +1,5 @@
 import { removeDetachedPunctuationSpacing, STRANDABLE_PUNCTUATION } from "./citationTextNormalization.js";
+import { SINGLE_BRACKET_ASSERTION_MARKER } from "./citationAnchorParser.js";
 
 const COMPLETE_ANCHOR = /\[\[\d+\]\]/g;
 const ANY_BRACKET_ANCHOR = /\[\[[^\]]*?\]\]/g;
@@ -9,11 +10,17 @@ const DETACHED_ANCHOR_BEFORE_PUNCTUATION = /[ \t]*\r?\n\s*\[\[\d+\]\][ \t]*(?=[.
 // The same shape when it lands at a chunk boundary: the detached anchor ends one chunk
 // and its punctuation opens the next, so the line break must be held back to decide.
 const TRAILING_DETACHED_ANCHOR = /\r?\n[ \t\r\n]*\[\[\d+\]\][ \t]*$/;
+// A single-bracket marker sitting at the very end of the buffer: still growing digits
+// (`[1`, `[12`), missing its `?` close (`[?`), or already closed (`[1]`, `[?]`) but not
+// yet confirmed against what follows. Held back raw (see below) rather than stripped,
+// because the next chunk may open with `(`, turning it into a markdown link's label.
+const SINGLE_BRACKET_TAIL_CANDIDATE = /(?<!\[)\[(?:\d+|\?)\]?$/;
 
 const stripCompleteAnchors = (text: string): string =>
   removeDetachedPunctuationSpacing(text
     .replace(COMPLETE_ANCHOR, "")
-    .replace(ANY_BRACKET_ANCHOR, ""));
+    .replace(ANY_BRACKET_ANCHOR, "")
+    .replace(SINGLE_BRACKET_ASSERTION_MARKER, ""));
 
 export class CitationAnchorSanitizer {
   private carry = "";
@@ -35,17 +42,26 @@ export class CitationAnchorSanitizer {
     }
 
     const reflowed = combined.replace(DETACHED_ANCHOR_BEFORE_PUNCTUATION, "");
-    const stripped = stripCompleteAnchors(reflowed);
+
+    // Set aside a single-bracket marker sitting at the buffer's end before it is
+    // evaluated: nothing after it yet means we cannot tell a bare marker from the start
+    // of a markdown link. Everything before it keeps its real following text, so that
+    // text's own markers are decided correctly, not against this held-back tail.
+    const tailCandidateMatch = reflowed.match(SINGLE_BRACKET_TAIL_CANDIDATE);
+    const evaluable = tailCandidateMatch ? reflowed.slice(0, tailCandidateMatch.index) : reflowed;
+    const tailCandidate = tailCandidateMatch?.[0] ?? "";
+
+    const stripped = stripCompleteAnchors(evaluable);
 
     const suffixMatch = stripped.match(/\[\[(?:(?!\]\]).)*$/s);
     if (suffixMatch && suffixMatch.index !== undefined) {
       const start = suffixMatch.index;
-      this.carry = stripped.slice(start).slice(-32);
+      this.carry = `${stripped.slice(start).slice(-32)}${tailCandidate}`;
       return stripped.slice(0, start);
     }
 
     if (stripped.endsWith("[")) {
-      this.carry = "[";
+      this.carry = `[${tailCandidate}`;
       return stripped.slice(0, -1);
     }
 
@@ -56,16 +72,18 @@ export class CitationAnchorSanitizer {
       const lineBreak = stripped.match(/\r?\n\s*$/)?.[0];
       if (lineBreak) {
         this.pendingLineBreak = lineBreak;
+        this.carry = tailCandidate;
         return stripped.slice(0, -lineBreak.length);
       }
     }
 
     const trailingWhitespace = stripped.match(/[ \t]+$/)?.[0];
     if (trailingWhitespace) {
-      this.carry = trailingWhitespace;
+      this.carry = `${trailingWhitespace}${tailCandidate}`;
       return stripped.slice(0, -trailingWhitespace.length);
     }
 
+    this.carry = tailCandidate;
     return stripped;
   }
 

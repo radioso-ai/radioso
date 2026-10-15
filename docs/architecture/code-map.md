@@ -401,22 +401,23 @@ Public surfaces and key files:
 
 - `backend/src/modules/voiceChannel/public.ts`
 - `backend/src/modules/voiceChannel/domain.ts` — `VoiceTurnPort`, `VoiceTurnInput`, `VoiceTurnEvent`, `VoiceTurnOutcome`
-- `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`, `speechText.ts`, `voiceTurnPolicy.ts` (bridge and turn limit, `VOICE_BEHAVIOR`), `voiceTurnOutcome.ts` (outcome from chat's `done` event) and `voiceLines.ts`; `voiceSessionMemory.ts` (in-process per-session memory: newest request, last bridge, replayable exchange)
+- `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`, `speechText.ts`, `voiceTurnPolicy.ts` (bridge and turn limit, `VOICE_BEHAVIOR`), `voiceTurnOutcome.ts` (outcome from chat's `done` event) and `voiceLines.ts`; `voiceSessionMemory.ts` (each session's memory between requests, shared across instances: newest request, last bridge, replayable exchange, interruption note)
 - `backend/src/modules/agents/voiceSettings.ts` — the agent's `voice` block on `GET`/`PUT /api/v1/agents/:agentId`, read by the voice services as types from `agents/public.ts`
-- `backend/src/modules/voiceChannel/persistence/voiceSessionRepository.ts` (`voice_sessions`, migration `214_voice_sessions.sql`)
+- `backend/src/modules/voiceChannel/persistence/voiceSessionRepository.ts` (`voice_sessions`, migration `214_voice_sessions.sql`) and `postgresVoiceSessionMemoryStore.ts` (`voice_session_memories`, `voice_session_requests`, the `radioso_voice_sessions` channel; migration `227_voice_session_memories.sql`)
 - `backend/src/modules/voiceChannel/adapters/openaiCompletions/` — dialects as data, request schema, SSE presenter, route
 - `backend/src/app/composition/voiceChannel.ts` and `backend/src/app/http/routes/agentVoiceRoute.ts` (mounted beside the REST agent channel)
 - `backend/src/modules/voiceChannel/README.md`
 
 Useful searches:
 
-- `rg "voiceTurns|VoiceTurn|voice_sessions|VOICE_SOURCE_CHANNEL" backend/src backend/tests`
+- `rg "voiceTurns|VoiceTurn|voice_session|VOICE_SOURCE_CHANNEL" backend/src backend/tests`
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts`
 - `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/voice-session-memory.test.ts tests/integration/voice-session-memory.integration.test.ts` (the shared memory suite in `tests/support/voiceSessionMemoryContract.ts`, two instances on one store)
 
 Related docs:
 

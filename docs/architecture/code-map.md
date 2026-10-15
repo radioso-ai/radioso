@@ -240,7 +240,7 @@ Public surfaces and key files:
 - `backend/src/app/http/openapi/paths/slackPaths.ts`
 - `backend/src/modules/slack/public.ts`
 - `backend/src/modules/slack/manifest/slackManifest.ts`
-- `backend/src/modules/connectors/plugins/slack/` (`slackChannelMessageDisposition.ts` is the pure speak/skip rule for un-mentioned channel messages)
+- `backend/src/modules/connectors/plugins/slack/` (`slackChannelMessageDisposition.ts` is the pure speak/skip rule for un-mentioned channel messages; `slackInboundEventJob.ts` defines the `slack.inbound_event` background job the worker dispatches through — the webhook only verifies, dedupes, and enqueues; `slackInboundJobComposition.ts` builds the worker-side `SlackMessageHandler`, re-exported through `plugins/index.ts` since composition outside `plugins/` may not import plugin internals directly)
 - `frontend/lib/api-slack.ts`
 - `frontend/components/dashboard/settings/slack-channel-card.tsx`
 
@@ -251,7 +251,7 @@ Useful searches:
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/slack tests/contract/slack-admin.contract.test.ts tests/contract/slack-webhook.contract.test.ts tests/integration/slack`
+- `cd backend && pnpm exec vitest run tests/unit/slack tests/unit/app-composition/slack-inbound-job-composition.test.ts tests/contract/slack-admin.contract.test.ts tests/contract/slack-webhook.contract.test.ts tests/integration/slack`
 - `cd frontend && pnpm exec vitest run tests/unit/api-slack.test.ts`
 - `cd frontend && pnpm exec playwright test tests/e2e/slack-channel.spec.ts`
 

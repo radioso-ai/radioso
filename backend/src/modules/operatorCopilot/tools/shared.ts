@@ -131,6 +131,9 @@ export const requiredCopilotConversation = (context: { copilotConversationId?: s
  */
 export const agentSettingReachNote = "Two settings change who can reach the agent rather than how it answers: agentCardEnabled publishes its public cards, and publicAgentAccessEnabled lets any AI agent connect with no credential (it needs agentCardEnabled on too). When proposing either, say in the rationale what it opens or closes.";
 
+/** `voice` and `mechanicsReplies` are nested blocks with no merge: a value is the whole new block. */
+export const agentSettingWholeBlockNote = "voice and mechanicsReplies replace the stored block whole, so send every line the agent keeps, as agent_configuration shows them; write each voice bridge line as one sentence of at least 45 characters.";
+
 export const scopedAgentDraftPublicationNote = "It drafts a proposal for operator review and changes nothing until the operator applies it. Applying a scoped authoring change saves a private agent draft. The current published revision and ongoing conversations are retained; use Review & Publish before new customer conversations use the change. Unversioned/live fields remain live.";
 export const copilotProposalOrigin = (context: { copilotConversationId?: string; operatorMcpInvocationId?: string }) => {
   if (context.operatorMcpInvocationId && !context.copilotConversationId) {

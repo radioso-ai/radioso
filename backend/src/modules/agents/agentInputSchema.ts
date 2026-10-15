@@ -1,6 +1,8 @@
 import { z, type ZodType } from "zod";
 
 import { agentSurfacePositions, type AgentInput } from "./domain.js";
+import { agentMechanicsRepliesSchema } from "./mechanicsReplies.js";
+import { agentVoiceSettingsSchema } from "./voiceSettings.js";
 
 export const agentInputThemeSchema = z.object({
   brand: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
@@ -91,22 +93,21 @@ export const agentInputFieldSchemas = {
     }).optional(),
     extensions: z.record(z.unknown()).optional(),
   }),
+  /** Replaced whole: every key is required, so a value names every line the agent keeps. */
+  voice: agentVoiceSettingsSchema,
+  /** Replaced whole, like `voice`: a value names every locale and mechanic the agent keeps. */
+  mechanicsReplies: agentMechanicsRepliesSchema,
   /**
    * `publicId` is deliberately absent. This map is the allowed-field list for both the PUT body
    * (`agentBodySchema`) and Ray's `propose_agent_setting`, and a public id is minted and rotated
    * by the agent service, never authored — an entry here would let a caller pick its own
    * discovery key or quietly re-point one that is already in the wild.
-   *
-   * `voice` is absent too: the PUT body takes it from the voice channel's own schema, and Ray has
-   * no reviewed descriptor for it, so `propose_agent_setting` must not reach it by name.
-   * `mechanicsReplies` is absent too: the PUT body takes it from its own schema
-   * (`agentMechanicsRepliesSchema`), and Ray has no reviewed descriptor for it, so
-   * `propose_agent_setting` must not reach it by name.
    */
-} satisfies Record<Exclude<keyof AgentInput, "publicId" | "voice" | "mechanicsReplies">, ZodType>;
+} satisfies Record<Exclude<keyof AgentInput, "publicId">, ZodType>;
 
-/** The reviewed-operation surface deliberately excludes channel, retrieval, model, asset, and
- * skill settings because those owners have dedicated authoring flows. */
+/** The reviewed-operation surface deliberately excludes surface, retrieval, model, asset, and
+ * skill settings because those owners have dedicated authoring flows. `voice` and
+ * `mechanicsReplies` are agent-owned blocks with no such flow, so they ride here, replaced whole. */
 export const agentReviewedSettingsPatchSchema = z.object({
   name: agentInputFieldSchemas.name,
   internalName: agentInputFieldSchemas.internalName,
@@ -126,6 +127,8 @@ export const agentReviewedSettingsPatchSchema = z.object({
   walkInConversationsPerHour: agentInputFieldSchemas.walkInConversationsPerHour,
   agentCardEnabled: agentInputFieldSchemas.agentCardEnabled,
   publicAgentAccessEnabled: agentInputFieldSchemas.publicAgentAccessEnabled,
+  voice: agentInputFieldSchemas.voice,
+  mechanicsReplies: agentInputFieldSchemas.mechanicsReplies,
 }).partial().strict().refine((patch) => Object.keys(patch).length > 0, {
   message: "At least one reviewable agent setting must be provided",
 });

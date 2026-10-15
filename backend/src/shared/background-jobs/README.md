@@ -1,0 +1,188 @@
+# Background Jobs
+
+A shared, in-repo substrate for durable work the worker runs after a request has
+answered: conversation summary refresh today, and any kind a module registers.
+A job is a row in Postgres; a Cloud Task or the worker's poll loop only wakes a
+worker to look. The substrate knows job kinds, payload schemas, leases,
+deadlines, retries, and dead letters, and nothing about conversations, channels,
+or any other product concept.
+
+Start here when work needs to survive a deploy, a scale-in, or a Cloud Run
+instance losing CPU after its response, and would otherwise run as a detached
+promise in the API process.
+
+## Boundaries
+
+The substrate owns:
+
+- `defineBackgroundJob`: a kind's name, zod payload schema, duplicate-key mode
+  (`onDuplicateKey`), and policy (`maxAttempts`, `leaseSeconds`,
+  `timeoutSeconds`, `retryBaseDelaySeconds`).
+- `backgroundJobRequest`: a validated job to write, with an optional
+  `idempotencyKey` and `runAfter`.
+- `backgroundJobHandler`: the function that runs one kind. It receives the
+  parsed payload and `{ jobId, attempt, signal }`, and takes an optional
+  `onDeadLetter` hook.
+- `BackgroundJobQueue`: the producer port. `enqueue` resolves once the job is
+  stored and wakes a worker without the caller waiting on it;
+  `enqueueInTransaction` writes inside the caller's transaction, and the caller
+  calls `wake()` once that transaction commits.
+- `BackgroundJobRuntime`: claims a due job under a lease, runs its handler while
+  renewing the lease, then deletes it, requeues it for a requested rerun,
+  retries it with a doubling backoff, or dead-letters it.
+- `BackgroundJobStore` and `BackgroundJobWriter`: the ports the runtime and the
+  queue write through.
+
+Implementations live outside it, and application composition
+(`backend/src/app/composition/backgroundJobs.ts`) wires them:
+
+- `backend/src/db/repositories/backgroundJobRepository.ts`: the generic
+  `background_jobs` store (migration `225_background_jobs.sql`).
+- `backend/src/shared/infra/cloudTasksBackgroundJobWake.ts`: the Cloud Tasks
+  wake, selected by `createDefaultBackgroundJobWake` when
+  `WORKER_DISPATCH_DRIVER=cloud-tasks` and `BACKGROUND_JOB_TASK_QUEUE_NAME` is
+  set. Otherwise `NoopBackgroundJobWake`, and the poll loop finds the job.
+- `backend/src/app/worker/backgroundJobWorkerTaskRoutes.ts`: the drain route
+  the Cloud Task and the Cloud Scheduler recovery sweep call, and the
+  dead-letter retention sweep route.
+
+## Semantics
+
+- **Duplicate keys, per kind.** Every kind declares what an enqueue does when a
+  job with the same kind and `idempotencyKey` is still waiting or running:
+  - `ignore` (one-shot): the duplicate is a no-op. Use it when the key names
+    one unit of work, such as an inbound event id.
+  - `rerun` (level-triggered): a duplicate that arrives while the job is
+    running marks it to run once more, because the run may have read state the
+    duplicate's change postdates; completion then returns the job to waiting
+    instead of deleting it. A duplicate of a job that has not started is folded
+    into it, and that job cannot be claimed until the producer's transaction
+    ends. Use it when the job recomputes from current state, and only when the
+    payload is fully determined by the key: a rerun runs the stored payload.
+
+  In both modes the key is free again once the job completes or is
+  dead-lettered. Durable deduplication beyond a live job (an event id seen last
+  week) belongs to the owning module's own table.
+- **Leases, heartbeats, deadlines.** A claim holds the job for the kind's
+  `leaseSeconds` under a fresh claim token. While the handler runs, the runtime
+  renews the lease three times per lease; a renewal that finds the claim taken
+  over aborts the handler's `signal` and the run writes nothing back. The
+  kind's `timeoutSeconds` is always shorter than its lease: when it passes, the
+  runtime aborts the `signal`, stops waiting, and records a retryable
+  `BackgroundJobTimeoutError`. Pass `signal` to provider and database calls; a
+  handler that ignores it keeps running in the background, and whatever it
+  writes afterwards races the retry. Every complete, retry, and dead-letter
+  write is fenced on the claim token. Handlers must be idempotent: a crash
+  between a side effect and the job's deletion runs the job again.
+- **Retries.** A failed run returns to waiting after
+  `retryBaseDelaySeconds * 2^(attempt - 1)`, capped at an hour, and wakes a
+  worker for that time. `NonRetryableBackgroundJobError` dead-letters at once,
+  and so does a stored payload that no longer matches its schema. A job whose
+  every lease expired without finishing is dead-lettered on its next claim
+  past `maxAttempts`.
+- **What a failure stores and reports.** `last_error` holds the error's class,
+  plus an `AppError` code when there is one, for example
+  `AppError [provider_unavailable]`. Never the message or stack, which can
+  carry provider responses, conversation text, or credentials. The error
+  reporter gets the same shape (kind, attempt, job id, that summary) and never
+  the error itself.
+- **Dead letters.** After `maxAttempts` runs, a failure that cannot be retried,
+  a payload that no longer parses, or attempts used up by crashed workers, the
+  job is parked. The same write drops its payload: a dead letter keeps its kind,
+  key, attempts, `last_error`, and timestamps for 14 days, then the retention
+  sweep removes it. A rerun requested during a run that ends in a dead letter is
+  dropped; the next enqueue starts fresh.
+- **Dead-letter hook.** `backgroundJobHandler(kind, handle, { onDeadLetter })`
+  runs `onDeadLetter(payload, { jobId, attempt, idempotencyKey, error,
+  transaction })` once, inside the transaction that parks the job, whatever
+  parked it. `payload` is the parsed payload, or `null` when the stored payload
+  no longer parses (the key is still there). Make its writes through
+  `transaction` so they commit with the park. The park is fenced on the claim
+  token, so an attempt whose claim was taken over never runs it. A hook that
+  throws rolls back with its writes; the job is parked without it and the
+  failure is reported by shape.
+- **Completion.** A completed job is deleted, because a payload can carry
+  conversation identifiers or content.
+
+## Time Budget
+
+The numbers below hold together; change them together.
+
+| What | Value | Where |
+|------|-------|-------|
+| A kind's deadline (`timeoutSeconds`) | at most 240 s; summary refresh 120 s | `defineBackgroundJob`, `BACKGROUND_JOB_MAX_TIMEOUT_SECONDS` |
+| A kind's lease (`leaseSeconds`) | longer than its deadline; summary refresh 180 s | `defineBackgroundJob` |
+| One drain request's budget, from the request's arrival | 270 s | `BACKGROUND_JOB_DRAIN_BUDGET_SECONDS` |
+| Jobs per pushed drain | 1 | `backgroundJobWorkerTaskRoutes.ts` |
+| Jobs per recovery sweep | up to 10, while the next job's deadline still fits the budget | `background_job_recovery_max_jobs` |
+| Worker request timeout | 300 s | `infra/terraform/compute.tf` (`document_worker`) |
+| Cloud Tasks dispatch deadline | 300 s | `cloudTasksBackgroundJobWake.ts` (set per task) |
+| Cloud Scheduler attempt deadline | 300 s | `infra/terraform/scheduler.tf` |
+
+A drain claims a job only while that kind's deadline still fits in what is left
+of its budget, so a request ends inside 270 s even when every handler runs to
+its deadline, and the 30 s above it covers the claim, completion, and
+dead-letter writes. The budget is longer than the longest deadline, so a kind
+at 240 s still fits a pushed drain after the request spent a few seconds
+arriving.
+Cloud Tasks and Cloud Scheduler wait as long as the worker does, so neither
+retries a drain that is still running. The poll loop has no request around it:
+each tick runs up to ten jobs, each under its own deadline.
+
+## How To Add A Job Kind
+
+1. Define the kind in the owning module, next to the code it runs:
+
+   ```ts
+   export const MY_JOB = defineBackgroundJob({
+     kind: "my_module.my_work",
+     payload: z.object({ workspaceId: z.string(), subjectId: z.string() }),
+     onDuplicateKey: "ignore", // or "rerun" for a job that recomputes from current state
+     maxAttempts: 5,
+     timeoutSeconds: 60,
+     leaseSeconds: 90,
+   });
+   ```
+
+   Keep the payload to identifiers the handler can load current state from.
+   The kind name is a stored value and a metric label: keep it stable.
+   `timeoutSeconds` must be shorter than `leaseSeconds` and at most 240 s.
+
+2. Enqueue through the `BackgroundJobQueue` port composition hands the module:
+   `queue.enqueue(backgroundJobRequest(MY_JOB, payload, { idempotencyKey }))`,
+   or `enqueueInTransaction(trx, request)` plus `wake()` after commit when the
+   job must commit with the caller's own writes.
+
+3. Export a handler factory from the module's composition entry point,
+   `backgroundJobHandler(MY_JOB, (payload, { signal }) => service.run(payload, { signal }))`,
+   and add it to the handler list `backend/src/app/server/dependencies.ts`
+   passes to `backgroundJobs.createRuntime`. The runtime refuses two handlers
+   for one kind, and a worker claims only kinds it has handlers for. Let a
+   failure the job should retry reject; resolve only when the work is done or
+   deliberately skipped. When the module has to record that the work was given
+   up, pass `{ onDeadLetter: (payload, { idempotencyKey, transaction }) => … }`
+   as the third argument and write through `transaction`.
+
+4. Test the handler as business behaviour, and the producer's enqueue with a
+   recording queue. `tests/support/inMemoryBackgroundJobStore.ts` gives runtime
+   semantics on a controllable clock.
+
+No migration, route, queue, or schedule is needed per kind.
+
+## Observability
+
+Every run records `background_jobs_total{kind,outcome}` (outcome `completed`,
+`requeued`, `retried`, `dead_lettered`, or `superseded`),
+`background_job_run_duration_ms{kind,outcome}`, and
+`background_job_wait_ms{kind}`, a `background_job.run` span with the kind and
+attempt, and a log line with the job id, kind, attempt, outcome, duration, and
+error class. A dead letter is reported to the error sinks. Wakes count
+`background_job_wakes_total{result}`; a failed lease renewal logs a warning.
+None of these carry the payload or an error message.
+
+## Tests
+
+- `cd backend && pnpm exec vitest run tests/unit/background-jobs`
+- `tests/integration/background-job-repository.integration.test.ts` (Postgres
+  store: `SKIP LOCKED` contention, claim-token fencing, lease renewal, reruns
+  against a producer's open transaction, retention)

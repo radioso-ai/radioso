@@ -4,7 +4,13 @@ import { RoutineDefinitionRepository } from "../../../db/repositories/routineDef
 import { RoutineStateRepository } from "../../../db/repositories/routineStateRepository.js";
 import { DirectiveStateRepository } from "../../../db/repositories/directiveStateRepository.js";
 import { ConversationSummaryRepository } from "../../../db/repositories/conversationSummaryRepository.js";
-import { ConversationSummaryService, ModelConversationSummaryGenerator, ModelConversationEarlyTitleGenerator } from "../../../modules/chat/composition.js";
+import {
+  ConversationSummaryService,
+  ModelConversationSummaryGenerator,
+  ModelConversationEarlyTitleGenerator,
+  conversationSummaryRefreshHandler,
+} from "../../../modules/chat/composition.js";
+import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ApprovalResumeEffectJournalRepository } from "../../../db/repositories/approvalResumeEffectJournalRepository.js";
 import { ClarificationStateRepository } from "../../../db/repositories/clarificationStateRepository.js";
@@ -209,6 +215,8 @@ export const buildChatServices = (input: {
   auditEventRepository: AuditEventRepository;
   auditService: AuditService;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepository;
+  /** Where a turn hands work to the worker: the conversation summary refresh rides here. */
+  backgroundJobs: BackgroundJobQueue;
   composition: ApplicationComposition;
   /** Records the activity of a handoff a turn requests and an approval decided; reads a conversation's timeline. */
   conversationActivity: { recorder: ConversationActivityRecorder; reads: ConversationActivityTimelineReader };
@@ -709,14 +717,14 @@ export const buildChatServices = (input: {
   const routineStateRepository = new RoutineStateRepository(input.database.kysely);
   const directiveStateRepository = new DirectiveStateRepository(input.database.kysely);
   const conversationSummaryRepository = new ConversationSummaryRepository(input.database.kysely);
-  // Rolling per-conversation summary (#866): read at prepare, regenerated
-  // fire-and-forget post-turn on the cheap rewrite-tier inference (a background
-  // summarization pass, never on the answer latency budget). The same call also
-  // produces a short topic title (#1114), written through the conversation
-  // repository — never the expiring summary row (see migration 154). Below the
-  // summary threshold, a separate lifetime-once early-title call (#1129) still
-  // titles the conversation as soon as it has a reply, on the same rewrite-tier
-  // inference and the same fire-and-forget seam.
+  // Rolling per-conversation summary (#866): read at prepare, regenerated in the
+  // worker by the conversation summary refresh background job each committed turn
+  // writes, on the cheap rewrite-tier inference (never on the answer latency
+  // budget). The same call also produces a short topic title (#1114), written
+  // through the conversation repository — never the expiring summary row (see
+  // migration 154). Below the summary threshold, a separate lifetime-once
+  // early-title call (#1129) still titles the conversation as soon as it has a
+  // reply, on the same rewrite-tier inference and the same job.
   const conversationSummaryService = new ConversationSummaryService(
     conversationSummaryRepository,
     input.messageRepository,
@@ -835,6 +843,7 @@ export const buildChatServices = (input: {
       input.conversationOwnershipRepository,
       actionDrainDispatcher,
       input.logger,
+      input.backgroundJobs,
     ),
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,
@@ -848,9 +857,9 @@ export const buildChatServices = (input: {
     suspendedRoutineReader: routineStateRepository,
     // Per-conversation directive firing memory for once/cooldown lifecycle (#865).
     directiveStateStore: directiveStateRepository,
-    // Rolling per-conversation summary (#866): read at prepare, regenerated post-turn.
+    // Rolling per-conversation summary (#866): read at prepare, refreshed by a background job.
     conversationSummaryStore: conversationSummaryRepository,
-    conversationSummaryUpdater: conversationSummaryService,
+    backgroundJobs: input.backgroundJobs,
     conversationOwnershipReader: input.conversationOwnershipRepository,
     routineProvider,
     clarifierFactory: ({ session, accountId }) => new DefaultClarifier(
@@ -1012,6 +1021,8 @@ export const buildChatServices = (input: {
     contactHistoryProvider,
     retrievalAnswerService,
     actionDispatchWorker,
+    // The chat-owned kinds the worker's background job runtime runs.
+    backgroundJobHandlers: [conversationSummaryRefreshHandler(conversationSummaryService)],
     // For producers outside the turn that write the outbox in their own transaction (a
     // conversation transfer and its notice) and push a drain once it commits.
     actionDrainDispatcher,

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AccountRepository } from "../../../src/db/repositories/accountRepository.js";
 import { ConversationRepository, type ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
@@ -10,6 +10,9 @@ import { WorkspaceRepository, type WorkspaceRecord } from "../../../src/db/repos
 import { ConversationActivityRepository } from "../../../src/db/repositories/conversationActivityRepository.js";
 import { MessageRepository } from "../../../src/db/repositories/messageRepository.js";
 import { PostgresAssistantTurnPersistence } from "../../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
+import { conversationSummaryRefreshRequest } from "../../../src/modules/chat/services/summary/conversationSummaryRefreshJob.js";
+import { BackgroundJobRepository } from "../../../src/db/repositories/backgroundJobRepository.js";
+import { DefaultBackgroundJobQueue, type BackgroundJobWakePort } from "../../../src/shared/background-jobs/index.js";
 import { projectVisitorRequestFacts, resolveContextForTurn } from "../../../src/modules/context-variables/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../../support/databaseMigrations.js";
@@ -46,6 +49,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
   const clearFixtures = async (): Promise<void> => {
     const sessionIds = [...createdSessionIds];
     if (sessionIds.length > 0) {
+      await database.query("DELETE FROM background_jobs WHERE idempotency_key = ANY($1::text[])", [sessionIds]);
       await database.query("DELETE FROM clarification_states WHERE session_id = ANY($1::uuid[])", [sessionIds]);
       await database.query("DELETE FROM routine_states WHERE session_id = ANY($1::uuid[])", [sessionIds]);
     }
@@ -979,5 +983,112 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     expect(serialized).not.toContain(fakeClientIp);
     expect(serialized).not.toContain(fakeUserAgent);
     expect(serialized).not.toContain("de-DE,de;q=0.9");
+  });
+
+  describe("background jobs the turn hands to the worker", () => {
+    const turnWithJobs = (input: { workspaceId: string; conversationId: string; assistantMessageId: string }) => ({
+      workspaceId: input.workspaceId,
+      conversationId: input.conversationId,
+      assistantMessage: {
+        id: input.assistantMessageId,
+        conversationId: input.conversationId,
+        workspaceId: input.workspaceId,
+        role: "assistant" as const,
+        content: "Saved.",
+      },
+      auditEvent: { eventType: "chat.answer", eventStatus: "success" as const, workspaceId: input.workspaceId, metadata: {} },
+      backgroundJobs: [conversationSummaryRefreshRequest({ workspaceId: input.workspaceId, conversationId: input.conversationId })],
+    });
+
+    const summaryJobsFor = (conversationId: string) =>
+      database.query<{ kind: string; status: string; payload: unknown }>(
+        "SELECT kind, status, payload FROM background_jobs WHERE idempotency_key = $1",
+        [conversationId],
+      );
+
+    const persistenceWithQueue = (wake: BackgroundJobWakePort["requestDrain"]) =>
+      new PostgresAssistantTurnPersistence(
+        database.kysely,
+        new ConversationActivityRepository(database.kysely),
+        60_000,
+        undefined,
+        undefined,
+        undefined,
+        new DefaultBackgroundJobQueue({
+          writer: new BackgroundJobRepository(database.kysely),
+          wake: { requestDrain: wake },
+          logger: { warn: vi.fn() },
+        }),
+      );
+
+    it("writes the jobs in the turn's commit and returns the wake for after that commit", async () => {
+      const { workspace, conversation } = await seedConversation();
+      const wake = vi.fn(async () => {});
+
+      const receipt = await persistenceWithQueue(wake).completeAssistantTurn(
+        turnWithJobs({ workspaceId: workspace.id, conversationId: conversation.id, assistantMessageId: randomUUID() }),
+      );
+
+      expect(await summaryJobsFor(conversation.id)).toEqual([{
+        kind: "conversation.summary_refresh",
+        status: "pending",
+        payload: { workspaceId: workspace.id, conversationId: conversation.id },
+      }]);
+      expect(wake).not.toHaveBeenCalled();
+      receipt.wakeBackgroundJobs?.();
+      expect(wake).toHaveBeenCalledOnce();
+    });
+
+    it("leaves no job and no wake behind when the turn rolls back", async () => {
+      const { workspace, conversation } = await seedConversation();
+      const wake = vi.fn(async () => {});
+
+      await expect(persistenceWithQueue(wake).completeAssistantTurn({
+        ...turnWithJobs({ workspaceId: workspace.id, conversationId: conversation.id, assistantMessageId: randomUUID() }),
+        commitFence: () => {
+          throw new Error("superseded by a newer turn");
+        },
+      })).rejects.toThrow("superseded by a newer turn");
+
+      expect(await summaryJobsFor(conversation.id)).toEqual([]);
+      expect(wake).not.toHaveBeenCalled();
+    });
+
+    it("folds a second turn's refresh into the one still waiting, with no second wake", async () => {
+      const { workspace, conversation } = await seedConversation();
+      const persistenceWithJobs = persistenceWithQueue(vi.fn(async () => {}));
+
+      const receipts = [];
+      for (let turn = 0; turn < 2; turn += 1) {
+        receipts.push(await persistenceWithJobs.completeAssistantTurn(
+          turnWithJobs({ workspaceId: workspace.id, conversationId: conversation.id, assistantMessageId: randomUUID() }),
+        ));
+      }
+
+      expect(await summaryJobsFor(conversation.id)).toHaveLength(1);
+      expect(receipts.map((receipt) => receipt.wakeBackgroundJobs !== undefined)).toEqual([true, false]);
+    });
+
+    it("in a caller's transaction, leaves the wake to the caller, whose commit makes the job visible", async () => {
+      const { workspace, conversation } = await seedConversation();
+      const wake = vi.fn(async () => {});
+      const persistenceWithJobs = persistenceWithQueue(wake);
+      let visibleBeforeCommit: unknown[] = [];
+
+      const receipt = await database.kysely.transaction().execute(async (trx) => {
+        const inner = await persistenceWithJobs.completeAssistantTurn({
+          ...turnWithJobs({ workspaceId: workspace.id, conversationId: conversation.id, assistantMessageId: randomUUID() }),
+          transaction: trx,
+        });
+        visibleBeforeCommit = await summaryJobsFor(conversation.id);
+        return inner;
+      });
+
+      expect(visibleBeforeCommit).toEqual([]);
+      expect(wake).not.toHaveBeenCalled();
+      expect(await summaryJobsFor(conversation.id)).toHaveLength(1);
+      receipt.wakeBackgroundJobs?.();
+      expect(wake).toHaveBeenCalledOnce();
+    });
   });
 });

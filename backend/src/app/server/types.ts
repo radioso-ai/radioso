@@ -25,6 +25,7 @@ import type {
 import type { FacetExtractionWorker, FacetExtractionWorkspaceDrainService } from "../../modules/facets/composition.js";
 import type { RetrievalMetadataFieldSourcePort } from "../../modules/settings/contracts/services.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
+import type { BackgroundJobRuntime } from "../../shared/background-jobs/index.js";
 import type { IngestionSettingsService } from "../../modules/settings/composition.js";
 import type { DocumentTypeCatalogService } from "../../modules/documentTypes/composition.js";
 import type { PlatformSettingsService } from "../../modules/settings/composition.js";
@@ -300,6 +301,14 @@ export interface AppDependencies {
   // Worker-process drain loop for the async conversation-action outbox (spec 070).
   // Present in every dependency build; only the worker runtime calls start/stop.
   actionDispatchWorker: ActionDispatchWorker;
+  /**
+   * Runs durable background jobs (`background_jobs`): a poll loop in the worker runtime, the
+   * `/internal/tasks/background-jobs/drain` route in the worker-task runtime. Present in every
+   * dependency build; only the worker runtimes start or drain it.
+   */
+  backgroundJobRuntime: BackgroundJobRuntime;
+  /** Removes dead-lettered background jobs once their retention window has passed. */
+  backgroundJobRetentionWorker: TtlRetentionWorker;
   /**
    * The email channel's inbound drain and sweep: an interval loop in the worker runtime, push and
    * schedule routes in the worker-task runtime. Undefined when no email provider is configured.

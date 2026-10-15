@@ -1107,6 +1107,38 @@ CREATE TABLE public.audit_events (
 
 
 --
+-- Name: background_jobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.background_jobs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    kind text NOT NULL,
+    payload jsonb,
+    idempotency_key text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    available_at timestamp with time zone DEFAULT now() NOT NULL,
+    lease_expires_at timestamp with time zone,
+    claim_token uuid,
+    rerun_requested boolean DEFAULT false NOT NULL,
+    last_error text,
+    dead_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT background_jobs_attempts_check CHECK ((attempts >= 0)),
+    CONSTRAINT background_jobs_dead_has_dead_at CHECK (((status = 'dead'::text) = (dead_at IS NOT NULL))),
+    CONSTRAINT background_jobs_dead_has_no_payload CHECK (((status = 'dead'::text) = (payload IS NULL))),
+    CONSTRAINT background_jobs_idempotency_key_check CHECK (((idempotency_key IS NULL) OR ((length(idempotency_key) >= 1) AND (length(idempotency_key) <= 512)))),
+    CONSTRAINT background_jobs_kind_check CHECK (((length(kind) >= 1) AND (length(kind) <= 128))),
+    CONSTRAINT background_jobs_last_error_check CHECK (((last_error IS NULL) OR (length(last_error) <= 160))),
+    CONSTRAINT background_jobs_rerun_only_while_running CHECK (((NOT rerun_requested) OR (status = 'running'::text))),
+    CONSTRAINT background_jobs_running_has_claim_token CHECK (((status = 'running'::text) = (claim_token IS NOT NULL))),
+    CONSTRAINT background_jobs_running_has_lease CHECK (((status = 'running'::text) = (lease_expires_at IS NOT NULL))),
+    CONSTRAINT background_jobs_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'dead'::text])))
+);
+
+
+--
 -- Name: bootstrap_greeting_cache; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4821,6 +4853,14 @@ ALTER TABLE ONLY public.audit_events
 
 
 --
+-- Name: background_jobs background_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.background_jobs
+    ADD CONSTRAINT background_jobs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: bootstrap_greeting_cache bootstrap_greeting_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6491,6 +6531,34 @@ CREATE INDEX audit_events_document_search_search_id_lookup_idx ON public.audit_e
 --
 
 CREATE INDEX audit_events_workspace_type_created_id_idx ON public.audit_events USING btree (workspace_id, event_type, created_at DESC, id DESC);
+
+
+--
+-- Name: background_jobs_dead_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX background_jobs_dead_at_idx ON public.background_jobs USING btree (dead_at) WHERE (status = 'dead'::text);
+
+
+--
+-- Name: background_jobs_live_idempotency_key_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX background_jobs_live_idempotency_key_uniq ON public.background_jobs USING btree (kind, idempotency_key) WHERE ((idempotency_key IS NOT NULL) AND (dead_at IS NULL));
+
+
+--
+-- Name: background_jobs_pending_available_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX background_jobs_pending_available_at_idx ON public.background_jobs USING btree (available_at) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: background_jobs_running_lease_expires_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX background_jobs_running_lease_expires_at_idx ON public.background_jobs USING btree (lease_expires_at) WHERE (status = 'running'::text);
 
 
 --

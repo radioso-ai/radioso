@@ -20,6 +20,7 @@ import type { CapturedClarificationTransition } from "../services/clarification/
 import type { GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
 import type { ActionDrainDispatcherPort } from "../services/actions/actionDrainDispatcher.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
 
 type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0];
 
@@ -273,11 +274,16 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     // interval-loop poller and the recovery sweep still drain the row.
     private readonly actionDrainDispatcher?: ActionDrainDispatcherPort,
     private readonly logger?: Pick<AppLogger, "warn">,
+    // Writes the background jobs a turn hands to the worker inside the turn's transaction, and
+    // wakes a worker once it commits.
+    private readonly backgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">,
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<AssistantTurnPersistenceReceipt> {
+    let insertedBackgroundJobs = 0;
     const run = async (db: Db): Promise<AssistantTurnPersistenceReceipt> => {
       const insertedActionTypes = await enqueueActions(db, input);
+      insertedBackgroundJobs = await this.enqueueBackgroundJobs(db, input);
       await applyRoutineStateTransition(db, input.routineStateTransition, this.routineStateTtlMs);
       if (input.pendingDecisionTransition) {
         await savePendingDecision(db, input.pendingDecisionTransition);
@@ -389,7 +395,35 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       : await this.db.transaction().execute(async (trx) => run(trx));
 
     await this.requestActionDrain(input.actions);
-    return result;
+    const queue = this.backgroundJobs;
+    if (insertedBackgroundJobs === 0 || !queue) {
+      return result;
+    }
+    // Whoever owns the transaction fires this after commit (the lifecycle for its own, the caller
+    // for one it supplied). Never awaited by a turn: the queue swallows and counts a failed wake,
+    // and the worker's sweep runs a job whose wake was lost.
+    return { ...result, wakeBackgroundJobs: () => void queue.wake() };
+  }
+
+  private async enqueueBackgroundJobs(db: Db, input: CompleteAssistantTurnInput): Promise<number> {
+    if (!input.backgroundJobs?.length) {
+      return 0;
+    }
+    if (!this.backgroundJobs) {
+      this.logger?.warn(
+        { conversationId: input.conversationId, kinds: input.backgroundJobs.map((job) => job.kind) },
+        "Turn requested background jobs but no background job queue is wired; skipped",
+      );
+      return 0;
+    }
+    let inserted = 0;
+    for (const job of input.backgroundJobs) {
+      const receipt = await this.backgroundJobs.enqueueInTransaction(db, job);
+      if (receipt.inserted) {
+        inserted += 1;
+      }
+    }
+    return inserted;
   }
 
   async discardReplacedUserMessage(input: {

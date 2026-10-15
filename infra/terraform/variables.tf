@@ -280,6 +280,53 @@ variable "action_dispatch_recovery_max_jobs" {
   }
 }
 
+# --- Background jobs (background_jobs) ---
+# Durable work the worker runs, such as conversation summary refresh. The backend and
+# the worker push a Cloud Task when they write a job (or schedule one for a retry's due
+# time); the recovery sweep below drains jobs whose push was lost or never sent and
+# reclaims jobs whose lease expired, and a daily sweep removes old dead-lettered jobs.
+
+variable "background_job_task_queue_name" {
+  description = "Cloud Tasks queue name used to wake the worker for background jobs."
+  type        = string
+  default     = "radioso-background-jobs"
+}
+
+variable "background_job_task_max_dispatches_per_second" {
+  description = "Cloud Tasks dispatch rate for background job wakes."
+  type        = number
+  default     = 10
+}
+
+variable "background_job_task_max_concurrent_dispatches" {
+  description = "Maximum concurrent Cloud Tasks dispatches for background job wakes. Each dispatch can run model calls, so this bounds the worker's concurrent background model work."
+  type        = number
+  default     = 10
+}
+
+variable "background_job_recovery_schedule" {
+  description = "Optional cron schedule for the background job recovery sweep, covering wakes that were lost or never sent and jobs whose lease expired."
+  type        = string
+  default     = null
+}
+
+variable "background_job_recovery_max_jobs" {
+  description = "Maximum background jobs each scheduled recovery request may run. Jobs run one after another inside the drain's 240 s budget, which also stops claiming once the next job's deadline no longer fits."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.background_job_recovery_max_jobs >= 1 && var.background_job_recovery_max_jobs <= 50
+    error_message = "background_job_recovery_max_jobs must be between 1 and 50."
+  }
+}
+
+variable "background_job_retention_schedule" {
+  description = "Optional cron schedule for the sweep that removes dead-lettered background jobs once their 14-day retention window has passed."
+  type        = string
+  default     = null
+}
+
 # --- Email channel (inbound email conversations) ---
 # Cloud Tasks queue for scheduled inbound/review/reconcile drains, plus a Cloud
 # Scheduler sweep for lease recovery, domain refresh, send reconciliation claims

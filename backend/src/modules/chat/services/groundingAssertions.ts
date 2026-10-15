@@ -5,6 +5,7 @@ import type {
   GroundingEnvelopeParseStatus,
 } from "./groundedAnswerEnvelope.js";
 import type { GroundingVerdict } from "../../../shared/domain/groundingDiagnostic.js";
+import { canonicalizeUnsourcedMarkers } from "./unsourcedMarkerCanonicalization.js";
 
 /**
  * How well evidence supported the answer. Scope is deliberately *not* a verdict here:
@@ -75,9 +76,10 @@ const normalizeSources = (
 };
 
 export const parseInlineAssertionGroups = (
-  body: string,
+  answerBody: string,
   contextCount: number,
 ): ParsedInlineAssertions => {
+  const body = canonicalizeUnsourcedMarkers(answerBody);
   const tokens = [...body.matchAll(COMPLETE_ASSERTION)].map((match) => ({
     start: match.index ?? 0,
     end: (match.index ?? 0) + match[0].length,

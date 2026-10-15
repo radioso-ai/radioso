@@ -6,8 +6,9 @@ import { AssistantIdentityLine, type AssistantIdentity } from '@/components/chat
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { Check, CircleCheckBig, Copy, PauseCircle, ThumbsDown, ThumbsUp, Wrench, Workflow } from 'lucide-react'
+import { Check, CircleCheckBig, Copy, PauseCircle, ThumbsDown, ThumbsUp, VolumeX, Wrench, Workflow } from 'lucide-react'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
 import type { RoutineThreadMarker } from '@/lib/routine-thread-grouping'
@@ -27,7 +28,7 @@ import {
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { humanReplyAuthor, type ReplyAttributionAudience } from '@/lib/reply-attribution'
 import { activityLine, placeActivity, threadDayBreaks } from '@/lib/conversation-activity'
-import type { ConversationActivityEntry } from '@/lib/api-types'
+import type { ConversationActivityEntry, ReplyInterruption } from '@/lib/api-types'
 import type {
   AnswerFeedbackEntry,
   AnswerFeedbackState,
@@ -174,6 +175,31 @@ export interface ChatThreadMessage {
   operatorDisplayName?: string
   /** Operator reads only: the teammate who wrote a human reply (display name, else email). */
   operatorLabel?: string
+  /** A reply the caller spoke over: how much of it they heard, in spoken characters. */
+  interruption?: ReplyInterruption
+}
+
+/** About how much of a reply the caller heard, as a whole percentage; none when nothing was spoken. */
+const heardPercent = ({ heardCharacterCount, spokenCharacterCount }: ReplyInterruption): number | null =>
+  spokenCharacterCount > 0
+    ? Math.min(100, Math.max(0, Math.round((heardCharacterCount / spokenCharacterCount) * 100)))
+    : null
+
+function InterruptedReplyBadge({ interruption }: { interruption: ReplyInterruption }) {
+  const percent = heardPercent(interruption)
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="outline" tabIndex={0} className="w-fit cursor-default gap-1 px-2 py-0 text-[11px] font-medium">
+          <VolumeX aria-hidden="true" className="size-3" />
+          Interrupted
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        The caller spoke over this reply.{percent === null ? '' : ` About ${percent}% was heard.`}
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 /**
@@ -805,6 +831,9 @@ export function ChatMessageThread({
                         >
                           {sourceBadgeLabel}
                         </Badge>
+                      ) : null}
+                      {audience === 'operator' && message.interruption ? (
+                        <InterruptedReplyBadge interruption={message.interruption} />
                       ) : null}
                       <div
                         {...getSelectableMessageProps(message.id)}

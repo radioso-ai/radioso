@@ -23,8 +23,8 @@ CREATE TABLE voice_session_memories (
   previous_sequence BIGINT,
   touched_at TIMESTAMPTZ NOT NULL,
   -- The session's requests in flight, by arrival number: when each arrived (epoch ms), the instance
-  -- running it, and, once a newer request overtook it, when and from which instance. A request
-  -- leaves when it settles, or five minutes after it arrived when its instance never settled it.
+  -- running it, and, once a newer request overtook it, when. A request leaves when it settles, or
+  -- five minutes after it arrived when its instance never settled it.
   requests JSONB NOT NULL DEFAULT '{}'::jsonb,
   -- The last bridge line spoken in the session: whose request spoke it, when, and whether that
   -- request lost its caller before its outcome (null until the request settles).

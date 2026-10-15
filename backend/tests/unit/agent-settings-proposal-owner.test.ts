@@ -163,6 +163,35 @@ describe("AgentService voice and mechanics replies proposals", () => {
     expect(prepared.effect).toEqual({ exposure: "live", reversibility: "reversible", metered: false });
   });
 
+  it("reads the stored block with its languages in another order as unchanged", async () => {
+    // Postgres jsonb returns object keys in its own order, so key order carries no meaning here.
+    const service = serviceWith({ voice: storedVoice, mechanicsReplies: storedMechanics });
+    const reordered = {
+      fallbackLine: storedVoice.fallbackLine,
+      bridgeLines: { it: storedVoice.bridgeLines.it, en: storedVoice.bridgeLines.en },
+      enabled: true,
+    };
+
+    const prepared = await service.prepareFieldsProposal("workspace-1", "agent-1", { voice: reordered, name: "Help Desk" });
+
+    expect(prepared.changes.map((change) => change.key)).toEqual(["name"]);
+    expect(prepared.unchanged).toEqual(["voice"]);
+    await expect(service.prepareFieldsProposal("workspace-1", "agent-1", { voice: reordered })).rejects.toThrow("already hold these values");
+  });
+
+  it("bounds the failing path it names, however long the offending key", async () => {
+    const service = serviceWith();
+    const hugeKey = "x".repeat(50_000);
+
+    const error: Error = await service.prepareFieldProposal("workspace-1", "agent-1", {
+      settingKey: "mechanicsReplies",
+      value: { [hugeKey]: { greeting: [], thanks: [], farewell: [], acknowledgement: [] } },
+    }).then(() => new Error("expected a rejection"), (caught: unknown) => caught as Error);
+
+    expect(error.message).toMatch(/^Invalid mechanicsReplies setting value at x+…: /);
+    expect(error.message.length).toBeLessThan(500);
+  });
+
   it("applies a reviewed voice patch fenced on the block it replaces", async () => {
     const service = new AgentService({} as never, {} as never);
     const apply = vi.spyOn(service, "applyProposalPatch").mockResolvedValue({ outcome: "applied", previous: agent(), agent: agent() });

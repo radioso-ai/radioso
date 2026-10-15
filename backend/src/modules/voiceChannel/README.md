@@ -121,8 +121,10 @@ helpers and the shared chat message limit from `app/http`
   start and `check` otherwise; a session's first turn has no routine. Lines
   rotate per policy turn within the process. A runtime that holds a first
   sentence shorter than some length (`minReleasableSentenceChars` on the
-  dialect, 45 on `elevenlabs`, carried on `VoiceTurnInput`) gets only the
-  style's lines that reach it; when none does, the shorter line is spoken and
+  dialect; `ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS`, 45, on `elevenlabs`,
+  exported from `public.ts` for the Voice card and Ray's descriptors; carried
+  on `VoiceTurnInput`) gets only the style's lines that reach it; when none
+  does, the shorter line is spoken and
   the service warns once per agent per process. The locale is the request's
   (`VoiceTurnInput.locale`, read by the dialect), else the agent's
   `assistantDefaultLocale`, else `en`; chat stores no response language per

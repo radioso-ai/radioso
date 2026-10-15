@@ -8,6 +8,7 @@ import { buildCopilotNeverListContext, copilotNeverList } from "../../../src/mod
 import { copilotIngestionSettingsChangeSchema } from "../../../src/modules/operatorCopilot/contracts/ingestionSettingsAuthoring.js";
 import { agentInputFieldSchemas, agentReviewedSettingsPatchSchema } from "../../../src/modules/agents/public.js";
 import { realCatalog } from "./realCatalogTestSupport.js";
+import { ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS } from "../../../src/modules/voiceChannel/public.js";
 
 describe("operator copilot catalog coverage", () => {
   // Ratchet: this may only ever decrease as tools land. Every increase so far has been a correction
@@ -100,11 +101,16 @@ describe("operator copilot catalog coverage", () => {
       voice: { enabled: true, bridgeLines: {}, fallbackLine: {} },
       mechanicsReplies: { en: { greeting: ["Hi!"], thanks: [], farewell: [], acknowledgement: [] } },
     }).success).toBe(true);
-    // Both blocks replace whole, so each descriptor tells Ray to send the lines it keeps.
+    // Both blocks replace whole, so each descriptor tells Ray to send the lines it keeps, and states
+    // the elevenlabs dialect's first-sentence floor for bridge and fallback lines from its one source.
     const catalog = realCatalog();
     for (const name of ["propose_agent_setting", "prepare_agent_settings"]) {
-      expect(catalog.find((descriptor) => descriptor.name === name)?.description).toContain("replace the stored block whole");
+      const description = catalog.find((descriptor) => descriptor.name === name)?.description;
+      expect(description).toContain("replace the stored block whole");
+      expect(description).toContain(`bridge or fallback line shorter than ${ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS} characters`);
     }
+    // agent_configuration returns the live voice block beside the portable configuration.
+    expect(catalog.find((descriptor) => descriptor.name === "agent_configuration")?.description).toContain("live voice settings");
   });
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks

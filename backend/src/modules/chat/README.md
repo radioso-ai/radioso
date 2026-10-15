@@ -110,9 +110,9 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   `heardCharacterCount` / `spokenCharacterCount` in spoken characters.
   `MessageRepository.markReplyInterrupted` implements it: it merges
   `interruption: { heardCharacterCount, spokenCharacterCount, recordedAt }` into
-  the message's `metadata_json`, leaves a marker with the same counts as it was,
-  and leaves alone a message that is not an assistant reply of that
-  conversation. `MessageRecord.interruption` reads it back on assistant rows,
+  the message's `metadata_json`, keeps the first marker on a reply whole (a
+  later mark changes neither the counts nor `recordedAt`), and leaves alone a
+  message that is not an assistant reply of that conversation. `MessageRecord.interruption` reads it back on assistant rows,
   and `chatHistoryService.ts` puts it on the reply as `interruption` (the counts
   only) on detail, turn and tail reads, public reads included. The voice
   channel's composition is the caller.

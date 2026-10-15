@@ -37,6 +37,13 @@ const ownershipSchema = z.object({
   reason: z.string().nullable(),
   takenOverAt: z.string().nullable(),
 }).nullable();
+const replyInterruptionSchema = z.object({
+  heardCharacterCount: z.number().int().nonnegative(),
+  spokenCharacterCount: z.number().int().nonnegative(),
+});
+// Compile-time guard: Ray's marker is chat's, so a field added to or dropped from it fails tsc here.
+const replyInterruptionMatchesContract: SameType<z.infer<typeof replyInterruptionSchema>, ReplyInterruption> = true;
+void replyInterruptionMatchesContract;
 const transcriptMessageSchema = z.object({
   id: z.string().uuid(),
   role: z.enum(["user", "assistant", "system"]),
@@ -53,7 +60,7 @@ const transcriptMessageSchema = z.object({
   operatorLabel: z.string().nullable(),
   turnFailure: turnFailureSchema,
   /** A reply the caller cut short by speaking over it: how much of it they heard, in spoken characters. */
-  interruption: z.object({ heardCharacterCount: z.number().int().nonnegative(), spokenCharacterCount: z.number().int().nonnegative() }).nullable(),
+  interruption: replyInterruptionSchema.nullable(),
 });
 const activityPersonSchema = z.object({ userId: z.string().uuid(), label: z.string().nullable() }).nullable();
 const transcriptActivitySchema = z.object({

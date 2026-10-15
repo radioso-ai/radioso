@@ -3,6 +3,7 @@ import {
   VoiceSessionRepository,
   VoiceTurnService,
   type VoiceChatTurnRequest,
+  type VoiceTurnNotes,
   type VoiceTurnPort,
 } from "../../modules/voiceChannel/public.js";
 import type { AgentRecord } from "../../modules/agents/public.js";
@@ -22,25 +23,14 @@ interface VoiceTurnNoteSinks {
  * audited after, so a note that rejects is one the session writes again; the mark is idempotent.
  * Notes name the reply by id and count characters; they never carry what was said.
  */
-export const createVoiceTurnNotes = (deps: VoiceTurnNoteSinks) => ({
-  replyInterrupted: async (note: {
-    workspaceId: string;
-    conversationId: string;
-    assistantMessageId: string;
-    heardCharacterCount: number;
-    spokenCharacterCount: number;
-  }): Promise<void> => {
+export const createVoiceTurnNotes = (deps: VoiceTurnNoteSinks): VoiceTurnNotes => ({
+  replyInterrupted: async (note) => {
     const { workspaceId, ...metadata } = note;
-    await deps.replies.markReplyInterrupted({
-      workspaceId,
-      conversationId: note.conversationId,
-      messageId: note.assistantMessageId,
-      heardCharacterCount: note.heardCharacterCount,
-      spokenCharacterCount: note.spokenCharacterCount,
-    });
+    const { assistantMessageId, ...reply } = note;
+    await deps.replies.markReplyInterrupted({ ...reply, messageId: assistantMessageId });
     await deps.auditService.record({ workspaceId, eventType: "voice.reply_interrupted", eventStatus: "success", metadata });
   },
-  replyReplayed: ({ workspaceId, ...metadata }: { workspaceId: string; conversationId: string; assistantMessageId: string }): Promise<void> =>
+  replyReplayed: ({ workspaceId, ...metadata }) =>
     deps.auditService.record({ workspaceId, eventType: "voice.reply_replayed", eventStatus: "success", metadata }),
 });
 

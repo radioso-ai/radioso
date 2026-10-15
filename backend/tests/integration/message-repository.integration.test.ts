@@ -127,7 +127,9 @@ describeIntegration("MessageRepository (Postgres)", () => {
     });
   });
 
-  it("writes one marker for the same counts written twice, and the newer counts when they change", async () => {
+  // The first report wins whole: a retried note, or a later report with other counts, changes neither
+  // the counts nor the time the marker was recorded.
+  it("keeps the first marker whole when the reply is marked again, with the same counts or others", async () => {
     const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine." });
     const mark = (heardCharacterCount: number) =>
       repository.markReplyInterrupted({ workspaceId, conversationId, messageId: reply.id, heardCharacterCount, spokenCharacterCount: 16 });
@@ -136,11 +138,12 @@ describeIntegration("MessageRepository (Postgres)", () => {
 
     await mark(7);
     const first = await storedMarker();
+    expect(first).toMatchObject({ heardCharacterCount: 7, recordedAt: expect.any(String) });
     await mark(7);
     expect(await storedMarker()).toEqual(first);
 
     await mark(9);
-    expect((await storedMarker()).heardCharacterCount).toBe(9);
+    expect(await storedMarker()).toEqual(first);
   });
 
   it("leaves a message alone that is not an assistant reply of the conversation", async () => {

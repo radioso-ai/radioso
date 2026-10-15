@@ -1,12 +1,14 @@
 -- Durable background work the worker runs: one row per job, claimed under a lease and deleted
 -- once it completes, because a payload can carry conversation identifiers or content. Postgres
 -- owns the job state; a Cloud Task or the worker's poll loop only wakes a worker to look. A job
--- that keeps failing is dead-lettered with an operator-safe error summary and removed by a
--- retention sweep.
+-- that keeps failing is dead-lettered: its payload is dropped in the same write, it keeps an
+-- operator-safe error summary, and a retention sweep removes it.
 CREATE TABLE background_jobs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   kind TEXT NOT NULL CHECK (length(kind) BETWEEN 1 AND 128),
-  payload JSONB NOT NULL,
+  -- Null only once dead-lettered: the payload can carry customer content, and a dead letter is kept
+  -- for inspection by its kind, key, attempts, and error.
+  payload JSONB,
   idempotency_key TEXT CHECK (idempotency_key IS NULL OR length(idempotency_key) BETWEEN 1 AND 512),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'dead')),
   -- Runs started since the job last completed, counting the current one.
@@ -28,7 +30,8 @@ CREATE TABLE background_jobs (
   CONSTRAINT background_jobs_running_has_lease CHECK ((status = 'running') = (lease_expires_at IS NOT NULL)),
   CONSTRAINT background_jobs_running_has_claim_token CHECK ((status = 'running') = (claim_token IS NOT NULL)),
   CONSTRAINT background_jobs_rerun_only_while_running CHECK (NOT rerun_requested OR status = 'running'),
-  CONSTRAINT background_jobs_dead_has_dead_at CHECK ((status = 'dead') = (dead_at IS NOT NULL))
+  CONSTRAINT background_jobs_dead_has_dead_at CHECK ((status = 'dead') = (dead_at IS NOT NULL)),
+  CONSTRAINT background_jobs_dead_has_no_payload CHECK ((status = 'dead') = (payload IS NULL))
 );
 
 -- One live job per kind and key: what a duplicate enqueue does is the kind's choice (folded, or a

@@ -37,7 +37,7 @@ describe("background job worker task routes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(drained);
-    expect(drain).toHaveBeenCalledWith({ maxJobs: 1, budgetMs: 240_000 });
+    expect(drain).toHaveBeenCalledWith({ maxJobs: 1, budgetMs: 270_000, startedAt: expect.any(Number) });
   });
 
   it("lets the scheduled sweep ask for more jobs under the same budget", async () => {
@@ -45,7 +45,7 @@ describe("background job worker task routes", () => {
 
     await request(buildApp({ drain })).post(DRAIN_PATH).send({ maxJobs: 20 });
 
-    expect(drain).toHaveBeenCalledWith({ maxJobs: 20, budgetMs: 240_000 });
+    expect(drain).toHaveBeenCalledWith({ maxJobs: 20, budgetMs: 270_000, startedAt: expect.any(Number) });
   });
 
   it("rejects a job count outside its bounds", async () => {
@@ -112,7 +112,7 @@ describe("background job routes on the worker task server", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ claimed: 0, completed: 0, requeued: 0, retried: 0, deadLettered: 0, superseded: 0 });
-    expect(drain).toHaveBeenCalledWith({ maxJobs: 1, budgetMs: 240_000 });
+    expect(drain).toHaveBeenCalledWith({ maxJobs: 1, budgetMs: 270_000, startedAt: expect.any(Number) });
   });
 
   it("sweeps dead-lettered jobs for a request carrying the token", async () => {

@@ -1619,8 +1619,9 @@ Related specs:
 Owns durable work the worker runs after a request has answered: a job kind with
 a zod payload schema and a duplicate-key mode (`ignore` or `rerun`), a
 `background_jobs` row claimed under a renewed lease and a deadline shorter than
-it, retries with a doubling backoff, dead letters kept 14 days with only the
-error's class, and deletion on completion.
+it, retries with a doubling backoff, dead letters kept 14 days with their
+payload dropped and only the error's class, an optional per-kind dead-letter
+hook that runs in the parking transaction, and deletion on completion.
 Conversation summary refresh is the first kind; a module adds one by defining
 it, enqueueing through the `BackgroundJobQueue` port, and registering a handler
 in composition. The substrate knows nothing about the work its handlers do.

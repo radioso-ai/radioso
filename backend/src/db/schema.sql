@@ -1113,7 +1113,7 @@ CREATE TABLE public.audit_events (
 CREATE TABLE public.background_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     kind text NOT NULL,
-    payload jsonb NOT NULL,
+    payload jsonb,
     idempotency_key text,
     status text DEFAULT 'pending'::text NOT NULL,
     attempts integer DEFAULT 0 NOT NULL,
@@ -1127,6 +1127,7 @@ CREATE TABLE public.background_jobs (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT background_jobs_attempts_check CHECK ((attempts >= 0)),
     CONSTRAINT background_jobs_dead_has_dead_at CHECK (((status = 'dead'::text) = (dead_at IS NOT NULL))),
+    CONSTRAINT background_jobs_dead_has_no_payload CHECK (((status = 'dead'::text) = (payload IS NULL))),
     CONSTRAINT background_jobs_idempotency_key_check CHECK (((idempotency_key IS NULL) OR ((length(idempotency_key) >= 1) AND (length(idempotency_key) <= 512)))),
     CONSTRAINT background_jobs_kind_check CHECK (((length(kind) >= 1) AND (length(kind) <= 128))),
     CONSTRAINT background_jobs_last_error_check CHECK (((last_error IS NULL) OR (length(last_error) <= 160))),

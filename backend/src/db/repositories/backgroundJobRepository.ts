@@ -12,12 +12,13 @@ import type {
 import { currentTimestamp, nowPlusSeconds, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
-const claimColumns = ["id", "kind", "payload", "attempts", "claim_token", "available_at"] as const;
+const claimColumns = ["id", "kind", "payload", "idempotency_key", "attempts", "claim_token", "available_at"] as const;
 
 interface ClaimRow {
   id: string;
   kind: string;
   payload: unknown;
+  idempotency_key: string | null;
   attempts: number;
   claim_token: string | null;
   available_at: Date;
@@ -28,6 +29,7 @@ const mapClaim = (row: ClaimRow): BackgroundJobClaim => ({
   kind: row.kind,
   payload: row.payload,
   attempt: row.attempts,
+  idempotencyKey: row.idempotency_key,
   token: row.claim_token!,
   availableAt: new Date(row.available_at),
 });
@@ -196,21 +198,36 @@ export class BackgroundJobRepository implements BackgroundJobStore, BackgroundJo
     return row ? new Date(row.available_at) : null;
   }
 
-  async deadLetter(claim: BackgroundJobClaim, input: { error: string }): Promise<boolean> {
-    const result = await this.db
-      .updateTable("background_jobs")
-      .set({
-        ...released,
-        status: "dead",
-        last_error: input.error,
-        dead_at: currentTimestamp(),
-        updated_at: currentTimestamp(),
-      })
-      .where("id", "=", claim.id)
-      .where("claim_token", "=", claim.token)
-      .where("status", "=", "running")
-      .executeTakeFirst();
-    return Number(result.numUpdatedRows) > 0;
+  /**
+   * Parks the job and drops its payload in one fenced write, then runs `onParked` in the same
+   * transaction, so a dead-letter hook's writes commit with the park or not at all.
+   */
+  async deadLetter(
+    claim: BackgroundJobClaim,
+    input: { error: string },
+    onParked?: (transaction: Db) => Promise<void>,
+  ): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const result = await trx
+        .updateTable("background_jobs")
+        .set({
+          ...released,
+          status: "dead",
+          payload: null,
+          last_error: input.error,
+          dead_at: currentTimestamp(),
+          updated_at: currentTimestamp(),
+        })
+        .where("id", "=", claim.id)
+        .where("claim_token", "=", claim.token)
+        .where("status", "=", "running")
+        .executeTakeFirst();
+      if (Number(result.numUpdatedRows) === 0) {
+        return false;
+      }
+      await onParked?.(trx);
+      return true;
+    });
   }
 
   /** The retention sweep's port: removes at most `limit` dead-lettered jobs parked before `cutoff`, oldest first. */

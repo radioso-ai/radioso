@@ -32,7 +32,11 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import { buildTelemetrySinks, type TelemetrySinkBundle } from "../../shared/observability/telemetry/buildTelemetrySinks.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
-import { NoopBackgroundJobWake, type BackgroundJobWakePort } from "../../shared/background-jobs/index.js";
+import {
+  NoopBackgroundJobWake,
+  type BackgroundJobQueue,
+  type BackgroundJobWakePort,
+} from "../../shared/background-jobs/index.js";
 import { CloudTasksBackgroundJobWake } from "../../shared/infra/cloudTasksBackgroundJobWake.js";
 import { DefaultAllowCapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import { StaticActionCapabilityMap, type ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
@@ -246,7 +250,11 @@ export const createDefaultConnectorRegistry = (
     Env,
     "SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET" | "SLACK_SIGNING_SECRET" | "CONNECTOR_ENCRYPTION_KEY"
   >>,
-  builtIn: { email?: ConnectorPlugin | null } = {},
+  builtIn: {
+    email?: ConnectorPlugin | null;
+    /** The Slack webhook's enqueue port; absent only in tests that never call `initializeAll`. */
+    slackBackgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
+  } = {},
 ): ConnectorRegistry => {
   const registry = new ConnectorRegistry();
   registerBuiltInConnectors(registry, {
@@ -255,6 +263,7 @@ export const createDefaultConnectorRegistry = (
       SLACK_OAUTH_CLIENT_SECRET: env?.SLACK_OAUTH_CLIENT_SECRET,
       SLACK_SIGNING_SECRET: env?.SLACK_SIGNING_SECRET,
       encryptionKey: env?.CONNECTOR_ENCRYPTION_KEY,
+      backgroundJobs: builtIn.slackBackgroundJobs,
     },
     email: builtIn.email,
   });

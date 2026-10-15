@@ -141,6 +141,11 @@ export class BackgroundJobRuntime {
     }));
   }
 
+  /** The kinds this runtime has a handler for, and so claims. For startup wiring checks. */
+  get registeredKinds(): readonly string[] {
+    return [...this.handlers.keys()];
+  }
+
   start(): void {
     if (this.timer || this.claimableKinds.length === 0) {
       return;

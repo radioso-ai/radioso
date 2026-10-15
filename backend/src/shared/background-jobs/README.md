@@ -1,11 +1,11 @@
 # Background Jobs
 
 A shared, in-repo substrate for durable work the worker runs after a request has
-answered: conversation summary refresh today, and any kind a module registers.
-A job is a row in Postgres; a Cloud Task or the worker's poll loop only wakes a
-worker to look. The substrate knows job kinds, payload schemas, leases,
-deadlines, retries, and dead letters, and nothing about conversations, channels,
-or any other product concept.
+answered: conversation summary refresh, Slack inbound-event dispatch, and any
+kind a module registers. A job is a row in Postgres; a Cloud Task or the
+worker's poll loop only wakes a worker to look. The substrate knows job kinds,
+payload schemas, leases, deadlines, retries, and dead letters, and nothing
+about conversations, channels, or any other product concept.
 
 Start here when work needs to survive a deploy, a scale-in, or a Cloud Run
 instance losing CPU after its response, and would otherwise run as a detached
@@ -110,8 +110,8 @@ The numbers below hold together; change them together.
 
 | What | Value | Where |
 |------|-------|-------|
-| A kind's deadline (`timeoutSeconds`) | at most 240 s; summary refresh 120 s | `defineBackgroundJob`, `BACKGROUND_JOB_MAX_TIMEOUT_SECONDS` |
-| A kind's lease (`leaseSeconds`) | longer than its deadline; summary refresh 180 s | `defineBackgroundJob` |
+| A kind's deadline (`timeoutSeconds`) | at most 240 s; summary refresh 120 s, Slack inbound dispatch 240 s (the handler has no signal to cancel, so the deadline cannot stop it early without risking a duplicate Slack reply) | `defineBackgroundJob`, `BACKGROUND_JOB_MAX_TIMEOUT_SECONDS` |
+| A kind's lease (`leaseSeconds`) | longer than its deadline; summary refresh 180 s, Slack inbound dispatch 270 s | `defineBackgroundJob` |
 | One drain request's budget, from the request's arrival | 270 s | `BACKGROUND_JOB_DRAIN_BUDGET_SECONDS` |
 | Jobs per pushed drain | 1 | `backgroundJobWorkerTaskRoutes.ts` |
 | Jobs per recovery sweep | up to 10, while the next job's deadline still fits the budget | `background_job_recovery_max_jobs` |

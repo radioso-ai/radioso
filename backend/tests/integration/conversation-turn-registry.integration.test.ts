@@ -8,6 +8,7 @@ import {
 } from "../../src/modules/chat/infra/postgresConversationTurnLeases.js";
 import {
   ChatTurnDisconnectAbortError,
+  ChatTurnLeaseLostError,
   ChatTurnSupersededError,
   type ConversationTurnInterruptionObserver,
 } from "../../src/modules/chat/services/conversationTurnRegistry.js";
@@ -48,25 +49,48 @@ const nextMacrotask = () => new Promise<void>((resolve) => {
   setImmediate(resolve);
 });
 
-/** Counts settled `begin` calls, so a test knows every started turn has taken its place. */
-class CountingLeaseStore implements ConversationTurnLeaseStore {
+/**
+ * The Postgres lease store, instrumented: counts settled `begin` calls so a test knows every started
+ * turn has taken its place, tracks calls in flight so a process closes only once they land, and can
+ * hold renewals back, as a stalled process would.
+ */
+class InstrumentedLeaseStore implements ConversationTurnLeaseStore {
   settledBegins = 0;
+  private inFlight = 0;
+  private renewalGate: Promise<void> | null = null;
+  private releaseRenewals: (() => void) | null = null;
 
   constructor(private readonly inner: ConversationTurnLeaseStore) {}
 
+  get idle(): boolean {
+    return this.inFlight === 0;
+  }
+
+  pauseRenewals(): void {
+    this.renewalGate = new Promise((resolve) => {
+      this.releaseRenewals = resolve;
+    });
+  }
+
+  resumeRenewals(): void {
+    this.releaseRenewals?.();
+    this.renewalGate = null;
+  }
+
   async begin(input: Parameters<ConversationTurnLeaseStore["begin"]>[0]) {
     try {
-      return await this.inner.begin(input);
+      return await this.track(this.inner.begin(input));
     } finally {
       this.settledBegins += 1;
     }
   }
 
   end(input: Parameters<ConversationTurnLeaseStore["end"]>[0]) {
-    return this.inner.end(input);
+    return this.track(this.inner.end(input));
   }
 
-  renew(input: Parameters<ConversationTurnLeaseStore["renew"]>[0]) {
+  async renew(input: Parameters<ConversationTurnLeaseStore["renew"]>[0]) {
+    await this.renewalGate;
     return this.inner.renew(input);
   }
 
@@ -76,6 +100,15 @@ class CountingLeaseStore implements ConversationTurnLeaseStore {
 
   successorsOf(turnIds: string[]) {
     return this.inner.successorsOf(turnIds);
+  }
+
+  private async track<T>(operation: Promise<T>): Promise<T> {
+    this.inFlight += 1;
+    try {
+      return await operation;
+    } finally {
+      this.inFlight -= 1;
+    }
   }
 }
 
@@ -105,8 +138,12 @@ interface TestProcess {
   settle(): Promise<void>;
   /** This process heard another process start a turn on `conversationId`. */
   heardStartOf(conversationId: string, ownerInstanceId: string): Promise<void>;
+  /** Holds this process's lease renewals back, as a stalled event loop would, until `resumeRenewals`. */
+  pauseRenewals(): void;
+  resumeRenewals(): void;
   /** Stops renewing and listening without ending its turns, as a crashed instance would. */
   crash(): Promise<void>;
+  /** Lets the starts and ends in flight land, then shuts down. */
   close(): Promise<void>;
 }
 
@@ -130,7 +167,7 @@ const startProcess = (
     reconnectDelay: { initialMs: options.reconnectDelayMs ?? 20, maxMs: options.reconnectDelayMs ?? 200 },
     logger: options.logger,
   });
-  const leases = new CountingLeaseStore(new PostgresConversationTurnLeaseStore(database.kysely));
+  const leases = new InstrumentedLeaseStore(new PostgresConversationTurnLeaseStore(database.kysely));
   const notices = new RecordingNotices(new PostgresConversationTurnNotices(listener));
   const registry = new CrossInstanceConversationTurnRegistry({
     instanceId,
@@ -170,8 +207,20 @@ const startProcess = (
       await vi.waitFor(() =>
         expect(notices.heard).toContainEqual(expect.objectContaining({ kind: "started", conversationId, ownerInstanceId })));
     },
+    pauseRenewals: () => leases.pauseRenewals(),
+    resumeRenewals: () => leases.resumeRenewals(),
     crash: shutDown,
-    close: shutDown,
+    async close() {
+      if (!closed) {
+        leases.resumeRenewals();
+        await vi.waitFor(() => {
+          expect(leases.settledBegins).toBe(started);
+          expect(leases.idle).toBe(true);
+        });
+        await nextMacrotask();
+      }
+      await shutDown();
+    },
   };
 };
 
@@ -189,11 +238,7 @@ describeIfDatabase("conversation turn coordination on Postgres", () => {
 
   describeConversationTurnRegistryContract("CrossInstanceConversationTurnRegistry", async (observer) => {
     const contractProcess = startProcess("contract", observer);
-    return {
-      registry: { start: contractProcess.start },
-      settle: () => contractProcess.settle(),
-      close: () => contractProcess.close(),
-    };
+    return { registry: { start: contractProcess.start }, close: () => contractProcess.close() };
   });
 
   describe("two processes on one database", () => {
@@ -279,13 +324,15 @@ describeIfDatabase("conversation turn coordination on Postgres", () => {
       second.complete();
     });
 
-    it("lets the commit latch win against a supersede racing in from the other process", async () => {
+    it("known cross-instance window: keeps a reply that latched its commit before its process heard of the newer turn", async () => {
       const first = a.start(conversationId, speechLike);
       first.beginEmission();
       await a.settle();
 
       const second = b.start(conversationId, speechLike);
-      // Same tick as the newer turn's start: its announcement cannot have reached A yet.
+      // A learns of the newer turn one notification after B's start statement commits. A latch set
+      // inside that window stands, so this reply is stored and the newer turn runs after it. On one
+      // instance the newer turn would have won; this is the window the docs describe, not a goal.
       expect(() => first.beginCommit()).not.toThrow();
       await a.heardStartOf(conversationId, b.instanceId);
 
@@ -380,6 +427,170 @@ describeIfDatabase("conversation turn coordination on Postgres", () => {
       first.complete();
       await second.waitForPredecessor();
       second.complete();
+    });
+
+    it("aborts a turn whose process stalled past its lease once it resumes, rather than renewing a lease a successor took over", async () => {
+      const first = a.start(conversationId);
+      first.beginEmission();
+      await a.settle();
+      a.pauseRenewals();
+
+      const second = b.start(conversationId);
+      await second.waitForPredecessor();
+      expect(expiredOnB).toHaveBeenCalledWith({ conversationId });
+      expect(first.signal.aborted).toBe(false);
+
+      a.resumeRenewals();
+
+      await vi.waitFor(() => expect(first.signal.aborted).toBe(true));
+      expect(() => first.throwIfCancelled()).toThrowError(ChatTurnLeaseLostError);
+      expect(cancelledOnA).toHaveBeenCalledWith({
+        conversationId,
+        reason: "lease_lost",
+        stage: "persisting",
+        scope: "local",
+      });
+      first.complete();
+      second.complete();
+    });
+  });
+
+  describe("three processes on one database", () => {
+    let processes: TestProcess[];
+    let expiredOnNewest: ReturnType<typeof vi.fn<NonNullable<ConversationTurnInterruptionObserver["predecessorLeaseExpired"]>>>;
+    let oldestOwner: TestProcess;
+    let middleOwner: TestProcess;
+    let newestOwner: TestProcess;
+    let conversationId: string;
+
+    beforeEach(() => {
+      expiredOnNewest = vi.fn<NonNullable<ConversationTurnInterruptionObserver["predecessorLeaseExpired"]>>();
+      oldestOwner = startProcess("oldest", { turnCancelled: vi.fn() });
+      middleOwner = startProcess("middle", { turnCancelled: vi.fn() }, { leaseTtlMs: 600, heartbeatIntervalMs: 150 });
+      newestOwner = startProcess("newest", { turnCancelled: vi.fn(), predecessorLeaseExpired: expiredOnNewest });
+      processes = [oldestOwner, middleOwner, newestOwner];
+      conversationId = randomUUID();
+    });
+
+    afterEach(async () => {
+      for (const owner of processes) {
+        await owner.close();
+      }
+    });
+
+    it("keeps the newest turn behind the oldest live one when the turn between them crashes while waiting", async () => {
+      const oldest = oldestOwner.start(conversationId);
+      oldest.beginEmission();
+      await oldestOwner.settle();
+      middleOwner.start(conversationId);
+      await middleOwner.settle();
+      const newest = newestOwner.start(conversationId);
+      await newestOwner.settle();
+
+      await middleOwner.crash();
+
+      await vi.waitFor(() => expect(expiredOnNewest).toHaveBeenCalledWith({ conversationId }), { timeout: 5_000 });
+      expect(await isPending(newest.waitForPredecessor())).toBe(true);
+      expect(oldest.signal.aborted).toBe(false);
+
+      oldest.complete();
+      await newest.waitForPredecessor();
+      newest.complete();
+    });
+
+    it("waits behind the oldest live turn when the turn right before it had already expired as it started", async () => {
+      const oldest = oldestOwner.start(conversationId);
+      oldest.beginEmission();
+      await oldestOwner.settle();
+      middleOwner.start(conversationId);
+      await middleOwner.settle();
+      await middleOwner.crash();
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      const newest = newestOwner.start(conversationId);
+      await newestOwner.settle();
+
+      await vi.waitFor(() => expect(expiredOnNewest).toHaveBeenCalledWith({ conversationId }), { timeout: 5_000 });
+      expect(await isPending(newest.waitForPredecessor())).toBe(true);
+
+      oldest.complete();
+      await newest.waitForPredecessor();
+      newest.complete();
+    });
+  });
+
+  describe("PostgresConversationTurnLeaseStore", () => {
+    let store: PostgresConversationTurnLeaseStore;
+    const leaseRow = (turnId: string) =>
+      admin.queryOptional<{ live: boolean }>(
+        "SELECT lease_expires_at > now() AS live FROM conversation_turn_leases WHERE turn_id = $1",
+        [turnId],
+      );
+    const headRow = (conversationId: string) =>
+      admin.queryOptional<{ turn_id: string }>(
+        "SELECT turn_id::text AS turn_id FROM conversation_turn_heads WHERE conversation_id = $1",
+        [conversationId],
+      );
+    const begin = (conversationId: string, ownerInstanceId: string) =>
+      store.begin({ conversationId, ownerInstanceId, supersedeAfterEmission: false, leaseTtlMs: 30_000 });
+    // Backdates the lease, and its conversation's head with it: a turn whose lease expired that
+    // long ago started at least that long ago.
+    const expire = async (turnId: string, ago: string) => {
+      await admin.execute(
+        "UPDATE conversation_turn_leases SET lease_expires_at = now() - $2::interval WHERE turn_id = $1",
+        [turnId, ago],
+      );
+      await admin.execute(
+        "UPDATE conversation_turn_heads SET updated_at = now() - $2::interval WHERE turn_id = $1",
+        [turnId, ago],
+      );
+    };
+
+    beforeAll(() => {
+      store = new PostgresConversationTurnLeaseStore(admin.kysely);
+    });
+
+    it("prunes another conversation's long-expired lease, and its head, as a turn starts", async () => {
+      const crashedConversation = randomUUID();
+      const crashed = await begin(crashedConversation, "crashed-instance");
+      await expire(crashed.turnId, "10 minutes");
+
+      const conversationId = randomUUID();
+      const started = await begin(conversationId, "live-instance");
+
+      expect(await leaseRow(crashed.turnId)).toBeNull();
+      expect(await headRow(crashedConversation)).toBeNull();
+      expect(await leaseRow(started.turnId)).toEqual({ live: true });
+      await store.end({ conversationId, turnId: started.turnId });
+    });
+
+    it("keeps a lease that expired only recently, so a successor can still tell it was taken over", async () => {
+      const recentConversation = randomUUID();
+      const recent = await begin(recentConversation, "stalled-instance");
+      await expire(recent.turnId, "1 second");
+
+      const conversationId = randomUUID();
+      const started = await begin(conversationId, "live-instance");
+
+      expect(await leaseRow(recent.turnId)).toEqual({ live: false });
+      await store.end({ conversationId, turnId: started.turnId });
+      await store.end({ conversationId: recentConversation, turnId: recent.turnId });
+    });
+
+    it("refuses to renew an expired lease and reports it lost, renewing only the live one", async () => {
+      const conversationId = randomUUID();
+      const expired = await begin(conversationId, "owner");
+      const otherConversation = randomUUID();
+      const live = await begin(otherConversation, "owner");
+      await expire(expired.turnId, "1 second");
+
+      const lost = await store.renew({ ownerInstanceId: "owner", turnIds: [expired.turnId, live.turnId], leaseTtlMs: 30_000 });
+
+      expect(lost).toEqual([expired.turnId]);
+      expect(await leaseRow(expired.turnId)).toEqual({ live: false });
+      expect(await leaseRow(live.turnId)).toEqual({ live: true });
+      await store.end({ conversationId, turnId: expired.turnId });
+      await store.end({ conversationId: otherConversation, turnId: live.turnId });
     });
   });
 

@@ -13,7 +13,7 @@ type ConversationTurnCancellationScope = "local" | "cross_instance";
 
 interface ConversationTurnCancellation {
   conversationId: string;
-  reason: "superseded" | "disconnect_timeout";
+  reason: "superseded" | "disconnect_timeout" | "lease_lost";
   stage: ConversationTurnStage;
   scope: ConversationTurnCancellationScope;
 }
@@ -76,6 +76,29 @@ export class ChatTurnDisconnectAbortError extends AppError {
       { conversationId, reason: "disconnect_timeout", stage },
     );
     this.name = "ChatTurnDisconnectAbortError";
+    this.conversationId = conversationId;
+    this.stage = stage;
+  }
+}
+
+/**
+ * Raised when the turn's coordination lease expired before its process renewed it (a stalled or
+ * partitioned process). A newer turn on the conversation no longer waits for an expired lease, so
+ * this turn stops rather than run alongside it. Like a disconnect abort, it takes the generic
+ * failure path: nothing about the conversation superseded it.
+ */
+export class ChatTurnLeaseLostError extends AppError {
+  readonly conversationId: string;
+  readonly stage: ConversationTurnStage;
+
+  constructor(conversationId: string, stage: ConversationTurnStage) {
+    super(
+      500,
+      "chat_turn_lease_lost",
+      "Chat turn aborted: its conversation lease expired before it finished.",
+      { conversationId, reason: "lease_lost", stage },
+    );
+    this.name = "ChatTurnLeaseLostError";
     this.conversationId = conversationId;
     this.stage = stage;
   }
@@ -214,6 +237,20 @@ export class ConversationTurnState {
       reason: "superseded",
       stage: this.stage,
       scope,
+    });
+  }
+
+  /** The turn's lease expired before it was renewed; a successor may already be running. */
+  leaseLost(): void {
+    if (this.completed || this.controller.signal.aborted) {
+      return;
+    }
+    this.controller.abort(new ChatTurnLeaseLostError(this.conversationId, this.stage));
+    this.observer?.turnCancelled({
+      conversationId: this.conversationId,
+      reason: "lease_lost",
+      stage: this.stage,
+      scope: "local",
     });
   }
 

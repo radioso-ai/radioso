@@ -85,19 +85,29 @@ For a successful stream, `done` marks completion of the core turn. Optional
 `suggestions` enrichment can follow, so clients that use suggestions should
 continue reading until the stream closes.
 
-These rules hold across instances: a newer message routed to a different
-backend instance supersedes the reply in flight just as it would on the same one.
-Each turn takes a lease in Postgres when it starts, and the conversation's turns
-are ordered there. The instance running the older reply hears about the newer
-turn through Postgres `LISTEN`/`NOTIFY` and cancels it, or, once the reply is past
-the point where it can be cut off, lets it finish while the newer turn waits.
-Each backend process opens one extra database connection for `LISTEN` with its
-first turn, and closes it once it has had no turn in flight for the pool's idle
-timeout (`DB_POOL_IDLE_TIMEOUT_MS`).
+These rules hold across instances. Each turn takes a lease in Postgres when it
+starts, and the conversation's turns are ordered there. On one instance, a newer
+message applies the rules the moment its turn starts. When the reply in flight
+runs on a different instance, that instance hears about the newer turn through
+Postgres `LISTEN`/`NOTIFY`, typically a few milliseconds after the newer turn
+starts, and applies the same rules then. A reply that passes its point of no
+return inside that gap is kept, and the newer message runs after it. For chat,
+that point is the first streamed chunk or the start of persisting. For a voice
+turn, it is the commit of its stored reply. While an instance's `LISTEN`
+connection is reconnecting, the gap lasts until it reconnects and reads back the
+turns it missed.
 
-If an instance crashes mid-turn, its lease stops being renewed and expires
-after about 30 seconds. A newer turn on that conversation waits at most that
-long, then runs.
+Each API or worker process holds one extra database connection for `LISTEN` while
+it has turns in flight. The connection closes once the process has had no turn in
+flight for the pool's idle timeout (`DB_POOL_IDLE_TIMEOUT_MS`). When you size the
+database's connection limit, count `DB_POOL_MAX + 1` per process.
+
+If an instance crashes mid-turn, its lease stops being renewed and expires after
+about 30 seconds. A newer turn waits at most that long for it. If the crashed turn
+was itself waiting behind an older reply that is still running, the newer turn
+keeps waiting for that reply. An instance that stalls past its lease, through a
+blocked event loop or a lost database connection, aborts its own turn when it
+resumes. It does not run alongside the turn that took over.
 
 ## A Disconnected Client Does Not Stop the Turn
 

@@ -7432,6 +7432,20 @@ CREATE INDEX conversation_ownership_workspace_idx ON public.conversation_ownersh
 
 
 --
+-- Name: conversation_turn_leases_lease_expires_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_turn_leases_lease_expires_at_idx ON public.conversation_turn_leases USING btree (lease_expires_at);
+
+
+--
+-- Name: conversation_turn_leases_predecessor_turn_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_turn_leases_predecessor_turn_id_idx ON public.conversation_turn_leases USING btree (predecessor_turn_id);
+
+
+--
 -- Name: conversations_workspace_anon_updated_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 

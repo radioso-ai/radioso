@@ -2066,7 +2066,7 @@
       "title": "Self-hosting operations",
       "description": "Backup, restore, upgrade, realtime, and worker incident practices for self-hosted Radioso deployments.",
       "section": "Operator guides",
-      "lastUpdated": "2026-09-28",
+      "lastUpdated": "2026-10-15",
       "intro": "Self-hosted Radioso has two durable data surfaces:\n\n* PostgreSQL, including accounts, workspaces, settings, conversations, audit events, documents, chunks, vectors, and worker queues\n* uploaded source-file storage, either the local document-storage volume or the configured object-storage bucket\n\nBack up both surfaces together. A database backup without source files can leave document records whose original uploads cannot be reprocessed. Source files without the database are not enough to restore accounts, settings, embeddings, or chat history.\n\nRedis or Valkey used for live dashboard updates is transient. Restore PostgreSQL and source files, then let the realtime runtime rebuild subscriptions and admission leases as browsers reconnect.",
       "sections": [
         {
@@ -2102,7 +2102,7 @@
         {
           "id": "worker-incidents",
           "heading": "Worker incidents",
-          "body": "If uploads succeed but new documents do not become searchable, treat it as a worker-path incident first.\n\nCheck in this order:\n\n1. The backend can accept uploads and write document records.\n2. The document worker is running and can connect to PostgreSQL.\n3. Source-file storage is reachable from the worker.\n4. The embedding provider credentials and model settings are valid.\n5. The queue is draining rather than growing.\n6. Failed jobs have enough logs to identify parser, storage, embedding, or timeout failures.\n\nFor local polling deployments, `WORKER_DISPATCH_DRIVER=noop` means the worker claims durable jobs from PostgreSQL. For queue-backed deployments, also check Cloud Tasks or AMQP delivery and retry configuration."
+          "body": "If uploads succeed but new documents do not become searchable, treat it as a worker-path incident first.\n\nCheck in this order:\n\n1. The backend can accept uploads and write document records.\n2. The document worker is running and can connect to PostgreSQL.\n3. Source-file storage is reachable from the worker.\n4. The embedding provider credentials and model settings are valid.\n5. The queue is draining rather than growing.\n6. Failed jobs have enough logs to identify parser, storage, embedding, or timeout failures.\n\nFor local polling deployments, `WORKER_DISPATCH_DRIVER=noop` means the worker claims durable jobs from PostgreSQL. For queue-backed deployments, also check Cloud Tasks or AMQP delivery and retry configuration.\n\nThe document worker also drives background work that has nothing to do with documents: the machine-access credential expiry scan, and any task an application module registers for a recurring sweep, such as the Enterprise usage-limit alert and auto top-up dispatchers. If the worker is down, these sweeps pause along with document processing, even though chat and the dashboard keep answering requests normally. A cloud deployment with no continuously running worker process drives the same sweeps on a schedule, pushed to the worker task service instead."
         },
         {
           "id": "secrets",

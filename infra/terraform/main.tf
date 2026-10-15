@@ -52,6 +52,24 @@ locals {
     var.slack_inbound_event_retention_schedule,
     "45 4 * * *",
   )
+  # Matches the document worker's own daily interval (DAILY_SCAN_INTERVAL_MS in
+  # credentialExpiryWarningService.ts).
+  credential_expiry_warning_schedule = coalesce(
+    var.credential_expiry_warning_schedule,
+    "15 4 * * *",
+  )
+  # Every minute: Cloud Scheduler's own minimum granularity, matching the dispatcher's
+  # ALERT_SWEEP_INTERVAL_MS (60s) poll-loop cadence.
+  usage_limit_alert_sweep_schedule = coalesce(
+    var.usage_limit_alert_sweep_schedule,
+    "* * * * *",
+  )
+  # Every minute: Cloud Scheduler's own minimum granularity, matching AUTO_TOP_UP_SWEEP_INTERVAL_MS
+  # (60s) in applicationModule.ts.
+  billing_auto_top_up_sweep_schedule = coalesce(
+    var.billing_auto_top_up_sweep_schedule,
+    "* * * * *",
+  )
   # Recovery only (lease recovery, domain refresh, send reconciliation claims, event-log
   # retention) — scheduled drains carry the normal-path work (research B7, B12).
   email_channel_sweep_schedule = coalesce(

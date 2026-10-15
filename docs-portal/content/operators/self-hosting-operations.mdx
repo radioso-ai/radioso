@@ -1,7 +1,7 @@
 ---
 title: "Self-hosting operations"
 description: "Backup, restore, upgrade, realtime, and worker incident practices for self-hosted Radioso deployments."
-last_updated: 2026-09-28
+last_updated: 2026-10-15
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -184,6 +184,8 @@ Check in this order:
 6. Failed jobs have enough logs to identify parser, storage, embedding, or timeout failures.
 
 For local polling deployments, `WORKER_DISPATCH_DRIVER=noop` means the worker claims durable jobs from PostgreSQL. For queue-backed deployments, also check Cloud Tasks or AMQP delivery and retry configuration.
+
+The document worker also drives background work that has nothing to do with documents: the machine-access credential expiry scan, and any task an application module registers for a recurring sweep, such as the Enterprise usage-limit alert and auto top-up dispatchers. If the worker is down, these sweeps pause along with document processing, even though chat and the dashboard keep answering requests normally. A cloud deployment with no continuously running worker process drives the same sweeps on a schedule, pushed to the worker task service instead.
 
 ## Secrets
 

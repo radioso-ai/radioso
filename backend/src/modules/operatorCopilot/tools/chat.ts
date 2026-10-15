@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { CallerKind } from "../../../shared/domain/conversationSource.js";
 import type { SameType } from "../../../shared/types/sameType.js";
-import type { ReplyInterruption } from "../../chat/contracts/index.js";
+import { replyInterruptionSchema, type ReplyInterruption } from "../../chat/contracts/index.js";
 import {
   CONVERSATION_ACTIVITY_KINDS,
   resolveActivityReadScope,
@@ -37,13 +37,6 @@ const ownershipSchema = z.object({
   reason: z.string().nullable(),
   takenOverAt: z.string().nullable(),
 }).nullable();
-const replyInterruptionSchema = z.object({
-  heardCharacterCount: z.number().int().nonnegative(),
-  spokenCharacterCount: z.number().int().nonnegative(),
-});
-// Compile-time guard: Ray's marker is chat's, so a field added to or dropped from it fails tsc here.
-const replyInterruptionMatchesContract: SameType<z.infer<typeof replyInterruptionSchema>, ReplyInterruption> = true;
-void replyInterruptionMatchesContract;
 const transcriptMessageSchema = z.object({
   id: z.string().uuid(),
   role: z.enum(["user", "assistant", "system"]),
@@ -109,6 +102,7 @@ const turnTraceOutputSchema = z.object({
       operatorDisplayName: z.string().nullable(),
       operatorLabel: z.string().nullable(),
       turnFailure: turnFailureSchema,
+      interruption: replyInterruptionSchema.nullable(),
       debug: z.object({
         eventStatus: z.enum(["success", "failure", "cancelled"]),
         recordedAt: z.string(),
@@ -360,6 +354,7 @@ const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string,
       operatorDisplayName: message.operatorDisplayName ?? null,
       operatorLabel: message.operatorLabel ?? null,
       turnFailure: projectTurnFailure(message.turnFailure),
+      interruption: message.interruption ?? null,
       debug: debug
         ? {
             eventStatus: debug.eventStatus,

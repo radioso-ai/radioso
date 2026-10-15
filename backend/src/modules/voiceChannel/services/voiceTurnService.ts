@@ -421,7 +421,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       recorded();
       return;
     }
-    notes.replyInterrupted({ workspaceId: input.session.workspaceId, ...interruption }).then(recorded, (error: unknown) => {
+    withinNoteTimeout(notes.replyInterrupted({ workspaceId: input.session.workspaceId, ...interruption })).then(recorded, (error: unknown) => {
       reservation.failed();
       this.warnNoteFailed(input, interruption.conversationId, error);
     });

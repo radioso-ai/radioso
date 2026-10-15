@@ -1284,6 +1284,37 @@ describe("VoiceTurnService", () => {
         expect(logger.info.mock.calls.filter(([, message]) => message === "Voice reply was interrupted")).toHaveLength(1);
       });
 
+      it("writes the interruption again on a later report when the first note does not finish within its time", async () => {
+        const heardUntil = "We open at nine.  \u200BSee";
+        const chat = supersedingChat([
+          answered(reply),
+          // Still composing past the note's time, then replaced, so the last exchange stays the interrupted reply.
+          [{ atMs: 0, event: { type: "conversation", conversationId } }, { atMs: 9_000, event: { type: "chunk", text: "Stale." } }],
+          answered("Yes."),
+        ]);
+        const notes = fakeNotes();
+        notes.replyInterrupted.mockReturnValueOnce(new Promise<void>(() => {}));
+        const metrics = fakeMetrics();
+        const logger = fakeLogger();
+        const turns = service(chat, { notes, metrics, logger });
+
+        await answerOnce(turns);
+        const replaced = start(turns, input({ utterance: "Sorry, on Sundays?", heardUntil }));
+        await vi.advanceTimersByTimeAsync(4_999);
+        expect(logger.warn).not.toHaveBeenCalledWith(expect.anything(), "Voice turn note could not be recorded");
+        await vi.advanceTimersByTimeAsync(1);
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({ conversationId, errorClass: "VoiceTurnNoteTimeoutError" }),
+          "Voice turn note could not be recorded",
+        );
+        const next = start(turns, input({ utterance: "Sorry, are you open on Sundays?", heardUntil }));
+        await vi.runAllTimersAsync();
+        await Promise.all([replaced, next]);
+
+        expect(notes.replyInterrupted).toHaveBeenCalledTimes(2);
+        expect(counted(metrics, "voice_reply_interrupted_total")).toEqual([{}]);
+      });
+
       it("counts only the reply's characters when a bridge line was spoken before it", async () => {
         const chat = supersedingChat([
           [

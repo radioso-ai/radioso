@@ -288,8 +288,9 @@ In the Inbox, that reply carries an **Interrupted** badge. Hover it to read
 the reply as it was spoken, after links, lists and other formatting became
 speech, so the percentage tells you roughly how far the caller got, not where
 in the written text they stopped. The conversation history API returns the
-counts on the reply as `interruption`. A conversation you already have open
-shows the badge the next time you open it.
+counts on the reply as `interruption`, and the dashboard's conversation tail
+returns the reply again once it is marked, so a conversation you have open
+shows the badge within a poll.
 
 ## Outcomes
 

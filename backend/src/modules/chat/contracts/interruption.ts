@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export type ConversationTurnStage =
   | "waiting"
   | "preparing"
@@ -21,21 +23,23 @@ export type ConversationTurnSupersession = "until_emission" | "latest_input_wins
  * How much of a stored assistant reply the caller heard before speaking over it, counted in the
  * characters the channel spoke (the reply as speech text), not in the stored content.
  */
-export interface ReplyInterruption {
-  heardCharacterCount: number;
-  spokenCharacterCount: number;
-}
+export const replyInterruptionSchema = z.object({
+  heardCharacterCount: z.number().int().nonnegative(),
+  spokenCharacterCount: z.number().int().nonnegative(),
+});
+export type ReplyInterruption = z.infer<typeof replyInterruptionSchema>;
 
 /**
  * Marks a stored assistant reply as cut short, keeping the reply's text and other metadata. The
  * first marker on a reply stays as written: a later mark, with the same counts or others, changes
- * nothing. A message that is not an assistant reply of the conversation is left alone, without an
- * error.
+ * nothing. Resolves true when the conversation holds the assistant reply, which then carries a
+ * marker, and false when it holds no such reply; a message that is not an assistant reply of the
+ * conversation is left alone.
  */
 export interface ReplyInterruptionMarker {
   markReplyInterrupted(input: {
     workspaceId: string;
     conversationId: string;
     messageId: string;
-  } & ReplyInterruption): Promise<void>;
+  } & ReplyInterruption): Promise<boolean>;
 }

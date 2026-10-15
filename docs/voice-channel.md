@@ -128,8 +128,32 @@ Radioso answers a session key that is a whole `{{…}}` placeholder with `400`.
 
 On a call, silence sounds like a dropped line. A grounded answer can take a
 second or two to start, so you give the agent a few short lines to say while
-it works, and one line to say if the answer takes far too long. They live in
-the agent's `voice` settings block:
+it works, and one line to say if the answer takes far too long.
+
+You write them in the **Voice** card, below the Agent API card on the agent's
+**Channels → API** page:
+
+1. Turn on **Voice lines on calls**.
+2. Add a language, such as English. Each language carries its own lines.
+3. Under **Bridge lines**, add **Check** lines, which the agent says while it
+   looks an answer up, and **Acknowledge** lines, which it says inside a
+   routine once the caller has answered a step. For the `elevenlabs` dialect,
+   write each one as a full sentence of at least 45 characters (see
+   [Dialects](#dialects)).
+4. Write the **Fallback line**, which the caller hears when nothing is ready
+   at 10 seconds.
+5. Select **Save voice settings**.
+
+The same card holds the agent's **Quick replies**: the lines it says word for
+word to a greeting, thanks, farewell, or acknowledgement, in chat as well as
+on calls. The card saves both blocks together.
+
+Ray can make the same change. Ask it to turn voice on or to add a bridge line,
+and it drafts the whole block with `propose_agent_setting` for you to review
+and apply.
+
+The card writes the agent's `voice` settings block, which you can also send
+to the agent settings API yourself:
 
 ```json
 {
@@ -165,8 +189,8 @@ the agent's `voice` settings block:
 }
 ```
 
-Set it with the agent settings API, using a personal token or a
-service-account credential from **Settings → API access**:
+Send it with a personal token or a service-account credential from
+**Settings → API access**:
 
 ```bash
 curl -sS -X PUT \
@@ -177,12 +201,12 @@ curl -sS -X PUT \
 ```
 
 where `voice.json` holds the object above. `GET /api/v1/agents/<agent-id>`
-returns the block as `voice`. The dashboard has no editor for it; saving other
-agent settings from the dashboard leaves it as it is.
+returns the block as `voice`, and the quick replies as `mechanicsReplies`.
 
-The block is replaced whole: a request that carries `voice` must carry
-`enabled`, `bridgeLines` and `fallbackLine`, and a request without `voice`
-keeps the stored one. To turn voice off, send the block back with
+The block is replaced whole, whether the card, Ray, or your own request
+writes it: a request that carries `voice` must carry `enabled`,
+`bridgeLines` and `fallbackLine`, and a request without `voice` keeps the
+stored one. To turn voice off, send the block back with
 `"enabled": false`. Keys are language tags such as `en`, `it` or `pt-BR`, up
 to 10 for each map. Each style holds up to 5 lines, and every line is 1 to 200
 characters. For the `elevenlabs` dialect, write each line as one sentence of at

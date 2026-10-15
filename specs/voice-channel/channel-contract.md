@@ -138,7 +138,11 @@ Both transports reach the same port through the same adapters; only outcome deri
 | `transfer.target` | string | E.164 number or SIP URI; the only source of a transfer destination |
 | `transfer.hours` | optional schedule | outside hours → callback instead of transfer; Phase 0 |
 
-Bridge delay and turn limit are composition constants, not settings. The block is settings-as-data (spec 079) and ships a Ray tool descriptor or a stated coverage-map exclusion.
+Bridge delay and turn limit are composition constants, not settings. The block is settings-as-data (spec 079).
+
+Operators edit it in the **Voice** card on the agent's Channels → API page (`frontend/components/dashboard/settings/voice-channel-card.tsx`), which saves `voice` and the agent's `mechanicsReplies` block together through `PUT /api/v1/agents/:agentId`, each replaced whole. The card states one rule inline: a bridge line is one full sentence of at least 45 characters, the shortest line the `elevenlabs` dialect speaks before the answer arrives.
+
+Ray's descriptors: both blocks are entries of `agentInputFieldSchemas` and of `agentReviewedSettingsPatchSchema` (`backend/src/modules/agents/agentInputSchema.ts`), so `propose_agent_setting` (`settingKey: "voice"` or `"mechanicsReplies"`) and `prepare_agent_settings` carry each as a whole-block, live, reach-neutral change. Both descriptions carry `agentSettingWholeBlockNote` (`operatorCopilot/tools/shared.ts`), and `agent_configuration` returns the stored `voice` block beside the portable config so a proposal starts from what is stored.
 
 ## 7. Conversation record
 

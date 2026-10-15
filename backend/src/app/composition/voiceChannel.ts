@@ -1,8 +1,9 @@
-import type { ChatStreamEvent } from "../../modules/chat/contracts/index.js";
+import type { ChatStreamEvent, ReplyInterruptionMarker } from "../../modules/chat/contracts/index.js";
 import {
   VoiceSessionRepository,
   VoiceTurnService,
   type VoiceChatTurnRequest,
+  type VoiceTurnNotes,
   type VoiceTurnPort,
 } from "../../modules/voiceChannel/public.js";
 import type { AgentRecord } from "../../modules/agents/public.js";
@@ -13,10 +14,39 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 /**
+ * Notes on a previous turn's stored reply. An interrupted reply is marked on the message first and
+ * audited after, so a note that rejects is one the session writes again; the mark is idempotent. A
+ * reply the conversation no longer holds is not marked and not audited, and the note resolves: a
+ * retry would find it no more. Notes name the reply by id and count characters; they never carry
+ * what was said.
+ */
+export const createVoiceTurnNotes = (deps: {
+  replies: ReplyInterruptionMarker;
+  auditService: Pick<AuditPort, "record">;
+  logger: Pick<AppLogger, "warn">;
+}): VoiceTurnNotes => ({
+  replyInterrupted: async (note) => {
+    const { workspaceId, ...metadata } = note;
+    const { assistantMessageId, ...reply } = note;
+    const marked = await deps.replies.markReplyInterrupted({ ...reply, messageId: assistantMessageId });
+    if (!marked) {
+      deps.logger.warn(
+        { workspaceId, conversationId: note.conversationId, messageId: assistantMessageId },
+        "Voice reply to mark interrupted was not found",
+      );
+      return;
+    }
+    await deps.auditService.record({ workspaceId, eventType: "voice.reply_interrupted", eventStatus: "success", metadata });
+  },
+  replyReplayed: ({ workspaceId, ...metadata }) =>
+    deps.auditService.record({ workspaceId, eventType: "voice.reply_replayed", eventStatus: "success", metadata }),
+});
+
+/**
  * The voice channel's turn port: sessions over Postgres, the same streaming chat turn the REST
  * agent channel runs, the agent's voice settings and the conversation's routine state and owner for
- * the turn policy, and audit notes on a previous turn's stored reply. Vendor adapters mount over
- * this port in the HTTP layer.
+ * the turn policy, and notes on a previous turn's stored reply. Vendor adapters mount over this
+ * port in the HTTP layer.
  */
 export const createVoiceChannelComposition = (deps: {
   db: Db;
@@ -28,6 +58,7 @@ export const createVoiceChannelComposition = (deps: {
   };
   routineStates: { loadActive(input: { sessionId: string }): Promise<unknown> };
   conversationOwnership: ConversationOwnershipReader;
+  replies: ReplyInterruptionMarker;
   auditService: Pick<AuditPort, "record">;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
@@ -44,21 +75,7 @@ export const createVoiceChannelComposition = (deps: {
     // A conversation's routine state is keyed by the conversation id.
     routines: { isRoutineActive: async (conversationId) => (await deps.routineStates.loadActive({ sessionId: conversationId })) !== null },
     ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await deps.conversationOwnership.load(conversationId)) },
-    // Notes name the reply by id and count characters; they never carry what was said.
-    notes: {
-      replyInterrupted: ({ workspaceId, ...metadata }) => deps.auditService.record({
-        workspaceId,
-        eventType: "voice.reply_interrupted",
-        eventStatus: "success",
-        metadata,
-      }),
-      replyReplayed: ({ workspaceId, ...metadata }) => deps.auditService.record({
-        workspaceId,
-        eventType: "voice.reply_replayed",
-        eventStatus: "success",
-        metadata,
-      }),
-    },
+    notes: createVoiceTurnNotes({ replies: deps.replies, auditService: deps.auditService, logger: deps.logger }),
     metrics: deps.metricsRegistry,
     logger: deps.logger,
   });

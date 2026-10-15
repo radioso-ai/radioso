@@ -3212,7 +3212,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Poll new messages for a saved assistant conversation */
+        /**
+         * Poll new messages for a saved assistant conversation
+         * @description Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once the caller has marked it interrupted, carrying `interruption`, in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.
+         */
         get: operations["tailHistoryConversation"];
         put?: never;
         post?: never;
@@ -8325,6 +8328,11 @@ export interface components {
                 };
             };
         };
+        /** @description Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`, which keeps the full reply. */
+        ReplyInterruption: {
+            heardCharacterCount: number;
+            spokenCharacterCount: number;
+        };
         ChatConversationMessage: {
             /** Format: uuid */
             id: string;
@@ -8341,6 +8349,7 @@ export interface components {
             suggestions?: components["schemas"]["ChatSuggestion"][];
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             operatorDisplayName?: string;
+            interruption?: components["schemas"]["ReplyInterruption"];
             debug?: components["schemas"]["ChatConversationMessageDebug"];
             turnFailure?: components["schemas"]["ChatConversationTurnFailure"];
             /** @description Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API. */
@@ -8362,6 +8371,7 @@ export interface components {
             suggestions?: components["schemas"]["ChatSuggestion"][];
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             operatorDisplayName?: string;
+            interruption?: components["schemas"]["ReplyInterruption"];
         };
         ConversationOwnershipResponse: {
             ownership: components["schemas"]["ConversationOwnership"];

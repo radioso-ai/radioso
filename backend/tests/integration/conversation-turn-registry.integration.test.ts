@@ -141,7 +141,6 @@ const startProcess = (
       leaseTtlMs: options.leaseTtlMs ?? 10_000,
       heartbeatIntervalMs: options.heartbeatIntervalMs ?? 1_000,
       predecessorPollIntervalMs: 50,
-      listenerWaitMs: 2_000,
     },
   });
   let started = 0;

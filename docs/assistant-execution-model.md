@@ -1,7 +1,7 @@
 ---
 title: "Assistant Execution Model"
 description: "Design principle that live chat stays in the request path while background work like exports is deferred asynchronously."
-last_updated: 2026-10-07
+last_updated: 2026-10-15
 ---
 
 # Assistant Execution Model
@@ -85,9 +85,19 @@ For a successful stream, `done` marks completion of the core turn. Optional
 `suggestions` enrichment can follow, so clients that use suggestions should
 continue reading until the stream closes.
 
-Interruption coordination is process-local. Multi-instance deployments need
-conversation-affine routing for strict behavior across instances. Without it,
-cancellation remains best effort within each process.
+These rules hold across instances: a newer message routed to a different
+backend instance supersedes the reply in flight just as it would on the same one.
+Each turn takes a lease in Postgres when it starts, and the conversation's turns
+are ordered there. The instance running the older reply hears about the newer
+turn through Postgres `LISTEN`/`NOTIFY` and cancels it, or, once the reply is past
+the point where it can be cut off, lets it finish while the newer turn waits.
+Each backend process opens one extra database connection for `LISTEN` with its
+first turn, and closes it once it has had no turn in flight for the pool's idle
+timeout (`DB_POOL_IDLE_TIMEOUT_MS`).
+
+If an instance crashes mid-turn, its lease stops being renewed and expires
+after about 30 seconds. A newer turn on that conversation waits at most that
+long, then runs.
 
 ## A Disconnected Client Does Not Stop the Turn
 

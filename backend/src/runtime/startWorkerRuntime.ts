@@ -55,6 +55,13 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
   dependencies.slackInboundEventRetentionWorker.start();
   dependencies.agentBundleImportCleanupWorker.start();
   dependencies.backgroundJobRetentionWorker.start();
+  // Credential-expiry warnings and every `registerPeriodicTask` contribution (e.g. EE's
+  // usage-alert sweep) run here rather than in the API runtime: this poll loop always has a
+  // live process behind it, while the API Cloud Run service has no CPU allocation once a
+  // request ends and may run at zero instances. The production push worker instead drives the
+  // same tasks from a Cloud Scheduler-pushed route (`documentWorkerTaskRoutes.ts`).
+  await dependencies.credentialExpiryWarningLifecycle.start();
+  await dependencies.periodicTasksLifecycle.start();
 
   let shuttingDown = false;
 
@@ -68,6 +75,8 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
       shuttingDown = true;
       dependencies.logger.info({ role: "worker", signal }, "Radioso document worker shutting down");
       try {
+        await dependencies.credentialExpiryWarningLifecycle.stop();
+        await dependencies.periodicTasksLifecycle.stop();
         await dependencies.backgroundJobRetentionWorker.stop();
         await dependencies.copilotRetentionWorker.stop();
         await dependencies.testExecutionRetentionWorker.stop();

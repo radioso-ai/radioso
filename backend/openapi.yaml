@@ -10703,6 +10703,19 @@ components:
             - input
       required:
         - method
+    ReplyInterruption:
+      type: object
+      properties:
+        heardCharacterCount:
+          type: integer
+          minimum: 0
+        spokenCharacterCount:
+          type: integer
+          minimum: 0
+      required:
+        - heardCharacterCount
+        - spokenCharacterCount
+      description: "Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`, which keeps the full reply."
     ChatConversationMessage:
       type: object
       properties:
@@ -10748,6 +10761,8 @@ components:
             $ref: "#/components/schemas/AnswerFeedbackEntry"
         operatorDisplayName:
           type: string
+        interruption:
+          $ref: "#/components/schemas/ReplyInterruption"
         debug:
           $ref: "#/components/schemas/ChatConversationMessageDebug"
         turnFailure:
@@ -10798,6 +10813,8 @@ components:
             $ref: "#/components/schemas/AnswerFeedbackEntry"
         operatorDisplayName:
           type: string
+        interruption:
+          $ref: "#/components/schemas/ReplyInterruption"
       required:
         - id
         - role
@@ -32692,6 +32709,7 @@ paths:
       tags:
         - History
       summary: Poll new messages for a saved assistant conversation
+      description: Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once the caller has marked it interrupted, carrying `interruption`, in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.
       operationId: tailHistoryConversation
       security:
         - bearerAuth: []
@@ -32712,6 +32730,7 @@ paths:
         - schema:
             type: string
             minLength: 1
+            description: The previous tail's `cursor`, or the detail's `tailCursor`, passed back as returned. Without it, the newest page.
           required: false
           name: cursor
           in: query

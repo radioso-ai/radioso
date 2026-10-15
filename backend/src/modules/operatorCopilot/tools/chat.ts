@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { CallerKind } from "../../../shared/domain/conversationSource.js";
 import type { SameType } from "../../../shared/types/sameType.js";
+import { replyInterruptionSchema, type ReplyInterruption } from "../../chat/contracts/index.js";
 import {
   CONVERSATION_ACTIVITY_KINDS,
   resolveActivityReadScope,
@@ -51,6 +52,8 @@ const transcriptMessageSchema = z.object({
   operatorDisplayName: z.string().nullable(),
   operatorLabel: z.string().nullable(),
   turnFailure: turnFailureSchema,
+  /** A reply the caller cut short by speaking over it: how much of it they heard, in spoken characters. */
+  interruption: replyInterruptionSchema.nullable(),
 });
 const activityPersonSchema = z.object({ userId: z.string().uuid(), label: z.string().nullable() }).nullable();
 const transcriptActivitySchema = z.object({
@@ -99,6 +102,7 @@ const turnTraceOutputSchema = z.object({
       operatorDisplayName: z.string().nullable(),
       operatorLabel: z.string().nullable(),
       turnFailure: turnFailureSchema,
+      interruption: replyInterruptionSchema.nullable(),
       debug: z.object({
         eventStatus: z.enum(["success", "failure", "cancelled"]),
         recordedAt: z.string(),
@@ -217,6 +221,7 @@ interface CopilotConversationMessage {
   operatorLabel?: string;
   turnFailure?: CopilotTurnFailure;
   debug?: CopilotDebug;
+  interruption?: ReplyInterruption;
 }
 
 interface CopilotConversationDetail {
@@ -290,6 +295,7 @@ const projectTranscript = (conversation: CopilotConversationDetail): Record<stri
     operatorDisplayName: message.operatorDisplayName ?? null,
     operatorLabel: message.operatorLabel ?? null,
     turnFailure: projectTurnFailure(message.turnFailure),
+    interruption: message.interruption ?? null,
   })),
   activity: (conversation.activity ?? []).map((entry) => ({
     kind: entry.kind,
@@ -348,6 +354,7 @@ const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string,
       operatorDisplayName: message.operatorDisplayName ?? null,
       operatorLabel: message.operatorLabel ?? null,
       turnFailure: projectTurnFailure(message.turnFailure),
+      interruption: message.interruption ?? null,
       debug: debug
         ? {
             eventStatus: debug.eventStatus,
@@ -373,7 +380,7 @@ const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string,
 // Test Chat sessions are private test executions rather than conversations, so these two readers
 // never see them; naming the Test Chat readers keeps a "why didn't it fire in Test Chat" question
 // from searching customer history.
-const CONVERSATION_TRANSCRIPT_DESCRIPTION = "Read a bounded transcript of a customer or dashboard chat conversation with shallow per-turn outcomes, routing, feedback, and ownership, plus its latest activity: who handed it off, took it, reassigned it, and handed it back, which approval option a teammate chose, and — for an operator with Quality access — who resolved or dismissed its feedback. Use turn_trace for one turn's full diagnostic spine. Test Chat sessions are read with test_chat_transcript.";
+const CONVERSATION_TRANSCRIPT_DESCRIPTION = "Read a bounded transcript of a customer or dashboard chat conversation with shallow per-turn outcomes, routing, feedback, and ownership, plus its latest activity: who handed it off, took it, reassigned it, and handed it back, which approval option a teammate chose, and — for an operator with Quality access — who resolved or dismissed its feedback. A voice reply the caller spoke over carries interruption: how many spoken characters they heard, of how many. Use turn_trace for one turn's full diagnostic spine. Test Chat sessions are read with test_chat_transcript.";
 const CONVERSATION_HISTORY_SEARCH_DESCRIPTION = "List recent customer and dashboard chat conversations in this workspace for investigation. Test Chat sessions are listed with test_chat_sessions.";
 const TURN_TRACE_DESCRIPTION = "Inspect one message's full turn diagnostic spine. Accepts user messages, including unanswered turns with their failure or cancellation reason. A routine's sub-trace reports which slots were filled by key only (filledSlotKeys, capturedSlotKeys) — never their values — and, per step the selector judged, its selection: outcome and the slot keys the model returned (returnedSlotKeys). Use test_chat_turn_trace to see values, on a private Test Chat run only.";
 

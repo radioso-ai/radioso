@@ -1190,26 +1190,38 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   // Composition-owned adapters for `registerPeriodicTask` contributions (e.g. EE's usage-alert
   // sweep): a notice-mail sender and an account-administrator directory, neither of which a
-  // contributing module may build itself without reaching into OSS internals.
+  // contributing module may build itself without reaching into OSS internals. Built once here —
+  // the one `buildDependencies` the worker runtime's poll loop and its Cloud Scheduler-driven
+  // task route both call — so neither caller duplicates this wiring.
   const noticeMail = createNoticeMailAdapter(infrastructure.mailService, { appBaseUrl: env.APP_BASE_URL });
   const accountAdministrators = createAccountAdministratorDirectory(repositories.accountMembershipRepository);
-  const periodicTasks = composition.periodicTaskRegistrations.map((registration) => {
-    const handle = registration.create({
+  const periodicTaskEntries = composition.periodicTaskRegistrations.map((registration) => ({
+    id: registration.id,
+    intervalMs: registration.intervalMs,
+    handle: registration.create({
       database: infrastructure.database,
       logger,
       audit: infrastructure.auditService,
       noticeMail,
       accountAdministrators,
       appBaseUrl: env.APP_BASE_URL ?? null,
-    });
-    return new PeriodicTaskRunner({
-      id: registration.id,
-      intervalMs: registration.intervalMs,
-      run: () => handle.run(),
-      logger,
-    });
-  });
-  const periodicTasksLifecycle = createPeriodicTasksLifecycle(periodicTasks);
+    }),
+  }));
+  // The poll worker's interval loop wraps each handle in a `PeriodicTaskRunner`; the push
+  // worker's task route looks the same handle up by id instead (`periodicTaskHandlesById`
+  // below), so a registration is built exactly once regardless of which runtime drives it.
+  const periodicTasksLifecycle = createPeriodicTasksLifecycle(
+    periodicTaskEntries.map(
+      ({ id, intervalMs, handle }) =>
+        new PeriodicTaskRunner({
+          id,
+          intervalMs,
+          run: () => handle.run(),
+          logger,
+        }),
+    ),
+  );
+  const periodicTaskHandlesById = new Map(periodicTaskEntries.map(({ id, handle }) => [id, handle]));
   const backgroundJobRuntime = backgroundJobs.createRuntime([...chat.backgroundJobHandlers]);
   return {
     env,
@@ -1248,6 +1260,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     machineAccessSecurityObserver: access.machineAccessSecurityObserver,
     credentialExpiryWarningLifecycle: access.credentialExpiryWarningLifecycle,
     periodicTasksLifecycle,
+    periodicTaskHandlesById,
     personalCredentialService: access.personalCredentialService,
     serviceAccountService: access.serviceAccountService,
     workspaceSessionService: workspace.workspaceSessionService,
@@ -1329,6 +1342,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       agentRepository: repositories.agentRepository,
       routineStates: new RoutineStateRepository(infrastructure.database.kysely),
       conversationOwnership: repositories.conversationOwnershipRepository,
+      replies: repositories.messageRepository,
       auditService: infrastructure.auditService,
       metricsRegistry: infrastructure.metricsRegistry,
       logger,

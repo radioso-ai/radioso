@@ -13,9 +13,13 @@ const buildApp = (input: {
   facetExtractionWorker?: { runOnce: ReturnType<typeof vi.fn>; drainWorkspace: ReturnType<typeof vi.fn> };
   facetExtractionWorkspaceDrain?: { requestWorkspaceDrain: ReturnType<typeof vi.fn> };
   copilotRetentionWorker?: { sweep: ReturnType<typeof vi.fn> };
+  testExecutionRetentionWorker?: { sweep: ReturnType<typeof vi.fn> };
   approvalResumeEffectJournalRetentionWorker?: { sweep: ReturnType<typeof vi.fn> };
+  revisionEvalRunRetentionWorker?: { sweep: ReturnType<typeof vi.fn> };
   slackInboundEventRetentionWorker?: { sweep: ReturnType<typeof vi.fn> };
   agentBundleImportCleanupWorker?: { sweep: ReturnType<typeof vi.fn> };
+  credentialExpiryWarningLifecycle?: { runOnce: ReturnType<typeof vi.fn> };
+  periodicTaskHandlesById?: ReadonlyMap<string, { run: ReturnType<typeof vi.fn> }>;
 }) => {
   const app = express();
   app.use(express.json());
@@ -24,9 +28,13 @@ const buildApp = (input: {
     facetExtractionWorker: input.facetExtractionWorker as never,
     facetExtractionWorkspaceDrain: input.facetExtractionWorkspaceDrain as never,
     copilotRetentionWorker: input.copilotRetentionWorker as never,
+    testExecutionRetentionWorker: input.testExecutionRetentionWorker as never,
     approvalResumeEffectJournalRetentionWorker: input.approvalResumeEffectJournalRetentionWorker as never,
+    revisionEvalRunRetentionWorker: input.revisionEvalRunRetentionWorker as never,
     slackInboundEventRetentionWorker: input.slackInboundEventRetentionWorker as never,
     agentBundleImportCleanupWorker: input.agentBundleImportCleanupWorker as never,
+    credentialExpiryWarningLifecycle: input.credentialExpiryWarningLifecycle as never,
+    periodicTaskHandlesById: (input.periodicTaskHandlesById ?? new Map()) as never,
   }));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(500).json({ error: "internal" });
@@ -235,5 +243,56 @@ describe("POST /internal/tasks/copilot-retention/sweep", () => {
     const response = await request(app).post("/internal/tasks/copilot-retention/sweep").send({});
 
     expect(response.status).toBeGreaterThanOrEqual(500);
+  });
+});
+
+describe("POST /internal/tasks/credential-expiry-warning/sweep", () => {
+  it("runs one credential-expiry scan", async () => {
+    const runOnce = vi.fn().mockResolvedValue(undefined);
+    const app = buildApp({ credentialExpiryWarningLifecycle: { runOnce } });
+
+    const response = await request(app).post("/internal/tasks/credential-expiry-warning/sweep").send({});
+
+    expect(response.status).toBe(200);
+    expect(runOnce).toHaveBeenCalledOnce();
+  });
+
+  it("surfaces a scan failure so the scheduler sees a non-2xx response", async () => {
+    const app = buildApp({
+      credentialExpiryWarningLifecycle: { runOnce: vi.fn().mockRejectedValue(new Error("boom")) },
+    });
+
+    const response = await request(app).post("/internal/tasks/credential-expiry-warning/sweep").send({});
+
+    expect(response.status).toBe(500);
+  });
+});
+
+describe("POST /internal/tasks/periodic-tasks/:taskId/run", () => {
+  it("runs the registered task matching the id in the path", async () => {
+    const run = vi.fn().mockResolvedValue(undefined);
+    const app = buildApp({ periodicTaskHandlesById: new Map([["ee-usage-limit-alerts", { run }]]) });
+
+    const response = await request(app).post("/internal/tasks/periodic-tasks/ee-usage-limit-alerts/run").send({});
+
+    expect(response.status).toBe(200);
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("answers 404 for a task id with no registration, rather than silently doing nothing", async () => {
+    const app = buildApp({ periodicTaskHandlesById: new Map() });
+
+    const response = await request(app).post("/internal/tasks/periodic-tasks/unknown-task/run").send({});
+
+    expect(response.status).toBe(404);
+  });
+
+  it("surfaces a failing run so the scheduler sees a non-2xx response", async () => {
+    const run = vi.fn().mockRejectedValue(new Error("boom"));
+    const app = buildApp({ periodicTaskHandlesById: new Map([["ee-usage-limit-alerts", { run }]]) });
+
+    const response = await request(app).post("/internal/tasks/periodic-tasks/ee-usage-limit-alerts/run").send({});
+
+    expect(response.status).toBe(500);
   });
 });

@@ -6,6 +6,7 @@ import {
   type ConversationActivityEntry,
   type RecentlyClosedInboxItem,
 } from "../../../../modules/conversationActivity/contracts/index.js";
+import { replyInterruptionSchema } from "../../../../modules/chat/contracts/index.js";
 import { assistantChatSchema } from "../../schemas/assistantChatSchemas.js";
 import {
   conversationParamsSchema,
@@ -647,6 +648,13 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const ReplyInterruptionSchema = registry.register(
+    "ReplyInterruption",
+    replyInterruptionSchema.openapi({
+      description: "Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`, which keeps the full reply.",
+    }),
+  );
+
   // Shared by the operator and public message schemas. `debug`, `turnFailure`, and
   // `operatorLabel` are operator-only and are added on top of this shape for the dashboard
   // schema alone: the first two carry turn diagnostics (and `turnFailure` carries raw error
@@ -664,6 +672,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     suggestions: z.array(ChatSuggestionSchema).optional(),
     answerFeedbackEntries: z.array(AnswerFeedbackEntrySchema).optional(),
     operatorDisplayName: z.string().optional(),
+    interruption: ReplyInterruptionSchema.optional(),
   };
 
   const ChatConversationMessageSchema = registry.register(

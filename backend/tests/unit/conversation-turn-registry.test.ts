@@ -1,263 +1,34 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  ChatTurnDisconnectAbortError,
-  ChatTurnSupersededError,
   InMemoryConversationTurnRegistry,
   LoggingConversationTurnInterruptionObserver,
 } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
+import { describeConversationTurnRegistryContract } from "../support/conversationTurnRegistryContract.js";
 
-const deferred = () => {
-  let resolve!: () => void;
-  const promise = new Promise<void>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-};
+describeConversationTurnRegistryContract("InMemoryConversationTurnRegistry", async (observer) => ({
+  registry: new InMemoryConversationTurnRegistry(observer),
+  settle: async () => undefined,
+  close: async () => undefined,
+}));
 
 describe("InMemoryConversationTurnRegistry", () => {
-  it("cancels an unlatched predecessor and holds its successor until cleanup completes", async () => {
-    const cancelled = vi.fn();
-    const registry = new InMemoryConversationTurnRegistry({ turnCancelled: cancelled });
-    const first = registry.start("conversation-1");
-    first.setStage("rendering");
-
-    const second = registry.start("conversation-1");
-    let successorReady = false;
-    void second.waitForPredecessor().then(() => {
-      successorReady = true;
-    });
-
-    expect(first.signal.aborted).toBe(true);
-    expect(() => first.throwIfCancelled()).toThrowError(ChatTurnSupersededError);
-    expect(successorReady).toBe(false);
-    expect(cancelled).toHaveBeenCalledWith({
-      conversationId: "conversation-1",
-      reason: "superseded",
-      stage: "rendering",
-    });
-
-    first.complete();
-    await second.waitForPredecessor();
-    expect(successorReady).toBe(true);
-  });
-
-  it("does not cancel a predecessor after its emission latch is set", async () => {
+  it("cancels its predecessor inside start, before any I/O", () => {
     const cancelled = vi.fn();
     const registry = new InMemoryConversationTurnRegistry({ turnCancelled: cancelled });
     const first = registry.start("conversation-1");
 
-    first.beginEmission();
-    const second = registry.start("conversation-1");
-
-    expect(first.signal.aborted).toBe(false);
-    expect(cancelled).not.toHaveBeenCalled();
-
-    const waiting = deferred();
-    void second.waitForPredecessor().then(waiting.resolve);
-    await Promise.resolve();
-    let ready = false;
-    void waiting.promise.then(() => {
-      ready = true;
-    });
-    await Promise.resolve();
-    expect(ready).toBe(false);
-
-    first.complete();
-    await waiting.promise;
-    expect(ready).toBe(true);
-  });
-
-  describe("superseding after emission", () => {
-    const speechLike = { supersedeAfterEmission: true };
-
-    it("cancels a predecessor that started emitting when both turns supersede after emission", async () => {
-      const cancelled = vi.fn();
-      const registry = new InMemoryConversationTurnRegistry({ turnCancelled: cancelled });
-      const first = registry.start("conversation-1", speechLike);
-      first.beginEmission();
-
-      const second = registry.start("conversation-1", speechLike);
-
-      expect(first.signal.aborted).toBe(true);
-      expect(() => first.throwIfCancelled()).toThrowError(
-        expect.objectContaining({ name: "ChatTurnSupersededError", stage: "persisting", afterEmission: true, replacedByNewerInput: true }),
-      );
-      expect(cancelled).toHaveBeenCalledWith({ conversationId: "conversation-1", reason: "superseded", stage: "persisting" });
-
-      let ready = false;
-      void second.waitForPredecessor().then(() => {
-        ready = true;
-      });
-      await Promise.resolve();
-      expect(ready).toBe(false);
-      first.complete();
-      await second.waitForPredecessor();
-      expect(ready).toBe(true);
-    });
-
-    it("reports a speech-like turn cancelled before it emitted as cancelled before emission", () => {
-      const registry = new InMemoryConversationTurnRegistry();
-      const first = registry.start("conversation-1", speechLike);
-      first.setStage("routing");
-
-      registry.start("conversation-1", speechLike);
-
-      expect(() => first.throwIfCancelled()).toThrowError(
-        expect.objectContaining({ stage: "routing", afterEmission: false, replacedByNewerInput: true }),
-      );
-    });
-
-    it("cancels a speech-like turn that has not emitted for a newer default-mode turn without calling its input replaced", () => {
-      const registry = new InMemoryConversationTurnRegistry();
-      const first = registry.start("conversation-1", speechLike);
-      first.setStage("routing");
-
-      registry.start("conversation-1");
-
-      expect(first.signal.aborted).toBe(true);
-      expect(() => first.throwIfCancelled()).toThrowError(
-        expect.objectContaining({ stage: "routing", afterEmission: false, replacedByNewerInput: false }),
-      );
-    });
-
-    it("never calls a default-mode turn's input replaced", () => {
-      const registry = new InMemoryConversationTurnRegistry();
-      const first = registry.start("conversation-1");
-
-      registry.start("conversation-1", speechLike);
-
-      expect(() => first.throwIfCancelled()).toThrowError(expect.objectContaining({ replacedByNewerInput: false }));
-    });
-
-    it("lets an emitting chat turn finish when only the newer turn supersedes after emission", () => {
-      const registry = new InMemoryConversationTurnRegistry();
-      const first = registry.start("conversation-1");
-      first.beginEmission();
-
-      registry.start("conversation-1", speechLike);
-
-      expect(first.signal.aborted).toBe(false);
-    });
-
-    it("lets a speech-like turn that began committing finish, holding the newer one until it completes", async () => {
-      const cancelled = vi.fn();
-      const registry = new InMemoryConversationTurnRegistry({ turnCancelled: cancelled });
-      const first = registry.start("conversation-1", speechLike);
-      first.beginEmission();
-      first.beginCommit();
-
-      const second = registry.start("conversation-1", speechLike);
-
-      expect(first.signal.aborted).toBe(false);
-      expect(() => first.throwIfCancelled()).not.toThrow();
-      expect(cancelled).not.toHaveBeenCalled();
-      let ready = false;
-      void second.waitForPredecessor().then(() => {
-        ready = true;
-      });
-      await Promise.resolve();
-      expect(ready).toBe(false);
-      first.complete();
-      await second.waitForPredecessor();
-      expect(ready).toBe(true);
-    });
-
-    it("atomically refuses to begin committing a turn a newer one already superseded", () => {
-      const registry = new InMemoryConversationTurnRegistry();
-      const first = registry.start("conversation-1", speechLike);
-      first.beginEmission();
-      registry.start("conversation-1", speechLike);
-
-      expect(() => first.beginCommit()).toThrowError(
-        expect.objectContaining({ name: "ChatTurnSupersededError", afterEmission: true, replacedByNewerInput: true }),
-      );
-    });
-
-    it("lets an emitting speech-like turn finish when the newer turn is a default chat turn", () => {
-      const registry = new InMemoryConversationTurnRegistry();
-      const first = registry.start("conversation-1", speechLike);
-      first.beginEmission();
-
-      registry.start("conversation-1");
-
-      expect(first.signal.aborted).toBe(false);
-    });
-  });
-
-  it("keeps newer registry ownership when an older turn completes", () => {
-    const registry = new InMemoryConversationTurnRegistry();
-    const first = registry.start("conversation-1");
-    const second = registry.start("conversation-1");
-
-    first.complete();
-    const third = registry.start("conversation-1");
-
-    expect(second.signal.aborted).toBe(true);
-    expect(third.signal.aborted).toBe(false);
-  });
-
-  it("atomically refuses to latch a turn that was already cancelled", () => {
-    const registry = new InMemoryConversationTurnRegistry();
-    const first = registry.start("conversation-1");
-    first.setStage("preparing");
     registry.start("conversation-1");
 
-    expect(() => first.beginEmission()).toThrowError(
-      expect.objectContaining({
-        code: "chat_turn_superseded",
-        details: {
-          conversationId: "conversation-1",
-          reason: "superseded",
-          stage: "preparing",
-        },
-      }),
-    );
+    expect(first.signal.aborted).toBe(true);
+    expect(cancelled).toHaveBeenCalledOnce();
   });
+});
 
-  it("cancels a lease externally after disconnect, aborting its signal and reporting through the cancellation observer", () => {
-    const cancelled = vi.fn();
-    const registry = new InMemoryConversationTurnRegistry({ turnCancelled: cancelled });
-    const lease = registry.start("conversation-1");
-    lease.setStage("rendering");
-
-    lease.cancelAfterDisconnect();
-
-    expect(lease.signal.aborted).toBe(true);
-    expect(() => lease.throwIfCancelled()).toThrowError(ChatTurnDisconnectAbortError);
-    expect(cancelled).toHaveBeenCalledWith({
-      conversationId: "conversation-1",
-      reason: "disconnect_timeout",
-      stage: "rendering",
-    });
-  });
-
-  it("does not report a disconnect cancellation twice when the lease is already cancelled", () => {
-    const cancelled = vi.fn();
-    const registry = new InMemoryConversationTurnRegistry({ turnCancelled: cancelled });
-    const lease = registry.start("conversation-1");
-
-    lease.cancelAfterDisconnect();
-    lease.cancelAfterDisconnect();
-
-    expect(cancelled).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not cancel a lease that has already completed", () => {
-    const cancelled = vi.fn();
-    const registry = new InMemoryConversationTurnRegistry({ turnCancelled: cancelled });
-    const lease = registry.start("conversation-1");
-
-    lease.complete();
-    lease.cancelAfterDisconnect();
-
-    expect(lease.signal.aborted).toBe(false);
-    expect(cancelled).not.toHaveBeenCalled();
-  });
-
+describe("LoggingConversationTurnInterruptionObserver", () => {
   it("records a safe structured log and a bounded cancellation counter", () => {
-    const logger = { info: vi.fn() };
+    const logger = { info: vi.fn(), warn: vi.fn() };
     const metrics = new MetricsRegistry();
     const observer = new LoggingConversationTurnInterruptionObserver(logger, metrics);
 
@@ -265,6 +36,7 @@ describe("InMemoryConversationTurnRegistry", () => {
       conversationId: "conversation-1",
       reason: "superseded",
       stage: "routing",
+      scope: "cross_instance",
     });
 
     expect(logger.info).toHaveBeenCalledWith(
@@ -273,15 +45,31 @@ describe("InMemoryConversationTurnRegistry", () => {
         event: "chat_turn_cancelled",
         reason: "superseded",
         stage: "routing",
+        scope: "cross_instance",
       },
       "Chat turn cancelled",
     );
     expect(metrics.renderPrometheus()).toContain(
-      'radioso_chat_turn_cancellations_total{reason="superseded",stage="routing"} 1',
+      'radioso_chat_turn_cancellations_total{reason="superseded",scope="cross_instance",stage="routing"} 1',
     );
     expect(metrics.renderPrometheus()).toContain(
       "# HELP radioso_chat_turn_cancellations_total Total assistant chat turns cancelled before completion.",
     );
+    expect(metrics.renderPrometheus()).not.toContain("conversation-1");
+  });
+
+  it("warns and counts a turn that took over from a predecessor whose lease expired", () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const metrics = new MetricsRegistry();
+    const observer = new LoggingConversationTurnInterruptionObserver(logger, metrics);
+
+    observer.predecessorLeaseExpired({ conversationId: "conversation-1" });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      { conversationId: "conversation-1", event: "chat_turn_lease_expiry_takeover" },
+      "Chat turn stopped waiting for a predecessor whose lease expired",
+    );
+    expect(metrics.renderPrometheus()).toContain("radioso_chat_turn_lease_expiry_takeovers_total 1");
     expect(metrics.renderPrometheus()).not.toContain("conversation-1");
   });
 });

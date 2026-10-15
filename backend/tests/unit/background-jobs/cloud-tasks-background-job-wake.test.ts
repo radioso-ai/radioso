@@ -9,6 +9,7 @@ interface CreateTaskRequest {
   parent: string;
   task: {
     scheduleTime?: { seconds: number; nanos: number };
+    dispatchDeadline?: { seconds: number };
     httpRequest: {
       url: string;
       headers: Record<string, string>;
@@ -48,6 +49,15 @@ describe("CloudTasksBackgroundJobWake", () => {
     expect(request.task.httpRequest.headers[WORKER_TASK_AUTH_HEADER]).toBe(workerTaskAuthToken);
     expect(request.task.httpRequest.body).toBeUndefined();
     expect(request.task.scheduleTime).toBeUndefined();
+  });
+
+  it("gives the worker as long as one drain can take before Cloud Tasks retries the wake", async () => {
+    const { client, wake } = createWake();
+
+    await wake.requestDrain();
+
+    const [request] = client.createTask.mock.calls[0];
+    expect(request.task.dispatchDeadline).toEqual({ seconds: 300 });
   });
 
   it("schedules the drain for a retry's due time", async () => {

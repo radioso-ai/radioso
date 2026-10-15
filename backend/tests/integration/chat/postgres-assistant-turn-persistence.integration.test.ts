@@ -1021,11 +1021,11 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         }),
       );
 
-    it("writes the jobs in the turn's commit and wakes the worker once it has committed", async () => {
+    it("writes the jobs in the turn's commit and returns the wake for after that commit", async () => {
       const { workspace, conversation } = await seedConversation();
       const wake = vi.fn(async () => {});
 
-      await persistenceWithQueue(wake).completeAssistantTurn(
+      const receipt = await persistenceWithQueue(wake).completeAssistantTurn(
         turnWithJobs({ workspaceId: workspace.id, conversationId: conversation.id, assistantMessageId: randomUUID() }),
       );
 
@@ -1034,10 +1034,12 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         status: "pending",
         payload: { workspaceId: workspace.id, conversationId: conversation.id },
       }]);
-      await vi.waitFor(() => expect(wake).toHaveBeenCalledOnce());
+      expect(wake).not.toHaveBeenCalled();
+      receipt.wakeBackgroundJobs?.();
+      expect(wake).toHaveBeenCalledOnce();
     });
 
-    it("leaves no job behind when the turn rolls back", async () => {
+    it("leaves no job and no wake behind when the turn rolls back", async () => {
       const { workspace, conversation } = await seedConversation();
       const wake = vi.fn(async () => {});
 
@@ -1052,19 +1054,41 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       expect(wake).not.toHaveBeenCalled();
     });
 
-    it("coalesces a second turn's refresh into the one still waiting, without another wake", async () => {
+    it("folds a second turn's refresh into the one still waiting, with no second wake", async () => {
       const { workspace, conversation } = await seedConversation();
-      const wake = vi.fn(async () => {});
-      const persistenceWithJobs = persistenceWithQueue(wake);
+      const persistenceWithJobs = persistenceWithQueue(vi.fn(async () => {}));
 
+      const receipts = [];
       for (let turn = 0; turn < 2; turn += 1) {
-        await persistenceWithJobs.completeAssistantTurn(
+        receipts.push(await persistenceWithJobs.completeAssistantTurn(
           turnWithJobs({ workspaceId: workspace.id, conversationId: conversation.id, assistantMessageId: randomUUID() }),
-        );
+        ));
       }
 
       expect(await summaryJobsFor(conversation.id)).toHaveLength(1);
-      await vi.waitFor(() => expect(wake).toHaveBeenCalledOnce());
+      expect(receipts.map((receipt) => receipt.wakeBackgroundJobs !== undefined)).toEqual([true, false]);
+    });
+
+    it("in a caller's transaction, leaves the wake to the caller, whose commit makes the job visible", async () => {
+      const { workspace, conversation } = await seedConversation();
+      const wake = vi.fn(async () => {});
+      const persistenceWithJobs = persistenceWithQueue(wake);
+      let visibleBeforeCommit: unknown[] = [];
+
+      const receipt = await database.kysely.transaction().execute(async (trx) => {
+        const inner = await persistenceWithJobs.completeAssistantTurn({
+          ...turnWithJobs({ workspaceId: workspace.id, conversationId: conversation.id, assistantMessageId: randomUUID() }),
+          transaction: trx,
+        });
+        visibleBeforeCommit = await summaryJobsFor(conversation.id);
+        return inner;
+      });
+
+      expect(visibleBeforeCommit).toEqual([]);
+      expect(wake).not.toHaveBeenCalled();
+      expect(await summaryJobsFor(conversation.id)).toHaveLength(1);
+      receipt.wakeBackgroundJobs?.();
+      expect(wake).toHaveBeenCalledOnce();
     });
   });
 });

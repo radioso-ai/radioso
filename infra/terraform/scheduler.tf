@@ -95,6 +95,8 @@ resource "google_cloud_scheduler_job" "background_job_recovery" {
   name     = "${local.resource_name_prefix}-background-job-recovery"
   region   = var.region
   schedule = local.background_job_recovery_schedule
+  # One drain runs inside a 240 s budget; the worker's request timeout is 300 s.
+  attempt_deadline = "300s"
 
   http_target {
     http_method = "POST"
@@ -114,10 +116,11 @@ resource "google_cloud_scheduler_job" "background_job_recovery" {
 }
 
 resource "google_cloud_scheduler_job" "background_job_retention" {
-  count    = var.deploy_services ? 1 : 0
-  name     = "${local.resource_name_prefix}-background-job-retention"
-  region   = var.region
-  schedule = local.background_job_retention_schedule
+  count            = var.deploy_services ? 1 : 0
+  name             = "${local.resource_name_prefix}-background-job-retention"
+  region           = var.region
+  schedule         = local.background_job_retention_schedule
+  attempt_deadline = "300s"
 
   http_target {
     http_method = "POST"

@@ -458,6 +458,7 @@ export interface AuditEvents {
 export interface BackgroundJobs {
   attempts: Generated<number>;
   available_at: Generated<Timestamp>;
+  claim_token: string | null;
   created_at: Generated<Timestamp>;
   dead_at: Timestamp | null;
   id: Generated<string>;
@@ -466,6 +467,7 @@ export interface BackgroundJobs {
   last_error: string | null;
   lease_expires_at: Timestamp | null;
   payload: Json;
+  rerun_requested: Generated<boolean>;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
 }

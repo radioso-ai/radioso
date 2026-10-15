@@ -168,6 +168,12 @@ interface PersistedAssistantTurn {
   response: ChatResponse;
   assistantMessageId: string;
   postCommitReceipt: PostCommitInvalidationReceipt;
+  /**
+   * Present when the turn wrote background jobs inside a caller's transaction: the caller calls it
+   * once that transaction has committed, as it flushes `postCommitReceipt`. A turn that owns its
+   * transaction has already woken the worker.
+   */
+  postCommitWake?: () => void;
 }
 
 /**
@@ -211,6 +217,8 @@ export interface AssistantTurnCommittedFacts {
 export interface AssistantTurnPersistenceReceipt {
   message: MessageRecord;
   committedFacts: AssistantTurnCommittedFacts;
+  /** Wakes a worker for the background jobs the turn wrote; call it once the turn's transaction has committed. */
+  wakeBackgroundJobs?: () => void;
 }
 
 /** The narrow slice of the action outbox the turn lifecycle needs (idempotent enqueue). */
@@ -830,6 +838,7 @@ export class ChatTurnLifecycle {
     });
     let assistantMessage: MessageRecord;
     let postCommitReceipt: PostCommitInvalidationReceipt;
+    let postCommitWake: (() => void) | undefined;
     const suspended = input.suspended === true;
     const baseAuditEvent = suspended
       ? this.buildAssistantTurnSuspendedAuditEvent(presentation.successInput)
@@ -890,6 +899,10 @@ export class ChatTurnLifecycle {
       postCommitReceipt = this.createPostCommitReceipt(input.workspaceId, persisted.committedFacts);
       if (!input.transaction) {
         flushPostCommitInvalidationReceipt(this.workspaceInvalidationPublisher, postCommitReceipt);
+        persisted.wakeBackgroundJobs?.();
+      } else {
+        // The jobs are invisible until the caller's transaction commits; a wake now would find nothing.
+        postCommitWake = persisted.wakeBackgroundJobs;
       }
       this.auditService.logRecorded?.(auditEvent);
       if (!suspended && recordsBookkeeping) {
@@ -974,6 +987,7 @@ export class ChatTurnLifecycle {
       kind: "persisted",
       assistantMessageId: assistantMessage.id,
       postCommitReceipt,
+      ...(postCommitWake ? { postCommitWake } : {}),
       response: {
         conversationId: input.session.conversation.id,
         agentId: input.session.agent.id,

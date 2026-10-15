@@ -1,5 +1,4 @@
-import { performance } from "node:perf_hooks";
-
+import { AppError } from "../domain/errors.js";
 import { traceOperation } from "../observability/tracing/operations.js";
 import { NonRetryableBackgroundJobError } from "./jobKind.js";
 import type {
@@ -12,18 +11,39 @@ import type {
 
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
 const DEFAULT_POLL_BATCH_SIZE = 10;
+/** A run renews its lease this many times per lease, so one slow renewal never lets it lapse. */
+const HEARTBEATS_PER_LEASE = 3;
 /** Doubling stops here, so a long retry budget never parks a job for days. */
 const MAX_RETRY_DELAY_SECONDS = 3_600;
-/** `last_error` is for an operator reading a dead letter, not an archive of provider responses. */
-const MAX_ERROR_CHARS = 1_000;
 const WAIT_BUCKETS_MS = [100, 500, 1_000, 5_000, 15_000, 60_000, 300_000, 900_000, 3_600_000];
 const RUN_BUCKETS_MS = [10, 50, 100, 500, 1_000, 2_500, 5_000, 10_000, 30_000, 60_000, 300_000];
+const ERROR_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+const ERROR_CODE_PATTERN = /^[A-Za-z0-9_.]{1,64}$/;
 
-type RunOutcome = "completed" | "retried" | "dead_lettered" | "superseded";
+/** The run passed its kind's deadline; the runtime stopped waiting for it. */
+class BackgroundJobTimeoutError extends Error {
+  constructor() {
+    super("Background job handler passed its deadline");
+    this.name = "BackgroundJobTimeoutError";
+  }
+}
+
+/** The run's lease was taken over by another worker; nothing it does is written back. */
+class BackgroundJobLeaseLostError extends Error {
+  constructor() {
+    super("Background job lease was taken over by another worker");
+    this.name = "BackgroundJobLeaseLostError";
+  }
+}
+
+type RunOutcome = "completed" | "requeued" | "retried" | "dead_lettered" | "superseded";
+
+type Execution = { readonly ok: true } | { readonly ok: false; readonly error: unknown };
 
 interface BackgroundJobDrainResult {
   claimed: number;
   completed: number;
+  requeued: number;
   retried: number;
   deadLettered: number;
   superseded: number;
@@ -55,7 +75,7 @@ interface RuntimeErrorReporter {
 interface BackgroundJobRuntimeOptions {
   store: BackgroundJobStore;
   handlers: readonly BackgroundJobHandlerRegistration[];
-  /** Schedules a wake for when a retried job is due, so a push-only worker does not wait for the sweep. */
+  /** Wakes a worker for a retry's due time or a requeued rerun, so a push-only worker does not wait for the sweep. */
   wake?: BackgroundJobWakePort;
   logger: RuntimeLogger;
   metrics?: RuntimeMetrics | null;
@@ -68,31 +88,39 @@ interface BackgroundJobRuntimeOptions {
 
 const outcomeCounter: Record<RunOutcome, keyof BackgroundJobDrainResult> = {
   completed: "completed",
+  requeued: "requeued",
   retried: "retried",
   dead_lettered: "deadLettered",
   superseded: "superseded",
 };
 
-const errorType = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
-
-const describeError = (error: unknown): string => {
-  const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  return text.length > MAX_ERROR_CHARS ? `${text.slice(0, MAX_ERROR_CHARS - 1)}…` : text;
+/**
+ * What a job row keeps about a failure, for an operator reading it later: the error's class, plus
+ * an application error's code. Never the message or stack, which can carry provider response
+ * bodies, conversation text, or credentials.
+ */
+const errorSummary = (error: unknown): string => {
+  const name = error instanceof Error && ERROR_NAME_PATTERN.test(error.name) ? error.name : "Error";
+  return error instanceof AppError && ERROR_CODE_PATTERN.test(error.code) ? `${name} [${error.code}]` : name;
 };
 
 /**
  * Runs durable background jobs: claims a due job under a lease, runs the handler registered for
- * its kind, then deletes it, retries it with a doubling backoff, or dead-letters it once its
- * attempts are spent. A job whose lease expires — its worker died or stalled — is claimed again
- * by the next drain, and the stale run's write back is fenced off by the attempt count.
+ * its kind, then deletes it, requeues it for a requested rerun, retries it with a doubling backoff,
+ * or dead-letters it once its attempts are spent.
+ *
+ * While a handler runs, the runtime renews the lease three times per lease and aborts the
+ * handler's signal when a renewal finds the claim taken over or when the kind's deadline passes;
+ * the deadline is always shorter than the lease. Every write back is fenced on the claim's token,
+ * so a worker that lost its claim writes nothing.
  *
  * Two triggers share `drain`: the poll loop `start` runs in the worker process, and the worker
- * task route a Cloud Task or the scheduled sweep calls. Handlers must be idempotent; a job can run
- * again after a crash between its side effects and its completion.
+ * task route a Cloud Task or the scheduled sweep calls with a time budget. Handlers must be
+ * idempotent; a job can run again after a crash between its side effects and its completion.
  */
 export class BackgroundJobRuntime {
   private readonly handlers = new Map<string, BackgroundJobHandlerRegistration>();
-  private readonly claimableKinds: readonly BackgroundJobClaimableKind[];
+  private readonly claimableKinds: readonly (BackgroundJobClaimableKind & { timeoutMs: number })[];
   private timer: ReturnType<typeof setInterval> | null = null;
   private tickInFlight: Promise<void> | null = null;
 
@@ -106,6 +134,7 @@ export class BackgroundJobRuntime {
     this.claimableKinds = [...this.handlers.values()].map((handler) => ({
       kind: handler.kind,
       leaseSeconds: handler.policy.leaseSeconds,
+      timeoutMs: handler.policy.timeoutSeconds * 1_000,
     }));
   }
 
@@ -126,14 +155,30 @@ export class BackgroundJobRuntime {
     await this.tickInFlight;
   }
 
-  /** Runs due jobs one at a time until none is due or `maxJobs` have run. Store failures propagate. */
-  async drain(input: { maxJobs: number }): Promise<BackgroundJobDrainResult> {
-    const result: BackgroundJobDrainResult = { claimed: 0, completed: 0, retried: 0, deadLettered: 0, superseded: 0 };
-    if (this.claimableKinds.length === 0) {
-      return result;
-    }
+  /**
+   * Runs due jobs one at a time until none is due or `maxJobs` have run. With a `budgetMs`, a job is
+   * claimed only while its kind's deadline still fits in what is left of the budget, so the drain
+   * ends inside the budget even if every handler runs to its deadline. Store failures propagate.
+   */
+  async drain(input: { maxJobs: number; budgetMs?: number }): Promise<BackgroundJobDrainResult> {
+    const result: BackgroundJobDrainResult = {
+      claimed: 0,
+      completed: 0,
+      requeued: 0,
+      retried: 0,
+      deadLettered: 0,
+      superseded: 0,
+    };
+    const startedAt = Date.now();
     for (let index = 0; index < input.maxJobs; index += 1) {
-      const claim = await this.options.store.claimNext({ kinds: this.claimableKinds });
+      const remainingMs = input.budgetMs === undefined ? Infinity : input.budgetMs - (Date.now() - startedAt);
+      const kinds = this.claimableKinds.filter((entry) => entry.timeoutMs <= remainingMs);
+      if (kinds.length === 0) {
+        break;
+      }
+      const claim = await this.options.store.claimNext({
+        kinds: kinds.map(({ kind, leaseSeconds }) => ({ kind, leaseSeconds })),
+      });
       if (!claim) {
         break;
       }
@@ -151,7 +196,7 @@ export class BackgroundJobRuntime {
       .then(
         () => undefined,
         (error: unknown) => {
-          this.options.logger.error({ errorType: errorType(error) }, "Background job poll failed");
+          this.options.logger.error({ errorType: errorSummary(error) }, "Background job poll failed");
           void this.options.errorReporter
             ?.report({ errorType: "background_job.poll_failed", error, severity: "error" })
             .catch(() => undefined);
@@ -165,23 +210,81 @@ export class BackgroundJobRuntime {
   private async run(claim: BackgroundJobClaim): Promise<RunOutcome> {
     const handler = this.handlers.get(claim.kind)!;
     this.observeWait(claim);
-    const startedAt = performance.now();
+    const startedAt = Date.now();
     if (claim.attempt > handler.policy.maxAttempts) {
       // Every earlier attempt was claimed and never finished: the worker died or stalled past the
       // lease each time. Running it again would exceed the budget the kind declared.
-      return this.deadLetter(claim, "LeaseExpired: no attempt finished within its lease", undefined, startedAt);
+      return this.deadLetter(claim, "BackgroundJobLeaseExpiredError", undefined, startedAt);
     }
+    const execution = await this.execute(claim, handler);
+    if (!execution.ok) {
+      if (execution.error instanceof BackgroundJobLeaseLostError) {
+        return this.record(claim, "superseded", startedAt);
+      }
+      return this.fail(claim, handler, execution.error, startedAt);
+    }
+    const completion = await this.options.store.complete(claim);
+    if (completion === "requeued") {
+      // A rerun was requested while this run held the job: it is due now.
+      await this.wakeAt(undefined);
+      return this.record(claim, "requeued", startedAt);
+    }
+    return this.record(claim, completion === "deleted" ? "completed" : "superseded", startedAt);
+  }
+
+  /**
+   * Runs the handler under the kind's deadline while renewing the lease. Resolves when the handler
+   * settles or when the run is interrupted, whichever comes first; a handler that ignores its
+   * aborted signal is left behind, and anything it writes afterwards is fenced or races the retry.
+   */
+  private async execute(claim: BackgroundJobClaim, handler: BackgroundJobHandlerRegistration): Promise<Execution> {
+    const controller = new AbortController();
+    const interrupted = new Promise<Execution>((resolve) => {
+      controller.signal.addEventListener("abort", () => resolve({ ok: false, error: controller.signal.reason }), { once: true });
+    });
+    const deadline = setTimeout(() => controller.abort(new BackgroundJobTimeoutError()), handler.policy.timeoutSeconds * 1_000);
+    const heartbeat = setInterval(
+      () => void this.renewLease(claim, handler, controller),
+      (handler.policy.leaseSeconds * 1_000) / HEARTBEATS_PER_LEASE,
+    );
     try {
-      await traceOperation({
+      const settled = traceOperation({
         name: "background_job.run",
         attributes: { "background_job.kind": claim.kind, "background_job.attempt": claim.attempt },
-        run: () => handler.run(claim.payload, { jobId: claim.id, attempt: claim.attempt }),
-      });
-    } catch (error) {
-      return this.fail(claim, handler, error, startedAt);
+        run: () => handler.run(claim.payload, { jobId: claim.id, attempt: claim.attempt, signal: controller.signal }),
+      }).then(
+        (): Execution => ({ ok: true }),
+        (error: unknown): Execution => ({ ok: false, error }),
+      );
+      const execution = await Promise.race([settled, interrupted]);
+      // A handler that rejected because its signal fired failed for the signal's reason.
+      return !execution.ok && controller.signal.aborted ? { ok: false, error: controller.signal.reason } : execution;
+    } finally {
+      clearTimeout(deadline);
+      clearInterval(heartbeat);
     }
-    const completed = await this.options.store.complete(claim);
-    return this.record(claim, completed ? "completed" : "superseded", startedAt);
+  }
+
+  /** A renewal that fails to reach the store is retried at the next heartbeat; one that finds the claim gone aborts the run. */
+  private async renewLease(
+    claim: BackgroundJobClaim,
+    handler: BackgroundJobHandlerRegistration,
+    controller: AbortController,
+  ): Promise<void> {
+    if (controller.signal.aborted) {
+      return;
+    }
+    try {
+      const renewed = await this.options.store.renewLease(claim, { leaseSeconds: handler.policy.leaseSeconds });
+      if (!renewed) {
+        controller.abort(new BackgroundJobLeaseLostError());
+      }
+    } catch (error) {
+      this.options.logger.warn(
+        { kind: claim.kind, jobId: claim.id, attempt: claim.attempt, errorType: errorSummary(error) },
+        "Background job lease renewal failed; retrying at the next heartbeat",
+      );
+    }
   }
 
   private async fail(
@@ -190,28 +293,29 @@ export class BackgroundJobRuntime {
     error: unknown,
     startedAt: number,
   ): Promise<RunOutcome> {
+    const summary = errorSummary(error);
     if (error instanceof NonRetryableBackgroundJobError || claim.attempt >= handler.policy.maxAttempts) {
-      return this.deadLetter(claim, describeError(error), error, startedAt);
+      return this.deadLetter(claim, summary, error, startedAt);
     }
     const delaySeconds = Math.min(
       handler.policy.retryBaseDelaySeconds * 2 ** (claim.attempt - 1),
       MAX_RETRY_DELAY_SECONDS,
     );
-    const availableAt = await this.options.store.retry(claim, { error: describeError(error), delaySeconds });
+    const availableAt = await this.options.store.retry(claim, { error: summary, delaySeconds });
     if (!availableAt) {
       return this.record(claim, "superseded", startedAt);
     }
     await this.wakeAt(availableAt);
-    return this.record(claim, "retried", startedAt, errorType(error));
+    return this.record(claim, "retried", startedAt, summary);
   }
 
   private async deadLetter(
     claim: BackgroundJobClaim,
-    lastError: string,
+    summary: string,
     error: unknown,
     startedAt: number,
   ): Promise<RunOutcome> {
-    const parked = await this.options.store.deadLetter(claim, { error: lastError });
+    const parked = await this.options.store.deadLetter(claim, { error: summary });
     if (!parked) {
       return this.record(claim, "superseded", startedAt);
     }
@@ -220,18 +324,18 @@ export class BackgroundJobRuntime {
         errorType: "background_job.dead_lettered",
         ...(error === undefined ? {} : { error }),
         severity: "error",
-        metadata: { kind: claim.kind, attempt: claim.attempt, jobId: claim.id },
+        metadata: { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, lastError: summary },
       })
       .catch(() => undefined);
-    return this.record(claim, "dead_lettered", startedAt, error === undefined ? "LeaseExpired" : errorType(error));
+    return this.record(claim, "dead_lettered", startedAt, summary);
   }
 
-  /** Best-effort: the sweep still finds a retry whose wake was lost. */
-  private async wakeAt(notBefore: Date): Promise<void> {
+  /** Best-effort: the sweep still finds a job whose wake was lost. */
+  private async wakeAt(notBefore: Date | undefined): Promise<void> {
     try {
-      await this.options.wake?.requestDrain({ notBefore });
+      await this.options.wake?.requestDrain(notBefore ? { notBefore } : undefined);
     } catch (error) {
-      this.options.logger.warn({ errorType: errorType(error) }, "Background job retry wake failed; the sweep will run it");
+      this.options.logger.warn({ errorType: errorSummary(error) }, "Background job wake failed; the sweep will run the job");
     }
   }
 
@@ -246,7 +350,7 @@ export class BackgroundJobRuntime {
   }
 
   private record(claim: BackgroundJobClaim, outcome: RunOutcome, startedAt: number, failure?: string): RunOutcome {
-    const durationMs = Math.round(performance.now() - startedAt);
+    const durationMs = Math.max(0, Date.now() - startedAt);
     this.options.metrics?.incrementCounter("background_jobs_total", {
       help: "Background job runs by kind and outcome.",
       labels: { kind: claim.kind, outcome },
@@ -266,14 +370,14 @@ export class BackgroundJobRuntime {
       durationMs,
       ...(failure ? { errorType: failure } : {}),
     };
-    if (outcome === "completed") {
-      this.options.logger.debug(fields, "Background job completed");
+    if (outcome === "completed" || outcome === "requeued") {
+      this.options.logger.debug(fields, outcome === "completed" ? "Background job completed" : "Background job completed; rerun queued");
     } else if (outcome === "dead_lettered") {
       this.options.logger.error(fields, "Background job dead-lettered");
     } else if (outcome === "retried") {
       this.options.logger.warn(fields, "Background job failed; retry scheduled");
     } else {
-      this.options.logger.warn(fields, "Background job run superseded after its lease expired");
+      this.options.logger.warn(fields, "Background job run superseded after its lease was taken over");
     }
     return outcome;
   }

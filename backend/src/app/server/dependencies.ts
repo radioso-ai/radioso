@@ -5,6 +5,7 @@ import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevis
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
 import { createVoiceChannelComposition } from "../composition/voiceChannel.js";
+import { createPostgresNotificationListener } from "../composition/postgresNotifications.js";
 import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
 import {
   createEmailChannelComposition,
@@ -311,6 +312,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     teammateLabels,
     messages: repositories.messageRepository,
   });
+  const notificationListener = createPostgresNotificationListener({ env, logger });
   const chat = buildChatServices({
     accountAccessService: access.accountAccessService,
     agentRetrievalScope,
@@ -334,6 +336,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     messageRepository: repositories.messageRepository,
     facetExtractionJobs: repositories.facetExtractionJobRepository,
     metricsRegistry: infrastructure.metricsRegistry,
+    notificationListener,
     telemetryService: infrastructure.telemetryService,
     webhookDestinations,
     productAnalyticsService: infrastructure.productAnalyticsService,
@@ -1290,7 +1293,17 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
     closeApprovalResumeEffectJournal: chat.closeApprovalResumeEffectJournal,
-    conversationTurnCoordination: chat.conversationTurnCoordination,
+    conversationTurnCoordination: {
+      // Chat's lease renewal stops first; the shared LISTEN connection, which voice session memory
+      // also hears through, closes last.
+      async shutdown() {
+        try {
+          await chat.conversationTurnCoordination.shutdown();
+        } finally {
+          await notificationListener.close();
+        }
+      },
+    },
     conversationOwnershipService,
     conversationIngestService,
     conversationOperatorDirectory,
@@ -1313,6 +1326,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     assistantChatService: chat.assistantChatService,
     voiceTurns: createVoiceChannelComposition({
       db: infrastructure.database.kysely,
+      notificationListener,
       assistantChatService: chat.assistantChatService,
       agentRepository: repositories.agentRepository,
       routineStates: new RoutineStateRepository(infrastructure.database.kysely),

@@ -14,6 +14,7 @@ import type { ChatStreamEvent } from "../../src/modules/chat/contracts/index.js"
 import { defaultAgentVoiceSettings } from "../../src/modules/agents/public.js";
 import type { VoiceTurnEvent, VoiceTurnInput, VoiceTurnOutcome } from "../../src/modules/voiceChannel/domain.js";
 import { registerOpenAiCompletionsRoute, VoiceTurnService } from "../../src/modules/voiceChannel/public.js";
+import { inMemoryVoiceSessionMemory } from "../support/inMemoryVoiceSessionMemoryStore.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -723,6 +724,7 @@ describe("voice completions route when a newer utterance supersedes the turn", (
       })(),
     };
     const turns = new VoiceTurnService({
+      memory: inMemoryVoiceSessionMemory(),
       sessions: { findConversationId: async () => conversationId, bind: async (_session, id) => id },
       chat,
       agents: { findVoiceProfile: async () => ({ voice: defaultAgentVoiceSettings(), defaultLocale: null }) },
@@ -959,6 +961,7 @@ describe("voice completions route outcomes", () => {
     } as unknown as ChatStreamEvent);
 
     const turnService = (events: ChatStreamEvent[], humanOwned = false) => new VoiceTurnService({
+      memory: inMemoryVoiceSessionMemory(),
       sessions: { findConversationId: async () => conversationId, bind: async (_session, id) => id },
       chat: { streamTurn: () => (async function* () { for (const event of events) yield event; })() },
       agents: { findVoiceProfile: async () => ({ voice: defaultAgentVoiceSettings(), defaultLocale: null }) },
@@ -975,6 +978,7 @@ describe("voice completions route outcomes", () => {
       const logger = { info: vi.fn(), warn: vi.fn() };
       // A fresh service per request, so each one is a session's only turn.
       const limitedTurns = () => new VoiceTurnService({
+      memory: inMemoryVoiceSessionMemory(),
         sessions: { findConversationId: async () => conversationId, bind: async (_session, id) => id },
         chat: {
           streamTurn: () => (async function* (): AsyncGenerator<ChatStreamEvent> {
@@ -994,7 +998,7 @@ describe("voice completions route outcomes", () => {
         routines: { isRoutineActive: async () => false },
         ownership: { isHumanOwned: async () => false },
         logger,
-        timing: { bridgeAfterMs: 10_000, bridgeAfterComposingIdleMs: 10_000, turnLimitMs: 20, replayWindowMs: 30_000 },
+        timing: { bridgeAfterMs: 10_000, bridgeAfterComposingIdleMs: 10_000, turnLimitMs: 20 },
       });
 
       try {
@@ -1031,6 +1035,7 @@ describe("voice completions route outcomes", () => {
         yield handOffDone({ answer });
       })());
       const turns = new VoiceTurnService({
+      memory: inMemoryVoiceSessionMemory(),
         sessions: { findConversationId: async () => conversationId, bind: async (_session, id) => id },
         chat: { streamTurn },
         agents: { findVoiceProfile: async () => ({ voice: defaultAgentVoiceSettings(), defaultLocale: null }) },

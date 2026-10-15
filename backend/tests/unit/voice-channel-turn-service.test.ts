@@ -11,6 +11,14 @@ import {
   type VoiceChatTurnRequest,
   type VoiceSessionStore,
 } from "../../src/modules/voiceChannel/services/voiceTurnService.js";
+import { VoiceSessionMemory } from "../../src/modules/voiceChannel/services/voiceSessionMemory.js";
+import { InMemoryVoiceSessionMemoryStore, inMemoryVoiceSessionMemory } from "../support/inMemoryVoiceSessionMemoryStore.js";
+
+type VoiceTurnServiceDependencies = ConstructorParameters<typeof VoiceTurnService>[0];
+
+/** A turn service as one instance runs it, over a session memory of its own unless a test shares one. */
+const newVoiceTurns = (dependencies: Omit<VoiceTurnServiceDependencies, "memory"> & Partial<Pick<VoiceTurnServiceDependencies, "memory">>) =>
+  new VoiceTurnService({ memory: inMemoryVoiceSessionMemory(), ...dependencies });
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -114,7 +122,7 @@ describe("VoiceTurnService", () => {
       done(),
     ]);
     const sessions = fakeSessions(null);
-    const service = new VoiceTurnService({ ...voiceOff, sessions, chat, logger: fakeLogger() });
+    const service = newVoiceTurns({ ...voiceOff, sessions, chat, logger: fakeLogger() });
 
     const events = await collect(service.runTurn(input(), new AbortController().signal));
 
@@ -140,7 +148,7 @@ describe("VoiceTurnService", () => {
   it("continues the bound conversation of a known session and names it before the turn runs", async () => {
     const chat = fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "Yes." }, done()]);
     const sessions = fakeSessions(conversationId);
-    const service = new VoiceTurnService({ ...voiceOff, sessions, chat, logger: fakeLogger() });
+    const service = newVoiceTurns({ ...voiceOff, sessions, chat, logger: fakeLogger() });
 
     const iterator = service.runTurn(input(), new AbortController().signal)[Symbol.asyncIterator]();
     const first = await iterator.next();
@@ -167,7 +175,7 @@ describe("VoiceTurnService", () => {
       { type: "chunk", text: "?] If you mean the monthly plan, ask me about that instead.[?]" },
       done(),
     ]);
-    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
+    const service = newVoiceTurns({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
 
     const events = await collect(service.runTurn(input(), new AbortController().signal));
 
@@ -184,7 +192,7 @@ describe("VoiceTurnService", () => {
       { type: "chunk", text: "*" },
       done(),
     ]);
-    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
+    const service = newVoiceTurns({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
 
     const events = await collect(service.runTurn(input(), new AbortController().signal));
 
@@ -193,7 +201,7 @@ describe("VoiceTurnService", () => {
 
   it("hands the caller's abort signal to the chat turn", async () => {
     const chat = fakeChat([{ type: "conversation", conversationId }, done()]);
-    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
+    const service = newVoiceTurns({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
     const abort = new AbortController();
 
     await collect(service.runTurn(input(), abort.signal));
@@ -210,7 +218,7 @@ describe("VoiceTurnService", () => {
       done(),
       { type: "suggestions", conversationId, suggestions: [] },
     ]);
-    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
+    const service = newVoiceTurns({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
 
     const events = await collect(service.runTurn(input(), new AbortController().signal));
 
@@ -225,7 +233,7 @@ describe("VoiceTurnService", () => {
       { type: "chunk", text: "Let me look that" },
       { type: "cancelled", conversationId, reason: "superseded", stage: "rendering" },
     ]);
-    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
+    const service = newVoiceTurns({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
 
     const events = await collect(service.runTurn(input(), new AbortController().signal));
 
@@ -238,7 +246,7 @@ describe("VoiceTurnService", () => {
   it("binds a human-owned first turn from the done event when no conversation event came first", async () => {
     const chat = fakeChat([done()]);
     const sessions = fakeSessions(null);
-    const service = new VoiceTurnService({ ...voiceOff, sessions, chat, logger: fakeLogger() });
+    const service = newVoiceTurns({ ...voiceOff, sessions, chat, logger: fakeLogger() });
 
     const events = await collect(service.runTurn(input(), new AbortController().signal));
 
@@ -250,7 +258,7 @@ describe("VoiceTurnService", () => {
     const otherConversationId = "77777777-7777-4777-8777-777777777777";
     const chat = fakeChat([{ type: "conversation", conversationId }, done()]);
     const logger = fakeLogger();
-    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(null, otherConversationId), chat, logger });
+    const service = newVoiceTurns({ ...voiceOff, sessions: fakeSessions(null, otherConversationId), chat, logger });
 
     const events = await collect(service.runTurn(input(), new AbortController().signal));
 
@@ -270,7 +278,7 @@ describe("VoiceTurnService", () => {
     const logger = fakeLogger();
     // The turn starts at 1,000 and everything after happens at 1,250.
     let clockReads = 0;
-    const service = new VoiceTurnService({ ...voiceOff,
+    const service = newVoiceTurns({ ...voiceOff,
       sessions: fakeSessions(conversationId),
       chat,
       logger,
@@ -297,7 +305,7 @@ describe("VoiceTurnService", () => {
   it("records a failed turn at warn with the error class and rethrows the chat error", async () => {
     class ProviderDownError extends Error {}
     const logger = fakeLogger();
-    const service = new VoiceTurnService({ ...voiceOff,
+    const service = newVoiceTurns({ ...voiceOff,
       sessions: fakeSessions(conversationId),
       chat: {
         streamTurn: () => (async function* (): AsyncGenerator<ChatStreamEvent> {
@@ -321,7 +329,7 @@ describe("VoiceTurnService", () => {
     ["on", { enabled: true, bridgeLines: {}, fallbackLine: {} }],
   ])("fails a turn whose chat stream ends without done or cancelled, with voice %s", async (_label, voice) => {
     const logger = fakeLogger();
-    const service = new VoiceTurnService({ ...voiceOff,
+    const service = newVoiceTurns({ ...voiceOff,
       agents: voiceProfiles(voice),
       sessions: fakeSessions(conversationId),
       chat: fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "We open at nine. See" }]),
@@ -360,7 +368,7 @@ describe("VoiceTurnService", () => {
     const runOutcome = async (events: ChatStreamEvent[]) => {
       const metrics = fakeMetrics();
       const logger = fakeLogger();
-      const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat: fakeChat(events), logger, metrics });
+      const service = newVoiceTurns({ ...voiceOff, sessions: fakeSessions(conversationId), chat: fakeChat(events), logger, metrics });
       const turn = await collect(service.runTurn(input(), new AbortController().signal));
       return { turn, metrics, logger };
     };
@@ -455,7 +463,7 @@ describe("VoiceTurnService", () => {
       const finished = gate();
       const requests: VoiceChatTurnRequest[] = [];
       const sessions = memorySessions();
-      const service = new VoiceTurnService({ ...voiceOff,
+      const service = newVoiceTurns({ ...voiceOff,
         sessions,
         logger: fakeLogger(),
         chat: {
@@ -497,7 +505,7 @@ describe("VoiceTurnService", () => {
     it("lets a waiting turn start the conversation when the first one fails before naming it", async () => {
       const failure = gate();
       const requests: VoiceChatTurnRequest[] = [];
-      const service = new VoiceTurnService({ ...voiceOff,
+      const service = newVoiceTurns({ ...voiceOff,
         sessions: memorySessions(),
         logger: fakeLogger(),
         chat: {
@@ -582,7 +590,7 @@ describe("VoiceTurnService", () => {
     });
 
     it("bridges when chat reports a search, and lets a quick composed reply through without one", async () => {
-      const turn = (steps: Array<{ atMs: number; event: ChatStreamEvent }>) => new VoiceTurnService({
+      const turn = (steps: Array<{ atMs: number; event: ChatStreamEvent }>) => newVoiceTurns({
         agents: voiceProfiles(voiceOn),
         routines: routineStates(false),
         ownership: conversationOwnership(false),
@@ -618,7 +626,7 @@ describe("VoiceTurnService", () => {
     it("still speaks a bridge line shorter than the runtime speaks on its own, and warns once per agent", async () => {
       const logger = fakeLogger();
       const status = (stage: "searching"): ChatStreamEvent => ({ type: "status", stage });
-      const service = new VoiceTurnService({
+      const service = newVoiceTurns({
         agents: voiceProfiles(voiceOn),
         routines: routineStates(false),
         ownership: conversationOwnership(false),
@@ -647,7 +655,7 @@ describe("VoiceTurnService", () => {
 
     it("runs the turn without a bridge or a limit while voice is off", async () => {
       const agents = voiceProfiles({ ...voiceOn, enabled: false });
-      const service = new VoiceTurnService({
+      const service = newVoiceTurns({
         agents,
         routines: routineStates(false),
         ownership: conversationOwnership(false),
@@ -668,7 +676,7 @@ describe("VoiceTurnService", () => {
 
     it("acknowledges while a routine is active in the session's conversation", async () => {
       const routines = routineStates(true);
-      const service = new VoiceTurnService({
+      const service = newVoiceTurns({
         agents: voiceProfiles(voiceOn),
         routines,
         ownership: conversationOwnership(false),
@@ -690,7 +698,7 @@ describe("VoiceTurnService", () => {
 
     it("checks on a session's first turn, which has no routine to read", async () => {
       const routines = routineStates(true);
-      const service = new VoiceTurnService({
+      const service = newVoiceTurns({
         agents: voiceProfiles(voiceOn),
         routines,
         ownership: conversationOwnership(false),
@@ -706,7 +714,7 @@ describe("VoiceTurnService", () => {
     });
 
     it("speaks in the request's locale ahead of the agent's default", async () => {
-      const service = new VoiceTurnService({
+      const service = newVoiceTurns({
         agents: voiceProfiles(voiceOn, "en"),
         routines: routineStates(false),
         ownership: conversationOwnership(false),
@@ -724,7 +732,7 @@ describe("VoiceTurnService", () => {
       const metrics = fakeMetrics();
       const logger = fakeLogger();
       const chat = timedChat(slowReply(12_000));
-      const service = new VoiceTurnService({
+      const service = newVoiceTurns({
         agents: voiceProfiles(voiceOn),
         routines: routineStates(false),
         ownership: conversationOwnership(false),
@@ -765,7 +773,7 @@ describe("VoiceTurnService", () => {
 
     it("logs a turn limit at warn even when there was no fallback line to speak", async () => {
       const logger = fakeLogger();
-      const service = new VoiceTurnService({
+      const service = newVoiceTurns({
         agents: voiceProfiles({ ...voiceOn, fallbackLine: {} }),
         routines: routineStates(false),
         ownership: conversationOwnership(false),
@@ -789,7 +797,7 @@ describe("VoiceTurnService", () => {
       const ownership = conversationOwnership(true);
       const metrics = fakeMetrics();
       const logger = fakeLogger();
-      const service = new VoiceTurnService({
+      const service = newVoiceTurns({
         agents: voiceProfiles(voiceOn),
         routines: routineStates(false),
         ownership,
@@ -821,7 +829,7 @@ describe("VoiceTurnService", () => {
 
     it("counts a bridge the agent has no line for as unresolved and speaks nothing", async () => {
       const metrics = fakeMetrics();
-      const service = new VoiceTurnService({
+      const service = newVoiceTurns({
         agents: voiceProfiles(voiceOn, "de"),
         routines: routineStates(false),
         ownership: conversationOwnership(false),
@@ -894,7 +902,7 @@ describe("VoiceTurnService", () => {
     const fakeMetrics = () => ({ observeHistogram: vi.fn(), incrementCounter: vi.fn() });
 
     const service = (chat: { streamTurn: (request: VoiceChatTurnRequest) => AsyncIterable<ChatStreamEvent> }, overrides: Partial<ConstructorParameters<typeof VoiceTurnService>[0]> = {}) =>
-      new VoiceTurnService({
+      newVoiceTurns({
         agents: voiceProfiles(voiceOn),
         routines: routineStates(false),
         ownership: conversationOwnership(false),
@@ -1045,6 +1053,131 @@ describe("VoiceTurnService", () => {
       await first;
 
       expect((await second).map((event) => event.type)).toEqual(["conversation", "bridge", "speech", "outcome"]);
+    });
+
+    describe("on two instances over one store", () => {
+      /** Two instances' services: their own memory each, over the session store they share. */
+      const twoInstances = (chat: Parameters<typeof service>[0], overrides: Parameters<typeof service>[1] = {}) => {
+        const store = new InMemoryVoiceSessionMemoryStore();
+        const memoryOn = () => new VoiceSessionMemory({
+          store,
+          notices: store.notices(),
+          windows: { replayWindowMs: 30_000, bridgeAfterMs: 2_500 },
+        });
+        return [service(chat, { ...overrides, memory: memoryOn() }), service(chat, { ...overrides, memory: memoryOn() })] as const;
+      };
+
+      /** A shared store whose settles are held until released, as a slow database would hold them. */
+      const heldSettles = () => {
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => { release = resolve; });
+        const settles: Array<Promise<void>> = [];
+        class HeldSettles extends InMemoryVoiceSessionMemoryStore {
+          override settle(settled: Parameters<InMemoryVoiceSessionMemoryStore["settle"]>[0]) {
+            const written = held.then(() => super.settle(settled));
+            settles.push(written);
+            return written;
+          }
+        }
+        const store = new HeldSettles();
+        const memory = new VoiceSessionMemory({ store, notices: store.notices(), windows: { replayWindowMs: 30_000, bridgeAfterMs: 2_500 } });
+        return { memory, release, settles };
+      };
+
+      it("ends a turn's events once its settle is in the store, so a retry on any instance can replay it", async () => {
+        const { memory, release, settles } = heldSettles();
+        const turns = service(supersedingChat([answered("We open at nine.")]), { memory });
+        let ended = false;
+
+        const turn = start(turns, input()).then((events) => {
+          ended = true;
+          return events;
+        });
+        await vi.runAllTimersAsync();
+        expect(settles).toHaveLength(1);
+        expect(ended).toBe(false);
+
+        release();
+        await vi.runAllTimersAsync();
+        expect(ended).toBe(true);
+        expect((await turn).at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+      });
+
+      it("ends a turn's events at the outcome when the limit cut it off, and settles it once the reply drained", async () => {
+        const { memory, release, settles } = heldSettles();
+        const turns = service(supersedingChat([answered("We open at nine.", 12_000)]), { memory });
+
+        const turn = start(turns, input());
+        await vi.runAllTimersAsync();
+
+        expect((await turn).slice(-2)).toEqual([
+          { type: "speech", text: "Sorry, could you ask me again?", last: true },
+          { type: "outcome", outcome: { kind: "continue" } },
+        ]);
+        expect(settles).toHaveLength(1);
+        release();
+        await vi.runAllTimersAsync();
+      });
+
+      it("ends a request still being looked up on one instance when a newer one arrives on the other", async () => {
+        const chat = supersedingChat([answered("Hatha yoga is on Sundays at nine.")]);
+        const sessions: VoiceSessionStore = {
+          findConversationId: () => new Promise<string>((resolve) => {
+            setTimeout(() => resolve(conversationId), 150);
+          }),
+          bind: async (_session, id) => id,
+        };
+        const [one, two] = twoInstances(chat, { sessions });
+
+        const first = start(one, input({ utterance: "Do you have Hatha?" }));
+        await vi.advanceTimersByTimeAsync(100);
+        const second = start(two, input({ utterance: "Do you have Hatha yoga?" }));
+        await vi.runAllTimersAsync();
+
+        expect(await first).toEqual([{ type: "outcome", outcome: { kind: "continue" } }]);
+        expect((await second).filter((event) => event.type === "speech")).toEqual([
+          { type: "speech", text: "Hatha yoga is on Sundays at nine.", last: true },
+        ]);
+        expect(chat.requests.map((request) => request.message)).toEqual(["Do you have Hatha yoga?"]);
+      });
+
+      it("replays on one instance the stored answer the runtime hung up on at the other", async () => {
+        const chat = supersedingChat([answered("We open at nine.", 1_000)]);
+        const notes = { replyInterrupted: vi.fn().mockResolvedValue(undefined), replyReplayed: vi.fn().mockResolvedValue(undefined) };
+        const [one, two] = twoInstances(chat, { notes });
+        const hangUp = new AbortController();
+
+        const first = start(one, input({ utterance: "When do you open?" }), hangUp.signal);
+        await vi.advanceTimersByTimeAsync(500);
+        hangUp.abort();
+        await vi.runAllTimersAsync();
+        await first;
+        const replayed = start(two, input({ utterance: "When do you open?" }));
+        await vi.runAllTimersAsync();
+
+        expect((await replayed).filter((event) => event.type === "speech")).toEqual([
+          { type: "speech", text: "We open at nine.", last: true },
+        ]);
+        expect(chat.requests).toHaveLength(1);
+        expect(notes.replyReplayed).toHaveBeenCalledWith({ workspaceId, conversationId, assistantMessageId });
+      });
+
+      it("speaks no second bridge after the overtaken request on the other instance bridged moments ago", async () => {
+        const searching = (atMs: number): Step => ({ atMs, event: { type: "status", stage: "searching" } });
+        const chat = supersedingChat([
+          [{ atMs: 0, event: { type: "conversation", conversationId } }, searching(50), { atMs: 3_000, event: { type: "chunk", text: "Stale." } }],
+          [{ atMs: 0, event: { type: "conversation", conversationId } }, searching(50), ...answered("We open at nine.", 2_500).slice(1)],
+        ]);
+        const [one, two] = twoInstances(chat);
+
+        const first = start(one, input({ utterance: "When do you open?" }));
+        await vi.advanceTimersByTimeAsync(600);
+        const second = start(two, input({ utterance: "When do you open on Sunday?" }));
+        await vi.runAllTimersAsync();
+
+        expect((await first).map((event) => event.type)).toEqual(["conversation", "bridge", "outcome"]);
+        expect((await second).map((event) => event.type)).toEqual(["conversation", "speech", "outcome"]);
+      });
     });
 
     describe("an identical re-request", () => {

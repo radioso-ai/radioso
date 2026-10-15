@@ -4,6 +4,7 @@ import { chatTurnQueuedActionTypes } from "../../src/app/composition/application
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
 import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
+import { inMemoryVoiceSessionMemory } from "./inMemoryVoiceSessionMemoryStore.js";
 import { setTimeout as delay } from "node:timers/promises";
 
 import request from "supertest";
@@ -2831,6 +2832,7 @@ export const createTestDependencies = (overrides: {
       },
       routines: { isRoutineActive: async (conversationId) => (await routineStateStore.loadActive({ sessionId: conversationId })) !== null },
       ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await conversationOwnershipRepository.load(conversationId)) },
+      memory: inMemoryVoiceSessionMemory(),
       metrics: metricsRegistry,
       logger,
     }),

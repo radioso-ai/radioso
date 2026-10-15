@@ -82,6 +82,7 @@ import type {
   ApplicationAccountAdministratorDirectoryPort,
   ApplicationModuleCoordinator,
   ApplicationNoticeMailPort,
+  ApplicationPeriodicTaskHandle,
   ApplicationRouteMount,
 } from "../composition/applicationModule.js";
 import type {
@@ -202,12 +203,23 @@ export interface AppDependencies {
   /** Application route mounts key their source budgets through this rather than reading `req.ip`. */
   requestSource: RequestSourceDigestPort;
   machineAccessSecurityObserver?: MachineAccessSecurityObserver;
-  credentialExpiryWarningLifecycle: Pick<CredentialExpiryWarningService, "start" | "stop">;
+  /** `runOnce` backs the Cloud Scheduler-driven worker task route
+   *  (`/internal/tasks/credential-expiry-warning/sweep`); `start`/`stop` back the self-host
+   *  poll worker's interval (`startWorkerRuntime.ts`). Neither runs from the API, which has no
+   *  CPU allocation once a request ends and may run at zero instances. */
+  credentialExpiryWarningLifecycle: Pick<CredentialExpiryWarningService, "start" | "stop" | "runOnce">;
   /** Every `registerPeriodicTask` registration, aggregated behind one start/stop pair. Started
-   *  and stopped only from the API runtime (see `startApiRuntime.ts`) — the worker and migration
-   *  runners never call this, so a task meant to run once per deployment does not also run once
-   *  per process. */
+   *  and stopped only from the worker runtime's poll loop (see `startWorkerRuntime.ts`) — the
+   *  API and migration runners never call this, so a task meant to run once per deployment does
+   *  not also run once per process. The production push worker instead calls each registered
+   *  task directly, by id, through `periodicTaskHandlesById`. */
   periodicTasksLifecycle: PeriodicTasksLifecycle;
+  /** The same `registerPeriodicTask` handles `periodicTasksLifecycle` wraps in a timer, keyed
+   *  by registration id so the Cloud Scheduler-driven worker task route
+   *  (`/internal/tasks/periodic-tasks/:taskId/run`) can run one on demand without its own
+   *  timer. Built once per handle in `buildDependencies` so both callers share the same
+   *  task-context wiring (notice mail, account administrators) rather than each building it. */
+  periodicTaskHandlesById: ReadonlyMap<string, ApplicationPeriodicTaskHandle>;
   personalCredentialService: PersonalCredentialService;
   serviceAccountService: ServiceAccountService;
   workspaceSessionService: WorkspaceSessionService;

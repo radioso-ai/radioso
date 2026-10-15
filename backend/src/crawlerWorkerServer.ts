@@ -1,6 +1,7 @@
 import { getEnv } from "./app/config/env.js";
 import { createLogger } from "./shared/observability/logger.js";
 import { loadEnvFileIfPresent } from "./runtime/loadEnv.js";
+import { loadConfiguredApplicationModules } from "./runtime/loadApplicationModules.js";
 import { shouldRunCrawlerWorker } from "./runtime/crawlerWorkerStartup.js";
 import { startCrawlerWorkerTaskRuntime } from "./runtime/startCrawlerWorkerTaskRuntime.js";
 import { installRuntimeProcessErrorHandlers } from "./runtime/processErrorHandlers.js";
@@ -8,16 +9,20 @@ import { installRuntimeProcessErrorHandlers } from "./runtime/processErrorHandle
 loadEnvFileIfPresent();
 
 const env = getEnv();
+const logger = createLogger();
 
-if (!shouldRunCrawlerWorker(env, createLogger(), "crawler-worker-task")) {
+if (!shouldRunCrawlerWorker(env, logger, "crawler-worker-task")) {
   process.exit(0);
 }
 
+const applicationModules = await loadConfiguredApplicationModules(env, logger);
 const runtime = await startCrawlerWorkerTaskRuntime({
   env: process.env.OBSERVABILITY_SERVICE_NAME ? env : {
     ...env,
     OBSERVABILITY_SERVICE_NAME: "radioso-crawler-worker",
   },
+  logger,
+  applicationModules,
 });
 
 installRuntimeProcessErrorHandlers(runtime, "crawler-worker-task");

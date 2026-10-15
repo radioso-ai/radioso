@@ -6,6 +6,7 @@ import { createApp } from "../../src/app/server/createApp.js";
 import { createWorkerTaskApp } from "../../src/app/worker/createWorkerTaskApp.js";
 import { createCrawlerWorkerTaskApp } from "../../src/app/worker/createCrawlerWorkerTaskApp.js";
 import type { Env } from "../../src/app/config/env.js";
+import type { ApplicationModule } from "../../src/app/composition/index.js";
 import { startApiRuntime } from "../../src/runtime/startApiRuntime.js";
 import { startWorkerTaskRuntime } from "../../src/runtime/startWorkerTaskRuntime.js";
 import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";
@@ -430,6 +431,48 @@ describe("runtime entrypoints", () => {
     await runtime.shutdown("test");
     runtimes.pop();
     expect(workerStopSpy).not.toHaveBeenCalled();
+  });
+
+  // Regression for the push-worker entrypoint never loading application modules
+  // (documentWorkerServer.ts called startWorkerTaskRuntime with no `applicationModules`, so
+  // EE's registerPeriodicTask contributions were absent from the worker-task app even though
+  // Terraform configures RADIOSO_APPLICATION_MODULES for it). This builds the real, unmocked
+  // buildDependencies — unlike the other tests in this file — with a module registering the
+  // exact ids EE's usage-limit-alert and auto-top-up sweeps use (pinned by
+  // ee/packages/backend-module/src/index.test.ts; the EE package itself is not a build
+  // dependency of this one, so it cannot be imported here), then asserts the worker-task app
+  // actually answers both routes instead of 404ing.
+  it("starts the worker task runtime with configured application modules and serves their periodic-task routes", async () => {
+    const env = createEnv(8099);
+    const eeShapedModule: ApplicationModule = {
+      id: "test-ee-shaped-module",
+      register(context) {
+        for (const id of ["ee-usage-limit-alerts", "ee-billing-auto-top-up"]) {
+          context.registerPeriodicTask?.({
+            id,
+            intervalMs: 60_000,
+            create: () => ({ run: async () => undefined }),
+          });
+        }
+      },
+    };
+
+    const runtime = await startWorkerTaskRuntime({
+      env,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      applicationModules: [eeShapedModule],
+      createApp: createWorkerTaskApp,
+    });
+    runtimes.push(runtime);
+
+    for (const id of ["ee-usage-limit-alerts", "ee-billing-auto-top-up"]) {
+      const response = await request(runtime.server!)
+        .post(`/internal/tasks/periodic-tasks/${id}/run`)
+        .set(WORKER_TASK_AUTH_HEADER, workerTaskAuthToken)
+        .send({});
+      expect(response.status).not.toBe(404);
+      expect(response.status).toBe(200);
+    }
   });
 
   it("serves session-authenticated admin routes after login bootstrap", async () => {

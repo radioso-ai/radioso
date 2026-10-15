@@ -368,6 +368,30 @@ variable "slack_inbound_event_retention_schedule" {
   default     = null
 }
 
+variable "credential_expiry_warning_schedule" {
+  description = "Optional cron schedule for the machine-access credential expiry warning scan. The document worker's own poll loop scans daily; this sweep is the production worker task service's push-driven equivalent."
+  type        = string
+  default     = null
+}
+
+# --- Generic registerPeriodicTask contributions ---
+# `registerPeriodicTask` lets any application module schedule a recurring background task
+# (e.g. EE's usage-limit alert sweep below); the worker task route that drains one is generic
+# by registration id (/internal/tasks/periodic-tasks/{task_id}/run), but each task still needs
+# its own Cloud Scheduler job here, the same way every named retention sweep above does.
+
+variable "usage_limit_alert_sweep_schedule" {
+  description = "Optional cron schedule for the Enterprise usage-limit alert sweep (registerPeriodicTask id ee-usage-limit-alerts). Only created when radioso_edition is enterprise. Cloud Scheduler's minimum granularity is one minute, matching the dispatcher's own ~1 minute alert-latency design."
+  type        = string
+  default     = null
+}
+
+variable "billing_auto_top_up_sweep_schedule" {
+  description = "Optional cron schedule for the Enterprise auto-top-up sweep (registerPeriodicTask id ee-billing-auto-top-up). Only created when radioso_edition is enterprise. Cloud Scheduler's minimum granularity is one minute, matching AUTO_TOP_UP_SWEEP_INTERVAL_MS (60s) in ee/packages/backend-module/src/billing/applicationModule.ts."
+  type        = string
+  default     = null
+}
+
 variable "agent_bundle_import_orphan_age_ms" {
   description = "Milliseconds an active bundle-import job may run before orphan cleanup reclaims it. Imports normally take seconds; use a larger value only for a deployment with known slow imports."
   type        = number

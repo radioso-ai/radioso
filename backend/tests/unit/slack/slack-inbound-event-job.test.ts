@@ -99,7 +99,7 @@ const setup = (
   const queue = new DefaultBackgroundJobQueue({ writer: store, wake, logger });
   const runtime = new BackgroundJobRuntime({
     store,
-    handlers: [createSlackInboundEventJobHandler(messageHandler, persistence)],
+    handlers: [createSlackInboundEventJobHandler(messageHandler, persistence, logger)],
     wake,
     logger,
     now: clock.now,
@@ -141,22 +141,26 @@ describe("Slack inbound event job handler", () => {
     expect(persistence.markInboundEventStatus).not.toHaveBeenCalled();
   });
 
-  it("returns success without dispatching when the inbound event is already terminal", async () => {
-    const handleMessageIm = vi.fn(async () => undefined);
-    // The dedupe row is already `processed` — a redelivery the webhook's own dedupe somehow let
-    // through, or a retry racing an attempt whose success write already landed.
-    const persistence = createFakePersistence({ EvAsync: "processed" });
-    const { queue, runtime } = setup(
-      { handleMessageIm, handleAppMention: vi.fn(), handleChannelMessage: vi.fn(), handleAppHomeOpened: vi.fn() },
-      persistence,
-    );
-    await queue.enqueue(slackInboundEventJobRequest(imPayload()));
+  it.each(["processed", "skipped", "failed"] as const)(
+    "returns success without dispatching when the inbound event is already terminal (%s)",
+    async (terminalStatus) => {
+      const handleMessageIm = vi.fn(async () => undefined);
+      // A redelivery the webhook's own dedupe somehow let through, or a retry racing an attempt
+      // whose own write already landed — including a dead-lettered `failed`, so a retry that
+      // somehow still runs after the job was parked does not re-dispatch the turn.
+      const persistence = createFakePersistence({ EvAsync: terminalStatus });
+      const { queue, runtime } = setup(
+        { handleMessageIm, handleAppMention: vi.fn(), handleChannelMessage: vi.fn(), handleAppHomeOpened: vi.fn() },
+        persistence,
+      );
+      await queue.enqueue(slackInboundEventJobRequest(imPayload()));
 
-    const result = await runtime.drain({ maxJobs: 1 });
+      const result = await runtime.drain({ maxJobs: 1 });
 
-    expect(result).toMatchObject({ claimed: 1, completed: 1 });
-    expect(handleMessageIm).not.toHaveBeenCalled();
-  });
+      expect(result).toMatchObject({ claimed: 1, completed: 1 });
+      expect(handleMessageIm).not.toHaveBeenCalled();
+    },
+  );
 
   it("marks the inbound event failed via the dead-letter hook only on the final attempt", async () => {
     const handleMessageIm = vi.fn(async () => {
@@ -183,6 +187,42 @@ describe("Slack inbound event job handler", () => {
     // The third argument is the dead-letter hook's parking transaction (an opaque stand-in here).
     expect(persistence.markInboundEventStatus).toHaveBeenCalledWith("EvAsync", "failed", expect.anything());
     expect(persistence.statuses.get("EvAsync")).toBe("failed");
+  });
+
+  it("logs the Slack event id when the dead-letter status write itself fails, leaving the event received", async () => {
+    const handleMessageIm = vi.fn(async () => {
+      throw new Error("chat_unavailable");
+    });
+    const markInboundEventStatus = vi.fn(async () => {
+      throw new Error("db_unavailable");
+    });
+    const persistence = { markInboundEventStatus, getInboundEventStatus: vi.fn(async () => "received" as const) };
+    const { clock, queue, runtime, logger } = setup(
+      { handleMessageIm, handleAppMention: vi.fn(), handleChannelMessage: vi.fn(), handleAppHomeOpened: vi.fn() },
+      persistence,
+    );
+    await queue.enqueue(slackInboundEventJobRequest(imPayload()));
+
+    for (let attempt = 1; attempt < SLACK_INBOUND_EVENT_JOB.policy.maxAttempts; attempt += 1) {
+      await runtime.drain({ maxJobs: 1 });
+      clock.advanceSeconds(3_600);
+    }
+    // The port still parks the job on its own terms — without the hook's write — once the hook
+    // itself fails; it never retries the hook. The event's own row is left `received`: nothing
+    // will ever claim this job again to try marking it `failed`.
+    const final = await runtime.drain({ maxJobs: 1 });
+
+    expect(final).toMatchObject({ claimed: 1, deadLettered: 1 });
+    expect(markInboundEventStatus).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "EvAsync",
+        teamId: "TTEST",
+        kind: SLACK_INBOUND_EVENT_JOB.kind,
+        errorType: "Error",
+      }),
+      "Slack inbound event dead-letter status write failed; the event stays received",
+    );
   });
 
   it("marks the inbound event failed, by idempotency key, when the stored payload no longer parses", async () => {

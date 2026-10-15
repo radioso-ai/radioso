@@ -17,6 +17,7 @@ import { startCrawlerWorkerRuntime } from "../../src/runtime/startCrawlerWorkerR
 import { startCrawlerWorkerTaskRuntime } from "../../src/runtime/startCrawlerWorkerTaskRuntime.js";
 import type { ConnectorPlugin } from "@radioso/connector-api";
 import { EmailChannelWorker } from "../../src/modules/connectors/plugins/email/emailChannelWorker.js";
+import { SLACK_INBOUND_EVENT_JOB } from "../../src/modules/connectors/plugins/slack/slackInboundEventJob.js";
 
 const createEnv = (): Env => ({
   NODE_ENV: "test",
@@ -850,6 +851,21 @@ describe("runtime startup", () => {
         // `undefined` under this test's env, so this checks key presence, not shape.
         const staleCoverageKeys = [...startedKeys].filter((key) => !(key in dependencies));
         expect(staleCoverageKeys).toEqual([]);
+      } finally {
+        await dependencies.connectorDb.close();
+      }
+    });
+  });
+
+  describe("background job kind registration", () => {
+    it("registers slack.inbound_event on the runtime a real buildDependencies() build assembles", async () => {
+      // Guards the `[...chat.backgroundJobHandlers, ...slackInboundJobs.backgroundJobHandlers]`
+      // spread in dependencies.ts directly: dropping that spread leaves the runtime with no
+      // handler for this kind, and this assertion — against the production-built runtime, not a
+      // hand-wired test double — fails.
+      const dependencies = buildDependencies(createEnv());
+      try {
+        expect(dependencies.backgroundJobRuntime.registeredKinds).toContain(SLACK_INBOUND_EVENT_JOB.kind);
       } finally {
         await dependencies.connectorDb.close();
       }

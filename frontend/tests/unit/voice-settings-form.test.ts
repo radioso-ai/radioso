@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
 import type { AgentMechanicsReplies, AgentVoiceSettings } from '@/lib/api-types'
-import { emptyVoiceLanguageLines, voiceSettingsFormFromAgent, voiceSettingsUpdateFromForm } from '@/lib/voice-settings-form'
+import {
+  ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS,
+  MECHANICS_REPLY_KINDS,
+  VOICE_BRIDGE_STYLES,
+  emptyVoiceLanguageLines,
+  isBelowElevenLabsSpokenFloor,
+  voiceSettingsFormAfterSave,
+  voiceSettingsFormFromAgent,
+  voiceSettingsUpdateFromForm,
+} from '@/lib/voice-settings-form'
 
 const voice: AgentVoiceSettings = {
   enabled: true,
@@ -65,5 +74,52 @@ describe('voice settings form', () => {
 
   it('reads an agent with nothing authored as voice off and no languages', () => {
     expect(voiceSettingsFormFromAgent({ enabled: false, bridgeLines: {}, fallbackLine: {} }, {})).toEqual({ enabled: false, languages: [] })
+  })
+
+  it('writes every bridge style and every reply kind the form knows', () => {
+    const language = emptyVoiceLanguageLines('en')
+    for (const style of VOICE_BRIDGE_STYLES) language.bridgeLines[style] = [`A ${style} line.`]
+    for (const kind of MECHANICS_REPLY_KINDS) language.mechanicsReplies[kind] = [`A ${kind} line.`]
+
+    const update = voiceSettingsUpdateFromForm({ enabled: true, languages: [language] })
+
+    expect(Object.keys(update.voice.bridgeLines.en).sort()).toEqual([...VOICE_BRIDGE_STYLES].sort())
+    expect(Object.keys(update.mechanicsReplies.en).sort()).toEqual([...MECHANICS_REPLY_KINDS].sort())
+  })
+
+  it('keeps a language with nothing in it across a save, in the order the operator added it', () => {
+    const form = {
+      enabled: true,
+      languages: [
+        { ...emptyVoiceLanguageLines('en'), bridgeLines: { check: ['  Let me check that for you, it only takes a moment. ', ''], acknowledge: [] } },
+        emptyVoiceLanguageLines('it'),
+      ],
+    }
+    const saved = voiceSettingsUpdateFromForm(form)
+
+    const after = voiceSettingsFormAfterSave(form, saved.voice, saved.mechanicsReplies)
+
+    expect(after.languages.map((language) => language.locale)).toEqual(['en', 'it'])
+    // Lines come back as the server stored them: trimmed, blanks dropped.
+    expect(after.languages[0].bridgeLines.check).toEqual(['Let me check that for you, it only takes a moment.'])
+    expect(after.languages[1]).toEqual(emptyVoiceLanguageLines('it'))
+  })
+
+  it('takes enabled and every line from the server after a save, adding any language only the server has', () => {
+    const after = voiceSettingsFormAfterSave({ enabled: true, languages: [emptyVoiceLanguageLines('it')] }, voice, mechanicsReplies)
+
+    expect(after.enabled).toBe(true)
+    expect(after.languages.map((language) => language.locale)).toEqual(['it', 'en', 'pt-BR'])
+    expect(after.languages[0].fallbackLine).toBe(voice.fallbackLine.it)
+  })
+
+  it('flags a line shorter than the ElevenLabs first-sentence floor, counting characters rather than code units', () => {
+    expect(ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS).toBe(45)
+    expect(isBelowElevenLabsSpokenFloor('One moment.')).toBe(true)
+    expect(isBelowElevenLabsSpokenFloor('Let me check that for you, it only takes a moment.')).toBe(false)
+    expect(isBelowElevenLabsSpokenFloor(`  ${'a'.repeat(45)}  `)).toBe(false)
+    expect(isBelowElevenLabsSpokenFloor('😀'.repeat(44))).toBe(true)
+    // Nothing written yet is not a short line.
+    expect(isBelowElevenLabsSpokenFloor('   ')).toBe(false)
   })
 })

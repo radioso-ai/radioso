@@ -1075,7 +1075,7 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'api-channel' ? (
           <section id="api-channel" className="space-y-6 scroll-mt-24">
             {agentId ? <ApiChannelCard agentId={agentId} /> : null}
-            {agentId ? <VoiceChannelCard agentId={agentId} /> : null}
+            {agentId ? <VoiceChannelCard key={agentId} agentId={agentId} /> : null}
           </section>
           ) : null}
 

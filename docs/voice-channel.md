@@ -137,12 +137,15 @@ You write them in the **Voice** card, below the Agent API card on the agent's
 2. Add a language, such as English. Each language carries its own lines.
 3. Under **Bridge lines**, add **Check** lines, which the agent says while it
    looks an answer up, and **Acknowledge** lines, which it says inside a
-   routine once the caller has answered a step. For the `elevenlabs` dialect,
-   write each one as a full sentence of at least 45 characters (see
-   [Dialects](#dialects)).
+   routine once the caller has answered a step.
 4. Write the **Fallback line**, which the caller hears when nothing is ready
    at 10 seconds.
 5. Select **Save voice settings**.
+
+On the `elevenlabs` dialect, bridge and fallback lines follow the
+[first-sentence length rule](#elevenlabs-first-sentence-length). The card
+warns under any line that falls short and still saves it, since other dialects
+speak a short line at once.
 
 The same card holds the agent's **Quick replies**: the lines it says word for
 word to a greeting, thanks, farewell, or acknowledgement, in chat as well as
@@ -209,9 +212,9 @@ writes it: a request that carries `voice` must carry `enabled`,
 stored one. To turn voice off, send the block back with
 `"enabled": false`. Keys are language tags such as `en`, `it` or `pt-BR`, up
 to 10 for each map. Each style holds up to 5 lines, and every line is 1 to 200
-characters. For the `elevenlabs` dialect, write each line as one sentence of at
-least 45 characters, like the lines above (see [Dialects](#dialects)). A new
-agent starts with `"enabled": false` and empty maps.
+characters. The lines above follow the
+[first-sentence length rule](#elevenlabs-first-sentence-length) for the
+`elevenlabs` dialect. A new agent starts with `"enabled": false` and empty maps.
 
 What happens on a turn while `enabled` is true:
 
@@ -392,7 +395,17 @@ zero-width space, it stops at the end of the reply or when the runtime hangs
 up, and the stored reply never contains it. The `generic` dialect sends
 neither.
 
-ElevenLabs also holds the first sentence of a reply until it has about 45
+The session key must name one call. A value that spans calls, such as a
+user id, would run every call of that user in one conversation, so no dialect
+falls back to one.
+
+Use `generic` for a runtime you control, such as LiveKit Agents or Pipecat:
+set the header to your own session id on every request of the session. A
+session key is opaque to Radioso and can be up to 256 characters.
+
+### ElevenLabs first-sentence length
+
+ElevenLabs holds the first sentence of a reply until it has about 45
 characters of text (observed 2026-10-13: 26 characters waited for the next
 sentence, 46 and 57 did not; invisible padding and two short sentences do not
 count). Write every bridge line and fallback line as a full sentence of at
@@ -401,14 +414,6 @@ this dialect, a style that has lines of both lengths speaks only its lines of
 45 characters or more. A style with none that long still speaks its shorter
 line, and the server logs `voice.bridge_line_below_vendor_minimum` at warn once
 per agent, naming the agent and the two lengths.
-
-The session key must name one call. A value that spans calls, such as a
-user id, would run every call of that user in one conversation, so no dialect
-falls back to one.
-
-Use `generic` for a runtime you control, such as LiveKit Agents or Pipecat:
-set the header to your own session id on every request of the session. A
-session key is opaque to Radioso and can be up to 256 characters.
 
 ## Request
 

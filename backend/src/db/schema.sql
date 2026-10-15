@@ -2136,7 +2136,7 @@ CREATE TABLE public.conversation_summaries (
 CREATE TABLE public.conversation_turn_heads (
     conversation_id text NOT NULL,
     turn_id bigint NOT NULL,
-    predecessor_turn_id bigint,
+    previous_turn_id bigint,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -2160,7 +2160,6 @@ CREATE SEQUENCE public.conversation_turn_id_seq
 CREATE TABLE public.conversation_turn_leases (
     turn_id bigint NOT NULL,
     conversation_id text NOT NULL,
-    predecessor_turn_id bigint,
     owner_instance_id text NOT NULL,
     supersede_after_emission boolean NOT NULL,
     lease_expires_at timestamp with time zone NOT NULL,
@@ -7432,17 +7431,17 @@ CREATE INDEX conversation_ownership_workspace_idx ON public.conversation_ownersh
 
 
 --
+-- Name: conversation_turn_leases_conversation_turn_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_turn_leases_conversation_turn_idx ON public.conversation_turn_leases USING btree (conversation_id, turn_id);
+
+
+--
 -- Name: conversation_turn_leases_lease_expires_at_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX conversation_turn_leases_lease_expires_at_idx ON public.conversation_turn_leases USING btree (lease_expires_at);
-
-
---
--- Name: conversation_turn_leases_predecessor_turn_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX conversation_turn_leases_predecessor_turn_id_idx ON public.conversation_turn_leases USING btree (predecessor_turn_id);
 
 
 --

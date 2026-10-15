@@ -200,6 +200,10 @@ export class ConversationTurnState {
   private emissionStarted = false;
   private commitStarted = false;
   private completed = false;
+  private successorDecided = false;
+  private lostLease = false;
+  /** `performance.now()` past which the turn's lease may have expired; null while it holds none. */
+  private leaseDeadline: number | null = null;
   private resolveFinished!: () => void;
 
   constructor(
@@ -216,11 +220,20 @@ export class ConversationTurnState {
     return this.completed;
   }
 
+  get hasLostLease(): boolean {
+    return this.lostLease;
+  }
+
   /**
    * A newer turn started right behind this one. It cancels this turn until this turn starts
-   * emitting, or, when both supersede after emission, until it begins committing its reply.
+   * emitting, or, when both supersede after emission, until it begins committing its reply. Only
+   * the turn right behind decides; a later turn leaves this one as that turn left it.
    */
   supersededBy(successor: ConversationTurnLeaseOptions, scope: ConversationTurnCancellationScope): void {
+    if (this.successorDecided) {
+      return;
+    }
+    this.successorDecided = true;
     if (this.completed || this.controller.signal.aborted || this.commitStarted) {
       return;
     }
@@ -240,8 +253,17 @@ export class ConversationTurnState {
     });
   }
 
+  /**
+   * The turn holds its lease until `deadline` (`performance.now()` time) unless renewed: past it,
+   * every checkpoint and latch treats the lease as lost, whether or not a timer has run yet.
+   */
+  holdLeaseUntil(deadline: number): void {
+    this.leaseDeadline = deadline;
+  }
+
   /** The turn's lease expired before it was renewed; a successor may already be running. */
   leaseLost(): void {
+    this.lostLease = true;
     if (this.completed || this.controller.signal.aborted) {
       return;
     }
@@ -300,6 +322,9 @@ export class ConversationTurnState {
 
   private throwIfCancelled(): void {
     const signal = this.controller.signal;
+    if (!signal.aborted && this.leaseDeadline !== null && performance.now() >= this.leaseDeadline) {
+      this.leaseLost();
+    }
     if (!signal.aborted) {
       return;
     }
@@ -312,21 +337,32 @@ export class ConversationTurnState {
 
 /** Coordinates the turns of one process: correct only while every turn of a conversation runs in it. */
 export class InMemoryConversationTurnRegistry implements ConversationTurnRegistry {
-  private readonly active = new Map<string, ConversationTurnState>();
+  /** Each conversation's turns in flight, oldest first. */
+  private readonly inFlight = new Map<string, ConversationTurnState[]>();
 
   constructor(private readonly observer?: ConversationTurnInterruptionObserver) {}
 
   start(conversationId: string, options: ConversationTurnLeaseOptions = {}): ConversationTurnLease {
-    const predecessor = this.active.get(conversationId);
+    const turns = this.inFlight.get(conversationId) ?? [];
+    const older = [...turns];
     const turn = new ConversationTurnState(conversationId, options.supersedeAfterEmission === true, this.observer);
-    predecessor?.supersededBy(options, "local");
-    this.active.set(conversationId, turn);
+    older.at(-1)?.supersededBy(options, "local");
+    turns.push(turn);
+    this.inFlight.set(conversationId, turns);
 
     return turn.lease({
-      waitForPredecessor: () => predecessor?.finished ?? Promise.resolve(),
+      waitForPredecessor: async () => {
+        await Promise.all(older.map((predecessor) => predecessor.finished));
+      },
       complete: () => {
-        if (turn.complete() && this.active.get(conversationId) === turn) {
-          this.active.delete(conversationId);
+        if (!turn.complete()) {
+          return;
+        }
+        const remaining = (this.inFlight.get(conversationId) ?? []).filter((inFlight) => inFlight !== turn);
+        if (remaining.length > 0) {
+          this.inFlight.set(conversationId, remaining);
+        } else {
+          this.inFlight.delete(conversationId);
         }
       },
     });

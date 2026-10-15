@@ -7,20 +7,22 @@ import {
   type ConversationTurnRegistry,
 } from "./conversationTurnRegistry.js";
 
-/** A turn's place in its conversation, as the lease store granted it. */
-export interface ConversationTurnLeaseGrant {
+/**
+ * A turn's place in its conversation. Turn ids grow in the order the store places a conversation's
+ * turns, so every older turn of the conversation has a lower id.
+ */
+interface ConversationTurnLeaseGrant {
   turnId: string;
-  /** The conversation's previous turn, when it was still in flight as this one started. */
-  predecessorTurnId: string | null;
-  /** That predecessor's owner had already stopped renewing its lease. */
-  predecessorExpired: boolean;
+  /** Another process may hold a live lease on an older turn of the conversation. */
+  remoteAhead: boolean;
+  /** Another process's lease on an older turn of the conversation has expired. */
+  expiredAhead: boolean;
 }
 
-/** A turn started right behind another, as every process hears of it. */
+/** A turn that started, as every process hears of it. */
 export interface ConversationTurnStarted {
   conversationId: string;
   turnId: string;
-  predecessorTurnId: string | null;
   supersedeAfterEmission: boolean;
   ownerInstanceId: string;
 }
@@ -29,11 +31,9 @@ export type ConversationTurnNotice =
   | ({ kind: "started" } & ConversationTurnStarted)
   | { kind: "ended"; conversationId: string; turnId: string };
 
-/** A turn that still holds a lease, as the store sees it. */
-interface ConversationTurnLeaseState {
-  live: boolean;
-  /** The turn it was placed behind, which a successor waits for once this lease has expired. */
-  predecessorTurnId: string | null;
+interface ConversationTurnRef {
+  turnId: string;
+  conversationId: string;
 }
 
 /**
@@ -41,10 +41,7 @@ interface ConversationTurnLeaseState {
  * Starting and ending a turn announce it on the matching notice source.
  */
 export interface ConversationTurnLeaseStore {
-  /**
-   * Places a new turn after the conversation's latest one, records its lease, and announces it.
-   * Also drops a bounded batch of leases long expired, so a crashed process leaves nothing behind.
-   */
+  /** Places a new turn after the conversation's latest one, records its lease, and announces it. */
   begin(input: {
     conversationId: string;
     ownerInstanceId: string;
@@ -52,17 +49,23 @@ export interface ConversationTurnLeaseStore {
     leaseTtlMs: number;
   }): Promise<ConversationTurnLeaseGrant>;
   /** Releases a finished turn's lease and announces that it ended. */
-  end(input: { conversationId: string; turnId: string }): Promise<void>;
+  end(input: ConversationTurnRef): Promise<void>;
   /**
    * Extends the leases this process holds that are still live; resolves with the ones it no longer
    * holds. Expiry is final: an expired lease is never extended again, since successors have
-   * stopped waiting for it. Also drops a bounded batch of leases long expired.
+   * stopped waiting for it. Also drops a bounded batch of leases long expired, never waiting on a
+   * row another statement holds.
    */
   renew(input: { ownerInstanceId: string; turnIds: string[]; leaseTtlMs: number }): Promise<string[]>;
-  /** The leases these turns still hold; a turn absent from the result has ended. */
-  leaseStates(turnIds: string[]): Promise<Map<string, ConversationTurnLeaseState>>;
-  /** The turns started right behind these, to catch up on announcements missed while not listening. */
-  successorsOf(turnIds: string[]): Promise<ConversationTurnStarted[]>;
+  /** Best effort: drops this conversation's leases long expired, and its head if it points at one. */
+  pruneExpired(conversationId: string): Promise<void>;
+  /**
+   * For each turn, whether a process other than `ownerInstanceId` still holds a live lease on an
+   * older turn of its conversation, and whether one holds an expired lease there.
+   */
+  aheadOf(turns: ConversationTurnRef[], ownerInstanceId: string): Promise<Map<string, { live: boolean; expired: boolean }>>;
+  /** The turn started right after each of these, to catch up on announcements missed while not listening. */
+  successorsOf(turns: ConversationTurnRef[]): Promise<ConversationTurnStarted[]>;
 }
 
 interface ConversationTurnNoticeHandlers {
@@ -79,10 +82,10 @@ export interface ConversationTurnNoticeSource {
 }
 
 interface CrossInstanceTimings {
-  /** How long a lease lasts without renewal before a successor stops waiting for its turn. */
+  /** How long a lease lasts without renewal before successors stop waiting for its turn. */
   leaseTtlMs: number;
   heartbeatIntervalMs: number;
-  /** How often a waiting turn checks its predecessor in the store, should a notice be missed. */
+  /** How often a waiting turn rechecks the store, should a notice be missed or a lease expire. */
   predecessorPollIntervalMs: number;
   /** First delay before retrying a failed catch-up; it doubles up to `CATCH_UP_RETRY_MAX_MS`. */
   catchUpRetryInitialMs: number;
@@ -98,6 +101,13 @@ const DEFAULT_TIMINGS: CrossInstanceTimings = {
 const CATCH_UP_RETRY_MAX_MS = 5_000;
 const END_RETRY_DELAYS_MS: readonly number[] = [250, 1_000];
 
+/**
+ * The watchdog gives a lease up this much before it would expire in the store, measured from when
+ * the statement that granted or renewed it was sent, so a stalled or cut-off owner stops before a
+ * successor can take over.
+ */
+const leaseSafetyMarginMs = (leaseTtlMs: number): number => Math.min(2_000, leaseTtlMs / 5);
+
 interface CrossInstanceConversationTurnRegistryOptions {
   /** Unique per process; names the owner of each lease this process holds. */
   instanceId: string;
@@ -110,18 +120,16 @@ interface CrossInstanceConversationTurnRegistryOptions {
 
 interface LocalTurn {
   readonly state: ConversationTurnState;
-  grant?: ConversationTurnLeaseGrant;
-  /** Resolves once this turn may run: every turn ahead of it ended, or their leases expired. */
-  predecessorSettled?: Promise<void>;
-  /** The turn right behind this one has been applied to it. */
-  successorApplied: boolean;
-  /** Its lease expired before it was renewed; it is no longer renewed. */
-  leaseLost: boolean;
+  readonly conversationId: string;
+  turnId?: string;
+  /** Resolves once no other process holds a live lease on an older turn of the conversation. */
+  remoteClear?: Promise<void>;
+  watchdog?: NodeJS.Timeout;
   ending: boolean;
 }
 
-interface PredecessorWaiter {
-  conversationId: string;
+interface RemoteWaiter {
+  turn: LocalTurn;
   settle(): void;
 }
 
@@ -133,6 +141,8 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => {
  * Coordinates a conversation's turns across every process that runs them. The lease store orders
  * the turns and holds their leases; notices wake the processes involved.
  *
+ * A turn runs once every older turn of its conversation has finished: this process's own older
+ * turns by their completion, other processes' by their leases ending or expiring in the store.
  * A newer turn supersedes this process's own turn of the conversation inside `start`, exactly as
  * the in-memory registry does. A turn another process runs is superseded by that process once the
  * newer turn's announcement reaches it, against the turn's own latches: the commit latch stays
@@ -147,17 +157,17 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
   private readonly logger?: Pick<AppLogger, "warn">;
   private readonly timings: CrossInstanceTimings;
 
-  /** Registered turns this process runs, by turn id, until their end is recorded. */
-  private readonly turns = new Map<string, LocalTurn>();
-  /** Each conversation's newest turn started here and not yet completed. */
-  private readonly newestLocal = new Map<string, LocalTurn>();
-  /** Turns still taking their place, by conversation; notices for those conversations are kept for them. */
-  private readonly registering = new Map<string, Set<LocalTurn>>();
+  /** Each conversation's turns in flight in this process, oldest first. */
+  private readonly inFlight = new Map<string, LocalTurn[]>();
+  /** Turns holding a lease, by turn id, until their end is recorded. */
+  private readonly leased = new Map<string, LocalTurn>();
+  /** Notices heard for a conversation while one of its turns here was still taking its place. */
   private readonly heldNotices = new Map<string, ConversationTurnNotice[]>();
+  private readonly registering = new Map<string, number>();
   /** Each conversation's last registration here, so turns started in this process keep their call order. */
   private readonly registrationTails = new Map<string, Promise<void>>();
-  /** Turns waiting for a predecessor another process runs, by that predecessor's turn id. */
-  private readonly waiters = new Map<string, Set<PredecessorWaiter>>();
+  /** Turns waiting for another process's older turn, by their own turn id. */
+  private readonly remoteWaiters = new Map<string, RemoteWaiter>();
 
   private unsubscribe: (() => void) | null = null;
   private listening = false;
@@ -166,6 +176,8 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
   private renewing = false;
+  private checking = false;
+  private checkRequested = false;
   private catchUpRunning = false;
   private catchUpRequested = false;
   private closed = false;
@@ -181,20 +193,15 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
 
   start(conversationId: string, options: ConversationTurnLeaseOptions = {}): ConversationTurnLease {
     const state = new ConversationTurnState(conversationId, options.supersedeAfterEmission === true, this.observer);
-    const turn: LocalTurn = { state, successorApplied: false, leaseLost: false, ending: false };
+    const turn: LocalTurn = { state, conversationId, ending: false };
 
     // Before any I/O, so this process's own predecessor can never latch behind a newer start.
-    const localPredecessor = this.newestLocal.get(conversationId);
-    if (localPredecessor) {
-      this.applySuccessor(localPredecessor, {
-        supersedeAfterEmission: state.supersedeAfterEmission,
-        ownerInstanceId: this.instanceId,
-      });
-    }
-    this.newestLocal.set(conversationId, turn);
+    const older = [...(this.inFlight.get(conversationId) ?? [])];
+    older.at(-1)?.state.supersededBy(options, "local");
+    this.inFlight.set(conversationId, [...older, turn]);
 
     this.subscribe();
-    this.addRegistering(turn);
+    this.registering.set(conversationId, (this.registering.get(conversationId) ?? 0) + 1);
     const previous = this.registrationTails.get(conversationId) ?? Promise.resolve();
     const registration = previous.then(() => this.register(turn));
     const tail = registration.catch(() => undefined);
@@ -208,7 +215,9 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
     let waiting: Promise<void> | undefined;
     return state.lease({
       waitForPredecessor: () => {
-        waiting ??= registration.then(() => turn.predecessorSettled);
+        waiting ??= registration.then(async () => {
+          await Promise.all([...older.map((predecessor) => predecessor.state.finished), turn.remoteClear]);
+        });
         return waiting;
       },
       complete: () => this.complete(turn),
@@ -231,155 +240,99 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
       // from the store once it is, which costs a query only then and no latency on the turn.
       const heardFromIssue = this.listening;
       const epochAtIssue = this.noticeEpoch;
+      const sentAt = performance.now();
       const grant = await this.leases.begin({
-        conversationId: turn.state.conversationId,
+        conversationId: turn.conversationId,
         ownerInstanceId: this.instanceId,
         supersedeAfterEmission: turn.state.supersedeAfterEmission,
         leaseTtlMs: this.timings.leaseTtlMs,
       });
-      this.admit(turn, grant);
+      this.admit(turn, grant, sentAt);
       if (!heardFromIssue || epochAtIssue !== this.noticeEpoch) {
-        // A turn right behind this one may have been announced while nothing listened.
+        // A turn right after this one may have been announced while nothing listened.
         this.requestCatchUp();
       }
+      if (grant.expiredAhead) {
+        void this.leases.pruneExpired(turn.conversationId).catch((error: unknown) => {
+          this.warn("conversation_turn_prune_failed", error);
+        });
+      }
     } finally {
-      this.removeRegistering(turn);
+      this.doneRegistering(turn.conversationId);
       this.releaseSubscriptionWhenIdle();
     }
   }
 
-  private admit(turn: LocalTurn, grant: ConversationTurnLeaseGrant): void {
-    turn.grant = grant;
-    this.turns.set(grant.turnId, turn);
+  private admit(turn: LocalTurn, grant: ConversationTurnLeaseGrant, sentAt: number): void {
+    turn.turnId = grant.turnId;
+    this.leased.set(grant.turnId, turn);
+    this.holdLease(turn, sentAt);
     this.ensureHeartbeat();
 
-    let predecessorEnded = false;
-    for (const notice of this.heldNotices.get(turn.state.conversationId) ?? []) {
-      if (notice.kind === "started" && notice.predecessorTurnId === grant.turnId) {
-        this.applySuccessor(turn, notice);
-      } else if (notice.kind === "ended" && notice.turnId === grant.predecessorTurnId) {
-        predecessorEnded = true;
+    for (const notice of this.heldNotices.get(turn.conversationId) ?? []) {
+      if (notice.kind === "started") {
+        this.onStarted(notice);
       }
     }
 
-    turn.predecessorSettled = this.predecessorSettled(turn, grant, predecessorEnded);
+    if (grant.remoteAhead && !turn.state.isCompleted) {
+      turn.remoteClear = new Promise<void>((settle) => {
+        this.remoteWaiters.set(grant.turnId, { turn, settle });
+      });
+      this.ensurePolling();
+      this.requestCheck();
+    } else if (grant.expiredAhead) {
+      this.observer?.predecessorLeaseExpired?.({ conversationId: turn.conversationId });
+    }
     if (turn.state.isCompleted) {
       this.end(turn);
     }
   }
 
-  private predecessorSettled(
-    turn: LocalTurn,
-    grant: ConversationTurnLeaseGrant,
-    predecessorEnded: boolean,
-  ): Promise<void> {
-    const predecessorTurnId = grant.predecessorTurnId;
-    if (!predecessorTurnId || predecessorEnded) {
-      return Promise.resolve();
-    }
-    const localPredecessor = this.turns.get(predecessorTurnId);
-    if (localPredecessor) {
-      this.applySuccessor(localPredecessor, {
-        supersedeAfterEmission: turn.state.supersedeAfterEmission,
-        ownerInstanceId: this.instanceId,
-      });
-      return localPredecessor.state.finished;
-    }
-    if (turn.state.isCompleted) {
-      // It ended before taking its place; nothing waits on it.
-      return Promise.resolve();
-    }
-    const settled = new Promise<void>((settle) => {
-      this.waitBehind(predecessorTurnId, { conversationId: turn.state.conversationId, settle });
-    });
-    if (grant.predecessorExpired) {
-      // Find out now which turn ahead of it is still live, if any, rather than at the next poll.
-      void this.pollPredecessors();
-    }
-    return settled;
-  }
-
   /**
-   * The newer turn's rule applies to the turn right ahead of it only. When this process's turn
-   * hears of a newer turn twice (a local start, then another process's turn that the store ordered
-   * in between), the first one it heard of applies.
+   * A turn started somewhere. The newest of this process's own turns of the conversation that it
+   * is newer than hears of it; a turn hears only of the first newer turn, the one right behind it.
+   * Notices arrive in the order the store placed the turns, so the first one heard is that turn.
    */
-  private applySuccessor(
-    predecessor: LocalTurn,
-    successor: Pick<ConversationTurnStarted, "supersedeAfterEmission" | "ownerInstanceId">,
-  ): void {
-    if (predecessor.successorApplied) {
-      return;
-    }
-    predecessor.successorApplied = true;
-    predecessor.state.supersededBy(
-      { supersedeAfterEmission: successor.supersedeAfterEmission },
-      successor.ownerInstanceId === this.instanceId ? "local" : "cross_instance",
-    );
-  }
-
-  private waitBehind(predecessorTurnId: string, waiter: PredecessorWaiter): void {
-    const localPredecessor = this.turns.get(predecessorTurnId);
-    if (localPredecessor) {
-      void localPredecessor.state.finished.then(() => waiter.settle());
-      return;
-    }
-    const waiters = this.waiters.get(predecessorTurnId) ?? new Set<PredecessorWaiter>();
-    waiters.add(waiter);
-    this.waiters.set(predecessorTurnId, waiters);
-    this.ensurePolling();
-  }
-
-  /**
-   * The predecessor ended, or its lease expired. An expired turn may itself have been waiting for
-   * an older turn that is still live, so its waiters move on to that one instead of running.
-   */
-  private predecessorGone(
-    predecessorTurnId: string,
-    outcome: { kind: "ended" } | { kind: "expired"; predecessorTurnId: string | null },
-  ): void {
-    const waiters = this.waiters.get(predecessorTurnId);
-    if (!waiters) {
-      return;
-    }
-    this.waiters.delete(predecessorTurnId);
-    for (const waiter of waiters) {
-      if (outcome.kind === "expired") {
-        this.observer?.predecessorLeaseExpired?.({ conversationId: waiter.conversationId });
-        if (outcome.predecessorTurnId) {
-          this.waitBehind(outcome.predecessorTurnId, waiter);
-          continue;
-        }
+  private onStarted(started: ConversationTurnStarted): void {
+    const local = this.inFlight.get(started.conversationId) ?? [];
+    for (const turn of local) {
+      if (turn.turnId !== undefined && BigInt(turn.turnId) < BigInt(started.turnId)) {
+        turn.state.supersededBy(
+          { supersedeAfterEmission: started.supersedeAfterEmission },
+          started.ownerInstanceId === this.instanceId ? "local" : "cross_instance",
+        );
       }
-      waiter.settle();
     }
-    if (this.waiters.size === 0) {
-      this.clearTimer("poll");
-    }
-    this.releaseSubscriptionWhenIdle();
   }
 
   private complete(turn: LocalTurn): void {
     if (!turn.state.complete()) {
       return;
     }
-    if (this.newestLocal.get(turn.state.conversationId) === turn) {
-      this.newestLocal.delete(turn.state.conversationId);
+    clearTimeout(turn.watchdog);
+    const remaining = (this.inFlight.get(turn.conversationId) ?? []).filter((inFlight) => inFlight !== turn);
+    if (remaining.length > 0) {
+      this.inFlight.set(turn.conversationId, remaining);
+    } else {
+      this.inFlight.delete(turn.conversationId);
     }
-    if (turn.grant) {
+    if (turn.turnId !== undefined) {
+      this.remoteWaiters.get(turn.turnId)?.settle();
+      this.remoteWaiters.delete(turn.turnId);
       this.end(turn);
     }
   }
 
   private end(turn: LocalTurn): void {
-    const grant = turn.grant;
-    if (!grant || turn.ending) {
+    const turnId = turn.turnId;
+    if (turnId === undefined || turn.ending) {
       return;
     }
     turn.ending = true;
-    void this.recordEnd(turn.state.conversationId, grant.turnId).finally(() => {
-      this.turns.delete(grant.turnId);
-      if (this.turns.size === 0) {
+    void this.recordEnd({ conversationId: turn.conversationId, turnId }).finally(() => {
+      this.leased.delete(turnId);
+      if (this.leased.size === 0) {
         this.clearTimer("heartbeat");
       }
       this.releaseSubscriptionWhenIdle();
@@ -387,15 +340,15 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
   }
 
   /** Retries briefly while the lease is still renewed; after that it expires on its own. */
-  private async recordEnd(conversationId: string, turnId: string): Promise<void> {
+  private async recordEnd(ref: ConversationTurnRef): Promise<void> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        await this.leases.end({ conversationId, turnId });
+        await this.leases.end(ref);
         return;
       } catch (error) {
         const retryDelayMs = END_RETRY_DELAYS_MS[attempt];
         if (retryDelayMs === undefined || this.closed) {
-          // A successor elsewhere waits until the lease expires.
+          // Other processes' turns wait until the lease expires.
           this.warn("conversation_turn_lease_end_failed", error);
           return;
         }
@@ -404,14 +357,23 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
     }
   }
 
+  /** The lease is held until `sentAt` + TTL in the store; give it up locally a margin before that. */
+  private holdLease(turn: LocalTurn, sentAt: number): void {
+    if (turn.state.isCompleted || turn.state.hasLostLease) {
+      return;
+    }
+    const deadline = sentAt + this.timings.leaseTtlMs - leaseSafetyMarginMs(this.timings.leaseTtlMs);
+    turn.state.holdLeaseUntil(deadline);
+    clearTimeout(turn.watchdog);
+    turn.watchdog = setTimeout(() => turn.state.leaseLost(), Math.max(0, deadline - performance.now()));
+    turn.watchdog.unref();
+  }
+
   private onNotice(notice: ConversationTurnNotice): void {
     if (notice.kind === "started") {
-      const predecessor = notice.predecessorTurnId ? this.turns.get(notice.predecessorTurnId) : undefined;
-      if (predecessor) {
-        this.applySuccessor(predecessor, notice);
-      }
-    } else {
-      this.predecessorGone(notice.turnId, { kind: "ended" });
+      this.onStarted(notice);
+    } else if ([...this.remoteWaiters.values()].some((waiter) => waiter.turn.conversationId === notice.conversationId)) {
+      this.requestCheck();
     }
     if (this.registering.has(notice.conversationId)) {
       const held = this.heldNotices.get(notice.conversationId) ?? [];
@@ -423,11 +385,11 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
   private onListening(): void {
     this.listening = true;
     // Announcements made while nothing listened are lost; the store has what they said.
-    if (this.turns.size > 0) {
+    if (this.leased.size > 0) {
       this.requestCatchUp();
     }
-    if (this.waiters.size > 0) {
-      void this.pollPredecessors();
+    if (this.remoteWaiters.size > 0) {
+      this.requestCheck();
     }
   }
 
@@ -436,13 +398,58 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
     this.noticeEpoch += 1;
   }
 
+  /** Rechecks every waiting turn against the store; one check runs at a time. */
+  private requestCheck(): void {
+    if (this.checking) {
+      this.checkRequested = true;
+      return;
+    }
+    void this.checkRemoteWaiters();
+  }
+
+  private async checkRemoteWaiters(): Promise<void> {
+    this.checking = true;
+    try {
+      do {
+        this.checkRequested = false;
+        const waiters = [...this.remoteWaiters.entries()];
+        if (waiters.length === 0) {
+          return;
+        }
+        const ahead = await this.leases.aheadOf(
+          waiters.map(([turnId, waiter]) => ({ turnId, conversationId: waiter.turn.conversationId })),
+          this.instanceId,
+        );
+        for (const [turnId, waiter] of waiters) {
+          const state = ahead.get(turnId);
+          if (state?.live || this.remoteWaiters.get(turnId) !== waiter) {
+            continue;
+          }
+          this.remoteWaiters.delete(turnId);
+          if (state?.expired) {
+            this.observer?.predecessorLeaseExpired?.({ conversationId: waiter.turn.conversationId });
+          }
+          waiter.settle();
+        }
+      } while (this.checkRequested);
+    } catch (error) {
+      this.warn("conversation_turn_predecessor_check_failed", error);
+    } finally {
+      this.checking = false;
+      if (this.remoteWaiters.size === 0) {
+        this.clearTimer("poll");
+      }
+      this.releaseSubscriptionWhenIdle();
+    }
+  }
+
   /**
    * Reads back the newer turns announced while nothing listened, retrying with backoff while this
    * process still has turns in flight. One catch-up runs at a time; a request during it runs it again.
    */
   private requestCatchUp(): void {
     if (!this.listening || this.closed) {
-      // The next `listening` catches up on every registered turn.
+      // The next `listening` catches up on every leased turn.
       return;
     }
     if (this.catchUpRunning) {
@@ -458,13 +465,13 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
     try {
       for (;;) {
         this.catchUpRequested = false;
-        const turnIds = [...this.turns.keys()];
-        if (turnIds.length === 0 || !this.listening || this.closed) {
+        const turns = [...this.leased].map(([turnId, turn]) => ({ turnId, conversationId: turn.conversationId }));
+        if (turns.length === 0 || !this.listening || this.closed) {
           return;
         }
         try {
-          for (const successor of await this.leases.successorsOf(turnIds)) {
-            this.onNotice({ kind: "started", ...successor });
+          for (const successor of await this.leases.successorsOf(turns)) {
+            this.onStarted(successor);
           }
           failures = 0;
           if (!this.catchUpRequested) {
@@ -483,53 +490,36 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
     }
   }
 
-  private async pollPredecessors(): Promise<void> {
-    const predecessorTurnIds = [...this.waiters.keys()];
-    if (predecessorTurnIds.length === 0) {
-      return;
-    }
-    try {
-      const states = await this.leases.leaseStates(predecessorTurnIds);
-      for (const turnId of predecessorTurnIds) {
-        const state = states.get(turnId);
-        if (!state) {
-          this.predecessorGone(turnId, { kind: "ended" });
-        } else if (!state.live) {
-          this.predecessorGone(turnId, { kind: "expired", predecessorTurnId: state.predecessorTurnId });
-        }
-      }
-    } catch (error) {
-      this.warn("conversation_turn_predecessor_poll_failed", error);
-    }
-  }
-
   /** One renewal at a time; a turn whose lease the store no longer holds is aborted, not renewed. */
   private async renewLeases(): Promise<void> {
-    const turnIds = [...this.turns].filter(([, turn]) => !turn.leaseLost).map(([turnId]) => turnId);
-    if (this.renewing || turnIds.length === 0) {
+    const held = [...this.leased].filter(([, turn]) => !turn.state.isCompleted && !turn.state.hasLostLease);
+    if (this.renewing || held.length === 0) {
       return;
     }
     this.renewing = true;
+    const sentAt = performance.now();
     try {
-      const lost = await this.leases.renew({
+      const lost = new Set(await this.leases.renew({
         ownerInstanceId: this.instanceId,
-        turnIds,
+        turnIds: held.map(([turnId]) => turnId),
         leaseTtlMs: this.timings.leaseTtlMs,
-      });
-      for (const turnId of lost) {
-        const turn = this.turns.get(turnId);
-        if (turn && !turn.leaseLost) {
-          turn.leaseLost = true;
+      }));
+      for (const [turnId, turn] of held) {
+        if (lost.has(turnId)) {
+          clearTimeout(turn.watchdog);
           turn.state.leaseLost();
+        } else {
+          this.holdLease(turn, sentAt);
         }
       }
-      if (lost.length > 0) {
+      if (lost.size > 0) {
         this.logger?.warn(
-          { event: "conversation_turn_lease_lost", leaseCount: lost.length },
+          { event: "conversation_turn_lease_lost", leaseCount: lost.size },
           "Conversation turn leases expired before renewal; their turns were aborted",
         );
       }
     } catch (error) {
+      // The watchdog aborts each turn if no renewal lands before its lease would expire.
       this.warn("conversation_turn_lease_renewal_failed", error);
     } finally {
       this.renewing = false;
@@ -547,9 +537,9 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
     });
   }
 
-  /** Stops listening once this process has no turn in flight and none waiting. */
+  /** Stops listening once this process has no turn leased, registering, or waiting. */
   private releaseSubscriptionWhenIdle(): void {
-    if (this.turns.size > 0 || this.registering.size > 0 || this.waiters.size > 0 || !this.unsubscribe) {
+    if (this.leased.size > 0 || this.registering.size > 0 || this.remoteWaiters.size > 0 || !this.unsubscribe) {
       return;
     }
     this.unsubscribe();
@@ -557,18 +547,11 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
     this.onInterrupted();
   }
 
-  private addRegistering(turn: LocalTurn): void {
-    const conversationId = turn.state.conversationId;
-    const registering = this.registering.get(conversationId) ?? new Set<LocalTurn>();
-    registering.add(turn);
-    this.registering.set(conversationId, registering);
-  }
-
-  private removeRegistering(turn: LocalTurn): void {
-    const conversationId = turn.state.conversationId;
-    const registering = this.registering.get(conversationId);
-    registering?.delete(turn);
-    if (registering?.size === 0) {
+  private doneRegistering(conversationId: string): void {
+    const remaining = (this.registering.get(conversationId) ?? 1) - 1;
+    if (remaining > 0) {
+      this.registering.set(conversationId, remaining);
+    } else {
       this.registering.delete(conversationId);
       this.heldNotices.delete(conversationId);
     }
@@ -589,7 +572,7 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
       return;
     }
     this.pollTimer = setInterval(() => {
-      void this.pollPredecessors();
+      this.requestCheck();
     }, this.timings.predecessorPollIntervalMs);
     this.pollTimer.unref();
   }

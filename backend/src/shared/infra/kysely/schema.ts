@@ -667,7 +667,7 @@ export interface ConversationSummaries {
 
 export interface ConversationTurnHeads {
   conversation_id: string;
-  predecessor_turn_id: Int8 | null;
+  previous_turn_id: Int8 | null;
   turn_id: Int8;
   updated_at: Generated<Timestamp>;
 }
@@ -676,7 +676,6 @@ export interface ConversationTurnLeases {
   conversation_id: string;
   lease_expires_at: Timestamp;
   owner_instance_id: string;
-  predecessor_turn_id: Int8 | null;
   started_at: Generated<Timestamp>;
   supersede_after_emission: boolean;
   turn_id: Int8;

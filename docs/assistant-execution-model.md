@@ -102,12 +102,17 @@ it has turns in flight. The connection closes once the process has had no turn i
 flight for the pool's idle timeout (`DB_POOL_IDLE_TIMEOUT_MS`). When you size the
 database's connection limit, count `DB_POOL_MAX + 1` per process.
 
-If an instance crashes mid-turn, its lease stops being renewed and expires after
-about 30 seconds. A newer turn waits at most that long for it. If the crashed turn
-was itself waiting behind an older reply that is still running, the newer turn
-keeps waiting for that reply. An instance that stalls past its lease, through a
-blocked event loop or a lost database connection, aborts its own turn when it
-resumes. It does not run alongside the turn that took over.
+A newer turn runs once every older turn of the conversation has finished, on any
+instance. If an instance crashes mid-turn, its lease stops being renewed and
+expires after about 30 seconds, and newer turns stop waiting for it. They still
+wait for any older reply on another instance that is running.
+
+An instance that cannot renew its lease aborts its own turn about two seconds
+before the lease would expire. That covers a blocked event loop and a database
+connection that only that instance lost. The turn never runs alongside the turn
+that takes over. As with a disconnect, the abort stops provider calls that honor
+the turn's signal; a stage that ignores it runs until it returns, and the turn
+then stores nothing.
 
 ## A Disconnected Client Does Not Stop the Turn
 

@@ -103,7 +103,7 @@ export class PostgresVoiceSessionMemoryStore implements VoiceSessionMemoryStore 
             SELECT m.newest_sequence, next.sequence, GREATEST(m.touched_at, next.at),
               -- The request before this one is overtaken by it, when it is still in flight.
               (SELECT coalesce(jsonb_object_agg(entry.key, CASE WHEN entry.key = m.newest_sequence::text
-                  THEN entry.value || jsonb_build_object('supersededAt', ${nextMs}, 'supersededBy', ${instanceId}::text)
+                  THEN entry.value || jsonb_build_object('supersededAt', ${nextMs})
                   ELSE entry.value END), '{}'::jsonb)
                 FROM jsonb_each(still.requests) entry)
                 || jsonb_build_object(next.sequence::text, jsonb_build_object('arrivedAt', ${nextMs}, 'instance', ${instanceId}::text)),
@@ -202,17 +202,15 @@ export class PostgresVoiceSessionMemoryStore implements VoiceSessionMemoryStore 
   }
 
   async claimBridge(input: Parameters<VoiceSessionMemoryStore["claimBridge"]>[0]): Promise<boolean> {
-    const { sessionId, sequence, instanceId } = input;
-    const latest = sql<boolean>`(m.last_bridge_sequence IS NULL OR m.last_bridge_sequence <= ${sequence}::bigint)`;
+    const { sessionId, sequence } = input;
+    // Only the newest request may take the line, so no bridge of a newer request can be overwritten.
     const { rows } = await sql<{ claimed: number }>`
       UPDATE voice_session_memories m SET
-        last_bridge_sequence = CASE WHEN ${latest} THEN ${sequence}::bigint ELSE m.last_bridge_sequence END,
-        last_bridge_at = CASE WHEN ${latest} THEN clock_timestamp() ELSE m.last_bridge_at END,
-        last_bridge_cut_off = CASE WHEN ${latest} THEN NULL ELSE m.last_bridge_cut_off END,
+        last_bridge_sequence = ${sequence}::bigint,
+        last_bridge_at = clock_timestamp(),
+        last_bridge_cut_off = NULL,
         touched_at = GREATEST(m.touched_at, clock_timestamp())
-      WHERE m.id = ${sessionId}::uuid
-        AND m.requests ? ${sequence}::text
-        AND coalesce(m.requests -> ${sequence}::text ->> 'supersededBy', ${instanceId}::text) = ${instanceId}::text
+      WHERE m.id = ${sessionId}::uuid AND m.newest_sequence = ${sequence}::bigint
       RETURNING 1 AS claimed
     `.execute(this.db);
     return rows.length > 0;

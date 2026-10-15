@@ -237,7 +237,7 @@ export const describeVoiceSessionMemoryContract = (
         const t = harness.now();
 
         const claim = await arrived(memory, session, t);
-        await expect(memory.claimBridge(claim)).resolves.toBe(true);
+        await expect(memory.claimBridge(claim, harness.now())).resolves.toBe(true);
         memory.bridgeSpoken(claim, t + 50);
 
         expect(memory.mayBridge(claim, t + 100)).toBe(true);
@@ -249,7 +249,7 @@ export const describeVoiceSessionMemoryContract = (
         const t = harness.now();
 
         const first = await arrived(one, session, t);
-        await expect(one.claimBridge(first)).resolves.toBe(true);
+        await expect(one.claimBridge(first, harness.now())).resolves.toBe(true);
         one.bridgeSpoken(first, t);
         const second = await arrived(two, session, t + 600);
 
@@ -265,7 +265,7 @@ export const describeVoiceSessionMemoryContract = (
         const t = harness.now();
 
         const first = await arrived(one, session, t);
-        await one.claimBridge(first);
+        await one.claimBridge(first, harness.now());
         one.bridgeSpoken(first, t);
         first.hungUpAt = t + 80;
         first.outcomeAt = t + 90;
@@ -281,7 +281,7 @@ export const describeVoiceSessionMemoryContract = (
         const t = harness.now();
 
         const first = await arrived(one, session, t);
-        await one.claimBridge(first);
+        await one.claimBridge(first, harness.now());
         one.bridgeSpoken(first, t);
         first.outcomeAt = t + 100;
         await one.settle(first, t + 100, undefined);
@@ -297,7 +297,7 @@ export const describeVoiceSessionMemoryContract = (
 
         // The first request delivered its fallback outcome and still drains its reply when the next one arrives.
         const first = await arrived(memory, session, t);
-        await memory.claimBridge(first);
+        await memory.claimBridge(first, harness.now());
         memory.bridgeSpoken(first, t + 50);
         first.outcomeAt = t + 100;
         const second = await arrived(memory, session, t + 200);
@@ -314,20 +314,20 @@ export const describeVoiceSessionMemoryContract = (
         const first = await arrived(one, session, t);
         const second = await arrived(two, session, t + 100);
 
-        await expect(one.claimBridge(first)).resolves.toBe(false);
-        await expect(two.claimBridge(second)).resolves.toBe(true);
+        await expect(one.claimBridge(first, harness.now())).resolves.toBe(false);
+        await expect(two.claimBridge(second, harness.now())).resolves.toBe(true);
       });
 
-      it("lets a request speak the bridge it was allowed before a newer request of its own instance arrived", async () => {
+      it("refuses the bridge of a request a newer request of its own instance overtook", async () => {
         const memory = harness.instance();
         const session = harness.session();
         const t = harness.now();
 
         const first = await arrived(memory, session, t);
-        expect(memory.mayBridge(first, t + 50)).toBe(true);
-        await arrived(memory, session, t + 60);
+        const second = await arrived(memory, session, t + 60);
 
-        await expect(memory.claimBridge(first)).resolves.toBe(true);
+        await expect(memory.claimBridge(first, t + 70)).resolves.toBe(false);
+        await expect(memory.claimBridge(second, t + 80)).resolves.toBe(true);
       });
     });
 
@@ -474,8 +474,8 @@ export const describeVoiceSessionMemoryContract = (
 
         const [left, right] = [await arrived(one, session, t), await arrived(two, session, t + 100)];
         const reservations = await Promise.all([
-          one.reserveInterruption(left, heardUntil),
-          two.reserveInterruption(right, heardUntil),
+          one.reserveInterruption(left, heardUntil, harness.now()),
+          two.reserveInterruption(right, heardUntil, harness.now()),
         ]);
         const taken = reservations.filter((reservation) => reservation !== null);
 
@@ -484,7 +484,7 @@ export const describeVoiceSessionMemoryContract = (
         taken[0]?.recorded();
         await harness.settled();
         const later = await arrived(two, session, t + 200);
-        await expect(two.reserveInterruption(later, heardUntil)).resolves.toBeNull();
+        await expect(two.reserveInterruption(later, heardUntil, harness.now())).resolves.toBeNull();
       });
 
       it("is handed back to the next report when its note could not be recorded", async () => {
@@ -494,13 +494,13 @@ export const describeVoiceSessionMemoryContract = (
         const t = harness.now();
 
         const first = await arrived(one, session, t);
-        const reservation = await one.reserveInterruption(first, heardUntil);
+        const reservation = await one.reserveInterruption(first, heardUntil, harness.now());
         expect(reservation).not.toBeNull();
         reservation?.failed();
         await harness.settled();
         const next = await arrived(two, session, t + 100);
 
-        await expect(two.reserveInterruption(next, heardUntil)).resolves.not.toBeNull();
+        await expect(two.reserveInterruption(next, heardUntil, harness.now())).resolves.not.toBeNull();
       });
 
       it("is taken over once the instance that reserved it has held it past a minute without a word", async () => {
@@ -510,13 +510,29 @@ export const describeVoiceSessionMemoryContract = (
 
         // Reserved, then never recorded nor handed back: its instance is gone.
         const abandoned = await arrived(crashed, session, harness.now());
-        await expect(crashed.reserveInterruption(abandoned, heardUntil)).resolves.not.toBeNull();
+        await expect(crashed.reserveInterruption(abandoned, heardUntil, harness.now())).resolves.not.toBeNull();
         const early = await arrived(alive, session, harness.now());
-        await expect(alive.reserveInterruption(early, heardUntil)).resolves.toBeNull();
+        await expect(alive.reserveInterruption(early, heardUntil, harness.now())).resolves.toBeNull();
 
         await harness.elapse(60_001);
         const late = await arrived(alive, session, harness.now());
-        await expect(alive.reserveInterruption(late, heardUntil)).resolves.not.toBeNull();
+        await expect(alive.reserveInterruption(late, heardUntil, harness.now())).resolves.not.toBeNull();
+      });
+
+      it("is taken over on the same instance once its own unreleased reservation has lapsed", async () => {
+        const memory = harness.instance();
+        const session = harness.session();
+        await deliveredAnswer(memory, session);
+
+        // Reserved, and its note write never came back.
+        const stuck = await arrived(memory, session, harness.now());
+        await expect(memory.reserveInterruption(stuck, heardUntil, harness.now())).resolves.not.toBeNull();
+        const early = await arrived(memory, session, harness.now());
+        await expect(memory.reserveInterruption(early, heardUntil, harness.now())).resolves.toBeNull();
+
+        await harness.elapse(60_001);
+        const late = await arrived(memory, session, harness.now());
+        await expect(memory.reserveInterruption(late, heardUntil, harness.now())).resolves.not.toBeNull();
       });
 
       it("is not reserved when the report is no strict prefix of what was spoken", async () => {
@@ -526,7 +542,7 @@ export const describeVoiceSessionMemoryContract = (
 
         const next = await arrived(memory, session, harness.now());
 
-        await expect(memory.reserveInterruption(next, "We close at")).resolves.toBeNull();
+        await expect(memory.reserveInterruption(next, "We close at", harness.now())).resolves.toBeNull();
       });
     });
 
@@ -544,8 +560,8 @@ export const describeVoiceSessionMemoryContract = (
         await harness.elapse(2_000);
         const late = await arrived(two, forgotten, harness.now());
 
-        await expect(two.reserveInterruption(soon, heardUntil)).resolves.not.toBeNull();
-        await expect(two.reserveInterruption(late, heardUntil)).resolves.toBeNull();
+        await expect(two.reserveInterruption(soon, heardUntil, harness.now())).resolves.not.toBeNull();
+        await expect(two.reserveInterruption(late, heardUntil, harness.now())).resolves.toBeNull();
       });
 
       it("forgets on the instance that served the session too", async () => {
@@ -556,7 +572,7 @@ export const describeVoiceSessionMemoryContract = (
         await harness.elapse(31_000);
         const late = await arrived(memory, session, harness.now());
 
-        await expect(memory.reserveInterruption(late, heardUntil)).resolves.toBeNull();
+        await expect(memory.reserveInterruption(late, heardUntil, harness.now())).resolves.toBeNull();
       });
 
       it("remembers a session while one of its requests is in flight, however long it runs", async () => {
@@ -568,7 +584,7 @@ export const describeVoiceSessionMemoryContract = (
         await harness.elapse(60_000);
         const next = await arrived(two, session, harness.now());
 
-        await expect(two.reserveInterruption(next, heardUntil)).resolves.not.toBeNull();
+        await expect(two.reserveInterruption(next, heardUntil, harness.now())).resolves.not.toBeNull();
       });
 
       it("stops counting a request in flight once it is older than a request lives, as when its instance crashed", async () => {
@@ -581,7 +597,7 @@ export const describeVoiceSessionMemoryContract = (
         await harness.elapse(5 * 60_000 + 1_000);
         const next = await arrived(alive, session, harness.now());
 
-        await expect(alive.reserveInterruption(next, heardUntil)).resolves.toBeNull();
+        await expect(alive.reserveInterruption(next, heardUntil, harness.now())).resolves.toBeNull();
       });
     });
   });

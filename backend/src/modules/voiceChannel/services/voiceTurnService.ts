@@ -406,7 +406,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     if (input.heardUntil === undefined) {
       return;
     }
-    void this.memory.reserveInterruption(claim, input.heardUntil).then((reservation) => {
+    void this.memory.reserveInterruption(claim, input.heardUntil, this.now()).then((reservation) => {
       if (reservation) {
         this.writeInterruptionNote(input, reservation);
       }
@@ -605,7 +605,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       startedAt,
       now: this.now,
       mayBridge: () => this.memory.mayBridge(claim, this.now()),
-      claimBridge: () => this.memory.claimBridge(claim),
+      claimBridge: () => this.memory.claimBridge(claim, this.now()),
       observer: {
         bridgeDue: (style, spoken) => {
           outcome.bridged = spoken;

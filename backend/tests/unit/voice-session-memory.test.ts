@@ -105,7 +105,7 @@ describe("VoiceSessionMemory on one instance", () => {
     const session = newSession();
 
     const first = await arrived(memory, session, 1_000);
-    const bridge = memory.claimBridge(first);
+    const bridge = memory.claimBridge(first, 1_100);
     first.outcomeAt = 1_200;
     const settled = memory.settle(first, 1_200, {
       utterance: "When do you open?",
@@ -115,7 +115,7 @@ describe("VoiceSessionMemory on one instance", () => {
       cutOffAt: null,
     });
     const second = memory.arrive(session, 1_300);
-    const note = memory.reserveInterruption(second, "At");
+    const note = memory.reserveInterruption(second, "At", 1_300);
 
     const registeredFirst = await Promise.race([memory.registered(second).then(() => "registered"), nextMacrotask().then(() => "waiting")]);
     expect(registeredFirst).toBe("registered");
@@ -151,6 +151,91 @@ describe("VoiceSessionMemory on one instance", () => {
     expect(memory.replayFor(again, "When do you open?", 1_300)?.reply).toEqual(reply);
     background.release();
     await settled;
+  });
+});
+
+describe("VoiceSessionMemory bridge claims on one instance", () => {
+  it("lets one bridge line through when a newer request bridges while the older one's claim is still in the store", async () => {
+    const store = new InMemoryVoiceSessionMemoryStore();
+    const claims = deferred();
+    class SlowBridgeClaims extends TrackingVoiceSessionMemoryStore {
+      override async claimBridge(input: Parameters<TrackingVoiceSessionMemoryStore["claimBridge"]>[0]) {
+        await claims.promise;
+        return super.claimBridge(input);
+      }
+    }
+    const memory = new VoiceSessionMemory({ store: new SlowBridgeClaims(store), notices: store.notices(), windows: VOICE_MEMORY_WINDOWS });
+    const session = newSession();
+    // As the turn policy asks: `mayBridge`, then the claim, right before speaking.
+    const speaks = async (claim: Awaited<ReturnType<typeof arrived>>, now: number) =>
+      memory.mayBridge(claim, now) && await memory.claimBridge(claim, now);
+
+    const first = await arrived(memory, session, 1_000);
+    const firstSpeaks = speaks(first, 1_050);
+    const second = await arrived(memory, session, 1_060);
+    const secondSpeaks = speaks(second, 1_070);
+    claims.release();
+
+    expect([await firstSpeaks, await secondSpeaks].filter(Boolean).length).toBeLessThanOrEqual(1);
+  });
+
+  it("decides on this instance which request speaks, when the store cannot be reached to say", async () => {
+    const store = new InMemoryVoiceSessionMemoryStore();
+    const outage = deferred();
+    class UnreachableBridgeClaims extends TrackingVoiceSessionMemoryStore {
+      override async claimBridge(): Promise<boolean> {
+        await outage.promise;
+        throw new Error("database unavailable");
+      }
+    }
+    const memory = new VoiceSessionMemory({ store: new UnreachableBridgeClaims(store), notices: store.notices(), windows: VOICE_MEMORY_WINDOWS });
+    const session = newSession();
+    const speaks = async (claim: Awaited<ReturnType<typeof arrived>>, now: number) =>
+      memory.mayBridge(claim, now) && await memory.claimBridge(claim, now);
+
+    const first = await arrived(memory, session, 1_000);
+    const firstSpeaks = speaks(first, 1_050);
+    const second = await arrived(memory, session, 1_060);
+    const secondSpeaks = speaks(second, 1_070);
+    const lateFirst = memory.claimBridge(first, 1_080);
+    outage.release();
+
+    // Spoken while the store was out, as before there was a store: the newer request holds back.
+    expect([await firstSpeaks, await secondSpeaks]).toEqual([true, false]);
+    await expect(lateFirst).resolves.toBe(false);
+  });
+
+  it("refuses the bridge of a request another instance overtook while this instance has not heard of it", async () => {
+    const store = new InMemoryVoiceSessionMemoryStore();
+    const deaf = store.notices();
+    const one = memoryOver(store, deaf);
+    const two = memoryOver(store, store.notices());
+    const session = newSession();
+
+    const first = await arrived(one, session, 1_000);
+    await nextMacrotask();
+    deaf.interrupt();
+    await arrived(two, session, 1_100);
+    await nextMacrotask();
+    expect(first.supersededAt).toBeNull();
+
+    await expect(one.claimBridge(first, 1_200)).resolves.toBe(false);
+  });
+});
+
+describe("VoiceSessionMemory over a long session", () => {
+  it("holds on to no request once it has settled and no arrival still reads it", async () => {
+    const store = new InMemoryVoiceSessionMemoryStore();
+    const memory = memoryOver(store, store.notices());
+    const session = newSession();
+
+    for (let turn = 0; turn < 50; turn += 1) {
+      const claim = await arrived(memory, session, 1_000 + turn * 100);
+      await memory.settle(claim, 1_050 + turn * 100, undefined);
+    }
+    await nextMacrotask();
+
+    expect(memory.heldRequestCount()).toBe(0);
   });
 });
 

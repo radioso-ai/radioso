@@ -298,11 +298,13 @@ helpers and the shared chat message limit from `app/http`
 - **Bridges never stack.** The policy asks `mayBridge` when the bridge falls
   due: no bridge once a newer request owns the session, and none while a bridge
   from a turn that lost its caller is younger than `bridgeAfterMs`. Then it
-  asks `claimBridge`, one store round trip right before the line is spoken: the
-  store records the bridge unless a request from another instance has
-  overtaken this one, and refuses it otherwise, so a request another instance
-  overtook stays silent even before its notice arrives. A newer request of the
-  same instance does not refuse it; `mayBridge` already answered for that one.
+  asks `claimBridge` right before the line is spoken. The instance decides
+  first, with no await: only its newest request of the session may take the
+  line, and taking it holds the next request's bridge back at once, as a spoken
+  line would. Then one store round trip records the bridge while the request is
+  still the session's newest, and refuses it once any newer request arrived, on
+  this instance or another, so the line stays unspoken even before the notice
+  arrives. When the store cannot be reached, the instance's decision stands.
   A refused or suppressed bridge is not counted in `voice_bridge_emitted_total`.
 - **Replay.** The route fires the port's `hungUp` signal when the runtime
   closes the request before the outcome was sent. A turn that was hung up on,

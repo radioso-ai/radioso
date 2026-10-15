@@ -180,6 +180,31 @@ describeIntegration("voice session memory on Postgres", () => {
       }
     });
 
+    it("refuses the bridge of a request another instance overtook while this instance's listener is down", async () => {
+      const [one, two] = [startInstance("deaf", { reconnectDelayMs: 5_000 }), startInstance("speaking")];
+      const listening = async () => {
+        const [row] = await admin.query<{ count: string }>(
+          "SELECT count(*)::text AS count FROM pg_stat_activity WHERE application_name = $1 AND query ILIKE 'LISTEN%'",
+          [one.listenerApplicationName],
+        );
+        return row?.count;
+      };
+      try {
+        const session = newSession();
+        const first = await arrived(one.memory, session, Date.now());
+        await vi.waitFor(async () => expect(await listening()).toBe("1"));
+        await admin.query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = $1", [one.listenerApplicationName]);
+        await vi.waitFor(async () => expect(await listening()).toBe("0"));
+
+        await arrived(two.memory, session, Date.now());
+        expect(first.supersededAt).toBeNull();
+
+        await expect(one.memory.claimBridge(first, Date.now())).resolves.toBe(false);
+      } finally {
+        await Promise.all([one.close(), two.close()]);
+      }
+    });
+
     it("learns of a newer request announced while its listener was down, once it reconnects", async () => {
       const [one, two] = [startInstance("dropped", { reconnectDelayMs: 1_000 }), startInstance("other")];
       const listenerSessions = async () => {

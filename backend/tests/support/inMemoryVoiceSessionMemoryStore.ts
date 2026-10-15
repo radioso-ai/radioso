@@ -17,7 +17,6 @@ interface RequestEntry {
   arrivedAt: number;
   instance: string;
   supersededAt?: number;
-  supersededBy?: string;
 }
 
 interface MemoryRow {
@@ -118,7 +117,6 @@ export class InMemoryVoiceSessionMemoryStore implements VoiceSessionMemoryStore 
       const previous = row.requests.get(row.newestSequence);
       if (previous) {
         previous.supersededAt = at;
-        previous.supersededBy = instanceId;
         superseded = row.newestSequence;
       }
       row.previousSequence = row.newestSequence;
@@ -178,14 +176,11 @@ export class InMemoryVoiceSessionMemoryStore implements VoiceSessionMemoryStore 
 
   async claimBridge(input: Parameters<VoiceSessionMemoryStore["claimBridge"]>[0]): Promise<boolean> {
     const row = this.rowById(input.sessionId);
-    const request = row?.requests.get(input.sequence);
-    if (!row || !request || (request.supersededBy !== undefined && request.supersededBy !== input.instanceId)) {
+    if (row?.newestSequence !== input.sequence) {
       return false;
     }
     const at = this.clock();
-    if (!row.lastBridge || !isNewer(row.lastBridge.sequence, input.sequence)) {
-      row.lastBridge = { sequence: input.sequence, at, cutOff: null };
-    }
+    row.lastBridge = { sequence: input.sequence, at, cutOff: null };
     row.touchedAt = Math.max(row.touchedAt, at);
     return true;
   }

@@ -277,7 +277,13 @@ imports from `services/`.
   `specs/1260-coverage-verdict-in-answer-head/`.
 - Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
   `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come
-  only from explicit valid `[[n]]` assertions. `implicitCitationDiagnostics.ts`
+  only from explicit valid `[[n]]` assertions. The single-bracket form the
+  model sometimes writes instead (`[n]`, `[?]`) carries no citation
+  attribution; both files strip it as a stray marker wherever it is not
+  adjacent to another bracket, the same shape the voice channel's speech
+  renderer strips (`voiceChannel/services/speechText.ts`, sharing the pattern
+  via `chat/contracts`), leaving a markdown link whose label is a bare number
+  (`[1](url)`) untouched. `implicitCitationDiagnostics.ts`
   records aggregate rollout diagnostics and never attaches citation artifacts or
   changes verdicts and suggestions.
   `citationTextNormalization.ts` owns the punctuation classes for the anchor

@@ -1,6 +1,6 @@
 import { removeDetachedPunctuationSpacing } from "./citationTextNormalization.js";
 
-export interface CitationAnchorGroup {
+interface CitationAnchorGroup {
   start: number;
   end: number;
   resultNumbers: number[];
@@ -8,6 +8,17 @@ export interface CitationAnchorGroup {
 }
 
 const ANCHOR_PATTERN = /\[\[(\d+|\?)\]\]/g;
+
+/**
+ * The single-bracket form of an assertion marker (`[n]` or `[?]`) the model sometimes
+ * writes instead of the prompted `[[n]]`/`[[?]]` (#1502). Not adjacent to another bracket,
+ * so `[[n]]`/`[[?]]` are left to their own handling, and not immediately followed by `(`,
+ * so a markdown link whose label is a bare number (`[1](url)`) survives. Everything else
+ * shaped like `[n]`/`[?]` is treated as a stray marker and removed, the same trade-off the
+ * voice channel's speech renderer already makes; shared here (exported via chat/contracts)
+ * so both paths strip the identical shape.
+ */
+export const SINGLE_BRACKET_ASSERTION_MARKER = /(?<!\[)\[(?:\d+|\?)\](?!\]|\()/g;
 
 export const findCitationAnchorGroups = (answer: string): CitationAnchorGroup[] => {
   const matches = [...answer.matchAll(ANCHOR_PATTERN)].map((match) => ({
@@ -53,4 +64,5 @@ export const stripResidualCitationSyntax = (text: string): string =>
   removeDetachedPunctuationSpacing(text
     .replace(/\[\[[^\]]*\]\]/g, "")
     .replace(/\[\[[^\s.,;:!?)]*/g, "")
-    .replace(/\]\]/g, ""));
+    .replace(/\]\]/g, "")
+    .replace(SINGLE_BRACKET_ASSERTION_MARKER, ""));

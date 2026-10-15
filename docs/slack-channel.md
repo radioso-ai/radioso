@@ -278,21 +278,31 @@ complete.
 3. Slack sends Events API payloads to `/api/connectors/slack/events`.
 4. Radioso verifies the Slack signature, checks replay age, deduplicates by
    `event_id`, and ignores bot-authored events and message edits, deletions,
-   and joins. The event id is the only thing kept from an event that is not
-   answered: it is stored without message text, for deduplication, and deleted
-   after 7 days by a sweep in the document worker (`SLACK_INBOUND_EVENT_RETENTION_DAYS`;
-   `0` keeps ids indefinitely). Under the Cloud Run task runtime the sweep is a
-   scheduled push to `POST /internal/tasks/slack-inbound-event-retention/sweep`.
-5. Radioso resolves the agent from the Slack channel binding. Direct messages,
-   agent-pane sessions, and unlisted channels use the default agent. An
-   un-mentioned channel message is answered only when it replies inside a
-   thread the agent already answers in, or when the channel binding responds
-   to every message; otherwise it is skipped. Opening the app's Messages tab
-   sets the suggested prompts and starts nothing.
+   and joins. A deduplicated, answerable event is written as a durable
+   `slack.inbound_event` job in the same transaction as the dedupe row, and
+   Radioso acks Slack with `200` once that write commits — well inside Slack's
+   3-second budget and before anything below runs. The event id is the only
+   thing kept from an event that is not answered: it is stored without
+   message text, for deduplication, and deleted after 7 days by a sweep in the
+   document worker (`SLACK_INBOUND_EVENT_RETENTION_DAYS`; `0` keeps ids
+   indefinitely). Under the Cloud Run task runtime the sweep is a scheduled
+   push to `POST /internal/tasks/slack-inbound-event-retention/sweep`.
+5. The document worker claims the `slack.inbound_event` job and resolves the
+   agent from the Slack channel binding. Direct messages, agent-pane
+   sessions, and unlisted channels use the default agent. An un-mentioned
+   channel message is answered only when it replies inside a thread the agent
+   already answers in, or when the channel binding responds to every message;
+   otherwise it is skipped. Opening the app's Messages tab sets the suggested
+   prompts and starts nothing.
 6. The Slack connector invokes the normal chat path with `sourceChannel:
    "slack"`.
 7. Radioso posts the completed answer back to Slack through the stored bot
-   token as a formatted message, in the thread the question came from.
+   token as a formatted message, in the thread the question came from. The
+   job is removed once that completes. A failed attempt — a provider error, a
+   dropped connection — retries with a doubling backoff; after its last
+   attempt the job is dead-lettered and the inbound event is marked `failed`.
+   The job keeps the event text only until it runs: a completed job is
+   deleted, and a dead-lettered one keeps only the error, never the message.
 8. If the typed turn outcome is `no_context`, the Slack connector can enqueue a
    `slack.post` escalation to the configured human channel.
 9. Operators act on interactive messages in Slack. Slack sends the button click

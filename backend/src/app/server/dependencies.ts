@@ -67,7 +67,7 @@ import {
   buildWorkspaceProviderCredentialsService,
 } from "./builders/accessAuth.js";
 import { buildChatServices } from "./builders/chat.js";
-import { buildConnectorRegistry } from "./builders/integrations.js";
+import { buildConnectorRegistry, buildSlackInboundJobComposition } from "./builders/integrations.js";
 import { buildIntegrationServices } from "./builders/integrations.js";
 import { buildDocumentRetrievalGraph } from "./builders/documentRetrievalGraph.js";
 import {
@@ -466,7 +466,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     metrics: infrastructure.metricsRegistry,
     logger,
   });
-  const connectorRegistry = buildConnectorRegistry({ composition, env, logger, emailPlugin: emailChannel?.plugin });
+  const connectorRegistry = buildConnectorRegistry({
+    composition,
+    env,
+    logger,
+    emailPlugin: emailChannel?.plugin,
+    slackBackgroundJobs: backgroundJobs.queue,
+  });
   const connectorManagementService = new ConnectorManagementService({
     database: infrastructure.database,
     registry: connectorRegistry,
@@ -1222,7 +1228,28 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ),
   );
   const periodicTaskHandlesById = new Map(periodicTaskEntries.map(({ id, handle }) => [id, handle]));
-  const backgroundJobRuntime = backgroundJobs.createRuntime([...chat.backgroundJobHandlers]);
+  const conversationLinks = buildConversationLinkResolver({
+    database: infrastructure.database,
+    appBaseUrl: env.APP_BASE_URL,
+  });
+  // Built here (not only inside the API-only `SlackPlugin`) so the worker can dispatch
+  // `slack.inbound_event` jobs: the webhook now only verifies, dedupes, and enqueues.
+  const slackInboundJobs = buildSlackInboundJobComposition({
+    db: infrastructure.database.kysely,
+    logger,
+    chatService: chat.chatService,
+    conversationIngestService,
+    slackInstallationService,
+    installations: repositories.slackInstallationRepository,
+    bindings: repositories.slackChannelBindingRepository,
+    workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
+    starterPrompts: chat.agentStarterPromptReader,
+    conversationLinks,
+  });
+  const backgroundJobRuntime = backgroundJobs.createRuntime([
+    ...chat.backgroundJobHandlers,
+    ...slackInboundJobs.backgroundJobHandlers,
+  ]);
   return {
     env,
     logger,
@@ -1241,10 +1268,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
-    conversationLinks: buildConversationLinkResolver({
-      database: infrastructure.database,
-      appBaseUrl: env.APP_BASE_URL,
-    }),
+    conversationLinks,
     realtimePublisherLifecycle: realtimePublisherComposition,
     realtimeRolloutPolicy,
     vectorIndexReconciler,

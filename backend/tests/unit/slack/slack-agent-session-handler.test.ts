@@ -78,6 +78,7 @@ const makeHandler = (options: {
       statuses.push(status);
     }),
     markStaleInboundEventsFailed: vi.fn(async () => 0),
+    enqueueInboundEvent: vi.fn(async () => "enqueued" as const),
     findConversationLink: vi.fn(async () => null),
     findConversationLinkByConversationId: vi.fn(async () => null),
     getOrCreateConversationLink: vi.fn(async (input) => ({

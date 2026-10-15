@@ -1,5 +1,6 @@
 import { findCitationAnchorGroups, stripResidualCitationSyntax } from "./citationAnchorParser.js";
 import { STRANDABLE_PUNCTUATION } from "./citationTextNormalization.js";
+import { canonicalizeUnsourcedMarkers } from "./unsourcedMarkerCanonicalization.js";
 import { findMarkdownSplitBoundaries } from "../../../shared/text/markdownSplitBoundary.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type {
@@ -11,40 +12,6 @@ import type {
 } from "../contracts/answerTypes.js";
 
 export type AnswerPresentationMetrics = Pick<MetricsRegistry, "incrementCounter">;
-
-export const remapAnswerSegmentsToCitationEvidence = (
-  answerSegments: AnswerSegment[],
-  visibleCitationEvidence: CitationEvidence[],
-  targetCitationEvidence: CitationEvidence[],
-): AnswerSegment[] => {
-  const targetIndexByDocumentId = new Map<string, number>();
-
-  for (const [index, citation] of targetCitationEvidence.entries()) {
-    if (!targetIndexByDocumentId.has(citation.documentId)) {
-      targetIndexByDocumentId.set(citation.documentId, index);
-    }
-  }
-
-  return answerSegments.map((segment) => {
-    if (!segment.citationIndices || segment.citationIndices.length === 0) {
-      return { text: segment.text };
-    }
-
-    const remappedIndices = [...new Set(segment.citationIndices.flatMap((index) => {
-      const citation = visibleCitationEvidence[index];
-      if (!citation) {
-        return [];
-      }
-
-      const remappedIndex = targetIndexByDocumentId.get(citation.documentId);
-      return remappedIndex === undefined ? [] : [remappedIndex];
-    }))];
-
-    return remappedIndices.length > 0
-      ? { text: segment.text, citationIndices: remappedIndices }
-      : { text: segment.text };
-  });
-};
 
 const hasParagraphBreak = (text: string): boolean => /\r?\n\r?\n/.test(text);
 const MARKDOWN_LINK_LINE_END = /((?:\*\*)?\[[^\]\n]+]\([^\s)\n]+(?:\([^\s)\n]*\)[^\s)\n]*)?\)(?:\*\*)?)([ \t]*)$/;
@@ -95,8 +62,10 @@ export class AnswerPresentationService {
     answer: string;
     citations: CitationEvidence[];
   }): NormalizedPresentedAnswer {
-    const trimmedAnswer = addMissingPunctuationAfterTerminalMarkdownLinks(input.answer.trim());
-    return this.normalizeAnchoredAnswer(trimmedAnswer, input.citations);
+    // Canonical before anchor grouping, so a single-bracket `[?]` ends its claim's segment
+    // instead of joining the next cited one.
+    const answer = canonicalizeUnsourcedMarkers(input.answer.trim());
+    return this.normalizeAnchoredAnswer(addMissingPunctuationAfterTerminalMarkdownLinks(answer), input.citations);
   }
 
   present(input: {

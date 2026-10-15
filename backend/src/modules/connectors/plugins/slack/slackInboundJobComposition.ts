@@ -56,6 +56,6 @@ export const buildSlackInboundJobComposition = (input: {
     clientFactory: input.clientFactory,
   });
   return {
-    backgroundJobHandlers: [createSlackInboundEventJobHandler(messageHandler, persistence)],
+    backgroundJobHandlers: [createSlackInboundEventJobHandler(messageHandler, persistence, input.logger)],
   };
 };

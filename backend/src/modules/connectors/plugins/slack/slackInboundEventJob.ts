@@ -244,6 +244,10 @@ type SlackInboundMessageHandler = Pick<
 
 type SlackInboundEventPersistence = Pick<SlackPersistencePort, "markInboundEventStatus" | "getInboundEventStatus">;
 
+interface SlackInboundEventJobLogger {
+  warn(payload: Record<string, unknown>, message: string): void;
+}
+
 const dispatchSlackInboundEvent = (
   messageHandler: SlackInboundMessageHandler,
   payload: SlackInboundEventJobPayload,
@@ -266,9 +270,9 @@ const dispatchSlackInboundEvent = (
  *
  * Checks the inbound event's own status first: a redelivery the webhook's dedupe somehow let
  * through, or a retry racing an earlier attempt's own (abandoned, but not yet superseded) write,
- * finds the event already `processed` or `skipped` and returns without dispatching. This narrows
- * but does not close the gap — an attempt can still crash after posting the reply and before its
- * own status write lands, and a retry would not see that yet.
+ * finds the event already terminal — `processed`, `skipped`, or `failed` — and returns without
+ * dispatching. This narrows but does not close the gap — an attempt can still crash after posting
+ * the reply and before its own status write lands, and a retry would not see that yet.
  *
  * Marking the event `failed` happens only in `onDeadLetter`, which the port runs once, inside the
  * transaction that parks the job, for every cause (final failure, a timeout, a payload that no
@@ -281,12 +285,13 @@ const dispatchSlackInboundEvent = (
 export const createSlackInboundEventJobHandler = (
   messageHandler: SlackInboundMessageHandler,
   persistence: SlackInboundEventPersistence,
+  logger: SlackInboundEventJobLogger,
 ): BackgroundJobHandlerRegistration =>
   backgroundJobHandler(
     SLACK_INBOUND_EVENT_JOB,
     async (payload) => {
       const status = await persistence.getInboundEventStatus(payload.eventId);
-      if (status === "processed" || status === "skipped") {
+      if (status === "processed" || status === "skipped" || status === "failed") {
         return;
       }
       await dispatchSlackInboundEvent(messageHandler, payload);
@@ -297,7 +302,25 @@ export const createSlackInboundEventJobHandler = (
         if (!eventId) {
           return;
         }
-        await persistence.markInboundEventStatus(eventId, "failed", context.transaction);
+        try {
+          await persistence.markInboundEventStatus(eventId, "failed", context.transaction);
+        } catch (error) {
+          // The runtime logs this generically (jobId, kind, attempt, error class) but has no way
+          // to know which Slack event the job carried; this line is what lets a reader of that
+          // generic log find the specific event that stayed `received`. Rethrown unchanged: the
+          // port rolls the write back and parks the job on its own terms regardless.
+          logger.warn(
+            {
+              eventId,
+              teamId: payload?.teamId,
+              jobId: context.jobId,
+              kind: SLACK_INBOUND_EVENT_JOB.kind,
+              errorType: error instanceof Error ? error.name : typeof error,
+            },
+            "Slack inbound event dead-letter status write failed; the event stays received",
+          );
+          throw error;
+        }
       },
     },
   );

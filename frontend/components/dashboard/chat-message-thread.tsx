@@ -27,6 +27,7 @@ import {
 } from '@/lib/product-analytics'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { humanReplyAuthor, type ReplyAttributionAudience } from '@/lib/reply-attribution'
+import { heardPercent } from '@/lib/reply-interruption'
 import { activityLine, placeActivity, threadDayBreaks } from '@/lib/conversation-activity'
 import type { ConversationActivityEntry, ReplyInterruption } from '@/lib/api-types'
 import type {
@@ -179,14 +180,8 @@ export interface ChatThreadMessage {
   interruption?: ReplyInterruption
 }
 
-/** About how much of a reply the caller heard, as a whole percentage; none when nothing was spoken. */
-const heardPercent = ({ heardCharacterCount, spokenCharacterCount }: ReplyInterruption): number | null =>
-  spokenCharacterCount > 0
-    ? Math.min(100, Math.max(0, Math.round((heardCharacterCount / spokenCharacterCount) * 100)))
-    : null
-
 function InterruptedReplyBadge({ interruption }: { interruption: ReplyInterruption }) {
-  const percent = heardPercent(interruption)
+  const percent = heardPercent(interruption.heardCharacterCount, interruption.spokenCharacterCount)
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -196,7 +191,7 @@ function InterruptedReplyBadge({ interruption }: { interruption: ReplyInterrupti
         </Badge>
       </TooltipTrigger>
       <TooltipContent side="bottom">
-        The caller spoke over this reply.{percent === null ? '' : ` About ${percent}% was heard.`}
+        The caller spoke over this reply.{percent === undefined ? '' : ` About ${percent}% was heard.`}
       </TooltipContent>
     </Tooltip>
   )

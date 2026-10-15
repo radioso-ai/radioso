@@ -644,7 +644,8 @@ export class MessageRepository implements MessageRepositoryPort, ReplyInterrupti
 
   /**
    * Keeps the marker under `metadata_json.interruption` with the time it was recorded, merged into
-   * the reply's other metadata. A marker already holding the same counts is left as written.
+   * the reply's other metadata. A reply that already carries a marker keeps it whole: the first
+   * report wins, so a retried note never moves its counts or its `recordedAt`.
    */
   async markReplyInterrupted(input: {
     workspaceId: string;
@@ -661,7 +662,7 @@ export class MessageRepository implements MessageRepositoryPort, ReplyInterrupti
       .where("conversation_id", "=", input.conversationId)
       .where("id", "=", input.messageId)
       .where("role", "=", "assistant")
-      .where(sql<boolean>`(metadata_json -> 'interruption') - 'recordedAt' IS DISTINCT FROM ${toJsonb(counts)}`)
+      .where(sql<boolean>`metadata_json -> 'interruption' IS NULL`)
       .execute();
   }
 

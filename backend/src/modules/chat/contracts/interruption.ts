@@ -28,8 +28,9 @@ export interface ReplyInterruption {
 
 /**
  * Marks a stored assistant reply as cut short, keeping the reply's text and other metadata. The
- * same counts written twice are one marker; newer counts replace older ones. A message that is not
- * an assistant reply of the conversation is left alone, without an error.
+ * first marker on a reply stays as written: a later mark, with the same counts or others, changes
+ * nothing. A message that is not an assistant reply of the conversation is left alone, without an
+ * error.
  */
 export interface ReplyInterruptionMarker {
   markReplyInterrupted(input: {

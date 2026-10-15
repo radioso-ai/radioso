@@ -6,6 +6,7 @@ import {
   type ConversationActivityEntry,
   type RecentlyClosedInboxItem,
 } from "../../../../modules/conversationActivity/contracts/index.js";
+import type { ReplyInterruption } from "../../../../modules/chat/contracts/index.js";
 import { assistantChatSchema } from "../../schemas/assistantChatSchemas.js";
 import {
   conversationParamsSchema,
@@ -656,6 +657,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       description: "Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`, which keeps the full reply.",
     }),
   );
+  // A documented shape that drifts from its contract fails tsc here.
+  const replyInterruptionMatchesContract: SameType<z.infer<typeof ReplyInterruptionSchema>, ReplyInterruption> = true;
+  void replyInterruptionMatchesContract;
 
   // Shared by the operator and public message schemas. `debug`, `turnFailure`, and
   // `operatorLabel` are operator-only and are added on top of this shape for the dashboard

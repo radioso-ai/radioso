@@ -21,7 +21,8 @@ The substrate owns:
 - `backgroundJobRequest`: a validated job to write, with an optional
   `idempotencyKey` and `runAfter`.
 - `backgroundJobHandler`: the function that runs one kind. It receives the
-  parsed payload and `{ jobId, attempt, signal }`.
+  parsed payload and `{ jobId, attempt, signal }`, and takes an optional
+  `onDeadLetter` hook.
 - `BackgroundJobQueue`: the producer port. `enqueue` resolves once the job is
   stored and wakes a worker without the caller waiting on it;
   `enqueueInTransaction` writes inside the caller's transaction, and the caller
@@ -79,13 +80,27 @@ Implementations live outside it, and application composition
   and so does a stored payload that no longer matches its schema. A job whose
   every lease expired without finishing is dead-lettered on its next claim
   past `maxAttempts`.
-- **What a failure stores.** `last_error` holds the error's class, plus an
-  `AppError` code when there is one, for example
+- **What a failure stores and reports.** `last_error` holds the error's class,
+  plus an `AppError` code when there is one, for example
   `AppError [provider_unavailable]`. Never the message or stack, which can
-  carry provider responses, conversation text, or credentials.
-- **Dead letters.** After `maxAttempts` runs the job keeps its `last_error` for
-  14 days, then the retention sweep removes it. A rerun requested during a run
-  that ends in a dead letter is dropped; the next enqueue starts fresh.
+  carry provider responses, conversation text, or credentials. The error
+  reporter gets the same shape (kind, attempt, job id, that summary) and never
+  the error itself.
+- **Dead letters.** After `maxAttempts` runs, a failure that cannot be retried,
+  a payload that no longer parses, or attempts used up by crashed workers, the
+  job is parked. The same write drops its payload: a dead letter keeps its kind,
+  key, attempts, `last_error`, and timestamps for 14 days, then the retention
+  sweep removes it. A rerun requested during a run that ends in a dead letter is
+  dropped; the next enqueue starts fresh.
+- **Dead-letter hook.** `backgroundJobHandler(kind, handle, { onDeadLetter })`
+  runs `onDeadLetter(payload, { jobId, attempt, idempotencyKey, error,
+  transaction })` once, inside the transaction that parks the job, whatever
+  parked it. `payload` is the parsed payload, or `null` when the stored payload
+  no longer parses (the key is still there). Make its writes through
+  `transaction` so they commit with the park. The park is fenced on the claim
+  token, so an attempt whose claim was taken over never runs it. A hook that
+  throws rolls back with its writes; the job is parked without it and the
+  failure is reported by shape.
 - **Completion.** A completed job is deleted, because a payload can carry
   conversation identifiers or content.
 
@@ -97,7 +112,7 @@ The numbers below hold together; change them together.
 |------|-------|-------|
 | A kind's deadline (`timeoutSeconds`) | at most 240 s; summary refresh 120 s | `defineBackgroundJob`, `BACKGROUND_JOB_MAX_TIMEOUT_SECONDS` |
 | A kind's lease (`leaseSeconds`) | longer than its deadline; summary refresh 180 s | `defineBackgroundJob` |
-| One drain request's budget | 240 s | `backgroundJobWorkerTaskRoutes.ts` |
+| One drain request's budget, from the request's arrival | 270 s | `BACKGROUND_JOB_DRAIN_BUDGET_SECONDS` |
 | Jobs per pushed drain | 1 | `backgroundJobWorkerTaskRoutes.ts` |
 | Jobs per recovery sweep | up to 10, while the next job's deadline still fits the budget | `background_job_recovery_max_jobs` |
 | Worker request timeout | 300 s | `infra/terraform/compute.tf` (`document_worker`) |
@@ -105,8 +120,11 @@ The numbers below hold together; change them together.
 | Cloud Scheduler attempt deadline | 300 s | `infra/terraform/scheduler.tf` |
 
 A drain claims a job only while that kind's deadline still fits in what is left
-of its budget, so a request ends inside 240 s even when every handler runs to
-its deadline, and the 60 s above it covers the claim and completion writes.
+of its budget, so a request ends inside 270 s even when every handler runs to
+its deadline, and the 30 s above it covers the claim, completion, and
+dead-letter writes. The budget is longer than the longest deadline, so a kind
+at 240 s still fits a pushed drain after the request spent a few seconds
+arriving.
 Cloud Tasks and Cloud Scheduler wait as long as the worker does, so neither
 retries a drain that is still running. The poll loop has no request around it:
 each tick runs up to ten jobs, each under its own deadline.
@@ -141,7 +159,9 @@ each tick runs up to ten jobs, each under its own deadline.
    passes to `backgroundJobs.createRuntime`. The runtime refuses two handlers
    for one kind, and a worker claims only kinds it has handlers for. Let a
    failure the job should retry reject; resolve only when the work is done or
-   deliberately skipped.
+   deliberately skipped. When the module has to record that the work was given
+   up, pass `{ onDeadLetter: (payload, { idempotencyKey, transaction }) => … }`
+   as the third argument and write through `transaction`.
 
 4. Test the handler as business behaviour, and the producer's enqueue with a
    recording queue. `tests/support/inMemoryBackgroundJobStore.ts` gives runtime

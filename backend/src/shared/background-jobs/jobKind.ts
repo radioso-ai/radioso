@@ -2,6 +2,7 @@ import type { z } from "zod";
 
 import type {
   BackgroundJobContext,
+  BackgroundJobDeadLetterContext,
   BackgroundJobDuplicateKeyMode,
   BackgroundJobHandlerRegistration,
   BackgroundJobKind,
@@ -11,10 +12,17 @@ import type {
 
 /**
  * The longest deadline a kind may declare. A worker drain claims a job only while that job's
- * deadline still fits in the drain's budget, so a kind with a longer deadline could never run in a
- * pushed drain. The worker task route's budget (`backgroundJobWorkerTaskRoutes.ts`) is at least this.
+ * deadline still fits in what is left of the drain's budget.
  */
 export const BACKGROUND_JOB_MAX_TIMEOUT_SECONDS = 240;
+
+/**
+ * How long one worker drain request may spend admitting jobs. Strictly longer than the longest
+ * deadline, so a kind at that deadline still fits after the request spent a few seconds arriving;
+ * the worker's 300 s request timeout leaves 30 s above it for the claim, completion, and
+ * dead-letter writes.
+ */
+export const BACKGROUND_JOB_DRAIN_BUDGET_SECONDS = 270;
 
 const DEFAULT_POLICY: BackgroundJobPolicy = {
   maxAttempts: 5,
@@ -98,18 +106,38 @@ export const backgroundJobRequest = <TPayload>(
   ...(options.runAfter === undefined ? {} : { runAfter: options.runAfter }),
 });
 
-/** Registers the function that runs one kind. The runtime parses each stored payload before calling it. */
+/**
+ * Registers the function that runs one kind. The runtime parses each stored payload before calling
+ * it. `onDeadLetter` runs once when a job of the kind is dead-lettered, for any reason: its last
+ * attempt failed or passed its deadline, it failed for good, its stored payload no longer parses
+ * (the hook then gets `null`), or its attempts ran out on crashed workers. Keep it to a quick write
+ * through `context.transaction`.
+ */
 export const backgroundJobHandler = <TPayload>(
   job: BackgroundJobKind<TPayload>,
   handle: (payload: TPayload, context: BackgroundJobContext) => Promise<void>,
-): BackgroundJobHandlerRegistration => ({
-  kind: job.kind,
-  policy: job.policy,
-  async run(payload, context) {
-    const parsed = job.payload.safeParse(payload);
-    if (!parsed.success) {
-      throw new InvalidBackgroundJobPayloadError(job.kind);
-    }
-    await handle(parsed.data, context);
-  },
-});
+  options: {
+    onDeadLetter?: (payload: TPayload | null, context: BackgroundJobDeadLetterContext) => Promise<void>;
+  } = {},
+): BackgroundJobHandlerRegistration => {
+  const onDeadLetter = options.onDeadLetter;
+  return {
+    kind: job.kind,
+    policy: job.policy,
+    async run(payload, context) {
+      const parsed = job.payload.safeParse(payload);
+      if (!parsed.success) {
+        throw new InvalidBackgroundJobPayloadError(job.kind);
+      }
+      await handle(parsed.data, context);
+    },
+    ...(onDeadLetter
+      ? {
+          onDeadLetter: async (payload: unknown, context: BackgroundJobDeadLetterContext) => {
+            const parsed = job.payload.safeParse(payload);
+            await onDeadLetter(parsed.success ? parsed.data : null, context);
+          },
+        }
+      : {}),
+  };
+};

@@ -182,10 +182,10 @@ The document worker is where work that outlives a request runs, so run it wherev
 
 A deployment without a running worker still answers chat, but documents stay queued, routine actions are never sent, and conversation summaries and titles stop updating.
 
-Background jobs live in the `background_jobs` table. A completed job is deleted, so the table holds only work that is waiting, running, or has failed for good. A failed job is retried with a growing delay; after its last attempt it stays for 14 days with the class of the error that stopped it, such as `BackgroundJobTimeoutError` or `AppError [provider_unavailable]`. The full error reaches your error tracking when a job is dead-lettered and is never stored in the table, because its message can carry conversation text:
+Background jobs live in the `background_jobs` table. A completed job is deleted, so the table holds only work that is waiting, running, or has failed for good. A failed job is retried with a growing delay. After its last attempt it stays for 14 days with its kind, key, attempt count, and the class of the error that stopped it, such as `BackgroundJobTimeoutError` or `AppError [provider_unavailable]`. Its payload is dropped when it fails for good, and neither the table nor your error tracking receives the error's message, because a payload or a message can carry conversation text:
 
 ```sql
-SELECT kind, status, attempts, available_at, last_error
+SELECT kind, idempotency_key, status, attempts, available_at, last_error
 FROM background_jobs
 ORDER BY created_at DESC
 LIMIT 20;

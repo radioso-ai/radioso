@@ -63,10 +63,13 @@ interface RuntimeMetrics {
   ): void;
 }
 
+/**
+ * The runtime reports by shape only: an error's message or stack can echo a provider response or
+ * customer content, so the reporter never receives the error itself.
+ */
 interface RuntimeErrorReporter {
   report(input: {
     errorType: string;
-    error?: unknown;
     severity?: "info" | "warn" | "error" | "fatal";
     metadata?: Record<string, unknown>;
   }): Promise<unknown>;
@@ -157,10 +160,11 @@ export class BackgroundJobRuntime {
 
   /**
    * Runs due jobs one at a time until none is due or `maxJobs` have run. With a `budgetMs`, a job is
-   * claimed only while its kind's deadline still fits in what is left of the budget, so the drain
-   * ends inside the budget even if every handler runs to its deadline. Store failures propagate.
+   * claimed only while its kind's deadline still fits in what is left of the budget, counted from
+   * `startedAt` (epoch ms; now when absent), so the drain ends inside the budget even if every
+   * handler runs to its deadline. Store failures propagate.
    */
-  async drain(input: { maxJobs: number; budgetMs?: number }): Promise<BackgroundJobDrainResult> {
+  async drain(input: { maxJobs: number; budgetMs?: number; startedAt?: number }): Promise<BackgroundJobDrainResult> {
     const result: BackgroundJobDrainResult = {
       claimed: 0,
       completed: 0,
@@ -169,7 +173,7 @@ export class BackgroundJobRuntime {
       deadLettered: 0,
       superseded: 0,
     };
-    const startedAt = Date.now();
+    const startedAt = input.startedAt ?? Date.now();
     for (let index = 0; index < input.maxJobs; index += 1) {
       const remainingMs = input.budgetMs === undefined ? Infinity : input.budgetMs - (Date.now() - startedAt);
       const kinds = this.claimableKinds.filter((entry) => entry.timeoutMs <= remainingMs);
@@ -196,9 +200,10 @@ export class BackgroundJobRuntime {
       .then(
         () => undefined,
         (error: unknown) => {
-          this.options.logger.error({ errorType: errorSummary(error) }, "Background job poll failed");
+          const summary = errorSummary(error);
+          this.options.logger.error({ errorType: summary }, "Background job poll failed");
           void this.options.errorReporter
-            ?.report({ errorType: "background_job.poll_failed", error, severity: "error" })
+            ?.report({ errorType: "background_job.poll_failed", severity: "error", metadata: { errorClass: summary } })
             .catch(() => undefined);
         },
       )
@@ -214,7 +219,7 @@ export class BackgroundJobRuntime {
     if (claim.attempt > handler.policy.maxAttempts) {
       // Every earlier attempt was claimed and never finished: the worker died or stalled past the
       // lease each time. Running it again would exceed the budget the kind declared.
-      return this.deadLetter(claim, "BackgroundJobLeaseExpiredError", undefined, startedAt);
+      return this.deadLetter(claim, handler, "BackgroundJobLeaseExpiredError", startedAt);
     }
     const execution = await this.execute(claim, handler);
     if (!execution.ok) {
@@ -295,7 +300,7 @@ export class BackgroundJobRuntime {
   ): Promise<RunOutcome> {
     const summary = errorSummary(error);
     if (error instanceof NonRetryableBackgroundJobError || claim.attempt >= handler.policy.maxAttempts) {
-      return this.deadLetter(claim, summary, error, startedAt);
+      return this.deadLetter(claim, handler, summary, startedAt);
     }
     const delaySeconds = Math.min(
       handler.policy.retryBaseDelaySeconds * 2 ** (claim.attempt - 1),
@@ -311,23 +316,64 @@ export class BackgroundJobRuntime {
 
   private async deadLetter(
     claim: BackgroundJobClaim,
+    handler: BackgroundJobHandlerRegistration,
     summary: string,
-    error: unknown,
     startedAt: number,
   ): Promise<RunOutcome> {
-    const parked = await this.options.store.deadLetter(claim, { error: summary });
+    const parked = await this.park(claim, handler, summary);
     if (!parked) {
       return this.record(claim, "superseded", startedAt);
     }
-    void this.options.errorReporter
-      ?.report({
-        errorType: "background_job.dead_lettered",
-        ...(error === undefined ? {} : { error }),
-        severity: "error",
-        metadata: { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, lastError: summary },
-      })
-      .catch(() => undefined);
+    this.report("background_job.dead_lettered", { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, lastError: summary });
     return this.record(claim, "dead_lettered", startedAt, summary);
+  }
+
+  /**
+   * Parks the job, running the kind's dead-letter hook in the parking transaction. The store fences
+   * the park on the claim token, so an attempt whose claim was taken over never runs the hook. A
+   * hook that throws rolls back with its writes, and the job is parked without it: a broken hook
+   * must not keep a failed job alive.
+   */
+  private async park(
+    claim: BackgroundJobClaim,
+    handler: BackgroundJobHandlerRegistration,
+    summary: string,
+  ): Promise<boolean> {
+    if (!handler.onDeadLetter) {
+      return this.options.store.deadLetter(claim, { error: summary });
+    }
+    const failed: { hookError?: unknown } = {};
+    try {
+      return await this.options.store.deadLetter(claim, { error: summary }, async (transaction) => {
+        try {
+          await handler.onDeadLetter?.(claim.payload, {
+            jobId: claim.id,
+            attempt: claim.attempt,
+            idempotencyKey: claim.idempotencyKey,
+            error: summary,
+            transaction,
+          });
+        } catch (error) {
+          failed.hookError = error;
+          throw error;
+        }
+      });
+    } catch (error) {
+      if (!("hookError" in failed)) {
+        throw error;
+      }
+      const hookError = errorSummary(failed.hookError);
+      this.options.logger.warn(
+        { kind: claim.kind, jobId: claim.id, attempt: claim.attempt, errorType: hookError },
+        "Background job dead-letter hook failed; the job is parked without it",
+      );
+      this.report("background_job.dead_letter_hook_failed", { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, hookError });
+      return this.options.store.deadLetter(claim, { error: summary });
+    }
+  }
+
+  private report(errorType: string, metadata: Record<string, unknown>): void {
+    void this.options.errorReporter?.report({ errorType, severity: "error", metadata }).catch(() => undefined);
   }
 
   /** Best-effort: the sweep still finds a job whose wake was lost. */

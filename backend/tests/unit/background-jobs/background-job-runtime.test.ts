@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import {
+  BACKGROUND_JOB_DRAIN_BUDGET_SECONDS,
+  BACKGROUND_JOB_MAX_TIMEOUT_SECONDS,
   BackgroundJobRuntime,
   DefaultBackgroundJobQueue,
   NonRetryableBackgroundJobError,
@@ -135,13 +137,13 @@ describe("BackgroundJobRuntime", () => {
     expect(onlyRow(store).availableAt).toEqual(new Date(Date.now() + 20_000));
   });
 
-  it("dead-letters a job on its last attempt and reports it", async () => {
+  it("dead-letters a job on its last attempt, drops its payload, and reports only its shape", async () => {
     const { queue, runtime, store, errorReporter } = setup([
       backgroundJobHandler(REFRESH, async () => {
-        throw new Error("still failing");
+        throw new Error("provider echoed SENTINEL-visitor-text");
       }),
     ]);
-    await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+    await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1", note: "SENTINEL-payload-text" }, { idempotencyKey: "s1" }));
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       await runtime.drain({ maxJobs: 1 });
@@ -149,12 +151,16 @@ describe("BackgroundJobRuntime", () => {
     }
 
     const row = onlyRow(store);
-    expect(row).toMatchObject({ status: "dead", attempts: 3, lastError: "Error" });
+    expect(row).toMatchObject({ status: "dead", attempts: 3, lastError: "Error", idempotencyKey: "s1", payload: null });
     expect(row.deadAt).not.toBeNull();
-    expect(errorReporter.report).toHaveBeenCalledWith(expect.objectContaining({
+    expect(errorReporter.report).toHaveBeenCalledOnce();
+    const [report] = errorReporter.report.mock.calls[0] as unknown as [Record<string, unknown>];
+    expect(report).toEqual({
       errorType: "background_job.dead_lettered",
-      metadata: expect.objectContaining({ kind: "test.refresh", attempt: 3 }),
-    }));
+      severity: "error",
+      metadata: { kind: "test.refresh", attempt: 3, jobId: row.id, lastError: "Error" },
+    });
+    expect(JSON.stringify([...store.rows.values()])).not.toContain("SENTINEL");
     // A dead job is never claimed again.
     expect(await runtime.drain({ maxJobs: 5 })).toMatchObject({ claimed: 0 });
   });
@@ -398,7 +404,175 @@ describe("BackgroundJobRuntime", () => {
     });
   });
 
+  describe("dead-letter hook", () => {
+    const deadLetterCalls = () => {
+      const calls: { payload: unknown; idempotencyKey: string | null; attempt: number; error: string; hasTransaction: boolean }[] = [];
+      const onDeadLetter = vi.fn(async (payload: unknown, context: {
+        idempotencyKey: string | null;
+        attempt: number;
+        error: string;
+        transaction: unknown;
+      }) => {
+        calls.push({
+          payload,
+          idempotencyKey: context.idempotencyKey,
+          attempt: context.attempt,
+          error: context.error,
+          hasTransaction: context.transaction !== undefined,
+        });
+      });
+      return { calls, onDeadLetter };
+    };
+
+    it("runs once with the payload when the last attempt fails", async () => {
+      const { calls, onDeadLetter } = deadLetterCalls();
+      const { queue, runtime } = setup([
+        backgroundJobHandler(REFRESH, async () => {
+          throw new Error("still failing");
+        }, { onDeadLetter }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" }));
+
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        await runtime.drain({ maxJobs: 1 });
+        vi.setSystemTime(Date.now() + 3_600_000);
+      }
+
+      expect(calls).toEqual([
+        { payload: { subjectId: "s1" }, idempotencyKey: "s1", attempt: 3, error: "Error", hasTransaction: true },
+      ]);
+    });
+
+    it("runs when the last attempt passes its deadline", async () => {
+      const { calls, onDeadLetter } = deadLetterCalls();
+      const ONE_SHOT = defineBackgroundJob({
+        kind: "test.one_shot",
+        payload: z.object({ eventId: z.string() }),
+        onDuplicateKey: "ignore",
+        maxAttempts: 1,
+        leaseSeconds: 60,
+        timeoutSeconds: 50,
+      });
+      const { queue, runtime } = setup([
+        backgroundJobHandler(ONE_SHOT, async () => {
+          await new Promise(() => {});
+        }, { onDeadLetter }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(ONE_SHOT, { eventId: "e1" }, { idempotencyKey: "e1" }));
+
+      const draining = runtime.drain({ maxJobs: 1 });
+      await vi.advanceTimersByTimeAsync(50_000);
+
+      expect(await draining).toMatchObject({ deadLettered: 1 });
+      expect(calls).toEqual([
+        { payload: { eventId: "e1" }, idempotencyKey: "e1", attempt: 1, error: "BackgroundJobTimeoutError", hasTransaction: true },
+      ]);
+    });
+
+    it("runs without a payload, but with the key, when the stored payload no longer parses", async () => {
+      const { calls, onDeadLetter } = deadLetterCalls();
+      const handle = vi.fn(async () => {});
+      const { runtime, store } = setup([backgroundJobHandler(REFRESH, handle, { onDeadLetter })]);
+      await store.insert({ kind: REFRESH.kind, payload: { subjectId: 42 }, onDuplicateKey: "rerun", idempotencyKey: "s1" });
+
+      await runtime.drain({ maxJobs: 1 });
+
+      expect(handle).not.toHaveBeenCalled();
+      expect(calls).toEqual([
+        { payload: null, idempotencyKey: "s1", attempt: 1, error: "InvalidBackgroundJobPayloadError", hasTransaction: true },
+      ]);
+    });
+
+    it("runs when repeated crashes used up the attempts", async () => {
+      const { calls, onDeadLetter } = deadLetterCalls();
+      const { runtime, store } = setup([backgroundJobHandler(REFRESH, async () => {}, { onDeadLetter })]);
+      await store.insert(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" }));
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        await store.claimNext({ kinds: [{ kind: REFRESH.kind, leaseSeconds: 60 }] });
+        vi.setSystemTime(Date.now() + 61_000);
+      }
+
+      await runtime.drain({ maxJobs: 1 });
+
+      expect(calls).toEqual([
+        { payload: { subjectId: "s1" }, idempotencyKey: "s1", attempt: 4, error: "BackgroundJobLeaseExpiredError", hasTransaction: true },
+      ]);
+    });
+
+    it("is not run by an attempt whose claim was taken over, so it runs once", async () => {
+      const { calls, onDeadLetter } = deadLetterCalls();
+      const { store, queue, logger } = setup([]);
+      const LAST_TRY = defineBackgroundJob({
+        kind: "test.last_try",
+        payload: z.object({ eventId: z.string() }),
+        onDuplicateKey: "ignore",
+        maxAttempts: 1,
+        leaseSeconds: 60,
+        timeoutSeconds: 50,
+      });
+      const hold = barrier();
+      const handler = backgroundJobHandler(LAST_TRY, async () => {
+        await hold.released;
+        throw new Error("failed after its claim was taken over");
+      }, { onDeadLetter });
+      const stalled = new BackgroundJobRuntime({ store, handlers: [handler], logger, now: clock.now });
+      const other = new BackgroundJobRuntime({ store, handlers: [handler], logger, now: clock.now });
+      await queue.enqueue(backgroundJobRequest(LAST_TRY, { eventId: "e1" }, { idempotencyKey: "e1" }));
+
+      const staleDrain = stalled.drain({ maxJobs: 1 });
+      await vi.advanceTimersByTimeAsync(0);
+      vi.setSystemTime(Date.now() + 61_000);
+      // The other worker finds the only attempt spent and dead-letters the job.
+      expect(await other.drain({ maxJobs: 1 })).toMatchObject({ deadLettered: 1 });
+
+      hold.release();
+      expect(await staleDrain).toMatchObject({ deadLettered: 0, superseded: 1 });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({ attempt: 2, error: "BackgroundJobLeaseExpiredError" });
+    });
+
+    it("still parks the job when the hook fails, and reports the failure by shape only", async () => {
+      const { queue, runtime, store, errorReporter } = setup([
+        backgroundJobHandler(SHORT, async () => {
+          throw new NonRetryableBackgroundJobError("gone");
+        }, {
+          onDeadLetter: async () => {
+            throw new Error("hook failed on SENTINEL-hook-text");
+          },
+        }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(SHORT, { value: 1 }));
+
+      expect(await runtime.drain({ maxJobs: 1 })).toMatchObject({ deadLettered: 1 });
+      expect(onlyRow(store)).toMatchObject({ status: "dead", payload: null, lastError: "NonRetryableBackgroundJobError" });
+      expect(errorReporter.report).toHaveBeenCalledWith({
+        errorType: "background_job.dead_letter_hook_failed",
+        severity: "error",
+        metadata: expect.objectContaining({ kind: "test.short", hookError: "Error" }),
+      });
+      expect(JSON.stringify(errorReporter.report.mock.calls)).not.toContain("SENTINEL");
+    });
+  });
+
   describe("time budget", () => {
+    it("leaves a pushed drain room for a kind at the longest deadline, even after time has passed before admission", async () => {
+      expect(BACKGROUND_JOB_DRAIN_BUDGET_SECONDS).toBeGreaterThan(BACKGROUND_JOB_MAX_TIMEOUT_SECONDS);
+      const LONGEST = defineBackgroundJob({
+        kind: "test.longest",
+        payload: z.object({ eventId: z.string() }),
+        onDuplicateKey: "ignore",
+        leaseSeconds: BACKGROUND_JOB_MAX_TIMEOUT_SECONDS + 60,
+        timeoutSeconds: BACKGROUND_JOB_MAX_TIMEOUT_SECONDS,
+      });
+      const { queue, runtime } = setup([backgroundJobHandler(LONGEST, async () => {})]);
+      await queue.enqueue(backgroundJobRequest(LONGEST, { eventId: "e1" }));
+      // The request arrived 10 s before the drain's first admission check (auth, body parsing, a cold start).
+      const startedAt = Date.now() - 10_000;
+
+      expect(await runtime.drain({ maxJobs: 1, budgetMs: BACKGROUND_JOB_DRAIN_BUDGET_SECONDS * 1_000, startedAt }))
+        .toMatchObject({ claimed: 1, completed: 1 });
+    });
+
     it("claims a job only while its kind's deadline still fits in the drain's budget", async () => {
       const { queue, runtime, store } = setup([
         backgroundJobHandler(SHORT, async () => {

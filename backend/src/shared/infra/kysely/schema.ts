@@ -466,7 +466,7 @@ export interface BackgroundJobs {
   kind: string;
   last_error: string | null;
   lease_expires_at: Timestamp | null;
-  payload: Json;
+  payload: Json | null;
   rerun_requested: Generated<boolean>;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;

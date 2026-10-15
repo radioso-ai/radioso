@@ -229,6 +229,72 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
     await expect(repository.retry(claim!, { error: "x".repeat(500), delaySeconds: 30 })).rejects.toThrow();
   });
 
+  it("drops a dead-lettered job's payload in the same write, keeping its kind, key, attempts and error", async () => {
+    const receipt = await repository.insert(
+      backgroundJobRequest(REFRESH, { subjectId: "SENTINEL-visitor-message" }, { idempotencyKey: "key-1" }),
+    );
+    const claim = await repository.claimNext({ kinds: KINDS });
+    expect(claim).toMatchObject({ idempotencyKey: "key-1", payload: { subjectId: "SENTINEL-visitor-message" } });
+
+    expect(await repository.deadLetter(claim!, { error: "Error" })).toBe(true);
+
+    const stored = await database.query<Record<string, unknown>>("SELECT * FROM background_jobs WHERE id = $1", [
+      receipt.inserted ? receipt.jobId : "",
+    ]);
+    expect(stored[0]).toMatchObject({
+      kind: "test.refresh",
+      idempotency_key: "key-1",
+      status: "dead",
+      attempts: 1,
+      last_error: "Error",
+      payload: null,
+    });
+    expect(JSON.stringify(stored)).not.toContain("SENTINEL");
+  });
+
+  it("commits a dead-letter hook's writes with the park, and rolls both back when the hook throws", async () => {
+    const id = await insert("s1", { idempotencyKey: "s1" });
+    const claim = await repository.claimNext({ kinds: KINDS });
+    const markerCount = async () =>
+      Number((await database.query<{ count: string }>("SELECT count(*) AS count FROM background_jobs WHERE kind = 'test.event'"))[0].count);
+
+    await expect(repository.deadLetter(claim!, { error: "Error" }, async (transaction) => {
+      await repository.insert(backgroundJobRequest(EVENT, { subjectId: "marker" }), transaction);
+      throw new Error("hook failed");
+    })).rejects.toThrow("hook failed");
+    expect(await markerCount()).toBe(0);
+    expect(await row(id)).toMatchObject({ status: "running", payload: { subjectId: "s1" } });
+
+    expect(await repository.deadLetter(claim!, { error: "Error" }, async (transaction) => {
+      await repository.insert(backgroundJobRequest(EVENT, { subjectId: "marker" }), transaction);
+    })).toBe(true);
+    expect(await markerCount()).toBe(1);
+    expect(await row(id)).toMatchObject({ status: "dead", payload: null });
+  });
+
+  it("never runs the hook for a claim that was taken over", async () => {
+    const id = await insert("s1");
+    const stale = await repository.claimNext({ kinds: KINDS });
+    await expireLease(id);
+    await repository.claimNext({ kinds: KINDS });
+    let hookRan = false;
+
+    expect(await repository.deadLetter(stale!, { error: "Error" }, async () => {
+      hookRan = true;
+    })).toBe(false);
+    expect(hookRan).toBe(false);
+  });
+
+  it("refuses a dead job that still holds a payload, or a live job without one", async () => {
+    const id = await insert("s1");
+    await expect(database.query(
+      "UPDATE background_jobs SET status = 'dead', dead_at = now() WHERE id = $1",
+      [id],
+    )).rejects.toThrow(/background_jobs_dead_has_no_payload/);
+    await expect(database.query("UPDATE background_jobs SET payload = NULL WHERE id = $1", [id]))
+      .rejects.toThrow(/background_jobs_dead_has_no_payload/);
+  });
+
   it("parks a dead-lettered job with its error until the retention window passes", async () => {
     const dead = await insert("dead");
     const live = await insert("live", { runAfter: new Date(Date.now() + 60_000) });

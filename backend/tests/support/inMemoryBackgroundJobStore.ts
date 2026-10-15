@@ -9,6 +9,10 @@ import type {
   BackgroundJobStore,
   BackgroundJobWriter,
 } from "../../src/shared/background-jobs/index.js";
+import type { Db } from "../../src/shared/infra/kysely/types.js";
+
+/** Stands in for the parking transaction a dead-letter hook receives; the fake has none. */
+const IN_MEMORY_TRANSACTION = {} as Db;
 
 export interface InMemoryBackgroundJobRow {
   id: string;
@@ -88,6 +92,7 @@ export class InMemoryBackgroundJobStore implements BackgroundJobStore, Backgroun
       kind: due.kind,
       payload: structuredClone(due.payload),
       attempt: due.attempts,
+      idempotencyKey: due.idempotencyKey,
       token: due.claimToken,
       availableAt: due.availableAt,
     };
@@ -123,10 +128,17 @@ export class InMemoryBackgroundJobStore implements BackgroundJobStore, Backgroun
     return row.availableAt;
   }
 
-  async deadLetter(claim: BackgroundJobClaim, input: { error: string }): Promise<boolean> {
+  async deadLetter(
+    claim: BackgroundJobClaim,
+    input: { error: string },
+    onParked?: (transaction: Db) => Promise<void>,
+  ): Promise<boolean> {
     const row = this.current(claim);
     if (!row) return false;
+    // Runs before the row changes, so a hook that throws leaves the job as it was: a rolled-back park.
+    await onParked?.(IN_MEMORY_TRANSACTION);
     this.release(row);
+    row.payload = null;
     row.status = "dead";
     row.lastError = input.error;
     row.deadAt = this.clock.now();

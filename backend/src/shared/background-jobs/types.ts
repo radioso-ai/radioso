@@ -76,12 +76,32 @@ export interface BackgroundJobContext {
   readonly signal: AbortSignal;
 }
 
+/** What a kind's dead-letter hook learns about the job it parks. */
+export interface BackgroundJobDeadLetterContext {
+  readonly jobId: string;
+  /** The attempt that parked the job. */
+  readonly attempt: number;
+  readonly idempotencyKey: string | null;
+  /** The stored error summary: the error's class and an application error code, never its message. */
+  readonly error: string;
+  /**
+   * The transaction that parks the job. Writes made through it commit with the dead letter, so they
+   * happen exactly once; a hook that throws rolls them back and the job is parked without them.
+   */
+  readonly transaction: Db;
+}
+
 /** A kind's handler with its payload type erased, so handlers of every kind share one registry. */
 export interface BackgroundJobHandlerRegistration {
   readonly kind: string;
   readonly policy: BackgroundJobPolicy;
   /** Checks the stored payload against the kind's schema, then runs the handler. */
   run(payload: unknown, context: BackgroundJobContext): Promise<void>;
+  /**
+   * Runs once, inside the transaction that dead-letters a job of this kind, whatever parked it.
+   * Receives the parsed payload, or null when the stored payload no longer parses.
+   */
+  onDeadLetter?(payload: unknown, context: BackgroundJobDeadLetterContext): Promise<void>;
 }
 
 /**
@@ -114,6 +134,7 @@ export interface BackgroundJobClaim {
   readonly payload: unknown;
   /** Runs started since the job last succeeded, counting this one. */
   readonly attempt: number;
+  readonly idempotencyKey: string | null;
   /** Unique to this claim: a worker whose claim was taken over can no longer write. */
   readonly token: string;
   /** When the job became due, for queue-wait latency. */
@@ -149,8 +170,16 @@ export interface BackgroundJobStore {
   complete(claim: BackgroundJobClaim): Promise<BackgroundJobCompletion>;
   /** Returns the job to waiting, due after `delaySeconds`. Resolves the new due time, or null when superseded. */
   retry(claim: BackgroundJobClaim, input: { error: string; delaySeconds: number }): Promise<Date | null>;
-  /** Parks the job for inspection with its last error. False when superseded. */
-  deadLetter(claim: BackgroundJobClaim, input: { error: string }): Promise<boolean>;
+  /**
+   * Parks the job with its last error and drops its payload, which can carry conversation content.
+   * `onParked` runs in the same transaction after the row is parked; if it throws, nothing is parked
+   * and the error propagates. False, without calling `onParked`, when the claim was superseded.
+   */
+  deadLetter(
+    claim: BackgroundJobClaim,
+    input: { error: string },
+    onParked?: (transaction: Db) => Promise<void>,
+  ): Promise<boolean>;
 }
 
 /** How a worker learns there is work: a Cloud Task, or nothing at all where a poll loop runs. */

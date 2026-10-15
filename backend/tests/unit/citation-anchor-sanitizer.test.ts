@@ -113,36 +113,12 @@ describe("citation anchor sanitizer", () => {
     expect(chunks.join("")).toBe("Use this selector:\n\n:hover { color: red; }");
   });
 
-  // #1502: the model sometimes writes the single-bracket form (`[n]`, `[?]`) instead of
-  // the prompted `[[n]]`/`[[?]]`. Treated the same way: removed wherever it is not
-  // adjacent to another bracket. The one shape this sanitizer still leaves alone is a
-  // markdown link whose label is a bare number (`[1](url)`) — anything else shaped like
-  // `[n]`/`[?]`, including a natural bracketed number, is now stripped as a possible
-  // marker, the same trade-off the voice channel's speech renderer already makes.
-  it("preserves a markdown link whose label is a bare number", () => {
-    const sanitizer = new CitationAnchorSanitizer();
-
-    const chunks = [
-      sanitizer.push("See [1](https://example.com) for details."),
-      sanitizer.flush(),
-    ];
-
-    expect(chunks.join("")).toBe("See [1](https://example.com) for details.");
-  });
-
-  it("preserves a markdown link whose label is a bare number, split across chunks", () => {
-    const sanitizer = new CitationAnchorSanitizer();
-
-    const chunks = [
-      sanitizer.push("See [1]"),
-      sanitizer.push("(https://example.com) for details."),
-      sanitizer.flush(),
-    ];
-
-    expect(chunks.join("")).toBe("See [1](https://example.com) for details.");
-  });
-
-  it("strips bracketed numeric text that is not part of a markdown link", () => {
+  // #1502: the model sometimes writes the single-bracket unsourced-claim marker (`[?]`)
+  // instead of the prompted `[[?]]`. Treated the same way: removed wherever it is not
+  // adjacent to another bracket. Scoped to `[?]` only — a single-bracket *number* is left
+  // alone, because it collides with legitimate text (`arr[0]`, `[2024]`, a document
+  // reference like `[1]`), which `[?]` never does.
+  it("preserves natural single-bracket numeric text in streamed output", () => {
     const sanitizer = new CitationAnchorSanitizer();
 
     const chunks = [
@@ -152,7 +128,7 @@ describe("citation anchor sanitizer", () => {
     ];
 
     expect(chunks.join("")).toBe(
-      "Read [1](https://example.com), inspect arr, and keep the  label.",
+      "Read [1](https://example.com), inspect arr[0], and keep the [2024] label.",
     );
   });
 
@@ -167,29 +143,40 @@ describe("citation anchor sanitizer", () => {
     expect(chunks.join("")).toBe("Kriya is not  documented here.");
   });
 
-  it("strips a single-bracket numeric marker at the end of a sentence", () => {
+  it("drops a single-bracket unsupported-claim marker held at flush", () => {
     const sanitizer = new CitationAnchorSanitizer();
 
     const chunks = [
-      sanitizer.push("Arudra is a leader[1]."),
+      sanitizer.push("Claim[?]"),
       sanitizer.flush(),
     ];
 
-    expect(chunks.join("")).toBe("Arudra is a leader.");
+    expect(chunks.join("")).toBe("Claim");
   });
 
-  it("never leaks a single-bracket marker split at any chunk boundary", () => {
-    for (const marker of ["[12]", "[?]"]) {
-      for (let split = 1; split < marker.length; split += 1) {
-        const sanitizer = new CitationAnchorSanitizer();
-        const chunks = [
-          sanitizer.push(`Claim${marker.slice(0, split)}`),
-          sanitizer.push(`${marker.slice(split)}.`),
-          sanitizer.flush(),
-        ];
+  it("never leaks a single-bracket unsupported-claim marker split at any chunk boundary", () => {
+    const marker = "[?]";
+    for (let split = 1; split < marker.length; split += 1) {
+      const sanitizer = new CitationAnchorSanitizer();
+      const chunks = [
+        sanitizer.push(`Claim${marker.slice(0, split)}`),
+        sanitizer.push(`${marker.slice(split)}.`),
+        sanitizer.flush(),
+      ];
 
-        expect(chunks.join(""), `${marker} split at ${split}`).toBe("Claim.");
-      }
+      expect(chunks.join(""), `split at ${split}`).toBe("Claim.");
     }
+  });
+
+  it("preserves a markdown link whose label is a bare number, split across chunks", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+
+    const chunks = [
+      sanitizer.push("See [1]"),
+      sanitizer.push("(https://example.com) for details."),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe("See [1](https://example.com) for details.");
   });
 });

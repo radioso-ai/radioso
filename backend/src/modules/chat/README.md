@@ -277,13 +277,20 @@ imports from `services/`.
   `specs/1260-coverage-verdict-in-answer-head/`.
 - Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
   `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come
-  only from explicit valid `[[n]]` assertions. The single-bracket form the
-  model sometimes writes instead (`[n]`, `[?]`) carries no citation
-  attribution; both files strip it as a stray marker wherever it is not
-  adjacent to another bracket, the same shape the voice channel's speech
-  renderer strips (`voiceChannel/services/speechText.ts`, sharing the pattern
-  via `chat/contracts`), leaving a markdown link whose label is a bare number
-  (`[1](url)`) untouched. `implicitCitationDiagnostics.ts`
+  only from explicit valid `[[n]]` assertions. The model sometimes writes the
+  single-bracket unsourced-claim marker (`[?]`) instead of the prompted
+  `[[?]]`; three places strip that stray `[?]` from the text path, sharing
+  one pattern defined in `citationAnchorParser.ts`: the streaming
+  `CitationAnchorSanitizer`, the residual-syntax cleanup in
+  `citationAnchorParser.ts` that `answerPresentationService.ts` calls, and
+  `fallbackReplyComposer.ts`'s decline composer. The text path strips `[?]`
+  only — a single-bracket *number* (`[n]`) is left alone, because it collides
+  with legitimate text (`arr[0]`, `[2024]`, a document reference like `[1]`),
+  which `[?]` never does. A markdown link whose label is `?` (`[?](url)`)
+  survives. The voice channel strips the broader `[n]`/`[?]` shape for speech
+  with its own local pattern (`voiceChannel/services/speechText.ts`) — the
+  two policies deliberately diverge, since speech has no equivalent of a
+  markdown link or array index to protect. `implicitCitationDiagnostics.ts`
   records aggregate rollout diagnostics and never attaches citation artifacts or
   changes verdicts and suggestions.
   `citationTextNormalization.ts` owns the punctuation classes for the anchor

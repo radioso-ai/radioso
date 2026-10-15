@@ -1,16 +1,9 @@
-import { SINGLE_BRACKET_ASSERTION_MARKER } from "../../chat/contracts/index.js";
-
 /**
  * A run of the assertion markers the answer composer writes for citations — `[[n]]`, `[[?]]`,
- * and the single-bracket form (`[n]`, `[?]`) the text path's anchor sanitizer also strips
- * (#1502, shared via chat/contracts) — and the whitespace before it. A single-bracket marker
- * never matches inside an unfinished `[[n]` that a later chunk will close. Structure only: no
- * words.
+ * `[n]`, `[?]` with n digits — and the whitespace before it. A single-bracket marker never matches
+ * inside an unfinished `[[n]` that a later chunk will close. Structure only: no words.
  */
-const ASSERTION_MARKER_RUN = new RegExp(
-  String.raw`\s*(?:\[\[(?:\d+|\?)\]\]|${SINGLE_BRACKET_ASSERTION_MARKER.source})+`,
-  "gu",
-);
+const ASSERTION_MARKER_RUN = /\s*(?:\[\[(?:\d+|\?)\]\]|(?<!\[)\[(?:\d+|\?)\](?!\]))+/gu;
 
 /** `[text](url)` and `![alt](url)`, with one level of parentheses inside the url; the text is spoken. */
 const MARKDOWN_LINK = /!?\[([^\]\n]*)\]\((?:[^()\s]|\([^()\s]*\))*\)/gu;

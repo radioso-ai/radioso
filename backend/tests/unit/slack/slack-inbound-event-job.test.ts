@@ -16,6 +16,7 @@ import {
 import { SlackMessageHandler } from "../../../src/modules/connectors/plugins/slack/slackMessageHandler.js";
 import { ChatTurnSupersededError } from "../../../src/modules/chat/services/conversationTurnRegistry.js";
 import type { SlackInstallationRecord } from "../../../src/modules/slack/install/slackInstallationService.js";
+import type { SlackInboundEventStatus } from "../../../src/modules/connectors/plugins/slack/slackPersistence.js";
 import { idleSlackAgentSessionClient } from "../../support/inMemorySlack.js";
 
 const START = new Date("2026-10-15T10:00:00.000Z");
@@ -49,8 +50,8 @@ const installation: SlackInstallationRecord = {
   updatedAt: new Date(),
 };
 
-const imPayload = (): SlackInboundEventJobPayload => ({
-  eventId: "EvAsync",
+const imPayload = (eventId = "EvAsync"): SlackInboundEventJobPayload => ({
+  eventId,
   teamId: "TTEST",
   inbound: {
     kind: "im" as const,
@@ -65,6 +66,26 @@ const imPayload = (): SlackInboundEventJobPayload => ({
   },
 });
 
+/**
+ * Mirrors `PostgresSlackPersistence`'s guard on a Map: a write only lands while the event is still
+ * `received`, so a late write from an attempt the port already abandoned (lease reclaimed, a
+ * later attempt already settled the event) is a no-op, never an overwrite.
+ */
+const createFakePersistence = (initial: Partial<Record<string, SlackInboundEventStatus>> = {}) => {
+  const statuses = new Map<string, SlackInboundEventStatus>(
+    Object.entries(initial).filter((entry): entry is [string, SlackInboundEventStatus] => entry[1] !== undefined),
+  );
+  return {
+    statuses,
+    markInboundEventStatus: vi.fn(async (eventId: string, status: "processed" | "skipped" | "failed") => {
+      if ((statuses.get(eventId) ?? "received") === "received") {
+        statuses.set(eventId, status);
+      }
+    }),
+    getInboundEventStatus: vi.fn(async (eventId: string) => statuses.get(eventId) ?? "received"),
+  };
+};
+
 const setup = (
   messageHandler: Parameters<typeof createSlackInboundEventJobHandler>[0],
   persistence: Parameters<typeof createSlackInboundEventJobHandler>[1],
@@ -78,7 +99,7 @@ const setup = (
   const queue = new DefaultBackgroundJobQueue({ writer: store, wake, logger });
   const runtime = new BackgroundJobRuntime({
     store,
-    handlers: [createSlackInboundEventJobHandler(messageHandler, persistence, logger)],
+    handlers: [createSlackInboundEventJobHandler(messageHandler, persistence)],
     wake,
     logger,
     now: clock.now,
@@ -100,7 +121,7 @@ describe("Slack inbound event job handler", () => {
 
   it("dispatches each inbound kind to its matching message-handler method and completes the job", async () => {
     const handleMessageIm = vi.fn(async () => undefined);
-    const persistence = { markInboundEventStatus: vi.fn(async () => undefined) };
+    const persistence = createFakePersistence();
     const { queue, runtime, store } = setup(
       { handleMessageIm, handleAppMention: vi.fn(), handleChannelMessage: vi.fn(), handleAppHomeOpened: vi.fn() },
       persistence,
@@ -120,11 +141,28 @@ describe("Slack inbound event job handler", () => {
     expect(persistence.markInboundEventStatus).not.toHaveBeenCalled();
   });
 
-  it("retries a failing turn through the port and marks the inbound event failed only on the final attempt", async () => {
+  it("returns success without dispatching when the inbound event is already terminal", async () => {
+    const handleMessageIm = vi.fn(async () => undefined);
+    // The dedupe row is already `processed` — a redelivery the webhook's own dedupe somehow let
+    // through, or a retry racing an attempt whose success write already landed.
+    const persistence = createFakePersistence({ EvAsync: "processed" });
+    const { queue, runtime } = setup(
+      { handleMessageIm, handleAppMention: vi.fn(), handleChannelMessage: vi.fn(), handleAppHomeOpened: vi.fn() },
+      persistence,
+    );
+    await queue.enqueue(slackInboundEventJobRequest(imPayload()));
+
+    const result = await runtime.drain({ maxJobs: 1 });
+
+    expect(result).toMatchObject({ claimed: 1, completed: 1 });
+    expect(handleMessageIm).not.toHaveBeenCalled();
+  });
+
+  it("marks the inbound event failed via the dead-letter hook only on the final attempt", async () => {
     const handleMessageIm = vi.fn(async () => {
       throw new Error("chat_unavailable");
     });
-    const persistence = { markInboundEventStatus: vi.fn(async () => undefined) };
+    const persistence = createFakePersistence();
     const { clock, queue, runtime } = setup(
       { handleMessageIm, handleAppMention: vi.fn(), handleChannelMessage: vi.fn(), handleAppHomeOpened: vi.fn() },
       persistence,
@@ -142,7 +180,34 @@ describe("Slack inbound event job handler", () => {
     expect(final).toMatchObject({ claimed: 1, deadLettered: 1 });
     expect(handleMessageIm).toHaveBeenCalledTimes(SLACK_INBOUND_EVENT_JOB.policy.maxAttempts);
     expect(persistence.markInboundEventStatus).toHaveBeenCalledOnce();
-    expect(persistence.markInboundEventStatus).toHaveBeenCalledWith("EvAsync", "failed");
+    // The third argument is the dead-letter hook's parking transaction (an opaque stand-in here).
+    expect(persistence.markInboundEventStatus).toHaveBeenCalledWith("EvAsync", "failed", expect.anything());
+    expect(persistence.statuses.get("EvAsync")).toBe("failed");
+  });
+
+  it("marks the inbound event failed, by idempotency key, when the stored payload no longer parses", async () => {
+    const handleMessageIm = vi.fn();
+    const persistence = createFakePersistence();
+    const { runtime, store } = setup(
+      { handleMessageIm, handleAppMention: vi.fn(), handleChannelMessage: vi.fn(), handleAppHomeOpened: vi.fn() },
+      persistence,
+    );
+    // A payload that cannot have come from `slackInboundEventJobRequest`: the schema change that
+    // broke it, or corruption, not something the catch-based approach this replaces could ever see
+    // (the old code never ran — and never got a chance to write `failed` — because the generic
+    // runtime rejects an unparseable payload before calling any handler).
+    await store.insert({
+      kind: SLACK_INBOUND_EVENT_JOB.kind,
+      payload: { not: "a valid slack inbound event payload" },
+      onDuplicateKey: "ignore",
+      idempotencyKey: "EvBadPayload",
+    });
+
+    const result = await runtime.drain({ maxJobs: 1 });
+
+    expect(result).toMatchObject({ claimed: 1, deadLettered: 1 });
+    expect(handleMessageIm).not.toHaveBeenCalled();
+    expect(persistence.markInboundEventStatus).toHaveBeenCalledWith("EvBadPayload", "failed", expect.anything());
   });
 
   it("never marks the inbound event failed once a retry succeeds", async () => {
@@ -153,7 +218,7 @@ describe("Slack inbound event job handler", () => {
         throw new Error("temporary_chat_unavailable");
       }
     });
-    const persistence = { markInboundEventStatus: vi.fn(async () => undefined) };
+    const persistence = createFakePersistence();
     const { clock, queue, runtime } = setup(
       { handleMessageIm, handleAppMention: vi.fn(), handleChannelMessage: vi.fn(), handleAppHomeOpened: vi.fn() },
       persistence,
@@ -168,7 +233,7 @@ describe("Slack inbound event job handler", () => {
   });
 
   it("coalesces a redelivery of the same Slack event id into one waiting job", async () => {
-    const persistence = { markInboundEventStatus: vi.fn(async () => undefined) };
+    const persistence = createFakePersistence();
     const { queue, store } = setup(
       { handleMessageIm: vi.fn(), handleAppMention: vi.fn(), handleChannelMessage: vi.fn(), handleAppHomeOpened: vi.fn() },
       persistence,
@@ -225,7 +290,7 @@ describe("Slack inbound event job handler", () => {
         ...idleSlackAgentSessionClient(),
       }),
     });
-    const { queue, runtime } = setup(handler, { markInboundEventStatus: vi.fn(async () => undefined) });
+    const { queue, runtime } = setup(handler, createFakePersistence());
     await queue.enqueue(slackInboundEventJobRequest(imPayload()));
 
     const result = await runtime.drain({ maxJobs: 1 });

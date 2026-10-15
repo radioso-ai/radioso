@@ -16,7 +16,7 @@ interface SlackWebhookRouterOptions {
   logger: ConnectorLogger;
   signingSecret: string;
   installations: Pick<SlackInstallationRepositoryPort, "findByTeamId">;
-  persistence: Pick<SlackPersistencePort, "createInboundEvent" | "markInboundEventStatus" | "enqueueInboundEvent">;
+  persistence: Pick<SlackPersistencePort, "createInboundEvent" | "enqueueInboundEvent">;
   now?: () => number;
 }
 
@@ -27,15 +27,12 @@ interface WebhookRequest extends Request {
 export const createSlackWebhookRouter = (options: SlackWebhookRouterOptions): Router => {
   const router = Router();
 
-  // Dedupes-and-marks-skipped for an event the worker will never see a job for. Shares the
-  // dedupe row with `enqueueInboundEvent`'s own insert so a redelivery of an already-skipped
-  // event is still recognised as a duplicate.
-  const skip = async (eventId: string, teamId: string): Promise<void> => {
-    const inserted = await options.persistence.createInboundEvent({ eventId, teamId });
-    if (inserted) {
-      await options.persistence.markInboundEventStatus(eventId, "skipped");
-    }
-  };
+  // One atomic insert for an event the worker will never see a job for: `createInboundEvent`'s
+  // dedupe and its terminal status land together, so there is no window — a crash between a
+  // "recorded" write and a separate "marked skipped" write — that could leave the row stuck
+  // `received` forever.
+  const skip = (eventId: string, teamId: string): Promise<boolean> =>
+    options.persistence.createInboundEvent({ eventId, teamId }, "skipped");
 
   router.post("/events", async (req: WebhookRequest, res, next) => {
     try {

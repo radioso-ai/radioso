@@ -22,10 +22,24 @@ export interface SlackConversationLinkCreateOutcome {
   created: boolean;
 }
 
+export type SlackInboundEventStatus = "received" | "processed" | "skipped" | "failed";
+
 export interface SlackPersistencePort {
-  createInboundEvent(input: { eventId: string; teamId: string }): Promise<boolean>;
-  markInboundEventStatus(eventId: string, status: "processed" | "skipped" | "failed"): Promise<void>;
-  markStaleInboundEventsFailed(input: { olderThan: Date }): Promise<number>;
+  /**
+   * Dedupes by event id; `status` defaults to `received` (a job is about to be enqueued for it) but
+   * a caller that already knows the event will not be dispatched — unparseable, bot-authored —
+   * passes `skipped` directly, so there is no window between "recorded" and "marked" a crash could
+   * leave stuck.
+   */
+  createInboundEvent(input: { eventId: string; teamId: string }, status?: SlackInboundEventStatus): Promise<boolean>;
+  /**
+   * Transitions away from `received` only: a write that finds the event already `processed`,
+   * `skipped`, or `failed` is a no-op, so an attempt abandoned after its lease was reclaimed can
+   * never clobber the status a later attempt (or the port's own dead-letter hook) already settled.
+   * `executor` lets a caller write inside its own transaction, such as a dead-letter park.
+   */
+  markInboundEventStatus(eventId: string, status: "processed" | "skipped" | "failed", executor?: Db): Promise<void>;
+  getInboundEventStatus(eventId: string): Promise<SlackInboundEventStatus | null>;
   /**
    * Dedupes and enqueues in one transaction: the inbound-event row and its background job are
    * written together, so a job-write failure rolls back the dedupe row too and Slack's own
@@ -77,10 +91,10 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
     private readonly backgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">,
   ) {}
 
-  async createInboundEvent(input: { eventId: string; teamId: string }): Promise<boolean> {
+  async createInboundEvent(input: { eventId: string; teamId: string }, status: SlackInboundEventStatus = "received"): Promise<boolean> {
     const row = await this.db
       .insertInto("slack_inbound_events")
-      .values({ event_id: input.eventId, team_id: input.teamId, status: "received" })
+      .values({ event_id: input.eventId, team_id: input.teamId, status })
       .onConflict((oc) => oc.column("event_id").doNothing())
       .returning("event_id")
       .executeTakeFirst();
@@ -111,23 +125,22 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
     return outcome;
   }
 
-  async markInboundEventStatus(eventId: string, status: "processed" | "skipped" | "failed"): Promise<void> {
-    await this.db
+  async markInboundEventStatus(eventId: string, status: "processed" | "skipped" | "failed", executor?: Db): Promise<void> {
+    await (executor ?? this.db)
       .updateTable("slack_inbound_events")
       .set({ status })
       .where("event_id", "=", eventId)
+      .where("status", "=", "received")
       .execute();
   }
 
-  async markStaleInboundEventsFailed(input: { olderThan: Date }): Promise<number> {
-    const rows = await this.db
-      .updateTable("slack_inbound_events")
-      .set({ status: "failed" })
-      .where("status", "=", "received")
-      .where("received_at", "<", input.olderThan)
-      .returning("event_id")
-      .execute();
-    return rows.length;
+  async getInboundEventStatus(eventId: string): Promise<SlackInboundEventStatus | null> {
+    const row = await this.db
+      .selectFrom("slack_inbound_events")
+      .select("status")
+      .where("event_id", "=", eventId)
+      .executeTakeFirst();
+    return (row?.status as SlackInboundEventStatus | undefined) ?? null;
   }
 
   async findConversationLink(input: {

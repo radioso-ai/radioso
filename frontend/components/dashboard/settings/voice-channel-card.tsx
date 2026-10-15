@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { AudioLines } from 'lucide-react'
 
-import { AddLanguageField, LanguageGroup, LineListEditor } from '@/components/dashboard/settings/locale-lines-editor'
+import { AddLanguageField, LanguageGroup, LineListEditor, LineWarning } from '@/components/dashboard/settings/locale-lines-editor'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { Button } from '@/components/ui/button'
@@ -13,10 +13,13 @@ import { Switch } from '@/components/ui/switch'
 import { agentsApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
+  ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS,
   VOICE_MAX_LANGUAGES,
   VOICE_MAX_LINE_LENGTH,
   VOICE_MAX_LINES,
   emptyVoiceLanguageLines,
+  isBelowElevenLabsSpokenFloor,
+  voiceSettingsFormAfterSave,
   voiceSettingsFormFromAgent,
   voiceSettingsUpdateFromForm,
   type MechanicsReplyKind,
@@ -36,6 +39,12 @@ const MECHANICS_REPLY_LABELS: ReadonlyArray<[MechanicsReplyKind, string]> = [
   ['acknowledgement', 'Acknowledgement'],
 ]
 
+/** Warns without blocking: only the `elevenlabs` dialect has a first-sentence floor. */
+const spokenFloorWarning = (line: string): string | null =>
+  isBelowElevenLabsSpokenFloor(line)
+    ? `Shorter than ${ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS} characters: ElevenLabs will not speak it before the answer.`
+    : null
+
 function VoiceLanguageEditor({
   language,
   onChange,
@@ -52,7 +61,7 @@ function VoiceLanguageEditor({
         <div className="space-y-0.5">
           <h4 className="text-sm font-semibold text-foreground">Bridge lines</h4>
           <p className="text-xs text-muted-foreground">
-            Write each as one full sentence of at least 45 characters, or ElevenLabs won&rsquo;t speak it before the answer arrives.
+            Write each bridge line and the fallback line as one full sentence of at least {ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS} characters, or ElevenLabs won&rsquo;t speak it before the answer arrives.
           </p>
         </div>
         {BRIDGE_STYLE_LABELS.map(([style, label]) => (
@@ -62,6 +71,7 @@ function VoiceLanguageEditor({
             lines={language.bridgeLines[style]}
             maxLines={VOICE_MAX_LINES}
             maxLength={VOICE_MAX_LINE_LENGTH}
+            lineWarning={spokenFloorWarning}
             onChange={(lines) => onChange({ ...language, bridgeLines: { ...language.bridgeLines, [style]: lines } })}
           />
         ))}
@@ -73,6 +83,7 @@ function VoiceLanguageEditor({
             maxLength={VOICE_MAX_LINE_LENGTH}
             onChange={(event) => onChange({ ...language, fallbackLine: event.target.value })}
           />
+          <LineWarning text={spokenFloorWarning(language.fallbackLine)} />
         </div>
       </div>
       <div className="space-y-3">
@@ -92,7 +103,11 @@ function VoiceLanguageEditor({
   )
 }
 
-/** The agent's `voice` and `mechanicsReplies` blocks, saved together and replaced whole. */
+/**
+ * The agent's `voice` and `mechanicsReplies` blocks, saved together and replaced whole. Render it
+ * keyed by `agentId`: a save replaces both blocks, so one agent's form must never outlive a switch
+ * to another agent.
+ */
 export function VoiceChannelCard({ agentId }: { agentId: string }) {
   const [form, setForm] = useState<VoiceSettingsForm | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -123,7 +138,7 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
     try {
       const agent = await agentsApi.updateAgent(agentId, voiceSettingsUpdateFromForm(current))
       if (!isCurrentSave(saveId)) return
-      setForm(voiceSettingsFormFromAgent(agent.voice, agent.mechanicsReplies))
+      setForm(voiceSettingsFormAfterSave(current, agent.voice, agent.mechanicsReplies))
       markSaved()
     } catch (error) {
       if (isCurrentSave(saveId)) markError(getApiErrorMessage(error, 'Failed to save voice settings.'))
@@ -141,6 +156,8 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
       {!form && !loadError ? <p className="text-sm text-muted-foreground">Loading voice settings…</p> : null}
       {form ? (
         <div className="space-y-5">
+          {/* Edits typed while a save is in flight would be replaced by its response, so the editors wait for it. */}
+          <fieldset disabled={saveState === 'saving'} className="min-w-0 space-y-5">
           <div className="flex items-center justify-between gap-4">
             <Label htmlFor="voiceEnabled" className="text-foreground">Voice lines on calls</Label>
             <Switch id="voiceEnabled" checked={form.enabled} onCheckedChange={(enabled) => edit({ ...form, enabled })} />
@@ -156,9 +173,10 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
           <AddLanguageField
             id="voiceNewLanguage"
             existingLocales={form.languages.map((language) => language.locale)}
-            disabled={form.languages.length >= VOICE_MAX_LANGUAGES}
+            maxLanguages={VOICE_MAX_LANGUAGES}
             onAdd={(locale) => edit({ ...form, languages: [...form.languages, emptyVoiceLanguageLines(locale)] })}
           />
+          </fieldset>
           <div className="flex items-center gap-3">
             <Button type="button" size="sm" onClick={() => void save(form)} loading={saveState === 'saving'}>
               Save voice settings

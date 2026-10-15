@@ -19,16 +19,17 @@ import { Label } from '@/components/ui/label'
 export function AddLanguageField({
   id,
   existingLocales,
-  disabled = false,
+  maxLanguages,
   onAdd,
 }: {
   id: string
   existingLocales: readonly string[]
-  disabled?: boolean
+  maxLanguages: number
   onAdd: (locale: string) => void
 }) {
   const [input, setInput] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const atLimit = existingLocales.length >= maxLanguages
 
   const add = () => {
     const resolved = resolveAssistantLocaleInput(input)
@@ -46,18 +47,34 @@ export function AddLanguageField({
   }
 
   return (
-    <div className="space-y-1">
+    <form
+      className="space-y-1"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (!atLimit && input.trim()) add()
+      }}
+    >
       <Label htmlFor={id} className="text-foreground">Add a language</Label>
       <div className="flex items-center gap-2">
         <div className="flex-1">
-          <AssistantLocaleCombobox id={id} value={input} onChange={setInput} placeholder="Language or tag, e.g. it or pt-BR" noFallbackOptionEnabled={false} />
+          <AssistantLocaleCombobox
+            id={id}
+            value={input}
+            onChange={(next) => {
+              setInput(next)
+              setError(null)
+            }}
+            placeholder="Language or tag, e.g. it or pt-BR"
+            noFallbackOptionEnabled={false}
+          />
         </div>
-        <Button type="button" size="sm" variant="outline" onClick={add} disabled={disabled || !input.trim()}>
+        <Button type="submit" size="sm" variant="outline" disabled={atLimit || !input.trim()}>
           Add
         </Button>
       </div>
+      {atLimit ? <p className="text-xs text-muted-foreground">Up to {maxLanguages} languages.</p> : null}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
+    </form>
   )
 }
 
@@ -83,6 +100,7 @@ export function LineListEditor({
   maxLines,
   maxLength,
   placeholder,
+  lineWarning,
   onChange,
 }: {
   label: string
@@ -90,6 +108,8 @@ export function LineListEditor({
   maxLines: number
   maxLength: number
   placeholder?: string
+  /** A one-line note under a line that saves but may not behave as the author expects. */
+  lineWarning?: (line: string) => string | null
   onChange: (next: string[]) => void
 }) {
   const replace = (index: number, value: string) => onChange(lines.map((line, at) => (at === index ? value : line)))
@@ -111,25 +131,32 @@ export function LineListEditor({
       </div>
       {lines.map((line, index) => (
         // A line has no identity beyond its position; the inputs are controlled, so removal re-renders cleanly.
-        <div key={index} className="flex items-center gap-2">
-          <Input
-            aria-label={`${label} line ${index + 1}`}
-            value={line}
-            maxLength={maxLength}
-            placeholder={placeholder}
-            onChange={(event) => replace(index, event.target.value)}
-          />
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            aria-label={`Remove ${label.toLowerCase()} line ${index + 1}`}
-            onClick={() => onChange(lines.filter((_, at) => at !== index))}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+        <div key={index} className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Input
+              aria-label={`${label} line ${index + 1}`}
+              value={line}
+              maxLength={maxLength}
+              placeholder={placeholder}
+              onChange={(event) => replace(index, event.target.value)}
+            />
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label={`Remove ${label.toLowerCase()} line ${index + 1}`}
+              onClick={() => onChange(lines.filter((_, at) => at !== index))}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+          <LineWarning text={lineWarning?.(line) ?? null} />
         </div>
       ))}
     </div>
   )
+}
+
+export function LineWarning({ text }: { text: string | null }) {
+  return text ? <p className="text-xs text-amber-700 dark:text-amber-400">{text}</p> : null
 }

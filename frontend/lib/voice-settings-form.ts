@@ -11,6 +11,20 @@ export const VOICE_MAX_LANGUAGES = 10
 export const VOICE_MAX_LINES = 5
 export const VOICE_MAX_LINE_LENGTH = 200
 
+/**
+ * The shortest first sentence the `elevenlabs` voice dialect speaks before more text arrives, so a
+ * shorter bridge or fallback line waits for the answer. Mirrors
+ * `ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS` in `backend/src/modules/voiceChannel/public.ts`;
+ * `backend/tests/unit/voice-channel-dialects.test.ts` pins the two together.
+ */
+export const ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS = 45
+
+/** A written line the `elevenlabs` dialect holds back; other dialects have no floor, so this only warns. */
+export const isBelowElevenLabsSpokenFloor = (line: string): boolean => {
+  const text = line.trim()
+  return text.length > 0 && Array.from(text).length < ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS
+}
+
 /** One language's lines across the `voice` and `mechanicsReplies` blocks. */
 export interface VoiceLanguageLines {
   locale: string
@@ -50,6 +64,11 @@ export const voiceSettingsFormFromAgent = (voice: AgentVoiceSettings, mechanicsR
 
 const authored = (lines: readonly string[]): string[] => lines.map((line) => line.trim()).filter((line) => line.length > 0)
 
+const authoredLinesOf = <Kind extends string>(kinds: readonly Kind[], source: Record<Kind, string[]>): Record<Kind, string[]> | null => {
+  const lines = Object.fromEntries(kinds.map((kind) => [kind, authored(source[kind])])) as Record<Kind, string[]>
+  return kinds.some((kind) => lines[kind].length > 0) ? lines : null
+}
+
 /**
  * The whole `voice` and `mechanicsReplies` blocks the form describes, as an agent update replaces
  * them. Blank lines are dropped, and a language with nothing in a block is left out of that block.
@@ -58,17 +77,25 @@ export const voiceSettingsUpdateFromForm = (form: VoiceSettingsForm): { voice: A
   const voice: AgentVoiceSettings = { enabled: form.enabled, bridgeLines: {}, fallbackLine: {} }
   const mechanicsReplies: AgentMechanicsReplies = {}
   for (const language of form.languages) {
-    const bridgeLines = { acknowledge: authored(language.bridgeLines.acknowledge), check: authored(language.bridgeLines.check) }
-    if (bridgeLines.acknowledge.length > 0 || bridgeLines.check.length > 0) voice.bridgeLines[language.locale] = bridgeLines
+    const bridgeLines = authoredLinesOf(VOICE_BRIDGE_STYLES, language.bridgeLines)
+    if (bridgeLines) voice.bridgeLines[language.locale] = bridgeLines
     const fallbackLine = language.fallbackLine.trim()
     if (fallbackLine) voice.fallbackLine[language.locale] = fallbackLine
-    const replies = {
-      greeting: authored(language.mechanicsReplies.greeting),
-      thanks: authored(language.mechanicsReplies.thanks),
-      farewell: authored(language.mechanicsReplies.farewell),
-      acknowledgement: authored(language.mechanicsReplies.acknowledgement),
-    }
-    if (Object.values(replies).some((lines) => lines.length > 0)) mechanicsReplies[language.locale] = replies
+    const replies = authoredLinesOf(MECHANICS_REPLY_KINDS, language.mechanicsReplies)
+    if (replies) mechanicsReplies[language.locale] = replies
   }
   return { voice, mechanicsReplies }
+}
+
+/**
+ * The form once a save returns: `enabled` and every language's lines as the server stored them,
+ * with the form's own language list kept, so a language added with nothing in it yet stays until
+ * the operator removes it.
+ */
+export const voiceSettingsFormAfterSave = (form: VoiceSettingsForm, voice: AgentVoiceSettings, mechanicsReplies: AgentMechanicsReplies): VoiceSettingsForm => {
+  const saved = voiceSettingsFormFromAgent(voice, mechanicsReplies)
+  const savedByLocale = new Map(saved.languages.map((language) => [language.locale, language]))
+  const kept = form.languages.map((language) => savedByLocale.get(language.locale) ?? emptyVoiceLanguageLines(language.locale))
+  const keptLocales = new Set(kept.map((language) => language.locale))
+  return { enabled: saved.enabled, languages: [...kept, ...saved.languages.filter((language) => !keptLocales.has(language.locale))] }
 }

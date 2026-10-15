@@ -13,7 +13,7 @@ import { isProviderCredentialError } from "../../../shared/infra/llm/providerErr
 import type { ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import { resolveChatLocale } from "./chatLocale.js";
 import { appendRoutineLeadBack, appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
-import { SINGLE_BRACKET_ASSERTION_MARKER } from "./citationAnchorParser.js";
+import { SINGLE_BRACKET_UNSOURCED_MARKER } from "./citationAnchorParser.js";
 
 export interface FallbackReplyInput {
   query: string;
@@ -61,7 +61,7 @@ const normalizeModelResponse = (value: string | undefined): string => {
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/\r\n?/g, "\n")
     .replace(/\[\[[^\]]*\]\]/g, "")
-    .replace(SINGLE_BRACKET_ASSERTION_MARKER, "")
+    .replace(SINGLE_BRACKET_UNSOURCED_MARKER, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/\s+([,.;:!?])/g, "$1")

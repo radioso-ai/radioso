@@ -7282,9 +7282,12 @@ describe("chat service streaming", () => {
         return "unused";
       },
       async *streamAnswer() {
-        yield "The page explains testing and parsing content for users[[1]]. ";
-        yield "It also offers 24/7 phone support[[?]].";
-        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[?]].")}`;
+        // The second claim's single-bracket unsupported marker (`[?]`, #1502) is split
+        // across this chunk and the next (`claim[` | `?] more.`), mirroring how the model
+        // can write it instead of the prompted `[[?]]`.
+        yield "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[?]]. This claim[";
+        yield "?] more.";
+        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[?]]. This claim[?] more.")}`;
       },
     };
     const service = makeChatService(
@@ -7321,16 +7324,17 @@ describe("chat service streaming", () => {
       events.push(event);
     }
 
-    const streamedText = events
-      .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
-      .map((event) => event.text)
-      .join("");
+    const chunkEvents = events.filter(
+      (event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk",
+    );
+    const streamedText = chunkEvents.map((event) => event.text).join("");
 
     expect(events.map((event) => event.type)).toEqual([
       "status",
       "conversation",
       "status",
       "status",
+      "chunk",
       "chunk",
       "chunk",
       "done",
@@ -7341,18 +7345,29 @@ describe("chat service streaming", () => {
       { type: "status", stage: "searching" },
       { type: "status", stage: "composing" },
     ]);
-    expect(streamedText).toBe("The page explains testing and parsing content for users. It also offers 24/7 phone support.");
+    expect(streamedText).toBe(
+      "The page explains testing and parsing content for users. It also offers 24/7 phone support. This claim more.",
+    );
     expect(streamedText).toContain("24/7 phone support");
+    for (const chunkEvent of chunkEvents) {
+      expect(chunkEvent.text).not.toContain("[?]");
+    }
     expect(events.findIndex((event) => event.type === "chunk")).toBeGreaterThanOrEqual(0);
     expect(events.findIndex((event) => event.type === "chunk")).toBeLessThan(
       events.findIndex((event) => event.type === "done"),
     );
-    expect(events.at(-1)).toEqual(
+    const done = events.at(-1) as Extract<ChatStreamEvent, { type: "done" }>;
+    expect(done).toEqual(
       expect.objectContaining({
         type: "done",
-        answer: "The page explains testing and parsing content for users. It also offers 24/7 phone support.",
+        answer: "The page explains testing and parsing content for users. It also offers 24/7 phone support. This claim more.",
       }),
     );
+    expect(done.answer).not.toContain("[?]");
+
+    const persisted = await messageRepository.listByConversationId("workspace-1", done.conversationId);
+    expect(persisted.at(-1)?.content).toBe(done.answer);
+    expect(persisted.at(-1)?.content).not.toContain("[?]");
   });
 
   it("preserves an uncited warn-mode draft as degraded", async () => {

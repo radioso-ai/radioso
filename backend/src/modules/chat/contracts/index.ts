@@ -58,9 +58,6 @@ export { buildAgentReplyEnvelope, isChatTurnResponse } from "../services/agentRe
 export { chatRequestInputFor, resolveAgentTurnInput, type AgentTurnInput } from "../services/agentTurnInput.js";
 export type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "./routineTurnState.js";
 export type { ChatStreamEvent } from "./streamEvents.js";
-// The single-bracket assertion-marker shape (`[n]`, `[?]`): the text path's anchor
-// sanitizers and the voice channel's speech renderer both strip the same shape (#1502).
-export { SINGLE_BRACKET_ASSERTION_MARKER } from "../services/citationAnchorParser.js";
 export type { ConversationTurnSupersession } from "./interruption.js";
 export type {
   ActionHandler,

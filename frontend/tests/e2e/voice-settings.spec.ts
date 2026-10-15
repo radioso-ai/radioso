@@ -126,7 +126,15 @@ test("an operator clears the voice lines, then the quick replies, and each clear
   await expect(reloadedEnglish.getByRole("textbox", { name: "Greeting line 1" })).toHaveValue(GREETING);
   await expect(reloadedEnglish.getByRole("textbox", { name: "Check line 1" })).toHaveCount(0);
 
+  // Adding a language that is already there is refused until that language is removed.
+  const addLanguageField = afterVoiceClear.getByLabel("Add a language");
+  await addLanguageField.fill("English");
+  await addLanguageField.press("Enter");
+  await addLanguageField.press("Escape");
+  const duplicate = afterVoiceClear.getByText("That language is already added.");
+  await expect(duplicate).toBeVisible();
   await reloadedEnglish.getByRole("button", { name: "Remove language" }).click();
+  await expect(duplicate).toHaveCount(0);
   await save(afterVoiceClear);
 
   // Each save carries both blocks whole and nothing else, so every other agent setting stays as stored.

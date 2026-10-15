@@ -188,8 +188,26 @@ describe("AgentService voice and mechanics replies proposals", () => {
       value: { [hugeKey]: { greeting: [], thanks: [], farewell: [], acknowledgement: [] } },
     }).then(() => new Error("expected a rejection"), (caught: unknown) => caught as Error);
 
-    expect(error.message).toMatch(/^Invalid mechanicsReplies setting value at x+…: /);
+    const path = /^Invalid mechanicsReplies setting value at (x+…): /.exec(error.message)?.[1];
+    expect(path).toHaveLength(200);
     expect(error.message.length).toBeLessThan(500);
+  });
+
+  it("cuts a long path between characters, never inside one", async () => {
+    const service = serviceWith();
+    // 😀 is two UTF-16 units: a cut at an odd unit would leave half of one.
+    const emojiKey = `x${"😀".repeat(150)}`;
+
+    const error: Error = await service.prepareFieldProposal("workspace-1", "agent-1", {
+      settingKey: "mechanicsReplies",
+      value: { [emojiKey]: { greeting: [], thanks: [], farewell: [], acknowledgement: [] } },
+    }).then(() => new Error("expected a rejection"), (caught: unknown) => caught as Error);
+
+    const path = /^Invalid mechanicsReplies setting value at (\S+…): /u.exec(error.message)?.[1] ?? "";
+    expect(path.length).toBeLessThanOrEqual(200);
+    // With the u flag a whole pair is one code point, so \p{Cs} matches only half of one.
+    expect(/\p{Cs}/u.test(path)).toBe(false);
+    expect(path.endsWith("😀…")).toBe(true);
   });
 
   it("applies a reviewed voice patch fenced on the block it replaces", async () => {

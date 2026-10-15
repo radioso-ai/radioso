@@ -28,7 +28,11 @@ export function AddLanguageField({
   onAdd: (locale: string) => void
 }) {
   const [input, setInput] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  // An error holds for the languages it was checked against: once one is added or removed, it no longer applies.
+  const localesKey = existingLocales.join('\u0000')
+  const [rejection, setRejection] = useState<{ message: string; localesKey: string } | null>(null)
+  const error = rejection?.localesKey === localesKey ? rejection.message : null
+  const setError = (message: string | null) => setRejection(message ? { message, localesKey } : null)
   const atLimit = existingLocales.length >= maxLanguages
 
   const add = () => {

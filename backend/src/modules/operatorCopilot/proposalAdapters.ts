@@ -383,6 +383,10 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
 }): CopilotAgentSettingProposalAdapter => ({
   targetType: "agent_setting",
   proposalDetailTargetRef: (rawTargetRef) => {
+    // A prepared (reviewed) proposal fences several settings, so it names no single key; the
+    // drafted change lists them.
+    const reviewed = reviewedSettingTargetRefSchema.safeParse(rawTargetRef);
+    if (reviewed.success) return { agentId: reviewed.data.agentId, settingKey: null };
     const targetRef = settingTargetRef(rawTargetRef);
     return { agentId: targetRef.agentId, settingKey: targetRef.settingKey };
   },

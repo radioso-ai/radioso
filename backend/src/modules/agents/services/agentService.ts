@@ -98,8 +98,16 @@ export interface AgentSettingsProposalPort {
 }
 
 const MAX_SETTING_ISSUE_PART_CHARS = 200;
-const boundedIssuePart = (text: string): string =>
-  text.length > MAX_SETTING_ISSUE_PART_CHARS ? `${text.slice(0, MAX_SETTING_ISSUE_PART_CHARS)}…` : text;
+/**
+ * At most 200 UTF-16 units, ellipsis included. Cut by code point: half an emoji is a lone
+ * surrogate, which the jsonb audit payload rejects (the same rule as Ray's `boundedSummary`).
+ */
+const boundedIssuePart = (text: string): string => {
+  if (text.length <= MAX_SETTING_ISSUE_PART_CHARS) return text;
+  const kept = Array.from(text).slice(0, MAX_SETTING_ISSUE_PART_CHARS - 1);
+  while (kept.length > 0 && kept.join("").length > MAX_SETTING_ISSUE_PART_CHARS - 1) kept.pop();
+  return `${kept.join("")}\u2026`;
+};
 
 /**
  * Where a proposed value first fails its schema, as a dot-path into the value. A nested block such

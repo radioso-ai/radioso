@@ -492,11 +492,13 @@ that session key starts a new conversation.
   credential at the same time, so five concurrent calls share 30 turns a
   minute. Past it, the runtime gets `429`.
 - The newest-utterance rule, the 30-second replay and the bridge rule hold
-  whichever Radioso instance each request of a session lands on. What the
-  session remembers between requests lives in the database, which costs each
-  request one database round trip before its turn starts, and the instance
-  running an overtaken request hears about the newer one through the Postgres
-  notification connection chat turns use. Two limits remain. A re-request
+  whichever Radioso instance each request of a session lands on. Each instance
+  shares what it remembers of the session through the database: that costs
+  each request one database round trip before its turn starts, one more right
+  before a bridge line is spoken, and one at the end of the turn, before the
+  response closes. The instance running an overtaken request hears about the
+  newer one through the Postgres notification connection chat turns use. Two
+  limits remain. A re-request
   hears the stored reply again only while no other request of the session is
   running on another instance; otherwise it runs as a new turn. And while an
   instance's notification connection is reconnecting, a request it runs learns

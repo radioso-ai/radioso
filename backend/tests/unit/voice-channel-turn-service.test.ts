@@ -1067,6 +1067,58 @@ describe("VoiceTurnService", () => {
         return [service(chat, { ...overrides, memory: memoryOn() }), service(chat, { ...overrides, memory: memoryOn() })] as const;
       };
 
+      /** A shared store whose settles are held until released, as a slow database would hold them. */
+      const heldSettles = () => {
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => { release = resolve; });
+        const settles: Array<Promise<void>> = [];
+        class HeldSettles extends InMemoryVoiceSessionMemoryStore {
+          override settle(settled: Parameters<InMemoryVoiceSessionMemoryStore["settle"]>[0]) {
+            const written = held.then(() => super.settle(settled));
+            settles.push(written);
+            return written;
+          }
+        }
+        const store = new HeldSettles();
+        const memory = new VoiceSessionMemory({ store, notices: store.notices(), windows: { replayWindowMs: 30_000, bridgeAfterMs: 2_500 } });
+        return { memory, release, settles };
+      };
+
+      it("ends a turn's events once its settle is in the store, so a retry on any instance can replay it", async () => {
+        const { memory, release, settles } = heldSettles();
+        const turns = service(supersedingChat([answered("We open at nine.")]), { memory });
+        let ended = false;
+
+        const turn = start(turns, input()).then((events) => {
+          ended = true;
+          return events;
+        });
+        await vi.runAllTimersAsync();
+        expect(settles).toHaveLength(1);
+        expect(ended).toBe(false);
+
+        release();
+        await vi.runAllTimersAsync();
+        expect(ended).toBe(true);
+        expect((await turn).at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+      });
+
+      it("ends a turn's events at the outcome when the limit cut it off, and settles it once the reply drained", async () => {
+        const { memory, release, settles } = heldSettles();
+        const turns = service(supersedingChat([answered("We open at nine.", 12_000)]), { memory });
+
+        const turn = start(turns, input());
+        await vi.runAllTimersAsync();
+
+        expect((await turn).slice(-2)).toEqual([
+          { type: "speech", text: "Sorry, could you ask me again?", last: true },
+          { type: "outcome", outcome: { kind: "continue" } },
+        ]);
+        expect(settles).toHaveLength(1);
+        release();
+        await vi.runAllTimersAsync();
+      });
+
       it("ends a request still being looked up on one instance when a newer one arrives on the other", async () => {
         const chat = supersedingChat([answered("Hatha yoga is on Sundays at nine.")]);
         const sessions: VoiceSessionStore = {

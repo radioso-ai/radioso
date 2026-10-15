@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
@@ -10,6 +11,7 @@ import type { VoiceSessionMemory } from "../../src/modules/voiceChannel/services
 import { Database } from "../../src/shared/infra/database.js";
 import { PostgresNotificationListener } from "../../src/shared/infra/postgresNotificationListener.js";
 import {
+  arrived,
   describeVoiceSessionMemoryContract,
   memoryOver,
   TrackingVoiceSessionMemoryStore,
@@ -75,6 +77,22 @@ describeIntegration("voice session memory on Postgres", () => {
     await nextMacrotask();
   };
 
+  /** Moves every time the database holds for this suite's sessions `ms` into the past. */
+  const age = async (ms: number): Promise<void> => {
+    await sql`
+      UPDATE voice_session_memories SET
+        touched_at = touched_at - ${ms}::integer * interval '1 millisecond',
+        last_bridge_at = last_bridge_at - ${ms}::integer * interval '1 millisecond',
+        last_exchange_note_claimed_at = last_exchange_note_claimed_at - ${ms}::integer * interval '1 millisecond',
+        requests = (
+          SELECT coalesce(jsonb_object_agg(entry.key, entry.value
+            || jsonb_build_object('arrivedAt', (entry.value->>'arrivedAt')::bigint - ${ms}::bigint)), '{}'::jsonb)
+          FROM jsonb_each(requests) entry
+        )
+      WHERE agent_id = ${agentId}::uuid
+    `.execute(admin.kysely);
+  };
+
   beforeAll(async () => {
     await admin.query(
       "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)",
@@ -94,6 +112,7 @@ describeIntegration("voice session memory on Postgres", () => {
 
   describeVoiceSessionMemoryContract("Postgres store", async () => {
     const instances: TestInstance[] = [];
+    let offset = 0;
     return {
       instance: () => {
         const instance = startInstance(`contract-${instances.length}`);
@@ -102,6 +121,11 @@ describeIntegration("voice session memory on Postgres", () => {
       },
       session: newSession,
       conversation: insertConversation,
+      now: () => Date.now() + offset,
+      elapse: async (ms) => {
+        offset += ms;
+        await age(ms);
+      },
       settled: () => settledOn(instances),
       close: async () => {
         await Promise.all(instances.map((instance) => instance.close()));
@@ -110,6 +134,52 @@ describeIntegration("voice session memory on Postgres", () => {
   });
 
   describe("across instances", () => {
+    it("lets only one of two identical re-requests that reach the database together replay the answer", async () => {
+      const [one, two, three] = [startInstance("first"), startInstance("racing-a"), startInstance("racing-b")];
+      try {
+        const session = newSession();
+        const conversationId = await insertConversation();
+        const t = Date.now();
+        const lost = await arrived(one.memory, session, t);
+        lost.hungUpAt = t + 1;
+        lost.outcomeAt = t + 2;
+        await one.memory.settle(lost, t + 2, {
+          utterance: "When do you open?",
+          conversationId,
+          reply: { messageId: randomUUID(), text: "At nine." },
+          spoken: { bridge: null, reply: "At nine." },
+          cutOffAt: t + 1,
+        });
+
+        // Both arrivals wait on the session's row; each one's statement started before the other committed.
+        let releaseLock!: () => void;
+        const lockReleased = new Promise<void>((resolve) => { releaseLock = resolve; });
+        let lockHeld!: () => void;
+        const lockTaken = new Promise<void>((resolve) => { lockHeld = resolve; });
+        const holder = admin.kysely.transaction().execute(async (trx) => {
+          await sql`SELECT id FROM voice_session_memories WHERE agent_id = ${agentId}::uuid AND session_key = ${session.sessionKey} FOR UPDATE`.execute(trx);
+          lockHeld();
+          await lockReleased;
+        });
+        await lockTaken;
+        const [left, right] = [two.memory.arrive(session, t + 100), three.memory.arrive(session, t + 100)];
+        await vi.waitFor(async () => {
+          const [row] = await admin.query<{ waiting: string }>(
+            "SELECT count(*)::text AS waiting FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND application_name LIKE 'radioso-voice-test-racing-%'",
+          );
+          expect(row?.waiting).toBe("2");
+        });
+        releaseLock();
+        await holder;
+        await Promise.all([two.memory.registered(left), three.memory.registered(right)]);
+
+        const replays = [two.memory.replayFor(left, "When do you open?", t + 100), three.memory.replayFor(right, "When do you open?", t + 100)];
+        expect(replays.filter((replay) => replay !== null)).toHaveLength(1);
+      } finally {
+        await Promise.all([one.close(), two.close(), three.close()]);
+      }
+    });
+
     it("learns of a newer request announced while its listener was down, once it reconnects", async () => {
       const [one, two] = [startInstance("dropped", { reconnectDelayMs: 1_000 }), startInstance("other")];
       const listenerSessions = async () => {
@@ -121,17 +191,16 @@ describeIntegration("voice session memory on Postgres", () => {
       };
       try {
         const session = newSession();
-        const t0 = Date.now();
-        const first = await one.memory.arrive(session, t0);
+        const first = await arrived(one.memory, session, Date.now());
         await vi.waitFor(async () => expect(await listenerSessions()).toBe("1"));
 
         await admin.query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = $1", [one.listenerApplicationName]);
         await vi.waitFor(async () => expect(await listenerSessions()).toBe("0"));
-        await two.memory.arrive(session, t0 + 100);
+        await arrived(two.memory, session, Date.now());
         await nextMacrotask();
         expect(first.supersededAt).toBeNull();
 
-        await vi.waitFor(() => expect(first.supersededAt).toBe(t0 + 100), { timeout: 5_000 });
+        await vi.waitFor(() => expect(first.supersededAt).not.toBeNull(), { timeout: 5_000 });
       } finally {
         await Promise.all([one.close(), two.close()]);
       }
@@ -139,83 +208,78 @@ describeIntegration("voice session memory on Postgres", () => {
   });
 
   describe("retention", () => {
-    const countRows = async (sessionKey: string) => {
-      const [row] = await admin.query<{ memories: string; requests: string }>(
-        `SELECT
-           (SELECT count(*) FROM voice_session_memories WHERE session_key = $1)::text AS memories,
-           (SELECT count(*) FROM voice_session_requests r JOIN voice_session_memories m ON m.id = r.memory_id
-             WHERE m.session_key = $1)::text AS requests`,
+    const sessionRows = async (sessionKey: string) =>
+      admin.query<{ requests: Record<string, unknown> }>(
+        "SELECT requests FROM voice_session_memories WHERE session_key = $1",
         [sessionKey],
       );
-      return row;
-    };
 
-    it("deletes a forgotten session's rows as other sessions' requests settle", async () => {
+    it("deletes a forgotten session's row as another session's request settles", async () => {
       const instance = startInstance("retention");
       try {
         const [idle, busy] = [newSession(), newSession()];
-        const t0 = Date.now();
-        const old = await instance.memory.arrive(idle, t0);
-        instance.memory.settle(old, t0 + 1_000, undefined);
-        await settledOn([instance]);
-        expect(await countRows(idle.sessionKey)).toEqual({ memories: "1", requests: "1" });
+        const old = await arrived(instance.memory, idle, Date.now());
+        await instance.memory.settle(old, Date.now(), undefined);
+        expect(await sessionRows(idle.sessionKey)).toEqual([{ requests: {} }]);
 
-        const later = await instance.memory.arrive(busy, t0 + 1_000 + 30_001);
-        instance.memory.settle(later, t0 + 1_000 + 30_001, undefined);
-        await settledOn([instance]);
+        await age(30_001);
+        const later = await arrived(instance.memory, busy, Date.now());
+        await instance.memory.settle(later, Date.now(), undefined);
 
-        expect(await countRows(idle.sessionKey)).toEqual({ memories: "0", requests: "0" });
-        expect(await countRows(busy.sessionKey)).toEqual({ memories: "1", requests: "1" });
+        expect(await sessionRows(idle.sessionKey)).toEqual([]);
+        expect(await sessionRows(busy.sessionKey)).toHaveLength(1);
       } finally {
         await instance.close();
       }
     });
 
-    it("keeps an idle session's rows while one of its requests is in flight", async () => {
+    it("keeps an idle session's row while one of its requests is in flight, and until that request is older than a request lives", async () => {
       const instance = startInstance("retention-in-flight");
       try {
         const [running, busy] = [newSession(), newSession()];
-        const t0 = Date.now();
-        await instance.memory.arrive(running, t0);
+        await arrived(instance.memory, running, Date.now());
 
-        const later = await instance.memory.arrive(busy, t0 + 60_000);
-        instance.memory.settle(later, t0 + 60_000, undefined);
-        await settledOn([instance]);
+        await age(60_000);
+        const later = await arrived(instance.memory, busy, Date.now());
+        await instance.memory.settle(later, Date.now(), undefined);
+        expect(await sessionRows(running.sessionKey)).toHaveLength(1);
 
-        expect(await countRows(running.sessionKey)).toEqual({ memories: "1", requests: "1" });
+        await age(5 * 60_000);
+        const last = await arrived(instance.memory, busy, Date.now());
+        await instance.memory.settle(last, Date.now(), undefined);
+        expect(await sessionRows(running.sessionKey)).toEqual([]);
       } finally {
         await instance.close();
       }
     });
 
     it("forgets the session's exchange with its conversation", async () => {
-      const instance = startInstance("conversation-deleted");
+      const [one, two] = [startInstance("conversation-deleted"), startInstance("conversation-deleted-other")];
       try {
         const session = newSession();
         const conversationId = await insertConversation();
-        const t0 = Date.now();
-        const claim = await instance.memory.arrive(session, t0);
-        claim.hungUpAt = t0 + 100;
-        instance.memory.settle(claim, t0 + 200, {
+        const t = Date.now();
+        const claim = await arrived(one.memory, session, t);
+        claim.hungUpAt = t + 100;
+        await one.memory.settle(claim, t + 200, {
           utterance: "When do you open?",
           conversationId,
           reply: { messageId: randomUUID(), text: "At nine." },
           spoken: { bridge: null, reply: "At nine." },
-          cutOffAt: t0 + 100,
+          cutOffAt: t + 100,
         });
-        await settledOn([instance]);
 
         await admin.query("DELETE FROM conversations WHERE id = $1", [conversationId]);
-        const again = await instance.memory.arrive(session, t0 + 300);
+        const again = await arrived(two.memory, session, t + 300);
 
-        expect(instance.memory.replayFor(again, "When do you open?", t0 + 300)).toBeNull();
+        expect(two.memory.replayFor(again, "When do you open?", t + 300)).toBeNull();
         const rows = await admin.query<{ last_exchange: unknown }>(
           "SELECT last_exchange FROM voice_session_memories WHERE session_key = $1",
           [session.sessionKey],
         );
         expect(rows).toEqual([{ last_exchange: null }]);
       } finally {
-        await instance.close();
+        await Promise.all([one.close(), two.close()]);
       }
     });
   });
@@ -226,16 +290,15 @@ describeIntegration("voice session memory on Postgres", () => {
       try {
         const session = newSession();
         const conversationId = await insertConversation();
-        const t0 = Date.now();
-        const claim = await instance.memory.arrive(session, t0);
-        instance.memory.settle(claim, t0 + 200, {
+        const t = Date.now();
+        const claim = await arrived(instance.memory, session, t);
+        await instance.memory.settle(claim, t + 200, {
           utterance: "My booking number is 4471",
           conversationId,
           reply: { messageId: randomUUID(), text: "Thanks." },
           spoken: { bridge: null, reply: "Thanks." },
           cutOffAt: null,
         });
-        await settledOn([instance]);
 
         const rows = await admin.query<{ last_exchange: string }>(
           "SELECT last_exchange::text AS last_exchange FROM voice_session_memories WHERE session_key = $1",

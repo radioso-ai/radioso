@@ -32,15 +32,16 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   those events; `voiceLines.ts` picks the turn's bridge and fallback lines by
   routine state and locale (tag structure only, never the lines' words);
   `voiceSessionMemory.ts` is what each session remembers between its requests
-  (the newest request, the last bridge, the last exchange), shared by every
-  instance through the `VoiceSessionMemoryStore` and `VoiceSessionNoticeSource`
-  ports it defines; it knows the rules and the requests this process runs, never
-  SQL or `LISTEN`; `voiceTurnMetrics.ts` names the turn's series.
+  (the newest request, the last bridge, the last exchange): exactly, in memory,
+  for the requests this process runs, and from the other instances through the
+  `VoiceSessionMemoryStore` and `VoiceSessionNoticeSource` ports it defines; it
+  knows the rules, never SQL or `LISTEN`; `voiceTurnMetrics.ts` names the
+  turn's series.
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
   `voice_sessions` (`voiceSessionRepository.ts`; the first binding wins), and
-  implements the memory's ports over `voice_session_memories`,
-  `voice_session_requests` and the `radioso_voice_sessions` notification
-  channel (`postgresVoiceSessionMemoryStore.ts`).
+  implements the memory's ports over `voice_session_memories` and the
+  `radioso_voice_sessions` notification channel
+  (`postgresVoiceSessionMemoryStore.ts`).
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is
@@ -253,46 +254,56 @@ helpers and the shared chat message limit from `app/http`
   know what the agent started to say. The cut reply is not billed as an
   answer; its model tokens stay in the usage ledger.
 - **Session memory across instances.** A voice runtime's requests carry no
-  affinity, so one session's requests land on any instance. What the session
-  remembers lives in Postgres (migration 227): `voice_session_memories` holds
-  one row per session (the newest arrival number, the last bridge line and
-  whether its request lost its caller, the last exchange with the caller's
-  utterance only as a SHA-256 digest, and where its interruption note stands),
-  and `voice_session_requests` one row per request, from its arrival until it
-  is five minutes old. Arriving is one statement: it locks the session's row,
-  draws the next number from `voice_session_arrival_seq`, registers the
-  request, reads back the last bridge, the last exchange and the requests still
-  in flight, and `NOTIFY`s `radioso_voice_sessions` with the overtaken
-  request's number and the arrival time, so the instance running that request
-  marks it superseded. That round trip is the only one a turn waits on: the
-  bridge line, the interruption note's claim and release, and the settle after
-  the outcome are written off the turn's path. The rows are the truth: a
-  notice missed while the process's `LISTEN` connection was down is read back
-  from `voice_session_requests` once it reconnects, and so is one announced
-  before the connection first listened. Until then, a request on that instance
-  can still start its chat turn, and the chat turn registry orders the two by
-  when their chat turns start. Arrivals, bridge lines and settles of one
-  session go to the store in the process's call order, so a request reads what
-  the process's earlier requests wrote. The notice payload carries a number and
-  a time, never a session key or content.
+  affinity, so one session's requests land on any instance. Each instance
+  remembers the requests it runs in memory, synchronously and exactly; on one
+  instance, supersession, bridges, replay and interruption notes behave as if
+  nothing else existed. Postgres is how instances see each other (migration
+  227): `voice_session_memories` holds one row per session with the newest
+  arrival number, the requests in flight (`requests`: arrival time, instance,
+  and who overtook each one), the last bridge line and whether its request
+  lost its caller, the last exchange with the caller's utterance only as a
+  SHA-256 digest, and where its interruption note stands. Every write locks
+  that row, and decides from the locked row, so two instances' writes to one
+  session are ordered. Arriving is one statement and the one round trip a turn
+  waits on before its first token: it draws the next number from
+  `voice_session_arrival_seq` and the arrival time from `clock_timestamp()`
+  under the lock, marks the request in flight before it overtaken, registers
+  the request, reads back what other instances left, and `NOTIFY`s
+  `radioso_voice_sessions` with the overtaken request's number and the time,
+  so the instance running it marks it superseded. A process's arrivals of one
+  session go to the store in call order; nothing else waits on anything. The
+  settle is written after the outcome, and the turn's events end once it is
+  in the store, so a retry the runtime sends right after reaches it on any
+  instance; a reply drained after the turn limit settles once it has drained.
+  The rows are the truth: a notice missed while the process's `LISTEN`
+  connection was down is read back from `requests` once it reconnects, with
+  backoff while the read fails. Until then, a request on that instance can
+  still start its chat turn, and the chat turn registry orders the two by when
+  their chat turns start. The notice payload carries a number and a time,
+  never a session key or content.
 - **Forgetting.** A session idle for longer than the replay window with no
-  request in flight is forgotten at its next arrival, and its rows are deleted
-  as other sessions' requests settle (up to 20 per settle, the way chat's lease
-  renewal prunes expired leases). A request older than five minutes no longer
-  counts as in flight, so a crashed instance's requests stop holding the
-  session. A deleted conversation takes the session's memory with it.
+  request in flight is forgotten at its next arrival, on the instance and in
+  its row, and its row is deleted as other sessions' requests settle (up to 20
+  per settle, the way chat's lease renewal prunes expired leases). A request
+  older than five minutes no longer counts as in flight, so a crashed
+  instance's requests stop holding the session. A deleted conversation takes
+  the session's row with it.
 - **Bursts.** A transcriber that flaps sends several requests in a second or
-  two. `VoiceSessionMemory.arrive` gives each the session's next arrival number
-  and marks the request before it superseded, on whichever instance runs it;
-  one still setting up (session lookup, voice profile) ends with `continue`
-  before its chat turn starts, and one already in chat is cancelled by the
-  registry when the newer turn starts. `arrive` runs as the request enters,
-  before any other read, so arrival order decides whichever request's reads
-  finish first. The conversation keeps the last transcript and one answer.
+  two. `VoiceSessionMemory.arrive` marks the previous request of this instance
+  superseded the moment the newer one enters, before any read; one on another
+  instance is marked by the arrival's notice. One still setting up (session
+  lookup, voice profile) ends with `continue` before its chat turn starts, and
+  one already in chat is cancelled by the registry when the newer turn starts.
+  The conversation keeps the last transcript and one answer.
 - **Bridges never stack.** The policy asks `mayBridge` when the bridge falls
   due: no bridge once a newer request owns the session, and none while a bridge
-  from a turn that lost its caller is younger than `bridgeAfterMs`. A
-  suppressed bridge is not counted in `voice_bridge_emitted_total`.
+  from a turn that lost its caller is younger than `bridgeAfterMs`. Then it
+  asks `claimBridge`, one store round trip right before the line is spoken: the
+  store records the bridge unless a request from another instance has
+  overtaken this one, and refuses it otherwise, so a request another instance
+  overtook stays silent even before its notice arrives. A newer request of the
+  same instance does not refuse it; `mayBridge` already answered for that one.
+  A refused or suppressed bridge is not counted in `voice_bridge_emitted_total`.
 - **Replay.** The route fires the port's `hungUp` signal when the runtime
   closes the request before the outcome was sent. A turn that was hung up on,
   or overtaken before its outcome, and that stored an answer, is replayable for
@@ -319,8 +330,11 @@ helpers and the shared chat message limit from `app/http`
   path, and the session counts it recorded only once the write succeeds
   (`VoiceSessionMemory.reserveInterruption`): a failed write is retried on the
   next report of the same reply, and the log line and the metric follow the
-  recorded note. The stored reply stays the full text; no message column
-  records the cut.
+  recorded note. Before the note is written, the reservation is claimed in the
+  session's row with an owner, so reports on different instances write it
+  once; a claim held for over a minute without being recorded or handed back
+  lapses, and the next report takes it over. The stored reply stays the full
+  text; no message column records the cut.
 - **ElevenLabs session key.** ElevenLabs sends no conversation id; the page
   that starts the session mints `session_key` and passes it as the custom LLM
   extra body, which arrives as `elevenlabs_extra_body.session_key`. Dynamic
@@ -351,11 +365,13 @@ frame ends with one generic OpenAI error frame. Never the utterance, the reply
 or an internal error message. Chat-side spans, metrics and failure logs cover the
 turn itself.
 
-The session memory's arrival round trip is part of the turn's `durationMs`; an
-arrival that fails fails the turn (`Voice turn failed`). A write made off the
-turn's path that fails logs `Voice session memory degraded` at warn with
-`event` (`voice_session_settle_failed`, `voice_session_bridge_failed`,
-`voice_session_note_claim_failed`, `voice_session_note_release_failed`,
+The session memory's arrival round trip is part of the turn's `durationMs`; the
+turn is logged before its settle is written. An arrival that fails fails the
+turn (`Voice turn failed`); a settle that fails still ends the turn. A store
+write that fails logs `Voice session memory degraded` at warn with
+`event` (`voice_session_settle_failed`, `voice_session_bridge_claim_failed`
+(the line is then spoken), `voice_session_note_claim_failed`,
+`voice_session_note_release_failed`,
 `voice_session_catch_up_failed`) and `errorType` only; a notice that cannot be
 parsed logs `Voice session notice could not be read`
 (`voice_session_notice_unreadable`). The shared `LISTEN` connection reports

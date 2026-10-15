@@ -61,6 +61,11 @@ export interface VoiceTurnPolicy extends Omit<VoiceTurnLines, "bridge"> {
    * request owns the session, or a turn this one superseded spoke a bridge moments ago). Absent: true.
    */
   mayBridge?: () => boolean;
+  /**
+   * Asked once the bridge may be spoken and has a line, right before it is: false keeps it unspoken
+   * and uncounted, as when another instance's newer request owns the session. Absent: true.
+   */
+  claimBridge?: () => Promise<boolean>;
   observer: VoiceTurnPolicyObserver;
 }
 
@@ -123,10 +128,11 @@ export async function* applyVoiceTurnPolicy(
   };
 
   /** Settles the bridge once; the line when the agent has one for the turn and the session may hear it. */
-  const bridgeNow = (): VoiceTurnEvent | null => {
+  const bridgeNow = async (): Promise<VoiceTurnEvent | null> => {
     bridgeHandled = true;
     const { bridge } = policy;
     if (bridge === null || (policy.mayBridge && !policy.mayBridge())) return null;
+    if (bridge.text !== null && policy.claimBridge && !(await policy.claimBridge())) return null;
     policy.observer.bridgeDue(bridge.style, bridge.text !== null);
     if (bridge.text === null) return null;
     bridged = true;
@@ -140,7 +146,7 @@ export async function* applyVoiceTurnPolicy(
       const pull: Pull = due ? await waitFor(pending, due.deadline, due.delayMs) : { kind: "event", step: await pending };
 
       if (pull.kind === "deadline" && pull.deadline === "bridge") {
-        const bridge = bridgeNow();
+        const bridge = await bridgeNow();
         if (bridge) yield bridge;
         continue;
       }
@@ -169,7 +175,7 @@ export async function* applyVoiceTurnPolicy(
         const open = !bridgeHandled && !spoken && !ended;
         if (open && event.phase === "searching") {
           // A retrieval turn always has seconds of work ahead.
-          const bridge = bridgeNow();
+          const bridge = await bridgeNow();
           if (bridge) yield bridge;
         } else if (event.phase === "composing") {
           composingAt ??= elapsed();

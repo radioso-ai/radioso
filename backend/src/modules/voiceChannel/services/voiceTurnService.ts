@@ -269,14 +269,9 @@ export class VoiceTurnService implements VoiceTurnPort {
    */
   async *runTurn(input: VoiceTurnInput, signal: AbortSignal, hungUp?: AbortSignal): AsyncGenerator<VoiceTurnEvent> {
     const startedAt = this.now();
-    // A hang-up while the request is still being registered counts from when it happened.
-    let claim: VoiceTurnClaim | undefined;
-    let hungUpAt: number | null = null;
+    const claim = this.memory.arrive(input.session, startedAt);
     const onHangUp = (): void => {
-      hungUpAt ??= this.now();
-      if (claim) {
-        claim.hungUpAt ??= hungUpAt;
-      }
+      claim.hungUpAt ??= this.now();
     };
     if (hungUp?.aborted) {
       onHangUp();
@@ -288,8 +283,8 @@ export class VoiceTurnService implements VoiceTurnPort {
     let firstTurn: FirstTurn | undefined;
 
     try {
-      claim = await this.memory.arrive(input.session, startedAt);
-      claim.hungUpAt ??= hungUpAt;
+      // One store round trip: other instances see this request, and it sees theirs.
+      await this.memory.registered(claim);
       this.noteInterruptedReply(input, claim);
       const replay = this.memory.replayFor(claim, input.utterance, startedAt);
       if (replay) {
@@ -303,9 +298,8 @@ export class VoiceTurnService implements VoiceTurnPort {
       } else {
         record.conversationId = sessionClaim.conversationId;
       }
-      const turnClaim = claim;
       const policy = claim.supersededAt === null
-        ? await this.policyFor(input, sessionClaim.conversationId, startedAt, record, () => this.memory.mayBridge(turnClaim, this.now()))
+        ? await this.policyFor(input, sessionClaim.conversationId, startedAt, record, claim)
         : null;
       if (claim.supersededAt !== null) {
         // A newer request of the session arrived while this one was setting up; it owns the turn.
@@ -325,25 +319,26 @@ export class VoiceTurnService implements VoiceTurnPort {
       throw error;
     } finally {
       hungUp?.removeEventListener("abort", onHangUp);
-      const finish = (): void => {
+      /** Settles the turn here at once and logs it; resolves once the store has the settle. */
+      const finish = (): Promise<void> => {
         this.releaseFirstTurn(input.session, firstTurn);
-        if (claim) {
-          this.memory.settle(claim, this.now(), this.exchangeOf(input, record, claim));
-        }
+        const settled = this.memory.settle(claim, this.now(), this.exchangeOf(input, record, claim));
         this.logTurn(input, record, startedAt, failure);
+        return settled;
       };
       // The events end with the outcome; a reply the limit cut off drains behind them, and the
-      // turn is settled and logged once it has finished.
+      // turn is settled and logged once it has finished. Any other turn ends its events once the
+      // store has its settle, so a retry the runtime sends right after reaches it on any instance.
       if (record.drain && failure === undefined) {
         void record.drain.then((drained) => {
           if (drained.failed) {
             record.result = "failed";
             failure = drained.error;
           }
-          finish();
+          return finish();
         });
       } else {
-        finish();
+        await finish();
       }
     }
   }
@@ -515,7 +510,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     claim: VoiceTurnClaim,
   ): AsyncGenerator<VoiceReplyEvent> {
     const speech = createSentenceCutter();
-    this.memory.chatTurnStarted(claim);
+    this.memory.chatTurnStarted(claim, this.now());
     try {
       for await (const event of this.dependencies.chat.streamTurn({
         workspaceId: input.session.workspaceId,
@@ -563,7 +558,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       // Chat ends every turn with `done` or `cancelled`; a stream that simply stops has no outcome to give.
       throw new VoiceTurnIncompleteError();
     } finally {
-      this.memory.chatTurnEnded(claim);
+      this.memory.chatTurnEnded(claim, this.now());
     }
   }
 
@@ -576,7 +571,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     conversationId: string | null,
     startedAt: number,
     record: VoiceTurnRecord,
-    mayBridge: () => boolean,
+    claim: VoiceTurnClaim,
   ): Promise<VoiceTurnPolicy | null> {
     const [profile, routineActive, humanOwned] = await Promise.all([
       this.dependencies.agents.findVoiceProfile(input.session),
@@ -609,7 +604,8 @@ export class VoiceTurnService implements VoiceTurnPort {
       turnLimitMs: humanOwned ? null : this.timing.turnLimitMs,
       startedAt,
       now: this.now,
-      mayBridge,
+      mayBridge: () => this.memory.mayBridge(claim, this.now()),
+      claimBridge: () => this.memory.claimBridge(claim),
       observer: {
         bridgeDue: (style, spoken) => {
           outcome.bridged = spoken;

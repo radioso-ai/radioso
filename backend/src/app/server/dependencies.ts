@@ -1290,6 +1290,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
     closeApprovalResumeEffectJournal: chat.closeApprovalResumeEffectJournal,
+    conversationTurnCoordination: chat.conversationTurnCoordination,
     conversationOwnershipService,
     conversationIngestService,
     conversationOperatorDirectory,

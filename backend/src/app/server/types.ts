@@ -268,6 +268,8 @@ export interface AppDependencies {
   chatService: ChatService;
   approvalDecisionService: ApprovalDecisionService;
   closeApprovalResumeEffectJournal(): Promise<void>;
+  /** Cross-instance chat turn coordination; its shutdown stops lease renewal and closes the LISTEN connection. */
+  conversationTurnCoordination: { shutdown(): Promise<void> };
   /** Who handles a human-owned conversation: take over, reply, transfer, hand back. */
   conversationOwnershipService: ConversationOwnershipService;
   /** Records a customer message without running a turn; connectors reach it through their chat port. */

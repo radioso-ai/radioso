@@ -5,14 +5,26 @@ import type { ConversationTurnStage } from "../contracts/interruption.js";
 
 export type { ConversationTurnStage } from "../contracts/interruption.js";
 
+/**
+ * Where the turn that cancelled this one runs: `local` for a disconnect or a newer turn on the same
+ * process, `cross_instance` for a newer turn another process started.
+ */
+type ConversationTurnCancellationScope = "local" | "cross_instance";
+
 interface ConversationTurnCancellation {
   conversationId: string;
   reason: "superseded" | "disconnect_timeout";
   stage: ConversationTurnStage;
+  scope: ConversationTurnCancellationScope;
 }
 
-interface ConversationTurnInterruptionObserver {
+export interface ConversationTurnInterruptionObserver {
   turnCancelled(input: ConversationTurnCancellation): void;
+  /**
+   * A turn stopped waiting for its predecessor because the process that owned the predecessor
+   * stopped renewing its lease (a crashed or stalled instance).
+   */
+  predecessorLeaseExpired?(input: { conversationId: string }): void;
 }
 
 interface ChatTurnSupersession {
@@ -111,7 +123,7 @@ export interface ConversationTurnRegistry {
 
 export class LoggingConversationTurnInterruptionObserver implements ConversationTurnInterruptionObserver {
   constructor(
-    private readonly logger: Pick<AppLogger, "info">,
+    private readonly logger: Pick<AppLogger, "info" | "warn">,
     private readonly metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null,
   ) {}
 
@@ -122,6 +134,7 @@ export class LoggingConversationTurnInterruptionObserver implements Conversation
         event: "chat_turn_cancelled",
         reason: input.reason,
         stage: input.stage,
+        scope: input.scope,
       },
       "Chat turn cancelled",
     );
@@ -130,124 +143,155 @@ export class LoggingConversationTurnInterruptionObserver implements Conversation
       labels: {
         reason: input.reason,
         stage: input.stage,
+        scope: input.scope,
       },
+    });
+  }
+
+  predecessorLeaseExpired(input: { conversationId: string }): void {
+    this.logger.warn(
+      { conversationId: input.conversationId, event: "chat_turn_lease_expiry_takeover" },
+      "Chat turn stopped waiting for a predecessor whose lease expired",
+    );
+    this.metricsRegistry?.incrementCounter("chat_turn_lease_expiry_takeovers_total", {
+      help: "Total assistant chat turns that stopped waiting for a predecessor whose owning process stopped renewing its lease.",
     });
   }
 }
 
-interface ActiveTurn {
-  controller: AbortController;
-  conversationId: string;
-  emissionStarted: boolean;
-  commitStarted: boolean;
-  supersedeAfterEmission: boolean;
-  finished: Promise<void>;
-  finish: () => void;
-  stage: ConversationTurnStage;
+interface ConversationTurnCoordination {
+  waitForPredecessor(): Promise<void>;
+  complete(): void;
 }
 
-const createActiveTurn = (conversationId: string, options: ConversationTurnLeaseOptions): ActiveTurn => {
-  let finish!: () => void;
-  const finished = new Promise<void>((resolve) => {
-    finish = resolve;
-  });
-  return {
-    controller: new AbortController(),
-    conversationId,
-    emissionStarted: false,
-    commitStarted: false,
-    supersedeAfterEmission: options.supersedeAfterEmission === true,
-    finished,
-    finish,
-    stage: "waiting",
-  };
-};
-
 /**
- * A newer turn cancels its predecessor until it starts emitting, or, when both agree, until it
- * begins committing its reply.
+ * One turn's interruption state in the process that runs it: its abort signal, stage, and the
+ * emission and commit latches. The latches and a newer turn's supersession both apply here,
+ * synchronously, so whichever lands first wins; a registry decides only which turn is newer and
+ * when a successor may run.
  */
-const supersedes = (predecessor: ActiveTurn, successor: ActiveTurn): boolean =>
-  !predecessor.controller.signal.aborted
-  && !predecessor.commitStarted
-  && (!predecessor.emissionStarted || (predecessor.supersedeAfterEmission && successor.supersedeAfterEmission));
+export class ConversationTurnState {
+  readonly finished: Promise<void>;
+  private readonly controller = new AbortController();
+  private stage: ConversationTurnStage = "waiting";
+  private emissionStarted = false;
+  private commitStarted = false;
+  private completed = false;
+  private resolveFinished!: () => void;
 
-const throwSignalReason = (turn: ActiveTurn): void => {
-  if (!turn.controller.signal.aborted) {
-    return;
+  constructor(
+    readonly conversationId: string,
+    readonly supersedeAfterEmission: boolean,
+    private readonly observer?: ConversationTurnInterruptionObserver,
+  ) {
+    this.finished = new Promise<void>((resolve) => {
+      this.resolveFinished = resolve;
+    });
   }
-  const reason = turn.controller.signal.reason;
-  if (reason instanceof Error) {
-    throw reason;
-  }
-  throw new ChatTurnSupersededError(turn.conversationId, turn.stage);
-};
 
+  get isCompleted(): boolean {
+    return this.completed;
+  }
+
+  /**
+   * A newer turn started right behind this one. It cancels this turn until this turn starts
+   * emitting, or, when both supersede after emission, until it begins committing its reply.
+   */
+  supersededBy(successor: ConversationTurnLeaseOptions, scope: ConversationTurnCancellationScope): void {
+    if (this.completed || this.controller.signal.aborted || this.commitStarted) {
+      return;
+    }
+    const replacedByNewerInput = this.supersedeAfterEmission && successor.supersedeAfterEmission === true;
+    if (this.emissionStarted && !replacedByNewerInput) {
+      return;
+    }
+    this.controller.abort(new ChatTurnSupersededError(this.conversationId, this.stage, {
+      afterEmission: this.emissionStarted,
+      replacedByNewerInput,
+    }));
+    this.observer?.turnCancelled({
+      conversationId: this.conversationId,
+      reason: "superseded",
+      stage: this.stage,
+      scope,
+    });
+  }
+
+  /** Marks the turn finished and releases whoever waits for it; false when it already was. */
+  complete(): boolean {
+    if (this.completed) {
+      return false;
+    }
+    this.completed = true;
+    this.resolveFinished();
+    return true;
+  }
+
+  lease(coordination: ConversationTurnCoordination): ConversationTurnLease {
+    return {
+      conversationId: this.conversationId,
+      signal: this.controller.signal,
+      waitForPredecessor: () => coordination.waitForPredecessor(),
+      setStage: (stage) => {
+        this.stage = stage;
+      },
+      throwIfCancelled: () => this.throwIfCancelled(),
+      beginEmission: () => {
+        this.throwIfCancelled();
+        this.emissionStarted = true;
+        this.stage = "persisting";
+      },
+      beginCommit: () => {
+        this.throwIfCancelled();
+        this.commitStarted = true;
+      },
+      complete: () => coordination.complete(),
+      cancelAfterDisconnect: () => {
+        if (this.completed || this.controller.signal.aborted) {
+          return;
+        }
+        this.controller.abort(new ChatTurnDisconnectAbortError(this.conversationId, this.stage));
+        this.observer?.turnCancelled({
+          conversationId: this.conversationId,
+          reason: "disconnect_timeout",
+          stage: this.stage,
+          scope: "local",
+        });
+      },
+    };
+  }
+
+  private throwIfCancelled(): void {
+    const signal = this.controller.signal;
+    if (!signal.aborted) {
+      return;
+    }
+    if (signal.reason instanceof Error) {
+      throw signal.reason;
+    }
+    throw new ChatTurnSupersededError(this.conversationId, this.stage);
+  }
+}
+
+/** Coordinates the turns of one process: correct only while every turn of a conversation runs in it. */
 export class InMemoryConversationTurnRegistry implements ConversationTurnRegistry {
-  private readonly active = new Map<string, ActiveTurn>();
+  private readonly active = new Map<string, ConversationTurnState>();
 
   constructor(private readonly observer?: ConversationTurnInterruptionObserver) {}
 
   start(conversationId: string, options: ConversationTurnLeaseOptions = {}): ConversationTurnLease {
     const predecessor = this.active.get(conversationId);
-    const turn = createActiveTurn(conversationId, options);
-    if (predecessor && supersedes(predecessor, turn)) {
-      const cancellation = new ChatTurnSupersededError(conversationId, predecessor.stage, {
-        afterEmission: predecessor.emissionStarted,
-        replacedByNewerInput: predecessor.supersedeAfterEmission && turn.supersedeAfterEmission,
-      });
-      predecessor.controller.abort(cancellation);
-      this.observer?.turnCancelled({
-        conversationId,
-        reason: "superseded",
-        stage: predecessor.stage,
-      });
-    }
-
+    const turn = new ConversationTurnState(conversationId, options.supersedeAfterEmission === true, this.observer);
+    predecessor?.supersededBy(options, "local");
     this.active.set(conversationId, turn);
-    let completed = false;
-    const complete = () => {
-      if (completed) {
-        return;
-      }
-      completed = true;
-      turn.finish();
-      if (this.active.get(conversationId) === turn) {
-        this.active.delete(conversationId);
-      }
-    };
 
-    return {
-      conversationId,
-      signal: turn.controller.signal,
+    return turn.lease({
       waitForPredecessor: () => predecessor?.finished ?? Promise.resolve(),
-      setStage(stage) {
-        turn.stage = stage;
-      },
-      throwIfCancelled() {
-        throwSignalReason(turn);
-      },
-      beginEmission() {
-        throwSignalReason(turn);
-        turn.emissionStarted = true;
-        turn.stage = "persisting";
-      },
-      beginCommit() {
-        throwSignalReason(turn);
-        turn.commitStarted = true;
-      },
-      complete,
-      cancelAfterDisconnect: () => {
-        if (completed || turn.controller.signal.aborted) {
-          return;
+      complete: () => {
+        if (turn.complete() && this.active.get(conversationId) === turn) {
+          this.active.delete(conversationId);
         }
-        turn.controller.abort(new ChatTurnDisconnectAbortError(conversationId, turn.stage));
-        this.observer?.turnCancelled({
-          conversationId,
-          reason: "disconnect_timeout",
-          stage: turn.stage,
-        });
       },
-    };
+    });
   }
 }

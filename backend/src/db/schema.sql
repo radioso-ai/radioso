@@ -2130,6 +2130,46 @@ CREATE TABLE public.conversation_summaries (
 
 
 --
+-- Name: conversation_turn_heads; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversation_turn_heads (
+    conversation_id text NOT NULL,
+    turn_id bigint NOT NULL,
+    predecessor_turn_id bigint,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: conversation_turn_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.conversation_turn_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: conversation_turn_leases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversation_turn_leases (
+    turn_id bigint NOT NULL,
+    conversation_id text NOT NULL,
+    predecessor_turn_id bigint,
+    owner_instance_id text NOT NULL,
+    supersede_after_emission boolean NOT NULL,
+    lease_expires_at timestamp with time zone NOT NULL,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT conversation_turn_leases_owner_instance_id_check CHECK (((length(owner_instance_id) >= 1) AND (length(owner_instance_id) <= 128)))
+);
+
+
+--
 -- Name: conversations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5394,6 +5434,22 @@ ALTER TABLE ONLY public.conversation_ownership
 
 ALTER TABLE ONLY public.conversation_summaries
     ADD CONSTRAINT conversation_summaries_pkey PRIMARY KEY (session_id);
+
+
+--
+-- Name: conversation_turn_heads conversation_turn_heads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_turn_heads
+    ADD CONSTRAINT conversation_turn_heads_pkey PRIMARY KEY (conversation_id);
+
+
+--
+-- Name: conversation_turn_leases conversation_turn_leases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_turn_leases
+    ADD CONSTRAINT conversation_turn_leases_pkey PRIMARY KEY (turn_id);
 
 
 --

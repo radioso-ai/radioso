@@ -83,6 +83,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
           try {
             await dependencies.applicationModules.shutdownAll();
             await dependencies.closeApprovalResumeEffectJournal();
+            await dependencies.conversationTurnCoordination.shutdown();
           } finally {
             await stopRuntimeTracing();
           }

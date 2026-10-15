@@ -74,6 +74,7 @@ export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOpti
         } finally {
           try {
             await dependencies.applicationModules.shutdownAll();
+            await dependencies.conversationTurnCoordination.shutdown();
           } finally {
             await stopRuntimeTracing();
           }

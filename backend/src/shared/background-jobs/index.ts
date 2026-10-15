@@ -1,6 +1,7 @@
 export type {
   BackgroundJobClaim,
   BackgroundJobClaimableKind,
+  BackgroundJobCompletion,
   BackgroundJobEnqueueReceipt,
   BackgroundJobHandlerRegistration,
   BackgroundJobQueue,
@@ -10,6 +11,7 @@ export type {
   BackgroundJobWriter,
 } from "./types.js";
 export {
+  BACKGROUND_JOB_MAX_TIMEOUT_SECONDS,
   NonRetryableBackgroundJobError,
   backgroundJobHandler,
   backgroundJobRequest,

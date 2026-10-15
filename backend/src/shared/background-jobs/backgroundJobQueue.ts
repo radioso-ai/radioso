@@ -22,8 +22,9 @@ export class NoopBackgroundJobWake implements BackgroundJobWakePort {
 
 /**
  * Writes jobs through the store and wakes a worker through the configured transport. The write is
- * the durable part; the wake only shortens the wait, so a lost wake is logged and counted, never
- * thrown at a producer whose job is already stored.
+ * the durable part and the only one a producer waits for; the wake only shortens the wait, so it
+ * runs after `enqueue` resolves, and a lost wake is logged and counted, never thrown at a producer
+ * whose job is already stored.
  */
 export class DefaultBackgroundJobQueue implements BackgroundJobQueue {
   constructor(private readonly deps: {
@@ -36,7 +37,7 @@ export class DefaultBackgroundJobQueue implements BackgroundJobQueue {
   async enqueue(request: BackgroundJobRequest): Promise<BackgroundJobEnqueueReceipt> {
     const receipt = await this.deps.writer.insert(request);
     if (receipt.inserted) {
-      await this.requestDrain(request.runAfter);
+      void this.requestDrain(request.runAfter);
     }
     return receipt;
   }

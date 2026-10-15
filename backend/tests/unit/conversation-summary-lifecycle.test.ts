@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 
 import type { AuditService } from "../../src/modules/audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../src/db/repositories/conversationRepository.js";
@@ -10,8 +11,19 @@ import {
 import {
   CONVERSATION_SUMMARY_REFRESH_JOB,
   conversationSummaryRefreshHandler,
+  conversationSummaryRefreshRequest,
 } from "../../src/modules/chat/services/summary/conversationSummaryRefreshJob.js";
-import type { BackgroundJobQueue, BackgroundJobRequest } from "../../src/shared/background-jobs/index.js";
+import {
+  BackgroundJobRuntime,
+  type BackgroundJobQueue,
+  type BackgroundJobRequest,
+} from "../../src/shared/background-jobs/index.js";
+import {
+  ConversationSummaryService,
+  type ConversationSummaryGenerator,
+} from "../../src/modules/chat/services/summary/conversationSummaryService.js";
+import type { ConversationSummaryRecord } from "../../src/modules/chat/contracts/conversationSummary.js";
+import { InMemoryBackgroundJobStore } from "../support/inMemoryBackgroundJobStore.js";
 import type { AppLogger } from "../../src/shared/observability/logger.js";
 import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
@@ -58,6 +70,7 @@ const turnInput = (overrides: { executionMode?: "live" | "safe_test" } = {}) => 
 const expectedRefresh: BackgroundJobRequest = {
   kind: "conversation.summary_refresh",
   payload: { workspaceId: "ws_1", conversationId: "conv_1", accountId: "acct_1" },
+  onDuplicateKey: "rerun",
   idempotencyKey: "conv_1",
 };
 
@@ -89,10 +102,11 @@ const lifecycleWith = (input: {
   );
 };
 
-const recordingPersistence = () => {
+const recordingPersistence = (wakeBackgroundJobs?: () => void) => {
   const completeAssistantTurn = vi.fn<AssistantTurnPersistencePort["completeAssistantTurn"]>(async (input) => ({
     message: { id: "assistant_msg_1", conversationId: input.conversationId, workspaceId: input.workspaceId, role: "assistant", content: "Answer.", createdAt: new Date() },
     committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false },
+    ...(wakeBackgroundJobs ? { wakeBackgroundJobs } : {}),
   }));
   return { completeAssistantTurn };
 };
@@ -110,6 +124,26 @@ describe("ChatTurnLifecycle conversation summary refresh (#866)", () => {
     );
     // The transactional path writes the job itself; nothing is enqueued beside the commit.
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("wakes the worker for the jobs it wrote once its own transaction has committed", async () => {
+    const wake = vi.fn();
+    const lifecycle = lifecycleWith({ persistence: recordingPersistence(wake), backgroundJobs: { enqueue: vi.fn() } });
+
+    const completed = await lifecycle.completeAssistantTurn(turnInput());
+
+    expect(wake).toHaveBeenCalledOnce();
+    expect(completed).not.toHaveProperty("postCommitWake");
+  });
+
+  it("hands the wake to the owner of a caller's transaction instead of firing it before that commit", async () => {
+    const wake = vi.fn();
+    const lifecycle = lifecycleWith({ persistence: recordingPersistence(wake), backgroundJobs: { enqueue: vi.fn() } });
+
+    const completed = await lifecycle.completeAssistantTurn({ ...turnInput(), transaction: {} as never });
+
+    expect(wake).not.toHaveBeenCalled();
+    expect(completed).toMatchObject({ kind: "persisted", postCommitWake: wake });
   });
 
   it("asks for no refresh on a safe-test turn", async () => {
@@ -150,12 +184,14 @@ describe("conversation summary refresh job", () => {
   it("runs the summary updater for the conversation it names", async () => {
     const refresh = vi.fn(async () => {});
 
+    const signal = new AbortController().signal;
+
     await conversationSummaryRefreshHandler({ refresh }).run(
       { workspaceId: "ws_1", conversationId: "conv_1", accountId: "acct_1" },
-      { jobId: "job_1", attempt: 1 },
+      { jobId: "job_1", attempt: 1, signal },
     );
 
-    expect(refresh).toHaveBeenCalledWith({ workspaceId: "ws_1", conversationId: "conv_1", accountId: "acct_1" });
+    expect(refresh).toHaveBeenCalledWith({ workspaceId: "ws_1", conversationId: "conv_1", accountId: "acct_1" }, { signal });
   });
 
   it("gives a turn with no account an anonymous refresh", async () => {
@@ -163,10 +199,57 @@ describe("conversation summary refresh job", () => {
 
     await conversationSummaryRefreshHandler({ refresh }).run(
       { workspaceId: "ws_1", conversationId: "conv_1" },
-      { jobId: "job_1", attempt: 1 },
+      { jobId: "job_1", attempt: 1, signal: new AbortController().signal },
     );
 
-    expect(refresh).toHaveBeenCalledWith({ workspaceId: "ws_1", conversationId: "conv_1" });
+    expect(refresh).toHaveBeenCalledWith({ workspaceId: "ws_1", conversationId: "conv_1" }, expect.anything());
     expect(CONVERSATION_SUMMARY_REFRESH_JOB.kind).toBe("conversation.summary_refresh");
+  });
+
+  it("retries a refresh whose model call failed, then saves the summary on the next attempt", async () => {
+    const clock = { now: () => new Date(Date.now()) };
+    const store = new InMemoryBackgroundJobStore(clock);
+    const saved: ConversationSummaryRecord[] = [];
+    const messages: MessageRecord[] = Array.from({ length: 12 }, (_, index) => ({
+      id: `m${index}`,
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+      role: index % 2 === 0 ? "user" : "assistant",
+      content: `message ${index}`,
+      createdAt: new Date(Date.UTC(2026, 9, 15, 10, index)),
+    }));
+    const generate = vi.fn<ConversationSummaryGenerator["generate"]>()
+      .mockRejectedValueOnce(new Error("provider exploded"))
+      .mockResolvedValue({ summary: "They asked about shipping." });
+    const updater = new ConversationSummaryService(
+      { load: async () => null, save: async ({ summary }) => { saved.push(summary); } },
+      {
+        countByConversationId: async () => messages.length,
+        listRecentByConversationId: async (_workspaceId, _conversationId, limit) => messages.slice(-limit),
+      },
+      { generate },
+      { getTitle: async () => null, setTitle: async () => {} },
+      { generate: async () => ({}) },
+    );
+    const runtime = new BackgroundJobRuntime({
+      store,
+      handlers: [conversationSummaryRefreshHandler(updater)],
+      logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      now: clock.now,
+    });
+    await store.insert(conversationSummaryRefreshRequest({ workspaceId: "ws_1", conversationId: "conv_1" }));
+
+    expect(await runtime.drain({ maxJobs: 1 })).toMatchObject({ retried: 1 });
+    expect([...store.rows.values()][0]).toMatchObject({ status: "pending", attempts: 1, lastError: "Error" });
+    expect(saved).toEqual([]);
+
+    vi.useFakeTimers({ now: Date.now() + 31_000 });
+    try {
+      expect(await runtime.drain({ maxJobs: 1 })).toMatchObject({ completed: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(saved).toEqual([expect.objectContaining({ summary: "They asked about shipping.", coveredMessageCount: 12 })]);
+    expect(store.rows.size).toBe(0);
   });
 });

@@ -950,6 +950,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
 
   template {
     service_account = data.google_service_account.worker.email
+    # Stated rather than left to Cloud Run's default (the same 300 s): the background job drain
+    # budget (240 s) and the Cloud Tasks dispatch and Cloud Scheduler attempt deadlines (300 s) are
+    # sized against it. See backend/src/shared/background-jobs/README.md.
+    timeout = "300s"
 
     scaling {
       min_instance_count = var.worker_min_instances

@@ -2,6 +2,11 @@ import type { BackgroundJobWakePort } from "../background-jobs/index.js";
 import { CloudTasksDrainDispatcher, type CloudTasksDrainTarget } from "./cloudTasksDrainDispatcher.js";
 
 const BACKGROUND_JOB_DRAIN_TASK_PATH = "/internal/tasks/background-jobs/drain";
+/**
+ * Matches the worker's request timeout: long enough for one drain (its budget plus the claim and
+ * completion writes), so Cloud Tasks does not retry a wake whose drain is still running.
+ */
+const BACKGROUND_JOB_DISPATCH_DEADLINE_SECONDS = 300;
 
 /**
  * Wakes the worker task server through the background-job Cloud Tasks queue. The task carries no
@@ -12,7 +17,11 @@ export class CloudTasksBackgroundJobWake implements BackgroundJobWakePort {
   private readonly drain: CloudTasksDrainDispatcher<never>;
 
   constructor(target: CloudTasksDrainTarget) {
-    this.drain = new CloudTasksDrainDispatcher({ ...target, taskPath: BACKGROUND_JOB_DRAIN_TASK_PATH });
+    this.drain = new CloudTasksDrainDispatcher({
+      ...target,
+      taskPath: BACKGROUND_JOB_DRAIN_TASK_PATH,
+      dispatchDeadlineSeconds: BACKGROUND_JOB_DISPATCH_DEADLINE_SECONDS,
+    });
   }
 
   async requestDrain(input: { notBefore?: Date } = {}): Promise<void> {

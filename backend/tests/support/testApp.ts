@@ -2769,7 +2769,8 @@ export const createTestDependencies = (overrides: {
     backgroundJobRuntime: new BackgroundJobRuntime({
       store: {
         claimNext: async () => null,
-        complete: async () => false,
+        renewLease: async () => false,
+        complete: async () => "superseded",
         retry: async () => null,
         deadLetter: async () => false,
       },

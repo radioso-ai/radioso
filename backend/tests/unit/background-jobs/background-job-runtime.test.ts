@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import {
@@ -11,19 +11,14 @@ import {
   type BackgroundJobHandlerRegistration,
   type BackgroundJobWakePort,
 } from "../../../src/shared/background-jobs/index.js";
+import { AppError } from "../../../src/shared/domain/errors.js";
 import { InMemoryBackgroundJobStore } from "../../support/inMemoryBackgroundJobStore.js";
 
 const START = new Date("2026-10-15T10:00:00.000Z");
 
-const createClock = () => {
-  let current = START.getTime();
-  return {
-    now: () => new Date(current),
-    advanceSeconds: (seconds: number) => {
-      current += seconds * 1_000;
-    },
-  };
-};
+// The store reads the same faked clock the runtime's heartbeat and deadline timers run on.
+// `vi.setSystemTime` moves that clock without firing timers: a worker that stalls.
+const clock = { now: () => new Date(Date.now()) };
 
 const createLogger = () => ({
   debug: vi.fn(),
@@ -37,21 +32,42 @@ const createMetrics = () => ({
   observeHistogram: vi.fn(),
 });
 
+/** A promise the test resolves by hand: holds a handler mid-run at a known point. */
+const barrier = () => {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { release, released };
+};
+
 const REFRESH = defineBackgroundJob({
   kind: "test.refresh",
   payload: z.object({ subjectId: z.string(), note: z.string().optional() }),
+  onDuplicateKey: "rerun",
   maxAttempts: 3,
   leaseSeconds: 60,
+  timeoutSeconds: 50,
   retryBaseDelaySeconds: 10,
 });
 
-const OTHER = defineBackgroundJob({
-  kind: "test.other",
-  payload: z.object({ value: z.number() }),
+const EVENT = defineBackgroundJob({
+  kind: "test.event",
+  payload: z.object({ eventId: z.string() }),
+  onDuplicateKey: "ignore",
+  leaseSeconds: 60,
+  timeoutSeconds: 50,
 });
 
-const setup = (handlers: (store: InMemoryBackgroundJobStore) => BackgroundJobHandlerRegistration[]) => {
-  const clock = createClock();
+const SHORT = defineBackgroundJob({
+  kind: "test.short",
+  payload: z.object({ value: z.number() }),
+  onDuplicateKey: "ignore",
+  leaseSeconds: 15,
+  timeoutSeconds: 10,
+});
+
+const setup = (handlers: BackgroundJobHandlerRegistration[]) => {
   const store = new InMemoryBackgroundJobStore(clock);
   const wake: BackgroundJobWakePort & { requestDrain: ReturnType<typeof vi.fn> } = {
     requestDrain: vi.fn(async () => {}),
@@ -60,60 +76,67 @@ const setup = (handlers: (store: InMemoryBackgroundJobStore) => BackgroundJobHan
   const metrics = createMetrics();
   const errorReporter = { report: vi.fn(async () => undefined) };
   const queue = new DefaultBackgroundJobQueue({ writer: store, wake, logger, metrics });
-  const runtime = new BackgroundJobRuntime({
-    store,
-    handlers: handlers(store),
-    wake,
-    logger,
-    metrics,
-    errorReporter,
-    now: clock.now,
-  });
-  return { clock, store, wake, logger, metrics, errorReporter, queue, runtime };
+  const runtime = new BackgroundJobRuntime({ store, handlers, wake, logger, metrics, errorReporter, now: clock.now });
+  return { store, wake, logger, metrics, errorReporter, queue, runtime };
 };
+
+const onlyRow = (store: InMemoryBackgroundJobStore) => {
+  const rows = [...store.rows.values()];
+  expect(rows).toHaveLength(1);
+  return rows[0];
+};
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: START });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("BackgroundJobRuntime", () => {
   it("runs a due job with its parsed payload and deletes it once the handler succeeds", async () => {
     const handled: unknown[] = [];
-    const { queue, runtime, store } = setup(() => [
+    const { queue, runtime, store } = setup([
       backgroundJobHandler(REFRESH, async (payload, context) => {
-        handled.push({ payload, attempt: context.attempt });
+        handled.push({ payload, attempt: context.attempt, aborted: context.signal.aborted });
       }),
     ]);
     await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
 
     const result = await runtime.drain({ maxJobs: 5 });
 
-    expect(handled).toEqual([{ payload: { subjectId: "s1" }, attempt: 1 }]);
-    expect(result).toEqual({ claimed: 1, completed: 1, retried: 0, deadLettered: 0, superseded: 0 });
+    expect(handled).toEqual([{ payload: { subjectId: "s1" }, attempt: 1, aborted: false }]);
+    expect(result).toEqual({ claimed: 1, completed: 1, requeued: 0, retried: 0, deadLettered: 0, superseded: 0 });
     expect(store.rows.size).toBe(0);
   });
 
   it("returns a failed job to waiting with a doubling backoff and wakes a worker for when it is due", async () => {
-    const { clock, queue, runtime, store, wake } = setup(() => [
+    const { queue, runtime, store, wake } = setup([
       backgroundJobHandler(REFRESH, async () => {
         throw new Error("provider unavailable");
       }),
     ]);
     await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+    await vi.advanceTimersByTimeAsync(0);
     wake.requestDrain.mockClear();
 
     expect(await runtime.drain({ maxJobs: 5 })).toMatchObject({ claimed: 1, retried: 1 });
-    const [row] = [...store.rows.values()];
-    expect(row).toMatchObject({ status: "pending", attempts: 1, lastError: "Error: provider unavailable" });
+    const row = onlyRow(store);
+    expect(row).toMatchObject({ status: "pending", attempts: 1, lastError: "Error" });
     expect(row.availableAt).toEqual(new Date(START.getTime() + 10_000));
     expect(wake.requestDrain).toHaveBeenCalledWith({ notBefore: row.availableAt });
 
     // Not due yet: a drain before the backoff elapses finds nothing.
     expect(await runtime.drain({ maxJobs: 5 })).toMatchObject({ claimed: 0 });
 
-    clock.advanceSeconds(10);
+    vi.setSystemTime(Date.now() + 10_000);
     expect(await runtime.drain({ maxJobs: 1 })).toMatchObject({ claimed: 1, retried: 1 });
-    expect([...store.rows.values()][0].availableAt).toEqual(new Date(clock.now().getTime() + 20_000));
+    expect(onlyRow(store).availableAt).toEqual(new Date(Date.now() + 20_000));
   });
 
-  it("dead-letters a job on its last attempt and keeps the error for inspection", async () => {
-    const { clock, queue, runtime, store, errorReporter } = setup(() => [
+  it("dead-letters a job on its last attempt and reports it", async () => {
+    const { queue, runtime, store, errorReporter } = setup([
       backgroundJobHandler(REFRESH, async () => {
         throw new Error("still failing");
       }),
@@ -122,11 +145,11 @@ describe("BackgroundJobRuntime", () => {
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       await runtime.drain({ maxJobs: 1 });
-      clock.advanceSeconds(3_600);
+      vi.setSystemTime(Date.now() + 3_600_000);
     }
 
-    const [row] = [...store.rows.values()];
-    expect(row).toMatchObject({ status: "dead", attempts: 3, lastError: "Error: still failing" });
+    const row = onlyRow(store);
+    expect(row).toMatchObject({ status: "dead", attempts: 3, lastError: "Error" });
     expect(row.deadAt).not.toBeNull();
     expect(errorReporter.report).toHaveBeenCalledWith(expect.objectContaining({
       errorType: "background_job.dead_lettered",
@@ -137,7 +160,7 @@ describe("BackgroundJobRuntime", () => {
   });
 
   it("dead-letters at once when the handler reports a failure no retry can fix", async () => {
-    const { queue, runtime, store } = setup(() => [
+    const { queue, runtime, store } = setup([
       backgroundJobHandler(REFRESH, async () => {
         throw new NonRetryableBackgroundJobError("subject deleted");
       }),
@@ -145,79 +168,268 @@ describe("BackgroundJobRuntime", () => {
     await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
 
     expect(await runtime.drain({ maxJobs: 5 })).toMatchObject({ claimed: 1, deadLettered: 1 });
-    expect([...store.rows.values()][0]).toMatchObject({ status: "dead", attempts: 1 });
+    expect(onlyRow(store)).toMatchObject({ status: "dead", attempts: 1, lastError: "NonRetryableBackgroundJobError" });
   });
 
   it("dead-letters a stored payload that no longer matches its schema without running the handler", async () => {
     const handle = vi.fn(async () => {});
-    const { runtime, store } = setup(() => [backgroundJobHandler(REFRESH, handle)]);
-    await store.insert({ kind: REFRESH.kind, payload: { subjectId: 42 } });
+    const { runtime, store } = setup([backgroundJobHandler(REFRESH, handle)]);
+    await store.insert({ kind: REFRESH.kind, payload: { subjectId: 42 }, onDuplicateKey: "rerun" });
 
     expect(await runtime.drain({ maxJobs: 5 })).toMatchObject({ deadLettered: 1 });
     expect(handle).not.toHaveBeenCalled();
-    expect([...store.rows.values()][0].lastError).toContain("InvalidBackgroundJobPayloadError");
+    expect(onlyRow(store).lastError).toBe("InvalidBackgroundJobPayloadError");
   });
 
-  it("takes over a job whose lease expired and fences the stale run out of completing it", async () => {
-    const clock = createClock();
-    const store = new InMemoryBackgroundJobStore(clock);
-    const logger = createLogger();
-    let releaseStaleRun!: () => void;
-    const staleRunBlocked = new Promise<void>((resolve) => {
-      releaseStaleRun = resolve;
+  describe("errors it stores", () => {
+    it("keeps only the error's class, never its message, which can carry conversation text or credentials", async () => {
+      const { queue, runtime, store } = setup([
+        backgroundJobHandler(REFRESH, async () => {
+          throw new Error("provider said: Authorization: Bearer sk-live-SECRET; visitor wrote 'my card is 4242'");
+        }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+
+      await runtime.drain({ maxJobs: 1 });
+
+      expect(onlyRow(store).lastError).toBe("Error");
     });
-    const attemptsSeen: number[] = [];
-    const handler = backgroundJobHandler(REFRESH, async (_payload, context) => {
-      attemptsSeen.push(context.attempt);
-      if (context.attempt === 1) {
-        await staleRunBlocked;
+
+    it("adds an application error's code, which is an identifier rather than text", async () => {
+      const { queue, runtime, store } = setup([
+        backgroundJobHandler(REFRESH, async () => {
+          throw new AppError(503, "provider_unavailable", "upstream echoed the prompt: tell me about my order 1234");
+        }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+
+      await runtime.drain({ maxJobs: 1 });
+
+      expect(onlyRow(store).lastError).toBe("AppError [provider_unavailable]");
+    });
+
+    it("drops a code that is not a plain identifier, and a code on anything but an application error", async () => {
+      let thrown = 0;
+      const { queue, runtime, store } = setup([
+        backgroundJobHandler(REFRESH, async () => {
+          thrown += 1;
+          throw thrown === 1
+            ? new AppError(500, "token sk-live-SECRET", "x")
+            : Object.assign(new Error("x"), { code: "SECRET_FROM_A_LIBRARY" });
+        }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+
+      await runtime.drain({ maxJobs: 1 });
+      expect(onlyRow(store).lastError).toBe("AppError");
+
+      vi.setSystemTime(Date.now() + 10_000);
+      await runtime.drain({ maxJobs: 1 });
+      expect(onlyRow(store).lastError).toBe("Error");
+    });
+  });
+
+  describe("leases", () => {
+    it("renews a slow handler's lease, so a second worker never re-enters it even after a stall past the first lease", async () => {
+      const { store, queue, logger } = setup([]);
+      const hold = barrier();
+      let entries = 0;
+      const handler = backgroundJobHandler(REFRESH, async () => {
+        entries += 1;
+        await hold.released;
+      });
+      const first = new BackgroundJobRuntime({ store, handlers: [handler], logger, now: clock.now });
+      const second = new BackgroundJobRuntime({ store, handlers: [handler], logger, now: clock.now });
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+
+      const running = first.drain({ maxJobs: 1 });
+      await vi.advanceTimersByTimeAsync(40_000);
+      // Heartbeats at 20 s and 40 s moved the lease to 100 s from the start.
+      expect(onlyRow(store).leaseExpiresAt).toEqual(new Date(START.getTime() + 100_000));
+
+      // The worker stalls for 25 s with no timer firing: past the first lease, inside the renewed one.
+      vi.setSystemTime(Date.now() + 25_000);
+      expect(await second.drain({ maxJobs: 1 })).toMatchObject({ claimed: 0 });
+
+      hold.release();
+      expect(await running).toMatchObject({ claimed: 1, completed: 1 });
+      expect(entries).toBe(1);
+      expect(store.rows.size).toBe(0);
+    });
+
+    it("aborts a run whose lease another worker took over, and writes nothing back", async () => {
+      const { store, queue, logger } = setup([]);
+      const hold = barrier();
+      const seen: { attempt: number; abortReason?: string }[] = [];
+      const handler = backgroundJobHandler(REFRESH, async (_payload, context) => {
+        const entry: { attempt: number; abortReason?: string } = { attempt: context.attempt };
+        seen.push(entry);
+        context.signal.addEventListener("abort", () => {
+          entry.abortReason = (context.signal.reason as Error).name;
+        });
+        if (context.attempt === 1) {
+          await hold.released;
+        }
+      });
+      const stalled = new BackgroundJobRuntime({ store, handlers: [handler], logger, now: clock.now });
+      const other = new BackgroundJobRuntime({ store, handlers: [handler], logger, now: clock.now });
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+
+      const staleDrain = stalled.drain({ maxJobs: 1 });
+      await vi.advanceTimersByTimeAsync(0);
+      // A stall longer than the whole lease: no heartbeat fires, the lease expires, another worker takes over.
+      vi.setSystemTime(Date.now() + 61_000);
+      expect(await other.drain({ maxJobs: 1 })).toMatchObject({ claimed: 1, completed: 1 });
+
+      // The stalled worker's next heartbeat finds its claim gone and aborts the run it still holds.
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(await staleDrain).toMatchObject({ claimed: 1, completed: 0, superseded: 1 });
+      expect(seen).toEqual([{ attempt: 1, abortReason: "BackgroundJobLeaseLostError" }, { attempt: 2 }]);
+      expect(store.rows.size).toBe(0);
+      hold.release();
+    });
+
+    it("abandons a handler that outlives its deadline, aborts it, and schedules a retry", async () => {
+      const { store, queue } = setup([]);
+      let signal: AbortSignal | undefined;
+      const stuck = new BackgroundJobRuntime({
+        store,
+        handlers: [backgroundJobHandler(REFRESH, async (_payload, context) => {
+          signal = context.signal;
+          await new Promise(() => {}); // never settles and ignores the signal
+        })],
+        logger: createLogger(),
+        now: clock.now,
+      });
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+
+      const draining = stuck.drain({ maxJobs: 1 });
+      await vi.advanceTimersByTimeAsync(50_000);
+
+      expect(await draining).toMatchObject({ claimed: 1, retried: 1 });
+      expect(signal?.aborted).toBe(true);
+      expect((signal?.reason as Error).name).toBe("BackgroundJobTimeoutError");
+      expect(onlyRow(store)).toMatchObject({ status: "pending", attempts: 1, lastError: "BackgroundJobTimeoutError" });
+    });
+
+    it("dead-letters a job whose every lease expired instead of running it past its retry budget", async () => {
+      const handle = vi.fn(async () => {});
+      const { runtime, store } = setup([backgroundJobHandler(REFRESH, handle)]);
+      const receipt = await store.insert(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+      // Three claims whose workers died mid-run, each lease left to expire.
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        await store.claimNext({ kinds: [{ kind: REFRESH.kind, leaseSeconds: 60 }] });
+        vi.setSystemTime(Date.now() + 61_000);
       }
+
+      expect(await runtime.drain({ maxJobs: 1 })).toMatchObject({ claimed: 1, deadLettered: 1 });
+      expect(handle).not.toHaveBeenCalled();
+      expect(receipt.inserted && store.rows.get(receipt.jobId)).toMatchObject({
+        status: "dead",
+        attempts: 4,
+        lastError: "BackgroundJobLeaseExpiredError",
+      });
     });
-    const crashedWorker = new BackgroundJobRuntime({ store, handlers: [handler], logger, now: clock.now });
-    const survivingWorker = new BackgroundJobRuntime({ store, handlers: [handler], logger, now: clock.now });
-    await store.insert(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
-
-    const staleDrain = crashedWorker.drain({ maxJobs: 1 });
-    await vi.waitFor(() => expect(attemptsSeen).toEqual([1]));
-
-    // Still leased: nobody else may take it.
-    expect(await survivingWorker.drain({ maxJobs: 1 })).toMatchObject({ claimed: 0 });
-
-    clock.advanceSeconds(61);
-    // The surviving worker reclaims the job and finishes it; the job is gone.
-    expect(await survivingWorker.drain({ maxJobs: 1 })).toMatchObject({ claimed: 1, completed: 1 });
-    expect(store.rows.size).toBe(0);
-
-    releaseStaleRun();
-    expect(await staleDrain).toMatchObject({ claimed: 1, completed: 0, superseded: 1 });
-    expect(attemptsSeen).toEqual([1, 2]);
   });
 
-  it("dead-letters a job whose every lease expired instead of running it past its retry budget", async () => {
-    const handle = vi.fn(async () => {});
-    const { clock, runtime, store } = setup(() => [backgroundJobHandler(REFRESH, handle)]);
-    const receipt = await store.insert(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
-    // Three claims whose workers died mid-run, each lease left to expire.
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      await store.claimNext({ kinds: [{ kind: REFRESH.kind, leaseSeconds: 60 }] });
-      clock.advanceSeconds(61);
-    }
+  describe("duplicate keys", () => {
+    it("reruns a level-triggered job once more when its key is enqueued while it runs", async () => {
+      const hold = barrier();
+      const runs: number[] = [];
+      const { queue, runtime, store, wake } = setup([
+        backgroundJobHandler(REFRESH, async () => {
+          runs.push(runs.length + 1);
+          if (runs.length === 1) {
+            await hold.released;
+          }
+        }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" }));
 
-    expect(await runtime.drain({ maxJobs: 1 })).toMatchObject({ claimed: 1, deadLettered: 1 });
-    expect(handle).not.toHaveBeenCalled();
-    expect(receipt.inserted && store.rows.get(receipt.jobId)).toMatchObject({ status: "dead", attempts: 4 });
+      const draining = runtime.drain({ maxJobs: 1 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(runs).toEqual([1]);
+      // The work this refresh already read is now stale: a newer turn committed.
+      expect(await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" })))
+        .toEqual({ inserted: false });
+      wake.requestDrain.mockClear();
+
+      hold.release();
+      expect(await draining).toMatchObject({ claimed: 1, completed: 0, requeued: 1 });
+      expect(onlyRow(store)).toMatchObject({ status: "pending", attempts: 0, rerunRequested: false });
+      expect(wake.requestDrain).toHaveBeenCalledOnce();
+
+      expect(await runtime.drain({ maxJobs: 1 })).toMatchObject({ claimed: 1, completed: 1 });
+      expect(runs).toEqual([1, 2]);
+      expect(store.rows.size).toBe(0);
+    });
+
+    it("drops a one-shot job's duplicate key while it runs", async () => {
+      const hold = barrier();
+      const handle = vi.fn(async () => {
+        await hold.released;
+      });
+      const { queue, runtime, store } = setup([backgroundJobHandler(EVENT, handle)]);
+      await queue.enqueue(backgroundJobRequest(EVENT, { eventId: "e1" }, { idempotencyKey: "e1" }));
+
+      const draining = runtime.drain({ maxJobs: 1 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await queue.enqueue(backgroundJobRequest(EVENT, { eventId: "e1" }, { idempotencyKey: "e1" })))
+        .toEqual({ inserted: false });
+
+      hold.release();
+      expect(await draining).toMatchObject({ completed: 1, requeued: 0 });
+      expect(handle).toHaveBeenCalledOnce();
+      expect(store.rows.size).toBe(0);
+    });
+
+    it("folds a duplicate into a job that has not started yet, in either mode", async () => {
+      const { queue, store } = setup([]);
+
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" }));
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" }));
+      await queue.enqueue(backgroundJobRequest(EVENT, { eventId: "e1" }, { idempotencyKey: "e1" }));
+      await queue.enqueue(backgroundJobRequest(EVENT, { eventId: "e1" }, { idempotencyKey: "e1" }));
+
+      expect([...store.rows.values()].map((row) => [row.kind, row.status, row.rerunRequested])).toEqual([
+        ["test.refresh", "pending", false],
+        ["test.event", "pending", false],
+      ]);
+    });
+  });
+
+  describe("time budget", () => {
+    it("claims a job only while its kind's deadline still fits in the drain's budget", async () => {
+      const { queue, runtime, store } = setup([
+        backgroundJobHandler(SHORT, async () => {
+          await new Promise((resolve) => setTimeout(resolve, 8_000));
+        }),
+        backgroundJobHandler(REFRESH, async () => {}),
+      ]);
+      for (const value of [1, 2, 3]) {
+        await queue.enqueue(backgroundJobRequest(SHORT, { value }));
+      }
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+
+      const draining = runtime.drain({ maxJobs: 10, budgetMs: 20_000 });
+      await vi.advanceTimersByTimeAsync(20_000);
+
+      // 10 s fits at 0 s and 8 s; at 16 s only 4 s remain. The 50 s kind never fits a 20 s budget.
+      expect(await draining).toMatchObject({ claimed: 2, completed: 2 });
+      expect([...store.rows.values()].map((row) => row.kind).sort()).toEqual(["test.refresh", "test.short"]);
+    });
   });
 
   it("claims only the kinds it has handlers for", async () => {
-    const { runtime, store } = setup(() => [backgroundJobHandler(REFRESH, async () => {})]);
-    await store.insert(backgroundJobRequest(OTHER, { value: 1 }));
+    const { runtime, store } = setup([backgroundJobHandler(REFRESH, async () => {})]);
+    await store.insert(backgroundJobRequest(SHORT, { value: 1 }));
 
     expect(await runtime.drain({ maxJobs: 5 })).toMatchObject({ claimed: 0 });
-    expect([...store.rows.values()][0]).toMatchObject({ status: "pending", attempts: 0 });
+    expect(onlyRow(store)).toMatchObject({ status: "pending", attempts: 0 });
   });
 
   it("stops a drain at maxJobs and runs the rest on the next one", async () => {
-    const { queue, runtime, store } = setup(() => [backgroundJobHandler(REFRESH, async () => {})]);
+    const { queue, runtime, store } = setup([backgroundJobHandler(REFRESH, async () => {})]);
     for (const subjectId of ["a", "b", "c"]) {
       await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId }));
     }
@@ -228,7 +440,6 @@ describe("BackgroundJobRuntime", () => {
   });
 
   it("refuses two handlers for the same kind", () => {
-    const clock = createClock();
     expect(() => new BackgroundJobRuntime({
       store: new InMemoryBackgroundJobStore(clock),
       handlers: [backgroundJobHandler(REFRESH, async () => {}), backgroundJobHandler(REFRESH, async () => {})],
@@ -237,13 +448,13 @@ describe("BackgroundJobRuntime", () => {
   });
 
   it("records kind, attempt, outcome and latency, and never the payload", async () => {
-    const { clock, queue, runtime, logger, metrics } = setup(() => [
+    const { queue, runtime, logger, metrics } = setup([
       backgroundJobHandler(REFRESH, async () => {
         throw new Error("boom");
       }),
     ]);
     await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1", note: "visitor said something private" }));
-    clock.advanceSeconds(2);
+    vi.setSystemTime(Date.now() + 2_000);
 
     await runtime.drain({ maxJobs: 1 });
 
@@ -272,53 +483,67 @@ describe("BackgroundJobRuntime", () => {
   });
 
   it("drains on its poll loop until stopped, and stop waits for the run in flight", async () => {
-    vi.useFakeTimers();
-    try {
-      const clock = createClock();
-      const store = new InMemoryBackgroundJobStore(clock);
-      let finishRun!: () => void;
-      const runFinished = new Promise<void>((resolve) => {
-        finishRun = resolve;
-      });
-      const started = vi.fn();
-      const runtime = new BackgroundJobRuntime({
-        store,
-        handlers: [backgroundJobHandler(REFRESH, async () => {
-          started();
-          await runFinished;
-        })],
-        logger: createLogger(),
-        pollIntervalMs: 1_000,
-        now: clock.now,
-      });
-      await store.insert(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+    const store = new InMemoryBackgroundJobStore(clock);
+    const hold = barrier();
+    const started = vi.fn();
+    const runtime = new BackgroundJobRuntime({
+      store,
+      handlers: [backgroundJobHandler(REFRESH, async () => {
+        started();
+        await hold.released;
+      })],
+      logger: createLogger(),
+      pollIntervalMs: 1_000,
+      now: clock.now,
+    });
+    await store.insert(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
 
-      runtime.start();
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(started).toHaveBeenCalledOnce();
+    runtime.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(started).toHaveBeenCalledOnce();
 
-      let stopped = false;
-      const stopping = runtime.stop().then(() => {
-        stopped = true;
-      });
-      await vi.advanceTimersByTimeAsync(0);
-      expect(stopped).toBe(false);
+    let stopped = false;
+    const stopping = runtime.stop().then(() => {
+      stopped = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopped).toBe(false);
 
-      finishRun();
-      await stopping;
-      expect(store.rows.size).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
+    hold.release();
+    await stopping;
+    expect(store.rows.size).toBe(0);
+  });
+});
+
+describe("defineBackgroundJob", () => {
+  it("refuses a deadline that does not leave the lease room to fence a stalled run", () => {
+    expect(() => defineBackgroundJob({
+      kind: "test.bad",
+      payload: z.object({}),
+      onDuplicateKey: "ignore",
+      leaseSeconds: 60,
+      timeoutSeconds: 60,
+    })).toThrow(/lease/);
+  });
+
+  it("refuses a deadline longer than one worker drain can hold", () => {
+    expect(() => defineBackgroundJob({
+      kind: "test.bad",
+      payload: z.object({}),
+      onDuplicateKey: "ignore",
+      leaseSeconds: 900,
+      timeoutSeconds: 600,
+    })).toThrow(/drain/);
   });
 });
 
 describe("DefaultBackgroundJobQueue", () => {
-  it("coalesces enqueues with the same key while the job waits, and wakes only for the first", async () => {
-    const { queue, store, wake } = setup(() => []);
+  it("wakes a worker once for the job it stores, not for a duplicate", async () => {
+    const { queue, store, wake } = setup([]);
 
     const first = await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" }));
     const second = await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" }));
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(first.inserted).toBe(true);
     expect(second).toEqual({ inserted: false });
@@ -326,8 +551,18 @@ describe("DefaultBackgroundJobQueue", () => {
     expect(wake.requestDrain).toHaveBeenCalledOnce();
   });
 
+  it("resolves once the job is stored, without waiting on the wake", async () => {
+    const store = new InMemoryBackgroundJobStore(clock);
+    const wake = { requestDrain: vi.fn(() => new Promise<void>(() => {})) };
+    const queue = new DefaultBackgroundJobQueue({ writer: store, wake, logger: createLogger() });
+
+    await expect(queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }))).resolves.toMatchObject({ inserted: true });
+    expect(wake.requestDrain).toHaveBeenCalledOnce();
+    expect(store.rows.size).toBe(1);
+  });
+
   it("enqueues the same key again once the earlier job has completed", async () => {
-    const { queue, runtime, store } = setup(() => [backgroundJobHandler(REFRESH, async () => {})]);
+    const { queue, runtime, store } = setup([backgroundJobHandler(REFRESH, async () => {})]);
     await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" }));
     await runtime.drain({ maxJobs: 1 });
 
@@ -337,15 +572,17 @@ describe("DefaultBackgroundJobQueue", () => {
     expect(store.rows.size).toBe(1);
   });
 
-  it("rejects a payload that does not match the kind's schema before anything is written", async () => {
-    const { store } = setup(() => []);
+  it("rejects a payload that does not match the kind's schema before anything is written", () => {
+    const { store } = setup([]);
 
     expect(() => backgroundJobRequest(REFRESH, { subjectId: 7 } as never)).toThrow();
     expect(store.rows.size).toBe(0);
   });
 
   it("never fails the enqueue when the wake is lost, and says so without the payload", async () => {
-    const { store, logger, metrics } = setup(() => []);
+    const store = new InMemoryBackgroundJobStore(clock);
+    const logger = createLogger();
+    const metrics = createMetrics();
     const queue = new DefaultBackgroundJobQueue({
       writer: store,
       wake: { requestDrain: vi.fn(async () => { throw new Error("cloud tasks down"); }) },
@@ -354,6 +591,7 @@ describe("DefaultBackgroundJobQueue", () => {
     });
 
     await expect(queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "secret-subject" }))).resolves.toMatchObject({ inserted: true });
+    await vi.advanceTimersByTimeAsync(0);
     expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ errorType: "Error" }), expect.any(String));
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("secret-subject");
     expect(metrics.incrementCounter).toHaveBeenCalledWith("background_job_wakes_total", expect.objectContaining({

@@ -1119,6 +1119,8 @@ CREATE TABLE public.background_jobs (
     attempts integer DEFAULT 0 NOT NULL,
     available_at timestamp with time zone DEFAULT now() NOT NULL,
     lease_expires_at timestamp with time zone,
+    claim_token uuid,
+    rerun_requested boolean DEFAULT false NOT NULL,
     last_error text,
     dead_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -1127,6 +1129,9 @@ CREATE TABLE public.background_jobs (
     CONSTRAINT background_jobs_dead_has_dead_at CHECK (((status = 'dead'::text) = (dead_at IS NOT NULL))),
     CONSTRAINT background_jobs_idempotency_key_check CHECK (((idempotency_key IS NULL) OR ((length(idempotency_key) >= 1) AND (length(idempotency_key) <= 512)))),
     CONSTRAINT background_jobs_kind_check CHECK (((length(kind) >= 1) AND (length(kind) <= 128))),
+    CONSTRAINT background_jobs_last_error_check CHECK (((last_error IS NULL) OR (length(last_error) <= 160))),
+    CONSTRAINT background_jobs_rerun_only_while_running CHECK (((NOT rerun_requested) OR (status = 'running'::text))),
+    CONSTRAINT background_jobs_running_has_claim_token CHECK (((status = 'running'::text) = (claim_token IS NOT NULL))),
     CONSTRAINT background_jobs_running_has_lease CHECK (((status = 'running'::text) = (lease_expires_at IS NOT NULL))),
     CONSTRAINT background_jobs_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'dead'::text])))
 );

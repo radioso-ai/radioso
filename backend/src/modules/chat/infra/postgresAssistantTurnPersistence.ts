@@ -395,14 +395,14 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       : await this.db.transaction().execute(async (trx) => run(trx));
 
     await this.requestActionDrain(input.actions);
-    if (insertedBackgroundJobs > 0) {
-      // Not awaited: the reply never waits on the wake. The queue swallows and counts a failed
-      // wake, and the worker's sweep runs a job whose wake was lost. On a caller-supplied
-      // transaction the wake can leave a moment before that commit lands, the same accepted race
-      // as `requestActionDrain`.
-      void this.backgroundJobs?.wake();
+    const queue = this.backgroundJobs;
+    if (insertedBackgroundJobs === 0 || !queue) {
+      return result;
     }
-    return result;
+    // Whoever owns the transaction fires this after commit (the lifecycle for its own, the caller
+    // for one it supplied). Never awaited by a turn: the queue swallows and counts a failed wake,
+    // and the worker's sweep runs a job whose wake was lost.
+    return { ...result, wakeBackgroundJobs: () => void queue.wake() };
   }
 
   private async enqueueBackgroundJobs(db: Db, input: CompleteAssistantTurnInput): Promise<number> {

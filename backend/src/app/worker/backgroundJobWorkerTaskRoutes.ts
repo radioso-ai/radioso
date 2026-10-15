@@ -1,14 +1,21 @@
 import { Router } from "express";
 import { z } from "zod";
 
+import { BACKGROUND_JOB_MAX_TIMEOUT_SECONDS } from "../../shared/background-jobs/index.js";
 import { serviceUnavailable } from "../../shared/domain/errors.js";
 import type { AppDependencies } from "../server/types.js";
 
+/** A pushed wake stands for one job: one model-backed run per push. The scheduled sweep asks for more. */
+const DEFAULT_DRAIN_MAX_JOBS = 1;
+
 /**
- * A pushed wake usually stands for one job; the cap keeps one request well inside the Cloud Run
- * request timeout even when each job is a model call. The scheduled sweep asks for more.
+ * How long one drain request may spend running jobs. A job is claimed only while its kind's
+ * deadline still fits in what is left, so the request ends inside this even when every handler
+ * runs to its deadline. It holds the longest deadline a kind may declare, and the worker request
+ * timeout, the Cloud Tasks dispatch deadline, and the Cloud Scheduler attempt deadline (300 s) each
+ * leave room above it for the claim and completion writes.
  */
-const DEFAULT_DRAIN_MAX_JOBS = 5;
+const DRAIN_BUDGET_MS = BACKGROUND_JOB_MAX_TIMEOUT_SECONDS * 1_000;
 
 const drainSchema = z.object({
   maxJobs: z.number().int().min(1).max(50).default(DEFAULT_DRAIN_MAX_JOBS),
@@ -36,7 +43,10 @@ export const createBackgroundJobWorkerTaskRoutes = (
       return;
     }
     try {
-      res.status(200).json(await dependencies.backgroundJobRuntime.drain({ maxJobs: parsed.data.maxJobs }));
+      res.status(200).json(await dependencies.backgroundJobRuntime.drain({
+        maxJobs: parsed.data.maxJobs,
+        budgetMs: DRAIN_BUDGET_MS,
+      }));
     } catch (error) {
       next(error);
     }

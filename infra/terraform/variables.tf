@@ -311,7 +311,7 @@ variable "background_job_recovery_schedule" {
 }
 
 variable "background_job_recovery_max_jobs" {
-  description = "Maximum background jobs each scheduled recovery request may run. Jobs run one after another inside the request, and a job can be several model calls, so keep the total inside the worker's request timeout."
+  description = "Maximum background jobs each scheduled recovery request may run. Jobs run one after another inside the drain's 240 s budget, which also stops claiming once the next job's deadline no longer fits."
   type        = number
   default     = 10
 

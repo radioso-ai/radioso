@@ -2,17 +2,28 @@ import type { z } from "zod";
 
 import type {
   BackgroundJobContext,
+  BackgroundJobDuplicateKeyMode,
   BackgroundJobHandlerRegistration,
   BackgroundJobKind,
   BackgroundJobPolicy,
   BackgroundJobRequest,
 } from "./types.js";
 
+/**
+ * The longest deadline a kind may declare. A worker drain claims a job only while that job's
+ * deadline still fits in the drain's budget, so a kind with a longer deadline could never run in a
+ * pushed drain. The worker task route's budget (`backgroundJobWorkerTaskRoutes.ts`) is at least this.
+ */
+export const BACKGROUND_JOB_MAX_TIMEOUT_SECONDS = 240;
+
 const DEFAULT_POLICY: BackgroundJobPolicy = {
   maxAttempts: 5,
-  leaseSeconds: 300,
+  leaseSeconds: 180,
+  timeoutSeconds: 120,
   retryBaseDelaySeconds: 30,
 };
+
+const DUPLICATE_KEY_MODES: readonly BackgroundJobDuplicateKeyMode[] = ["ignore", "rerun"];
 
 /** Kind names are stored and used as a metric label, so they stay short dotted identifiers. */
 const KIND_PATTERN = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/;
@@ -39,22 +50,36 @@ class InvalidBackgroundJobPayloadError extends NonRetryableBackgroundJobError {
 export const defineBackgroundJob = <TPayload>(definition: {
   kind: string;
   payload: z.ZodType<TPayload>;
+  onDuplicateKey: BackgroundJobDuplicateKeyMode;
 } & Partial<BackgroundJobPolicy>): BackgroundJobKind<TPayload> => {
   if (!KIND_PATTERN.test(definition.kind) || definition.kind.length > 128) {
     throw new Error(`Invalid background job kind "${definition.kind}"`);
   }
+  if (!DUPLICATE_KEY_MODES.includes(definition.onDuplicateKey)) {
+    throw new Error(`Background job kind "${definition.kind}" needs onDuplicateKey "ignore" or "rerun"`);
+  }
   const policy: BackgroundJobPolicy = {
     maxAttempts: definition.maxAttempts ?? DEFAULT_POLICY.maxAttempts,
     leaseSeconds: definition.leaseSeconds ?? DEFAULT_POLICY.leaseSeconds,
+    timeoutSeconds: definition.timeoutSeconds ?? DEFAULT_POLICY.timeoutSeconds,
     retryBaseDelaySeconds: definition.retryBaseDelaySeconds ?? DEFAULT_POLICY.retryBaseDelaySeconds,
   };
   if (!Number.isInteger(policy.maxAttempts) || policy.maxAttempts < 1) {
     throw new Error(`Background job kind "${definition.kind}" needs at least one attempt`);
   }
-  if (!(policy.leaseSeconds > 0) || !(policy.retryBaseDelaySeconds > 0)) {
-    throw new Error(`Background job kind "${definition.kind}" needs a positive lease and retry delay`);
+  if (!(policy.timeoutSeconds > 0) || !(policy.retryBaseDelaySeconds > 0)) {
+    throw new Error(`Background job kind "${definition.kind}" needs a positive deadline and retry delay`);
   }
-  return { kind: definition.kind, payload: definition.payload, policy };
+  if (!(policy.timeoutSeconds < policy.leaseSeconds)) {
+    throw new Error(`Background job kind "${definition.kind}" needs a deadline shorter than its lease`);
+  }
+  if (policy.timeoutSeconds > BACKGROUND_JOB_MAX_TIMEOUT_SECONDS) {
+    throw new Error(
+      `Background job kind "${definition.kind}" has a deadline longer than one worker drain holds ` +
+        `(${BACKGROUND_JOB_MAX_TIMEOUT_SECONDS} s)`,
+    );
+  }
+  return { kind: definition.kind, payload: definition.payload, onDuplicateKey: definition.onDuplicateKey, policy };
 };
 
 /**
@@ -68,6 +93,7 @@ export const backgroundJobRequest = <TPayload>(
 ): BackgroundJobRequest => ({
   kind: job.kind,
   payload: job.payload.parse(payload),
+  onDuplicateKey: job.onDuplicateKey,
   ...(options.idempotencyKey === undefined ? {} : { idempotencyKey: options.idempotencyKey }),
   ...(options.runAfter === undefined ? {} : { runAfter: options.runAfter }),
 });

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   BackgroundJobClaim,
   BackgroundJobClaimableKind,
+  BackgroundJobCompletion,
   BackgroundJobEnqueueReceipt,
   BackgroundJobRequest,
   BackgroundJobStore,
@@ -18,14 +19,17 @@ export interface InMemoryBackgroundJobRow {
   attempts: number;
   availableAt: Date;
   leaseExpiresAt: Date | null;
+  claimToken: string | null;
+  rerunRequested: boolean;
   lastError: string | null;
   deadAt: Date | null;
 }
 
 /**
- * The `background_jobs` semantics on a controllable clock, for runtime tests: live-key
- * idempotency, due and lease-expired claims, attempt fencing, delete on completion. The Postgres
- * store is held to the same behaviour by its integration test.
+ * The `background_jobs` semantics on a controllable clock, for runtime tests: live-key duplicates
+ * folded or marked for a rerun per the request's mode, due and lease-expired claims, claim-token
+ * fencing, lease renewal, delete or requeue on completion. The Postgres store is held to the same
+ * behaviour by its integration test.
  */
 export class InMemoryBackgroundJobStore implements BackgroundJobStore, BackgroundJobWriter {
   readonly rows = new Map<string, InMemoryBackgroundJobRow>();
@@ -37,6 +41,9 @@ export class InMemoryBackgroundJobStore implements BackgroundJobStore, Backgroun
       const live = [...this.rows.values()].find((row) =>
         row.kind === request.kind && row.idempotencyKey === request.idempotencyKey && row.status !== "dead");
       if (live) {
+        if (request.onDuplicateKey === "rerun" && live.status === "running") {
+          live.rerunRequested = true;
+        }
         return { inserted: false };
       }
     }
@@ -50,6 +57,8 @@ export class InMemoryBackgroundJobStore implements BackgroundJobStore, Backgroun
       attempts: 0,
       availableAt: request.runAfter ?? this.clock.now(),
       leaseExpiresAt: null,
+      claimToken: null,
+      rerunRequested: false,
       lastError: null,
       deadAt: null,
     });
@@ -70,28 +79,45 @@ export class InMemoryBackgroundJobStore implements BackgroundJobStore, Backgroun
     }
     due.status = "running";
     due.attempts += 1;
+    due.claimToken = randomUUID();
+    // A rerun requested of an earlier run whose lease lapsed is covered by this run.
+    due.rerunRequested = false;
     due.leaseExpiresAt = new Date(now + leases.get(due.kind)! * 1_000);
     return {
       id: due.id,
       kind: due.kind,
       payload: structuredClone(due.payload),
       attempt: due.attempts,
+      token: due.claimToken,
       availableAt: due.availableAt,
     };
   }
 
-  async complete(claim: BackgroundJobClaim): Promise<boolean> {
+  async renewLease(claim: BackgroundJobClaim, input: { leaseSeconds: number }): Promise<boolean> {
     const row = this.current(claim);
     if (!row) return false;
-    this.rows.delete(row.id);
+    row.leaseExpiresAt = new Date(this.clock.now().getTime() + input.leaseSeconds * 1_000);
     return true;
+  }
+
+  async complete(claim: BackgroundJobClaim): Promise<BackgroundJobCompletion> {
+    const row = this.current(claim);
+    if (!row) return "superseded";
+    if (row.rerunRequested) {
+      this.release(row);
+      row.attempts = 0;
+      row.lastError = null;
+      row.availableAt = this.clock.now();
+      return "requeued";
+    }
+    this.rows.delete(row.id);
+    return "deleted";
   }
 
   async retry(claim: BackgroundJobClaim, input: { error: string; delaySeconds: number }): Promise<Date | null> {
     const row = this.current(claim);
     if (!row) return null;
-    row.status = "pending";
-    row.leaseExpiresAt = null;
+    this.release(row);
     row.lastError = input.error;
     row.availableAt = new Date(this.clock.now().getTime() + input.delaySeconds * 1_000);
     return row.availableAt;
@@ -100,15 +126,22 @@ export class InMemoryBackgroundJobStore implements BackgroundJobStore, Backgroun
   async deadLetter(claim: BackgroundJobClaim, input: { error: string }): Promise<boolean> {
     const row = this.current(claim);
     if (!row) return false;
+    this.release(row);
     row.status = "dead";
-    row.leaseExpiresAt = null;
     row.lastError = input.error;
     row.deadAt = this.clock.now();
     return true;
   }
 
+  private release(row: InMemoryBackgroundJobRow): void {
+    row.status = "pending";
+    row.leaseExpiresAt = null;
+    row.claimToken = null;
+    row.rerunRequested = false;
+  }
+
   private current(claim: BackgroundJobClaim): InMemoryBackgroundJobRow | null {
     const row = this.rows.get(claim.id);
-    return row && row.status === "running" && row.attempts === claim.attempt ? row : null;
+    return row && row.status === "running" && row.claimToken === claim.token ? row : null;
   }
 }

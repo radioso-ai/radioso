@@ -11,15 +11,20 @@ const ANCHOR_PATTERN = /\[\[(\d+|\?)\]\]/g;
 
 /**
  * The single-bracket form of the unsupported-claim marker (`[?]`) the model sometimes
- * writes instead of the prompted `[[?]]` (#1502). Not adjacent to another bracket, so
- * `[[?]]` is left to its own handling, and not immediately followed by `(`, so a markdown
- * link whose label is `?` (`[?](url)`) survives. Scoped to `[?]` only — not `[n]` — because
- * a single-bracket number collides with legitimate text (`arr[0]`, `[2024]`, a document
- * reference like `[1]`), which `[?]` never does. Shared by the three text-path strips
- * below (the streaming sanitizer, the residual-syntax cleanup here, and the fallback
- * composer); the voice channel keeps its own, broader `[n]`/`[?]` pattern for speech.
+ * writes instead of the prompted `[[?]]` (#1502). Not preceded by another `[`, so `[[?]]`
+ * is left to its own handling — that lookbehind is the only bracket guard needed, since
+ * the inner `[?]` of `[[?]]` is always preceded by a `[`. A marker the model over-closed
+ * (`[?]]`) is consumed together with its stray extra `]`, rather than left for the
+ * generic `]]` cleanup below, which only recognizes a *pair* and would otherwise strand
+ * one bracket (see the ordering in `stripResidualCitationSyntax`). Not immediately
+ * followed by `(`, so a markdown link whose label is `?` (`[?](url)`) survives. Scoped to
+ * `[?]` only — not `[n]` — because a single-bracket number collides with legitimate text
+ * (`arr[0]`, `[2024]`, a document reference like `[1]`), which `[?]` never does. Shared by
+ * the three text-path strips below (the streaming sanitizer, the residual-syntax cleanup
+ * here, and the fallback composer); the voice channel keeps its own, broader `[n]`/`[?]`
+ * pattern for speech.
  */
-export const SINGLE_BRACKET_UNSOURCED_MARKER = /(?<!\[)\[\?\](?!\]|\()/g;
+export const SINGLE_BRACKET_UNSOURCED_MARKER = /(?<!\[)\[\?\]\]?(?!\()/g;
 
 export const findCitationAnchorGroups = (answer: string): CitationAnchorGroup[] => {
   const matches = [...answer.matchAll(ANCHOR_PATTERN)].map((match) => ({
@@ -65,5 +70,8 @@ export const stripResidualCitationSyntax = (text: string): string =>
   removeDetachedPunctuationSpacing(text
     .replace(/\[\[[^\]]*\]\]/g, "")
     .replace(/\[\[[^\s.,;:!?)]*/g, "")
-    .replace(/\]\]/g, "")
-    .replace(SINGLE_BRACKET_UNSOURCED_MARKER, ""));
+    // Single-bracket cleanup runs before the generic `]]` sweep: otherwise a `[?]`
+    // immediately followed by an unrelated `]` would have its own closing bracket eaten
+    // by the generic sweep first, stranding the opening `[?` unrecognized by either step.
+    .replace(SINGLE_BRACKET_UNSOURCED_MARKER, "")
+    .replace(/\]\]/g, ""));

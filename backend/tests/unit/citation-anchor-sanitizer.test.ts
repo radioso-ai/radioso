@@ -179,4 +179,43 @@ describe("citation anchor sanitizer", () => {
 
     expect(chunks.join("")).toBe("See [1](https://example.com) for details.");
   });
+
+  // Round 2 (#1514): the model sometimes over-closes the marker (`[?]]`) rather than
+  // leaving a stray `]` as unrelated content. The extra bracket is consumed with it.
+  it("strips a single-bracket marker immediately followed by a stray closing bracket", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+
+    const chunks = [
+      sanitizer.push("Claim[?]] next"),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe("Claim next");
+  });
+
+  it("strips a single-bracket marker immediately followed by a stray closing bracket, split across chunks", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+
+    const chunks = [
+      sanitizer.push("Claim[?]"),
+      sanitizer.push("] next"),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe("Claim next");
+  });
+
+  it("preserves a markdown link whose label is a question mark, split at any chunk boundary", () => {
+    const snippet = "[?](url)";
+    for (let split = 1; split < snippet.length; split += 1) {
+      const sanitizer = new CitationAnchorSanitizer();
+      const chunks = [
+        sanitizer.push(`See ${snippet.slice(0, split)}`),
+        sanitizer.push(`${snippet.slice(split)} for details.`),
+        sanitizer.flush(),
+      ];
+
+      expect(chunks.join(""), `split at ${split}`).toBe("See [?](url) for details.");
+    }
+  });
 });

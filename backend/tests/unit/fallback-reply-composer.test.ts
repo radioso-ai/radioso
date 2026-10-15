@@ -163,6 +163,49 @@ describe("grounded miss response composer", () => {
       });
   });
 
+  it("preserves a markdown link whose label is a question mark in the decline text (#1502)", async () => {
+    const composer = new ModelFallbackReplyComposer(pipeline({
+      metadata: { capability: "chat", provider: "openai", model: "test-model" },
+      async complete() {
+        return textResult(JSON.stringify({
+          reply: "See [?](https://example.com) for details.",
+          declineReason: "content_gap",
+        }));
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }));
+
+    await expect(composer.composeNoContext({ query: "Anything", usageContext }))
+      .resolves.toEqual({
+        text: "See [?](https://example.com) for details.",
+        declineReason: "content_gap",
+      });
+  });
+
+  // Round 2 (#1514): an over-closed marker (`[?]]`) must disappear whole.
+  it("strips a single-bracket marker immediately followed by a stray closing bracket (#1502)", async () => {
+    const composer = new ModelFallbackReplyComposer(pipeline({
+      metadata: { capability: "chat", provider: "openai", model: "test-model" },
+      async complete() {
+        return textResult(JSON.stringify({
+          reply: "Claim[?]] next.",
+          declineReason: "content_gap",
+        }));
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }));
+
+    await expect(composer.composeNoContext({ query: "Anything", usageContext }))
+      .resolves.toEqual({
+        text: "Claim next.",
+        declineReason: "content_gap",
+      });
+  });
+
   it("classifies an in-remit decline as a content gap", async () => {
     const composer = new ModelFallbackReplyComposer(pipeline({
       metadata: { capability: "chat", provider: "openai", model: "test-model" },

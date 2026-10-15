@@ -382,6 +382,29 @@ describe("answer presentation service", () => {
     expect(result.answer).toBe("See [1](https://example.com) for details.");
   });
 
+  it("preserves a markdown link whose label is a question mark", () => {
+    const service = new AnswerPresentationService();
+    const result = service.present({
+      answer: "See [?](https://example.com) for details.",
+      citations: [],
+    });
+
+    expect(result.answer).toBe("See [?](https://example.com) for details.");
+  });
+
+  // Round 2 (#1514): an over-closed marker (`[?]]`) must disappear whole — the generic
+  // `]]` cleanup elsewhere in this file only recognizes a *pair*, so it cannot be left to
+  // strand one of the marker's own brackets.
+  it("strips a single-bracket marker immediately followed by a stray closing bracket", () => {
+    const service = new AnswerPresentationService();
+    const result = service.present({
+      answer: "Claim[?]] next",
+      citations: [],
+    });
+
+    expect(result.answer).toBe("Claim next");
+  });
+
   it("collapses consecutive claims that cite the same document into one visible citation", () => {
     const service = new AnswerPresentationService();
 

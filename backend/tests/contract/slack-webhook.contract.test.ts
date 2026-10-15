@@ -28,15 +28,15 @@ const createInMemorySlackPersistence = () => {
   return {
     enqueuedJobs,
     statusByEventId,
-    createInboundEvent: vi.fn(async ({ eventId }: { eventId: string }) => {
+    createInboundEvent: vi.fn(async (
+      { eventId }: { eventId: string },
+      status: "received" | "skipped" = "received",
+    ) => {
       if (statusByEventId.has(eventId)) {
         return false;
       }
-      statusByEventId.set(eventId, "received");
-      return true;
-    }),
-    markInboundEventStatus: vi.fn(async (eventId: string, status: "processed" | "skipped" | "failed") => {
       statusByEventId.set(eventId, status);
+      return true;
     }),
     enqueueInboundEvent: vi.fn(async ({ eventId, job }: { eventId: string; teamId: string; job: BackgroundJobRequest }) => {
       if (statusByEventId.has(eventId)) {
@@ -195,6 +195,21 @@ describe("Slack inbound webhook contract", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(persistence.enqueuedJobs).toHaveLength(1);
+  });
+
+  it("skips in one atomic write, never a separate status-update call", async () => {
+    const { app, persistence } = createApp();
+    const botBody = JSON.stringify(messagePayload("EvAtomicSkip", { bot_id: "B123" }));
+
+    await request(app)
+      .post("/api/connectors/slack/events")
+      .set(createSignedHeaders(botBody))
+      .type("application/json")
+      .send(botBody);
+
+    expect(persistence.createInboundEvent).toHaveBeenCalledTimes(1);
+    expect(persistence.createInboundEvent).toHaveBeenCalledWith({ eventId: "EvAtomicSkip", teamId: "TTEST" }, "skipped");
+    expect(persistence.statusByEventId.get("EvAtomicSkip")).toBe("skipped");
   });
 
   it("dedupes by event_id and suppresses bot-authored loops without enqueuing a job", async () => {

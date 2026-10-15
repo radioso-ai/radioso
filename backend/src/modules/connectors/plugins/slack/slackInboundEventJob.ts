@@ -237,14 +237,12 @@ export const SLACK_INBOUND_EVENT_JOB = defineBackgroundJob({
 export const slackInboundEventJobRequest = (input: SlackInboundEventJobPayload): BackgroundJobRequest =>
   backgroundJobRequest(SLACK_INBOUND_EVENT_JOB, input, { idempotencyKey: input.eventId });
 
-interface SlackInboundEventJobLogger {
-  warn(payload: Record<string, unknown>, message: string): void;
-}
-
 type SlackInboundMessageHandler = Pick<
   SlackMessageHandler,
   "handleMessageIm" | "handleAppMention" | "handleChannelMessage" | "handleAppHomeOpened"
 >;
+
+type SlackInboundEventPersistence = Pick<SlackPersistencePort, "markInboundEventStatus" | "getInboundEventStatus">;
 
 const dispatchSlackInboundEvent = (
   messageHandler: SlackInboundMessageHandler,
@@ -264,34 +262,42 @@ const dispatchSlackInboundEvent = (
 };
 
 /**
- * Runs the existing Slack message dispatch for one job attempt. Most skip/processed transitions
- * already happen inside the message handler itself; this wrapper's own job is the one transition
- * the handler cannot make on its own — recognising the port's *final* attempt (the one about to
- * be dead-lettered) and marking the inbound event `failed` there, instead of on every retry.
+ * Runs the existing Slack message dispatch for one job attempt.
+ *
+ * Checks the inbound event's own status first: a redelivery the webhook's dedupe somehow let
+ * through, or a retry racing an earlier attempt's own (abandoned, but not yet superseded) write,
+ * finds the event already `processed` or `skipped` and returns without dispatching. This narrows
+ * but does not close the gap — an attempt can still crash after posting the reply and before its
+ * own status write lands, and a retry would not see that yet.
+ *
+ * Marking the event `failed` happens only in `onDeadLetter`, which the port runs once, inside the
+ * transaction that parks the job, for every cause (final failure, a timeout, a payload that no
+ * longer parses, attempts exhausted by crashed workers) — not in a catch here, which could only
+ * ever see a thrown error on the attempt holding the claim, never a timeout or a payload the
+ * schema already rejected before dispatch ran at all. `markInboundEventStatus`'s own guard (only
+ * writes from `received`) is what actually stops an abandoned attempt's later, unrelated write
+ * from overwriting that `failed` — or a dead-lettered job's "failed" — after the fact.
  */
 export const createSlackInboundEventJobHandler = (
   messageHandler: SlackInboundMessageHandler,
-  persistence: Pick<SlackPersistencePort, "markInboundEventStatus">,
-  logger: SlackInboundEventJobLogger,
+  persistence: SlackInboundEventPersistence,
 ): BackgroundJobHandlerRegistration =>
-  backgroundJobHandler(SLACK_INBOUND_EVENT_JOB, async (payload, context) => {
-    try {
-      await dispatchSlackInboundEvent(messageHandler, payload);
-    } catch (error) {
-      if (context.attempt >= SLACK_INBOUND_EVENT_JOB.policy.maxAttempts) {
-        try {
-          await persistence.markInboundEventStatus(payload.eventId, "failed");
-        } catch (statusError) {
-          logger.warn(
-            {
-              teamId: payload.teamId,
-              eventId: payload.eventId,
-              errorType: statusError instanceof Error ? statusError.name : typeof statusError,
-            },
-            "Slack inbound event failure status update failed",
-          );
-        }
+  backgroundJobHandler(
+    SLACK_INBOUND_EVENT_JOB,
+    async (payload) => {
+      const status = await persistence.getInboundEventStatus(payload.eventId);
+      if (status === "processed" || status === "skipped") {
+        return;
       }
-      throw error;
-    }
-  });
+      await dispatchSlackInboundEvent(messageHandler, payload);
+    },
+    {
+      onDeadLetter: async (payload, context) => {
+        const eventId = payload?.eventId ?? context.idempotencyKey ?? undefined;
+        if (!eventId) {
+          return;
+        }
+        await persistence.markInboundEventStatus(eventId, "failed", context.transaction);
+      },
+    },
+  );

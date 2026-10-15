@@ -12,8 +12,8 @@ import type { BackgroundJobHandlerRegistration } from "../../../../shared/backgr
 import type { ConversationLinkResolver } from "../../../../shared/domain/conversationLinkResolver.js";
 import type { Db } from "../../../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../../../shared/observability/logger.js";
-import { SlackMessageHandler } from "./slackMessageHandler.js";
-import { PostgresSlackPersistence } from "./slackPersistence.js";
+import { SlackMessageHandler, type SlackWebApiClientFactory } from "./slackMessageHandler.js";
+import { PostgresSlackPersistence, type SlackPersistencePort } from "./slackPersistence.js";
 import { createSlackInboundEventJobHandler } from "./slackInboundEventJob.js";
 import type { SlackStarterPromptsPort } from "./slackAgentSession.js";
 
@@ -30,14 +30,18 @@ export const buildSlackInboundJobComposition = (input: {
   logger: AppLogger;
   chatService: ChatAnswerPort;
   conversationIngestService: ConversationIngestPort;
-  slackInstallationService: SlackInstallationService;
+  slackInstallationService: Pick<SlackInstallationService, "resolveBotTokenForInstallation" | "markNeedsReauthForInstallation">;
   installations: SlackInstallationRepositoryPort;
   bindings: SlackBindingRepositoryPort;
   workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
   starterPrompts?: SlackStarterPromptsPort;
   conversationLinks?: ConversationLinkResolver;
+  /** Override for tests that want to drive a real dispatch without a Postgres connection. */
+  persistence?: SlackPersistencePort;
+  /** Override for tests that want to drive a real dispatch without calling the Slack Web API. */
+  clientFactory?: SlackWebApiClientFactory;
 }): { backgroundJobHandlers: readonly BackgroundJobHandlerRegistration[] } => {
-  const persistence = new PostgresSlackPersistence(input.db);
+  const persistence = input.persistence ?? new PostgresSlackPersistence(input.db);
   const messageHandler = new SlackMessageHandler({
     logger: input.logger,
     chat: createConnectorChatPort(input.chatService, input.conversationIngestService),
@@ -49,8 +53,9 @@ export const buildSlackInboundJobComposition = (input: {
     workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
     starterPrompts: input.starterPrompts,
     conversationLinks: input.conversationLinks,
+    clientFactory: input.clientFactory,
   });
   return {
-    backgroundJobHandlers: [createSlackInboundEventJobHandler(messageHandler, persistence, input.logger)],
+    backgroundJobHandlers: [createSlackInboundEventJobHandler(messageHandler, persistence)],
   };
 };

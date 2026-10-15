@@ -68,7 +68,7 @@ const makeHandler = (bindings: InMemorySlackBindingRepository) => {
   const persistence: SlackPersistencePort = {
     createInboundEvent: vi.fn(),
     markInboundEventStatus: vi.fn(),
-    markStaleInboundEventsFailed: vi.fn(async () => 0),
+    getInboundEventStatus: vi.fn(async () => "received" as const),
     enqueueInboundEvent: vi.fn(async () => "enqueued" as const),
     findConversationLink: vi.fn(async () => null),
     findConversationLinkByConversationId: vi.fn(async () => null),

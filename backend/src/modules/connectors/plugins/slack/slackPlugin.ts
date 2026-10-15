@@ -74,16 +74,11 @@ export class SlackPlugin implements ConnectorPlugin {
     const integrationConnections = new IntegrationConnectionRepository(db);
     const installations = new SlackInstallationRepository(db);
     const bindings = new SlackChannelBindingRepository(db);
+    // No stale-"received" sweep here: a durable job backs every enqueued event (retried and,
+    // on its final attempt, dead-lettered — which marks the event `failed` itself), and a
+    // skip is now one atomic write, so nothing legitimately stays `received` for a sweep to
+    // catch. A time-boxed sweep would only risk marking a still-retrying event failed early.
     const persistence = new PostgresSlackPersistence(db, this.options.backgroundJobs);
-    const staleFailures = await persistence.markStaleInboundEventsFailed({
-      olderThan: new Date(Date.now() - 10 * 60 * 1000),
-    });
-    if (staleFailures > 0) {
-      context.logger.warn(
-        { event: "slack_inbound", staleFailures },
-        "Marked stale Slack inbound events failed during connector startup",
-      );
-    }
     const extendedContext = context as SlackConnectorContext;
     const installationService = new SlackInstallationService({
       oauthConnections,

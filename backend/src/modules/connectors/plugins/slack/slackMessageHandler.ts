@@ -85,7 +85,7 @@ export interface SlackInboundEventEnvelope<Event extends SlackInboundEvent = Sla
   event: Event;
 }
 
-type SlackWebApiClientFactory = (
+export type SlackWebApiClientFactory = (
   options: Pick<SlackWebApiClientOptions, "botToken">,
 ) => Pick<
   SlackWebApiClientInstance,

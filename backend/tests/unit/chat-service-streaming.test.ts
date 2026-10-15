@@ -7282,12 +7282,15 @@ describe("chat service streaming", () => {
         return "unused";
       },
       async *streamAnswer() {
-        // The second claim's single-bracket unsupported marker (`[?]`, #1502) is split
+        // The third claim's single-bracket unsupported marker (`[?]`, #1502) is split
         // across this chunk and the next (`claim[` | `?] more.`), mirroring how the model
-        // can write it instead of the prompted `[[?]]`.
+        // can write it instead of the prompted `[[?]]`; the `[?]` inside the inline code
+        // span after it is content, also split across chunks. The manifest mirrors the
+        // model's three claims, the single-bracket one as an unsourced group.
         yield "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[?]]. This claim[";
-        yield "?] more.";
-        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[?]]. This claim[?] more.")}`;
+        yield "?] more. Match a literal question mark with `[";
+        yield "?]`.";
+        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[?]]. This claim[[?]] more. Match a literal question mark with `[?]`.")}`;
       },
     };
     const service = makeChatService(
@@ -7337,6 +7340,7 @@ describe("chat service streaming", () => {
       "chunk",
       "chunk",
       "chunk",
+      "chunk",
       "done",
     ]);
     expect(events.slice(0, 4)).toEqual([
@@ -7345,13 +7349,11 @@ describe("chat service streaming", () => {
       { type: "status", stage: "searching" },
       { type: "status", stage: "composing" },
     ]);
-    expect(streamedText).toBe(
-      "The page explains testing and parsing content for users. It also offers 24/7 phone support. This claim more.",
-    );
+    const visibleAnswer =
+      "The page explains testing and parsing content for users. It also offers 24/7 phone support. This claim more. Match a literal question mark with `[?]`.";
+    expect(streamedText).toBe(visibleAnswer);
     expect(streamedText).toContain("24/7 phone support");
-    for (const chunkEvent of chunkEvents) {
-      expect(chunkEvent.text).not.toContain("[?]");
-    }
+    expect(streamedText.replace("`[?]`", "")).not.toContain("[");
     expect(events.findIndex((event) => event.type === "chunk")).toBeGreaterThanOrEqual(0);
     expect(events.findIndex((event) => event.type === "chunk")).toBeLessThan(
       events.findIndex((event) => event.type === "done"),
@@ -7360,14 +7362,12 @@ describe("chat service streaming", () => {
     expect(done).toEqual(
       expect.objectContaining({
         type: "done",
-        answer: "The page explains testing and parsing content for users. It also offers 24/7 phone support. This claim more.",
+        answer: visibleAnswer,
       }),
     );
-    expect(done.answer).not.toContain("[?]");
 
     const persisted = await messageRepository.listByConversationId("workspace-1", done.conversationId);
-    expect(persisted.at(-1)?.content).toBe(done.answer);
-    expect(persisted.at(-1)?.content).not.toContain("[?]");
+    expect(persisted.at(-1)?.content).toBe(visibleAnswer);
   });
 
   it("preserves an uncited warn-mode draft as degraded", async () => {

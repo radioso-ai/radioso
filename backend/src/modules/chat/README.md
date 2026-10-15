@@ -278,19 +278,14 @@ imports from `services/`.
 - Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
   `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come
   only from explicit valid `[[n]]` assertions. The model sometimes writes the
-  single-bracket unsourced-claim marker (`[?]`) instead of the prompted
-  `[[?]]`; three places strip that stray `[?]` from the text path, sharing
-  one pattern defined in `citationAnchorParser.ts`: the streaming
-  `CitationAnchorSanitizer`, the residual-syntax cleanup in
-  `citationAnchorParser.ts` that `answerPresentationService.ts` calls, and
-  `fallbackReplyComposer.ts`'s decline composer. The text path strips `[?]`
-  only — a single-bracket *number* (`[n]`) is left alone, because it collides
-  with legitimate text (`arr[0]`, `[2024]`, a document reference like `[1]`),
-  which `[?]` never does. A markdown link whose label is `?` (`[?](url)`)
-  survives. The voice channel strips the broader `[n]`/`[?]` shape for speech
-  with its own local pattern (`voiceChannel/services/speechText.ts`) — the
-  two policies deliberately diverge, since speech has no equivalent of a
-  markdown link or array index to protect. `implicitCitationDiagnostics.ts`
+  unsupported-claim marker with single brackets; `[?]` is read as `[[?]]` where
+  model answer text enters each consumer, through
+  `canonicalizeUnsourcedMarkers` (`unsourcedMarkerCanonicalization.ts`):
+  `parseInlineAssertionGroups` for grounding, `AnswerPresentationService.normalize`
+  before anchor grouping, the streaming `CitationAnchorSanitizer`, and the decline
+  composer in `fallbackReplyComposer.ts`. From there the `[[?]]` handling applies
+  unchanged. `[?]` inside an inline code span on the same line stays, and a
+  single-bracket number (`[n]`) is never touched. `implicitCitationDiagnostics.ts`
   records aggregate rollout diagnostics and never attaches citation artifacts or
   changes verdicts and suggestions.
   `citationTextNormalization.ts` owns the punctuation classes for the anchor

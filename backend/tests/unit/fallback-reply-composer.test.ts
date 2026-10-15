@@ -142,68 +142,44 @@ describe("grounded miss response composer", () => {
     expect(properties.declineReason?.enum).toEqual(["content_gap", "out_of_scope"]);
   });
 
-  it("strips a single-bracket assertion marker from the model's decline text (#1502)", async () => {
-    const composer = new ModelFallbackReplyComposer(pipeline({
-      metadata: { capability: "chat", provider: "openai", model: "test-model" },
-      async complete() {
-        return textResult(JSON.stringify({
-          reply: "That's outside what I can help with[?], but I can help with our courses.",
-          declineReason: "out_of_scope",
-        }));
-      },
-      stream() {
-        return streamResult([""]);
-      },
-    }));
+  // #1502: the model sometimes writes the unsupported-claim marker with single brackets.
+  // The decline composer reads `[?]` as `[[?]]` before its own citation cleanup.
+  describe("single-bracket unsupported-claim marker", () => {
+    const composeReply = async (reply: string): Promise<string> => {
+      const composer = new ModelFallbackReplyComposer(pipeline({
+        metadata: { capability: "chat", provider: "openai", model: "test-model" },
+        async complete() {
+          return textResult(JSON.stringify({ reply, declineReason: "content_gap" }));
+        },
+        stream() {
+          return streamResult([""]);
+        },
+      }));
+      return (await composer.composeNoContext({ query: "Anything", usageContext })).text;
+    };
 
-    await expect(composer.composeNoContext({ query: "What is the capital of Mars?", usageContext }))
-      .resolves.toEqual({
-        text: "That's outside what I can help with, but I can help with our courses.",
-        declineReason: "out_of_scope",
-      });
-  });
+    it("removes a marker from the decline text", async () => {
+      await expect(composeReply("That's outside what I can help with[?], but I can help with our courses."))
+        .resolves.toBe("That's outside what I can help with, but I can help with our courses.");
+    });
 
-  it("preserves a markdown link whose label is a question mark in the decline text (#1502)", async () => {
-    const composer = new ModelFallbackReplyComposer(pipeline({
-      metadata: { capability: "chat", provider: "openai", model: "test-model" },
-      async complete() {
-        return textResult(JSON.stringify({
-          reply: "See [?](https://example.com) for details.",
-          declineReason: "content_gap",
-        }));
-      },
-      stream() {
-        return streamResult([""]);
-      },
-    }));
+    it("treats a bracket or parenthetical after the marker as it treats one after [[?]]", async () => {
+      for (const [single, double] of [
+        ["Claim[?]] next.", "Claim[[?]]] next."],
+        ["See [?](https://example.com) for details.", "See [[?]](https://example.com) for details."],
+      ]) {
+        const reply = await composeReply(single);
 
-    await expect(composer.composeNoContext({ query: "Anything", usageContext }))
-      .resolves.toEqual({
-        text: "See [?](https://example.com) for details.",
-        declineReason: "content_gap",
-      });
-  });
+        expect(reply).toBe(await composeReply(double));
+        expect(reply).not.toContain("[?");
+      }
+    });
 
-  // Round 2 (#1514): an over-closed marker (`[?]]`) must disappear whole.
-  it("strips a single-bracket marker immediately followed by a stray closing bracket (#1502)", async () => {
-    const composer = new ModelFallbackReplyComposer(pipeline({
-      metadata: { capability: "chat", provider: "openai", model: "test-model" },
-      async complete() {
-        return textResult(JSON.stringify({
-          reply: "Claim[?]] next.",
-          declineReason: "content_gap",
-        }));
-      },
-      stream() {
-        return streamResult([""]);
-      },
-    }));
-
-    await expect(composer.composeNoContext({ query: "Anything", usageContext }))
-      .resolves.toEqual({
-        text: "Claim next.",
-        declineReason: "content_gap",
-      });
+    it("leaves [?] inside inline code alone", async () => {
+      for (const text of ["Use `[?]` to match a literal question mark.", "The pattern `/a[?]b/` matches ab."]) {
+        await expect(composeReply(text)).resolves.toBe(text);
+      }
+    });
   });
 
   it("classifies an in-remit decline as a content gap", async () => {

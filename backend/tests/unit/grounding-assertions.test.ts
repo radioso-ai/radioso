@@ -192,4 +192,33 @@ describe("grounding assertions", () => {
       [],
     ]);
   });
+
+  // #1502: the model sometimes writes the unsupported-claim marker with single brackets and
+  // mirrors it in `claims` as an unsourced group. Grounding reads `[?]` as `[[?]]`.
+  it("reads a single-bracket [?] as an explicitly unsourced inline assertion", () => {
+    const body = "The advanced workshop runs in June[[1]], but the fee is waived[?].";
+    const raw = formatV2Envelope(body, {
+      v: 2,
+      coverage: "partial_insufficient_evidence",
+      requestFocus: "the workshop fee",
+      outcome: "answer",
+      claims: [[1], []],
+      suggestions: [],
+      grounding: "degraded",
+    });
+
+    expect(parseInlineAssertionGroups(body, 3)).toEqual({ groups: [[1], []], invalidSourceCount: 0 });
+    expect(summarize(raw)).toEqual(summarize(raw.replace("[?]", "[[?]]")));
+    expect(summarize(raw)).toMatchObject({
+      verdict: "degraded",
+      claimCount: 2,
+      sourcedClaimCount: 1,
+      unsourcedClaimCount: 1,
+      assertionMismatch: false,
+    });
+  });
+
+  it("does not count [?] inside inline code as an assertion", () => {
+    expect(parseInlineAssertionGroups("Match `a[?]b` literally[[1]].", 3).groups).toEqual([[1]]);
+  });
 });

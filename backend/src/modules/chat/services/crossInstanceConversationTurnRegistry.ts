@@ -73,16 +73,15 @@ interface CrossInstanceTimings {
   heartbeatIntervalMs: number;
   /** How often a waiting turn checks its predecessor in the store, should a notice be missed. */
   predecessorPollIntervalMs: number;
-  /** How long a starting turn waits for the notice connection before it registers regardless. */
-  listenerWaitMs: number;
 }
 
 const DEFAULT_TIMINGS: CrossInstanceTimings = {
   leaseTtlMs: 30_000,
   heartbeatIntervalMs: 10_000,
   predecessorPollIntervalMs: 1_000,
-  listenerWaitMs: 2_000,
 };
+
+const END_RETRY_DELAYS_MS: readonly number[] = [250, 1_000];
 
 interface CrossInstanceConversationTurnRegistryOptions {
   /** Unique per process; names the owner of each lease this process holds. */
@@ -138,7 +137,6 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
   private listening = false;
   /** Advances whenever notices may have been missed. */
   private noticeEpoch = 0;
-  private listeningWaiters: Array<() => void> = [];
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
   private closed = false;
@@ -187,12 +185,12 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.listening = false;
-    this.releaseListeningWaiters();
   }
 
   private async register(turn: LocalTurn): Promise<void> {
     try {
-      await this.untilListening();
+      // Not waiting for the notice connection: when it was not listening yet, the turn catches up
+      // from the store once it is, which costs a query only then and no latency on the turn.
       const heardFromIssue = this.listening;
       const epochAtIssue = this.noticeEpoch;
       const grant = await this.leases.begin({
@@ -316,19 +314,33 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
       return;
     }
     turn.ending = true;
-    void this.leases
-      .end({ conversationId: turn.state.conversationId, turnId: grant.turnId })
-      .catch((error: unknown) => {
-        // The lease expires on its own; a successor elsewhere waits until then.
-        this.warn("conversation_turn_lease_end_failed", error);
-      })
-      .finally(() => {
-        this.turns.delete(grant.turnId);
-        if (this.turns.size === 0) {
-          this.clearTimer("heartbeat");
+    void this.recordEnd(turn.state.conversationId, grant.turnId).finally(() => {
+      this.turns.delete(grant.turnId);
+      if (this.turns.size === 0) {
+        this.clearTimer("heartbeat");
+      }
+      this.releaseSubscriptionWhenIdle();
+    });
+  }
+
+  /** Retries briefly while the lease is still renewed; after that it expires on its own. */
+  private async recordEnd(conversationId: string, turnId: string): Promise<void> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await this.leases.end({ conversationId, turnId });
+        return;
+      } catch (error) {
+        const retryDelayMs = END_RETRY_DELAYS_MS[attempt];
+        if (retryDelayMs === undefined || this.closed) {
+          // A successor elsewhere waits until the lease expires.
+          this.warn("conversation_turn_lease_end_failed", error);
+          return;
         }
-        this.releaseSubscriptionWhenIdle();
-      });
+        await new Promise((resolve) => {
+          setTimeout(resolve, retryDelayMs).unref();
+        });
+      }
+    }
   }
 
   private onNotice(notice: ConversationTurnNotice): void {
@@ -349,7 +361,6 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
 
   private onListening(): void {
     this.listening = true;
-    this.releaseListeningWaiters();
     // Announcements made while nothing listened are lost; the store has what they said.
     if (this.turns.size > 0) {
       void this.catchUpOnSuccessors([...this.turns.keys()]);
@@ -437,28 +448,6 @@ export class CrossInstanceConversationTurnRegistry implements ConversationTurnRe
     this.unsubscribe();
     this.unsubscribe = null;
     this.onInterrupted();
-  }
-
-  private untilListening(): Promise<void> {
-    if (this.listening || this.closed) {
-      return Promise.resolve();
-    }
-    return new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, this.timings.listenerWaitMs);
-      timer.unref();
-      this.listeningWaiters.push(() => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
-  }
-
-  private releaseListeningWaiters(): void {
-    const waiters = this.listeningWaiters;
-    this.listeningWaiters = [];
-    for (const release of waiters) {
-      release();
-    }
   }
 
   private addRegistering(turn: LocalTurn): void {

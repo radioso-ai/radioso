@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Env } from "../../src/app/config/env.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
+import type { ApplicationModule } from "../../src/app/composition/index.js";
 import { buildDependencies } from "../../src/app/server/dependencies.js";
 import { PostgresAssistantTurnPersistence } from "../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { ChatTurnLifecycle } from "../../src/modules/chat/services/chatTurnLifecycle.js";
@@ -373,6 +374,50 @@ describe("runtime startup", () => {
     expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
   });
 
+  // documentWorkerServer.ts (the production push-worker entrypoint) is the only caller that
+  // builds dependencies for this runtime outside tests; it must load configured application
+  // modules (RADIOSO_APPLICATION_MODULES / RADIOSO_EDITION=enterprise) exactly like
+  // documentWorker.ts does for the poll worker, or a module's `registerPeriodicTask`
+  // contributions — EE's usage-limit and auto-top-up sweeps included — are silently absent
+  // from the push-worker's dependency graph even though Terraform configures the env var for
+  // it. No `buildDependencies` override here: the real one must actually receive the modules,
+  // so this calls it for real (as the "builds default dependencies" test above also does) and
+  // inspects what it built through `createApp` instead of mocking the builder itself.
+  it("passes configured application modules through to the real buildDependencies, mirroring the poll-loop worker", async () => {
+    const env = createEnv();
+    let capturedDependencies: AppDependencies | undefined;
+    const applicationModules: ApplicationModule[] = [
+      {
+        id: "test-periodic-task-module",
+        register(context) {
+          context.registerPeriodicTask?.({
+            id: "test-periodic-task",
+            intervalMs: 60_000,
+            create: () => ({ run: async () => undefined }),
+          });
+        },
+      },
+    ];
+
+    const runtime = await startWorkerTaskRuntime({
+      env,
+      logger: createLogger().logger as any,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      applicationModules,
+      createApp: (dependencies) => {
+        capturedDependencies = dependencies;
+        return ({}) as any;
+      },
+      listen: vi.fn((_app: unknown, _port: number, onListening: () => void) => {
+        onListening();
+        return { close: vi.fn((callback?: () => void) => callback?.()) };
+      }),
+    });
+
+    expect(capturedDependencies?.periodicTaskHandlesById.has("test-periodic-task")).toBe(true);
+    await runtime.shutdown("test");
+  });
+
   it("starts the crawler worker runtime independently after migration verification", async () => {
     const env = createEnv();
     const dependencies = createDependencies();
@@ -432,6 +477,47 @@ describe("runtime startup", () => {
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expectCalledBefore(close, dependencies.realtimePublisherLifecycle.shutdown);
     expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
+  });
+
+  // crawlerWorkerServer.ts has the same gap documentWorkerServer.ts had: a module's
+  // registerPeriodicTask contributions aside, the website-crawl ingestion path itself reserves
+  // document/usage-limit capacity through whatever UsageLimitPolicy this process's own
+  // buildDependencies call registered (src/modules/documents/services/documentIngestionService.ts),
+  // so an Enterprise deployment's crawl-sourced documents bypass usage limits entirely if this
+  // push-worker entrypoint never loads the Enterprise module Terraform configures it for.
+  it("passes configured application modules through to the real buildDependencies, mirroring the poll-loop crawler worker", async () => {
+    const env = createEnv();
+    let capturedDependencies: AppDependencies | undefined;
+    const applicationModules: ApplicationModule[] = [
+      {
+        id: "test-periodic-task-module",
+        register(context) {
+          context.registerPeriodicTask?.({
+            id: "test-periodic-task",
+            intervalMs: 60_000,
+            create: () => ({ run: async () => undefined }),
+          });
+        },
+      },
+    ];
+
+    const runtime = await startCrawlerWorkerTaskRuntime({
+      env,
+      logger: createLogger().logger as any,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      applicationModules,
+      createApp: (dependencies) => {
+        capturedDependencies = dependencies;
+        return ({}) as any;
+      },
+      listen: vi.fn((_app: unknown, _port: number, onListening: () => void) => {
+        onListening();
+        return { close: vi.fn((callback?: () => void) => callback?.()) };
+      }),
+    });
+
+    expect(capturedDependencies?.periodicTaskHandlesById.has("test-periodic-task")).toBe(true);
+    await runtime.shutdown("test");
   });
 
   it("passes the metrics registry through API startup composition when metrics are enabled", async () => {

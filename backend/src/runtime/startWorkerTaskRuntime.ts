@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 
 import type { Env } from "../app/config/env.js";
 import type { AppDependencies } from "../app/server/types.js";
+import type { ApplicationModule } from "../app/composition/index.js";
 import { createWorkerTaskApp } from "../app/worker/createWorkerTaskApp.js";
 import { buildDependencies } from "../app/server/dependencies.js";
 import { ensureNoPendingMigrations, type MigrationTimeoutOptions } from "../db/runMigrations.js";
@@ -25,6 +26,7 @@ interface StartWorkerTaskRuntimeOptions {
   buildDependencies?: (env: Env) => AppDependencies;
   createApp?: (dependencies: AppDependencies) => Express;
   listen?: (app: Express, port: number, onListening: () => void) => ServerLike;
+  applicationModules?: ApplicationModule[];
 }
 
 const defaultListen = (app: Express, port: number, onListening: () => void): Server =>
@@ -38,7 +40,9 @@ export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOpti
   }, logger);
   startRuntimeTracing(options.env, logger, "document-worker-task-server");
 
-  const dependencies = (options.buildDependencies ?? buildDependencies)(options.env);
+  const dependencies = options.buildDependencies
+    ? options.buildDependencies(options.env)
+    : buildDependencies(options.env, { modules: options.applicationModules });
   dependencies.logger.info({ role: "worker-task" }, "Radioso worker task runtime starting");
   await dependencies.applicationModules.initializeAll();
   const app = (options.createApp ?? createWorkerTaskApp)(dependencies);

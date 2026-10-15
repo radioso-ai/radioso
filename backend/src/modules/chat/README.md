@@ -313,22 +313,30 @@ imports from `services/`.
   (`app/composition/conversationTurnCoordination.ts`), so this holds whichever
   instance runs each turn. Starting a turn is one statement: it locks the
   conversation's `conversation_turn_heads` row, links the turn to the latest one,
-  records its lease in `conversation_turn_leases`, and `NOTIFY`s
-  `radioso_conversation_turns`. The process that runs the older turn applies the
-  supersession against that turn's own latches, so `beginCommit` stays
-  synchronous and still wins or loses atomically against a newer turn from any
-  instance. Leases are renewed every 10 seconds and expire after 30; a successor
-  stops waiting for an expired one. The `LISTEN` connection
+  records its lease in `conversation_turn_leases`, `NOTIFY`s
+  `radioso_conversation_turns`, and prunes a bounded batch of leases crashed
+  processes left. A newer turn supersedes this process's own turn of the
+  conversation inside `start`, before any I/O, as the in-memory registry does.
+  A turn another process runs is superseded by that process when the announcement
+  arrives, against the turn's own latches, so `beginCommit` stays synchronous and
+  wins or loses atomically; a latch set before the announcement arrives (about one
+  round trip) stands, and the newer turn waits for it. Leases are renewed every
+  10 seconds while live and expire after 30; expiry is final, and a process whose
+  renewal finds its lease expired aborts that turn (`ChatTurnLeaseLostError`). A
+  successor that finds its predecessor's lease expired waits for that turn's own
+  predecessor instead, so a crashed waiter never lets a newer turn overtake an
+  older reply still running. The `LISTEN` connection
   (`shared/infra/postgresNotificationListener.ts`) is one per process, opened with
   the first turn and closed after the pool's idle timeout; announcements missed
   while it was down are read back from `conversation_turn_leases` when it
-  reconnects. `chat_turn_cancellations_total` carries `scope` (`local`,
-  `cross_instance`); `chat_turn_lease_expiry_takeovers_total` counts successors
-  that stopped waiting for an expired lease. Every registry runs the shared
-  contract in `tests/support/conversationTurnRegistryContract.ts`
+  reconnects, retried with backoff while turns remain in flight.
+  `chat_turn_cancellations_total` carries `scope` (`local`, `cross_instance`) and
+  the `lease_lost` reason; `chat_turn_lease_expiry_takeovers_total` counts
+  successors that stopped waiting for an expired lease. Every registry runs the
+  shared contract in `tests/support/conversationTurnRegistryContract.ts`
   (`tests/unit/conversation-turn-registry.test.ts`,
   `tests/integration/conversation-turn-registry.integration.test.ts`, which also
-  runs two processes on one database). A superseded turn
+  runs two and three processes on one database). A superseded turn
   is still accountable: `chatTurnLifecycle.recordSupersession` records a
   `chat.answer` audit event with `eventStatus: "cancelled"` (never `"failure"` —
   a user typing a follow-up is not an assistant error) keyed to the turn's

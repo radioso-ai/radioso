@@ -12,12 +12,6 @@ import {
 /** One registry implementation under the shared lease contract. */
 export interface ConversationTurnRegistryHarness {
   registry: ConversationTurnRegistry;
-  /**
-   * Resolves once every turn started so far has taken its place in the conversation's order and
-   * the supersession that placement decides has applied. Immediate for a registry that decides
-   * inside `start`.
-   */
-  settle(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -41,8 +35,10 @@ export const isPending = async (promise: Promise<unknown>): Promise<boolean> => 
 const speechLike = { supersedeAfterEmission: true };
 
 /**
- * The lease contract every `ConversationTurnRegistry` keeps, whichever process each turn runs in.
- * Each case runs on a fresh conversation id, so a registry backed by shared storage needs no reset.
+ * The lease contract every `ConversationTurnRegistry` keeps for turns of one process. A newer turn
+ * supersedes in `start` itself, before any I/O, so a predecessor's synchronous latches can never
+ * slip in between. Each case runs on a fresh conversation id, so a registry backed by shared
+ * storage needs no reset.
  */
 export const describeConversationTurnRegistryContract = (
   label: string,
@@ -68,7 +64,6 @@ export const describeConversationTurnRegistryContract = (
       first.setStage("rendering");
 
       const second = harness.registry.start(conversationId);
-      await harness.settle();
 
       expect(first.signal.aborted).toBe(true);
       expect(() => first.throwIfCancelled()).toThrowError(ChatTurnSupersededError);
@@ -90,7 +85,6 @@ export const describeConversationTurnRegistryContract = (
       first.beginEmission();
 
       const second = harness.registry.start(conversationId);
-      await harness.settle();
 
       expect(first.signal.aborted).toBe(false);
       expect(turnCancelled).not.toHaveBeenCalled();
@@ -117,7 +111,6 @@ export const describeConversationTurnRegistryContract = (
     it("orders the turns of each conversation on their own", async () => {
       const first = harness.registry.start(conversationId);
       const other = harness.registry.start(randomUUID());
-      await harness.settle();
 
       await other.waitForPredecessor();
       expect(first.signal.aborted).toBe(false);
@@ -132,7 +125,6 @@ export const describeConversationTurnRegistryContract = (
         first.beginEmission();
 
         const second = harness.registry.start(conversationId, speechLike);
-        await harness.settle();
 
         expect(first.signal.aborted).toBe(true);
         expect(() => first.throwIfCancelled()).toThrowError(
@@ -161,7 +153,6 @@ export const describeConversationTurnRegistryContract = (
         first.setStage("routing");
 
         const second = harness.registry.start(conversationId, speechLike);
-        await harness.settle();
 
         expect(() => first.throwIfCancelled()).toThrowError(
           expect.objectContaining({ stage: "routing", afterEmission: false, replacedByNewerInput: true }),
@@ -175,7 +166,6 @@ export const describeConversationTurnRegistryContract = (
         first.setStage("routing");
 
         const second = harness.registry.start(conversationId);
-        await harness.settle();
 
         expect(first.signal.aborted).toBe(true);
         expect(() => first.throwIfCancelled()).toThrowError(
@@ -189,7 +179,6 @@ export const describeConversationTurnRegistryContract = (
         const first = harness.registry.start(conversationId);
 
         const second = harness.registry.start(conversationId, speechLike);
-        await harness.settle();
 
         expect(() => first.throwIfCancelled()).toThrowError(expect.objectContaining({ replacedByNewerInput: false }));
         first.complete();
@@ -201,7 +190,6 @@ export const describeConversationTurnRegistryContract = (
         first.beginEmission();
 
         const second = harness.registry.start(conversationId, speechLike);
-        await harness.settle();
 
         expect(first.signal.aborted).toBe(false);
         first.complete();
@@ -214,7 +202,6 @@ export const describeConversationTurnRegistryContract = (
         first.beginCommit();
 
         const second = harness.registry.start(conversationId, speechLike);
-        await harness.settle();
 
         expect(first.signal.aborted).toBe(false);
         expect(() => first.throwIfCancelled()).not.toThrow();
@@ -230,7 +217,6 @@ export const describeConversationTurnRegistryContract = (
         const first = harness.registry.start(conversationId, speechLike);
         first.beginEmission();
         const second = harness.registry.start(conversationId, speechLike);
-        await harness.settle();
 
         expect(() => first.beginCommit()).toThrowError(
           expect.objectContaining({ name: "ChatTurnSupersededError", afterEmission: true, replacedByNewerInput: true }),
@@ -244,7 +230,6 @@ export const describeConversationTurnRegistryContract = (
         first.beginEmission();
 
         const second = harness.registry.start(conversationId);
-        await harness.settle();
 
         expect(first.signal.aborted).toBe(false);
         first.complete();
@@ -255,11 +240,9 @@ export const describeConversationTurnRegistryContract = (
     it("keeps newer registry ownership when an older turn completes", async () => {
       const first = harness.registry.start(conversationId);
       const second = harness.registry.start(conversationId);
-      await harness.settle();
 
       first.complete();
       const third = harness.registry.start(conversationId);
-      await harness.settle();
 
       expect(second.signal.aborted).toBe(true);
       expect(third.signal.aborted).toBe(false);
@@ -272,7 +255,6 @@ export const describeConversationTurnRegistryContract = (
       const first = harness.registry.start(conversationId);
       first.setStage("preparing");
       const second = harness.registry.start(conversationId);
-      await harness.settle();
 
       expect(() => first.beginEmission()).toThrowError(
         expect.objectContaining({
@@ -309,7 +291,6 @@ export const describeConversationTurnRegistryContract = (
       const first = harness.registry.start(conversationId);
       first.beginEmission();
       const second = harness.registry.start(conversationId);
-      await harness.settle();
 
       first.cancelAfterDisconnect();
       expect(await isPending(second.waitForPredecessor())).toBe(true);

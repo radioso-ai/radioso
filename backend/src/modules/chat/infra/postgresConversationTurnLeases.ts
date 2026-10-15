@@ -18,10 +18,46 @@ const CONVERSATION_TURN_CHANNEL = "radioso_conversation_turns";
 /** How long an expired lease is kept, so a waiting successor can tell a takeover from an end. */
 const EXPIRED_LEASE_RETENTION = "5 minutes";
 
+/** At most this many leases, and heads, are pruned per statement, so pruning never grows a turn's start. */
+const PRUNE_BATCH = 20;
+
+/**
+ * Drops a bounded batch of leases expired longer than the retention, and heads left pointing at no
+ * live-enough lease. `SKIP LOCKED` keeps it from ever waiting on a row another statement holds, so
+ * it adds no lock wait (and no deadlock) to the statement it rides on. `exceptConversationId` keeps
+ * a starting turn's own head out of it: the same statement upserts that row.
+ */
+const pruneExpiredLeases = (exceptConversationId: string | null) => sql`
+  pruned_leases AS (
+    DELETE FROM conversation_turn_leases
+    WHERE turn_id IN (
+      SELECT turn_id FROM conversation_turn_leases
+      WHERE lease_expires_at < now() - ${EXPIRED_LEASE_RETENTION}::interval
+      ORDER BY lease_expires_at
+      LIMIT ${PRUNE_BATCH}::integer
+      FOR UPDATE SKIP LOCKED
+    )
+  ), pruned_heads AS (
+    DELETE FROM conversation_turn_heads
+    WHERE conversation_id IN (
+      SELECT head.conversation_id FROM conversation_turn_heads head
+      WHERE head.updated_at < now() - ${EXPIRED_LEASE_RETENTION}::interval
+        AND head.conversation_id IS DISTINCT FROM ${exceptConversationId}::text
+        AND NOT EXISTS (
+          SELECT 1 FROM conversation_turn_leases lease
+          WHERE lease.turn_id = head.turn_id
+            AND lease.lease_expires_at >= now() - ${EXPIRED_LEASE_RETENTION}::interval
+        )
+      LIMIT ${PRUNE_BATCH}::integer
+      FOR UPDATE SKIP LOCKED
+    )
+  )`;
+
 /**
  * Turn order and leases in `conversation_turn_heads` and `conversation_turn_leases` (migration
  * 226). Starting a turn is one statement: it locks the conversation's head row, links the new turn
- * to the latest one, records the lease, and announces it.
+ * to the latest one, records the lease, announces it, and prunes a bounded batch of leases left by
+ * crashed processes.
  */
 export class PostgresConversationTurnLeaseStore implements ConversationTurnLeaseStore {
   constructor(private readonly db: Db) {}
@@ -37,7 +73,7 @@ export class PostgresConversationTurnLeaseStore implements ConversationTurnLease
     // that start committed meanwhile; such a predecessor is fresh, so only a visibly expired lease
     // counts as expired.
     const { rows } = await sql<{ turn_id: string; predecessor_turn_id: string | null; predecessor_expired: boolean }>`
-      WITH next_turn AS (
+      WITH ${pruneExpiredLeases(input.conversationId)}, next_turn AS (
         SELECT nextval('conversation_turn_id_seq') AS turn_id
       ), head AS (
         INSERT INTO conversation_turn_heads AS h (conversation_id, turn_id, predecessor_turn_id)
@@ -102,19 +138,14 @@ export class PostgresConversationTurnLeaseStore implements ConversationTurnLease
   async renew(input: { ownerInstanceId: string; turnIds: string[]; leaseTtlMs: number }): Promise<string[]> {
     const { rows } = await sql<{ turn_id: string }>`
       WITH renewed AS (
+        -- Only a live lease is extended: once expired, successors have stopped waiting for it.
         UPDATE conversation_turn_leases
         SET lease_expires_at = now() + ${input.leaseTtlMs}::integer * interval '1 millisecond'
-        WHERE owner_instance_id = ${input.ownerInstanceId}::text AND turn_id = ANY(${input.turnIds}::bigint[])
+        WHERE owner_instance_id = ${input.ownerInstanceId}::text
+          AND turn_id = ANY(${input.turnIds}::bigint[])
+          AND lease_expires_at > now()
         RETURNING turn_id
-      ), pruned AS (
-        DELETE FROM conversation_turn_leases
-        WHERE lease_expires_at < now() - ${EXPIRED_LEASE_RETENTION}::interval
-        RETURNING turn_id, conversation_id
-      ), pruned_heads AS (
-        DELETE FROM conversation_turn_heads head
-        USING pruned
-        WHERE head.conversation_id = pruned.conversation_id AND head.turn_id = pruned.turn_id
-      )
+      ), ${pruneExpiredLeases(null)}
       SELECT held.turn_id::text AS turn_id
       FROM unnest(${input.turnIds}::bigint[]) AS held(turn_id)
       WHERE NOT EXISTS (SELECT 1 FROM renewed WHERE renewed.turn_id = held.turn_id)
@@ -122,13 +153,13 @@ export class PostgresConversationTurnLeaseStore implements ConversationTurnLease
     return rows.map((row) => row.turn_id);
   }
 
-  async leaseStates(turnIds: string[]): Promise<Map<string, "live" | "expired">> {
-    const { rows } = await sql<{ turn_id: string; live: boolean }>`
-      SELECT turn_id::text AS turn_id, lease_expires_at > now() AS live
+  async leaseStates(turnIds: string[]): Promise<Map<string, { live: boolean; predecessorTurnId: string | null }>> {
+    const { rows } = await sql<{ turn_id: string; live: boolean; predecessor_turn_id: string | null }>`
+      SELECT turn_id::text AS turn_id, lease_expires_at > now() AS live, predecessor_turn_id::text AS predecessor_turn_id
       FROM conversation_turn_leases
       WHERE turn_id = ANY(${turnIds}::bigint[])
     `.execute(this.db);
-    return new Map(rows.map((row) => [row.turn_id, row.live ? "live" : "expired"]));
+    return new Map(rows.map((row) => [row.turn_id, { live: row.live, predecessorTurnId: row.predecessor_turn_id }]));
   }
 
   async successorsOf(turnIds: string[]): Promise<ConversationTurnStarted[]> {

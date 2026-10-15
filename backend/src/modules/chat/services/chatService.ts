@@ -65,7 +65,7 @@ import {
 import { WORKBENCH_TEST_SOURCE_CHANNELS } from "../../../shared/domain/conversationSource.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import type { ConversationSummaryStore } from "../contracts/conversationSummary.js";
-import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
+import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
 import {
   ChatTurnAssembly,
   type ChatTurnAssemblyFactory,
@@ -236,8 +236,8 @@ export interface ChatServiceOptions {
   directiveStateStore?: DirectiveStateStore;
   /** Optional: durable per-conversation summary read model for prompt injection. */
   conversationSummaryStore?: Pick<ConversationSummaryStore, "load">;
-  /** Optional: fire-and-forget per-conversation summary refresh after persisted turns. */
-  conversationSummaryUpdater?: ConversationSummaryUpdater;
+  /** Optional: hands the worker a per-conversation summary refresh job with each persisted turn. */
+  backgroundJobs?: Pick<BackgroundJobQueue, "enqueue">;
   selectionStrategy?: TurnSelectionStrategy;
   turnRouter: TurnRouter;
   turnInterpreter?: ChatConversationTurnInterpreter;
@@ -469,7 +469,7 @@ export class ChatService {
       directiveSteering = noopRouteScopedDirectiveRuntime,
       directiveStateStore = noopDirectiveStateStore,
       conversationSummaryStore,
-      conversationSummaryUpdater,
+      backgroundJobs,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       turnRouter,
       turnInterpreter,
@@ -543,7 +543,7 @@ export class ChatService {
       logger,
       undefined,
       conversationOwnershipRepository,
-      conversationSummaryUpdater,
+      backgroundJobs,
       turnRuntime.metrics,
       workspaceInvalidationPublisher,
     );

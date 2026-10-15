@@ -56,18 +56,18 @@ export interface ConversationEarlyTitleGenerator {
 }
 
 /** Model-call knobs for the early-title generator; distinct from the combined call's config. */
-export interface ConversationEarlyTitleGenerationConfig {
+interface ConversationEarlyTitleGenerationConfig {
   reasoningEffort: ReasoningEffort;
   maxOutputTokens: number;
 }
 
-/** Post-turn trigger consumed by the turn lifecycle; fire-and-forget, never awaited. */
+/** Run by the conversation summary refresh background job after a turn commits; never throws. */
 export interface ConversationSummaryUpdater {
   refresh(input: { workspaceId: string; conversationId: string; accountId?: string }): Promise<void>;
 }
 
 /** The size bounds the regeneration honors; widened from the composition-owned defaults. */
-export interface ConversationSummaryConfig {
+interface ConversationSummaryConfig {
   minMessages: number;
   refreshEveryMessages: number;
   maxSourceMessages: number;
@@ -80,7 +80,7 @@ export interface ConversationSummaryConfig {
 }
 
 /** Model-call knobs for the generator; distinct from the size bounds the service applies. */
-export interface ConversationSummaryGenerationConfig {
+interface ConversationSummaryGenerationConfig {
   reasoningEffort: ReasoningEffort;
   maxOutputTokens: number;
 }
@@ -124,8 +124,9 @@ const clampTitle = (value: string | undefined, maxLength: number): string | unde
 };
 
 /**
- * Regenerates (never appends) the rolling per-conversation summary (#866) off the
- * critical path after a turn completes. Below the message threshold the raw window
+ * Regenerates (never appends) the rolling per-conversation summary (#866) in the worker,
+ * as the conversation summary refresh background job a committed turn writes (see
+ * `conversationSummaryRefreshJob.ts`). Below the message threshold the raw window
  * already carries the whole conversation, so it skips without an LLM call. Above it,
    * one LLM call rewrites the previous summary plus a bounded tail of recent messages
    * into a fresh, hard-clamped summary and upserts it under the watermark guard. The

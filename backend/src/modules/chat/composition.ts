@@ -5,6 +5,8 @@ export {
   ModelConversationSummaryGenerator,
   ModelConversationEarlyTitleGenerator,
 } from "./services/summary/conversationSummaryService.js";
+// The worker runs the refresh as a background job; composition registers its handler.
+export { conversationSummaryRefreshHandler } from "./services/summary/conversationSummaryRefreshJob.js";
 // App-wiring entrypoints for the MCP converse surface (composed in app/composition).
 export { AgentConverseAudit } from "./services/agentConverseAudit.js";
 export { AgentConverseService } from "./services/agentConverseService.js";

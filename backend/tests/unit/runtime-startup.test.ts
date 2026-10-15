@@ -89,6 +89,7 @@ const createEnv = (): Env => ({
   WORKER_TASKS_QUEUE_NAME: undefined,
   WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
   ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
+  BACKGROUND_JOB_TASK_QUEUE_NAME: undefined,
   WORKER_TASKS_SERVICE_URL: undefined,
   WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
@@ -191,6 +192,14 @@ const createDependencies = () =>
     actionDispatchWorker: {
       start: vi.fn(),
       stop: vi.fn().mockResolvedValue(undefined),
+    },
+    backgroundJobRuntime: {
+      start: vi.fn(),
+      stop: vi.fn().mockResolvedValue(undefined),
+    },
+    backgroundJobRetentionWorker: {
+      start: vi.fn(),
+      stop: vi.fn(async () => {}),
     },
     websiteCrawlWorker: {
       start: vi.fn().mockResolvedValue(undefined),
@@ -304,6 +313,8 @@ describe("runtime startup", () => {
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.vectorIndexReconciler?.start).toHaveBeenCalledOnce();
     expect(dependencies.actionDispatchWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.backgroundJobRuntime.start).toHaveBeenCalledOnce();
+    expect(dependencies.backgroundJobRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.copilotRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.testExecutionRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.approvalResumeEffectJournalRetentionWorker.start).toHaveBeenCalledOnce();
@@ -317,6 +328,8 @@ describe("runtime startup", () => {
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.vectorIndexReconciler?.stop).toHaveBeenCalledOnce();
     expect(dependencies.actionDispatchWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.backgroundJobRuntime.stop).toHaveBeenCalledOnce();
+    expect(dependencies.backgroundJobRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.copilotRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.testExecutionRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.approvalResumeEffectJournalRetentionWorker.stop).toHaveBeenCalledOnce();
@@ -659,6 +672,8 @@ describe("runtime startup", () => {
     > = {
       documentProcessingWorker: { route: "POST /internal/tasks/document-processing (and /recover)" },
       actionDispatchWorker: { route: "POST /internal/tasks/actions/drain (and /recover)" },
+      backgroundJobRuntime: { route: "POST /internal/tasks/background-jobs/drain (push and scheduled sweep)" },
+      backgroundJobRetentionWorker: { route: "POST /internal/tasks/background-job-retention/sweep" },
       emailChannelWorker: { route: "POST /internal/tasks/email-channel/drain (and /sweep)" },
       vectorIndexReconciler: {
         noPushCounterpart:

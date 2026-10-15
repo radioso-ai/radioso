@@ -1,7 +1,7 @@
 ---
 title: "Self-hosting operations"
 description: "Backup, restore, upgrade, realtime, and worker incident practices for self-hosted Radioso deployments."
-last_updated: 2026-09-28
+last_updated: 2026-10-15
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -169,6 +169,27 @@ SELECT pg_terminate_backend(<pid>);
 ```
 
 Use this carefully. Confirm the session is stale or belongs to the failed rollout before terminating it. Restarting the database is the broader fallback when session-level recovery is not clear.
+
+## What the worker runs
+
+The document worker is where work that outlives a request runs, so run it wherever you run the backend. Besides processing uploaded documents, it:
+
+- sends a routine's queued actions: contact requests, handoff notifications, approval requests
+- runs background jobs, such as the one each answered turn writes to refresh the conversation's rolling summary and title
+- drains the email channel's inbound mail and review turns, when a provider is configured
+- extracts message facets for Audience Pulse
+- removes data past its retention window: old Ray conversations, test executions, Slack event ids, and dead-lettered background jobs
+
+A deployment without a running worker still answers chat, but documents stay queued, routine actions are never sent, and conversation summaries and titles stop updating.
+
+Background jobs live in the `background_jobs` table. A completed job is deleted, so the table holds only work that is waiting, running, or has failed for good. A failed job is retried with a growing delay; after its last attempt it stays for 14 days with the error that stopped it:
+
+```sql
+SELECT kind, status, attempts, available_at, last_error
+FROM background_jobs
+ORDER BY created_at DESC
+LIMIT 20;
+```
 
 ## Worker incidents
 

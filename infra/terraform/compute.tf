@@ -293,6 +293,10 @@ resource "google_cloud_run_v2_service" "backend" {
         value = google_cloud_tasks_queue.conversation_actions[0].name
       }
       env {
+        name  = "BACKGROUND_JOB_TASK_QUEUE_NAME"
+        value = google_cloud_tasks_queue.background_jobs[0].name
+      }
+      env {
         name  = "WORKER_TASKS_SERVICE_URL"
         value = local.worker_tasks_service_url
       }
@@ -1185,6 +1189,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
       env {
         name  = "ACTION_DISPATCH_TASK_QUEUE_NAME"
         value = google_cloud_tasks_queue.conversation_actions[0].name
+      }
+      env {
+        name  = "BACKGROUND_JOB_TASK_QUEUE_NAME"
+        value = google_cloud_tasks_queue.background_jobs[0].name
       }
       env {
         name  = "WORKER_TASKS_SERVICE_URL"

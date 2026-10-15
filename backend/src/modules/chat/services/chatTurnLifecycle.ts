@@ -64,7 +64,8 @@ import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.
 import type { ChatRoutineTurnReporter, ChatRoutineTurnState } from "../contracts/routineTurnState.js";
 import type { ChatAnswerCoverageAssessment } from "../contracts/answerCoverage.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
-import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
+import { conversationSummaryRefreshRequest } from "./summary/conversationSummaryRefreshJob.js";
+import type { BackgroundJobQueue, BackgroundJobRequest } from "../../../shared/background-jobs/index.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import {
@@ -269,6 +270,8 @@ export interface AssistantTurnPersistencePort {
     ownershipHandoff?: OwnershipHandoffInput | null;
     ownershipAuditEvent?: AuditEventInput | null;
     additionalAuditEvent?: AuditEventInput | null;
+    /** Background jobs the turn hands to the worker, written in the turn's own transaction. */
+    backgroundJobs?: readonly BackgroundJobRequest[];
     transaction?: Db;
     /** Runs as the transaction's last step; a throw rolls the whole turn back. */
     commitFence?: () => void;
@@ -658,14 +661,36 @@ export class ChatTurnLifecycle {
     private readonly logger?: Pick<AppLogger, "warn">,
     private readonly pendingDecisionRepository?: PendingDecisionWriterPort,
     private readonly conversationOwnershipRepository?: ConversationOwnershipWriterPort,
-    // Optional: when wired, the per-conversation rolling summary (#866) is
-    // regenerated fire-and-forget after the turn is durably persisted.
-    private readonly conversationSummaryUpdater?: ConversationSummaryUpdater,
+    // Optional: when wired, a turn that records bookkeeping hands the worker a
+    // conversation summary refresh job (#866), written in the turn's own commit.
+    private readonly backgroundJobs?: Pick<BackgroundJobQueue, "enqueue">,
     private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
   ) {
     this.capabilityPolicy = capabilityPolicy ?? new DefaultAllowCapabilityPolicy();
+  }
+
+  /**
+   * The fallback path's job write: it has no transaction to join, so each job is written once the
+   * reply exists. Best-effort, because the reply already stands; the next turn writes a new job.
+   */
+  private async enqueueBackgroundJobs(jobs: readonly BackgroundJobRequest[], conversationId: string): Promise<void> {
+    for (const job of jobs) {
+      try {
+        await this.backgroundJobs?.enqueue(job);
+      } catch (error) {
+        this.logger?.warn(
+          {
+            event: "background_job_enqueue_failed",
+            conversationId,
+            kind: job.kind,
+            errorType: error instanceof Error ? error.name : typeof error,
+          },
+          "Failed to enqueue a background job for the turn",
+        );
+      }
+    }
   }
 
   /** Enqueue routine-emitted fire-and-forget actions to the outbox (idempotent). */
@@ -773,6 +798,15 @@ export class ChatTurnLifecycle {
     const ownershipHandoff = capabilities.ownershipHandoff === "apply" ? input.ownershipHandoff : undefined;
     const recordsBookkeeping = capabilities.turnBookkeeping === "record";
     const additionalAuditEvent = recordsBookkeeping ? input.additionalAuditEvent : undefined;
+    // The rolling conversation summary (#866) is regenerated in the worker, never on this turn's
+    // path: the turn only writes the job, and the reply never waits on a model call for it.
+    const backgroundJobs: readonly BackgroundJobRequest[] = this.backgroundJobs && recordsBookkeeping
+      ? [conversationSummaryRefreshRequest({
+          workspaceId: input.workspaceId,
+          conversationId: input.session.conversation.id,
+          accountId: input.accountId,
+        })]
+      : [];
     const routineTurnState = describeRoutineTurn(input);
     const invocationReport = input.session.routineInvocationReport ?? null;
     if (invocationReport) {
@@ -848,6 +882,7 @@ export class ChatTurnLifecycle {
         ownershipHandoff: storedHandoff(ownershipHandoff),
         ownershipAuditEvent,
         additionalAuditEvent,
+        backgroundJobs,
         transaction: input.transaction,
         commitFence: input.commitFence,
       });
@@ -894,6 +929,7 @@ export class ChatTurnLifecycle {
         : null;
       await input.commitClarificationState?.();
       await this.conversationRepository.touch(presentation.successInput.conversationId, input.workspaceId);
+      await this.enqueueBackgroundJobs(backgroundJobs, input.session.conversation.id);
       postCommitReceipt = this.createPostCommitReceipt(input.workspaceId, {
         insertedActionTypes,
         decisionCreated: pendingDecisionCreated,
@@ -932,31 +968,6 @@ export class ChatTurnLifecycle {
         },
         "Failed to persist directive firing state",
       );
-    }
-
-    // Regenerate the rolling conversation summary (#866) off the critical path.
-    // Unawaited and error-swallowed: an LLM call is too slow to await, and a lost
-    // update self-heals on the next turn (each regeneration derives from current
-    // state). The updater swallows its own failures; this .catch is a backstop.
-    if (this.conversationSummaryUpdater && recordsBookkeeping) {
-      void this.conversationSummaryUpdater
-        .refresh({
-          workspaceId: input.workspaceId,
-          conversationId: input.session.conversation.id,
-          accountId: input.accountId,
-        })
-        .catch((error) => {
-          // Name/message only: raw error objects can carry provider response bodies.
-          this.logger?.warn(
-            {
-              event: "conversation_summary_generation_failed",
-              conversationId: input.session.conversation.id,
-              errorType: error instanceof Error ? error.name : typeof error,
-              errorMessage: error instanceof Error ? error.message : undefined,
-            },
-            "Failed to regenerate conversation summary",
-          );
-        });
     }
 
     return {

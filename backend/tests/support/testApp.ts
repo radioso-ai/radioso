@@ -41,6 +41,7 @@ import {
 import { ChatService, type ChatGateway, type ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
 import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
 import { ActionDispatchWorker } from "../../src/modules/chat/services/actions/actionDispatchWorker.js";
+import { BackgroundJobRuntime } from "../../src/shared/background-jobs/index.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import { scopeTag } from "@radioso/conversation-defaults";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
@@ -430,6 +431,7 @@ export const createTestEnv = (): Env => ({
   WORKER_TASKS_QUEUE_NAME: undefined,
   WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
   ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
+  BACKGROUND_JOB_TASK_QUEUE_NAME: undefined,
   WORKER_TASKS_SERVICE_URL: undefined,
   WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
@@ -2763,6 +2765,24 @@ export const createTestDependencies = (overrides: {
     testExecutionService,
     revisionEvalRunService,
     actionDispatchWorker,
+    // Background jobs never run in tests; a runtime with no handlers claims nothing.
+    backgroundJobRuntime: new BackgroundJobRuntime({
+      store: {
+        claimNext: async () => null,
+        complete: async () => false,
+        retry: async () => null,
+        deadLetter: async () => false,
+      },
+      handlers: [],
+      logger,
+    }),
+    backgroundJobRetentionWorker: new TtlRetentionWorker({
+      subject: "background_job_dead_letter",
+      sweep: { deleteBefore: async () => 0 },
+      audit: auditService,
+      logger,
+      retentionDays: 14,
+    }),
     copilotRetentionWorker: new CopilotRetentionWorker({
       retention: copilotRepository,
       audit: auditService,

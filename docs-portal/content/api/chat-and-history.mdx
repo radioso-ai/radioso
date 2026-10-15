@@ -1,7 +1,7 @@
 ---
 title: "Chat and history"
 description: "Ask one agent questions with a channel credential, then inspect saved history with workspace access."
-last_updated: 2026-09-18
+last_updated: 2026-10-15
 ---
 
 # Chat and history
@@ -94,6 +94,8 @@ actually declined. Interaction decisions include the originating assessment and
 target message IDs, plus a routine execution ID only after a routine starts.
 
 A turn without a reply still shows up here. If the visitor sent another message before the assistant answered, or the answer attempt failed outright, the interrupted user message carries a `turnFailure` object: `eventStatus` of `cancelled` for the first case (with the pipeline `stage` it was interrupted at) or `failure` for the second (with `errorMessage`). `turnFailure` is dashboard-only — it never appears on the public or embed conversation reads.
+
+A reply a voice caller spoke over carries `interruption`: `heardCharacterCount`, how much of the reply the caller heard, and `spokenCharacterCount`, how long the spoken reply was. Both count the characters the voice channel spoke, so they do not index into `content`, which keeps the full reply. The field appears on detail, turn, and tail reads alike, and only on a reply that was cut short.
 
 Use `GET /api/v1/history/chat/{conversationId}/tail` to read messages created after a cursor. The cursor is the newest message the client has already seen. Conversation detail responses include `tailCursor`; use it for follow-up tail calls after loading the transcript. If `cursor` is omitted, Radioso returns the newest bounded page and a cursor for the newest returned message. Dashboard tail responses can include `ownership` when the conversation is currently human-owned.
 

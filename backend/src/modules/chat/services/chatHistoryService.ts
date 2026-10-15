@@ -2,7 +2,7 @@ import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
-import type { ConversationTurnStage } from "../contracts/interruption.js";
+import type { ConversationTurnStage, ReplyInterruption } from "../contracts/interruption.js";
 import {
   formatActivityCursor,
   type ConversationActivityEntry,
@@ -278,7 +278,13 @@ export interface ChatConversationTurn {
    * shares these reads and whose presenter forwards unrecognised fields.
    */
   operatorLabel?: string;
+  /** On an assistant reply the caller spoke over: how much of it they heard, in spoken characters. */
+  interruption?: ReplyInterruption;
 }
+
+/** The interruption marker, on a reply that carries one and on no other message. */
+const interruptionField = (message: MessageRecord): { interruption?: ReplyInterruption } =>
+  message.interruption ? { interruption: message.interruption } : {};
 
 /**
  * Reads the signature from a human-agent reply's stored metadata, the same on every surface. A
@@ -1303,6 +1309,7 @@ export class ChatHistoryService {
         turnFailure: message.role === "user" ? turnFailureByUserMessageId.get(message.id) : undefined,
         operatorDisplayName: operatorDisplayNameFrom(message),
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
+        ...interruptionField(message),
       })),
       ...operatorOwnershipField(ownershipRecord),
       ...(activity ? { activity: activity.present(operatorLabels) } : {}),
@@ -1380,6 +1387,7 @@ export class ChatHistoryService {
         turnFailure,
         operatorDisplayName: operatorDisplayNameFrom(message),
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
+        ...interruptionField(message),
       },
       ...operatorOwnershipField(ownershipRecord),
     };
@@ -1469,6 +1477,7 @@ export class ChatHistoryService {
       ...(options.includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
       operatorDisplayName: operatorDisplayNameFrom(message),
       ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
+      ...interruptionField(message),
     };
   }
 

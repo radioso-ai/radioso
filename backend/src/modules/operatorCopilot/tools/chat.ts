@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { CallerKind } from "../../../shared/domain/conversationSource.js";
 import type { SameType } from "../../../shared/types/sameType.js";
+import type { ReplyInterruption } from "../../chat/contracts/index.js";
 import {
   CONVERSATION_ACTIVITY_KINDS,
   resolveActivityReadScope,
@@ -51,6 +52,8 @@ const transcriptMessageSchema = z.object({
   operatorDisplayName: z.string().nullable(),
   operatorLabel: z.string().nullable(),
   turnFailure: turnFailureSchema,
+  /** A reply the caller cut short by speaking over it: how much of it they heard, in spoken characters. */
+  interruption: z.object({ heardCharacterCount: z.number().int().nonnegative(), spokenCharacterCount: z.number().int().nonnegative() }).nullable(),
 });
 const activityPersonSchema = z.object({ userId: z.string().uuid(), label: z.string().nullable() }).nullable();
 const transcriptActivitySchema = z.object({
@@ -217,6 +220,7 @@ interface CopilotConversationMessage {
   operatorLabel?: string;
   turnFailure?: CopilotTurnFailure;
   debug?: CopilotDebug;
+  interruption?: ReplyInterruption;
 }
 
 interface CopilotConversationDetail {
@@ -290,6 +294,7 @@ const projectTranscript = (conversation: CopilotConversationDetail): Record<stri
     operatorDisplayName: message.operatorDisplayName ?? null,
     operatorLabel: message.operatorLabel ?? null,
     turnFailure: projectTurnFailure(message.turnFailure),
+    interruption: message.interruption ?? null,
   })),
   activity: (conversation.activity ?? []).map((entry) => ({
     kind: entry.kind,

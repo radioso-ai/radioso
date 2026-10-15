@@ -854,6 +854,39 @@ describe("chat history service reply attribution for operators", () => {
   });
 });
 
+describe("chat history service interrupted replies", () => {
+  const seedInterruptedReply = async () => {
+    const { service, conversationRepository, messageRepository } = createService();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const question = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "user", content: "When do you open?" });
+    const cutReply = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "assistant", content: "We open at nine on weekdays." });
+    cutReply.interruption = { heardCharacterCount: 12, spokenCharacterCount: 40 };
+    const fullReply = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "assistant", content: "And at ten on Saturdays." });
+    return { service, messageRepository, conversation, question, cutReply, fullReply };
+  };
+
+  it("carries the interruption on the reply the caller cut short, and on no other message, on every read", async () => {
+    const { service, messageRepository, conversation, question, cutReply } = await seedInterruptedReply();
+
+    const reads = [
+      (await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 })).messages,
+      (await service.tailConversation("workspace-1", conversation.id, { cursor: messageRepository.cursorFor(question), limit: 10 })).messages,
+      [(await service.getConversationTurn("workspace-1", cutReply.id)).message],
+    ];
+
+    for (const messages of reads) {
+      for (const message of messages) {
+        if (message.id === cutReply.id) {
+          expect(message.interruption).toEqual({ heardCharacterCount: 12, spokenCharacterCount: 40 });
+        } else {
+          expect(message).not.toHaveProperty("interruption");
+        }
+      }
+    }
+    expect(reads.map((messages) => messages.some((message) => message.id === cutReply.id))).toEqual([true, true, true]);
+  });
+});
+
 describe("chat history service conversation activity", () => {
   const createActivityService = () => {
     const conversationRepository = new InMemoryConversationRepository();

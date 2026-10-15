@@ -145,7 +145,7 @@ Bridge delay and turn limit are composition constants, not settings. The block i
 - `sourceChannel: "voice"`, `callerKind: "human"`.
 - `channelContext: { provider: "voice", vendor, sessionKey, transport, callerId? }` as a new member of the `ConversationChannelContext` union, following the `email` precedent.
 - `voice_sessions (agent_id, vendor, session_key) → conversation_id`, unique on the triple, mirroring the email thread table.
-- A reply the caller spoke over is stored whole once it finished; how much of it the caller heard is a `voice.reply_interrupted` audit note on that reply. A reply cut off while it was still streaming is not stored: the conversation keeps the caller's message without a reply. A message marker for interrupted replies, shown in history, is the open item listed in plan.md section 0.
+- A reply the caller spoke over is stored whole once it finished. How much of it the caller heard is marked on the message (`metadata_json.interruption`, written through chat's `ReplyInterruptionMarker` and read back by history as the assistant message's `interruption: { heardCharacterCount, spokenCharacterCount }`) and recorded as a `voice.reply_interrupted` audit note on that reply; the Inbox shows the reply with an Interrupted badge. A reply cut off while it was still streaming is not stored: the conversation keeps the caller's message without a reply.
 
 ## 8. Vendor matrix
 

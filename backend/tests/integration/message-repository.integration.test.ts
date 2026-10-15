@@ -112,6 +112,54 @@ describeIntegration("MessageRepository (Postgres)", () => {
     expect(reloaded.find((m) => m.id === unknownMethod.id)?.inputMetadata).toBeUndefined();
   });
 
+  it("marks an assistant reply the caller cut short, keeping the reply's other metadata", async () => {
+    const suggestions = [{ kind: "question", label: "Opening hours?" }];
+    const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine.", metadata: { suggestions } });
+
+    await repository.markReplyInterrupted({ workspaceId, conversationId, messageId: reply.id, heardCharacterCount: 7, spokenCharacterCount: 16 });
+
+    const reloaded = await repository.findByIdAndWorkspaceId(workspaceId, reply.id);
+    expect(reloaded?.content).toBe("We open at nine.");
+    expect(reloaded?.interruption).toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16 });
+    expect(reloaded?.metadata).toMatchObject({
+      suggestions,
+      interruption: { heardCharacterCount: 7, spokenCharacterCount: 16, recordedAt: expect.any(String) },
+    });
+  });
+
+  it("writes one marker for the same counts written twice, and the newer counts when they change", async () => {
+    const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine." });
+    const mark = (heardCharacterCount: number) =>
+      repository.markReplyInterrupted({ workspaceId, conversationId, messageId: reply.id, heardCharacterCount, spokenCharacterCount: 16 });
+    const storedMarker = async () =>
+      (await repository.findByIdAndWorkspaceId(workspaceId, reply.id))?.metadata?.interruption as { heardCharacterCount: number; recordedAt: string };
+
+    await mark(7);
+    const first = await storedMarker();
+    await mark(7);
+    expect(await storedMarker()).toEqual(first);
+
+    await mark(9);
+    expect((await storedMarker()).heardCharacterCount).toBe(9);
+  });
+
+  it("leaves a message alone that is not an assistant reply of the conversation", async () => {
+    const otherConversationId = randomUUID();
+    await database.query(`INSERT INTO conversations (id, workspace_id) VALUES ($1,$2)`, [otherConversationId, workspaceId]);
+    const question = await repository.create({ conversationId, workspaceId, role: "user", content: "When do you open?" });
+    const otherReply = await repository.create({ conversationId: otherConversationId, workspaceId, role: "assistant", content: "At nine." });
+    const counts = { heardCharacterCount: 3, spokenCharacterCount: 8 };
+
+    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: question.id, ...counts })).resolves.toBeUndefined();
+    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: otherReply.id, ...counts })).resolves.toBeUndefined();
+    await expect(repository.markReplyInterrupted({ workspaceId: randomUUID(), conversationId: otherConversationId, messageId: otherReply.id, ...counts })).resolves.toBeUndefined();
+    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: randomUUID(), ...counts })).resolves.toBeUndefined();
+
+    expect((await repository.findByIdAndWorkspaceId(workspaceId, question.id))?.metadata).not.toHaveProperty("interruption");
+    expect((await repository.findByIdAndWorkspaceId(workspaceId, otherReply.id))?.metadata).not.toHaveProperty("interruption");
+    expect((await repository.findByIdAndWorkspaceId(workspaceId, otherReply.id))?.interruption).toBeUndefined();
+  });
+
   it("windows newest-first with a stable cursor and total", async () => {
     const ids: string[] = [];
     for (let i = 0; i < 3; i += 1) {

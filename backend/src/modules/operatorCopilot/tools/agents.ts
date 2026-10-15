@@ -91,11 +91,11 @@ export interface AgentConfigurationCopilotToolDependencies {
 export const createAgentConfigurationCopilotTools = (deps: AgentConfigurationCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "agent_configuration", shape: "read", verificationCost: () => 0, uiLabel: "Reading agent configuration", contributingModule: "agents", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
-    description: "List workspace agents or read one agent's redacted portable configuration. Use mode list to override page context. A directive id returns that directive in full.",
+    description: "List workspace agents or read one agent's redacted portable configuration plus its live voice settings. Use mode list to override page context. A directive id returns that directive in full.",
     inputSchema: agentConfigurationInputSchema, outputSchema: agentConfigurationOutputSchema,
     createTool: (context) => ({
       name: "agent_configuration",
-      description: "List workspace agents or read one agent's redacted portable configuration. Use mode list to override page context. A directive id returns that directive in full.",
+      description: "List workspace agents or read one agent's redacted portable configuration plus its live voice settings. Use mode list to override page context. A directive id returns that directive in full.",
       inputSchema: agentConfigurationInputSchema,
       outputSchema: agentConfigurationOutputSchema,
       invoke: async ({ mode = "auto", agentId, directiveId }) => {

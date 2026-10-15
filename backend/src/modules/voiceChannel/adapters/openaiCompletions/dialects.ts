@@ -40,6 +40,13 @@ export interface CompletionsDialect {
   interruptedReplySuffix?: string;
 }
 
+/**
+ * Observed 2026-10-13: ElevenLabs holds a reply's first sentence until it has about 45 characters
+ * (26 waited for the next sentence; 46 and 57 did not). Any first sentence, so a bridge line and a
+ * fallback line alike. Authoring guidance (the Voice card, Ray's descriptors) reads this number.
+ */
+export const ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS = 45;
+
 const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
   // ElevenLabs sends no id of its own; the page that starts the session mints one and passes it as
   // the custom LLM extra body, which arrives on every turn under `elevenlabs_extra_body`.
@@ -52,9 +59,7 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
     // whitespace and a later non-blank delta arrives. Pieces end on the terminator, so the flush is
     // a space (the whitespace) plus a zero-width space (the non-blank delta), sent as one chunk.
     sentenceFlushDelta: " \u200B",
-    // Observed 2026-10-13: ElevenLabs holds a reply's first sentence until it has about 45
-    // characters (26 waited for the next sentence; 46 and 57 did not).
-    minReleasableSentenceChars: 45,
+    minReleasableSentenceChars: ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS,
     // Observed 2026-10-13: ElevenLabs drops a custom-LLM stream that is silent for about 4 s (4.0 s
     // held, 4.5 s dropped) and re-asks with the same utterance; any invisible delta resets that.
     keepAlive: { delta: " \u200B", afterIdleMs: 2_500 },

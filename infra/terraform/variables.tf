@@ -386,6 +386,12 @@ variable "usage_limit_alert_sweep_schedule" {
   default     = null
 }
 
+variable "billing_auto_top_up_sweep_schedule" {
+  description = "Optional cron schedule for the Enterprise auto-top-up sweep (registerPeriodicTask id ee-billing-auto-top-up). Only created when radioso_edition is enterprise. Cloud Scheduler's minimum granularity is one minute, matching AUTO_TOP_UP_SWEEP_INTERVAL_MS (60s) in ee/packages/backend-module/src/billing/applicationModule.ts."
+  type        = string
+  default     = null
+}
+
 variable "agent_bundle_import_orphan_age_ms" {
   description = "Milliseconds an active bundle-import job may run before orphan cleanup reclaims it. Imports normally take seconds; use a larger value only for a deployment with known slow imports."
   type        = number

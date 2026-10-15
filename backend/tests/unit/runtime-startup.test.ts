@@ -247,20 +247,21 @@ describe("runtime startup", () => {
       }),
     );
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
-    expect(dependencies.credentialExpiryWarningLifecycle?.start).toHaveBeenCalledOnce();
-    expect(dependencies.periodicTasksLifecycle?.start).toHaveBeenCalledOnce();
+    // Background work with no request in flight to pay for it belongs to the worker runtime,
+    // not the API: the API Cloud Run service has no CPU allocation once a request ends and may
+    // run at zero instances, so a timer started here would stall or never fire.
+    expect(dependencies.credentialExpiryWarningLifecycle?.start).not.toHaveBeenCalled();
+    expect(dependencies.periodicTasksLifecycle?.start).not.toHaveBeenCalled();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
     expect(dependencies.vectorIndexReconciler?.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
-    expect(dependencies.credentialExpiryWarningLifecycle?.stop).toHaveBeenCalledOnce();
-    expect(dependencies.periodicTasksLifecycle?.stop).toHaveBeenCalledOnce();
+    expect(dependencies.credentialExpiryWarningLifecycle?.stop).not.toHaveBeenCalled();
+    expect(dependencies.periodicTasksLifecycle?.stop).not.toHaveBeenCalled();
     expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expect(dependencies.connectorRegistry.shutdownAll).toHaveBeenCalledOnce();
     expectCalledBefore(close, dependencies.realtimePublisherLifecycle.shutdown);
-    expectCalledBefore(dependencies.credentialExpiryWarningLifecycle?.stop, dependencies.periodicTasksLifecycle?.stop);
-    expectCalledBefore(dependencies.periodicTasksLifecycle?.stop, dependencies.realtimePublisherLifecycle.shutdown);
     expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
     expectCalledBefore(dependencies.applicationModules.shutdownAll, dependencies.connectorRegistry.shutdownAll);
   });
@@ -310,6 +311,10 @@ describe("runtime startup", () => {
     expect(dependencies.revisionEvalRunRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.slackInboundEventRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
+    // Background work that previously ran as a timer in the API runtime now runs here instead,
+    // where a self-host deployment always has a live poll-loop process to drive it.
+    expect(dependencies.credentialExpiryWarningLifecycle?.start).toHaveBeenCalledOnce();
+    expect(dependencies.periodicTasksLifecycle?.start).toHaveBeenCalledOnce();
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
 
@@ -323,9 +328,13 @@ describe("runtime startup", () => {
     expect(dependencies.revisionEvalRunRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.slackInboundEventRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
+    expect(dependencies.credentialExpiryWarningLifecycle?.stop).toHaveBeenCalledOnce();
+    expect(dependencies.periodicTasksLifecycle?.stop).toHaveBeenCalledOnce();
     expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expectCalledBefore(dependencies.documentProcessingWorker.stop, dependencies.realtimePublisherLifecycle.shutdown);
+    expectCalledBefore(dependencies.credentialExpiryWarningLifecycle?.stop, dependencies.realtimePublisherLifecycle.shutdown);
+    expectCalledBefore(dependencies.periodicTasksLifecycle?.stop, dependencies.realtimePublisherLifecycle.shutdown);
     expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
   });
 
@@ -690,6 +699,12 @@ describe("runtime startup", () => {
       },
       agentBundleImportCleanupWorker: {
         route: "POST /internal/tasks/agent-bundle-imports/sweep",
+      },
+      credentialExpiryWarningLifecycle: {
+        route: "POST /internal/tasks/credential-expiry-warning/sweep",
+      },
+      periodicTasksLifecycle: {
+        route: "POST /internal/tasks/periodic-tasks/:taskId/run (one per registerPeriodicTask id)",
       },
     };
 

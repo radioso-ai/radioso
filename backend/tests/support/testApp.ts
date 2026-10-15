@@ -2615,6 +2615,7 @@ export const createTestDependencies = (overrides: {
     realtimePublisherLifecycle: { shutdown: async () => undefined },
     credentialExpiryWarningLifecycle,
     periodicTasksLifecycle: { start: async () => undefined, stop: async () => undefined },
+    periodicTaskHandlesById: new Map(),
     realtimeRolloutPolicy: overrides.realtimeRolloutPolicy ?? { allows: () => false },
     logger,
     operatorCopilotService,

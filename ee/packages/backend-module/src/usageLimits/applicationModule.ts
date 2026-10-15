@@ -51,8 +51,9 @@ export const createUsageLimitsApplicationModule = (): ApplicationModule => ({
     context.registerCopilotTools?.(({ database }) =>
       createUsageLimitCopilotToolContribution({ usage: new EnterpriseUsageLimitService(database) }));
     // Sweep-only delivery (no post-commit trigger; see specs/usage-alerts design): a periodic
-    // task in the API runtime claims due `ee_usage_limit_alerts` rows and sends them. Runs only
-    // where `registerPeriodicTask` is wired (the API runtime), never the worker or migrator.
+    // task claims due `ee_usage_limit_alerts` rows and sends them. Runs only where
+    // `registerPeriodicTask` is wired: the worker runtime's poll loop locally, and the Cloud
+    // Scheduler-driven worker task route in production — never the API or migrator.
     context.registerPeriodicTask?.({
       id: "ee-usage-limit-alerts",
       intervalMs: ALERT_SWEEP_INTERVAL_MS,

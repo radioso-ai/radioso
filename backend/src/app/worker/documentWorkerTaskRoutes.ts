@@ -29,7 +29,7 @@ const FACET_TASK_DRAIN_MAX_JOBS = 100;
 
 type DocumentWorkerTaskRouteDependencies = Pick<
   AppDependencies,
-  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain" | "copilotRetentionWorker" | "testExecutionRetentionWorker" | "approvalResumeEffectJournalRetentionWorker" | "revisionEvalRunRetentionWorker" | "slackInboundEventRetentionWorker" | "agentBundleImportCleanupWorker"
+  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain" | "copilotRetentionWorker" | "testExecutionRetentionWorker" | "approvalResumeEffectJournalRetentionWorker" | "revisionEvalRunRetentionWorker" | "slackInboundEventRetentionWorker" | "agentBundleImportCleanupWorker" | "credentialExpiryWarningLifecycle" | "periodicTaskHandlesById"
 >;
 
 // Compatibility tombstone for Cloud Tasks pushes enqueued before the crawler
@@ -213,6 +213,37 @@ export const createDocumentWorkerTaskRoutes = (
         return;
       }
       res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // The task-runtime counterpart to the daily scan `startWorkerRuntime` runs. Credential
+  // expiry warnings have no per-item queue to push against, so this scheduled sweep is the
+  // whole trigger in a production deployment with no continuously running worker process.
+  router.post("/internal/tasks/credential-expiry-warning/sweep", async (_req, res, next) => {
+    try {
+      await dependencies.credentialExpiryWarningLifecycle.runOnce();
+      res.status(200).json({ status: "ok" });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // The task-runtime counterpart to the interval loop `startWorkerRuntime` runs for every
+  // `registerPeriodicTask` contribution (e.g. EE's usage-alert sweep). Generic by design: the
+  // registration API lets any application module add a task without this OSS route naming it,
+  // so Cloud Scheduler targets one of these by the registration's own id instead of a
+  // per-task route.
+  router.post("/internal/tasks/periodic-tasks/:taskId/run", async (req, res, next) => {
+    const handle = dependencies.periodicTaskHandlesById.get(req.params.taskId);
+    if (!handle) {
+      res.status(404).json({ error: "unknown_periodic_task" });
+      return;
+    }
+    try {
+      await handle.run();
+      res.status(200).json({ status: "ok" });
     } catch (error) {
       next(error);
     }

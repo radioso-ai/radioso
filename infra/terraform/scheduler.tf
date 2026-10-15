@@ -15,6 +15,13 @@ locals {
   # drain and sweep routes are additional routes on that service.
   email_channel_sweep_url  = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/email-channel/sweep" : null
   email_channel_sweep_body = base64encode(jsonencode({ maxJobs = var.email_channel_sweep_max_jobs }))
+  # Credential expiry warnings have no per-item queue behind them either, so this schedule is
+  # the whole trigger for a deployment with no continuously running worker process.
+  credential_expiry_warning_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/credential-expiry-warning/sweep" : null
+  # Generic `registerPeriodicTask` route, one job per registration id. EE's usage-limit alert
+  # sweep is the only registration today; a future OSS or EE module that registers another
+  # periodic task needs its own job here, pointed at its own id.
+  usage_limit_alert_sweep_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/ee-usage-limit-alerts/run" : null
 }
 
 resource "google_cloud_scheduler_job" "document_worker_recovery" {
@@ -174,6 +181,54 @@ resource "google_cloud_scheduler_job" "email_channel_sweep" {
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.email_channel_sweep_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_cloud_scheduler_job" "credential_expiry_warning" {
+  count    = var.deploy_services ? 1 : 0
+  name     = "${local.resource_name_prefix}-credential-expiry-warning"
+  region   = var.region
+  schedule = local.credential_expiry_warning_schedule
+
+  http_target {
+    http_method = "POST"
+    uri         = local.credential_expiry_warning_url
+    body        = base64encode(jsonencode({}))
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.credential_expiry_warning_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# EE-only: the registration (`registerPeriodicTask({ id: "ee-usage-limit-alerts", ... })`) only
+# exists when the enterprise application module is loaded.
+resource "google_cloud_scheduler_job" "usage_limit_alert_sweep" {
+  count    = var.deploy_services && var.radioso_edition == "enterprise" ? 1 : 0
+  name     = "${local.resource_name_prefix}-usage-limit-alert-sweep"
+  region   = var.region
+  schedule = local.usage_limit_alert_sweep_schedule
+
+  http_target {
+    http_method = "POST"
+    uri         = local.usage_limit_alert_sweep_url
+    body        = base64encode(jsonencode({}))
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.usage_limit_alert_sweep_url
     }
   }
 

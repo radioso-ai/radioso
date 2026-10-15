@@ -79,8 +79,9 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
     fetchPublicUrl,
   });
   await dependencies.applicationModules.initializeAll();
-  await dependencies.credentialExpiryWarningLifecycle.start();
-  await dependencies.periodicTasksLifecycle.start();
+  // Credential-expiry warnings and `registerPeriodicTask` contributions run from the worker
+  // runtime, not here: this Cloud Run service has no CPU allocation once a request ends and
+  // may run at zero instances, so a timer started in this process would stall or never fire.
 
   const app = (options.createApp ?? createApp)(dependencies);
   const server = (options.listen ?? defaultListen)(app, options.env.PORT, () => {
@@ -112,24 +113,16 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
         });
       } finally {
         try {
-          await dependencies.credentialExpiryWarningLifecycle.stop();
+          await dependencies.realtimePublisherLifecycle.shutdown();
         } finally {
           try {
-            await dependencies.periodicTasksLifecycle.stop();
+          await dependencies.applicationModules.shutdownAll();
+          await dependencies.closeApprovalResumeEffectJournal();
           } finally {
             try {
-              await dependencies.realtimePublisherLifecycle.shutdown();
+              await dependencies.connectorRegistry.shutdownAll();
             } finally {
-              try {
-              await dependencies.applicationModules.shutdownAll();
-              await dependencies.closeApprovalResumeEffectJournal();
-              } finally {
-                try {
-                  await dependencies.connectorRegistry.shutdownAll();
-                } finally {
-                  await stopRuntimeTracing();
-                }
-              }
+              await stopRuntimeTracing();
             }
           }
         }

@@ -16,3 +16,25 @@ export type ConversationTurnStage =
  *   before it emitted anything leaves no user message behind, because the newer request replaces it.
  */
 export type ConversationTurnSupersession = "until_emission" | "latest_input_wins";
+
+/**
+ * How much of a stored assistant reply the caller heard before speaking over it, counted in the
+ * characters the channel spoke (the reply as speech text), not in the stored content.
+ */
+export interface ReplyInterruption {
+  heardCharacterCount: number;
+  spokenCharacterCount: number;
+}
+
+/**
+ * Marks a stored assistant reply as cut short, keeping the reply's text and other metadata. The
+ * same counts written twice are one marker; newer counts replace older ones. A message that is not
+ * an assistant reply of the conversation is left alone, without an error.
+ */
+export interface ReplyInterruptionMarker {
+  markReplyInterrupted(input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+  } & ReplyInterruption): Promise<void>;
+}

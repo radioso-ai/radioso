@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with one conversation per voice session and authored lines that cover the wait."
-last_updated: 2026-10-14
+last_updated: 2026-10-15
 ---
 
 # Voice Channel
@@ -277,11 +277,19 @@ replaces the running one.
 
 When the caller speaks over a reply that was stored, ElevenLabs replays that
 reply in the next request cut short to what was heard, followed by `...`. The
-conversation keeps the full reply; the audit trail records
-`voice.reply_interrupted` against it, with how many characters the caller
-heard (`heardCharacterCount`) and how long the spoken reply was
+conversation keeps the full reply and marks it with how many characters the
+caller heard (`heardCharacterCount`) and how long the spoken reply was
 (`spokenCharacterCount`). A bridge line spoken before the reply does not count
-toward either.
+toward either. The audit trail records the same counts as
+`voice.reply_interrupted`.
+
+In the Inbox, that reply carries an **Interrupted** badge. Hover it to read
+"The caller spoke over this reply. About 37% was heard." Both counts measure
+the reply as it was spoken, after links, lists and other formatting became
+speech, so the percentage tells you roughly how far the caller got, not where
+in the written text they stopped. The conversation history API returns the
+counts on the reply as `interruption`. A conversation you already have open
+shows the badge the next time you open it.
 
 ## Outcomes
 

@@ -4,6 +4,7 @@ import { sql } from "kysely";
 
 import type { MessageSource } from "@radioso/conversation-contract";
 
+import type { ReplyInterruption, ReplyInterruptionMarker } from "../../modules/chat/contracts/interruption.js";
 import { clockTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
@@ -26,6 +27,8 @@ export interface MessageRecord {
   /** Visitor-perceived time from request receipt through the final assistant answer, in milliseconds. */
   totalLatencyMs?: number;
   grounding?: GroundingDiagnosticSnapshot;
+  /** On an assistant reply the caller spoke over: how much of it they heard. */
+  interruption?: ReplyInterruption;
   createdAt: Date;
 }
 
@@ -196,6 +199,21 @@ const mapInputMetadata = (value: unknown): UserMessageInputMetadata | undefined 
   };
 };
 
+const isCharacterCount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0;
+
+/** The marker {@link MessageRepository.markReplyInterrupted} keeps in the metadata; a malformed one reads as none. */
+const mapInterruption = (metadata: unknown): ReplyInterruption | undefined => {
+  const marker = metadata && typeof metadata === "object" ? (metadata as { interruption?: unknown }).interruption : undefined;
+  if (!marker || typeof marker !== "object" || Array.isArray(marker)) {
+    return undefined;
+  }
+  const { heardCharacterCount, spokenCharacterCount } = marker as Record<string, unknown>;
+  return isCharacterCount(heardCharacterCount) && isCharacterCount(spokenCharacterCount)
+    ? { heardCharacterCount, spokenCharacterCount }
+    : undefined;
+};
+
 const messageColumns = [
   "id",
   "conversation_id",
@@ -227,6 +245,7 @@ export const mapMessageRow = (row: MessageRow): MessageRecord => ({
     ? row.metadata_json as Record<string, unknown>
     : undefined,
   inputMetadata: row.role === "user" ? mapInputMetadata(row.metadata_json) : undefined,
+  interruption: row.role === "assistant" ? mapInterruption(row.metadata_json) : undefined,
   skillName: row.skill_name ?? undefined,
   skillOutcome: row.skill_outcome ?? undefined,
   skillStatus: row.skill_status ?? undefined,
@@ -253,7 +272,7 @@ const toPreview = (content: string): string => {
     : normalized;
 };
 
-export class MessageRepository implements MessageRepositoryPort {
+export class MessageRepository implements MessageRepositoryPort, ReplyInterruptionMarker {
   constructor(private readonly db: Db) {}
 
   async findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null> {
@@ -621,6 +640,29 @@ export class MessageRepository implements MessageRepositoryPort {
       .executeTakeFirstOrThrow();
 
     return mapMessageRow(row as MessageRow);
+  }
+
+  /**
+   * Keeps the marker under `metadata_json.interruption` with the time it was recorded, merged into
+   * the reply's other metadata. A marker already holding the same counts is left as written.
+   */
+  async markReplyInterrupted(input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+  } & ReplyInterruption): Promise<void> {
+    const counts = { heardCharacterCount: input.heardCharacterCount, spokenCharacterCount: input.spokenCharacterCount };
+    await this.db
+      .updateTable("messages")
+      .set({
+        metadata_json: sql`metadata_json || jsonb_build_object('interruption', ${toJsonb(counts)} || jsonb_build_object('recordedAt', clock_timestamp()))`,
+      })
+      .where("workspace_id", "=", input.workspaceId)
+      .where("conversation_id", "=", input.conversationId)
+      .where("id", "=", input.messageId)
+      .where("role", "=", "assistant")
+      .where(sql<boolean>`(metadata_json -> 'interruption') - 'recordedAt' IS DISTINCT FROM ${toJsonb(counts)}`)
+      .execute();
   }
 
   async deleteUserMessage(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<boolean> {

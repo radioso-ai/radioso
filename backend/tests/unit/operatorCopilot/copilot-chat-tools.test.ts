@@ -151,6 +151,34 @@ describe("copilot chat readers", () => {
     expect(traceTool.outputSchema.safeParse(trace).success).toBe(true);
   });
 
+  it("shows Ray which reply the caller cut short and how much of it they heard", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const reply = (id: string, content: string) => ({ id, role: "assistant" as const, source: "ai_agent", content, createdAt: "2026-08-18T10:00:02.000Z" });
+    ports.getConversation.mockResolvedValue({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel: "voice",
+      callerKind: "human" as const,
+      createdAt: "2026-08-18T10:00:00.000Z",
+      updatedAt: "2026-08-18T10:00:02.000Z",
+      messageCount: 2,
+      messages: [
+        { ...reply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } },
+        reply("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "And at ten on Saturdays."),
+      ],
+    });
+
+    const transcript = await tool.createTool(context(null)).invoke({ conversationId }, {} as never);
+
+    expect(transcript).toMatchObject({
+      transcript: { messages: [{ interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } }, { interruption: null }] },
+    });
+    expect(tool.outputSchema.safeParse(transcript).success).toBe(true);
+  });
+
   /**
    * The spine carries each capability's own trace as a sub-trace, and `activityTrace` is the
    * pre-spine field for the same retrieval run. Measured on real turns, the two were byte-identical

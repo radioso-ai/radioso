@@ -15793,6 +15793,24 @@
           "method"
         ]
       },
+      "ReplyInterruption": {
+        "type": "object",
+        "properties": {
+          "heardCharacterCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "spokenCharacterCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "heardCharacterCount",
+          "spokenCharacterCount"
+        ],
+        "description": "Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`, which keeps the full reply."
+      },
       "ChatConversationMessage": {
         "type": "object",
         "properties": {
@@ -15854,6 +15872,9 @@
           },
           "operatorDisplayName": {
             "type": "string"
+          },
+          "interruption": {
+            "$ref": "#/components/schemas/ReplyInterruption"
           },
           "debug": {
             "$ref": "#/components/schemas/ChatConversationMessageDebug"
@@ -15935,6 +15956,9 @@
           },
           "operatorDisplayName": {
             "type": "string"
+          },
+          "interruption": {
+            "$ref": "#/components/schemas/ReplyInterruption"
           }
         },
         "required": [

@@ -105,6 +105,17 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   retrieval misses to a person, `retrievalTurnSkill.ts` gives a composed decline no
   lead-back, and the grounded prompt adds `chat/routine-lead-back-decline-handoff.md`
   so a `no_support` answer leaves it out.
+- `contracts/interruption.ts`: `ReplyInterruptionMarker`, the port a channel calls
+  when its caller spoke over a stored assistant reply, with the reply's id and
+  `heardCharacterCount` / `spokenCharacterCount` in spoken characters.
+  `MessageRepository.markReplyInterrupted` implements it: it merges
+  `interruption: { heardCharacterCount, spokenCharacterCount, recordedAt }` into
+  the message's `metadata_json`, leaves a marker with the same counts as it was,
+  and leaves alone a message that is not an assistant reply of that
+  conversation. `MessageRecord.interruption` reads it back on assistant rows,
+  and `chatHistoryService.ts` puts it on the reply as `interruption` (the counts
+  only) on detail, turn and tail reads, public reads included. The voice
+  channel's composition is the caller.
 - `composition.ts`: chat module wiring used by application composition.
 - `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
   records a customer message without running a turn, for a channel that decides

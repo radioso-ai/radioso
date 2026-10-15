@@ -18,10 +18,13 @@ validation and use the shared draft-mutation boundary.
 
 Agents also store and serve the `voice` settings block (`voiceSettings.ts`):
 its schema, the voice-off default, and a tolerant reader for stored blocks. It
-lives in `behavior_settings.voice`, travels on `GET`/`PUT /api/v1/agents/:agentId`,
-and stays out of `agentInputFieldSchemas`, so Ray's `propose_agent_setting`
-cannot reach it. The voice channel reads it through type-only imports from
-`public.ts`; nothing here loads the voice runtime.
+lives in `behavior_settings.voice` and travels on `GET`/`PUT /api/v1/agents/:agentId`,
+which the dashboard's Voice card (`frontend/components/dashboard/settings/voice-channel-card.tsx`)
+writes. It has an `agentInputFieldSchemas` entry and a place in the reviewed patch, so Ray
+authors it with `propose_agent_setting` or `prepare_agent_settings`, replacing the block
+whole; it is outside the portable config, so `agent_configuration` returns it beside it.
+The voice channel reads it through type-only imports from `public.ts`; nothing here loads
+the voice runtime.
 
 Agents also store and serve the `mechanicsReplies` block (`mechanicsReplies.ts`): the
 lines an agent says, word for word, to a greeting, thanks, farewell, or
@@ -29,13 +32,14 @@ acknowledgement, keyed by language tag. It lives in `behavior_settings.mechanics
 travels on `GET`/`PUT /api/v1/agents/:agentId` (an update replaces the block whole; a
 body that leaves it out leaves the stored one alone), and is a portable field of the
 agent config, so Test Chat, eval replay, and bundle import speak the same lines as live
-chat. It stays out of `agentInputFieldSchemas`, so Ray's `propose_agent_setting` cannot
-write it; Ray reads it through `agent_configuration`. The chat module's quick-reply lane
-reads it (`modules/chat/services/quickReplyWording.ts`).
+chat. The Voice card edits it beside the `voice` block, and Ray authors it the same way,
+reading it through `agent_configuration`. The chat module's quick-reply lane reads it
+(`modules/chat/services/quickReplyWording.ts`).
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/agent-revision-service.test.ts tests/unit/agent-revision-routes.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/agent-revision-runtime-resolver.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/agent-voice-settings.test.ts tests/contract/agent-voice-settings.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/agent-settings-proposal-owner.test.ts` (Ray's proposals for both blocks)
 - `cd backend && pnpm exec vitest run tests/unit/agent-mechanics-replies.test.ts`

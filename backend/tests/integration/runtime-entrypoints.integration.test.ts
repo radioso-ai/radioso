@@ -87,6 +87,7 @@ const createEnv = (port: number): Env => ({
   WORKER_TASKS_QUEUE_NAME: undefined,
   WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
   ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
+  BACKGROUND_JOB_TASK_QUEUE_NAME: undefined,
   WORKER_TASKS_SERVICE_URL: undefined,
   WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,

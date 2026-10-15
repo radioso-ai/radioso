@@ -35,6 +35,17 @@ locals {
     var.action_dispatch_recovery_schedule,
     "*/5 * * * *",
   )
+  # Every 5 minutes by default: the push path wakes the worker for normal work, so this only
+  # catches lost wakes and expired leases; a summary refresh a few minutes late is harmless.
+  background_job_recovery_schedule = coalesce(
+    var.background_job_recovery_schedule,
+    "*/5 * * * *",
+  )
+  # Daily: dead-lettered jobs are kept 14 days for inspection, so a day of lateness is immaterial.
+  background_job_retention_schedule = coalesce(
+    var.background_job_retention_schedule,
+    "15 5 * * *",
+  )
   # Daily is the right cadence for a retention window measured in months: the sweep is the only
   # trigger retention has under the task runtime, and a day of lateness on a 90-day window is
   # immaterial next to the cost of scanning for expired rows every few minutes.

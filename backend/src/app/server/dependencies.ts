@@ -128,6 +128,7 @@ import { RoutineStateRepository } from "../../db/repositories/routineStateReposi
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
+import { createBackgroundJobComposition } from "../composition/backgroundJobs.js";
 import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
 import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
@@ -311,6 +312,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     teammateLabels,
     messages: repositories.messageRepository,
   });
+  // Durable background work the worker runs. The queue exists before the modules that enqueue;
+  // the runtime is assembled below from the handlers those modules return.
+  const backgroundJobs = createBackgroundJobComposition({
+    db: infrastructure.database.kysely,
+    env,
+    logger,
+    metrics: infrastructure.metricsRegistry,
+    errorReporter: infrastructure.errorReportingService,
+    audit: infrastructure.auditService,
+  });
   const chat = buildChatServices({
     accountAccessService: access.accountAccessService,
     agentRetrievalScope,
@@ -318,6 +329,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSkillRepository,
     auditEventRepository: infrastructure.auditEventRepository,
     auditService: infrastructure.auditService,
+    backgroundJobs: backgroundJobs.queue,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     composition,
     conversationActivity,
@@ -1210,6 +1222,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ),
   );
   const periodicTaskHandlesById = new Map(periodicTaskEntries.map(({ id, handle }) => [id, handle]));
+  const backgroundJobRuntime = backgroundJobs.createRuntime([...chat.backgroundJobHandlers]);
   return {
     env,
     logger,
@@ -1339,6 +1352,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalAnswerService: chat.retrievalAnswerService,
     retrievalDefaultsProvider,
     actionDispatchWorker: chat.actionDispatchWorker,
+    backgroundJobRuntime,
+    backgroundJobRetentionWorker: backgroundJobs.retentionWorker,
     emailChannel: emailChannel ?? undefined,
     emailChannelWorker: emailChannel?.worker,
     emailReviewChecks: emailChannel?.reviewChecks,

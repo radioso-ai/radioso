@@ -32,6 +32,8 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import { buildTelemetrySinks, type TelemetrySinkBundle } from "../../shared/observability/telemetry/buildTelemetrySinks.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
+import { NoopBackgroundJobWake, type BackgroundJobWakePort } from "../../shared/background-jobs/index.js";
+import { CloudTasksBackgroundJobWake } from "../../shared/infra/cloudTasksBackgroundJobWake.js";
 import { DefaultAllowCapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import { StaticActionCapabilityMap, type ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import {
@@ -353,6 +355,34 @@ export const createDefaultActionDrainDispatcher = (
         logger,
       })
     : new NoopActionDrainDispatcher();
+
+/**
+ * Selects how a background job wakes the worker task server: a Cloud Task on the background job
+ * queue when the worker is dispatched by Cloud Tasks and `BACKGROUND_JOB_TASK_QUEUE_NAME` is set.
+ * Otherwise nothing is pushed, and the worker's poll loop (local) or the scheduled sweep (Cloud
+ * Run) finds the job; like the action queue, an unprovisioned queue never blocks startup.
+ */
+export const createDefaultBackgroundJobWake = (
+  env: Pick<Env,
+    | "WORKER_DISPATCH_DRIVER"
+    | "GOOGLE_CLOUD_PROJECT"
+    | "WORKER_TASKS_QUEUE_LOCATION"
+    | "WORKER_TASKS_SERVICE_URL"
+    | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
+    | "WORKER_TASK_AUTH_TOKEN"
+    | "BACKGROUND_JOB_TASK_QUEUE_NAME"
+  >,
+): BackgroundJobWakePort =>
+  env.WORKER_DISPATCH_DRIVER === "cloud-tasks" && env.BACKGROUND_JOB_TASK_QUEUE_NAME
+    ? new CloudTasksBackgroundJobWake({
+        projectId: env.GOOGLE_CLOUD_PROJECT!,
+        location: env.WORKER_TASKS_QUEUE_LOCATION!,
+        queueName: env.BACKGROUND_JOB_TASK_QUEUE_NAME,
+        workerServiceUrl: env.WORKER_TASKS_SERVICE_URL!,
+        invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
+        workerTaskAuthToken: env.WORKER_TASK_AUTH_TOKEN!,
+      })
+    : new NoopBackgroundJobWake();
 
 /**
  * Selects how the email channel pushes drains (research B7): through its own Cloud Tasks queue,

@@ -27,12 +27,15 @@ locals {
     var.worker_task_queue_name,
     var.worker_crawl_task_queue_name,
     var.action_dispatch_task_queue_name,
+    var.background_job_task_queue_name,
   ] : []
 
   monitored_scheduler_job_names = var.deploy_services ? [
     "${local.resource_name_prefix}-document-worker-recovery",
     "${local.resource_name_prefix}-crawler-worker-recovery",
     "${local.resource_name_prefix}-action-dispatch-recovery",
+    "${local.resource_name_prefix}-background-job-recovery",
+    "${local.resource_name_prefix}-background-job-retention",
     "${local.resource_name_prefix}-copilot-retention",
     "${local.resource_name_prefix}-slack-inbound-event-retention",
     "${local.resource_name_prefix}-agent-bundle-import-cleanup",

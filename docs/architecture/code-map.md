@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-13
+last_updated: 2026-10-15
 ---
 
 # Code Map
@@ -1201,7 +1201,9 @@ Primary internals:
   `llmAnswerCoverageProducer.ts` concurrently with compose for a measurement
   window and records head/shadow agreement; never on the turn's critical path)
 - `backend/src/modules/chat/services/summary/conversationSummaryService.ts` (rolling
-  per-conversation summary #866: regenerated post-turn, injected into interpretation
+  per-conversation summary #866: regenerated in the worker by the
+  `conversation.summary_refresh` background job each committed turn writes
+  (`conversationSummaryRefreshJob.ts`), injected into interpretation
   and answer prompts; state in `conversation_summaries`. The same regeneration call
   also produces a short conversation title #1114, written to `conversations.title`
   — a separate, non-expiring column — via `ConversationRepositoryPort.setTitle`)
@@ -1611,6 +1613,54 @@ Related specs:
 
 - `specs/939-continuous-content-planning/`
 - `specs/956-audience-topic-census/`
+
+## Background Jobs
+
+Owns durable work the worker runs after a request has answered: a job kind with
+a zod payload schema and a duplicate-key mode (`ignore` or `rerun`), a
+`background_jobs` row claimed under a renewed lease and a deadline shorter than
+it, retries with a doubling backoff, dead letters kept 14 days with their
+payload dropped and only the error's class, an optional per-kind dead-letter
+hook that runs in the parking transaction, and deletion on completion.
+Conversation summary refresh is the first kind; a module adds one by defining
+it, enqueueing through the `BackgroundJobQueue` port, and registering a handler
+in composition. The substrate knows nothing about the work its handlers do.
+
+The local worker runtime polls for due jobs every two seconds. Cloud Run serves
+`POST /internal/tasks/background-jobs/drain`, called by a Cloud Task on the
+background job queue when a job is written (or scheduled for a retry's due time)
+and by a Cloud Scheduler recovery sweep every five minutes, which also picks up
+jobs whose lease expired. `POST /internal/tasks/background-job-retention/sweep`
+removes old dead letters daily.
+
+Public surfaces and contracts:
+
+- `backend/src/shared/background-jobs/README.md` (how to add a job kind)
+- `backend/src/shared/background-jobs/index.ts` (`defineBackgroundJob`,
+  `backgroundJobRequest`, `backgroundJobHandler`, `BackgroundJobQueue`,
+  `BackgroundJobStore`, `BackgroundJobRuntime`)
+- `backend/src/app/composition/backgroundJobs.ts` (queue, runtime, retention
+  sweep) and `createDefaultBackgroundJobWake` in `defaultComposition.ts`
+
+Primary internals:
+
+- `backend/src/shared/background-jobs/backgroundJobRuntime.ts`
+- `backend/src/db/repositories/backgroundJobRepository.ts` (`background_jobs`,
+  migration `225_background_jobs.sql`)
+- `backend/src/shared/infra/cloudTasksBackgroundJobWake.ts`
+- `backend/src/app/worker/backgroundJobWorkerTaskRoutes.ts`
+- `backend/src/runtime/startWorkerRuntime.ts` (poll loop and retention start/stop)
+- `infra/terraform/queue.tf` (`background_jobs`), `infra/terraform/scheduler.tf`
+  (`background_job_recovery`, `background_job_retention`)
+
+Operator configuration:
+
+- `BACKGROUND_JOB_TASK_QUEUE_NAME` (with `WORKER_DISPATCH_DRIVER=cloud-tasks`)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/background-jobs tests/unit/conversation-summary-lifecycle.test.ts`
+- `tests/integration/background-job-repository.integration.test.ts`
 
 ## Facet Extraction Jobs
 

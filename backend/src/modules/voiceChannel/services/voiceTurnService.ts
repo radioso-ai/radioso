@@ -99,7 +99,7 @@ interface VoiceTurnTiming {
 }
 
 /** Durable notes on a session's previous turn, keyed to its stored reply. Never the reply's text. */
-interface VoiceTurnNotes {
+export interface VoiceTurnNotes {
   /** The vendor replayed the stored reply cut short: how much of it the caller heard. */
   replyInterrupted(note: {
     workspaceId: string;
@@ -421,7 +421,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       recorded();
       return;
     }
-    notes.replyInterrupted({ workspaceId: input.session.workspaceId, ...interruption }).then(recorded, (error: unknown) => {
+    withinNoteTimeout(notes.replyInterrupted({ workspaceId: input.session.workspaceId, ...interruption })).then(recorded, (error: unknown) => {
       reservation.failed();
       this.warnNoteFailed(input, interruption.conversationId, error);
     });

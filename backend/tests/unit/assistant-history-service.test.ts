@@ -56,7 +56,7 @@ describe("AssistantHistoryService", () => {
     );
   });
 
-  it("tails a conversation with ownership, the replying teammate's label, and the activity since the caller's cursor", async () => {
+  it("tails a conversation with ownership, the replying teammate's label, the activity since the caller's cursor, and the replies marked interrupted since it", async () => {
     const tailConversation = vi.fn(async () => ({}) as never);
     const chatHistoryService = { tailConversation } as unknown as ChatHistoryService;
     const service = new AssistantHistoryService(chatHistoryService);
@@ -72,7 +72,7 @@ describe("AssistantHistoryService", () => {
       "workspace-1",
       "conversation-1",
       { limit: 20, activityCursor: "77777777-7777-4777-8777-777777777777" },
-      { includeOwnership: true, includeOperatorLabel: true, activity: { includeFeedback: false } },
+      { includeOwnership: true, includeOperatorLabel: true, activity: { includeFeedback: false }, redeliverInterruptedReplies: true },
     );
   });
 });

@@ -64,9 +64,10 @@ helpers and the shared chat message limit from `app/http`
 - `backend/src/app/composition/voiceChannel.ts` — builds the port over
   Postgres, `AssistantChatService.streamAnswer`, the agent repository (voice
   settings and default locale), the routine state store, the conversation
-  ownership reader (`handoff/public.ts`) and the audit service (the
-  `voice.reply_interrupted` and `voice.reply_replayed` notes); exposed as
-  `AppDependencies.voiceTurns`.
+  ownership reader (`handoff/public.ts`), the message repository as chat's
+  `ReplyInterruptionMarker` and the audit service (the
+  `voice.reply_interrupted` and `voice.reply_replayed` notes, built by
+  `createVoiceTurnNotes`); exposed as `AppDependencies.voiceTurns`.
 - The agent's `voice` settings block belongs to the agents module
   (`agents/voiceSettings.ts`, stored in `behavior_settings.voice`, served on
   `GET`/`PUT /api/v1/agents/:agentId`). This module reads it: the services
@@ -274,14 +275,18 @@ helpers and the shared chat message limit from `app/http`
   When it is a strict prefix of what the session's last stored turn spoke
   (bridge plus reply, zero-width spaces and spacing aside) and what it leaves
   out holds words, not only punctuation, the service logs
-  `Voice reply was interrupted` and records `voice.reply_interrupted` against
-  the stored reply with `heardCharacterCount` (reply characters only) and
-  `spokenCharacterCount`, once per reply. The note is written off the turn's
-  path, and the session counts it recorded only once the write succeeds
-  (`VoiceSessionMemory.reserveInterruption`): a failed write is retried on the
-  next report of the same reply, and the log line and the metric follow the
-  recorded note. The stored reply stays the full text; no message column
-  records the cut.
+  `Voice reply was interrupted` and notes the stored reply with
+  `heardCharacterCount` (reply characters only) and `spokenCharacterCount`,
+  once per reply. Composition writes the note in two steps: it marks the
+  message through chat's `ReplyInterruptionMarker`, which history reads back
+  as the reply's `interruption`, then records `voice.reply_interrupted`. A mark
+  that fails rejects the note before the audit write; a reply the
+  conversation no longer holds is neither marked nor audited, and the note
+  resolves. The note is written off the turn's path, within the 5 s note
+  limit, and the session counts it recorded only once both writes succeed (`VoiceSessionMemory.reserveInterruption`): a failed note is written
+  again on the next report of the same reply, where the mark is idempotent,
+  and the log line and the metric follow the recorded note. The stored reply
+  keeps its full text.
 - **ElevenLabs session key.** ElevenLabs sends no conversation id; the page
   that starts the session mints `session_key` and passes it as the custom LLM
   extra body, which arrives as `elevenlabs_extra_body.session_key`. Dynamic
@@ -300,8 +305,11 @@ reached the turn limit` at warn when the limit fired, else `Voice turn finished`
 `after_speech`, `abandoned`), or `Voice turn failed` at warn with
 `errorClass`. `Voice reply was interrupted` at info names the conversation,
 the reply's message id and the two character counts, once the note is
-recorded; a note that fails to record, or (the replay note) takes longer than
-5 s, logs `Voice turn note could not be recorded` at warn. A warn when a concurrent first turn bound the session to another
+recorded; a note that fails to record, or takes longer than 5 s, logs `Voice
+turn note could not be recorded` at warn, and an interrupted reply the
+conversation no longer holds logs `Voice reply to mark interrupted was not
+found` at warn (workspace, conversation and message ids) and writes no audit
+event. A warn when a concurrent first turn bound the session to another
 conversation, and a warn naming only `dialect` and `agentId` when a request
 carries no usable session key (a 400). Once per agent per process, when a
 turn's bridge line is below the dialect's minimum, `Voice bridge line is
@@ -327,7 +335,8 @@ turn cancelled mid-reply with `stage: "persisting"`.
 ## Tests
 
 - `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts` (the
-  policy tests use fake timers)
+  policy tests use fake timers; `voice-channel-composition-notes` covers the
+  mark-then-audit order of the notes)
 - `cd backend && pnpm exec vitest run tests/unit/conversation-turn-registry.test.ts tests/unit/chat-service-routine-reply-streaming.test.ts`
   (the chat side of `latest_input_wins`: cancelling after emission, and the
   replaced turn's user message; and the `handoff` report on a streamed

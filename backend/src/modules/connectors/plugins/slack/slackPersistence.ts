@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 import { ConversationRepository } from "../../../../db/repositories/conversationRepository.js";
+import type { BackgroundJobQueue, BackgroundJobRequest } from "../../../../shared/background-jobs/index.js";
 import {
   currentTimestamp,
   transactionAdvisoryLock,
@@ -25,6 +26,12 @@ export interface SlackPersistencePort {
   createInboundEvent(input: { eventId: string; teamId: string }): Promise<boolean>;
   markInboundEventStatus(eventId: string, status: "processed" | "skipped" | "failed"): Promise<void>;
   markStaleInboundEventsFailed(input: { olderThan: Date }): Promise<number>;
+  /**
+   * Dedupes and enqueues in one transaction: the inbound-event row and its background job are
+   * written together, so a job-write failure rolls back the dedupe row too and Slack's own
+   * redelivery can try again, rather than finding a "received" row with no job behind it.
+   */
+  enqueueInboundEvent(input: { eventId: string; teamId: string; job: BackgroundJobRequest }): Promise<"duplicate" | "enqueued">;
   findConversationLink(input: { workspaceId: string; slackKey: string }): Promise<SlackConversationLinkRecord | null>;
   findConversationLinkByConversationId(input: {
     workspaceId: string;
@@ -63,7 +70,12 @@ const mapLink = (row: SlackConversationLinkRow): SlackConversationLinkRecord => 
 });
 
 export class PostgresSlackPersistence implements SlackPersistencePort {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    /** Needed only by {@link enqueueInboundEvent}; the API webhook supplies it, the worker's
+     *  job-dispatch instance never calls that method and may omit it. */
+    private readonly backgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">,
+  ) {}
 
   async createInboundEvent(input: { eventId: string; teamId: string }): Promise<boolean> {
     const row = await this.db
@@ -73,6 +85,30 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
       .returning("event_id")
       .executeTakeFirst();
     return row !== undefined;
+  }
+
+  async enqueueInboundEvent(input: { eventId: string; teamId: string; job: BackgroundJobRequest }): Promise<"duplicate" | "enqueued"> {
+    if (!this.backgroundJobs) {
+      throw new Error("PostgresSlackPersistence.enqueueInboundEvent requires a backgroundJobs queue");
+    }
+    const backgroundJobs = this.backgroundJobs;
+    const outcome = await this.db.transaction().execute(async (trx) => {
+      const row = await trx
+        .insertInto("slack_inbound_events")
+        .values({ event_id: input.eventId, team_id: input.teamId, status: "received" })
+        .onConflict((oc) => oc.column("event_id").doNothing())
+        .returning("event_id")
+        .executeTakeFirst();
+      if (!row) {
+        return "duplicate" as const;
+      }
+      await backgroundJobs.enqueueInTransaction(trx, input.job);
+      return "enqueued" as const;
+    });
+    if (outcome === "enqueued") {
+      void backgroundJobs.wake();
+    }
+    return outcome;
   }
 
   async markInboundEventStatus(eventId: string, status: "processed" | "skipped" | "failed"): Promise<void> {

@@ -2,6 +2,12 @@ import type { ConnectorPlugin } from "@radioso/connector-api";
 
 import type { AuditPort } from "../../../modules/audit/contracts/index.js";
 import { createDefaultConnectorRegistry, type ApplicationComposition } from "../../composition/index.js";
+import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
+
+// The worker-side Slack composition lives in the connector plugin catalog (plugin internals
+// may only be imported from there); re-exported here so `dependencies.ts` finds it alongside
+// `buildConnectorRegistry`, the API-side Slack wiring.
+export { buildSlackInboundJobComposition } from "../../../modules/connectors/plugins/index.js";
 import {
   WorkspaceProviderCredentialsService,
 } from "../../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
@@ -158,8 +164,13 @@ export const buildConnectorRegistry = (input: {
   logger: AppLogger;
   /** The email channel's webhook plugin, when an email provider is configured. */
   emailPlugin?: ConnectorPlugin | null;
+  /** The Slack webhook's enqueue port, for the `slack.inbound_event` job. */
+  slackBackgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
 }) => {
-  const connectorRegistry = createDefaultConnectorRegistry(input.composition.connectors, input.env, { email: input.emailPlugin });
+  const connectorRegistry = createDefaultConnectorRegistry(input.composition.connectors, input.env, {
+    email: input.emailPlugin,
+    slackBackgroundJobs: input.slackBackgroundJobs,
+  });
   if (input.env.CONNECTOR_ENCRYPTION_KEY) {
     connectorRegistry.setEncryptionKey(input.env.CONNECTOR_ENCRYPTION_KEY);
   } else {

@@ -85,7 +85,7 @@ export interface SlackInboundEventEnvelope<Event extends SlackInboundEvent = Sla
   event: Event;
 }
 
-export type SlackWebApiClientFactory = (
+type SlackWebApiClientFactory = (
   options: Pick<SlackWebApiClientOptions, "botToken">,
 ) => Pick<
   SlackWebApiClientInstance,
@@ -136,6 +136,21 @@ const threadSlackKey = (teamId: string, channelId: string, threadTs: string): st
 // Slack renders a user mention as `<@U123>` or, in older payloads, `<@U123|handle>`.
 const mentionsUser = (text: string, userId: string): boolean =>
   text.includes(`<@${userId}>`) || text.includes(`<@${userId}|`);
+
+/**
+ * True when an inbound event is the app's own voice: a bot-authored post, or a post from the
+ * installation's own bot user. Pure and stateless so the webhook can filter before ever enqueuing
+ * a job, not only the worker that would otherwise run and answer it.
+ */
+export const isSlackBotLoop = (
+  installation: SlackInstallationRecord | null,
+  event: { user?: unknown; bot_id?: unknown },
+): boolean => {
+  if (typeof event.bot_id === "string" && event.bot_id.length > 0) {
+    return true;
+  }
+  return Boolean(installation?.botUserId && event.user === installation.botUserId);
+};
 
 const channelThreadContext = (
   installation: SlackInstallationRecord,
@@ -596,12 +611,5 @@ export class SlackMessageHandler {
       },
       "Slack gap escalation enqueued",
     );
-  }
-
-  isBotLoop(installation: SlackInstallationRecord | null, event: { user?: unknown; bot_id?: unknown }): boolean {
-    if (typeof event.bot_id === "string" && event.bot_id.length > 0) {
-      return true;
-    }
-    return Boolean(installation?.botUserId && event.user === installation.botUserId);
   }
 }

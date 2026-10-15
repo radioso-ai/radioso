@@ -15,6 +15,7 @@ import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector
 import { EmailChannelCard } from '@/components/dashboard/settings/email-channel-card'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { SlackChannelCard } from '@/components/dashboard/settings/slack-channel-card'
+import { VoiceChannelCard } from '@/components/dashboard/settings/voice-channel-card'
 import { SkillList } from '@/components/dashboard/settings/skills/SkillList'
 import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
@@ -1074,6 +1075,7 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'api-channel' ? (
           <section id="api-channel" className="space-y-6 scroll-mt-24">
             {agentId ? <ApiChannelCard agentId={agentId} /> : null}
+            {agentId ? <VoiceChannelCard agentId={agentId} /> : null}
           </section>
           ) : null}
 

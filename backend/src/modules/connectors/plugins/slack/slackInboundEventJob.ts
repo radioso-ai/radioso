@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  BACKGROUND_JOB_MAX_TIMEOUT_SECONDS,
   backgroundJobHandler,
   backgroundJobRequest,
   defineBackgroundJob,
@@ -209,18 +210,27 @@ export type SlackInboundEventJobPayload = z.infer<typeof slackInboundEventJobPay
  * ack. `onDuplicateKey: "ignore"` makes this one-shot: redelivery dedupe stays where it already is
  * (`slack_inbound_events`/`createInboundEvent`), so a duplicate enqueue while the job is live is
  * simply dropped rather than re-running or re-queuing it. Four attempts with a 5s-doubling backoff
- * mirror the retry budget the old in-process retries used (1s/5s/30s). A chat turn normally
- * answers in a few seconds even with a model call; 60s leaves headroom for a slower one without
- * holding the job past a worker crash for long, and the 90s lease (heartbeat-renewed every 30s
- * while the turn runs) stays comfortably above that deadline.
+ * mirror the retry budget the old in-process retries used (1s/5s/30s).
+ *
+ * `timeoutSeconds` is pinned to the port's maximum (`BACKGROUND_JOB_MAX_TIMEOUT_SECONDS`), not a
+ * value sized to a typical turn: neither `ChatAnswerPort.answer` nor `SlackMessageHandler`'s
+ * dispatch methods accept the handler's `AbortSignal`, so a timeout here does not stop the
+ * handler — it only tells the runtime to retry early while the original run keeps going. A slow
+ * model call or skill webhook past a tighter deadline would then post its reply twice: once from
+ * the still-running original attempt, once from the retry. The old in-process code had no
+ * deadline at all, so this keeps that behaviour rather than regressing it, while still bounding a
+ * genuinely wedged worker. `leaseSeconds` sits above the timeout (so a run that legitimately
+ * takes the full deadline never loses its claim mid-flight) and below the document worker's own
+ * 300s request deadline (`infra/terraform/compute.tf`), so a retry only fires once the worker that
+ * held the job is actually gone.
  */
 export const SLACK_INBOUND_EVENT_JOB = defineBackgroundJob({
   kind: "slack.inbound_event",
   payload: slackInboundEventJobPayloadSchema,
   onDuplicateKey: "ignore",
   maxAttempts: 4,
-  timeoutSeconds: 60,
-  leaseSeconds: 90,
+  timeoutSeconds: BACKGROUND_JOB_MAX_TIMEOUT_SECONDS,
+  leaseSeconds: 270,
   retryBaseDelaySeconds: 5,
 });
 

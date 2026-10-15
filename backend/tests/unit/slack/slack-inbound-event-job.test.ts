@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  BACKGROUND_JOB_MAX_TIMEOUT_SECONDS,
   BackgroundJobRuntime,
   DefaultBackgroundJobQueue,
   type BackgroundJobWakePort,
@@ -86,6 +87,17 @@ const setup = (
 };
 
 describe("Slack inbound event job handler", () => {
+  it("pins its deadline to the port maximum, with a lease above it and below the worker's request timeout", () => {
+    // No AbortSignal reaches the chat turn, so the timeout cannot stop a running handler early —
+    // a tighter deadline would let the original attempt and a retry both post a reply. Pinning the
+    // deadline to the port's ceiling makes a retry fire only once a worker genuinely stops
+    // renewing the lease, not because a slow-but-live turn outran an arbitrary budget.
+    expect(SLACK_INBOUND_EVENT_JOB.policy.timeoutSeconds).toBe(BACKGROUND_JOB_MAX_TIMEOUT_SECONDS);
+    expect(SLACK_INBOUND_EVENT_JOB.policy.leaseSeconds).toBeGreaterThan(SLACK_INBOUND_EVENT_JOB.policy.timeoutSeconds);
+    // The document worker's own Cloud Run request deadline (infra/terraform/compute.tf).
+    expect(SLACK_INBOUND_EVENT_JOB.policy.leaseSeconds).toBeLessThan(300);
+  });
+
   it("dispatches each inbound kind to its matching message-handler method and completes the job", async () => {
     const handleMessageIm = vi.fn(async () => undefined);
     const persistence = { markInboundEventStatus: vi.fn(async () => undefined) };

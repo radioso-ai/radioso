@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 import { createConversationActivityComposition } from "../../src/app/composition/conversationActivity.js";
@@ -14,6 +14,7 @@ import type {
   ContactHistorySummary,
 } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { VisitorRecord } from "../../src/db/repositories/visitorRepository.js";
+import { encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import {
   InMemoryAuditEventRepository,
   InMemoryConversationActivityStore,
@@ -884,6 +885,20 @@ describe("chat history service interrupted replies", () => {
       }
     }
     expect(reads.map((messages) => messages.some((message) => message.id === cutReply.id))).toEqual([true, true, true]);
+  });
+
+  it("asks for replies marked since the cursor only on a tail that re-delivers them, with the cursor's mark watermark", async () => {
+    const { service, messageRepository, conversation, fullReply } = await seedInterruptedReply();
+    const listSince = vi.spyOn(messageRepository, "listSinceByConversationId");
+    const cursor = encodeCursor({ createdAt: fullReply.createdAt.toISOString(), id: fullReply.id, markedAt: "2026-10-15T10:00:00.000Z" });
+
+    await service.tailConversation("workspace-1", conversation.id, { cursor, limit: 10 }, { redeliverInterruptedReplies: true });
+    await service.tailConversation("workspace-1", conversation.id, { cursor, limit: 10 }, { includeOwnership: true });
+
+    expect(listSince.mock.calls.map(([, , input]) => input)).toEqual([
+      { sinceCreatedAt: fullReply.createdAt, sinceId: fullReply.id, sinceMarkedAt: "2026-10-15T10:00:00.000Z", limit: 10, redeliverInterruptedReplies: true },
+      { sinceCreatedAt: fullReply.createdAt, sinceId: fullReply.id, sinceMarkedAt: "2026-10-15T10:00:00.000Z", limit: 10, redeliverInterruptedReplies: false },
+    ]);
   });
 });
 

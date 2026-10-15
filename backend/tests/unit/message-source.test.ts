@@ -44,3 +44,29 @@ describe("message source discriminator", () => {
     expect(deriveMessageSourceFromRole("system")).toBe("system");
   });
 });
+
+describe("message interruption marker", () => {
+  const assistantRow = (interruption: unknown) => row({ role: "assistant", metadata_json: { interruption } });
+
+  it("reads the counts of a well-formed marker on an assistant reply, without its recorded time", () => {
+    expect(mapMessageRow(assistantRow({ heardCharacterCount: 7, spokenCharacterCount: 16, recordedAt: "2026-10-15T10:00:00.000Z" })).interruption)
+      .toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16 });
+  });
+
+  it.each([
+    ["an array", []],
+    ["a null", null],
+    ["a negative count", { heardCharacterCount: -1, spokenCharacterCount: 16 }],
+    ["a string count", { heardCharacterCount: "7", spokenCharacterCount: 16 }],
+    ["a fractional count", { heardCharacterCount: 7.5, spokenCharacterCount: 16 }],
+    ["a missing count", { heardCharacterCount: 7 }],
+  ])("reads %s as no marker", (_label, interruption) => {
+    expect(mapMessageRow(assistantRow(interruption)).interruption).toBeUndefined();
+  });
+
+  it("reads no marker from a message without one, or from a message that is not an assistant reply", () => {
+    expect(mapMessageRow(row({ role: "assistant" })).interruption).toBeUndefined();
+    expect(mapMessageRow(row({ role: "user", metadata_json: { interruption: { heardCharacterCount: 7, spokenCharacterCount: 16 } } })).interruption)
+      .toBeUndefined();
+  });
+});

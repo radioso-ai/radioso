@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { MessageRepository } from "../../src/db/repositories/messageRepository.js";
+import { decodeCursorWithKeys } from "../../src/shared/domain/cursorPagination.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -116,7 +117,8 @@ describeIntegration("MessageRepository (Postgres)", () => {
     const suggestions = [{ kind: "question", label: "Opening hours?" }];
     const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine.", metadata: { suggestions } });
 
-    await repository.markReplyInterrupted({ workspaceId, conversationId, messageId: reply.id, heardCharacterCount: 7, spokenCharacterCount: 16 });
+    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: reply.id, heardCharacterCount: 7, spokenCharacterCount: 16 }))
+      .resolves.toBe(true);
 
     const reloaded = await repository.findByIdAndWorkspaceId(workspaceId, reply.id);
     expect(reloaded?.content).toBe("We open at nine.");
@@ -136,14 +138,25 @@ describeIntegration("MessageRepository (Postgres)", () => {
     const storedMarker = async () =>
       (await repository.findByIdAndWorkspaceId(workspaceId, reply.id))?.metadata?.interruption as { heardCharacterCount: number; recordedAt: string };
 
-    await mark(7);
+    await expect(mark(7)).resolves.toBe(true);
     const first = await storedMarker();
     expect(first).toMatchObject({ heardCharacterCount: 7, recordedAt: expect.any(String) });
-    await mark(7);
+    // Still marked, so a retried note goes on to its audit event.
+    await expect(mark(7)).resolves.toBe(true);
     expect(await storedMarker()).toEqual(first);
 
-    await mark(9);
+    await expect(mark(9)).resolves.toBe(true);
     expect(await storedMarker()).toEqual(first);
+  });
+
+  it("marks a reply whose metadata holds a null interruption, which reads as unmarked", async () => {
+    const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine.", metadata: { interruption: null } });
+    expect((await repository.findByIdAndWorkspaceId(workspaceId, reply.id))?.interruption).toBeUndefined();
+
+    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: reply.id, heardCharacterCount: 7, spokenCharacterCount: 16 }))
+      .resolves.toBe(true);
+
+    expect((await repository.findByIdAndWorkspaceId(workspaceId, reply.id))?.interruption).toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16 });
   });
 
   it("leaves a message alone that is not an assistant reply of the conversation", async () => {
@@ -153,14 +166,63 @@ describeIntegration("MessageRepository (Postgres)", () => {
     const otherReply = await repository.create({ conversationId: otherConversationId, workspaceId, role: "assistant", content: "At nine." });
     const counts = { heardCharacterCount: 3, spokenCharacterCount: 8 };
 
-    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: question.id, ...counts })).resolves.toBeUndefined();
-    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: otherReply.id, ...counts })).resolves.toBeUndefined();
-    await expect(repository.markReplyInterrupted({ workspaceId: randomUUID(), conversationId: otherConversationId, messageId: otherReply.id, ...counts })).resolves.toBeUndefined();
-    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: randomUUID(), ...counts })).resolves.toBeUndefined();
+    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: question.id, ...counts })).resolves.toBe(false);
+    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: otherReply.id, ...counts })).resolves.toBe(false);
+    await expect(repository.markReplyInterrupted({ workspaceId: randomUUID(), conversationId: otherConversationId, messageId: otherReply.id, ...counts })).resolves.toBe(false);
+    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: randomUUID(), ...counts })).resolves.toBe(false);
 
     expect((await repository.findByIdAndWorkspaceId(workspaceId, question.id))?.metadata).not.toHaveProperty("interruption");
     expect((await repository.findByIdAndWorkspaceId(workspaceId, otherReply.id))?.metadata).not.toHaveProperty("interruption");
     expect((await repository.findByIdAndWorkspaceId(workspaceId, otherReply.id))?.interruption).toBeUndefined();
+  });
+
+  describe("tail re-delivery of interrupted replies", () => {
+    const sinceCursor = (cursor: string | null) => {
+      const { keys } = decodeCursorWithKeys(cursor!, ["createdAt", "id"]);
+      return { sinceCreatedAt: new Date(keys.createdAt), sinceId: keys.id, sinceMarkedAt: (keys as Record<string, string>).markedAt };
+    };
+    const tail = (cursor: string | null, redeliverInterruptedReplies = true) =>
+      repository.listSinceByConversationId(workspaceId, conversationId, { ...sinceCursor(cursor), limit: 10, redeliverInterruptedReplies });
+    const markReply = (messageId: string) =>
+      repository.markReplyInterrupted({ workspaceId, conversationId, messageId, heardCharacterCount: 7, spokenCharacterCount: 16 });
+    // Whole milliseconds, as the cursor keeps them, so a read after the cursor's own message starts
+    // strictly after it. The marker is recorded on the database clock, after the reply and before the
+    // later message.
+    const createAt = async (role: "user" | "assistant", content: string, iso: string) => {
+      const message = await repository.create({ conversationId, workspaceId, role, content });
+      await setTime(message.id, iso);
+      return message;
+    };
+
+    it("re-delivers a reply marked after the cursor once, and only to a tail that asks for it", async () => {
+      await createAt("user", "When do you open?", "2026-06-01T00:00:00.000Z");
+      const reply = await createAt("assistant", "We open at nine.", "2026-06-01T00:00:01.000Z");
+      const { latestCursor: seen } = await repository.listSinceByConversationId(workspaceId, conversationId, { limit: 10 });
+      expect((await tail(seen)).messages).toEqual([]);
+
+      await markReply(reply.id);
+
+      expect((await tail(seen, false)).messages).toEqual([]);
+      const redelivered = await tail(seen);
+      expect(redelivered.messages.map((message) => [message.id, message.interruption])).toEqual([
+        [reply.id, { heardCharacterCount: 7, spokenCharacterCount: 16 }],
+      ]);
+      expect(decodeCursorWithKeys(redelivered.latestCursor!, ["createdAt", "id"]).keys.id).toBe(reply.id);
+      expect((await tail(redelivered.latestCursor)).messages).toEqual([]);
+    });
+
+    it("orders a re-delivered reply with the new messages, and moves the cursor past both", async () => {
+      const reply = await createAt("assistant", "We open at nine.", "2026-06-01T00:00:01.000Z");
+      const { latestCursor: seen } = await repository.listSinceByConversationId(workspaceId, conversationId, { limit: 10 });
+
+      await markReply(reply.id);
+      const next = await createAt("user", "And Sunday?", "2099-01-01T00:00:00.000Z");
+
+      const page = await tail(seen);
+      expect(page.messages.map((message) => message.id)).toEqual([reply.id, next.id]);
+      expect(decodeCursorWithKeys(page.latestCursor!, ["createdAt", "id"]).keys.id).toBe(next.id);
+      expect((await tail(page.latestCursor)).messages).toEqual([]);
+    });
   });
 
   it("windows newest-first with a stable cursor and total", async () => {

@@ -282,6 +282,12 @@ export interface ChatConversationTurn {
   interruption?: ReplyInterruption;
 }
 
+/** A tail cursor's marker watermark, read only in the form the repository writes it. */
+const cursorMarkedAt = (cursor: { keys: Readonly<Record<string, string>> } | null): string | undefined => {
+  const value = cursor?.keys.markedAt;
+  return value !== undefined && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString() === value ? value : undefined;
+};
+
 /** The interruption marker, on a reply that carries one and on no other message. */
 const interruptionField = (message: MessageRecord): { interruption?: ReplyInterruption } =>
   message.interruption ? { interruption: message.interruption } : {};
@@ -1407,6 +1413,11 @@ export class ChatHistoryService {
       includeLatency?: boolean;
       includeOperatorLabel?: boolean;
       activity?: ConversationActivityReadScope;
+      /**
+       * Operator reads that merge messages by id: the tail also returns an already-seen reply once
+       * the caller has marked it interrupted, so an open transcript shows the marker.
+       */
+      redeliverInterruptedReplies?: boolean;
     } = {},
   ): Promise<ChatConversationTail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -1420,7 +1431,9 @@ export class ChatHistoryService {
       this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
         sinceCreatedAt: cursor ? new Date(cursor.keys.createdAt) : undefined,
         sinceId: cursor?.keys.id,
+        sinceMarkedAt: cursorMarkedAt(cursor),
         limit: input.limit,
+        redeliverInterruptedReplies: options.redeliverInterruptedReplies === true,
       }),
       options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
       this.loadActivity(

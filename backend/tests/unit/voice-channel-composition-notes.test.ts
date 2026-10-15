@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createVoiceTurnNotes } from "../../src/app/composition/voiceChannel.js";
 import type { AuditEventInput } from "../../src/modules/audit/contracts/index.js";
@@ -11,9 +11,10 @@ const note = {
   spokenCharacterCount: 40,
 };
 
-const sinks = (options: { markFails?: boolean } = {}) => {
+const sinks = (options: { markFails?: boolean; replyFound?: boolean } = {}) => {
   const writes: string[] = [];
   const audits: AuditEventInput[] = [];
+  const logger = { warn: vi.fn() };
   const notes = createVoiceTurnNotes({
     replies: {
       markReplyInterrupted: async (input) => {
@@ -21,6 +22,7 @@ const sinks = (options: { markFails?: boolean } = {}) => {
         if (options.markFails) {
           throw new Error("database unavailable");
         }
+        return options.replyFound ?? true;
       },
     },
     auditService: {
@@ -29,8 +31,9 @@ const sinks = (options: { markFails?: boolean } = {}) => {
         audits.push(event);
       },
     },
+    logger,
   });
-  return { notes, writes, audits };
+  return { notes, writes, audits, logger };
 };
 
 describe("voice channel composition: turn notes", () => {
@@ -59,6 +62,18 @@ describe("voice channel composition: turn notes", () => {
     await expect(notes.replyInterrupted(note)).rejects.toThrow("database unavailable");
 
     expect(writes).toEqual(["mark:message-1:12/40"]);
+  });
+
+  it("records nothing and warns when the conversation holds no such reply, without failing the note", async () => {
+    const { notes, writes, logger } = sinks({ replyFound: false });
+
+    await expect(notes.replyInterrupted(note)).resolves.toBeUndefined();
+
+    expect(writes).toEqual(["mark:message-1:12/40"]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId: "workspace-1", conversationId: "conversation-1", messageId: "message-1" },
+      "Voice reply to mark interrupted was not found",
+    );
   });
 
   it("records a replayed reply as an audit event only", async () => {

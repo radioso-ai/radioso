@@ -171,12 +171,19 @@ describe("copilot chat readers", () => {
       ],
     });
 
+    const cutReply = { ...reply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } };
+    ports.getConversationTurn.mockResolvedValue({ conversationId, message: cutReply });
+    const traceTool = ports.descriptors.find((descriptor) => descriptor.name === "turn_trace")!;
+
     const transcript = await tool.createTool(context(null)).invoke({ conversationId }, {} as never);
+    const trace = await traceTool.createTool(context(null)).invoke({ messageId: cutReply.id }, {} as never);
 
     expect(transcript).toMatchObject({
       transcript: { messages: [{ interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } }, { interruption: null }] },
     });
+    expect(trace).toMatchObject({ trace: { message: { interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } } } });
     expect(tool.outputSchema.safeParse(transcript).success).toBe(true);
+    expect(traceTool.outputSchema.safeParse(trace).success).toBe(true);
   });
 
   /**

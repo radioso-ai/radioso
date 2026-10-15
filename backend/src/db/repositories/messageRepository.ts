@@ -4,8 +4,12 @@ import { sql } from "kysely";
 
 import type { MessageSource } from "@radioso/conversation-contract";
 
-import type { ReplyInterruption, ReplyInterruptionMarker } from "../../modules/chat/contracts/interruption.js";
-import { clockTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import {
+  replyInterruptionSchema,
+  type ReplyInterruption,
+  type ReplyInterruptionMarker,
+} from "../../modules/chat/contracts/interruption.js";
+import { clockTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { GroundingDiagnosticSnapshot } from "../../shared/domain/groundingDiagnostic.js";
@@ -62,6 +66,15 @@ export interface ConversationMessageSummary {
   preview: string | null;
 }
 
+export interface TailReadInput {
+  sinceCreatedAt?: Date;
+  sinceId?: string;
+  /** The `markedAt` key of the tail cursor: when the newest marker it delivered was recorded. */
+  sinceMarkedAt?: string;
+  limit: number;
+  redeliverInterruptedReplies?: boolean;
+}
+
 export interface MessageRepositoryPort {
   findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null>;
   listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]>;
@@ -93,10 +106,17 @@ export interface MessageRepositoryPort {
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ messages: MessageRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
+  /**
+   * The messages after the `(sinceCreatedAt, sinceId)` cursor, oldest first. With
+   * `redeliverInterruptedReplies`, the read also returns, in the same order, the conversation's
+   * assistant replies at or before the cursor whose interruption marker was recorded since the
+   * cursor's message (and after `sinceMarkedAt`, the newest marker the cursor already delivered);
+   * the returned cursor carries that newest marker as `markedAt`, so each marker arrives once.
+   */
   listSinceByConversationId(
     workspaceId: string,
     conversationId: string,
-    input: { sinceCreatedAt?: Date; sinceId?: string; limit: number },
+    input: TailReadInput,
   ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }>;
   summarizeByConversationIds(
     workspaceId: string,
@@ -199,20 +219,20 @@ const mapInputMetadata = (value: unknown): UserMessageInputMetadata | undefined 
   };
 };
 
-const isCharacterCount = (value: unknown): value is number =>
-  typeof value === "number" && Number.isInteger(value) && value >= 0;
-
 /** The marker {@link MessageRepository.markReplyInterrupted} keeps in the metadata; a malformed one reads as none. */
 const mapInterruption = (metadata: unknown): ReplyInterruption | undefined => {
   const marker = metadata && typeof metadata === "object" ? (metadata as { interruption?: unknown }).interruption : undefined;
-  if (!marker || typeof marker !== "object" || Array.isArray(marker)) {
-    return undefined;
-  }
-  const { heardCharacterCount, spokenCharacterCount } = marker as Record<string, unknown>;
-  return isCharacterCount(heardCharacterCount) && isCharacterCount(spokenCharacterCount)
-    ? { heardCharacterCount, spokenCharacterCount }
-    : undefined;
+  const parsed = replyInterruptionSchema.safeParse(marker);
+  return parsed.success ? parsed.data : undefined;
 };
+
+/**
+ * When a marker was recorded, as a UTC ISO string with milliseconds: the format `Date.toISOString`
+ * writes, so marker times and tail cursor times compare as text, in time order, without a cast.
+ */
+const markerRecordedAt = sql<string>`to_char(${clockTimestamp()} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+const markerRecordedAtOf = sql<string>`metadata_json -> 'interruption' ->> 'recordedAt'`;
+const carriesMarker = sql<boolean>`jsonb_typeof(metadata_json -> 'interruption') = 'object'`;
 
 const messageColumns = [
   "id",
@@ -420,7 +440,7 @@ export class MessageRepository implements MessageRepositoryPort, ReplyInterrupti
   async listSinceByConversationId(
     workspaceId: string,
     conversationId: string,
-    input: { sinceCreatedAt?: Date; sinceId?: string; limit: number },
+    input: TailReadInput,
   ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }> {
     // Tail cursor is (created_at, id). Safe because messages within a conversation are inserted
     // one-per-operation via clock_timestamp() and are causally sequential, so created_at is unique
@@ -487,16 +507,65 @@ export class MessageRepository implements MessageRepositoryPort, ReplyInterrupti
       .execute();
 
     const messages = rows.map((row) => mapMessageRow(row as MessageRow));
-    const lastReturned = messages.at(-1);
+    const cursorMessage = messages.at(-1) ?? latest;
+    const redelivered = input.redeliverInterruptedReplies
+      ? await this.listMarkedSince(workspaceId, conversationId, {
+          sinceCreatedAt,
+          sinceId,
+          sinceMarkedAt: input.sinceMarkedAt,
+          limit: input.limit,
+        })
+      : { messages: [], newestMarkedAt: undefined };
+    const markedAt = [input.sinceMarkedAt, redelivered.newestMarkedAt]
+      .filter((value): value is string => value !== undefined)
+      .sort()
+      .at(-1);
 
     return {
-      messages,
-      latestCursor: lastReturned
+      messages: [...redelivered.messages, ...messages],
+      latestCursor: cursorMessage
         ? encodeCursor({
-            createdAt: lastReturned.createdAt.toISOString(),
-            id: lastReturned.id,
+            createdAt: cursorMessage.createdAt.toISOString(),
+            id: cursorMessage.id,
+            // Only a marker recorded since the cursor's message still needs the watermark.
+            ...(markedAt !== undefined && markedAt >= cursorMessage.createdAt.toISOString() ? { markedAt } : {}),
           })
         : newestCursor,
+    };
+  }
+
+  /**
+   * Assistant replies at or before the cursor whose marker was recorded at or after the cursor's
+   * message and after the newest marker already delivered, oldest first. Marker times and cursor
+   * times share one text format, so they compare as text.
+   */
+  private async listMarkedSince(
+    workspaceId: string,
+    conversationId: string,
+    input: { sinceCreatedAt: Date; sinceId: string; sinceMarkedAt?: string; limit: number },
+  ): Promise<{ messages: MessageRecord[]; newestMarkedAt: string | undefined }> {
+    const rows = await this.db
+      .selectFrom("messages")
+      .select([...messageColumns, markerRecordedAtOf.as("marked_at")])
+      .where("workspace_id", "=", workspaceId)
+      .where("conversation_id", "=", conversationId)
+      .where("role", "=", "assistant")
+      .where((eb) =>
+        eb.or([
+          eb("created_at", "<", input.sinceCreatedAt),
+          eb.and([eb("created_at", "=", input.sinceCreatedAt), eb("id", "<=", input.sinceId)]),
+        ]),
+      )
+      .where(carriesMarker)
+      .where(markerRecordedAtOf, ">=", input.sinceCreatedAt.toISOString())
+      .$if(input.sinceMarkedAt !== undefined, (query) => query.where(markerRecordedAtOf, ">", input.sinceMarkedAt!))
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
+      .limit(input.limit)
+      .execute();
+    return {
+      messages: rows.map((row) => mapMessageRow(row as MessageRow)),
+      newestMarkedAt: rows.map((row) => row.marked_at).sort().at(-1),
     };
   }
 
@@ -651,19 +720,23 @@ export class MessageRepository implements MessageRepositoryPort, ReplyInterrupti
     workspaceId: string;
     conversationId: string;
     messageId: string;
-  } & ReplyInterruption): Promise<void> {
+  } & ReplyInterruption): Promise<boolean> {
     const counts = { heardCharacterCount: input.heardCharacterCount, spokenCharacterCount: input.spokenCharacterCount };
-    await this.db
+    const marker = jsonbConcat(toJsonb(counts), sql`jsonb_build_object('recordedAt', ${markerRecordedAt})`);
+    // A reply that already carries a marker is matched and rewritten unchanged, so a retried note
+    // still learns that the reply is marked and goes on to its audit event.
+    const result = await this.db
       .updateTable("messages")
-      .set({
-        metadata_json: sql`metadata_json || jsonb_build_object('interruption', ${toJsonb(counts)} || jsonb_build_object('recordedAt', clock_timestamp()))`,
-      })
+      .set((eb) => ({
+        metadata_json: sql`CASE WHEN ${carriesMarker} THEN metadata_json
+          ELSE ${jsonbConcat(eb.ref("metadata_json"), sql`jsonb_build_object('interruption', ${marker})`)} END`,
+      }))
       .where("workspace_id", "=", input.workspaceId)
       .where("conversation_id", "=", input.conversationId)
       .where("id", "=", input.messageId)
       .where("role", "=", "assistant")
-      .where(sql<boolean>`metadata_json -> 'interruption' IS NULL`)
-      .execute();
+      .executeTakeFirst();
+    return result.numUpdatedRows > 0n;
   }
 
   async deleteUserMessage(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<boolean> {

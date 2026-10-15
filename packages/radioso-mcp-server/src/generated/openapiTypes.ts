@@ -3207,7 +3207,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Poll new messages for a saved assistant conversation */
+        /**
+         * Poll new messages for a saved assistant conversation
+         * @description Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once the caller has marked it interrupted, carrying `interruption`, in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.
+         */
         get: operations["tailHistoryConversation"];
         put?: never;
         post?: never;

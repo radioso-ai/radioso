@@ -4088,6 +4088,7 @@ CREATE TABLE public.voice_session_memories (
     newest_sequence bigint NOT NULL,
     previous_sequence bigint,
     touched_at timestamp with time zone NOT NULL,
+    requests jsonb DEFAULT '{}'::jsonb NOT NULL,
     last_bridge_sequence bigint,
     last_bridge_at timestamp with time zone,
     last_bridge_cut_off boolean,
@@ -4095,21 +4096,12 @@ CREATE TABLE public.voice_session_memories (
     last_exchange_conversation_id uuid,
     last_exchange jsonb,
     last_exchange_note text DEFAULT 'none'::text NOT NULL,
+    last_exchange_note_owner text,
+    last_exchange_note_claimed_at timestamp with time zone,
     CONSTRAINT voice_session_memories_last_exchange_note_check CHECK ((last_exchange_note = ANY (ARRAY['none'::text, 'pending'::text, 'recorded'::text]))),
+    CONSTRAINT voice_session_memories_last_exchange_note_owner_check CHECK (((length(last_exchange_note_owner) >= 1) AND (length(last_exchange_note_owner) <= 128))),
     CONSTRAINT voice_session_memories_session_key_check CHECK (((length(session_key) >= 1) AND (length(session_key) <= 256))),
     CONSTRAINT voice_session_memories_vendor_check CHECK (((length(vendor) >= 1) AND (length(vendor) <= 64)))
-);
-
-
---
--- Name: voice_session_requests; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.voice_session_requests (
-    sequence bigint NOT NULL,
-    memory_id uuid NOT NULL,
-    arrived_at timestamp with time zone NOT NULL,
-    settled_at timestamp with time zone
 );
 
 
@@ -6403,14 +6395,6 @@ ALTER TABLE ONLY public.voice_session_memories
 
 ALTER TABLE ONLY public.voice_session_memories
     ADD CONSTRAINT voice_session_memories_session_uniq UNIQUE (agent_id, vendor, session_key);
-
-
---
--- Name: voice_session_requests voice_session_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.voice_session_requests
-    ADD CONSTRAINT voice_session_requests_pkey PRIMARY KEY (sequence);
 
 
 --
@@ -9077,20 +9061,6 @@ CREATE INDEX voice_session_memories_last_exchange_conversation_id_idx ON public.
 --
 
 CREATE INDEX voice_session_memories_touched_at_idx ON public.voice_session_memories USING btree (touched_at);
-
-
---
--- Name: voice_session_requests_arrived_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX voice_session_requests_arrived_at_idx ON public.voice_session_requests USING btree (arrived_at);
-
-
---
--- Name: voice_session_requests_memory_id_sequence_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX voice_session_requests_memory_id_sequence_idx ON public.voice_session_requests USING btree (memory_id, sequence);
 
 
 --
@@ -12472,14 +12442,6 @@ ALTER TABLE ONLY public.voice_session_memories
 
 ALTER TABLE ONLY public.voice_session_memories
     ADD CONSTRAINT voice_session_memories_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
-
-
---
--- Name: voice_session_requests voice_session_requests_memory_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.voice_session_requests
-    ADD CONSTRAINT voice_session_requests_memory_id_fkey FOREIGN KEY (memory_id) REFERENCES public.voice_session_memories(id) ON DELETE CASCADE;
 
 
 --

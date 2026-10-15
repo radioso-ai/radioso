@@ -1944,20 +1944,16 @@ export interface VoiceSessionMemories {
   last_exchange: Json | null;
   last_exchange_conversation_id: string | null;
   last_exchange_note: Generated<string>;
+  last_exchange_note_claimed_at: Timestamp | null;
+  last_exchange_note_owner: string | null;
   last_exchange_sequence: Int8 | null;
   newest_sequence: Int8;
   previous_sequence: Int8 | null;
+  requests: Generated<Json>;
   session_key: string;
   touched_at: Timestamp;
   vendor: string;
   workspace_id: string;
-}
-
-export interface VoiceSessionRequests {
-  arrived_at: Timestamp;
-  memory_id: string;
-  sequence: Int8;
-  settled_at: Timestamp | null;
 }
 
 export interface VoiceSessions {
@@ -2215,7 +2211,6 @@ export interface DB {
   vector_index_work: VectorIndexWork;
   visitors: Visitors;
   voice_session_memories: VoiceSessionMemories;
-  voice_session_requests: VoiceSessionRequests;
   voice_sessions: VoiceSessions;
   website_crawl_jobs: WebsiteCrawlJobs;
   workspace_embedding_profiles: WorkspaceEmbeddingProfiles;

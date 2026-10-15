@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { VoiceSessionRef } from "../domain.js";
@@ -6,8 +6,6 @@ import { heardPrefixLength, spokenLength } from "./speechText.js";
 
 /** One request's place in its session, from its arrival until its turn ends. */
 export interface VoiceTurnClaim {
-  /** Arrival number: rises in arrival order across every instance that serves the session. */
-  readonly sequence: string;
   /** When a newer request of the session arrived while this one was in flight. */
   supersededAt: number | null;
   /** When the runtime closed this request before the turn's outcome reached it. */
@@ -53,14 +51,13 @@ export interface RememberedVoiceExchange {
 /** Where the note of an exchange's interruption stands: none yet, being written, or durable. */
 export type VoiceInterruptionNoteState = "none" | "pending" | "recorded";
 
-/** What the session remembered as a request arrived, and the request's place in it. */
+/** What the store held for the session when a request arrived, and the request's place in it. */
 export interface VoiceSessionArrival {
-  /** The session's memory, which the request's later writes address. */
+  /** The session's durable memory, which the request's later writes address. */
   sessionId: string;
+  /** Arrival number: rises in arrival order across every instance that serves the session. */
   sequence: string;
-  /** The request this one overtook, which may still be in flight; its instance is told. */
-  supersededSequence: string | null;
-  /** The session's other requests still in flight. */
+  /** The session's other requests still in flight, on any instance. */
   inFlightSequences: string[];
   /** The last bridge line; `cutOff` is null while the request that spoke it is in flight. */
   lastBridge: { sequence: string; at: number; cutOff: boolean | null } | null;
@@ -73,16 +70,22 @@ export interface VoiceSessionRetention {
   forgetAfterMs: number;
   /** A request still unsettled this long after it arrived counts as gone: its instance crashed. */
   requestLifetimeMs: number;
+  /** A claim on an interruption note older than this may be taken over: its owner crashed. */
+  noteClaimLifetimeMs: number;
 }
 
-/** Where every instance serving a session keeps what the session remembers. */
+/**
+ * Where the instances serving a session see each other's requests. Every call stands on its own:
+ * arrivals of one instance are made in order, and nothing else waits for anything.
+ */
 export interface VoiceSessionMemoryStore {
   /**
-   * Registers a request with the next arrival number. The session's last exchange is forgotten
-   * first when the session has been idle past `forgetAfterMs` with nothing in flight. The request it
-   * overtook, unless that one already settled, is announced on the notice source.
+   * Registers a request with the next arrival number, on the store's clock, and marks the request in
+   * flight before it overtaken by this instance; that request's instance is told. The session's
+   * exchange is forgotten first when the session has been idle past `forgetAfterMs` with nothing in
+   * flight.
    */
-  arrive(input: { session: VoiceSessionRef; now: number; retention: VoiceSessionRetention }): Promise<VoiceSessionArrival>;
+  arrive(input: { session: VoiceSessionRef; instanceId: string; retention: VoiceSessionRetention }): Promise<VoiceSessionArrival>;
   /**
    * Ends a request: records its exchange unless a newer one is recorded, and whether it lost its
    * caller when it spoke the session's last bridge line. Also deletes forgotten sessions.
@@ -90,19 +93,26 @@ export interface VoiceSessionMemoryStore {
   settle(input: {
     sessionId: string;
     sequence: string;
-    now: number;
     cutOff: boolean;
     exchange: RememberedVoiceExchange | null;
     retention: VoiceSessionRetention;
   }): Promise<void>;
-  /** Records a bridge line, unless a newer request of the session already spoke one. */
-  bridgeSpoken(input: { sessionId: string; sequence: string; at: number }): Promise<void>;
-  /** Takes the exchange's interruption note for writing; false when it is recorded or being written. */
-  claimInterruptionNote(input: { sessionId: string; exchangeSequence: string }): Promise<boolean>;
-  /** Marks a taken note recorded, or hands it back so a later report writes it. */
-  releaseInterruptionNote(input: { sessionId: string; exchangeSequence: string; recorded: boolean }): Promise<void>;
+  /**
+   * Records the request's bridge line unless a request from another instance has overtaken it, in
+   * which case it must not be spoken: false.
+   */
+  claimBridge(input: { sessionId: string; sequence: string; instanceId: string }): Promise<boolean>;
+  /** Takes the exchange's interruption note for `owner`; false while it is recorded or another owner's claim is live. */
+  claimInterruptionNote(input: {
+    sessionId: string;
+    exchangeSequence: string;
+    owner: string;
+    retention: VoiceSessionRetention;
+  }): Promise<boolean>;
+  /** Marks `owner`'s claim recorded, or hands it back so a later report writes it. */
+  releaseInterruptionNote(input: { sessionId: string; exchangeSequence: string; owner: string; recorded: boolean }): Promise<void>;
   /** When each of these requests was overtaken, for the ones a newer request overtook. */
-  supersededAt(sequences: string[]): Promise<Map<string, number>>;
+  supersededAt(requests: Array<{ sessionId: string; sequence: string }>): Promise<Map<string, number>>;
 }
 
 interface VoiceSessionNoticeHandlers {
@@ -146,6 +156,8 @@ interface VoiceSessionMemoryWindows {
 
 /** A request whose instance stopped settling it for this long has crashed or stalled. */
 const REQUEST_LIFETIME_MS = 5 * 60_000;
+/** An interruption note claimed this long ago and never released was abandoned. */
+const NOTE_CLAIM_LIFETIME_MS = 60_000;
 
 /** A failed catch-up is retried after this delay, doubling up to the maximum. */
 const CATCH_UP_RETRY_INITIAL_MS = 250;
@@ -155,19 +167,43 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => {
   setTimeout(resolve, ms).unref();
 });
 
-/** Requests of one session that this process runs, and the order its writes for them go out in. */
-interface LocalSession {
-  readonly key: string;
-  readonly claims: Set<VoiceTurnClaim>;
-  arriving: number;
-  /** Each write for the session, in this process's call order, so an arrival reads the ones before it. */
-  tail: Promise<void>;
+const noop = (): void => undefined;
+
+/** The last bridge line as this process knows it: spoken here (`claim`), or read from the store. */
+interface KnownBridge {
+  sequence: string;
+  at: number;
+  claim: VoiceTurnClaim | null;
+  /** For a bridge read from the store: whether its request lost its caller; null while in flight. */
+  cutOff: boolean | null;
+}
+
+interface KnownExchange {
+  sequence: string;
+  exchange: RememberedVoiceExchange;
+  note: VoiceInterruptionNoteState;
+}
+
+/** What this process remembers of a session between its requests. */
+interface SessionState {
+  newest: VoiceTurnClaim | null;
+  /** Requests not yet settled. */
+  open: number;
+  /** Chat turns still running for the session's requests. */
+  chatTurns: number;
+  lastBridge: KnownBridge | null;
+  lastExchange: KnownExchange | null;
+  touchedAt: number;
+  /** This process's requests of the session, by arrival number, while the session is remembered. */
+  readonly requests: Map<string, VoiceTurnClaim>;
+  /** This process's arrivals of the session, so the store numbers them in call order. */
+  arrivals: Promise<unknown>;
 }
 
 interface ClaimContext {
-  readonly local: LocalSession;
-  readonly arrival: VoiceSessionArrival;
-  chatTurnRunning: boolean;
+  readonly state: SessionState;
+  readonly registration: Promise<void>;
+  arrival: VoiceSessionArrival | null;
 }
 
 const sessionKeyOf = (session: VoiceSessionRef): string =>
@@ -176,6 +212,8 @@ const sessionKeyOf = (session: VoiceSessionRef): string =>
 /** The caller's words, whitespace aside, as a digest: equal utterances share one. */
 const utteranceDigest = (utterance: string): string =>
   createHash("sha256").update(utterance.replace(/\s+/gu, " ").trim()).digest("base64url");
+
+const isNewer = (left: string, right: string): boolean => BigInt(left) > BigInt(right);
 
 /**
  * When the turn lost its caller before its outcome left: overtaken or hung up on; null when delivered.
@@ -189,29 +227,34 @@ export const cutOffAt = (claim: VoiceTurnClaim): number | null => {
 };
 
 /**
- * What each voice session remembers between its requests, shared by every instance through the
- * store: which request is the newest (it supersedes the ones before it), when a request that lost
- * its caller last spoke a bridge line, and the last exchange a re-request may replay or report as
- * interrupted. Arriving and settling a request are one store round trip each; everything a turn
- * asks while it runs is answered here, from what its arrival read and from what this process
- * hears. A newer request on another instance reaches the request it overtook through the notice
- * source; the store has it should a notice be missed. A session is forgotten once it has been idle
- * for longer than both windows with no request in flight.
+ * What each voice session remembers between its requests: which request is the newest (it
+ * supersedes the ones before it), when a superseded turn last spoke a bridge line, and the last
+ * exchange a re-request may replay or report as interrupted.
+ *
+ * Requests this process runs are remembered here, synchronously and exactly; a session is forgotten
+ * once it has been idle for longer than both windows with nothing in flight. The store is how the
+ * instances that share a session see each other: each request registers there as it arrives, one
+ * round trip, and reads what other instances' requests left; a newer request on another instance
+ * reaches the one it overtook through the notice source, and the store has it should a notice be
+ * missed. A bridge line is claimed in the store before it is spoken, so a request another instance
+ * overtook stays silent.
  */
 export class VoiceSessionMemory {
   private readonly store: VoiceSessionMemoryStore;
   private readonly notices: VoiceSessionNoticeSource;
   private readonly windows: VoiceSessionMemoryWindows;
   private readonly retention: VoiceSessionRetention;
+  private readonly retainMs: number;
+  private readonly instanceId: string;
   private readonly logger?: Pick<AppLogger, "warn">;
 
-  private readonly sessions = new Map<string, LocalSession>();
-  /** This process's requests, by arrival number, until their settle has been written. */
-  private readonly claims = new Map<string, VoiceTurnClaim>();
+  private readonly sessions = new Map<string, SessionState>();
   private readonly contexts = new WeakMap<VoiceTurnClaim, ClaimContext>();
+  /** This process's unsettled requests, by arrival number, which notices and catch-ups address. */
+  private readonly unsettled = new Map<string, VoiceTurnClaim>();
   /** Supersessions heard while an arrival here had no number yet, by the superseded number. */
   private readonly heldSupersessions = new Map<string, number>();
-  private arriving = 0;
+  private registering = 0;
 
   private unsubscribe: (() => void) | null = null;
   private listening = false;
@@ -224,76 +267,75 @@ export class VoiceSessionMemory {
     store: VoiceSessionMemoryStore;
     notices: VoiceSessionNoticeSource;
     windows: VoiceSessionMemoryWindows;
+    /** Names this process's requests in the store; one per process. */
+    instanceId?: string;
     logger?: Pick<AppLogger, "warn">;
   }) {
     this.store = options.store;
     this.notices = options.notices;
     this.windows = options.windows;
+    this.instanceId = options.instanceId ?? randomUUID();
     this.logger = options.logger;
+    this.retainMs = Math.max(options.windows.replayWindowMs, options.windows.bridgeAfterMs);
     this.retention = {
-      forgetAfterMs: Math.max(options.windows.replayWindowMs, options.windows.bridgeAfterMs),
+      forgetAfterMs: this.retainMs,
       requestLifetimeMs: REQUEST_LIFETIME_MS,
+      noteClaimLifetimeMs: NOTE_CLAIM_LIFETIME_MS,
     };
   }
 
   /**
-   * Registers a request of the session, one store round trip; the request in flight before it is
-   * superseded from now, on whichever instance it runs.
+   * Registers a request of the session; the request in flight before it is superseded from now.
+   * The request in flight here is marked at once; `registered` resolves once every instance can see
+   * the request, one store round trip later.
    */
-  async arrive(session: VoiceSessionRef, now: number): Promise<VoiceTurnClaim> {
-    const local = this.localSession(sessionKeyOf(session));
-    local.arriving += 1;
-    this.arriving += 1;
+  arrive(session: VoiceSessionRef, now: number): VoiceTurnClaim {
+    this.forgetIdle(now);
+    const state = this.stateOf(sessionKeyOf(session), now);
+    const previous = state.newest;
+    if (previous && !previous.settled) {
+      previous.supersededAt ??= now;
+    }
+    const claim: VoiceTurnClaim = { supersededAt: null, hungUpAt: null, outcomeAt: null, settled: false };
+    state.newest = claim;
+    state.open += 1;
+    this.registering += 1;
     this.subscribe();
-    let heardFromIssue = false;
-    let epochAtIssue = 0;
-    let arrival: VoiceSessionArrival;
-    try {
-      arrival = await this.inOrder(local, () => {
-        // Not waiting for the notice connection: when it is not listening yet, this request
-        // catches up from the store once its number is known.
-        heardFromIssue = this.listening;
-        epochAtIssue = this.noticeEpoch;
-        return this.store.arrive({ session, now, retention: this.retention });
-      });
-    } catch (error) {
-      this.arrivalEnded(local);
-      throw error;
-    }
-
-    const claim: VoiceTurnClaim = {
-      sequence: arrival.sequence,
-      supersededAt: this.heldSupersessions.get(arrival.sequence) ?? null,
-      hungUpAt: null,
-      outcomeAt: null,
-      settled: false,
-    };
-    this.contexts.set(claim, { local, arrival, chatTurnRunning: false });
-    local.claims.add(claim);
-    this.claims.set(claim.sequence, claim);
-    this.arrivalEnded(local);
-    if (arrival.supersededSequence) {
-      this.superseded(arrival.supersededSequence, now);
-    }
-    if (!heardFromIssue || epochAtIssue !== this.noticeEpoch) {
-      // A newer request may have been announced while nothing listened.
-      this.requestCatchUp();
-    }
+    const registration = this.register(session, state, claim);
+    // A failed registration fails the turn that awaits it; nothing else waits on it.
+    registration.catch(noop);
+    this.contexts.set(claim, { state, registration, arrival: null });
     return claim;
+  }
+
+  /** Resolves once the request is registered in the store; rejects when the store refused it. */
+  registered(claim: VoiceTurnClaim): Promise<void> {
+    return this.contexts.get(claim)?.registration ?? Promise.resolve();
   }
 
   /**
    * Ends the request's hold on the session. `exchange` is what the conversation now keeps of the
-   * turn; undefined when it keeps nothing, so the exchange before it stays the newest. Written off
-   * the turn's path, before this process's next request of the session arrives.
+   * turn; undefined when it keeps nothing, so the exchange before it stays the newest. Applied here
+   * at once; the returned promise resolves once the store has it, and never rejects.
    */
-  settle(claim: VoiceTurnClaim, now: number, exchange: VoiceExchange | undefined): void {
+  settle(claim: VoiceTurnClaim, now: number, exchange: VoiceExchange | undefined): Promise<void> {
     const context = this.contexts.get(claim);
     if (!context || claim.settled) {
-      return;
+      return Promise.resolve();
     }
+    const { state } = context;
     claim.settled = true;
-    context.chatTurnRunning = false;
+    state.open = Math.max(0, state.open - 1);
+    state.touchedAt = now;
+    if (state.newest === claim) {
+      state.newest = null;
+    }
+    const sequence = context.arrival?.sequence;
+    if (!sequence) {
+      // Never registered: nothing of it reached the store.
+      return Promise.resolve();
+    }
+    this.unsettled.delete(sequence);
     const remembered: RememberedVoiceExchange | null = exchange
       ? {
           utteranceDigest: utteranceDigest(exchange.utterance),
@@ -303,40 +345,39 @@ export class VoiceSessionMemory {
           cutOffAt: exchange.cutOffAt,
         }
       : null;
-    void this.inOrder(context.local, () => this.store.settle({
-      sessionId: context.arrival.sessionId,
-      sequence: claim.sequence,
-      now,
+    if (remembered && (state.lastExchange === null || isNewer(sequence, state.lastExchange.sequence))) {
+      state.lastExchange = { sequence, exchange: remembered, note: "none" };
+    }
+    this.releaseSubscriptionWhenIdle();
+    return this.store.settle({
+      sessionId: context.arrival!.sessionId,
+      sequence,
       cutOff: cutOffAt(claim) !== null,
       exchange: remembered,
       retention: this.retention,
-    }))
-      .catch((error: unknown) => this.warn("voice_session_settle_failed", error))
-      .finally(() => this.forget(claim, context.local));
+    }).catch((error: unknown) => this.warn("voice_session_settle_failed", error));
   }
 
-  chatTurnStarted(claim: VoiceTurnClaim): void {
-    const context = this.contexts.get(claim);
-    if (context) {
-      context.chatTurnRunning = true;
+  chatTurnStarted(claim: VoiceTurnClaim, now: number): void {
+    const state = this.touched(claim, now);
+    if (state) {
+      state.chatTurns += 1;
     }
   }
 
-  chatTurnEnded(claim: VoiceTurnClaim): void {
-    const context = this.contexts.get(claim);
-    if (context) {
-      context.chatTurnRunning = false;
+  chatTurnEnded(claim: VoiceTurnClaim, now: number): void {
+    const state = this.touched(claim, now);
+    if (state) {
+      state.chatTurns = Math.max(0, state.chatTurns - 1);
     }
   }
 
-  /** Remembers the bridge line for the session's next requests, written off the turn's path. */
   bridgeSpoken(claim: VoiceTurnClaim, now: number): void {
     const context = this.contexts.get(claim);
-    if (!context) {
-      return;
+    const state = this.touched(claim, now);
+    if (state && context?.arrival) {
+      state.lastBridge = { sequence: context.arrival.sequence, at: now, claim, cutOff: null };
     }
-    this.inOrder(context.local, () => this.store.bridgeSpoken({ sessionId: context.arrival.sessionId, sequence: claim.sequence, at: now }))
-      .catch((error: unknown) => this.warn("voice_session_bridge_failed", error));
   }
 
   /**
@@ -347,19 +388,42 @@ export class VoiceSessionMemory {
     if (claim.supersededAt !== null) {
       return false;
     }
-    const context = this.contexts.get(claim);
-    const last = context ? this.lastBridgeOf(context) : null;
-    return !(last && last.sequence !== claim.sequence && last.cutOff && now - last.at < this.windows.bridgeAfterMs);
+    const last = this.contexts.get(claim)?.state.lastBridge;
+    if (!last || last.claim === claim) {
+      return true;
+    }
+    const cutOff = last.claim ? cutOffAt(last.claim) !== null : last.cutOff ?? true;
+    return !(cutOff && now - last.at < this.windows.bridgeAfterMs);
+  }
+
+  /**
+   * Claims the bridge line in the store, asked once `mayBridge` allowed it: false when a request on
+   * another instance has overtaken this one, so the line stays unspoken. A newer request of this
+   * process does not count; `mayBridge` already answered for those. When the store cannot be
+   * reached, the line is spoken.
+   */
+  async claimBridge(claim: VoiceTurnClaim): Promise<boolean> {
+    const arrival = this.contexts.get(claim)?.arrival;
+    if (!arrival) {
+      return true;
+    }
+    try {
+      return await this.store.claimBridge({ sessionId: arrival.sessionId, sequence: arrival.sequence, instanceId: this.instanceId });
+    } catch (error) {
+      this.warn("voice_session_bridge_claim_failed", error);
+      return true;
+    }
   }
 
   /**
    * The stored answer to speak again for `utterance`: the session's newest exchange asked the
-   * same, has an answer, lost its caller within the replay window, and no chat turn is running.
+   * same, has an answer, lost its caller within the replay window, and no chat turn is running. A
+   * request of the session in flight on another instance counts as running one.
    */
   replayFor(claim: VoiceTurnClaim, utterance: string, now: number): ReplayableVoiceExchange | null {
     const context = this.contexts.get(claim);
-    const exchange = context?.arrival.lastExchange?.exchange;
-    if (!context || !exchange?.reply || exchange.cutOffAt === null || this.chatTurnMayBeRunning(context)) {
+    const exchange = context?.state.lastExchange?.exchange;
+    if (!context || !exchange?.reply || exchange.cutOffAt === null || context.state.chatTurns > 0 || this.inFlightElsewhere(context)) {
       return null;
     }
     const withinWindow = now - exchange.cutOffAt <= this.windows.replayWindowMs;
@@ -370,14 +434,15 @@ export class VoiceSessionMemory {
 
   /**
    * Reserves the newest exchange's reply as far as the caller heard it, while the vendor reports it
-   * cut short and no note of it is recorded or being written, on any instance; null when the report
-   * is no strict prefix of what was spoken.
+   * cut short and no note of it is recorded or being written; null when the report is no strict
+   * prefix of what was spoken. Held here at once, then claimed in the store, so the note is written
+   * once whichever instances the reports reach; a claim whose owner never released it lapses.
    */
   async reserveInterruption(claim: VoiceTurnClaim, heardUntil: string): Promise<VoiceReplyInterruptionReservation | null> {
     const context = this.contexts.get(claim);
-    const last = context?.arrival.lastExchange;
+    const last = context?.state.lastExchange;
     const { reply, spoken, conversationId } = last?.exchange ?? {};
-    if (!context || !last || last.note !== "none" || !reply || !spoken || !conversationId) {
+    if (!context?.arrival || !last || last.note !== "none" || !reply || !spoken || !conversationId) {
       return null;
     }
     const whole = spoken.bridge === null ? spoken.reply : `${spoken.bridge} ${spoken.reply}`;
@@ -385,16 +450,22 @@ export class VoiceSessionMemory {
     if (heard === null) {
       return null;
     }
-    const note = { sessionId: context.arrival.sessionId, exchangeSequence: last.sequence };
+    last.note = "pending";
+    const note = { sessionId: context.arrival.sessionId, exchangeSequence: last.sequence, owner: randomUUID() };
+    let claimed = false;
     try {
-      if (!(await this.store.claimInterruptionNote(note))) {
-        return null;
-      }
+      claimed = await this.store.claimInterruptionNote({ ...note, retention: this.retention });
     } catch (error) {
       this.warn("voice_session_note_claim_failed", error);
+    }
+    if (!claimed) {
+      if (last.note === "pending") {
+        last.note = "none";
+      }
       return null;
     }
     const release = (recorded: boolean): void => {
+      last.note = recorded ? "recorded" : "none";
       this.store.releaseInterruptionNote({ ...note, recorded })
         .catch((error: unknown) => this.warn("voice_session_note_release_failed", error));
     };
@@ -411,45 +482,84 @@ export class VoiceSessionMemory {
     };
   }
 
-  /**
-   * The session's last bridge line as of this request's arrival. Whether its request lost its caller
-   * is known exactly when that request runs here; one that ran elsewhere and was still in flight then
-   * lost it, since this request or an earlier one overtook it.
-   */
-  private lastBridgeOf(context: ClaimContext): { sequence: string; at: number; cutOff: boolean } | null {
-    const remembered = context.arrival.lastBridge;
-    if (!remembered) {
-      return null;
+  private async register(session: VoiceSessionRef, state: SessionState, claim: VoiceTurnClaim): Promise<void> {
+    let heardFromIssue = false;
+    let epochAtIssue = 0;
+    const previousArrivals = state.arrivals;
+    // Only this session's earlier arrivals here come first: the store numbers them in call order.
+    const arriving = previousArrivals.then(() => {
+      heardFromIssue = this.listening;
+      epochAtIssue = this.noticeEpoch;
+      return this.store.arrive({ session, instanceId: this.instanceId, retention: this.retention });
+    });
+    state.arrivals = arriving.catch(noop);
+    try {
+      let arrival: VoiceSessionArrival;
+      try {
+        arrival = await arriving;
+      } catch (error) {
+        this.settle(claim, state.touchedAt, undefined).catch(noop);
+        throw error;
+      }
+      const context = this.contexts.get(claim);
+      if (context) {
+        context.arrival = arrival;
+      }
+      state.requests.set(arrival.sequence, claim);
+      if (!claim.settled) {
+        this.unsettled.set(arrival.sequence, claim);
+        const heldAt = this.heldSupersessions.get(arrival.sequence);
+        if (heldAt !== undefined) {
+          claim.supersededAt ??= heldAt;
+        }
+      }
+      this.learnFrom(state, arrival);
+      if (!heardFromIssue || epochAtIssue !== this.noticeEpoch) {
+        // A newer request may have been announced while nothing listened.
+        this.requestCatchUp();
+      }
+    } finally {
+      this.registering -= 1;
+      if (this.registering === 0) {
+        this.heldSupersessions.clear();
+      }
+      this.releaseSubscriptionWhenIdle();
     }
-    const claimHere = this.claims.get(remembered.sequence);
-    const cutOff = claimHere ? cutOffAt(claimHere) !== null : remembered.cutOff ?? true;
-    return { sequence: remembered.sequence, at: remembered.at, cutOff };
   }
 
-  /**
-   * Whether another request of the session may be running a chat turn. This process knows its own
-   * requests; one in flight on another instance counts as running one.
-   */
-  private chatTurnMayBeRunning(context: ClaimContext): boolean {
-    return context.arrival.inFlightSequences.some((sequence) => {
-      const claimHere = this.claims.get(sequence);
-      if (!claimHere) {
-        return true;
-      }
-      return !claimHere.settled && this.contexts.get(claimHere)?.chatTurnRunning === true;
-    });
+  /** Takes in what other instances' requests left that this process has not seen. */
+  private learnFrom(state: SessionState, arrival: VoiceSessionArrival): void {
+    const bridge = arrival.lastBridge;
+    if (bridge && (state.lastBridge === null || isNewer(bridge.sequence, state.lastBridge.sequence))) {
+      state.lastBridge = { ...bridge, claim: state.requests.get(bridge.sequence) ?? null };
+    }
+    const exchange = arrival.lastExchange;
+    if (!exchange) {
+      return;
+    }
+    // `pending` here means this process is writing the note; another instance's claim is the
+    // store's to arbitrate when this one tries.
+    const note: VoiceInterruptionNoteState = exchange.note === "recorded" ? "recorded" : "none";
+    if (state.lastExchange === null || isNewer(exchange.sequence, state.lastExchange.sequence)) {
+      state.lastExchange = { sequence: exchange.sequence, exchange: exchange.exchange, note };
+    } else if (state.lastExchange.sequence === exchange.sequence && note === "recorded") {
+      state.lastExchange.note = note;
+    }
+  }
+
+  /** Whether a request of the session that another instance runs was in flight when this one arrived. */
+  private inFlightElsewhere(context: ClaimContext): boolean {
+    return (context.arrival?.inFlightSequences ?? []).some((sequence) => !context.state.requests.has(sequence));
   }
 
   /** A newer request arrived at `at`; the request `sequence` is superseded wherever it runs. */
   private superseded(sequence: string, at: number): void {
-    const claim = this.claims.get(sequence);
+    const claim = this.unsettled.get(sequence);
     if (claim) {
-      if (!claim.settled) {
-        claim.supersededAt ??= at;
-      }
+      claim.supersededAt ??= at;
       return;
     }
-    if (this.arriving > 0 && !this.heldSupersessions.has(sequence)) {
+    if (this.registering > 0 && !this.heldSupersessions.has(sequence)) {
       // It may be an arrival here whose number is still on its way back.
       this.heldSupersessions.set(sequence, at);
     }
@@ -478,14 +588,17 @@ export class VoiceSessionMemory {
     try {
       for (;;) {
         this.catchUpRequested = false;
-        const sequences = [...this.claims.values()]
-          .filter((claim) => !claim.settled && claim.supersededAt === null)
-          .map((claim) => claim.sequence);
-        if (sequences.length === 0 || !this.listening) {
+        const requests = [...this.unsettled.entries()]
+          .filter(([, claim]) => claim.supersededAt === null)
+          .flatMap(([sequence, claim]) => {
+            const sessionId = this.contexts.get(claim)?.arrival?.sessionId;
+            return sessionId ? [{ sessionId, sequence }] : [];
+          });
+        if (requests.length === 0 || !this.listening) {
           return;
         }
         try {
-          for (const [sequence, at] of await this.store.supersededAt(sequences)) {
+          for (const [sequence, at] of await this.store.supersededAt(requests)) {
             this.superseded(sequence, at);
           }
           failures = 0;
@@ -529,7 +642,7 @@ export class VoiceSessionMemory {
 
   /** Stops listening once no request of this process is arriving or in flight. */
   private releaseSubscriptionWhenIdle(): void {
-    if (this.arriving > 0 || this.claims.size > 0 || !this.unsubscribe) {
+    if (this.registering > 0 || this.unsettled.size > 0 || !this.unsubscribe) {
       return;
     }
     this.unsubscribe();
@@ -537,42 +650,39 @@ export class VoiceSessionMemory {
     this.onInterrupted();
   }
 
-  private localSession(key: string): LocalSession {
-    let local = this.sessions.get(key);
-    if (!local) {
-      local = { key, claims: new Set(), arriving: 0, tail: Promise.resolve() };
-      this.sessions.set(key, local);
+  private touched(claim: VoiceTurnClaim, now: number): SessionState | null {
+    const state = this.contexts.get(claim)?.state;
+    if (state) {
+      state.touchedAt = now;
     }
-    return local;
+    return state ?? null;
   }
 
-  private inOrder<T>(local: LocalSession, write: () => Promise<T>): Promise<T> {
-    const written = local.tail.then(write);
-    local.tail = written.then(() => undefined, () => undefined);
-    return written;
-  }
-
-  private arrivalEnded(local: LocalSession): void {
-    local.arriving -= 1;
-    this.arriving -= 1;
-    if (this.arriving === 0) {
-      this.heldSupersessions.clear();
+  private stateOf(sessionKey: string, now: number): SessionState {
+    let state = this.sessions.get(sessionKey);
+    if (!state) {
+      state = {
+        newest: null,
+        open: 0,
+        chatTurns: 0,
+        lastBridge: null,
+        lastExchange: null,
+        touchedAt: now,
+        requests: new Map(),
+        arrivals: Promise.resolve(),
+      };
+      this.sessions.set(sessionKey, state);
     }
-    this.dropWhenIdle(local);
+    state.touchedAt = now;
+    return state;
   }
 
-  /** Forgets a settled request once its settle was written; no later arrival here lists it in flight. */
-  private forget(claim: VoiceTurnClaim, local: LocalSession): void {
-    this.claims.delete(claim.sequence);
-    local.claims.delete(claim);
-    this.dropWhenIdle(local);
-  }
-
-  private dropWhenIdle(local: LocalSession): void {
-    if (local.arriving === 0 && local.claims.size === 0 && this.sessions.get(local.key) === local) {
-      this.sessions.delete(local.key);
+  private forgetIdle(now: number): void {
+    for (const [sessionKey, state] of this.sessions) {
+      if (state.open === 0 && state.chatTurns === 0 && now - state.touchedAt > this.retainMs) {
+        this.sessions.delete(sessionKey);
+      }
     }
-    this.releaseSubscriptionWhenIdle();
   }
 
   private warn(event: string, error: unknown): void {

@@ -31,11 +31,16 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `voiceTurnPolicy.ts` is the pure timing wrapper (bridge and turn limit) over
   those events; `voiceLines.ts` picks the turn's bridge and fallback lines by
   routine state and locale (tag structure only, never the lines' words);
-  `voiceSessionMemory.ts` is the in-process memory of each session between its
-  requests (the newest request, the last bridge, the last exchange);
-  `voiceTurnMetrics.ts` names the turn's series.
+  `voiceSessionMemory.ts` is what each session remembers between its requests
+  (the newest request, the last bridge, the last exchange), shared by every
+  instance through the `VoiceSessionMemoryStore` and `VoiceSessionNoticeSource`
+  ports it defines; it knows the rules and the requests this process runs, never
+  SQL or `LISTEN`; `voiceTurnMetrics.ts` names the turn's series.
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
-  `voice_sessions`. The first binding wins.
+  `voice_sessions` (`voiceSessionRepository.ts`; the first binding wins), and
+  implements the memory's ports over `voice_session_memories`,
+  `voice_session_requests` and the `radioso_voice_sessions` notification
+  channel (`postgresVoiceSessionMemoryStore.ts`).
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is
@@ -59,10 +64,13 @@ helpers and the shared chat message limit from `app/http`
 
 ## Entry points
 
-- `public.ts` — `VoiceTurnPort`, `VoiceTurnService`, `VoiceSessionRepository`,
-  `registerOpenAiCompletionsRoute`.
+- `public.ts` — `VoiceTurnPort`, `VoiceTurnService`, `VoiceSessionMemory`,
+  `VoiceSessionRepository`, `PostgresVoiceSessionMemoryStore`,
+  `PostgresVoiceSessionNotices`, `registerOpenAiCompletionsRoute`.
 - `backend/src/app/composition/voiceChannel.ts` — builds the port over
-  Postgres, `AssistantChatService.streamAnswer`, the agent repository (voice
+  Postgres (sessions and their memory, with the process's shared
+  `PostgresNotificationListener` from `postgresNotifications.ts`),
+  `AssistantChatService.streamAnswer`, the agent repository (voice
   settings and default locale), the routine state store, the conversation
   ownership reader (`handoff/public.ts`) and the audit service (the
   `voice.reply_interrupted` and `voice.reply_replayed` notes); exposed as
@@ -244,15 +252,43 @@ helpers and the shared chat message limit from `app/http`
   message, and the next turn (including a routine collecting slots) does not
   know what the agent started to say. The cut reply is not billed as an
   answer; its model tokens stay in the usage ledger.
+- **Session memory across instances.** A voice runtime's requests carry no
+  affinity, so one session's requests land on any instance. What the session
+  remembers lives in Postgres (migration 227): `voice_session_memories` holds
+  one row per session (the newest arrival number, the last bridge line and
+  whether its request lost its caller, the last exchange with the caller's
+  utterance only as a SHA-256 digest, and where its interruption note stands),
+  and `voice_session_requests` one row per request, from its arrival until it
+  is five minutes old. Arriving is one statement: it locks the session's row,
+  draws the next number from `voice_session_arrival_seq`, registers the
+  request, reads back the last bridge, the last exchange and the requests still
+  in flight, and `NOTIFY`s `radioso_voice_sessions` with the overtaken
+  request's number and the arrival time, so the instance running that request
+  marks it superseded. That round trip is the only one a turn waits on: the
+  bridge line, the interruption note's claim and release, and the settle after
+  the outcome are written off the turn's path. The rows are the truth: a
+  notice missed while the process's `LISTEN` connection was down is read back
+  from `voice_session_requests` once it reconnects, and so is one announced
+  before the connection first listened. Until then, a request on that instance
+  can still start its chat turn, and the chat turn registry orders the two by
+  when their chat turns start. Arrivals, bridge lines and settles of one
+  session go to the store in the process's call order, so a request reads what
+  the process's earlier requests wrote. The notice payload carries a number and
+  a time, never a session key or content.
+- **Forgetting.** A session idle for longer than the replay window with no
+  request in flight is forgotten at its next arrival, and its rows are deleted
+  as other sessions' requests settle (up to 20 per settle, the way chat's lease
+  renewal prunes expired leases). A request older than five minutes no longer
+  counts as in flight, so a crashed instance's requests stop holding the
+  session. A deleted conversation takes the session's memory with it.
 - **Bursts.** A transcriber that flaps sends several requests in a second or
-  two. `VoiceSessionMemory.arrive` marks the previous request of the session
-  superseded; one still setting up (session lookup, voice profile) ends with
-  `continue` before its chat turn starts, and one already in chat is cancelled
-  by the registry when the newer turn starts. `arrive` runs as the request
-  enters, before any read, so arrival order decides whichever request's reads
-  finish first. The conversation keeps the last
-  transcript and one answer. In-process only: a burst split across API
-  instances can store two user messages.
+  two. `VoiceSessionMemory.arrive` gives each the session's next arrival number
+  and marks the request before it superseded, on whichever instance runs it;
+  one still setting up (session lookup, voice profile) ends with `continue`
+  before its chat turn starts, and one already in chat is cancelled by the
+  registry when the newer turn starts. `arrive` runs as the request enters,
+  before any other read, so arrival order decides whichever request's reads
+  finish first. The conversation keeps the last transcript and one answer.
 - **Bridges never stack.** The policy asks `mayBridge` when the bridge falls
   due: no bridge once a newer request owns the session, and none while a bridge
   from a turn that lost its caller is younger than `bridgeAfterMs`. A
@@ -263,12 +299,15 @@ helpers and the shared chat message limit from `app/http`
   `VOICE_BEHAVIOR.replayWindowMs` (30 s): an identical utterance (whitespace
   aside) for the session, with no chat turn running, is answered with the
   stored answer as speech, with no chat turn, no bridge and no user message.
+  An instance knows which of its own requests run a chat turn; a request of the
+  session in flight on another instance counts as running one, so the
+  re-request then runs as a new turn.
   The replayed turn writes its `voice.reply_replayed` note once its outcome
   has left, off the response's path: the response and the session's settling
   never wait for the audit write, and a note that fails or takes longer than
   5 s logs a warn.
   While no answer is stored, the identical utterance runs as a new turn and
-  supersedes the running one. In-process only.
+  supersedes the running one.
 - **Interrupted replies.** The `elevenlabs` dialect reads an assistant message
   right before the newest user message that ends in `...` as `heardUntil`.
   When it is a strict prefix of what the session's last stored turn spoke
@@ -312,6 +351,16 @@ frame ends with one generic OpenAI error frame. Never the utterance, the reply
 or an internal error message. Chat-side spans, metrics and failure logs cover the
 turn itself.
 
+The session memory's arrival round trip is part of the turn's `durationMs`; an
+arrival that fails fails the turn (`Voice turn failed`). A write made off the
+turn's path that fails logs `Voice session memory degraded` at warn with
+`event` (`voice_session_settle_failed`, `voice_session_bridge_failed`,
+`voice_session_note_claim_failed`, `voice_session_note_release_failed`,
+`voice_session_catch_up_failed`) and `errorType` only; a notice that cannot be
+parsed logs `Voice session notice could not be read`
+(`voice_session_notice_unreadable`). The shared `LISTEN` connection reports
+its own drops and reconnects (`postgres_notification_listener_lost`).
+
 The policy records `voice_turn_first_speech_ms` (histogram, `bridged`),
 `voice_bridge_emitted_total` (`style`, `locale_resolved`: `no` when the agent
 had no line, so nothing was spoken) and `voice_turn_limit_total`
@@ -327,7 +376,15 @@ turn cancelled mid-reply with `stage: "persisting"`.
 ## Tests
 
 - `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts` (the
-  policy tests use fake timers)
+  policy tests use fake timers; the turn service tests also run two instances
+  over one in-memory store)
+- `cd backend && pnpm exec vitest run tests/unit/voice-session-memory.test.ts`
+  and `tests/integration/voice-session-memory.integration.test.ts`: the shared
+  behaviour suite in `tests/support/voiceSessionMemoryContract.ts`, over
+  `tests/support/inMemoryVoiceSessionMemoryStore.ts` and over Postgres, each
+  with two instances on one store (supersession, bridges, replay, interruption
+  notes, forgetting); the integration file adds a dropped `LISTEN` connection,
+  row retention and the conversation cascade
 - `cd backend && pnpm exec vitest run tests/unit/conversation-turn-registry.test.ts tests/unit/chat-service-routine-reply-streaming.test.ts`
   (the chat side of `latest_input_wins`: cancelling after emission, and the
   replaced turn's user message; and the `handoff` report on a streamed

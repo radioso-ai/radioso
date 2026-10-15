@@ -100,7 +100,10 @@ turns it missed.
 Each API or worker process holds one extra database connection for `LISTEN` while
 it has turns in flight. The connection closes once the process has had no turn in
 flight for the pool's idle timeout (`DB_POOL_IDLE_TIMEOUT_MS`). When you size the
-database's connection limit, count `DB_POOL_MAX + 1` per process.
+database's connection limit, count `DB_POOL_MAX + 1` per process. Voice requests
+share that connection: the voice channel keeps each call's memory between
+requests in Postgres too, so the newest utterance wins and a lost reply replays
+whichever instance each request reaches (see [Voice Channel](voice-channel.md)).
 
 A newer turn runs once every older turn of the conversation has finished, on any
 instance. If an instance crashes mid-turn, its lease stops being renewed and

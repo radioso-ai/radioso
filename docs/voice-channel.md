@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with one conversation per voice session and authored lines that cover the wait."
-last_updated: 2026-10-14
+last_updated: 2026-10-15
 ---
 
 # Voice Channel
@@ -492,10 +492,17 @@ that session key starts a new conversation.
   credential at the same time, so five concurrent calls share 30 turns a
   minute. Past it, the runtime gets `429`.
 - The newest-utterance rule, the 30-second replay and the bridge rule hold
-  within one Radioso instance. Requests of one session that land on different
-  instances do not see each other there: a burst of revised transcripts split
-  across two instances can store two caller messages, and a re-request that
-  lands on another instance runs as a new turn.
+  whichever Radioso instance each request of a session lands on. What the
+  session remembers between requests lives in the database, which costs each
+  request one database round trip before its turn starts, and the instance
+  running an overtaken request hears about the newer one through the Postgres
+  notification connection chat turns use. Two limits remain. A re-request
+  hears the stored reply again only while no other request of the session is
+  running on another instance; otherwise it runs as a new turn. And while an
+  instance's notification connection is reconnecting, a request it runs learns
+  that a newer one arrived only once the connection is back, so for that
+  moment the conversation keeps whichever of the two turns started its answer
+  last.
 - When a newer utterance arrives while a reply is still streaming, the caller
   has heard part of it and the vendor keeps the truncated text, but Radioso
   stores the caller's message with no reply. The Inbox shows an unanswered

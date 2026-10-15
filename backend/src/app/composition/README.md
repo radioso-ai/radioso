@@ -58,10 +58,16 @@ composition calls them and assembles the result.
   adapter. It exposes only the synchronous publisher port to API/worker graphs;
   subscriber/admission clients belong to the dedicated realtime composition and
   broker adapters remain outside mutation services.
-- Chat turn coordination: `conversationTurnCoordination.ts` assembles the
-  cross-instance turn registry from chat's Postgres lease store and notices and
-  the process's `PostgresNotificationListener`, and gives every runtime a
-  `shutdown` that stops lease renewal and closes the `LISTEN` connection.
+- Cross-instance coordination: `postgresNotifications.ts` creates the process's
+  one `PostgresNotificationListener`, and `server/dependencies.ts` hands it to
+  both consumers: `conversationTurnCoordination.ts`, which assembles the
+  cross-instance turn registry from chat's Postgres lease store and notices, and
+  `voiceChannel.ts`, which assembles voice session memory from the voice
+  module's Postgres store and notices. Each consumer subscribes only while it
+  has work in flight, so the connection opens with the first one and closes
+  after the pool's idle timeout. `AppDependencies.conversationTurnCoordination`
+  is the runtimes' one `shutdown`: it stops lease renewal, then closes the
+  `LISTEN` connection.
 
 ## Tests
 

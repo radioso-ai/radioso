@@ -1935,6 +1935,31 @@ export interface Visitors {
   workspace_id: string;
 }
 
+export interface VoiceSessionMemories {
+  agent_id: string;
+  id: Generated<string>;
+  last_bridge_at: Timestamp | null;
+  last_bridge_cut_off: boolean | null;
+  last_bridge_sequence: Int8 | null;
+  last_exchange: Json | null;
+  last_exchange_conversation_id: string | null;
+  last_exchange_note: Generated<string>;
+  last_exchange_sequence: Int8 | null;
+  newest_sequence: Int8;
+  previous_sequence: Int8 | null;
+  session_key: string;
+  touched_at: Timestamp;
+  vendor: string;
+  workspace_id: string;
+}
+
+export interface VoiceSessionRequests {
+  arrived_at: Timestamp;
+  memory_id: string;
+  sequence: Int8;
+  settled_at: Timestamp | null;
+}
+
 export interface VoiceSessions {
   agent_id: string;
   conversation_id: string;
@@ -2189,6 +2214,8 @@ export interface DB {
   vector_index_checkpoints: VectorIndexCheckpoints;
   vector_index_work: VectorIndexWork;
   visitors: Visitors;
+  voice_session_memories: VoiceSessionMemories;
+  voice_session_requests: VoiceSessionRequests;
   voice_sessions: VoiceSessions;
   website_crawl_jobs: WebsiteCrawlJobs;
   workspace_embedding_profiles: WorkspaceEmbeddingProfiles;

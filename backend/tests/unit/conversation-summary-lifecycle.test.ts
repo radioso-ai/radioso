@@ -3,8 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { AuditService } from "../../src/modules/audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
-import { ChatTurnLifecycle } from "../../src/modules/chat/services/chatTurnLifecycle.js";
-import type { ConversationSummaryUpdater } from "../../src/modules/chat/services/summary/conversationSummaryService.js";
+import {
+  ChatTurnLifecycle,
+  type AssistantTurnPersistencePort,
+} from "../../src/modules/chat/services/chatTurnLifecycle.js";
+import {
+  CONVERSATION_SUMMARY_REFRESH_JOB,
+  conversationSummaryRefreshHandler,
+} from "../../src/modules/chat/services/summary/conversationSummaryRefreshJob.js";
+import type { BackgroundJobQueue, BackgroundJobRequest } from "../../src/shared/background-jobs/index.js";
 import type { AppLogger } from "../../src/shared/observability/logger.js";
 import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
@@ -37,9 +44,31 @@ const presentation = (): ChatPresentedAnswer => ({
   citations: [],
 });
 
-const lifecycleWith = (updater: ConversationSummaryUpdater, logger?: Pick<AppLogger, "warn">) => {
+const turnInput = (overrides: { executionMode?: "live" | "safe_test" } = {}) => ({
+  workspaceId: "ws_1",
+  accountId: "acct_1",
+  session: session(),
+  presentation: presentation(),
+  requestReceivedAt: Date.now(),
+  answerStartedAt: Date.now(),
+  stream: false,
+  ...overrides,
+});
+
+const expectedRefresh: BackgroundJobRequest = {
+  kind: "conversation.summary_refresh",
+  payload: { workspaceId: "ws_1", conversationId: "conv_1", accountId: "acct_1" },
+  idempotencyKey: "conv_1",
+};
+
+const lifecycleWith = (input: {
+  backgroundJobs?: Pick<BackgroundJobQueue, "enqueue">;
+  persistence?: AssistantTurnPersistencePort;
+  logger?: Pick<AppLogger, "warn">;
+}) => {
   const auditService = {
     record: vi.fn(async () => {}),
+    logRecorded: vi.fn(),
     updateChatAnswerSuggestions: vi.fn(async () => {}),
   } as unknown as AuditService;
   const conversationRepository = { touch: vi.fn(async () => {}) } as unknown as ConversationRepositoryPort;
@@ -50,60 +79,94 @@ const lifecycleWith = (updater: ConversationSummaryUpdater, logger?: Pick<AppLog
     auditService,
     undefined,
     undefined,
+    input.persistence,
     undefined,
     undefined,
+    input.logger,
     undefined,
-    logger,
     undefined,
-    undefined,
-    updater,
+    input.backgroundJobs,
   );
 };
 
-describe("ChatTurnLifecycle rolling conversation summary trigger (#866)", () => {
-  it("triggers regeneration but does not await it (a hanging updater never blocks the turn)", async () => {
-    const refresh = vi.fn(() => new Promise<void>(() => {})); // never resolves
-    const lifecycle = lifecycleWith({ refresh });
+const recordingPersistence = () => {
+  const completeAssistantTurn = vi.fn<AssistantTurnPersistencePort["completeAssistantTurn"]>(async (input) => ({
+    message: { id: "assistant_msg_1", conversationId: input.conversationId, workspaceId: input.workspaceId, role: "assistant", content: "Answer.", createdAt: new Date() },
+    committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false },
+  }));
+  return { completeAssistantTurn };
+};
 
-    const completed = await lifecycle.completeAssistantTurn({
-      workspaceId: "ws_1",
-      accountId: "acct_1",
-      session: session(),
-      presentation: presentation(),
-      requestReceivedAt: Date.now(),
-      answerStartedAt: Date.now(),
-      stream: false,
-    });
+describe("ChatTurnLifecycle conversation summary refresh (#866)", () => {
+  it("writes one refresh job, keyed by conversation, in the same commit as the reply", async () => {
+    const persistence = recordingPersistence();
+    const enqueue = vi.fn();
+    const lifecycle = lifecycleWith({ persistence, backgroundJobs: { enqueue } });
+
+    await lifecycle.completeAssistantTurn(turnInput());
+
+    expect(persistence.completeAssistantTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ backgroundJobs: [expectedRefresh] }),
+    );
+    // The transactional path writes the job itself; nothing is enqueued beside the commit.
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("asks for no refresh on a safe-test turn", async () => {
+    const persistence = recordingPersistence();
+    const lifecycle = lifecycleWith({ persistence, backgroundJobs: { enqueue: vi.fn() } });
+
+    await lifecycle.completeAssistantTurn(turnInput({ executionMode: "safe_test" }));
+
+    expect(persistence.completeAssistantTurn).toHaveBeenCalledWith(expect.objectContaining({ backgroundJobs: [] }));
+  });
+
+  it("enqueues the refresh once the reply is saved where no transactional persistence is wired", async () => {
+    const enqueue = vi.fn(async () => ({ inserted: true as const, jobId: "job_1" }));
+    const lifecycle = lifecycleWith({ backgroundJobs: { enqueue } });
+
+    const completed = await lifecycle.completeAssistantTurn(turnInput());
 
     expect(completed.assistantMessageId).toBe("assistant_msg_1");
+    expect(enqueue).toHaveBeenCalledWith(expectedRefresh);
+  });
+
+  it("keeps the turn when the refresh cannot be enqueued, and logs it without content", async () => {
+    const warn = vi.fn();
+    const enqueue = vi.fn(async () => {
+      throw new Error("database unavailable");
+    });
+    const lifecycle = lifecycleWith({ backgroundJobs: { enqueue }, logger: { warn } });
+
+    await expect(lifecycle.completeAssistantTurn(turnInput())).resolves.toMatchObject({ assistantMessageId: "assistant_msg_1" });
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "background_job_enqueue_failed", conversationId: "conv_1", kind: "conversation.summary_refresh" }),
+      expect.any(String),
+    );
+  });
+});
+
+describe("conversation summary refresh job", () => {
+  it("runs the summary updater for the conversation it names", async () => {
+    const refresh = vi.fn(async () => {});
+
+    await conversationSummaryRefreshHandler({ refresh }).run(
+      { workspaceId: "ws_1", conversationId: "conv_1", accountId: "acct_1" },
+      { jobId: "job_1", attempt: 1 },
+    );
+
     expect(refresh).toHaveBeenCalledWith({ workspaceId: "ws_1", conversationId: "conv_1", accountId: "acct_1" });
   });
 
-  it("does not fail the turn when the updater rejects", async () => {
-    const warn = vi.fn();
-    const logger = { warn } as unknown as Pick<AppLogger, "warn">;
-    const refresh = vi.fn(async () => {
-      throw new Error("updater blew up");
-    });
-    const lifecycle = lifecycleWith({ refresh }, logger);
+  it("gives a turn with no account an anonymous refresh", async () => {
+    const refresh = vi.fn(async () => {});
 
-    await expect(
-      lifecycle.completeAssistantTurn({
-        workspaceId: "ws_1",
-        session: session(),
-        presentation: presentation(),
-        requestReceivedAt: Date.now(),
-        answerStartedAt: Date.now(),
-        stream: false,
-      }),
-    ).resolves.toBeDefined();
-
-    // Let the unawaited rejection settle.
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ event: "conversation_summary_generation_failed", conversationId: "conv_1" }),
-      expect.any(String),
+    await conversationSummaryRefreshHandler({ refresh }).run(
+      { workspaceId: "ws_1", conversationId: "conv_1" },
+      { jobId: "job_1", attempt: 1 },
     );
+
+    expect(refresh).toHaveBeenCalledWith({ workspaceId: "ws_1", conversationId: "conv_1" });
+    expect(CONVERSATION_SUMMARY_REFRESH_JOB.kind).toBe("conversation.summary_refresh");
   });
 });

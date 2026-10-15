@@ -479,9 +479,14 @@ imports from `services/`.
   `contracts/conversationSummary.ts` `ConversationSummaryStore` port.
   `chatSessionPreparer.ts` loads it at prepare into `PreparedSession.conversationSummary`
   (the approval-resume path shares the same `loadConversationSummaryText` helper, so the
-  "no summary" policy cannot drift); `chatTurnLifecycle.ts` regenerates it fire-and-forget
-  after the turn is persisted (never awaited, self-heals on the next turn), debounced by
-  `refreshEveryMessages` so it does not pay an LLM call every turn. The first summary for
+  "no summary" policy cannot drift). `chatTurnLifecycle.ts` hands each turn that records
+  bookkeeping a `conversation.summary_refresh` background job
+  (`services/summary/conversationSummaryRefreshJob.ts`), which `PostgresAssistantTurnPersistence`
+  writes in the turn's own transaction and wakes the worker for after commit, without the reply
+  waiting on it. The job is keyed by conversation, so a burst of turns yields one refresh; the
+  worker's background job runtime runs `ConversationSummaryService.refresh`, which is debounced
+  by `refreshEveryMessages` so it does not pay an LLM call every turn and self-heals on the
+  next turn when it fails. The first summary for
   a legacy long conversation uses a capped recent backfill window (`maxInitialBackfillMessages`)
   so one post-deploy turn cannot trigger unbounded sequential model calls. Rows FK-cascade
   with their conversation (content, unlike the structural `routine_states`/`directive_states`).

@@ -314,6 +314,9 @@ const envSchema = z.object({
   // NoopActionDrainDispatcher rather than failing startup, so the backend can deploy
   // ahead of the Terraform queue/scheduler that provisions it.
   ACTION_DISPATCH_TASK_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
+  // Same optional shape as the action queue: unset, a background job waits for the worker's poll
+  // loop or the scheduled sweep instead of being pushed, and startup never fails on it.
+  BACKGROUND_JOB_TASK_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_TASKS_SERVICE_URL: emptyStringToUndefined(z.string().url()),
   WORKER_TASKS_CRAWL_SERVICE_URL: emptyStringToUndefined(z.string().url()),
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: emptyStringToUndefined(z.string().email()),

@@ -40,6 +40,9 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
   dependencies.facetExtractionWorker?.start();
   // Drain the async conversation-action outbox (spec 070) out of band from the turn.
   dependencies.actionDispatchWorker.start();
+  // Run durable background jobs (`background_jobs`): conversation summary refresh and any other
+  // kind a module registers.
+  dependencies.backgroundJobRuntime.start();
   // Drain the email channel's inbound work and run its sweep; present only when a provider is
   // configured, and idle unless EMAIL_CHANNEL_WORKERS_ENABLED.
   dependencies.emailChannelWorker?.start();
@@ -51,6 +54,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
   dependencies.revisionEvalRunRetentionWorker.start();
   dependencies.slackInboundEventRetentionWorker.start();
   dependencies.agentBundleImportCleanupWorker.start();
+  dependencies.backgroundJobRetentionWorker.start();
 
   let shuttingDown = false;
 
@@ -64,6 +68,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
       shuttingDown = true;
       dependencies.logger.info({ role: "worker", signal }, "Radioso document worker shutting down");
       try {
+        await dependencies.backgroundJobRetentionWorker.stop();
         await dependencies.copilotRetentionWorker.stop();
         await dependencies.testExecutionRetentionWorker.stop();
         await dependencies.approvalResumeEffectJournalRetentionWorker.stop();
@@ -71,6 +76,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
         await dependencies.slackInboundEventRetentionWorker.stop();
         await dependencies.agentBundleImportCleanupWorker.stop();
         await dependencies.emailChannelWorker?.stop();
+        await dependencies.backgroundJobRuntime.stop();
         await dependencies.actionDispatchWorker.stop();
         await dependencies.facetExtractionWorker?.stop();
         await dependencies.documentJobConsumer?.stop();

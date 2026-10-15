@@ -455,6 +455,21 @@ export interface AuditEvents {
   workspace_id: string | null;
 }
 
+export interface BackgroundJobs {
+  attempts: Generated<number>;
+  available_at: Generated<Timestamp>;
+  created_at: Generated<Timestamp>;
+  dead_at: Timestamp | null;
+  id: Generated<string>;
+  idempotency_key: string | null;
+  kind: string;
+  last_error: string | null;
+  lease_expires_at: Timestamp | null;
+  payload: Json;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface BootstrapGreetingCache {
   agent_id: string;
   created_at: Generated<Timestamp>;
@@ -2075,6 +2090,7 @@ export interface DB {
   assistant_answer_triage_transitions: AssistantAnswerTriageTransitions;
   audience_pulse_snapshots: AudiencePulseSnapshots;
   audit_events: AuditEvents;
+  background_jobs: BackgroundJobs;
   bootstrap_greeting_cache: BootstrapGreetingCache;
   chunk_embeddings: ChunkEmbeddings;
   chunks: Chunks;

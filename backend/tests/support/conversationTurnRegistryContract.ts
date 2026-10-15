@@ -12,6 +12,12 @@ import {
 /** One registry implementation under the shared lease contract. */
 export interface ConversationTurnRegistryHarness {
   registry: ConversationTurnRegistry;
+  /**
+   * Resolves once every turn started so far has taken its place in the conversation's order, so a
+   * wait that is still pending is pending for its predecessors, not for its own registration.
+   * Supersession never needs it: that applies inside `start`.
+   */
+  settle(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -73,6 +79,7 @@ export const describeConversationTurnRegistryContract = (
         stage: "rendering",
         scope: "local",
       });
+      await harness.settle();
       expect(await isPending(second.waitForPredecessor())).toBe(true);
 
       first.complete();
@@ -88,6 +95,7 @@ export const describeConversationTurnRegistryContract = (
 
       expect(first.signal.aborted).toBe(false);
       expect(turnCancelled).not.toHaveBeenCalled();
+      await harness.settle();
       expect(await isPending(second.waitForPredecessor())).toBe(true);
 
       first.complete();
@@ -141,6 +149,7 @@ export const describeConversationTurnRegistryContract = (
           stage: "persisting",
           scope: "local",
         });
+        await harness.settle();
         expect(await isPending(second.waitForPredecessor())).toBe(true);
 
         first.complete();
@@ -206,6 +215,7 @@ export const describeConversationTurnRegistryContract = (
         expect(first.signal.aborted).toBe(false);
         expect(() => first.throwIfCancelled()).not.toThrow();
         expect(turnCancelled).not.toHaveBeenCalled();
+        await harness.settle();
         expect(await isPending(second.waitForPredecessor())).toBe(true);
 
         first.complete();
@@ -235,6 +245,37 @@ export const describeConversationTurnRegistryContract = (
         first.complete();
         second.complete();
       });
+    });
+
+    it("waits for every older turn still in flight, even when the turn between them ended first", async () => {
+      const first = harness.registry.start(conversationId);
+      first.beginEmission();
+      const second = harness.registry.start(conversationId);
+      second.complete();
+
+      const third = harness.registry.start(conversationId);
+
+      expect(first.signal.aborted).toBe(false);
+      await harness.settle();
+      expect(await isPending(third.waitForPredecessor())).toBe(true);
+      first.complete();
+      await third.waitForPredecessor();
+      third.complete();
+    });
+
+    it("lets only the turn right behind a turn decide whether it is cut off", async () => {
+      const first = harness.registry.start(conversationId, speechLike);
+      first.beginEmission();
+      const second = harness.registry.start(conversationId);
+      expect(first.signal.aborted).toBe(false);
+      second.complete();
+
+      const third = harness.registry.start(conversationId, speechLike);
+
+      expect(first.signal.aborted).toBe(false);
+      first.complete();
+      await third.waitForPredecessor();
+      third.complete();
     });
 
     it("keeps newer registry ownership when an older turn completes", async () => {
@@ -293,6 +334,7 @@ export const describeConversationTurnRegistryContract = (
       const second = harness.registry.start(conversationId);
 
       first.cancelAfterDisconnect();
+      await harness.settle();
       expect(await isPending(second.waitForPredecessor())).toBe(true);
 
       first.complete();

@@ -277,7 +277,15 @@ imports from `services/`.
   `specs/1260-coverage-verdict-in-answer-head/`.
 - Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
   `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come
-  only from explicit valid `[[n]]` assertions. `implicitCitationDiagnostics.ts`
+  only from explicit valid `[[n]]` assertions. The model sometimes writes the
+  unsupported-claim marker with single brackets; `[?]` is read as `[[?]]` where
+  model answer text enters each consumer, through
+  `canonicalizeUnsourcedMarkers` (`unsourcedMarkerCanonicalization.ts`):
+  `parseInlineAssertionGroups` for grounding, `AnswerPresentationService.normalize`
+  before anchor grouping, the streaming `CitationAnchorSanitizer`, and the decline
+  composer in `fallbackReplyComposer.ts`. From there the `[[?]]` handling applies
+  unchanged. `[?]` inside an inline code span on the same line stays, and a
+  single-bracket number (`[n]`) is never touched. `implicitCitationDiagnostics.ts`
   records aggregate rollout diagnostics and never attaches citation artifacts or
   changes verdicts and suggestions.
   `citationTextNormalization.ts` owns the punctuation classes for the anchor

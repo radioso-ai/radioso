@@ -318,4 +318,57 @@ describe("public voice session start contract", () => {
     await request(app).put("/api/v1/settings/general").set(dashboard).send({ websiteEmbedLauncherLabel: "Talk to us" }).expect(200);
     expect(await readSwitch()).toBe(true);
   });
+
+  describe("the dashboard's view of voice readiness", () => {
+    const readReadiness = async (app: Parameters<typeof request>[0], dashboard: Record<string, string>, agentId: string) =>
+      (await request(app).get(`/api/v1/agents/${agentId}`).set(dashboard).expect(200)).body.voiceCallReadiness;
+
+    it("reads ready when voice is on, a vendor agent is bound and the key can be read", async () => {
+      const { app, dashboard, agentId } = await embedWorkspace();
+
+      expect(await readReadiness(app, dashboard, agentId)).toEqual({ ready: true, missing: null });
+    });
+
+    it.each([
+      ["the voice channel", { voice: { ...boundVoice, enabled: false } }, "voice_channel"],
+      ["the runtime", { voice: { ...boundVoice, runtime: null } }, "runtime"],
+      ["the vendor key", { vendorKey: null }, "vendor_key"],
+    ])("names %s when it is what is missing", async (_piece, options, missing) => {
+      const { app, dashboard, agentId } = await embedWorkspace(options);
+
+      expect(await readReadiness(app, dashboard, agentId)).toEqual({ ready: false, missing });
+    });
+
+    it("names the encryption, and offers no calls on the website, when a key is stored but the backend cannot read it", async () => {
+      const { app, dashboard, agentId, repositories, operator, embedConfig } = await embedWorkspace({
+        vendorKey: null,
+        voiceCallsOffered: true,
+        envOverrides: { CONNECTOR_ENCRYPTION_KEY: undefined },
+      });
+      await repositories.workspaceProviderCredentialsRepository.upsert({
+        workspaceId: operator.workspaceId,
+        provider: "elevenlabs",
+        ciphertext: "v1:stored-under-a-key-this-backend-no-longer-has",
+      });
+
+      expect(await readReadiness(app, dashboard, agentId)).toEqual({ ready: false, missing: "encryption" });
+      expect((await embedConfig()).body.voice).toEqual({ available: false });
+    });
+  });
+
+  it("records who turned calls on the website on or off, with ids and booleans only", async () => {
+    const { app, dashboard, agentId, dependencies, operator } = await embedWorkspace();
+    const voiceCallEvents = () => (dependencies.auditService as unknown as {
+      events: Array<{ eventType: string; metadata?: Record<string, unknown>; workspaceId?: string; accountId?: string | null }>;
+    }).events.filter((event) => event.eventType === "website_embed.voice_calls_offered.changed");
+
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ surfaceSettings: { websiteEmbed: { voiceCallsOffered: true } } }).expect(200);
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ surfaceSettings: { websiteEmbed: { launcherLabel: "Ask us" } } }).expect(200);
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ surfaceSettings: { websiteEmbed: { voiceCallsOffered: false } } }).expect(200);
+
+    expect(voiceCallEvents()).toEqual([
+      expect.objectContaining({ workspaceId: operator.workspaceId, eventStatus: "success", metadata: { agentId, before: false, after: true } }),
+      expect.objectContaining({ workspaceId: operator.workspaceId, eventStatus: "success", metadata: { agentId, before: true, after: false } }),
+    ]);
+  });
 });

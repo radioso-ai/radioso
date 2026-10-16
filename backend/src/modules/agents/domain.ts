@@ -225,6 +225,9 @@ export interface WebsiteEmbedSurfaceSettings extends PublicAgentSurfaceSettings 
   /**
    * The operator offers voice calls from this embed: its composer shows Talk when the agent's voice
    * is also ready (on, bound to a runtime, the vendor key stored). Off until the operator turns it on.
+   * It controls only the widget's button. Session starts are gated by voice readiness alone: any
+   * page holding the embed token can start one whatever this says, which is how a page with its own
+   * call controls works.
    */
   voiceCallsOffered: boolean;
 }

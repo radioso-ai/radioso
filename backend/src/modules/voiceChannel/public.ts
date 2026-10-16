@@ -1,4 +1,5 @@
 export type {
+  VoiceCallReadiness,
   VoiceSessionAvailabilityPort,
   VoiceSessionStartLookup,
   VoiceSessionStartPort,

@@ -1056,8 +1056,8 @@ export const installDashboardApiMocks = async (
     webhookDestinationUpdates?: WebhookDestinationMutationFixture[];
     requestLog?: string[];
     providerEncryptionConfigured?: boolean;
-    /** Providers whose key the workspace stores before the first request, e.g. `["elevenlabs"]`. */
-    storedProviderCredentials?: string[];
+    /** What `GET /agents/:id` says of the agent's voice readiness. Defaults to the voice channel missing. */
+    voiceCallReadiness?: ApiSchemas["VoiceCallReadiness"];
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
     llmModelUpdates?: Array<unknown>;
     /** Per capability, the model the plan runs instead of the preference. Defaults to none. */
@@ -1139,7 +1139,6 @@ export const installDashboardApiMocks = async (
     "openai-compatible": null,
     gemini: null,
     claude: null,
-    ...Object.fromEntries((options.storedProviderCredentials ?? []).map((provider) => [provider, { updatedAt: nowIso }])),
   };
   const providerCredentialUpdates = options.providerCredentialUpdates;
   const knownModelsByProvider = {
@@ -2244,7 +2243,7 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}`) {
       if (request.method() === "GET") {
-        await json(route, agentSettings);
+        await json(route, { ...agentSettings, voiceCallReadiness: options.voiceCallReadiness ?? { ready: false, missing: "voice_channel" } });
         return;
       }
 

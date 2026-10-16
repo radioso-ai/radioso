@@ -652,6 +652,9 @@ export type InvitationDetailsResponse = ApiSchemas['InvitationDetailsResponse']
 export type WorkspaceRouteResolutionResponse = ApiSchemas['WorkspaceRouteResolutionResponse']
 export type WorkspaceSummaryResponse = ApiSchemas['WorkspaceSummaryResponse']
 
+/** Whether the agent's voice is ready for calls, as `GET /agents/:agentId` tells a dashboard session. */
+export type VoiceCallReadiness = ApiSchemas['VoiceCallReadiness']
+
 export type AgentSettings = ApiSchemas['ConversationAgent'] & {
   assistantLinkUtmEnabled: boolean
 }

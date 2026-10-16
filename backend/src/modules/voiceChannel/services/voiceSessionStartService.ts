@@ -5,6 +5,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import type { AgentVoiceSettings } from "../../agents/public.js";
 import {
   VoiceVendorRequestError,
+  type VoiceCallReadiness,
   type VoiceSessionAvailabilityPort,
   type VoiceSessionStarter,
   type VoiceSessionStartPort,
@@ -56,6 +57,9 @@ const vendorErrorFields = (error: unknown) => ({
   ...(error instanceof VoiceVendorRequestError && error.vendorStatus !== undefined ? { vendorStatus: error.vendorStatus } : {}),
 });
 
+const READINESS_GAP_OF_OUTCOME = { voice_off: "voice_channel", no_runtime: "runtime" } as const;
+const READINESS_GAP_OF_PRESENCE = { missing: "vendor_key", unreadable: "encryption" } as const;
+
 const FAILED_OUTCOME_OF_READING: Record<Exclude<VoiceVendorCredentialReading["kind"], "present">, VoiceSessionFailedOutcome> = {
   missing: "credential_missing",
   unreadable: "credential_unreadable",
@@ -84,16 +88,20 @@ const sessionRuntimeOf = <Runtime>(voice: { enabled: boolean; runtime: Runtime |
 export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSessionAvailabilityPort {
   constructor(private readonly dependencies: VoiceSessionStartServiceDependencies) {}
 
-  async isAvailable(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<boolean> {
+  async readiness(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<VoiceCallReadiness> {
     const binding = sessionRuntimeOf(input.voice);
-    if (binding.kind === "unavailable") return false;
-    const { workspaceId } = input;
-    const { vendor } = binding.runtime;
+    if (binding.kind === "unavailable") return { ready: false, missing: READINESS_GAP_OF_OUTCOME[binding.outcome] };
+    const presence = await this.dependencies.credentials.presence({ workspaceId: input.workspaceId, vendor: binding.runtime.vendor });
+    return presence === "stored" ? { ready: true, missing: null } : { ready: false, missing: READINESS_GAP_OF_PRESENCE[presence] };
+  }
+
+  async isAvailable(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<boolean> {
     try {
-      return await this.dependencies.credentials.isStored({ workspaceId, vendor });
+      return (await this.readiness(input)).ready;
     } catch (error) {
       // A page that cannot learn whether it may talk offers text alone; the start would fail the same way.
-      this.dependencies.logger.warn({ workspaceId, vendor, errorClass: errorClassOf(error) }, "Voice availability check failed");
+      const vendor = input.voice.runtime?.vendor ?? "none";
+      this.dependencies.logger.warn({ workspaceId: input.workspaceId, vendor, errorClass: errorClassOf(error) }, "Voice availability check failed");
       return false;
     }
   }

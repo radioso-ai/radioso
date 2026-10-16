@@ -568,6 +568,7 @@ export const buildChatServices = (input: {
             );
           }
         },
+        logger: input.logger,
       }),
     ],
     wake: actionDrainDispatcher,

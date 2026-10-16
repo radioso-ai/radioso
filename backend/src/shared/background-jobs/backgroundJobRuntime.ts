@@ -1,6 +1,5 @@
 import { AppError } from "../domain/errors.js";
 import { traceOperation } from "../observability/tracing/operations.js";
-import { stringifyUnknown } from "../text/stringifyUnknown.js";
 import { NonRetryableBackgroundJobError } from "./jobKind.js";
 import type {
   BackgroundJobClaim,
@@ -116,12 +115,6 @@ const errorSummary = (error: unknown): string => {
 
 const isBackgroundJobSkipped = (result: BackgroundJobSkipped | void): result is BackgroundJobSkipped =>
   typeof result === "object" && result !== null && "skipped" in result;
-
-/** The raw error's own message, for a failure hook's `errorMessage` — `undefined` means no underlying error (a synthetic failure). */
-const errorMessageOf = (error: unknown): string | null => {
-  if (error === undefined) return null;
-  return error instanceof Error ? error.message : stringifyUnknown(error);
-};
 
 /**
  * Runs durable background jobs: claims a due job under a lease, runs the handler registered for
@@ -384,7 +377,7 @@ export class BackgroundJobRuntime {
             attempt: claim.attempt,
             idempotencyKey: claim.idempotencyKey,
             error: summary,
-            errorMessage: errorMessageOf(rawError),
+            cause: rawError,
             transaction,
           });
         } catch (error) {
@@ -445,7 +438,7 @@ export class BackgroundJobRuntime {
             attempt: claim.attempt,
             idempotencyKey: claim.idempotencyKey,
             error: summary,
-            errorMessage: errorMessageOf(rawError),
+            cause: rawError,
             transaction,
           });
         } catch (error) {

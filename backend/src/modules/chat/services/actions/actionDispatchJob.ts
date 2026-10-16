@@ -24,11 +24,21 @@ const actionDispatchJobPayloadSchema: z.ZodType<ActionDispatchJobPayload> = z.ob
  * The one job kind every routine action request rides, whatever its own `type` — the generic
  * runtime addresses a kind by name, not by this table's `type` column, so the real type travels
  * inside the payload (`ActionRequestRepository.claimNext`'s claim mapping) and
- * {@link createActionDispatchJobHandler} routes on it. Five attempts and a flat 60 s retry carry
- * over the outbox's existing contract unchanged. `timeoutSeconds` is new: no bespoke timeout ever
- * bounded a handler call before this move; 240 s is the substrate's own ceiling, comfortably above
- * any current handler's real latency, and a handler that ignores its (unused) `signal` keeps
- * running in the background exactly as the substrate documents for any kind that does this.
+ * {@link createActionDispatchJobHandler} routes on it. Five attempts. `timeoutSeconds` is new: no
+ * bespoke timeout ever bounded a handler call before this move; 120 s comfortably bounds every
+ * current handler's transport (Resend's own timeout is 15 s, the webhook client's is 10 s), while
+ * leaving most of the drain budget free to admit more jobs per call (see
+ * `actionDispatchWorkerTaskRoutes.ts`) — the substrate's own 240 s ceiling would have left only
+ * 30 s of a 270 s drain budget for admitting work. A handler that ignores its (unused) `signal`
+ * keeps running in the background exactly as the substrate documents for any kind that does this.
+ *
+ * `retryDelaysSeconds` grows instead of staying flat: the old `ActionDispatchWorker` never woke a
+ * retry early, so a flat 60 s backoff still spent roughly 20 minutes riding out a transient outage
+ * across 5 attempts in practice (each retry waited for the next poll tick or the 5-minute sweep,
+ * not its own 60 s). This runtime wakes a retry at its own `availableAt`, so a flat 60 s schedule
+ * here would exhaust all 5 attempts in about 4 minutes — failing a 5-minute Resend or webhook
+ * outage for good instead of riding it out. `[60, 120, 300, 600]` (18 minutes across 4 retries)
+ * keeps that old effective window.
  */
 export const ACTION_DISPATCH_JOB = defineBackgroundJob({
   kind: "chat.action_dispatch",

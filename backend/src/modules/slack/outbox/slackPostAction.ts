@@ -151,6 +151,9 @@ export class SlackPostActionHandler implements ActionHandler {
     outcome: "retry" | "failed";
     error: string;
   }): Promise<void> {
+    // `input.error` is the underlying error's own text (see `BackgroundJobFailureContext.cause`,
+    // extracted by `actionDispatchJob.ts`'s `causeMessage`) — it can carry a Slack API response
+    // body or a signed URL, so only ids and the outcome reach this log, never that text.
     const parsed = slackPostPayloadSchema.safeParse(input.payload);
     this.options.logger?.warn?.({
       event: "slack_post",
@@ -158,7 +161,6 @@ export class SlackPostActionHandler implements ActionHandler {
       installationId: parsed.success ? parsed.data.installationId : undefined,
       kind: parsed.success ? parsed.data.kind : undefined,
       outcome: input.outcome,
-      error: input.error,
     }, "Slack post action failed");
   }
 }

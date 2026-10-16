@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  agentInputFieldSchemas,
   agentVoiceSettingsSchema,
   defaultAgentVoiceSettings,
+  expectedAgentFieldValue,
   readStoredAgentVoiceSettings,
 } from "../../src/modules/agents/public.js";
 
@@ -86,20 +88,31 @@ describe("agent voice settings", () => {
     ["a blank vendor agent id", { vendor: "elevenlabs", agentId: "   " }],
     ["a vendor agent id with a path or query in it", { vendor: "elevenlabs", agentId: "agent_42&branch_id=x" }],
     ["a vendor agent id longer than 128 characters", { vendor: "elevenlabs", agentId: "a".repeat(129) }],
-  ])("rejects a runtime with %s", (_case, runtime) => {
-    expect(agentVoiceSettingsSchema.safeParse({ ...authored, runtime }).success).toBe(false);
+    ["a key the binding does not name, such as an API key", { vendor: "elevenlabs", agentId: "agent_42", apiKey: "xi-secret" }],
+  ])("refuses a runtime with %s", (_case, runtime) => {
+    expect(agentInputFieldSchemas.voice.safeParse({ ...authored, runtime }).success).toBe(false);
   });
 
-  it("requires the runtime key, so a block written without it cannot unbind the vendor agent", () => {
+  it("accepts a written block without runtime as bound to no vendor agent, so writers that predate the binding keep working", () => {
     const { runtime: _runtime, ...withoutRuntime } = authored;
 
-    expect(agentVoiceSettingsSchema.safeParse(withoutRuntime).success).toBe(false);
+    expect(agentInputFieldSchemas.voice.parse(withoutRuntime)).toEqual({ ...authored, runtime: null });
   });
 
   it("reads a stored block written before the runtime binding as bound to no vendor agent", () => {
     const { runtime: _runtime, ...storedWithoutRuntime } = authored;
 
     expect(readStoredAgentVoiceSettings(storedWithoutRuntime)).toEqual({ ...authored, runtime: null });
+  });
+
+  it("fences a proposal prepared before the runtime binding on the block as stored, so a missing runtime and null compare equal", () => {
+    const { runtime: _runtime, ...preparedBefore } = authored;
+    const stored = { ...authored, runtime: null };
+
+    expect(JSON.stringify(expectedAgentFieldValue("voice", preparedBefore))).toBe(JSON.stringify(stored));
+    // A bound runtime is a real difference, and other settings compare as they are.
+    expect(JSON.stringify(expectedAgentFieldValue("voice", preparedBefore))).not.toBe(JSON.stringify(authored));
+    expect(expectedAgentFieldValue("name", "Help Desk")).toBe("Help Desk");
   });
 
   it("reads a stored block back as authored, and anything unreadable as voice off", () => {

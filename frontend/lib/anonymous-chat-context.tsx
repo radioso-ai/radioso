@@ -137,6 +137,8 @@ interface AnonymousChatContextValue {
   sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata) => Promise<void>
   startNewChat: () => Promise<void>
   trackAnalyticsEvent: (event: WebsiteEmbedAnalyticsInput) => void
+  /** The visitor's language, as the greeting is asked for it; a voice call asks for the same. */
+  visitorLocale?: string
 }
 
 const AnonymousChatContext = createContext<AnonymousChatContextValue | null>(null)
@@ -1218,6 +1220,11 @@ export function AnonymousChatProvider({
     onAnalyticsEvent?.(event)
   }, [onAnalyticsEvent])
 
+  const visitorLocale = useMemo(
+    () => resolveAnonymousChatBootstrapLocale({ localeOverride, pageContext }),
+    [localeOverride, pageContext],
+  )
+
   const value = useMemo<AnonymousChatContextValue>(
     () => ({
       publicChatToken: effectivePublicChatToken,
@@ -1242,6 +1249,7 @@ export function AnonymousChatProvider({
       sendMessage,
       startNewChat,
       trackAnalyticsEvent,
+      visitorLocale,
     }),
     [
       effectivePublicChatToken,
@@ -1266,6 +1274,7 @@ export function AnonymousChatProvider({
       sendMessage,
       startNewChat,
       trackAnalyticsEvent,
+      visitorLocale,
     ],
   )
 

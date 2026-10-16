@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
 import { ExternalLink, Maximize2, MoreHorizontal, RotateCcw, UserRound, X } from 'lucide-react'
 
@@ -29,9 +29,12 @@ import {
 import { AssistantMessageContent } from '@/components/dashboard/chat-citations'
 import { AssistantAiChip, buildAssistantIdentity } from '@/components/chat/assistant-identity'
 import { ScrollToBottomButton } from '@/components/chat/scroll-to-bottom-button'
+import { VoiceCallBar, VoiceCallNotice, VoiceTalkButton } from '@/components/chat/voice-call-controls'
 import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 import { skillCatalogFromPublicIntakeActions } from '@/lib/skill-catalog'
+import { useVoiceSession } from '@/lib/use-voice-session'
+import { interleaveVoiceTranscript } from '@/lib/voice-session'
 import {
   answerFeedbackApi,
   type AgentBrandingSettings,
@@ -544,6 +547,8 @@ function PublicChatContent({
   copyOverrides,
   themeOverrides,
   surface,
+  voiceAvailable = false,
+  panelOpen = true,
 }: {
   initialWorkspaceName?: string | null
   localeOverride?: string | null
@@ -555,6 +560,10 @@ function PublicChatContent({
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
   surface: PublicChatSurface
+  /** The agent takes voice sessions from the website embed, so the composer offers Talk. */
+  voiceAvailable?: boolean
+  /** Whether the launcher shows the panel; closing it ends a call. */
+  panelOpen?: boolean
 }) {
   const [input, setInput] = useState('')
   const viewportLayout = useWebsiteEmbedViewportLayout()
@@ -583,6 +592,7 @@ function PublicChatContent({
     sendMessage,
     startNewChat,
     trackAnalyticsEvent,
+    visitorLocale,
   } = useAnonymousChat()
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
@@ -628,13 +638,40 @@ function PublicChatContent({
     )),
     [copy.publicChatAgentUnavailableMessage, copy.publicChatMessageFailedMessage, messages],
   )
+  const lastMessageIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    lastMessageIdRef.current = messages.at(-1)?.id ?? null
+  }, [messages])
+  const readLastMessageId = useCallback(() => lastMessageIdRef.current, [])
+  const voiceOffered = surface === 'embed' && voiceAvailable
+  const voice = useVoiceSession({ token: publicChatToken, locale: visitorLocale, currentMessageId: readLastMessageId })
+  const { isActive: isVoiceCallActive, stop: stopVoiceCall } = voice
+  useEffect(() => {
+    if (!panelOpen && isVoiceCallActive) stopVoiceCall()
+  }, [isVoiceCallActive, panelOpen, stopVoiceCall])
+  // Lines said on a call sit in the thread where they were said, marked as spoken.
+  const threadMessages = useMemo(
+    () => interleaveVoiceTranscript(
+      visibleMessages,
+      voice.lines.map((line) => ({
+        id: line.id,
+        role: line.speaker === 'caller' ? ('user' as const) : ('assistant' as const),
+        content: line.text,
+        createdAt: undefined,
+        status: 'complete' as const,
+        spokenLabel: copy.publicChatSpokenLabel,
+        afterMessageId: line.afterMessageId,
+      })),
+    ),
+    [copy.publicChatSpokenLabel, visibleMessages, voice.lines],
+  )
   const skillCatalog = useMemo(() => skillCatalogFromPublicIntakeActions(intakeActions), [intakeActions])
   const hasUserMessage = visibleMessages.some((message) => message.role === 'user')
   const useCenteredIntro = surface === 'public' && !hasUserMessage && !isCompactKeyboardLayout && !isNarrowLayout
   const greetingMessage = visibleMessages.find((message) => message.role === 'assistant') ?? null
 
   const { isAtBottom, scrollToBottom, scrollToLatestTurn } = useChatScroll({
-    messages: visibleMessages,
+    messages: threadMessages,
     containerRef: messagesScrollRef,
     sentinelRef: messagesEndRef,
     pinUserMessage: !isCompactKeyboardLayout,
@@ -999,7 +1036,7 @@ function PublicChatContent({
             }`}
             style={{ background: theme.panelBackground }}
           >
-            {visibleMessages.length === 0 ? (
+            {threadMessages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center text-center">
                 <div className="mb-4">
                   <AssistantAvatar avatarUrl={resolvedAvatarUrl} label={copy.publicChatEmptyTitle} themeOverrides={resolvedThemeOverrides} className="size-12" />
@@ -1031,7 +1068,7 @@ function PublicChatContent({
                   </div>
                 ) : null}
                 <ChatMessageThread
-                  messages={visibleMessages}
+                  messages={threadMessages}
                   onOpenDocument={async () => 'unavailable'}
                   onSuggestionSelect={handleSuggestionSelect}
                   onAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleAnswerFeedback : undefined}
@@ -1070,7 +1107,7 @@ function PublicChatContent({
           ) : null}
 
           <div className="relative">
-            {!isAtBottom && visibleMessages.length > 0 ? (
+            {!isAtBottom && threadMessages.length > 0 ? (
               <div className="pointer-events-none absolute inset-x-0 bottom-full z-10 mb-2 px-4">
                 <div className="mx-auto flex max-w-3xl justify-end">
                   <ScrollToBottomButton
@@ -1081,17 +1118,23 @@ function PublicChatContent({
               </div>
             ) : null}
             <PublicChatBubbleComposerSurface theme={theme} compact={isCompactKeyboardLayout}>
-              <PublicChatBubbleComposerForm
-                theme={theme}
-                copy={copy}
-                value={input}
-                onChange={setInput}
-                onKeyDown={handleKeyDown}
-                onSubmit={handleSubmit}
-                inputRef={inputRef}
-                isLoading={isLoading}
-                compact={isCompactKeyboardLayout}
-              />
+              {voiceOffered ? <VoiceCallNotice theme={theme} copy={copy} state={voice.state} /> : null}
+              {voiceOffered && isVoiceCallActive ? (
+                <VoiceCallBar theme={theme} copy={copy} state={voice.state} onStop={stopVoiceCall} />
+              ) : (
+                <PublicChatBubbleComposerForm
+                  theme={theme}
+                  copy={copy}
+                  value={input}
+                  onChange={setInput}
+                  onKeyDown={handleKeyDown}
+                  onSubmit={handleSubmit}
+                  inputRef={inputRef}
+                  isLoading={isLoading}
+                  compact={isCompactKeyboardLayout}
+                  accessory={voiceOffered ? <VoiceTalkButton theme={theme} copy={copy} onPress={voice.talk} /> : null}
+                />
+              )}
               {!isCompactKeyboardLayout ? (
                 <PublicChatBubbleDisclaimer
                   theme={theme}
@@ -1124,6 +1167,8 @@ export function PublicChatShell({
   clientContextCapabilities,
   resolveSignedIdentity,
   onAnalyticsEvent,
+  voiceAvailable,
+  panelOpen,
 }: {
   token: string
   initialWorkspaceName?: string | null
@@ -1140,6 +1185,8 @@ export function PublicChatShell({
   clientContextCapabilities?: ClientContextCapabilities
   resolveSignedIdentity?: () => Promise<string | null>
   onAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
+  voiceAvailable?: boolean
+  panelOpen?: boolean
 }) {
   const theme = getWebsiteEmbedTheme(themeOverrides)
 
@@ -1174,6 +1221,8 @@ export function PublicChatShell({
           copyOverrides={copyOverrides}
           themeOverrides={themeOverrides}
           surface={surface}
+          voiceAvailable={voiceAvailable}
+          panelOpen={panelOpen}
         />
       </div>
     </AnonymousChatProvider>

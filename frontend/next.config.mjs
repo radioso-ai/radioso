@@ -42,11 +42,15 @@ const securityHeaders = [
   },
 ];
 
-const embedSecurityHeaders = securityHeaders.map((header) => (
-  header.key === "Content-Security-Policy"
-    ? { ...header, value: embedCspDirectives }
-    : header
-));
+// The chat frame may use the microphone for a voice call; the host page delegates it with the
+// iframe's `allow="microphone"`, which the launcher sets only when the agent takes voice calls.
+const voicePermissionsPolicy = "camera=(), microphone=(self), geolocation=()";
+
+const embedSecurityHeaders = securityHeaders.map((header) => {
+  if (header.key === "Content-Security-Policy") return { ...header, value: embedCspDirectives };
+  if (header.key === "Permissions-Policy") return { ...header, value: voicePermissionsPolicy };
+  return header;
+});
 
 const resolvePublicMcpUrl = () => {
   if (process.env.NEXT_PUBLIC_MCP_URL) {
@@ -115,6 +119,12 @@ const nextConfig = {
       {
         source: "/embed-frame",
         headers: embedSecurityHeaders,
+      },
+      {
+        // The embed test page hosts the launcher like a customer's site, so it can hand the frame
+        // its microphone.
+        source: "/embed-test",
+        headers: [{ key: "Permissions-Policy", value: voicePermissionsPolicy }],
       },
       {
         source: "/oauth/operator-mcp/consent",

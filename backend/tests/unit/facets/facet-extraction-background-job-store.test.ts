@@ -44,7 +44,7 @@ describe("FacetExtractionBackgroundJobStore", () => {
       const jobs = buildJobsStub({ claimBatch: vi.fn(async () => [buildJob()]) });
       const store = new FacetExtractionBackgroundJobStore(jobs, MAX_ATTEMPTS);
 
-      const claim = await store.claimNext({ kinds: [{ kind: "facets.extraction", leaseSeconds: 300 }], asOf: NOW });
+      const claim = await store.claimNext({ kinds: [{ kind: "facets.extraction", leaseSeconds: 300 }] });
 
       expect(claim).toEqual({
         id: "job-1",
@@ -56,18 +56,29 @@ describe("FacetExtractionBackgroundJobStore", () => {
         availableAt: NOW,
       });
       expect(jobs.releaseExpiredClaims).toHaveBeenCalledWith({
-        claimedAtOrBefore: new Date(NOW.getTime() - 300_000),
+        claimedAtOrBefore: expect.any(Date),
         maxAttempts: MAX_ATTEMPTS,
       });
-      expect(jobs.claimBatch).toHaveBeenCalledWith(1, NOW);
+      // `now` is omitted (the repository's own clock decides what's due); `excludeIds`
+      // passes through whatever this drain has already claimed.
+      expect(jobs.claimBatch).toHaveBeenCalledWith(1, undefined, undefined, undefined, undefined);
+    });
+
+    it("passes excludeIds through so this drain cannot reclaim a job it already claimed", async () => {
+      const jobs = buildJobsStub({ claimBatch: vi.fn(async () => [buildJob()]) });
+      const store = new FacetExtractionBackgroundJobStore(jobs, MAX_ATTEMPTS);
+
+      await store.claimNext({ kinds: [{ kind: "facets.extraction", leaseSeconds: 300 }], excludeIds: ["job-0"] });
+
+      expect(jobs.claimBatch).toHaveBeenCalledWith(1, undefined, undefined, undefined, ["job-0"]);
     });
 
     it("returns null when there are no kinds or nothing is claimable", async () => {
       const jobs = buildJobsStub();
       const store = new FacetExtractionBackgroundJobStore(jobs, MAX_ATTEMPTS);
 
-      expect(await store.claimNext({ kinds: [], asOf: NOW })).toBeNull();
-      expect(await store.claimNext({ kinds: [{ kind: "facets.extraction", leaseSeconds: 300 }], asOf: NOW })).toBeNull();
+      expect(await store.claimNext({ kinds: [] })).toBeNull();
+      expect(await store.claimNext({ kinds: [{ kind: "facets.extraction", leaseSeconds: 300 }] })).toBeNull();
     });
   });
 

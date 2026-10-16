@@ -35,7 +35,7 @@ import { useVoiceSession } from '@/lib/use-voice-session'
 
 type Session = ReturnType<typeof useVoiceSession>
 
-const readNoMessage = () => 'greeting'
+const readMessageIds = () => ['greeting']
 
 beforeAll(() => {
   ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -47,7 +47,7 @@ describe('useVoiceSession', () => {
   let latest: Session
 
   function Harness() {
-    latest = useVoiceSession({ token: 'launch-token', currentMessageId: readNoMessage, offered: true })
+    latest = useVoiceSession({ token: 'launch-token', precedingMessageIds: readMessageIds, offered: true })
     return null
   }
 
@@ -90,7 +90,22 @@ describe('useVoiceSession', () => {
     await settle()
     await act(async () => vendor.callbacks!.onLine({ speaker: 'caller', text: 'Hello' }))
 
-    expect(latest.lines).toEqual([{ id: 'voice-line-1', speaker: 'caller', text: 'Hello', afterMessageId: 'greeting' }])
+    expect(latest.lines).toEqual([{ id: 'voice-line-1', speaker: 'caller', text: 'Hello', afterMessageIds: ['greeting'] }])
+  })
+
+  it('forgets the call and its lines when the conversation is cleared', async () => {
+    await act(async () => latest.talk())
+    await settle()
+    await act(async () => {
+      vendor.callbacks!.onConnected()
+      vendor.callbacks!.onLine({ speaker: 'caller', text: 'Hello' })
+    })
+
+    await act(async () => latest.reset())
+
+    expect(latest.state).toEqual({ status: 'idle' })
+    expect(latest.lines).toEqual([])
+    expect(vendor.end).toHaveBeenCalledTimes(1)
   })
 
   it('takes a call stopped while connecting back to idle', async () => {

@@ -11,10 +11,13 @@ export function VoiceTalkButton({
   theme,
   copy,
   onPress,
+  disabled = false,
 }: {
   theme: WebsiteEmbedTheme
   copy: WebsiteEmbedCopy
   onPress: () => void
+  /** While the chat loads or a typed reply streams, as Send is. */
+  disabled?: boolean
 }) {
   return (
     <Button
@@ -23,6 +26,7 @@ export function VoiceTalkButton({
       variant="ghost"
       className="h-9 w-9 shrink-0 rounded-full hover:opacity-80"
       onClick={onPress}
+      disabled={disabled}
       title={copy.publicChatTalkLabel}
       style={{ color: theme.inputForeground }}
     >

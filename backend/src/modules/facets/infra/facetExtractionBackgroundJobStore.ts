@@ -84,20 +84,23 @@ export class FacetExtractionBackgroundJobStore implements BackgroundJobStore {
     private readonly telemetryService?: Pick<TelemetryService, "emit">,
   ) {}
 
-  async claimNext(input: { kinds: readonly BackgroundJobClaimableKind[]; asOf: Date }): Promise<BackgroundJobClaim | null> {
+  async claimNext(
+    input: { kinds: readonly BackgroundJobClaimableKind[]; excludeIds?: readonly string[] },
+  ): Promise<BackgroundJobClaim | null> {
     const lease = input.kinds[0];
     if (!lease) {
       return null;
     }
     // Mirrors the pre-existing worker: a separate sweep releases claims stale past this kind's
     // lease before claiming, rather than reclaiming a stale row within the same claim query.
-    // `asOf` is fixed for the whole drain, not read fresh here, so a job this same drain already
-    // retried with a short delay is not reclaimable again until the next wake, poll tick, or sweep.
     await this.jobs.releaseExpiredClaims({
-      claimedAtOrBefore: new Date(input.asOf.getTime() - lease.leaseSeconds * 1_000),
+      claimedAtOrBefore: new Date(Date.now() - lease.leaseSeconds * 1_000),
       maxAttempts: this.maxAttempts,
     });
-    const [job] = await this.jobs.claimBatch(1, input.asOf);
+    // `now` is omitted so the repository's own (database) clock decides what's due, never this
+    // process's; `excludeIds` keeps this drain from reclaiming a job it just retried with the
+    // schedule's short first step.
+    const [job] = await this.jobs.claimBatch(1, undefined, undefined, undefined, input.excludeIds);
     if (!job || job.claimedAt === null) {
       return null;
     }

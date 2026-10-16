@@ -121,7 +121,7 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
     const { jobId, messageId } = await enqueueOne();
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
 
-    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
+    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
     expect(claim).not.toBeNull();
     expect(claim).toMatchObject({ id: jobId, payload: { messageId, workspaceId } });
 
@@ -139,7 +139,7 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
   it("marks a skipped outcome with its reason instead of completed", async () => {
     const { jobId } = await enqueueOne();
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
-    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
+    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
 
     await store.complete(claim!, { skipped: "empty_message" });
 
@@ -151,7 +151,7 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
   it("schedules a retry at the delay the runtime computed, and the job is claimable again once due", async () => {
     const { jobId } = await enqueueOne();
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
-    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
+    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
 
     const availableAt = await store.retry(claim!, { error: "Error [provider_unavailable]", delaySeconds: 0 });
     expect(availableAt).toBeInstanceOf(Date);
@@ -160,14 +160,14 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
     expect(row.status).toBe("queued");
     expect(row.last_error).toBe("Error [provider_unavailable]");
 
-    const reclaimed = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
+    const reclaimed = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
     expect(reclaimed).toMatchObject({ id: jobId, attempt: 2 });
   });
 
   it("dead-letters a job terminally, keeping its identifiers unlike the generic store's dropped payload", async () => {
     const { jobId, messageId } = await enqueueOne();
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
-    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
+    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
 
     await expect(store.deadLetter(claim!, { error: "NonRetryableBackgroundJobError" })).resolves.toBe(true);
 
@@ -176,14 +176,14 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
     expect(row.message_id).toBe(messageId);
     expect(row.claimed_at).toBeNull();
 
-    const reclaimAttempt = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
+    const reclaimAttempt = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
     expect(reclaimAttempt).toBeNull();
   });
 
   it("fences every write back to a claim that another worker has already taken over (attempt and claimed_at both move)", async () => {
     const { jobId } = await enqueueOne();
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
-    const staleClaim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
+    const staleClaim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
 
     // Simulate a second worker reclaiming the same row after the lease lapsed: a fresh
     // `claimed_at` and attempt, exactly what `claimNext`'s own stale-claim sweep would do.
@@ -203,7 +203,7 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
   it("fences a write back to a claim whose claimed_at alone moved, attempt_count unchanged", async () => {
     const { jobId } = await enqueueOne();
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
-    const staleClaim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
+    const staleClaim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
 
     // Only claimed_at moves — attempt_count stays put. The fence must still catch this: it
     // matches on both columns, not attempt_count alone.
@@ -219,8 +219,29 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
 
   it("returns nothing once the queue is empty", async () => {
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
-    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
+    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
     expect(claim).toBeNull();
+  });
+
+  it("excludeIds keeps a due, queued row this same drain already retried out of the next claim", async () => {
+    const { jobId } = await enqueueOne();
+    const store = new FacetExtractionBackgroundJobStore(repository, 3);
+    const firstClaim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
+    expect(firstClaim?.id).toBe(jobId);
+
+    // Back to queued and due immediately — exactly what a same-drain retry with a 1s delay looks
+    // like once that second has passed. Without excludeIds this row is claimable again.
+    await store.retry(firstClaim!, { error: "Error", delaySeconds: 0 });
+    expect((await readRow(jobId)).status).toBe("queued");
+
+    const excluded = await store.claimNext({
+      kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }],
+      excludeIds: [jobId],
+    });
+    expect(excluded).toBeNull();
+
+    const reclaimed = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
+    expect(reclaimed?.id).toBe(jobId);
   });
 
   /**

@@ -46,9 +46,9 @@ export const ACTION_DISPATCH_JOB = defineBackgroundJob({
   onDuplicateKey: "ignore",
   maxAttempts: 5,
   leaseSeconds: 300,
-  timeoutSeconds: 240,
+  timeoutSeconds: 120,
   retryBaseDelaySeconds: 60,
-  retryDelaysSeconds: [60],
+  retryDelaysSeconds: [60, 120, 300, 600],
 });
 
 /** The registry slice this adapter needs: resolving a handler by the row's own action `type`. */
@@ -70,6 +70,12 @@ export type ActionDispatchPersistedOutcome = "claimed" | "dispatched" | "skipped
 export interface ActionDispatchJobHandlerOptions {
   onPersistedOutcome?: (input: { request: ActionDispatchJobPayload; outcome: ActionDispatchPersistedOutcome }) => void;
   /**
+   * Logs a throwing `onPersistedOutcome` observer by error class only — never the error's message,
+   * which a best-effort observer (a cache invalidation) has no documented obligation to keep free
+   * of customer content. Omit in tests that do not care.
+   */
+  logger?: { warn(payload: Record<string, unknown>, message: string): void };
+  /**
    * Overrides `ACTION_DISPATCH_JOB` — for tests only, so a suite that drains retries in a tight
    * loop against real Postgres (where a fake clock cannot move the database's own `now()`) can use
    * a near-zero `retryDelaysSeconds` instead of the production flat 60 s. Production composition
@@ -77,6 +83,9 @@ export interface ActionDispatchJobHandlerOptions {
    */
   job?: BackgroundJobKind<ActionDispatchJobPayload>;
 }
+
+/** The error's own name/constructor only — never its message, which a throwing observer's cause may not keep free of customer content. */
+const observerErrorClass = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
 
 /**
  * `ActionDispatcher` handed its handlers the real caught-and-stringified error text (never a
@@ -119,8 +128,19 @@ export const createActionDispatchJobHandler = (
   registry: ActionHandlerResolver,
   options: ActionDispatchJobHandlerOptions = {},
 ): BackgroundJobHandlerRegistration => {
+  // The persisted outbox transition (the row's own claim/retry/dead-letter/skip write) is
+  // authoritative; a downstream observer (a best-effort cache invalidation) cannot undo or
+  // reclassify it, and must never turn a real send into a resend — a throw here is isolated,
+  // not left to fail the run, the same isolation `ActionDispatcher` gave this call.
   const observe = (request: ActionDispatchJobPayload, outcome: ActionDispatchPersistedOutcome): void => {
-    options.onPersistedOutcome?.({ request, outcome });
+    try {
+      options.onPersistedOutcome?.({ request, outcome });
+    } catch (error) {
+      options.logger?.warn(
+        { outcome, errorType: observerErrorClass(error) },
+        "Action dispatch's persisted-outcome observer failed; the outcome itself is unaffected",
+      );
+    }
   };
   return backgroundJobHandler(
     options.job ?? ACTION_DISPATCH_JOB,

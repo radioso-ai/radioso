@@ -142,12 +142,15 @@ implementations did not change.
   carry provider responses, conversation text, or credentials. The error
   reporter gets the same shape (kind, attempt, job id, that summary) and never
   the error itself. `onAttemptFailed` and `onDeadLetter` additionally get
-  `errorMessage`: the underlying error's own message (`null` for a synthetic
-  failure such as a lease that expired with no run to blame). Unlike `error`,
-  this is never written anywhere by the substrate — it exists only so a
-  handler's hook can make its own bounded, structural extraction (a trailing
-  HTTP status code, say) from text that may itself carry a secret, the same
-  trust a handler's own `run` already has for the errors it throws.
+  `cause`: the underlying error itself (`undefined` for a synthetic failure
+  such as a lease that expired with no run to blame). Unlike `error`, the
+  substrate never logs, stores, or reports `cause` or anything derived from
+  it — it exists only so a handler's hook can make its own bounded,
+  structural extraction (a trailing HTTP status code, say) from an error
+  that may itself carry a secret in its message, the same trust a handler's
+  own `run` already has for the errors it throws. A hook must treat `cause`
+  with that same care: never log, store, or report it or its message
+  verbatim.
 - **Dead letters.** After `maxAttempts` runs, a failure that cannot be retried,
   a payload that no longer parses, or attempts used up by crashed workers, the
   job is parked. The same write drops its payload: a dead letter keeps its kind,

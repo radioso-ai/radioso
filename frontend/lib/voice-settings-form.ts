@@ -1,3 +1,4 @@
+import { voiceVendorNames, type VoiceVendorName } from '@/lib/api-llm-providers'
 import type { AgentMechanicsReplies, AgentVoiceSettings } from '@/lib/api-types'
 
 export const VOICE_BRIDGE_STYLES = ['check', 'acknowledge'] as const
@@ -25,12 +26,9 @@ export const isBelowElevenLabsSpokenFloor = (line: string): boolean => {
   return text.length > 0 && Array.from(text).length < ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS
 }
 
-export type VoiceRuntimeVendor = NonNullable<AgentVoiceSettings['runtime']>['vendor']
-export const VOICE_RUNTIME_VENDORS: readonly VoiceRuntimeVendor[] = ['elevenlabs']
-
 /** The vendor agent a Radioso-started voice session opens; a blank `agentId` binds none. */
 export interface VoiceRuntimeForm {
-  vendor: VoiceRuntimeVendor
+  vendor: VoiceVendorName
   agentId: string
 }
 
@@ -63,7 +61,7 @@ export const voiceSettingsFormFromAgent = (voice: AgentVoiceSettings, mechanicsR
   const locales = [...new Set([...Object.keys(voice.bridgeLines), ...Object.keys(voice.fallbackLine), ...Object.keys(mechanicsReplies)])]
   return {
     enabled: voice.enabled,
-    runtime: voice.runtime ? { ...voice.runtime } : { vendor: VOICE_RUNTIME_VENDORS[0], agentId: '' },
+    runtime: voice.runtime ? { ...voice.runtime } : { vendor: voiceVendorNames[0], agentId: '' },
     languages: locales.map((locale) => ({
       locale,
       bridgeLines: linesOf(VOICE_BRIDGE_STYLES, voice.bridgeLines[locale]),

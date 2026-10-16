@@ -39,7 +39,7 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
   await installDashboardApiMocks(page, { agentUpdates });
 
   const card = await openVoiceCard(page);
-  const voiceSwitch = card.getByRole("switch", { name: "Voice lines on calls" });
+  const voiceSwitch = card.getByRole("switch", { name: "Voice channel" });
   await expect(voiceSwitch).not.toBeChecked();
   await voiceSwitch.click();
   await expect(card.getByLabel("Voice runtime")).toContainText("ElevenLabs");
@@ -99,7 +99,7 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
   await page.reload();
 
   const reloaded = page.locator("#voice-channel");
-  await expect(reloaded.getByRole("switch", { name: "Voice lines on calls" })).toBeChecked();
+  await expect(reloaded.getByRole("switch", { name: "Voice channel" })).toBeChecked();
   await expect(reloaded.getByLabel("ElevenLabs agent id")).toHaveValue(VENDOR_AGENT_ID);
   const reloadedEnglish = reloaded.getByRole("group", { name: "Voice lines: English" });
   await expect(reloadedEnglish.getByRole("textbox", { name: "Check line 1" })).toHaveValue(BRIDGE_LINE);
@@ -130,14 +130,14 @@ test("an operator unbinds the ElevenLabs agent, clears the voice lines, then the
   await expect(card.getByLabel("ElevenLabs agent id")).toHaveValue(VENDOR_AGENT_ID);
   await card.getByLabel("ElevenLabs agent id").fill("");
   const english = card.getByRole("group", { name: "Voice lines: English" });
-  await card.getByRole("switch", { name: "Voice lines on calls" }).click();
+  await card.getByRole("switch", { name: "Voice channel" }).click();
   await english.getByRole("button", { name: "Remove check line 1" }).click();
   await english.getByLabel("Fallback line").fill("");
   await save(card);
 
   await page.reload();
   const afterVoiceClear = page.locator("#voice-channel");
-  await expect(afterVoiceClear.getByRole("switch", { name: "Voice lines on calls" })).not.toBeChecked();
+  await expect(afterVoiceClear.getByRole("switch", { name: "Voice channel" })).not.toBeChecked();
   // The quick replies the operator left alone are still there.
   const reloadedEnglish = afterVoiceClear.getByRole("group", { name: "Voice lines: English" });
   await expect(reloadedEnglish.getByRole("textbox", { name: "Greeting line 1" })).toHaveValue(GREETING);
@@ -161,7 +161,7 @@ test("an operator unbinds the ElevenLabs agent, clears the voice lines, then the
   ]);
 
   await page.reload();
-  await expect(page.locator("#voice-channel").getByRole("switch", { name: "Voice lines on calls" })).toBeVisible();
+  await expect(page.locator("#voice-channel").getByRole("switch", { name: "Voice channel" })).toBeVisible();
   await expect(page.locator("#voice-channel").getByRole("group", { name: /^Voice lines: / })).toHaveCount(0);
 });
 
@@ -204,7 +204,7 @@ test("switching to another agent shows that agent's own lines before its voice s
   releaseOtherAgent();
   const otherCard = page.locator("#voice-channel");
   await expect(otherCard.getByRole("textbox", { name: "Check line 1" })).toHaveValue(otherBridgeLine);
-  await expect(otherCard.getByRole("switch", { name: "Voice lines on calls" })).not.toBeChecked();
+  await expect(otherCard.getByRole("switch", { name: "Voice channel" })).not.toBeChecked();
   await save(otherCard);
 
   expect(otherAgentUpdates).toEqual([{

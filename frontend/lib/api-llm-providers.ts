@@ -5,7 +5,7 @@ export type LlmProviderName = (typeof llmProviderNames)[number]
 
 /** Voice runtimes whose key the workspace holds beside its model provider keys; none has a deployment fallback. */
 export const voiceVendorNames = ['elevenlabs'] as const
-type VoiceVendorName = (typeof voiceVendorNames)[number]
+export type VoiceVendorName = (typeof voiceVendorNames)[number]
 export type CredentialProviderName = LlmProviderName | VoiceVendorName
 
 export const llmCapabilityNames = ['chat', 'rewrite', 'rerank'] as const

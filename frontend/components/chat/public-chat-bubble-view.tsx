@@ -199,7 +199,7 @@ export function PublicChatBubbleDisclaimer({
   )
 }
 
-export interface PublicChatBubbleComposerFormProps {
+interface PublicChatBubbleComposerFormProps {
   theme: WebsiteEmbedTheme
   copy: WebsiteEmbedCopy
   value: string

@@ -1657,6 +1657,10 @@ Primary internals:
 - `backend/src/shared/infra/cloudTasksBackgroundJobWake.ts`
 - `backend/src/app/worker/backgroundJobWorkerTaskRoutes.ts`
 - `backend/src/runtime/startWorkerRuntime.ts` (poll loop and retention start/stop)
+- `backend/src/modules/facets/infra/facetExtractionBackgroundJobStore.ts`: a
+  second `BackgroundJobStore` implementation, over a module-owned table
+  (`facet_extraction_jobs`) instead of `background_jobs` — see "Facet
+  Extraction Jobs" below for why and what it could not express.
 - `infra/terraform/queue.tf` (`background_jobs`), `infra/terraform/scheduler.tf`
   (`background_job_recovery`, `background_job_retention`)
 
@@ -1672,45 +1676,55 @@ Focused checks:
 ## Facet Extraction Jobs
 
 Owns the async job spine that turns individual messages into stored facets for
-the topic census: one durable job per message, a polling claim loop in the
-worker process, the retry policy around it, and the `message_facets` store the
-census reads from.
+the topic census: one durable job per message, the retry policy around it, and
+the `message_facets` store the census reads from.
 
-Facet extraction is batch analytics — no chat turn waits on it. An Audience
-Pulse refresh asks the task worker to drain only its 30-day workspace window in bounded,
-automatically chained slices and the dashboard polls task status until it can
-generate the complete report. The spine knows nothing about what a facet is:
-extraction arrives as an injected port, registered through application
-composition. With no extractor registered the worker is not built, so queued
-jobs stay durable rather than being drained into a no-op. Eligibility for a
-job is decided once, at enqueue time, by `isEligibleForFacetExtraction` in the
-Chat module (`chatSessionPreparer.ts`) — the same predicate Audience Pulse
-reads history with, restated as a write-time check rather than duplicated.
+Facet extraction is batch analytics — no chat turn waits on it. The spine
+knows nothing about what a facet is: extraction arrives as an injected port,
+registered through application composition. With no extractor registered
+neither path below is built, so queued jobs stay durable rather than being
+drained into a no-op. Eligibility for a job is decided once, at enqueue time,
+by `isEligibleForFacetExtraction` in the Chat module (`chatSessionPreparer.ts`)
+— the same predicate Audience Pulse reads history with, restated as a
+write-time check rather than duplicated.
 
-The local document-worker runtime starts that poll loop. Cloud Run instead
-serves authenticated task requests: `POST /internal/tasks/facet-extraction/drain`
-drains a bounded workspace slice and schedules the next one while work remains.
-The scheduled `/internal/tasks/document-processing/recover` invocation retains
-its ten-job cap as recovery only. Both paths use the job repository's claim and
-lease rules, so task retries and recovery can race safely without claiming the
-same row.
+Per-message claiming runs on the shared generic background-job runtime
+(`backend/src/shared/background-jobs/`, see that section) instead of a
+bespoke poll loop: `FacetExtractionBackgroundJobStore` implements the
+runtime's `BackgroundJobStore` port over the existing `facet_extraction_jobs`
+table (no schema change, no row migration), and a handler registered for the
+`facets.extraction` kind runs the extractor and records the outcome. Locally
+the runtime's own poll loop drains it; on Cloud Run the scheduled
+`POST /internal/tasks/document-processing/recover` call also drains a bounded
+claim of this kind, since the queue has no push transport of its own.
+
+Audience Pulse's workspace-scoped refresh is a different, bespoke path over
+the same table, kept outside the generic runtime: the generic claim filters
+by kind only, not by workspace or message window, and Audience Pulse needs a
+30-day window drained in bounded, automatically chained, concurrent slices.
+`FacetExtractionWorkspaceDrainWorker` runs that path; `POST
+/internal/tasks/facet-extraction/drain` drains a bounded workspace slice and
+schedules the next one while work remains, through
+`CloudTasksFacetExtractionDrainDispatcher`. Both paths claim from the same
+table with the same fencing, so they never claim the same row.
 
 Public surfaces and contracts:
 
 - `backend/src/modules/facets/contracts.ts` (`FacetExtractionPort`, `FacetExtractionJobStore`, `MessageFacetRepositoryPort`)
-- `backend/src/modules/facets/composition.ts` (`createFacetExtractionWorker`)
+- `backend/src/modules/facets/composition.ts` (`createFacetExtractionBackgroundJobRuntime`, `createFacetExtractionWorkspaceDrainWorker`)
 - `registerFacetExtraction` on the application module registration context
 
 Primary internals:
 
-- `backend/src/modules/facets/services/facetExtractionWorker.ts`
+- `backend/src/modules/facets/infra/facetExtractionBackgroundJobStore.ts` (the `facets.extraction` kind and its `BackgroundJobStore` adapter)
+- `backend/src/modules/facets/services/facetExtractionWorkspaceDrainWorker.ts`
 - `backend/src/modules/facets/services/facetExtractionWorkspaceDrainService.ts`
 - `backend/src/modules/facets/infra/cloudTasksFacetExtractionDrainDispatcher.ts`
 - `backend/src/modules/facets/services/facetExtractionService.ts` (extraction on the `"rewrite"` model tier plus embedding through `ClusteringEmbeddingPort`)
 - `backend/src/db/repositories/facetExtractionJobRepository.ts` (`facet_extraction_jobs`)
 - `backend/src/db/repositories/messageFacetRepository.ts` (`message_facets`)
 - `backend/src/db/migrations/137_topic_census.sql` (`facet_extraction_jobs`, `message_facets`)
-- `backend/src/runtime/startWorkerRuntime.ts` (start/stop registration)
+- `backend/src/runtime/startWorkerRuntime.ts` (`facetExtractionBackgroundJobRuntime` start/stop registration)
 - `backend/scripts/dev/backfillFacetExtractionJobs.ts` (dev tool: enqueue jobs for eligible messages that predate this feature)
 
 Operator configuration:

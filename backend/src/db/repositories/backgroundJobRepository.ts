@@ -90,20 +90,30 @@ export class BackgroundJobRepository implements BackgroundJobStore, BackgroundJo
     return written && written.status === "pending" ? { inserted: true, jobId: written.id } : { inserted: false };
   }
 
-  async claimNext(input: { kinds: readonly BackgroundJobClaimableKind[]; asOf: Date }): Promise<BackgroundJobClaim | null> {
+  /**
+   * Due is decided by the database's own `now()`, never a caller-supplied instant: a worker's clock
+   * can skew from the database's and hide a job that genuinely became due. `excludeIds` (the ids a
+   * single `drain()` call has already claimed) is a `NOT IN`, so a row due by this same `now()` is
+   * still skipped when the caller has already claimed it this call.
+   */
+  async claimNext(input: { kinds: readonly BackgroundJobClaimableKind[]; excludeIds?: readonly string[] }): Promise<BackgroundJobClaim | null> {
     if (input.kinds.length === 0) {
       return null;
     }
     return this.db.transaction().execute(async (trx) => {
-      const due = await trx
+      let query = trx
         .selectFrom("background_jobs")
         .select(["id", "kind"])
         .where("kind", "in", input.kinds.map((entry) => entry.kind))
         .where((eb) =>
           eb.or([
-            eb.and([eb("status", "=", "pending"), eb("available_at", "<=", input.asOf)]),
-            eb.and([eb("status", "=", "running"), eb("lease_expires_at", "<", input.asOf)]),
-          ]))
+            eb.and([eb("status", "=", "pending"), eb("available_at", "<=", currentTimestamp())]),
+            eb.and([eb("status", "=", "running"), eb("lease_expires_at", "<", currentTimestamp())]),
+          ]));
+      if (input.excludeIds && input.excludeIds.length > 0) {
+        query = query.where("id", "not in", [...input.excludeIds]);
+      }
+      const due = await query
         .orderBy("available_at", "asc")
         .limit(1)
         .forUpdate()

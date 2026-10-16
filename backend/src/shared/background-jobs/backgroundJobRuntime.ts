@@ -178,10 +178,11 @@ export class BackgroundJobRuntime {
    * `startedAt` (epoch ms; now when absent), so the drain ends inside the budget even if every
    * handler runs to its deadline. Store failures propagate.
    *
-   * Every claim in one `drain()` call uses the same `asOf` — this call's start time, not a fresh
-   * read per claim — so a job this call itself retries (with a short delay) is not eligible again
-   * within the same call: it waits for the next wake, poll tick, or sweep instead of spending its
-   * whole retry budget here.
+   * This call remembers every id it has claimed and excludes them from every further claim it makes
+   * within the same call: a job this call itself retries (with a short delay) is not eligible again
+   * here even once its delay has elapsed, no matter how much wall-clock time this call's other
+   * claims spend before it loops back. It waits for the next wake, poll tick, or sweep instead of
+   * spending its whole retry budget on itself.
    */
   async drain(input: { maxJobs: number; budgetMs?: number; startedAt?: number }): Promise<BackgroundJobDrainResult> {
     const result: BackgroundJobDrainResult = {
@@ -194,7 +195,7 @@ export class BackgroundJobRuntime {
       superseded: 0,
     };
     const startedAt = input.startedAt ?? Date.now();
-    const asOf = new Date(startedAt);
+    const claimedIds: string[] = [];
     for (let index = 0; index < input.maxJobs; index += 1) {
       const remainingMs = input.budgetMs === undefined ? Infinity : input.budgetMs - (Date.now() - startedAt);
       const kinds = this.claimableKinds.filter((entry) => entry.timeoutMs <= remainingMs);
@@ -203,11 +204,12 @@ export class BackgroundJobRuntime {
       }
       const claim = await this.options.store.claimNext({
         kinds: kinds.map(({ kind, leaseSeconds }) => ({ kind, leaseSeconds })),
-        asOf,
+        excludeIds: claimedIds,
       });
       if (!claim) {
         break;
       }
+      claimedIds.push(claim.id);
       result.claimed += 1;
       result[outcomeCounter[await this.run(claim)]] += 1;
     }

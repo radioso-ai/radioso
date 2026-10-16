@@ -98,6 +98,7 @@ import type {
   AbuseControlRepositoryPort,
 } from "../../src/modules/security/contracts/abuseControl.js";
 import type {
+  WorkspaceCredentialProvider,
   WorkspaceProviderCredentialRecord,
   WorkspaceProviderCredentialSummary,
   WorkspaceProviderCredentialsRepositoryPort,
@@ -1775,7 +1776,7 @@ export class InMemoryWorkspaceProviderCredentialsRepository
 
   async findByWorkspaceAndProvider(
     workspaceId: string,
-    provider: LlmProviderName,
+    provider: WorkspaceCredentialProvider,
   ): Promise<WorkspaceProviderCredentialRecord | null> {
     return this.items.get(`${workspaceId}:${provider}`) ?? null;
   }
@@ -1793,7 +1794,7 @@ export class InMemoryWorkspaceProviderCredentialsRepository
 
   async upsert(input: {
     workspaceId: string;
-    provider: LlmProviderName;
+    provider: WorkspaceCredentialProvider;
     ciphertext: string;
   }): Promise<WorkspaceProviderCredentialRecord> {
     const key = `${input.workspaceId}:${input.provider}`;
@@ -1809,7 +1810,7 @@ export class InMemoryWorkspaceProviderCredentialsRepository
     return record;
   }
 
-  async remove(workspaceId: string, provider: LlmProviderName): Promise<boolean> {
+  async remove(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<boolean> {
     return this.items.delete(`${workspaceId}:${provider}`);
   }
 }

@@ -106,7 +106,11 @@ export class VoiceSessionStartService implements VoiceSessionStartPort {
     }
 
     try {
-      const session = await this.dependencies.starters[vendor].startSession({ vendorAgentId: runtime.agentId, credential: reading.credential });
+      const session = await this.dependencies.starters[vendor].startSession({
+        vendorAgentId: runtime.agentId,
+        region: runtime.region,
+        credential: reading.credential,
+      });
       this.record(vendor, "started");
       return {
         kind: "started",

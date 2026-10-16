@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { isLocaleTag } from "../../shared/domain/locale.js";
-import { VOICE_VENDORS } from "../../shared/domain/voiceVendor.js";
+import { DEFAULT_VOICE_VENDOR_REGION, VOICE_VENDOR_REGIONS, VOICE_VENDORS } from "../../shared/domain/voiceVendor.js";
 
 const MAX_LOCALES = 10;
 const MAX_LINES_PER_STYLE = 5;
@@ -25,18 +25,32 @@ const bridgeLinesSchema = z.object({
   check: z.array(voiceLineSchema).max(MAX_LINES_PER_STYLE),
 });
 
+const vendorAgentIdSchema = z.string().trim().min(1).max(MAX_VENDOR_AGENT_ID_LENGTH).regex(/^[A-Za-z0-9_-]+$/, {
+  message: "Must be the vendor's agent id: letters, digits, underscores and hyphens",
+});
+const vendorRegionSchema = z.enum(VOICE_VENDOR_REGIONS);
+
 /**
  * The vendor agent that speaks for this agent: the one a Radioso-started session opens. The id is
  * the vendor's own, opaque to Radioso; it travels in a vendor URL, so it is held to identifier
- * characters. Strict: a key the binding does not name, such as a vendor API key, is refused rather
- * than dropped, so a secret sent here never reads as saved.
+ * characters. `region` is the data residency region of the vendor account the agent lives in,
+ * which decides the vendor host a session start calls.
  */
 const voiceRuntimeSchema = z.object({
   vendor: z.enum(VOICE_VENDORS),
-  agentId: z.string().trim().min(1).max(MAX_VENDOR_AGENT_ID_LENGTH).regex(/^[A-Za-z0-9_-]+$/, {
-    message: "Must be the vendor's agent id: letters, digits, underscores and hyphens",
-  }),
-}).strict();
+  agentId: vendorAgentIdSchema,
+  region: vendorRegionSchema,
+});
+
+/**
+ * The binding as a write sends it: `region` may be left out for the vendor's default region.
+ * Strict: a key the binding does not name, such as a vendor API key, is refused rather than
+ * dropped, so a secret sent here never reads as saved.
+ */
+const voiceRuntimeInputSchema = voiceRuntimeSchema.extend({ region: vendorRegionSchema.optional() }).strict();
+
+/** The binding as stored: one written before `region` existed is in the vendor's default region. */
+const storedVoiceRuntimeSchema = voiceRuntimeSchema.extend({ region: vendorRegionSchema.default(DEFAULT_VOICE_VENDOR_REGION) });
 
 /**
  * How an agent sounds on the voice channel, authored by the operator and read by the voice
@@ -61,7 +75,7 @@ export const agentVoiceSettingsSchema = z.object({
  * input and output (Ray's tool schemas need that); `storedAgentVoiceSettingsSchema` fills it.
  */
 export const agentVoiceSettingsInputSchema = agentVoiceSettingsSchema.extend({
-  runtime: voiceRuntimeSchema.nullable().optional(),
+  runtime: voiceRuntimeInputSchema.nullable().optional(),
 }).strict();
 
 /**
@@ -69,7 +83,7 @@ export const agentVoiceSettingsInputSchema = agentVoiceSettingsSchema.extend({
  * agent. Tolerant of keys it does not name, so a stored row a later version wrote still reads.
  */
 const storedAgentVoiceSettingsSchema = agentVoiceSettingsSchema.extend({
-  runtime: voiceRuntimeSchema.nullable().default(null),
+  runtime: storedVoiceRuntimeSchema.nullable().default(null),
 });
 
 export type AgentVoiceSettings = z.infer<typeof agentVoiceSettingsSchema>;

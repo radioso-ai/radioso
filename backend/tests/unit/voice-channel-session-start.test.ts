@@ -22,7 +22,7 @@ const boundVoice: AgentVoiceSettings = {
   enabled: true,
   bridgeLines: {},
   fallbackLine: {},
-  runtime: { vendor: "elevenlabs", agentId: "agent_42" },
+  runtime: { vendor: "elevenlabs", agentId: "agent_42", region: "eu" },
 };
 
 const serviceWith = (overrides: {
@@ -70,7 +70,7 @@ describe("voice session start", () => {
 
     expect(result).toEqual({ kind: "started", vendor: "elevenlabs", signedUrl, sessionKey, locale: "de-CH", expiresAt });
     expect(read).toHaveBeenCalledWith({ workspaceId, vendor: "elevenlabs" });
-    expect(startSession).toHaveBeenCalledWith({ vendorAgentId: "agent_42", credential: { apiKey } });
+    expect(startSession).toHaveBeenCalledWith({ vendorAgentId: "agent_42", region: "eu", credential: { apiKey } });
     expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "started" }]);
   });
 

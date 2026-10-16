@@ -261,7 +261,7 @@ describeIntegration("AgentRepository (Postgres)", () => {
       enabled: true,
       bridgeLines: { en: { acknowledge: ["Got it."], check: ["One moment."] } },
       fallbackLine: { en: "Sorry, could you ask me again?" },
-      runtime: { vendor: "elevenlabs" as const, agentId: "agent_01jxk2v9qbe8n7r6t5w4" },
+      runtime: { vendor: "elevenlabs" as const, agentId: "agent_01jxk2v9qbe8n7r6t5w4", region: "eu" as const },
     };
     const created = await repository.create(workspaceId, { name: "Voice", voice });
 

@@ -6,3 +6,14 @@
 export const VOICE_VENDORS = ["elevenlabs"] as const;
 
 export type VoiceVendor = (typeof VOICE_VENDORS)[number];
+
+/**
+ * Where a voice vendor account keeps its data. The account's region decides which of the vendor's
+ * hosts serves it; an account in one region is unknown to the others. `us` is the vendor's
+ * default, global region.
+ */
+export const VOICE_VENDOR_REGIONS = ["us", "eu", "in", "sg"] as const;
+
+export type VoiceVendorRegion = (typeof VOICE_VENDOR_REGIONS)[number];
+
+export const DEFAULT_VOICE_VENDOR_REGION: VoiceVendorRegion = "us";

@@ -85,7 +85,7 @@ const storedVoice = {
     it: { acknowledge: [], check: ["Controllo subito per te, ci vorrà solo un momento."] },
   },
   fallbackLine: { en: "Sorry, this is taking much longer than it should, could you ask me again?" },
-  runtime: { vendor: "elevenlabs" as const, agentId: "agent_01jxk2v9qbe8n7r6t5w4" },
+  runtime: { vendor: "elevenlabs" as const, agentId: "agent_01jxk2v9qbe8n7r6t5w4", region: "us" as const },
 };
 const storedMechanics = {
   en: { greeting: ["Hi! How can I help?"], thanks: [], farewell: ["Goodbye!"], acknowledgement: [] },

@@ -1,6 +1,6 @@
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
-import type { VoiceVendor } from "../../shared/domain/voiceVendor.js";
+import type { VoiceVendor, VoiceVendorRegion } from "../../shared/domain/voiceVendor.js";
 
 export type VoiceTransport = "phone" | "web";
 
@@ -106,22 +106,26 @@ export interface VoiceVendorSession {
    * page that asked for it and is never logged or stored.
    */
   signedUrl: string;
-  /** When the URL stops opening sessions, when the vendor states it. */
+  /** When the URL stops opening sessions, computed from the validity the vendor documents. */
   expiresAt?: Date;
 }
 
-/** Opens sessions on one vendor's agents. One adapter per vendor implements it. */
+/**
+ * Opens sessions on one vendor's agents. One adapter per vendor implements it; `region` is the
+ * data residency region of the vendor account, which picks the host the adapter calls.
+ */
 export interface VoiceSessionStarter {
-  startSession(input: { vendorAgentId: string; credential: VoiceVendorCredential }): Promise<VoiceVendorSession>;
+  startSession(input: { vendorAgentId: string; region: VoiceVendorRegion; credential: VoiceVendorCredential }): Promise<VoiceVendorSession>;
 }
 
 /**
  * A vendor call that did not give a session: the vendor answered with an error (`vendorStatus` is
- * its HTTP status), never answered, or answered with something that is not a session.
+ * its HTTP status), could not be reached, did not finish answering in time, or answered with
+ * something that is not a session.
  */
 export class VoiceVendorRequestError extends Error {
   constructor(
-    readonly reason: "rejected" | "unreachable" | "malformed_response",
+    readonly reason: "rejected" | "unreachable" | "timeout" | "malformed_response",
     readonly vendorStatus?: number,
   ) {
     super(vendorStatus === undefined ? `Voice vendor session start failed: ${reason}` : `Voice vendor session start failed: ${reason} (${vendorStatus})`);

@@ -26,10 +26,26 @@ export const isBelowElevenLabsSpokenFloor = (line: string): boolean => {
   return text.length > 0 && Array.from(text).length < ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS
 }
 
+/** The data residency regions a vendor account can be in, from the generated contract. */
+export type VoiceRuntimeRegion = NonNullable<AgentVoiceSettings['runtime']>['region']
+const listEveryRegion = <const Regions extends readonly VoiceRuntimeRegion[]>(
+  regions: Regions & (Exclude<VoiceRuntimeRegion, Regions[number]> extends never ? unknown : never),
+) => regions
+/** In the order the card offers them; `us` is the vendor's default region. */
+export const VOICE_RUNTIME_REGIONS = listEveryRegion(['us', 'eu', 'in', 'sg'])
+
+/**
+ * The agent settings API's bound on a vendor agent id. Mirrors `maxLength` on
+ * `AgentVoiceSettings.runtime.agentId` in the OpenAPI contract; `tests/unit/voice-settings-form.test.ts`
+ * pins the two together.
+ */
+export const VOICE_RUNTIME_AGENT_ID_MAX_LENGTH = 128
+
 /** The vendor agent a Radioso-started voice session opens; a blank `agentId` binds none. */
 export interface VoiceRuntimeForm {
   vendor: VoiceVendorName
   agentId: string
+  region: VoiceRuntimeRegion
 }
 
 /** One language's lines across the `voice` and `mechanicsReplies` blocks. */
@@ -61,7 +77,7 @@ export const voiceSettingsFormFromAgent = (voice: AgentVoiceSettings, mechanicsR
   const locales = [...new Set([...Object.keys(voice.bridgeLines), ...Object.keys(voice.fallbackLine), ...Object.keys(mechanicsReplies)])]
   return {
     enabled: voice.enabled,
-    runtime: voice.runtime ? { ...voice.runtime } : { vendor: voiceVendorNames[0], agentId: '' },
+    runtime: voice.runtime ? { ...voice.runtime } : { vendor: voiceVendorNames[0], agentId: '', region: VOICE_RUNTIME_REGIONS[0] },
     languages: locales.map((locale) => ({
       locale,
       bridgeLines: linesOf(VOICE_BRIDGE_STYLES, voice.bridgeLines[locale]),
@@ -84,7 +100,7 @@ const authoredLinesOf = <Kind extends string>(kinds: readonly Kind[], source: Re
  */
 export const voiceSettingsUpdateFromForm = (form: VoiceSettingsForm): { voice: AgentVoiceSettings; mechanicsReplies: AgentMechanicsReplies } => {
   const agentId = form.runtime.agentId.trim()
-  const runtime = agentId ? { vendor: form.runtime.vendor, agentId } : null
+  const runtime = agentId ? { vendor: form.runtime.vendor, agentId, region: form.runtime.region } : null
   const voice: AgentVoiceSettings = { enabled: form.enabled, bridgeLines: {}, fallbackLine: {}, runtime }
   const mechanicsReplies: AgentMechanicsReplies = {}
   for (const language of form.languages) {

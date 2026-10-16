@@ -73,7 +73,7 @@ import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
   authoredDirectiveInputSchema,
-  expectedAgentFieldValue,
+  changedAgentProposalFields,
   type AgentGreetingSnapshot,
   type AgentInput,
   type AgentRecord,
@@ -1387,17 +1387,8 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     }
     const previous = await this.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!previous) return { outcome: "targetDeleted" };
-    const value = (key: string): unknown => {
-      if (key === "assistantName") return previous.name;
-      if (key === "anonymousChatEnabled") return previous.surfaceSettings.anonymousChat.enabled;
-      if (key === "websiteEmbedEnabled") return previous.surfaceSettings.websiteEmbed.enabled;
-      if (key === "websiteEmbedAllowedOrigins") return previous.surfaceSettings.websiteEmbed.allowedOrigins;
-      if (key === "websiteEmbedLauncherLabel") return previous.surfaceSettings.websiteEmbed.launcherLabel;
-      if (key === "websiteEmbedLauncherPosition") return previous.surfaceSettings.websiteEmbed.launcherPosition;
-      return (previous as unknown as Record<string, unknown>)[key];
-    };
     const changed = "expectedFields" in guard
-      ? guard.expectedFields.filter((field) => JSON.stringify(value(field.key)) !== JSON.stringify(expectedAgentFieldValue(field.key, field.value))).map((field) => field.key)
+      ? changedAgentProposalFields(previous, guard.expectedFields)
       : previous.updatedAt.getTime() === guard.expectedUpdatedAt.getTime() ? [] : ["target"];
     if (changed.length) return { outcome: "changed", fields: changed };
     const lockedInput = guard.normalizeLocked?.(previous) ?? input;

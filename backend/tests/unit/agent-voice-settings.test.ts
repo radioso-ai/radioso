@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   agentInputFieldSchemas,
   agentVoiceSettingsSchema,
+  changedAgentProposalFields,
   defaultAgentVoiceSettings,
-  expectedAgentFieldValue,
   readStoredAgentVoiceSettings,
+  type AgentRecord,
 } from "../../src/modules/agents/public.js";
 
 const authored = {
@@ -107,12 +108,24 @@ describe("agent voice settings", () => {
 
   it("fences a proposal prepared before the runtime binding on the block as stored, so a missing runtime and null compare equal", () => {
     const { runtime: _runtime, ...preparedBefore } = authored;
-    const stored = { ...authored, runtime: null };
+    const agentWith = (voice: unknown) => ({ voice, name: "Help Desk" }) as unknown as AgentRecord;
 
-    expect(JSON.stringify(expectedAgentFieldValue("voice", preparedBefore))).toBe(JSON.stringify(stored));
+    expect(changedAgentProposalFields(agentWith({ ...authored, runtime: null }), [{ key: "voice", value: preparedBefore }])).toEqual([]);
     // A bound runtime is a real difference, and other settings compare as they are.
-    expect(JSON.stringify(expectedAgentFieldValue("voice", preparedBefore))).not.toBe(JSON.stringify(authored));
-    expect(expectedAgentFieldValue("name", "Help Desk")).toBe("Help Desk");
+    expect(changedAgentProposalFields(agentWith(authored), [{ key: "voice", value: preparedBefore }])).toEqual(["voice"]);
+    expect(changedAgentProposalFields(agentWith(authored), [{ key: "name", value: "Help Desk" }])).toEqual([]);
+    expect(changedAgentProposalFields(agentWith(authored), [{ key: "name", value: "Sales" }])).toEqual(["name"]);
+  });
+
+  it("refuses a written block with a key it does not name, and says which", () => {
+    const result = agentInputFieldSchemas.voice.safeParse({ ...authored, apiKey: "xi-secret" });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual([expect.objectContaining({ code: "unrecognized_keys", keys: ["apiKey"] })]);
+  });
+
+  it("still reads a stored block with a key it does not name", () => {
+    expect(readStoredAgentVoiceSettings({ ...authored, laterSetting: true })).toEqual(authored);
   });
 
   it("reads a stored block back as authored, and anything unreadable as voice off", () => {

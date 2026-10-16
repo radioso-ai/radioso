@@ -27,7 +27,6 @@ export {
 export {
   AGENT_CONFIG_FULL_TEXT_FIELD_PATHS,
   agentInputFieldSchemas,
-  expectedAgentFieldValue,
   agentInputThemeSchema,
   agentReviewedSettingsPatchSchema,
   type AgentReviewedSettingsPatch,
@@ -153,3 +152,4 @@ export {
   type NormalizedAuthoredDirectiveInput,
 } from "./authoredDirectives.js";
 export * from "./copilotPrimitiveRegistry.js";
+export { changedAgentProposalFields, storedAgentFieldReaders } from "./proposalFence.js";

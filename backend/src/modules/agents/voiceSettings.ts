@@ -54,15 +54,20 @@ export const agentVoiceSettingsSchema = z.object({
 });
 
 /**
- * What a write accepts: `runtime` may be left out, by a writer that predates the binding, and the
- * block is then bound to no vendor agent. Optional rather than defaulted, so a parse keeps one shape
- * for input and output (Ray's tool schemas need that); `storedAgentVoiceSettingsSchema` fills it.
+ * What a write accepts: the block as served, except that `runtime` may be left out, by a writer
+ * that predates the binding, and the block is then bound to no vendor agent. Strict, like the
+ * runtime binding: a key the block does not name (an API key, a misspelt setting) is refused with
+ * its path rather than dropped. Optional rather than defaulted, so a parse keeps one shape for
+ * input and output (Ray's tool schemas need that); `storedAgentVoiceSettingsSchema` fills it.
  */
 export const agentVoiceSettingsInputSchema = agentVoiceSettingsSchema.extend({
   runtime: voiceRuntimeSchema.nullable().optional(),
-});
+}).strict();
 
-/** A written or stored block as the agent keeps it: a block without `runtime` is bound to no vendor agent. */
+/**
+ * A written or stored block as the agent keeps it: a block without `runtime` is bound to no vendor
+ * agent. Tolerant of keys it does not name, so a stored row a later version wrote still reads.
+ */
 const storedAgentVoiceSettingsSchema = agentVoiceSettingsSchema.extend({
   runtime: voiceRuntimeSchema.nullable().default(null),
 });
@@ -82,16 +87,8 @@ export const readStoredAgentVoiceSettings = (stored: unknown): AgentVoiceSetting
   return parsed.success ? parsed.data : defaultAgentVoiceSettings();
 };
 
-/**
- * Whether a reviewed proposal's expected `voice` value still matches the stored block. A value
- * captured before the block gained `runtime` reads with that key's default, as the stored block
- * does, so a missing `runtime` and `null` are the same value. Any other expected value compares
- * as it is.
- */
-export const expectedAgentVoiceSettingsValue = (expected: unknown): unknown => {
-  const parsed = storedAgentVoiceSettingsSchema.safeParse(expected);
-  return parsed.success ? parsed.data : expected;
+/** Validates a written block as a write must be, then fills its defaults as the agent will store it. */
+export const parseWrittenAgentVoiceSettings = (written: unknown) => {
+  const parsed = agentVoiceSettingsInputSchema.safeParse(written);
+  return parsed.success ? storedAgentVoiceSettingsSchema.safeParse(parsed.data) : parsed;
 };
-
-/** Validates a written block and fills its defaults, as the agent will store it. */
-export const parseWrittenAgentVoiceSettings = (written: unknown) => storedAgentVoiceSettingsSchema.safeParse(written);

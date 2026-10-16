@@ -7,7 +7,7 @@ import { ActionRequestRepository } from "../../src/db/repositories/actionRequest
 import { ActionDispatchSkippedError, type ActionHandler } from "../../src/modules/chat/services/actions/actionDispatcher.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
-import { createActionDispatchTestRuntime } from "../support/actionDispatchTestRuntime.js";
+import { ACTION_DISPATCH_TEST_RETRY_DELAY_MS, createActionDispatchTestRuntime } from "../support/actionDispatchTestRuntime.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
@@ -84,8 +84,8 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
     created.push(named.id);
     const unnamed = await enqueue();
 
-    const first = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }], asOf: new Date() });
-    const second = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }], asOf: new Date() });
+    const first = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
+    const second = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
     const claimed = [first, second];
     const namedRow = claimed.find((claim) => claim?.id === named.id);
     const unnamedRow = claimed.find((claim) => claim?.id === unnamed.id);
@@ -107,7 +107,7 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
     // Claim one row so it moves to in_progress — it must drop out of pendingCount
     // and stop being a candidate for oldestPendingCreatedAt, but still count as
     // in-progress backlog (a stuck lease is exactly what an operator needs to see).
-    const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }], asOf: new Date() });
+    const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
     expect(claim?.id).toBe(first.id);
 
     const snapshot = await repository.getPendingDepthSnapshot();
@@ -169,6 +169,19 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
       expect(await repository.complete(second!)).toBe("deleted");
     });
 
+    it("excludes ids already claimed this call, even once the row is genuinely due by the database's own clock", async () => {
+      const row = await enqueue();
+      const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
+      expect(claim?.id).toBe(row.id);
+      // The lease has expired: by the database's own now(), the row is due again.
+      await database.query(`UPDATE routine_action_requests SET updated_at = now() - interval '10 seconds' WHERE id = $1`, [row.id]);
+
+      expect(
+        await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 1 }], excludeIds: [row.id] }),
+      ).toBeNull();
+      expect(await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 1 }] })).toMatchObject({ id: row.id, attempt: 2 });
+    });
+
     it("complete marks the row dispatched without deleting it (unlike the generic store)", async () => {
       const row = await enqueue();
       const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
@@ -203,7 +216,7 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
 
     it("retry runs the per-attempt hook once the reschedule lands, and never for a superseded claim", async () => {
       await enqueue();
-      const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }], asOf: new Date() });
+      const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
       const onRetried = vi.fn(async () => undefined);
 
       expect(await repository.retry(claim!, { error: "provider_unavailable", delaySeconds: 60 }, onRetried)).toBeInstanceOf(Date);
@@ -281,8 +294,15 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
       });
       created.push(actionId);
 
+      // Each retry's `next_attempt_at` is genuinely in the future by the database's own clock
+      // (see ACTION_DISPATCH_TEST_RETRY_DELAY_MS) — a fake Node timer cannot move it, so this test
+      // waits past it for real before the next claim, rather than racing the schedule.
+      const waitPastRetryDelay = () => new Promise((resolve) => setTimeout(resolve, ACTION_DISPATCH_TEST_RETRY_DELAY_MS + 50));
+
       expect(await dispatchPending(1)).toMatchObject({ claimed: 1, retried: 1 });
+      await waitPastRetryDelay();
       expect(await dispatchPending(1)).toMatchObject({ claimed: 1, retried: 1 });
+      await waitPastRetryDelay();
       expect(await dispatchPending(1)).toMatchObject({ claimed: 1, completed: 1 });
 
       expect(recordFailureOutcome).toHaveBeenCalledTimes(2);

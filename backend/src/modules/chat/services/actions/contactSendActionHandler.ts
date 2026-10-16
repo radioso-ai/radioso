@@ -223,9 +223,9 @@ export class FetchContactWebhookHttpClient extends FetchWebhookHttpClient {}
 
 /**
  * A caught delivery failure's HTTP status, if the error's own message (see
- * `BackgroundJobFailureContext.errorMessage`) ends in one — `ResendEmailDeliveryError`
- * and the webhook client's own errors both format theirs this way. Structural,
- * not content-based: it never echoes the surrounding text, only a 3-digit code.
+ * `BackgroundJobFailureContext.cause`, extracted by `actionDispatchJob.ts`'s `causeMessage`) ends
+ * in one — `ResendEmailDeliveryError` and the webhook client's own errors both format theirs this
+ * way. Structural, not content-based: it never echoes the surrounding text, only a 3-digit code.
  */
 const trailingStatusCode = (message: string): number | undefined => {
   const match = /\b([1-5]\d{2})\D*$/u.exec(message);
@@ -366,8 +366,8 @@ export class ContactSendActionHandler implements ActionHandler {
    * gap that let the outbox drain outage go unnoticed for two months); this closes
    * it without logging the visitor's email, name, or message.
    *
-   * `input.error` is the background-job runtime's `errorMessage` — the underlying error's own
-   * text (see `BackgroundJobFailureContext`) — this handler's own bounded messages today, but it
+   * `input.error` is `actionDispatchJob.ts`'s extraction of the background-job runtime's `cause`
+   * (see `BackgroundJobFailureContext`) — this handler's own bounded messages today, but it
    * flows from an injected {@link ContactNotificationMailer} / {@link ContactWebhookHttpClient},
    * so a host-supplied transport could echo a provider response body, a reply-to address, or a
    * webhook URL with a token in its query string. The error reporter is an external sink, so that

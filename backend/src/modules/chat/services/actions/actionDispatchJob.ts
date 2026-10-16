@@ -7,6 +7,7 @@ import {
   type BackgroundJobHandlerRegistration,
 } from "../../../../shared/background-jobs/index.js";
 import type { BackgroundJobKind } from "../../../../shared/background-jobs/types.js";
+import { stringifyUnknown } from "../../../../shared/text/stringifyUnknown.js";
 import { ActionDispatchSkippedError, type ActionHandler, type ActionHandlerContext } from "./actionDispatcher.js";
 
 const actionDispatchJobPayloadSchema: z.ZodType<ActionDispatchJobPayload> = z.object({
@@ -66,6 +67,18 @@ export interface ActionDispatchJobHandlerOptions {
    */
   job?: BackgroundJobKind<ActionDispatchJobPayload>;
 }
+
+/**
+ * `ActionDispatcher` handed its handlers the real caught-and-stringified error text (never a
+ * generic class-only summary); this reproduces that from the runtime's `cause` — the underlying
+ * error itself, kept out of every store column, log, and the error reporter — so a handler's own
+ * bounded extraction (`contactSendActionHandler`'s trailing HTTP status code) still works. `null`
+ * for a synthetic failure (lease expiry, an unparseable stored payload) with no error to describe.
+ */
+const causeMessage = (cause: unknown): string | null => {
+  if (cause === undefined) return null;
+  return cause instanceof Error ? cause.message : stringifyUnknown(cause);
+};
 
 const toHandlerContext = (
   payload: ActionDispatchJobPayload,
@@ -135,11 +148,8 @@ export const createActionDispatchJobHandler = (
           payload: payload.payload,
           context: toHandlerContext(payload, context.jobId, context.attempt),
           outcome: "retry",
-          // `ActionDispatcher` handed its handlers the real caught-and-stringified error text
-          // (never the generic class-only summary); errorMessage reproduces that so a handler's
-          // own bounded extraction (`contactSendActionHandler`'s trailing HTTP status code) still
-          // works. Falls back to the summary only for a synthetic failure with no real error.
-          error: context.errorMessage ?? context.error,
+          // Falls back to the class-only summary only for a synthetic failure with no real error.
+          error: causeMessage(context.cause) ?? context.error,
         });
       },
       onDeadLetter: async (payload, context) => {
@@ -155,7 +165,7 @@ export const createActionDispatchJobHandler = (
           payload: payload.payload,
           context: toHandlerContext(payload, context.jobId, context.attempt),
           outcome: "failed",
-          error: context.errorMessage ?? context.error,
+          error: causeMessage(context.cause) ?? context.error,
         });
       },
     },

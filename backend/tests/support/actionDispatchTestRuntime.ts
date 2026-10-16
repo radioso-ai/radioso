@@ -10,11 +10,21 @@ import { BackgroundJobRuntime, defineBackgroundJob } from "../../src/shared/back
 import type { Db } from "../../src/shared/infra/kysely/types.js";
 
 /**
+ * `next_attempt_at` is computed by Postgres's own clock, which a fake Node timer cannot move, so a
+ * row scheduled for a retry genuinely is not due until this much real time has passed — the
+ * schedule must be strictly positive, so a test cannot force "due again instantly" the way the
+ * production flat 60 s backoff's old `[0]` test override once did. A suite that drains a retry in
+ * a tight loop and expects it due again must itself wait at least this long between claims; see
+ * `ACTION_DISPATCH_TEST_RETRY_DELAY_MS` below.
+ */
+const TEST_RETRY_DELAY_SECONDS = 0.05;
+
+/** `TEST_RETRY_DELAY_SECONDS` in milliseconds, for a test to `setTimeout` past before reclaiming. */
+export const ACTION_DISPATCH_TEST_RETRY_DELAY_MS = TEST_RETRY_DELAY_SECONDS * 1_000;
+
+/**
  * Drains real `routine_action_requests` rows through the generic runtime (#1509), the same way
  * production does, for tests that previously drove `ActionDispatcher` directly as a convenience.
- * `retryDelaysSeconds: [0]` replaces the production flat 60 s backoff: `next_attempt_at` is
- * computed by Postgres's own clock, which a fake Node timer cannot move, so a suite that drains a
- * retry in a tight loop needs the row due again immediately rather than a minute from now.
  */
 const testActionDispatchJob = (maxAttempts: number) =>
   defineBackgroundJob({
@@ -25,7 +35,7 @@ const testActionDispatchJob = (maxAttempts: number) =>
     leaseSeconds: ACTION_DISPATCH_JOB.policy.leaseSeconds,
     timeoutSeconds: ACTION_DISPATCH_JOB.policy.timeoutSeconds,
     retryBaseDelaySeconds: ACTION_DISPATCH_JOB.policy.retryBaseDelaySeconds,
-    retryDelaysSeconds: [0],
+    retryDelaysSeconds: [TEST_RETRY_DELAY_SECONDS],
   });
 
 export interface ActionDispatchTestRuntime {

@@ -233,8 +233,10 @@ review. The API key is yours to enter in Settings; Ray never asks for it.
 The website embed is a ready-made page for voice calls. When the agent's
 **Voice channel** is on, an ElevenLabs agent is bound under **Runtime**, and
 the workspace holds an ElevenLabs key under **Voice runtime keys**, the embed's
-composer shows a microphone button, **Talk**, beside Send. The embed snippet
-stays the same. The embed learns this from its config, which a browser keeps
+composer shows a microphone button, **Talk**, beside Send. Browsers give a
+microphone only to pages served over https (or from `localhost`), so a page
+served over plain http shows no button. The embed snippet stays the same. The
+embed learns this from its config, which a browser keeps
 for a minute and a CDN in front of the app host for up to five, so the button
 can take that long to appear or disappear after you change one of the three.
 
@@ -253,12 +255,14 @@ When a visitor presses **Talk**:
    answers, with **End call** beside it. The visitor can talk over the agent:
    ElevenLabs stops the reply, and the Inbox marks it as interrupted.
 4. Each thing the visitor says and each reply appears in the panel as it
-   happens, marked **Spoken**. Those lines belong to the open panel; after a
-   reload the panel shows the text chat alone.
+   happens, marked **Spoken**. A reply the visitor talked over is cut to the
+   part ElevenLabs actually spoke. Those lines belong to the open panel; after
+   a reload the panel shows the text chat alone.
 
 The call ends when the visitor selects **End call**, closes the panel, or
 ElevenLabs closes the session; the panel then reads "Call ended" and offers
-**Talk** again. A start that Radioso turns down (any status in the table
+**Talk** again. **End call** while the call is still connecting goes straight
+back to **Talk**; the start it made still counts against the visitor's budget. A start that Radioso turns down (any status in the table
 above) reads "Talking isn't available right now. Try again later." The call
 is its own conversation: the Inbox and Activity list it with the source
 **Voice**, next to the visitor's text chats.

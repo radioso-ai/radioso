@@ -4,6 +4,8 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Env } from "../../src/app/config/env.js";
+import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
+import { VOICE_CALL_READINESS_GAPS } from "../../src/modules/voiceChannel/public.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 const SITE = "https://example.com";
@@ -325,6 +327,12 @@ describe("public voice session start contract", () => {
   });
 
   describe("the dashboard's view of voice readiness", () => {
+    it("serves the readiness gaps the voice domain lists, and no others", () => {
+      const document = createOpenApiDocument() as { components: { schemas: Record<string, { properties: Record<string, { enum?: unknown[] }> }> } };
+
+      expect(document.components.schemas.VoiceCallReadiness.properties.missing.enum).toEqual([...VOICE_CALL_READINESS_GAPS]);
+    });
+
     const readReadiness = async (app: Parameters<typeof request>[0], dashboard: Record<string, string>, agentId: string) =>
       (await request(app).get(`/api/v1/agents/${agentId}`).set(dashboard).expect(200)).body.voiceCallReadiness;
 

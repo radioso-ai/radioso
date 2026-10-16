@@ -238,9 +238,9 @@ choice, and it starts off:
    bound under **Runtime**, and an ElevenLabs key under **Voice runtime
    keys**, as above.
 2. On the agent's **Web chat** page, under **Website widget**, turn on
-   **Offer calls on the website**. The switch turns on only once voice is
-   ready; until then it names the piece still missing. You can turn it off at
-   any time.
+   **Offer calls on the website**. You can turn it on once voice is ready;
+   until then it names the piece still missing. You can turn it off at any
+   time.
 
 The embed's composer then shows a microphone button, **Talk**, beside Send.
 The switch governs only the widget: a page of your own that starts sessions

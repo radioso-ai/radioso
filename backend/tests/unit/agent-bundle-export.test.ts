@@ -13,6 +13,7 @@ import type {
 import type { RoutineDefinition } from "../../src/modules/routines/public.js";
 import { notifyCapability } from "../../src/modules/skills/capabilities/notify.js";
 import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const baseAgent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
@@ -43,7 +44,7 @@ const baseAgent = (): ConversationAgent => ({
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -52,8 +53,7 @@ const baseAgent = (): ConversationAgent => ({
       theme: { brand: "#445566", brandText: "#ffffff", surface: "#ffffff", text: "#111111" },
       copy: {},
       expertOverrides: {},
-      voiceCallsOffered: false,
-    },
+    }),
     extensions: {},
   },
   authoredDirectives: [],

@@ -1,12 +1,11 @@
+import { voiceVendorNames, type VoiceVendorName } from './api-llm-providers'
 import type { VoiceMode } from './voice-session'
 
-/** The voice runtimes the chat panel can open a session on. */
-const VOICE_VENDORS = ['elevenlabs'] as const
-
-export type VoiceVendor = (typeof VOICE_VENDORS)[number]
+/** The voice runtimes the chat panel can open a session on: every vendor the API contract names. */
+export type VoiceVendor = VoiceVendorName
 
 export const isVoiceVendor = (value: unknown): value is VoiceVendor =>
-  typeof value === 'string' && (VOICE_VENDORS as readonly string[]).includes(value)
+  typeof value === 'string' && (voiceVendorNames as readonly string[]).includes(value)
 
 /** One finished line of the call: what the caller said, or the agent's reply. */
 export interface VoiceRuntimeLine {
@@ -64,7 +63,7 @@ const VOICE_RUNTIME_LOADERS: Record<VoiceVendor, () => Promise<VoiceRuntime>> = 
 
 /** Loads every vendor's client: a call learns its vendor from the session start, which comes after. */
 export const loadVoiceRuntimes = async (): Promise<Readonly<Record<VoiceVendor, VoiceRuntime>>> => {
-  const loaded = await Promise.all(VOICE_VENDORS.map(async (vendor) => [vendor, await VOICE_RUNTIME_LOADERS[vendor]()] as const))
+  const loaded = await Promise.all(voiceVendorNames.map(async (vendor) => [vendor, await VOICE_RUNTIME_LOADERS[vendor]()] as const))
   return Object.fromEntries(loaded) as Record<VoiceVendor, VoiceRuntime>
 }
 

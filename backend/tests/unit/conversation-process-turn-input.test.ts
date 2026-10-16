@@ -29,6 +29,7 @@ import type {
   DirectiveSteeringResult,
 } from "../../src/modules/directives/public.js";
 import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const inMemoryDirectiveStateStore = (): DirectiveStateStore => {
   const rows = new Map<string, DirectiveFiringState>();
@@ -107,7 +108,7 @@ const agent = (): AgentRecord => ({
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -121,8 +122,7 @@ const agent = (): AgentRecord => ({
       },
       copy: {},
       expertOverrides: {},
-      voiceCallsOffered: false,
-    },
+    }),
     extensions: {},
   },
   createdAt: new Date("2026-01-01T00:00:00.000Z"),

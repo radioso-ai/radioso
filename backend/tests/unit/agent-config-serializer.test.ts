@@ -13,6 +13,7 @@ import {
 } from "../../src/modules/agents/agentConfig.js";
 import { retrieveSkillConfigSchema, type RetrieveSkillConfig } from "../../src/modules/retrieval/public.js";
 import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const fullyConfiguredAgent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
@@ -79,7 +80,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
       enabled: true,
       token: "raw-anonymous-token",
     },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: true,
       token: "raw-embed-token",
       allowedOrigins: ["https://raw-origin.example.com"],
@@ -99,8 +100,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
       expertOverrides: {
         sales: "Route to sales.",
       },
-      voiceCallsOffered: false,
-    },
+    }),
     extensions: {
       websiteEmbed: {
         enabled: true,

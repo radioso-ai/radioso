@@ -17,6 +17,7 @@ import {
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 // Real-Postgres characterization of AgentRepository. This is the only coverage that
 // exercises the actual SQL (now Kysely) end to end: the agent projection (correlated
@@ -36,7 +37,7 @@ describeIntegration("AgentRepository (Postgres)", () => {
   const sourceA = randomUUID();
   const sourceB = randomUUID();
 
-  const websiteEmbedDefaults = (): WebsiteEmbedSurfaceSettings => ({
+  const websiteEmbedDefaults = (): WebsiteEmbedSurfaceSettings => websiteEmbedFixture({
     enabled: false,
     token: null,
     allowedOrigins: [],
@@ -45,7 +46,6 @@ describeIntegration("AgentRepository (Postgres)", () => {
     theme: defaultAgentEmbedTheme(),
     copy: {},
     expertOverrides: {},
-    voiceCallsOffered: false,
   });
 
   // Seed an agents row directly so the read path parses hand-crafted on-disk JSONB. The

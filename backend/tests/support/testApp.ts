@@ -41,8 +41,8 @@ import {
 } from "../../src/modules/chat/composition.js";
 import { ChatService, type ChatGateway, type ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
 import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
-import { ActionDispatchWorker } from "../../src/modules/chat/services/actions/actionDispatchWorker.js";
 import { BackgroundJobRuntime } from "../../src/shared/background-jobs/index.js";
+import { PeriodicTaskRunner } from "../../src/app/composition/periodicTaskRunner.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import { scopeTag } from "@radioso/conversation-defaults";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
@@ -2127,11 +2127,24 @@ export const createTestDependencies = (overrides: {
       },
     },
   });
-  // The action outbox drain never runs in tests; a no-op dispatcher satisfies the shape.
-  const actionDispatchWorker = new ActionDispatchWorker(
-    { dispatchPending: async () => ({ dispatched: 0, retried: 0, failed: 0 }) },
-    { logger },
-  );
+  // The action outbox drain never runs in tests; a runtime with no handlers claims nothing.
+  const actionDispatchJobRuntime = new BackgroundJobRuntime({
+    store: {
+      claimNext: async () => null,
+      renewLease: async () => false,
+      complete: async () => "superseded",
+      retry: async () => null,
+      deadLetter: async () => false,
+    },
+    handlers: [],
+    logger,
+  });
+  const actionOutboxQueueDepthReporter = new PeriodicTaskRunner({
+    id: "action-outbox-queue-depth-stub",
+    intervalMs: 999_999_999,
+    run: async () => undefined,
+    logger,
+  });
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
   const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const operatorReplyService = new OperatorReplyService({
@@ -2808,7 +2821,9 @@ export const createTestDependencies = (overrides: {
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
     revisionEvalRunService,
-    actionDispatchWorker,
+    actionDispatchJobRuntime,
+    actionOutboxQueueDepthReporter,
+    reportActionOutboxQueueState: async () => undefined,
     // Background jobs never run in tests; a runtime with no handlers claims nothing.
     backgroundJobRuntime: new BackgroundJobRuntime({
       store: {

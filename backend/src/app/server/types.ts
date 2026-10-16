@@ -1,5 +1,4 @@
 import type {
-  ActionDispatchWorker,
   AgentStarterPromptReader,
   AssistantChatService,
   AssistantHistoryService,
@@ -144,6 +143,7 @@ import type { OperatorMcpApplicationService } from "../../modules/operatorCopilo
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRetentionWorker } from "../../modules/operatorCopilot/public.js";
 import type { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
+import type { PeriodicTaskRunner } from "../composition/periodicTaskRunner.js";
 import type { CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
 import type { AgenticCapabilityRunner } from "../../shared/agent-runtime/index.js";
 import type { QualityTurnsService } from "../../modules/quality/composition.js";
@@ -303,9 +303,22 @@ export interface AppDependencies {
   workbenchReplayRunner: WorkbenchReplayRunner;
   /** Operator-only immutable candidate test executions; never mounted on public chat. */
   testExecutionService: TestExecutionService;
-  // Worker-process drain loop for the async conversation-action outbox (spec 070).
-  // Present in every dependency build; only the worker runtime calls start/stop.
-  actionDispatchWorker: ActionDispatchWorker;
+  /**
+   * Runs the async conversation-action outbox (spec 070) through the generic background-job
+   * runtime (#1509): a poll loop in the worker runtime, `/internal/tasks/actions/drain` and
+   * `/recover` in the worker-task runtime. Present in every dependency build; only the worker
+   * runtimes start or drain it.
+   */
+  actionDispatchJobRuntime: BackgroundJobRuntime;
+  /** Reports the outbox's pending/in-progress depth on its own interval, not tied to a drain. */
+  actionOutboxQueueDepthReporter: PeriodicTaskRunner;
+  /**
+   * Emits the same outbox depth/oldest-pending-age signal on demand — best-effort, never throws.
+   * The poll worker's interval (`actionOutboxQueueDepthReporter`) covers the local/dev runtime;
+   * the push worker's task route calls this directly after every pushed drain and sweep, since
+   * Cloud Run only runs that process while a request is in flight and never starts an interval.
+   */
+  reportActionOutboxQueueState: () => Promise<void>;
   /**
    * Runs durable background jobs (`background_jobs`): a poll loop in the worker runtime, the
    * `/internal/tasks/background-jobs/drain` route in the worker-task runtime. Present in every

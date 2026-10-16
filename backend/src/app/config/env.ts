@@ -320,9 +320,9 @@ const envSchema = z.object({
   // Deliberately independent of the WORKER_DISPATCH_DRIVER=cloud-tasks requiredness
   // check below: unlike document/crawl dispatch, action-outbox push is an optional
   // low-latency accelerant, not the only drain path (the interval-loop poller and the
-  // recovery sweep both drain without it). Leaving this unset degrades to
-  // NoopActionDrainDispatcher rather than failing startup, so the backend can deploy
-  // ahead of the Terraform queue/scheduler that provisions it.
+  // recovery sweep both drain without it). Leaving this unset degrades to a no-op wake
+  // rather than failing startup, so the backend can deploy ahead of the Terraform
+  // queue/scheduler that provisions it.
   ACTION_DISPATCH_TASK_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
   // Same optional shape as the action queue: unset, a background job waits for the worker's poll
   // loop or the scheduled sweep instead of being pushed, and startup never fails on it.

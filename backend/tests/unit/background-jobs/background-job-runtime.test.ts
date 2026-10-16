@@ -552,6 +552,59 @@ describe("BackgroundJobRuntime", () => {
       });
       expect(JSON.stringify(errorReporter.report.mock.calls)).not.toContain("SENTINEL");
     });
+
+    it("carries the underlying error itself separately from the stored summary, and undefined for a synthetic failure", async () => {
+      const realErrorCalls: { error: string; cause: unknown }[] = [];
+      const onDeadLetterReal = vi.fn(async (_payload: unknown, context: { error: string; cause: unknown }) => {
+        realErrorCalls.push({ error: context.error, cause: context.cause });
+      });
+      const { queue, runtime } = setup([
+        backgroundJobHandler(REFRESH, async () => {
+          throw new Error("provider said SENTINEL-detail-456");
+        }, { onDeadLetter: onDeadLetterReal }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        await runtime.drain({ maxJobs: 1 });
+        vi.setSystemTime(Date.now() + 3_600_000);
+      }
+      expect(realErrorCalls).toHaveLength(1);
+      expect(realErrorCalls[0].error).toBe("Error");
+      expect(realErrorCalls[0].cause).toBeInstanceOf(Error);
+      expect((realErrorCalls[0].cause as Error).message).toBe("provider said SENTINEL-detail-456");
+
+      const syntheticCalls: { cause: unknown }[] = [];
+      const onDeadLetterSynthetic = vi.fn(async (_payload: unknown, context: { cause: unknown }) => {
+        syntheticCalls.push({ cause: context.cause });
+      });
+      const { runtime: otherRuntime, store } = setup([backgroundJobHandler(REFRESH, async () => {}, { onDeadLetter: onDeadLetterSynthetic })]);
+      await store.insert(backgroundJobRequest(REFRESH, { subjectId: "s2" }, { idempotencyKey: "s2" }));
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        await store.claimNext({ kinds: [{ kind: REFRESH.kind, leaseSeconds: 60 }] });
+        vi.setSystemTime(Date.now() + 61_000);
+      }
+      await otherRuntime.drain({ maxJobs: 1 });
+      // A lease-expired dead-letter has no attempt's own error to report — the hook gets undefined.
+      expect(syntheticCalls).toEqual([{ cause: undefined }]);
+    });
+
+    it("never lets a secret-bearing error reach the store, the logger, or the error reporter", async () => {
+      const secret = "SECRET-token-abc123";
+      const { queue, runtime, store, logger, errorReporter } = setup([
+        backgroundJobHandler(REFRESH, async () => {
+          throw new Error(`webhook POST failed: https://hooks.example.com/x?token=${secret}`);
+        }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        await runtime.drain({ maxJobs: 1 });
+        vi.setSystemTime(Date.now() + 3_600_000);
+      }
+      expect(onlyRow(store).lastError).toBe("Error");
+      const loggedText = JSON.stringify([...logger.debug.mock.calls, ...logger.warn.mock.calls, ...logger.error.mock.calls]);
+      expect(loggedText).not.toContain(secret);
+      expect(JSON.stringify(errorReporter.report.mock.calls)).not.toContain(secret);
+    });
   });
 
   describe("retry backoff schedule", () => {
@@ -793,6 +846,26 @@ describe("BackgroundJobRuntime", () => {
         metadata: expect.objectContaining({ kind: "test.short", hookError: "Error" }),
       });
       expect(JSON.stringify(errorReporter.report.mock.calls)).not.toContain("SENTINEL");
+    });
+
+    it("carries the underlying error itself separately from the stored summary", async () => {
+      const realErrorCalls: { error: string; cause: unknown }[] = [];
+      const onAttemptFailedReal = vi.fn(async (_payload: unknown, context: { error: string; cause: unknown }) => {
+        realErrorCalls.push({ error: context.error, cause: context.cause });
+      });
+      const { queue, runtime } = setup([
+        backgroundJobHandler(REFRESH, async () => {
+          throw new Error("provider said SENTINEL-detail-789");
+        }, { onAttemptFailed: onAttemptFailedReal }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+
+      await runtime.drain({ maxJobs: 1 });
+
+      expect(realErrorCalls).toHaveLength(1);
+      expect(realErrorCalls[0].error).toBe("Error");
+      expect(realErrorCalls[0].cause).toBeInstanceOf(Error);
+      expect((realErrorCalls[0].cause as Error).message).toBe("provider said SENTINEL-detail-789");
     });
   });
 

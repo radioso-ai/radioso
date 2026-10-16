@@ -20,7 +20,7 @@ import type { AppLogger } from "../../../shared/observability/logger.js";
 export const SLACK_POST_ACTION_TYPE = "slack.post";
 const MAX_SLACK_POST_ACTION_TEXT_LENGTH = 200_000;
 
-export const slackPostPayloadSchema = z.object({
+const slackPostPayloadSchema = z.object({
   installationId: z.string().uuid(),
   channelId: z.string().min(1),
   text: z.string().min(1).max(MAX_SLACK_POST_ACTION_TEXT_LENGTH),
@@ -31,7 +31,7 @@ export const slackPostPayloadSchema = z.object({
   updateTs: z.string().min(1).optional(),
 });
 
-export type SlackPostPayload = z.infer<typeof slackPostPayloadSchema>;
+type SlackPostPayload = z.infer<typeof slackPostPayloadSchema>;
 
 export interface SlackPostOutboxPort {
   enqueue(input: {
@@ -68,7 +68,7 @@ export const enqueueSlackPostAction = async (
     idempotencyKey: input.idempotencyKey,
   });
 
-export type SlackPostClientFactory = (
+type SlackPostClientFactory = (
   options: Pick<SlackWebApiClientOptions, "botToken">,
 ) => Pick<SlackWebApiClientInstance, "postMessage"> & Partial<Pick<SlackWebApiClientInstance, "updateMessage">>;
 
@@ -151,6 +151,9 @@ export class SlackPostActionHandler implements ActionHandler {
     outcome: "retry" | "failed";
     error: string;
   }): Promise<void> {
+    // `input.error` is the underlying error's own text (see `BackgroundJobFailureContext.cause`,
+    // extracted by `actionDispatchJob.ts`'s `causeMessage`) — it can carry a Slack API response
+    // body or a signed URL, so only ids and the outcome reach this log, never that text.
     const parsed = slackPostPayloadSchema.safeParse(input.payload);
     this.options.logger?.warn?.({
       event: "slack_post",
@@ -158,7 +161,6 @@ export class SlackPostActionHandler implements ActionHandler {
       installationId: parsed.success ? parsed.data.installationId : undefined,
       kind: parsed.success ? parsed.data.kind : undefined,
       outcome: input.outcome,
-      error: input.error,
     }, "Slack post action failed");
   }
 }

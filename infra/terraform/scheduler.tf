@@ -79,6 +79,8 @@ resource "google_cloud_scheduler_job" "action_dispatch_recovery" {
   name     = "${local.resource_name_prefix}-action-dispatch-recovery"
   region   = var.region
   schedule = local.action_dispatch_recovery_schedule
+  # One drain runs inside a 270 s budget; the worker's request timeout is 300 s.
+  attempt_deadline = "300s"
 
   http_target {
     http_method = "POST"

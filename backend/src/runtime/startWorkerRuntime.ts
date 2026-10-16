@@ -38,8 +38,10 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
   // Drain per-message facet extraction for the topic census. Batch analytics: the poll
   // loop is the whole transport, and it is absent unless an extractor is registered.
   dependencies.facetExtractionBackgroundJobRuntime?.start();
-  // Drain the async conversation-action outbox (spec 070) out of band from the turn.
-  dependencies.actionDispatchWorker.start();
+  // Drain the async conversation-action outbox (spec 070) out of band from the turn, through the
+  // generic background-job runtime (#1509).
+  dependencies.actionDispatchJobRuntime.start();
+  await dependencies.actionOutboxQueueDepthReporter.start();
   // Run durable background jobs (`background_jobs`): conversation summary refresh and any other
   // kind a module registers.
   dependencies.backgroundJobRuntime.start();
@@ -86,7 +88,8 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
         await dependencies.agentBundleImportCleanupWorker.stop();
         await dependencies.emailChannelWorker?.stop();
         await dependencies.backgroundJobRuntime.stop();
-        await dependencies.actionDispatchWorker.stop();
+        await dependencies.actionOutboxQueueDepthReporter.stop();
+        await dependencies.actionDispatchJobRuntime.stop();
         await dependencies.facetExtractionBackgroundJobRuntime?.stop();
         await dependencies.documentJobConsumer?.stop();
         await dependencies.documentProcessingWorker.stop();

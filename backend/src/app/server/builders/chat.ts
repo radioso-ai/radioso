@@ -10,7 +10,8 @@ import {
   ModelConversationEarlyTitleGenerator,
   conversationSummaryRefreshHandler,
 } from "../../../modules/chat/composition.js";
-import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
+import { BackgroundJobRuntime, type BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
+import { PeriodicTaskRunner } from "../../composition/periodicTaskRunner.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ApprovalResumeEffectJournalRepository } from "../../../db/repositories/approvalResumeEffectJournalRepository.js";
 import { ClarificationStateRepository } from "../../../db/repositories/clarificationStateRepository.js";
@@ -42,9 +43,8 @@ import { VisitorRepository, VisitorResolver } from "../../../modules/visitors/co
 import { AuditService } from "../../../modules/audit/composition.js";
 import { ApprovalDecisionService } from "../../../modules/approvals/public.js";
 import {
-  ActionDispatcher,
-  ActionDispatchWorker,
   ActionHandlerRegistry,
+  createActionDispatchJobHandler,
   DrainTriggeringActionOutbox,
   AssistantChatService,
   AssistantHistoryService,
@@ -526,10 +526,10 @@ export const buildChatServices = (input: {
     directiveMatchGatewayFactory,
     logger: input.logger,
   });
-  // Async conversation actions (spec 070). A routine action step enqueues an intent to
-  // the outbox during the turn (`actionOutbox`); the worker drains and routes it to a
-  // registered handler out of band (`actionDispatchWorker`). The two share one repository
-  // so the same table backs the enqueue and the drain.
+  // Async conversation actions (spec 070). A routine action step enqueues an intent to the
+  // outbox during the turn (`actionOutbox`); the worker drains it through the generic
+  // background-job runtime (#1509), routed to a registered handler by `createActionDispatchJobHandler`.
+  // The store and the enqueue share one repository, so the same table backs both.
   const actionOutbox = new ActionRequestRepository(input.database.kysely);
   // The fallback (non-transactional) enqueue path — see `ChatTurnLifecycle`'s
   // `assistantTurnPersistence`-absent branch — also requests a drain once durable.
@@ -556,26 +556,63 @@ export const buildChatServices = (input: {
           : registration.handler,
     })),
   );
-  const actionDispatchWorker = new ActionDispatchWorker(
-    new ActionDispatcher(actionOutbox, actionHandlerRegistry, {}, ({ request }) => {
-      if (request.type === CONTACT_SEND_ACTION_TYPE && request.workspaceId) {
-        input.workspaceInvalidationPublisher.enqueue(
-          request.workspaceId,
-          ["conversation.contact_delivery_changed"],
-        );
-      }
-    }),
-    {
-      logger: input.logger,
-      errorReporter: input.errorReporter,
-      // Outbox depth / oldest-pending-age — the operator-alertable signal for a
-      // stuck outbox (the failure mode this worker exists to catch). Reported on
-      // every drain, not just activity transitions: see the staleness note on
-      // `ActionDispatchWorkerOptions.depthSnapshot`.
-      depthSnapshot: actionOutbox,
-      telemetryService: input.telemetryService,
-    },
-  );
+  const actionDispatchJobRuntime = new BackgroundJobRuntime({
+    store: actionOutbox,
+    handlers: [
+      createActionDispatchJobHandler(actionHandlerRegistry, {
+        onPersistedOutcome: ({ request }) => {
+          if (request.type === CONTACT_SEND_ACTION_TYPE && request.workspaceId) {
+            input.workspaceInvalidationPublisher.enqueue(
+              request.workspaceId,
+              ["conversation.contact_delivery_changed"],
+            );
+          }
+        },
+        logger: input.logger,
+      }),
+    ],
+    wake: actionDrainDispatcher,
+    logger: input.logger,
+    metrics: input.metricsRegistry,
+    errorReporter: input.errorReporter,
+  });
+  // Outbox depth / oldest-pending-age — the operator-alertable signal for a stuck outbox.
+  // Shared by the poll worker's own interval (below, `ActionDispatchWorker`'s old 5 s carried
+  // over unchanged) and the push worker's task route (`actionDispatchWorkerTaskRoutes.ts`),
+  // which has no interval of its own — Cloud Run's push worker only runs while a request is in
+  // flight, so without this call after every pushed drain and sweep, production never emits
+  // this signal at all. Best-effort and self-contained: never throws, so a reporting failure
+  // never fails the drain or sweep request it rides on.
+  const reportActionOutboxQueueState = async (): Promise<void> => {
+    try {
+      const snapshot = await actionOutbox.getPendingDepthSnapshot();
+      const oldestPendingAgeMs = snapshot.oldestPendingCreatedAt
+        ? Math.max(0, Date.now() - snapshot.oldestPendingCreatedAt.getTime())
+        : 0;
+      await input.telemetryService.emit({
+        eventType: "action.dispatch.queue_state",
+        metrics: {
+          pendingCount: snapshot.pendingCount,
+          inProgressCount: snapshot.inProgressCount,
+          oldestPendingAgeMs,
+        },
+      });
+    } catch (error) {
+      input.logger.error(
+        { err: error instanceof Error ? error.message : String(error) },
+        "Action dispatch queue-depth reporting failed",
+      );
+    }
+  };
+  // Reported on its own interval in the poll worker, not tied to a drain: unlike an
+  // edge-triggered log, a permanently stuck backlog never produces another claim to report on,
+  // so a stale gauge would hide it.
+  const actionOutboxQueueDepthReporter = new PeriodicTaskRunner({
+    id: "action-outbox-queue-depth",
+    intervalMs: 5_000,
+    logger: input.logger,
+    run: reportActionOutboxQueueState,
+  });
 // Routine machinery (spec 070 / #520). The owning routines module loads the
   // per-turn catalog, applies capability gates, and assembles the runtime ports.
   const publishedRoutineSource = input.composition.publishedRoutineRegistrationSource ??
@@ -831,7 +868,7 @@ export const buildChatServices = (input: {
     conversationEngine,
     turnAssemblyFactory: chatTurnAssemblyFactory,
     // Turn-emitted action intents land here, persisted to the outbox and
-    // dispatched out of band by `actionDispatchWorker` in the worker process. Only
+    // dispatched out of band by the action dispatch job runtime in the worker process. Only
     // exercised by the `assistantTurnPersistence`-absent fallback path (tests /
     // non-DB hosts) — production writes actions through `assistantTurnPersistence`
     // below instead, transactionally with the rest of the turn.
@@ -1020,7 +1057,9 @@ export const buildChatServices = (input: {
     workbenchReplayRunner,
     contactHistoryProvider,
     retrievalAnswerService,
-    actionDispatchWorker,
+    actionDispatchJobRuntime,
+    actionOutboxQueueDepthReporter,
+    reportActionOutboxQueueState,
     // The chat-owned kinds the worker's background job runtime runs.
     backgroundJobHandlers: [conversationSummaryRefreshHandler(conversationSummaryService)],
     // For producers outside the turn that write the outbox in their own transaction (a

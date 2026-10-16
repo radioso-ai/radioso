@@ -5,8 +5,11 @@ import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 import { buildContactDeliveryResolver } from "../../../src/app/composition/contactDelivery.js";
 import { ActionRequestRepository } from "../../../src/db/repositories/actionRequestRepository.js";
 import { EmailWebhookOperatorNotificationSink as EmailWebhookOperatorNotificationSinkBase } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
-import { ActionDispatcher, ActionHandlerRegistry } from "../../../src/modules/chat/services/actions/actionDispatcher.js";
 import { RoutineEndingNotifyActionHandler } from "../../../src/modules/chat/services/actions/routineEndingNotifyActionHandler.js";
+import {
+  createActionDispatchTestRuntime,
+  type ActionDispatchTestRuntime,
+} from "../../support/actionDispatchTestRuntime.js";
 import { buildHandoffNotifyAction } from "../../../src/modules/chat/services/handoffOwnership.js";
 import { ROUTINE_ENDING_NOTICE_ACTIONS } from "../../../src/modules/chat/services/operatorNoticeAction.js";
 import { HANDOFF_NOTIFY_ACTION_TYPE } from "../../../src/modules/chat/services/routines/contactRoutine.js";
@@ -97,7 +100,7 @@ describeIntegration("handoff notify delivery through the action outbox (Postgres
     return { actionId, conversationId };
   };
 
-  const dispatcherFor = (mailer: ContactNotificationMailer, maxAttempts = 5): ActionDispatcher => {
+  const dispatcherFor = (mailer: ContactNotificationMailer, maxAttempts = 5): ActionDispatchTestRuntime => {
     const handler = new RoutineEndingNotifyActionHandler({
       ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff,
       dispatcher: new OperatorNotificationDispatcher([
@@ -107,10 +110,10 @@ describeIntegration("handoff notify delivery through the action outbox (Postgres
         resolve: async () => ({ agentId, agentName: "Handoff agent", routineName: null }),
       },
     });
-    return new ActionDispatcher(
-      outbox,
-      new ActionHandlerRegistry([{ type: HANDOFF_NOTIFY_ACTION_TYPE, handler }]),
-      { maxAttempts, retryBackoffSeconds: 0 },
+    return createActionDispatchTestRuntime(
+      database.kysely,
+      [{ type: HANDOFF_NOTIFY_ACTION_TYPE, handler }],
+      { maxAttempts },
     );
   };
 
@@ -124,7 +127,7 @@ describeIntegration("handoff notify delivery through the action outbox (Postgres
    * other suite in the run, and earlier suites leave their own pending rows behind, so a single
    * batch can fill up before it reaches the row this test enqueued.
    */
-  const dispatchUntilSettled = async (dispatcher: ActionDispatcher, actionId: string): Promise<void> => {
+  const dispatchUntilSettled = async (dispatcher: ActionDispatchTestRuntime, actionId: string): Promise<void> => {
     for (let round = 0; round < 50; round += 1) {
       await dispatcher.dispatchPending();
       const outcome = await actionOutcome(actionId);
@@ -159,9 +162,12 @@ describeIntegration("handoff notify delivery through the action outbox (Postgres
       },
     }, 1), actionId);
 
+    // The generic runtime's dead-letter hook stores only the error's class, never its message
+    // (which can carry provider or recipient detail) — see `errorSummary` in
+    // `backgroundJobRuntime.ts`. `ActionDispatcher` used to store the free-text message verbatim.
     await expect(actionOutcome(actionId)).resolves.toEqual({
       status: "failed",
-      last_error: "Operator notification delivery failed",
+      last_error: "AggregateError",
     });
   });
 

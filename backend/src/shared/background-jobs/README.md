@@ -58,6 +58,41 @@ Implementations live outside it, and application composition
   onto this runtime without a data migration, but it cannot express every
   access pattern the queue it replaces had.
 
+The action outbox (#1509) runs on this runtime too, over its own table:
+`backend/src/db/repositories/actionRequestRepository.ts` implements
+`BackgroundJobStore` over `routine_action_requests`, with no schema change —
+the fencing token is the row's own `attempts`, and the lease is the staleness
+of `updated_at`. One job kind, `chat.action_dispatch`, carries every action
+`type` (the real routing value travels inside the job's payload, since the
+table has no `kind` column); `backend/src/modules/chat/services/actions/
+actionDispatchJob.ts`'s `createActionDispatchJobHandler` resolves it against
+the existing `ActionHandlerRegistry` and reproduces the outbox's own retry
+contract through the port growth above: a growing `retryDelaysSeconds`
+(`[60, 120, 300, 600]`, about 18 minutes across 4 retries — this runtime
+wakes a retry at its own `availableAt`, so a flat 60 s schedule would
+exhaust all 5 attempts in about 4 minutes instead of riding out a longer
+outage the way the old poll-driven worker's effective window did),
+`onAttemptFailed`/`onDeadLetter` for the handler's two
+`recordFailureOutcome` outcomes, and a handler-returned `skipped` result for
+a transport that deliberately delivers nothing. `ActionHandler`
+implementations did not change.
+
+A domain store built on this substrate inherits two edge cases worth naming
+rather than discovering in an incident:
+
+- A job whose last attempt's lease expired (a crashed or stalled worker) is
+  dead-lettered on its next claim without running again — `onDeadLetter` still
+  fires. For the action outbox this means `recordFailureOutcome("failed")` can
+  be recorded for an action whose handler may have already sent it: the crash
+  that lost the lease could have happened after the real delivery, not before.
+- `onAttemptFailed`/`onDeadLetter` run inside the store's own retry or
+  dead-letter write-back, while a handler's `recordFailureOutcome` (and the
+  handler's own `handle`) typically use their own separate pool connections.
+  Under mass failure, a hook's connection can hit the pool's own timeout and
+  be dropped — the reschedule or park still commits (the hook failing rolls
+  back only the hook's own writes, never the outcome), but the hook's side
+  effect (an alert, a cache invalidation) is silently lost that one time.
+
 ## Semantics
 
 - **Duplicate keys, per kind.** Every kind declares what an enqueue does when a
@@ -126,7 +161,16 @@ Implementations live outside it, and application composition
   `AppError [provider_unavailable]`. Never the message or stack, which can
   carry provider responses, conversation text, or credentials. The error
   reporter gets the same shape (kind, attempt, job id, that summary) and never
-  the error itself.
+  the error itself. `onAttemptFailed` and `onDeadLetter` additionally get
+  `cause`: the underlying error itself (`undefined` for a synthetic failure
+  such as a lease that expired with no run to blame). Unlike `error`, the
+  substrate never logs, stores, or reports `cause` or anything derived from
+  it — it exists only so a handler's hook can make its own bounded,
+  structural extraction (a trailing HTTP status code, say) from an error
+  that may itself carry a secret in its message, the same trust a handler's
+  own `run` already has for the errors it throws. A hook must treat `cause`
+  with that same care: never log, store, or report it or its message
+  verbatim.
 - **Dead letters.** After `maxAttempts` runs, a failure that cannot be retried,
   a payload that no longer parses, or attempts used up by crashed workers, the
   job is parked. The same write drops its payload: a dead letter keeps its kind,

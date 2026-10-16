@@ -6,6 +6,7 @@ import {
   defineBackgroundJob,
   type BackgroundJobHandlerRegistration,
 } from "../../../../shared/background-jobs/index.js";
+import type { BackgroundJobKind } from "../../../../shared/background-jobs/types.js";
 import { ActionDispatchSkippedError, type ActionHandler, type ActionHandlerContext } from "./actionDispatcher.js";
 
 const actionDispatchJobPayloadSchema: z.ZodType<ActionDispatchJobPayload> = z.object({
@@ -57,6 +58,13 @@ export type ActionDispatchPersistedOutcome = "claimed" | "dispatched" | "skipped
 
 export interface ActionDispatchJobHandlerOptions {
   onPersistedOutcome?: (input: { request: ActionDispatchJobPayload; outcome: ActionDispatchPersistedOutcome }) => void;
+  /**
+   * Overrides `ACTION_DISPATCH_JOB` — for tests only, so a suite that drains retries in a tight
+   * loop against real Postgres (where a fake clock cannot move the database's own `now()`) can use
+   * a near-zero `retryDelaysSeconds` instead of the production flat 60 s. Production composition
+   * never sets this.
+   */
+  job?: BackgroundJobKind<ActionDispatchJobPayload>;
 }
 
 const toHandlerContext = (
@@ -92,7 +100,7 @@ export const createActionDispatchJobHandler = (
     options.onPersistedOutcome?.({ request, outcome });
   };
   return backgroundJobHandler(
-    ACTION_DISPATCH_JOB,
+    options.job ?? ACTION_DISPATCH_JOB,
     async (payload, context) => {
       observe(payload, "claimed");
       const handler = registry.resolve(payload.type);

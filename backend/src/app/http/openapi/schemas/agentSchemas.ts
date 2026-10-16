@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
-import { publicVoiceSessionStartSchema } from "../../routes/publicVoiceSessionRoute.js";
+import { publicChatSessionSchema, publicVoiceSessionStartSchema } from "../../routes/publicChatRouteSchemas.js";
 import { createRevisionCandidateBodySchema, publishRevisionBodySchema } from "../../routes/agentRevisionRequestSchemas.js";
 import {
   agentChannelChatSchema,

@@ -160,6 +160,52 @@ describe("VoiceTurnService", () => {
     expect(sessions.bind).not.toHaveBeenCalled();
   });
 
+  it("joins the website visitor who started the session on its first turn, and reads the start no more once bound", async () => {
+    const visitor = { publicSessionId: "77777777-7777-4777-8777-777777777777", visitorKey: "88888888-8888-4888-8888-888888888888" };
+    const starts = { findStartedVisitor: vi.fn().mockResolvedValue(visitor) };
+    const firstChat = fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "Hi." }, done()]);
+    const first = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(null), chat: firstChat, starts, logger: fakeLogger() });
+
+    await collect(first.runTurn(input(), new AbortController().signal));
+
+    expect(starts.findStartedVisitor).toHaveBeenCalledWith(input().session);
+    expect(firstChat.requests[0]).toMatchObject({ visitorKey: visitor.visitorKey });
+    expect(firstChat.requests[0]).not.toHaveProperty("conversationId");
+
+    const laterChat = fakeChat([{ type: "chunk", text: "Yes." }, done()]);
+    const later = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat: laterChat, starts, logger: fakeLogger() });
+    await collect(later.runTurn(input(), new AbortController().signal));
+
+    expect(starts.findStartedVisitor).toHaveBeenCalledTimes(1);
+    expect(laterChat.requests[0]).not.toHaveProperty("visitorKey");
+  });
+
+  it("groups a started session's visitor by the public session when the page sent no visitor key, as the embed's chat does", async () => {
+    const starts = { findStartedVisitor: vi.fn().mockResolvedValue({ publicSessionId: "77777777-7777-4777-8777-777777777777", visitorKey: null }) };
+    const chat = fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "Hi." }, done()]);
+    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(null), chat, starts, logger: fakeLogger() });
+
+    await collect(service.runTurn(input(), new AbortController().signal));
+
+    expect(chat.requests[0]).toMatchObject({ visitorKey: "77777777-7777-4777-8777-777777777777" });
+  });
+
+  it("runs a first turn whose page minted its own key, or whose start cannot be read, with no visitor", async () => {
+    const unread = { findStartedVisitor: vi.fn().mockRejectedValue(new Error("connection terminated")) };
+    const logger = fakeLogger();
+    const chat = fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "Hi." }, done()]);
+    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(null), chat, starts: unread, logger });
+
+    const events = await collect(service.runTurn(input(), new AbortController().signal));
+
+    expect(events.at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+    expect(chat.requests[0]).not.toHaveProperty("visitorKey");
+    expect(logger.warn).toHaveBeenCalledWith(
+      { agentId, vendor: "elevenlabs", errorClass: "Error" },
+      "Voice session start could not be read; the turn runs without its visitor",
+    );
+  });
+
   it("speaks a reply whose citation markers leaked without them, even split across chunks", async () => {
     const chat = fakeChat([
       { type: "conversation", conversationId },

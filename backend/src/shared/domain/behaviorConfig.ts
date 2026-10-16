@@ -337,6 +337,11 @@ export const VOICE_BEHAVIOR = {
   // this window the channel speaks the stored answer again instead of running
   // and storing a second turn; past it, an identical utterance is a new question.
   replayWindowMs: 30_000,
+  // A session Radioso starts for a page records the visitor who asked for it, so the session's first
+  // turn joins that visitor. The record waits this long for the first turn: the page opens the
+  // session as soon as it has it, and an ElevenLabs signed URL stops opening sessions after 15
+  // minutes anyway.
+  sessionStartTtlMs: 15 * 60_000,
 } as const;
 
 export const DOCUMENT_BEHAVIOR = {

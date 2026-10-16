@@ -49,7 +49,13 @@ import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRu
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
-import { VoiceTurnService } from "../../src/modules/voiceChannel/public.js";
+import {
+  VoiceTurnService,
+  type VoiceSessionStartLookup,
+  type VoiceSessionStartRegistry,
+  type VoiceSessionVisitor,
+} from "../../src/modules/voiceChannel/public.js";
+import type { VoiceSessionStore } from "../../src/modules/voiceChannel/services/voiceTurnService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import {
   AgentRevisionRuntimeResolver,
@@ -413,6 +419,10 @@ export const createTestEnv = (): Env => ({
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS: 120,
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600,
+  PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS: 3,
+  PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS: 600_000,
+  PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 30,
+  PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS: 60_000,
   AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
   AGENT_CHANNEL_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 300,
   AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS: 30,
@@ -471,6 +481,7 @@ interface TestRepositories {
   documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
   conversationRepository: InMemoryConversationRepository;
   visitorRepository: InMemoryVisitorProfileRepository;
+  workspaceProviderCredentialsRepository: InMemoryWorkspaceProviderCredentialsRepository;
   conversationOwnershipRepository: InMemoryConversationOwnershipRepository;
   conversationActivity: InMemoryConversationActivityStore;
   actionOutbox: InMemoryActionOutbox;
@@ -817,6 +828,32 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
     return `${variableId}:${scope.type}:${scope.id}`;
   }
 }
+
+/** `voice_sessions` in memory: session bindings, and started sessions waiting for their first turn. */
+const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartRegistry & VoiceSessionStartLookup & {
+  readonly started: ReadonlyMap<string, { visitor: VoiceSessionVisitor; expiresAt: Date }>;
+} => {
+  const bound = new Map<string, string>();
+  const started = new Map<string, { visitor: VoiceSessionVisitor; expiresAt: Date }>();
+  const keyOf = (session: { workspaceId: string; agentId: string; vendor: string; sessionKey: string }) =>
+    JSON.stringify([session.workspaceId, session.agentId, session.vendor, session.sessionKey]);
+  return {
+    started,
+    findConversationId: async (session) => bound.get(keyOf(session)) ?? null,
+    bind: async (session, conversationId) => {
+      if (!bound.has(keyOf(session))) bound.set(keyOf(session), conversationId);
+      return bound.get(keyOf(session)) ?? conversationId;
+    },
+    register: async ({ session, visitor, expiresAt }) => {
+      if (!started.has(keyOf(session))) started.set(keyOf(session), { visitor, expiresAt });
+    },
+    findStartedVisitor: async (session) => {
+      const start = started.get(keyOf(session));
+      if (!start || bound.has(keyOf(session)) || start.expiresAt.getTime() <= Date.now()) return null;
+      return start.visitor;
+    },
+  };
+};
 
 export const createTestDependencies = (overrides: {
   chatGateway?: ChatGateway;
@@ -1401,8 +1438,10 @@ export const createTestDependencies = (overrides: {
   const abuseControlService = new AbuseControlService(
     overrides.abuseControlRepository ?? new InMemoryAbuseControlRepository(),
   );
+  const voiceSessions = createInMemoryVoiceSessions();
+  const workspaceProviderCredentialsRepository = new InMemoryWorkspaceProviderCredentialsRepository();
   const workspaceProviderCredentialsService = new WorkspaceProviderCredentialsService(
-    new InMemoryWorkspaceProviderCredentialsRepository(),
+    workspaceProviderCredentialsRepository,
     auditService,
     { key: env.CONNECTOR_ENCRYPTION_KEY },
   );
@@ -2834,18 +2873,8 @@ export const createTestDependencies = (overrides: {
     chatHistoryService,
     assistantChatService,
     voiceTurns: new VoiceTurnService({
-      sessions: (() => {
-        const bound = new Map<string, string>();
-        const keyOf = (session: { agentId: string; vendor: string; sessionKey: string }) =>
-          JSON.stringify([session.agentId, session.vendor, session.sessionKey]);
-        return {
-          findConversationId: async (session) => bound.get(keyOf(session)) ?? null,
-          bind: async (session, conversationId) => {
-            if (!bound.has(keyOf(session))) bound.set(keyOf(session), conversationId);
-            return bound.get(keyOf(session)) ?? conversationId;
-          },
-        };
-      })(),
+      sessions: voiceSessions,
+      starts: voiceSessions,
       chat: { streamTurn: (request) => assistantChatService.streamAnswer({ ...request, stream: true }) },
       agents: {
         findVoiceProfile: async ({ workspaceId, agentId }) => {
@@ -2860,6 +2889,7 @@ export const createTestDependencies = (overrides: {
     }),
     voiceSessionStarts: createVoiceSessionStartComposition({
       agentRepository,
+      starts: voiceSessions,
       credentials: workspaceProviderCredentialsService,
       fetch: overrides.voiceVendorFetch ?? (async () => {
         throw new TypeError("Voice vendor calls are disabled in tests");
@@ -2952,6 +2982,7 @@ export const createTestDependencies = (overrides: {
       routineDefinitionRepository,
       machineAccessRepository,
       workspaceRepository,
+      workspaceProviderCredentialsRepository,
     },
   };
 };

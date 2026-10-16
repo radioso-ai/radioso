@@ -86,14 +86,25 @@ export interface VoiceVendorCredential {
   apiKey: string;
 }
 
+/** `unreadable`: a key is stored but cannot be decrypted, so the workspace must enter it again. */
+export type VoiceVendorCredentialReading =
+  | { kind: "present"; credential: VoiceVendorCredential }
+  | { kind: "missing" }
+  | { kind: "unreadable" };
+
 export interface VoiceVendorCredentialReader {
-  /** Null when the workspace holds no key for the vendor; throws when one is stored but cannot be read. */
-  read(input: { workspaceId: string; vendor: VoiceVendor }): Promise<VoiceVendorCredential | null>;
+  /** Rejects only when the credential store cannot be read at all. */
+  read(input: { workspaceId: string; vendor: VoiceVendor }): Promise<VoiceVendorCredentialReading>;
 }
 
 /** What a vendor hands back for a page to open a session on its agent. */
 export interface VoiceVendorSession {
-  /** The vendor's single-use URL for opening the session. A bearer: never logged. */
+  /**
+   * The vendor's URL for opening sessions on its agent until `expiresAt`. Whoever holds it can open
+   * a session on the workspace's vendor account until then (an ElevenLabs signed URL is valid for
+   * 15 minutes and is not limited to one session), so it is a bearer capability: it goes to the
+   * page that asked for it and is never logged or stored.
+   */
   signedUrl: string;
   /** When the URL stops opening sessions, when the vendor states it. */
   expiresAt?: Date;
@@ -119,19 +130,39 @@ export class VoiceVendorRequestError extends Error {
 }
 
 /**
+ * The page's visitor who asked for a session: the website embed's public session and the visitor
+ * key it carries. A session's first turn joins this visitor. Correlation only: holding a session
+ * key grants nothing.
+ */
+export interface VoiceSessionVisitor {
+  publicSessionId: string;
+  visitorKey: string | null;
+}
+
+/** Where a started session waits for its first turn. */
+export interface VoiceSessionStartRegistry {
+  register(start: { session: VoiceSessionRef; visitor: VoiceSessionVisitor; expiresAt: Date }): Promise<void>;
+}
+
+/** What a session's first turn reads of its start. */
+export interface VoiceSessionStartLookup {
+  /** The visitor who started the session, while the start is unexpired and no turn has bound the session. */
+  findStartedVisitor(session: VoiceSessionRef): Promise<VoiceSessionVisitor | null>;
+}
+
+/**
  * How a session start ended. `started` carries what the page needs to open the session: the
  * vendor's URL, the session key the voice runtime sends back on every turn, and the caller's
  * language. `unavailable`: the agent takes no voice sessions (it is gone, voice is off, or no vendor
- * agent is bound). The two credential kinds and `vendor_failed` name the bound vendor.
+ * agent is bound). `failed`: the agent takes them, and this one could not be started; why is the
+ * service's to log and count, never the visitor's to read.
  */
 export type VoiceSessionStartResult =
   | { kind: "started"; vendor: VoiceVendor; signedUrl: string; sessionKey: string; locale: string; expiresAt?: Date }
   | { kind: "unavailable" }
-  | { kind: "credential_missing"; vendor: VoiceVendor }
-  | { kind: "credential_unreadable"; vendor: VoiceVendor }
-  | { kind: "vendor_failed"; vendor: VoiceVendor };
+  | { kind: "failed" };
 
 export interface VoiceSessionStartPort {
-  /** Starts a voice session for one agent. `locale` is the caller's language tag, when the page names one. */
-  start(input: { workspaceId: string; agentId: string; locale?: string }): Promise<VoiceSessionStartResult>;
+  /** Starts a voice session for one agent and visitor. `locale` is the caller's language tag, when the page names one. */
+  start(input: { workspaceId: string; agentId: string; visitor: VoiceSessionVisitor; locale?: string }): Promise<VoiceSessionStartResult>;
 }

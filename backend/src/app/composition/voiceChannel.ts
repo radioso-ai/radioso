@@ -8,6 +8,7 @@ import {
   createElevenLabsSessionStarter,
   type VoiceChatTurnRequest,
   type VoiceSessionStartPort,
+  type VoiceSessionStartRegistry,
   type VoiceTurnNotes,
   type VoiceTurnPort,
 } from "../../modules/voiceChannel/public.js";
@@ -18,6 +19,7 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { VoiceVendor } from "../../shared/domain/voiceVendor.js";
+import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
 
 type AgentVoiceProfileRepository = {
   findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<Pick<AgentRecord, "voice" | "assistantDefaultLocale"> | null>;
@@ -81,6 +83,7 @@ export const createVoiceChannelComposition = (deps: {
 }): VoiceTurnPort =>
   new VoiceTurnService({
     sessions: new VoiceSessionRepository(deps.db),
+    starts: new VoiceSessionRepository(deps.db),
     chat: { streamTurn: (request) => deps.assistantChatService.streamAnswer({ ...request, stream: true }) },
     agents: voiceProfileSource(deps.agentRepository),
     // A conversation's routine state is keyed by the conversation id.
@@ -91,14 +94,21 @@ export const createVoiceChannelComposition = (deps: {
     logger: deps.logger,
   });
 
+/** A stored key the store cannot decrypt, as opposed to a store that cannot be read at all. */
+const isUnreadableCredential = (error: unknown): boolean =>
+  error instanceof ProviderConfigurationError
+  && typeof error.details === "object" && error.details !== null
+  && (error.details as { kind?: unknown }).kind === "credential_unreadable";
+
 /**
  * Starts voice sessions on the vendor agent each Radioso agent is bound to: the ElevenLabs session
- * starter over `fetch`, and the workspace's vendor key from the workspace credential store. A
- * vendor key is always the workspace's own; there is no deployment fallback, so a workspace without
- * one gets no session.
+ * starter over `fetch`, the workspace's vendor key from the workspace credential store, and a
+ * registry of started sessions (`VoiceSessionRepository` in production). A vendor key is always the workspace's own; there is no
+ * deployment fallback, so a workspace without one gets no session.
  */
 export const createVoiceSessionStartComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
+  starts: VoiceSessionStartRegistry;
   credentials: { getApiKey(workspaceId: string, provider: VoiceVendor): Promise<string | undefined> };
   fetch: typeof globalThis.fetch;
   metricsRegistry: MetricsRegistry | null;
@@ -108,11 +118,17 @@ export const createVoiceSessionStartComposition = (deps: {
     agents: voiceProfileSource(deps.agentRepository),
     credentials: {
       read: async ({ workspaceId, vendor }) => {
-        const apiKey = await deps.credentials.getApiKey(workspaceId, vendor);
-        return apiKey ? { apiKey } : null;
+        try {
+          const apiKey = await deps.credentials.getApiKey(workspaceId, vendor);
+          return apiKey ? { kind: "present", credential: { apiKey } } : { kind: "missing" };
+        } catch (error) {
+          if (isUnreadableCredential(error)) return { kind: "unreadable" };
+          throw error;
+        }
       },
     },
     starters: { elevenlabs: createElevenLabsSessionStarter({ fetch: deps.fetch }) },
+    starts: deps.starts,
     newSessionKey: randomUUID,
     metrics: deps.metricsRegistry,
     logger: deps.logger,

@@ -7,6 +7,7 @@ import {
   VoiceTurnIncompleteError,
   type VoiceChannelContext,
   type VoiceSessionRef,
+  type VoiceSessionStartLookup,
   type VoiceTurnEvent,
   type VoiceTurnInput,
   type VoiceTurnOutcome,
@@ -61,6 +62,11 @@ export interface VoiceChatTurnRequest {
    * before its reply starts replaces it, so the conversation keeps no user message for it.
    */
   supersession: Extract<ConversationTurnSupersession, "latest_input_wins">;
+  /**
+   * On a session's first turn, when Radioso started the session for a website visitor: that
+   * visitor's grouping key, so the new conversation joins the visitor the embed's own chat does.
+   */
+  visitorKey?: string;
   signal: AbortSignal;
 }
 
@@ -130,6 +136,8 @@ interface VoiceTurnServiceDependencies {
   logger: Pick<AppLogger, "info" | "warn">;
   metrics?: VoiceTurnMetricsSink | null;
   notes?: VoiceTurnNotes;
+  /** The visitor a Radioso-started session was started for; without it, first turns join no visitor. */
+  starts?: VoiceSessionStartLookup;
   /** Overrides `VOICE_BEHAVIOR`; tests only. */
   timing?: VoiceTurnTiming;
   now?: () => number;
@@ -213,7 +221,7 @@ interface FirstTurn {
 /** What a turn starts from: the session's conversation, or the claim to start one. */
 type SessionClaim =
   | { conversationId: string }
-  | { conversationId: null; firstTurn: FirstTurn };
+  | { conversationId: null; firstTurn: FirstTurn; visitorKey: string | null };
 
 const createFirstTurn = (): FirstTurn => {
   let settle!: () => void;
@@ -309,7 +317,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       if (sessionClaim.conversationId) {
         yield { type: "conversation", conversationId: sessionClaim.conversationId };
       }
-      const reply = this.replyEvents(input, sessionClaim.conversationId, firstTurn, record, signal, sessionKey);
+      const reply = this.replyEvents(input, sessionClaim, record, signal, sessionKey);
       yield* this.delivered(policy ? applyVoiceTurnPolicy(reply, policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
     } catch (error) {
       record.result = "failed";
@@ -492,8 +500,7 @@ export class VoiceTurnService implements VoiceTurnPort {
    */
   private async *replyEvents(
     input: VoiceTurnInput,
-    boundConversationId: string | null,
-    firstTurn: FirstTurn | undefined,
+    sessionClaim: SessionClaim,
     record: VoiceTurnRecord,
     signal: AbortSignal,
     sessionKey: string,
@@ -504,7 +511,8 @@ export class VoiceTurnService implements VoiceTurnPort {
       for await (const event of this.dependencies.chat.streamTurn({
         workspaceId: input.session.workspaceId,
         agentId: input.session.agentId,
-        ...(boundConversationId ? { conversationId: boundConversationId } : {}),
+        ...(sessionClaim.conversationId ? { conversationId: sessionClaim.conversationId } : {}),
+        ...(sessionClaim.conversationId === null && sessionClaim.visitorKey ? { visitorKey: sessionClaim.visitorKey } : {}),
         message: input.utterance,
         sourceChannel: VOICE_SOURCE_CHANNEL,
         channelContext: channelContextFor(input),
@@ -516,7 +524,7 @@ export class VoiceTurnService implements VoiceTurnPort {
         if (!record.conversationId && (event.type === "conversation" || event.type === "done")) {
           record.conversationId = event.conversationId;
           await this.bindNewSession(input.session, record.conversationId);
-          this.releaseFirstTurn(input.session, firstTurn);
+          this.releaseFirstTurn(input.session, sessionClaim.conversationId === null ? sessionClaim.firstTurn : undefined);
           yield { type: "conversation", conversationId: record.conversationId };
         }
 
@@ -646,8 +654,27 @@ export class VoiceTurnService implements VoiceTurnPort {
       if (!this.firstTurns.has(key)) {
         const firstTurn = createFirstTurn();
         this.firstTurns.set(key, firstTurn);
-        return { conversationId: null, firstTurn };
+        return { conversationId: null, firstTurn, visitorKey: await this.startedVisitorKey(session) };
       }
+    }
+  }
+
+  /**
+   * The grouping key of the visitor a Radioso-started session was started for: the embed's visitor
+   * key, else its public session, which is what the embed's own chat groups by. Correlation only, so
+   * a start that cannot be read leaves the turn without a visitor rather than failing it.
+   */
+  private async startedVisitorKey(session: VoiceSessionRef): Promise<string | null> {
+    if (!this.dependencies.starts) return null;
+    try {
+      const visitor = await this.dependencies.starts.findStartedVisitor(session);
+      return visitor ? visitor.visitorKey ?? visitor.publicSessionId : null;
+    } catch (error) {
+      this.dependencies.logger.warn(
+        { agentId: session.agentId, vendor: session.vendor, errorClass: errorClassOf(error) },
+        "Voice session start could not be read; the turn runs without its visitor",
+      );
+      return null;
     }
   }
 

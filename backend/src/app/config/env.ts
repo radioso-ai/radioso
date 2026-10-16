@@ -266,6 +266,13 @@ const envSchema = z.object({
   // more frequent than turn creation in normal use, so it gets its own, more
   // generous budget on the same window rather than sharing the turn-creation cap.
   PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(120),
+  // A voice session start opens a session on the workspace's own vendor account, which the vendor
+  // bills, so it has its own small budgets: per visitor session (its signed public session id and
+  // request source together) and per workspace.
+  PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(600_000),
+  PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(30),
+  PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   // Agent-channel turns spend provider and retrieval budget. A single credential
   // cannot exhaust a workspace, and credential rotation cannot evade the shared cap.
   AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),

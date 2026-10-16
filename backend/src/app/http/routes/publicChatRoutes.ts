@@ -46,8 +46,9 @@ import {
 } from "../presenters/publicChatPresenter.js";
 import { resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
 import { registerPublicVoiceSessionRoute } from "./publicVoiceSessionRoute.js";
+import type { PublicVoiceSessionRateLimiterDependencies } from "../middleware/publicVoiceSessionRateLimiter.js";
 
-type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
+type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & PublicVoiceSessionRateLimiterDependencies & Pick<
   AppDependencies,
   | "env"
   | "agentRepository"

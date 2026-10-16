@@ -34,6 +34,7 @@ import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 import { skillCatalogFromPublicIntakeActions } from '@/lib/skill-catalog'
 import { useVoiceSession } from '@/lib/use-voice-session'
+import { canAskForMicrophone } from '@/lib/voice-call'
 import { interleaveVoiceTranscript } from '@/lib/voice-session'
 import {
   answerFeedbackApi,
@@ -643,7 +644,8 @@ function PublicChatContent({
     lastMessageIdRef.current = messages.at(-1)?.id ?? null
   }, [messages])
   const readLastMessageId = useCallback(() => lastMessageIdRef.current, [])
-  const voiceOffered = surface === 'embed' && voiceAvailable
+  // Talk needs both the agent's voice and a page that can ask for the microphone.
+  const voiceOffered = surface === 'embed' && voiceAvailable && canAskForMicrophone()
   const voice = useVoiceSession({ token: publicChatToken, locale: visitorLocale, currentMessageId: readLastMessageId, offered: voiceOffered })
   const { isActive: isVoiceCallActive, stop: stopVoiceCall } = voice
   useEffect(() => {
@@ -735,8 +737,10 @@ function PublicChatContent({
     }
   }
 
+  // The call bar stands in for the composer during a call, so typing goes nowhere then.
+  const composerShown = !(voiceOffered && isVoiceCallActive)
   useEffect(() => {
-    if (surface !== 'embed' || isHydrating || isUnavailable) {
+    if (surface !== 'embed' || isHydrating || isUnavailable || !composerShown) {
       return
     }
 
@@ -773,7 +777,7 @@ function PublicChatContent({
 
     window.addEventListener('keydown', handleTypingShortcut)
     return () => window.removeEventListener('keydown', handleTypingShortcut)
-  }, [input.length, isHydrating, isUnavailable, surface])
+  }, [composerShown, input.length, isHydrating, isUnavailable, surface])
 
   const handleSuggestionSelect = (suggestion: ChatSuggestion, messageId: string) => {
     if (isLoading) return
@@ -1118,7 +1122,7 @@ function PublicChatContent({
             ) : null}
             <PublicChatBubbleComposerSurface theme={theme} compact={isCompactKeyboardLayout}>
               {voiceOffered ? <VoiceCallNotice theme={theme} copy={copy} state={voice.state} /> : null}
-              {voiceOffered && isVoiceCallActive ? (
+              {!composerShown ? (
                 <VoiceCallBar theme={theme} copy={copy} state={voice.state} onStop={stopVoiceCall} />
               ) : (
                 <PublicChatBubbleComposerForm

@@ -5,6 +5,8 @@ import type {
   BackgroundJobClaim,
   BackgroundJobClaimableKind,
   BackgroundJobHandlerRegistration,
+  BackgroundJobPolicy,
+  BackgroundJobSkipped,
   BackgroundJobStore,
   BackgroundJobWakePort,
 } from "./types.js";
@@ -36,13 +38,16 @@ class BackgroundJobLeaseLostError extends Error {
   }
 }
 
-type RunOutcome = "completed" | "requeued" | "retried" | "dead_lettered" | "superseded";
+type RunOutcome = "completed" | "skipped" | "requeued" | "retried" | "dead_lettered" | "superseded";
 
-type Execution = { readonly ok: true } | { readonly ok: false; readonly error: unknown };
+type Execution =
+  | { readonly ok: true; readonly result: BackgroundJobSkipped | void }
+  | { readonly ok: false; readonly error: unknown };
 
 interface BackgroundJobDrainResult {
   claimed: number;
   completed: number;
+  skipped: number;
   requeued: number;
   retried: number;
   deadLettered: number;
@@ -91,6 +96,7 @@ interface BackgroundJobRuntimeOptions {
 
 const outcomeCounter: Record<RunOutcome, keyof BackgroundJobDrainResult> = {
   completed: "completed",
+  skipped: "skipped",
   requeued: "requeued",
   retried: "retried",
   dead_lettered: "deadLettered",
@@ -106,6 +112,9 @@ const errorSummary = (error: unknown): string => {
   const name = error instanceof Error && ERROR_NAME_PATTERN.test(error.name) ? error.name : "Error";
   return error instanceof AppError && ERROR_CODE_PATTERN.test(error.code) ? `${name} [${error.code}]` : name;
 };
+
+const isBackgroundJobSkipped = (result: BackgroundJobSkipped | void): result is BackgroundJobSkipped =>
+  typeof result === "object" && result !== null && "skipped" in result;
 
 /**
  * Runs durable background jobs: claims a due job under a lease, runs the handler registered for
@@ -168,17 +177,24 @@ export class BackgroundJobRuntime {
    * claimed only while its kind's deadline still fits in what is left of the budget, counted from
    * `startedAt` (epoch ms; now when absent), so the drain ends inside the budget even if every
    * handler runs to its deadline. Store failures propagate.
+   *
+   * Every claim in one `drain()` call uses the same `asOf` — this call's start time, not a fresh
+   * read per claim — so a job this call itself retries (with a short delay) is not eligible again
+   * within the same call: it waits for the next wake, poll tick, or sweep instead of spending its
+   * whole retry budget here.
    */
   async drain(input: { maxJobs: number; budgetMs?: number; startedAt?: number }): Promise<BackgroundJobDrainResult> {
     const result: BackgroundJobDrainResult = {
       claimed: 0,
       completed: 0,
+      skipped: 0,
       requeued: 0,
       retried: 0,
       deadLettered: 0,
       superseded: 0,
     };
     const startedAt = input.startedAt ?? Date.now();
+    const asOf = new Date(startedAt);
     for (let index = 0; index < input.maxJobs; index += 1) {
       const remainingMs = input.budgetMs === undefined ? Infinity : input.budgetMs - (Date.now() - startedAt);
       const kinds = this.claimableKinds.filter((entry) => entry.timeoutMs <= remainingMs);
@@ -187,6 +203,7 @@ export class BackgroundJobRuntime {
       }
       const claim = await this.options.store.claimNext({
         kinds: kinds.map(({ kind, leaseSeconds }) => ({ kind, leaseSeconds })),
+        asOf,
       });
       if (!claim) {
         break;
@@ -233,13 +250,17 @@ export class BackgroundJobRuntime {
       }
       return this.fail(claim, handler, execution.error, startedAt);
     }
-    const completion = await this.options.store.complete(claim);
+    const skipped = isBackgroundJobSkipped(execution.result) ? execution.result : undefined;
+    const completion = await this.options.store.complete(claim, skipped);
     if (completion === "requeued") {
       // A rerun was requested while this run held the job: it is due now.
       await this.wakeAt(undefined);
       return this.record(claim, "requeued", startedAt);
     }
-    return this.record(claim, completion === "deleted" ? "completed" : "superseded", startedAt);
+    if (completion !== "deleted") {
+      return this.record(claim, "superseded", startedAt);
+    }
+    return this.record(claim, skipped ? "skipped" : "completed", startedAt);
   }
 
   /**
@@ -263,7 +284,7 @@ export class BackgroundJobRuntime {
         attributes: { "background_job.kind": claim.kind, "background_job.attempt": claim.attempt },
         run: () => handler.run(claim.payload, { jobId: claim.id, attempt: claim.attempt, signal: controller.signal }),
       }).then(
-        (): Execution => ({ ok: true }),
+        (result): Execution => ({ ok: true, result }),
         (error: unknown): Execution => ({ ok: false, error }),
       );
       const execution = await Promise.race([settled, interrupted]);
@@ -307,16 +328,70 @@ export class BackgroundJobRuntime {
     if (error instanceof NonRetryableBackgroundJobError || claim.attempt >= handler.policy.maxAttempts) {
       return this.deadLetter(claim, handler, summary, startedAt);
     }
-    const delaySeconds = Math.min(
-      handler.policy.retryBaseDelaySeconds * 2 ** (claim.attempt - 1),
-      MAX_RETRY_DELAY_SECONDS,
-    );
-    const availableAt = await this.options.store.retry(claim, { error: summary, delaySeconds });
+    const delaySeconds = this.retryDelaySeconds(handler.policy, claim.attempt);
+    const availableAt = await this.scheduleRetry(claim, handler, summary, delaySeconds);
     if (!availableAt) {
       return this.record(claim, "superseded", startedAt);
     }
     await this.wakeAt(availableAt);
     return this.record(claim, "retried", startedAt, summary);
+  }
+
+  /**
+   * `retryDelaysSeconds[attempt - 1]`, clamped to its last entry once attempts run past it; absent
+   * a schedule, the default is `retryBaseDelaySeconds` doubled per attempt, up to a fixed ceiling.
+   */
+  private retryDelaySeconds(policy: BackgroundJobPolicy, attempt: number): number {
+    if (policy.retryDelaysSeconds && policy.retryDelaysSeconds.length > 0) {
+      const index = Math.min(attempt - 1, policy.retryDelaysSeconds.length - 1);
+      return policy.retryDelaysSeconds[index];
+    }
+    return Math.min(policy.retryBaseDelaySeconds * 2 ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
+  }
+
+  /**
+   * Reschedules the retry, running the kind's per-attempt hook in the same write-back. Mirrors
+   * `park()`: the store fences the reschedule on the claim token, so an attempt whose claim was
+   * taken over never runs the hook. A hook that throws rolls back with the reschedule, and the
+   * retry is written again without it — a broken hook must not strand a retryable job.
+   */
+  private async scheduleRetry(
+    claim: BackgroundJobClaim,
+    handler: BackgroundJobHandlerRegistration,
+    summary: string,
+    delaySeconds: number,
+  ): Promise<Date | null> {
+    if (!handler.onAttemptFailed) {
+      return this.options.store.retry(claim, { error: summary, delaySeconds });
+    }
+    const failed: { hookError?: unknown } = {};
+    try {
+      return await this.options.store.retry(claim, { error: summary, delaySeconds }, async (transaction) => {
+        try {
+          await handler.onAttemptFailed?.(claim.payload, {
+            jobId: claim.id,
+            attempt: claim.attempt,
+            idempotencyKey: claim.idempotencyKey,
+            error: summary,
+            transaction,
+          });
+        } catch (error) {
+          failed.hookError = error;
+          throw error;
+        }
+      });
+    } catch (error) {
+      if (!("hookError" in failed)) {
+        throw error;
+      }
+      const hookError = errorSummary(failed.hookError);
+      this.options.logger.warn(
+        { kind: claim.kind, jobId: claim.id, attempt: claim.attempt, errorType: hookError },
+        "Background job per-attempt failure hook failed; the retry is scheduled without it",
+      );
+      this.report("background_job.attempt_failed_hook_failed", { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, hookError });
+      return this.options.store.retry(claim, { error: summary, delaySeconds });
+    }
   }
 
   private async deadLetter(
@@ -421,8 +496,15 @@ export class BackgroundJobRuntime {
       durationMs,
       ...(failure ? { errorType: failure } : {}),
     };
-    if (outcome === "completed" || outcome === "requeued") {
-      this.options.logger.debug(fields, outcome === "completed" ? "Background job completed" : "Background job completed; rerun queued");
+    if (outcome === "completed" || outcome === "requeued" || outcome === "skipped") {
+      this.options.logger.debug(
+        fields,
+        outcome === "completed"
+          ? "Background job completed"
+          : outcome === "skipped"
+            ? "Background job completed; delivery skipped by design"
+            : "Background job completed; rerun queued",
+      );
     } else if (outcome === "dead_lettered") {
       this.options.logger.error(fields, "Background job dead-lettered");
     } else if (outcome === "retried") {

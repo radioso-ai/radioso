@@ -93,6 +93,13 @@ services.
   above has to remember to write the URL itself. Reloading the page, or returning to
   a tab whose session cache still holds a loaded test, reopens or adopts the same
   test rather than losing it.
+- Delete a conversation: `delete-conversation-action.tsx` in the `ConversationDrawer`
+  header, shown to owners and admins, confirms and calls
+  `DELETE /history/chat/{id}`. Lists refresh through
+  `matchesWorkspaceInvalidation('conversation.deleted', …)` here and through the
+  server's `conversation.deleted` event elsewhere; an open drawer or Inbox reading
+  pane on a conversation that is gone clears itself when its tail poll answers
+  `not_found` (`hooks/use-conversation-tail.ts`, `onNotFound`).
 - Share a saved test: `agent-view.tsx` passes `testExecutionHref` (the
   `?testExecution=<id>` link above) into Test Chat, which backs the **Copy link to
   this chat** menu item and the per-row link button in `test-execution-history-view.tsx`.

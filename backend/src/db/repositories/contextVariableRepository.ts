@@ -22,8 +22,14 @@ import type {
   ContextVariableUpdateRecord,
 } from "../../modules/context-variables/public.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
-import { currentTimestamp, optionalTimestampMatch, timestampMatchOrAbsent, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
+import { anyOf, currentTimestamp, optionalTimestampMatch, timestampMatchOrAbsent, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type {
+  ConversationDataEraser,
+  ConversationErasureScope,
+  VerifiedCustomerDataEraser,
+  VerifiedCustomerErasureScope,
+} from "../../shared/domain/conversationDataErasure.js";
 import { agentRevisionLockKey, withAgentDraftMutation } from "./agentDraftMutation.js";
 
 interface ContextVariableRow {
@@ -780,5 +786,38 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
           }
         : { result, unchanged: true };
     });
+  }
+}
+
+/**
+ * Erases the values a host pushed about a person: `session` values keyed by a chat session the
+ * erased conversations alone carried, and `customer` values keyed by an erased visitor's verified
+ * customer id. Agent and workspace values describe the operator's own configuration and stay. A
+ * workspace's values cascade with its variables, so the workspace scope has nothing to add.
+ */
+export class ContextVariableValueEraser implements ConversationDataEraser, VerifiedCustomerDataEraser {
+  readonly owner = "context-variables";
+
+  constructor(private readonly db: Db) {}
+
+  async erase(scope: ConversationErasureScope): Promise<number> {
+    if (scope.kind === "workspace" || scope.chatSessionIds.length === 0) {
+      return 0;
+    }
+    return this.deleteScoped(scope.workspaceId, "session", scope.chatSessionIds);
+  }
+
+  async eraseVerifiedCustomer(scope: VerifiedCustomerErasureScope): Promise<number> {
+    return this.deleteScoped(scope.workspaceId, "customer", [scope.verifiedCustomerId]);
+  }
+
+  private async deleteScoped(workspaceId: string, scopeType: "session" | "customer", scopeIds: readonly string[]): Promise<number> {
+    const result = await this.db
+      .deleteFrom("context_variable_values")
+      .where("workspace_id", "=", workspaceId)
+      .where("scope_type", "=", scopeType)
+      .where((eb) => anyOf(eb.ref("scope_id"), scopeIds, "text[]"))
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
   }
 }

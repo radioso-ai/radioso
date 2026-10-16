@@ -14405,6 +14405,7 @@ components:
         - conversation.turn_committed
         - conversation.contact_delivery_changed
         - conversation.ownership_changed
+        - conversation.deleted
         - search.created
         - hitl.decision_created
         - hitl.decision_resolved
@@ -14433,7 +14434,7 @@ components:
             type: string
             minLength: 1
           minItems: 1
-          description: "Unique invalidation kind strings. Known protocol version 1 kinds: document.status_changed, crawl.status_changed, crawl.progress, conversation.created, conversation.turn_committed, conversation.contact_delivery_changed, conversation.ownership_changed, search.created, hitl.decision_created, hitl.decision_resolved, quality.feedback_changed, quality.triage_changed. Clients process recognized kinds in mixed frames, ignore unknown future kinds, and retain their polling floor."
+          description: "Unique invalidation kind strings. Known protocol version 1 kinds: document.status_changed, crawl.status_changed, crawl.progress, conversation.created, conversation.turn_committed, conversation.contact_delivery_changed, conversation.ownership_changed, conversation.deleted, search.created, hitl.decision_created, hitl.decision_resolved, quality.feedback_changed, quality.triage_changed. Clients process recognized kinds in mixed frames, ignore unknown future kinds, and retain their polling floor."
           uniqueItems: true
       required:
         - protocolVersion
@@ -32861,6 +32862,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - History
+      summary: Permanently delete a conversation and everything derived from it
+      description: "Erases the conversation, its messages, and every record derived from it: summaries, routine and decision state, held replies, email threads and inbound mail, session-scoped context values, and the turn audit events that carry its content. The billing ledger keeps its usage rows without the link. Records one `conversation.erased` audit event with counts only. Requires workspace.history.delete. There is no undo."
+      operationId: deleteHistoryConversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+      responses:
+        "204":
+          description: Conversation deleted
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks workspace.history.delete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/history/chat/{conversationId}/tail:
     get:
       tags:
@@ -32980,6 +33023,49 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Visitor not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/history/visitors/{visitorId}:
+    delete:
+      tags:
+        - History
+      summary: Permanently delete a visitor, every conversation they had, and everything derived from them
+      description: Erases each of the visitor's conversations as `DELETE /api/v1/history/chat/{conversationId}` does, then the customer-scoped context values for the visitor's verified customer id, then the visitor record. Records one `visitor.erased` audit event with counts only. Requires workspace.history.delete. There is no undo.
+      operationId: deleteHistoryVisitor
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: visitorId
+          in: path
+      responses:
+        "204":
+          description: Visitor deleted
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks workspace.history.delete
           content:
             application/json:
               schema:

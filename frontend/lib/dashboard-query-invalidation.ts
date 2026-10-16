@@ -66,6 +66,16 @@ export const matchesWorkspaceInvalidation = (
         || isDashboardQueryFamily(queryKey, workspaceId, 'attention/held-replies')
         || isDashboardQueryFamily(queryKey, workspaceId, 'attention/recently-closed')
         || matchesHistory(queryKey, workspaceId, ['all', 'chat'])
+    // An erased conversation leaves every list it can appear on.
+    case 'conversation.deleted':
+      return matchesHistory(queryKey, workspaceId, ['all', 'chat', 'contact'])
+        || isDashboardQueryFamily(queryKey, workspaceId, 'attention/decisions')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'attention/human-owned')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'attention/held-replies')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'attention/recently-closed')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'attention/delivery-failures')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'quality/stats')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'quality/turns')
     case 'conversation.created':
     case 'conversation.turn_committed':
       return matchesHistory(queryKey, workspaceId, ['all', 'chat'])

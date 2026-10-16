@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { anyOf, castText, jsonbKeyText, jsonbSet, toJsonb, toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import type { ConversationDataEraser, ConversationErasureScope } from "../../shared/domain/conversationDataErasure.js";
 
 export interface AuditEventRecord {
   id: string;
@@ -287,5 +288,45 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
       .executeTakeFirst();
 
     return row ? mapAuditEvent(row as AuditEventRow) : null;
+  }
+}
+
+/**
+ * The audit events that hold a turn's conversation-derived content: suggestions, rewritten queries,
+ * retrieval diagnostics and turn traces, keyed by the conversation id in their metadata. Every other
+ * event that names a conversation records ids and outcome codes only, and stays as the record of
+ * what happened.
+ */
+const CONVERSATION_CONTENT_EVENT_TYPES = ["chat.answer", "chat.suspended"] as const;
+
+/**
+ * Erases a conversation's turn events. `audit_events.workspace_id` is SET NULL on workspace
+ * deletion, so the workspace scope runs before that cascade, or the events would outlive it.
+ */
+export class ConversationAuditEraser implements ConversationDataEraser {
+  readonly owner = "audit";
+
+  constructor(private readonly db: Db) {}
+
+  async erase(scope: ConversationErasureScope): Promise<number> {
+    if (scope.kind === "conversations" && scope.conversationIds.length === 0) {
+      return 0;
+    }
+    let erased = 0;
+    // One statement per event type, so each can use its own partial index.
+    for (const eventType of CONVERSATION_CONTENT_EVENT_TYPES) {
+      const result = await this.db
+        .deleteFrom("audit_events")
+        .where("workspace_id", "=", scope.workspaceId)
+        .where("event_type", "=", eventType)
+        .$if(scope.kind === "conversations", (qb) => qb.where((eb) => anyOf(
+          jsonbKeyText(eb.ref("metadata_json"), "conversationId"),
+          scope.kind === "conversations" ? scope.conversationIds : [],
+          "text[]",
+        )))
+        .executeTakeFirst();
+      erased += Number(result.numDeletedRows);
+    }
+    return erased;
   }
 }

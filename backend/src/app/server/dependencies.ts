@@ -141,6 +141,8 @@ import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversat
 import { createConversationActivityComposition } from "../composition/conversationActivity.js";
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
 import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitOfWork.js";
+import { createPostgresConversationErasureUnitOfWork } from "../composition/conversationErasure.js";
+import { ConversationErasureService } from "../../modules/privacy/public.js";
 import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
 import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
@@ -1408,6 +1410,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,
     assistantHistoryService: chat.assistantHistoryService,
+    conversationErasure: new ConversationErasureService({
+      unitOfWork: createPostgresConversationErasureUnitOfWork({ db: infrastructure.database.kysely, logger }),
+      invalidation: realtimePublisherComposition.publisher,
+      auditLog: infrastructure.auditService,
+    }),
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,
     retrievalDefaultsProvider,

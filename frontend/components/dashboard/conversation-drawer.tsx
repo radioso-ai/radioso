@@ -20,6 +20,7 @@ import { ActivityTraceGraph } from './activity-trace-graph'
 import { TurnFlowOverlay } from './turn-flow-overlay'
 import { ChatMessageThread } from './chat-message-thread'
 import { ContinueInTestChatAction } from './workbench/continue-in-test-chat-action'
+import { DeleteConversationAction } from './delete-conversation-action'
 import { VisitorPanel } from './visitor-panel'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
@@ -237,6 +238,11 @@ export function ConversationDrawer({
   const handleItemNotFound = useCallback(() => {
     onAfterClose?.()
   }, [onAfterClose])
+  // Deleted, or aged out, while the drawer is open: it closes as for a link to a missing conversation.
+  const handleTailNotFound = useCallback(() => {
+    onSelectedItemChange(null)
+    onAfterClose?.()
+  }, [onAfterClose, onSelectedItemChange])
   const conversationTail = useConversationTail({
     conversationId: selectedChatConversationId ?? '',
     // A no-cursor tail poll returns the newest history window. Audience Pulse
@@ -244,6 +250,7 @@ export function ConversationDrawer({
     // merging that unrelated live window would defeat the evidence anchor.
     enabled: selectedChatConversationId !== null && !isAudiencePulseEvidence,
     intervalMs: 1000,
+    onNotFound: handleTailNotFound,
   })
 
   const {
@@ -343,16 +350,20 @@ export function ConversationDrawer({
     [routineMarkers, routineNamesById, conversationAgentId, buildRoutineHref],
   )
 
+  const closeDrawer = () => {
+    onSelectedItemChange(null)
+    setShowGraph(false)
+    setFlowOpen(false)
+    onAfterClose?.()
+  }
+
   return (
     <>
       <Drawer
         open={selectedItem !== null}
         onOpenChange={(open) => {
           if (!open) {
-            onSelectedItemChange(null)
-            setShowGraph(false)
-            setFlowOpen(false)
-            onAfterClose?.()
+            closeDrawer()
           }
         }}
         direction="right"
@@ -425,6 +436,9 @@ export function ConversationDrawer({
                     conversationId={selectedItem.id}
                     agentId={conversationDetail.agentId}
                   />
+                ) : null}
+                {selectedItem?.kind === 'chat' && conversationDetail ? (
+                  <DeleteConversationAction conversationId={selectedItem.id} onDeleted={closeDrawer} />
                 ) : null}
                 {showGraph && activeEnvelope ? (
                   <Button

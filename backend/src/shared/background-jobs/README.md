@@ -76,13 +76,17 @@ Implementations live outside it, and application composition
   writes afterwards races the retry. Every complete, retry, and dead-letter
   write is fenced on the claim token. Handlers must be idempotent: a crash
   between a side effect and the job's deletion runs the job again.
-- **Claim eligibility is fixed for a whole drain.** Every claim inside one
-  `drain()` call uses that call's start time, not a fresh clock read per claim.
-  A job this same call just retried (or a lease it just reclaimed) is not
-  eligible again until the next wake, poll tick, or recovery sweep, even when
-  its delay is as short as the facet queue's 1 s first step — so one drain
-  (especially a long recovery sweep) can never burn a job's whole retry budget
-  on itself.
+- **Claim eligibility is fixed for a whole drain.** A `drain()` call remembers
+  every id it has claimed and excludes them from every further claim it makes
+  within that same call. Due is still decided by the store's own clock (the
+  database's `now()`, for the generic store, never a caller-supplied instant
+  that could skew from it) — a job this same call just retried (or a lease it
+  just reclaimed) can become genuinely due again before the call ends,
+  especially during a long recovery sweep whose other claims take real time to
+  run, but the exclusion keeps it from being claimed a second time, even when
+  its delay is as short as the facet queue's 1 s first step. It waits for the
+  next wake, poll tick, or recovery sweep instead, so one drain can never burn
+  a job's whole retry budget on itself.
 - **Retries.** A failed run returns to waiting after a delay the kind's policy
   decides, and wakes a worker for that time. The default is doubling:
   `retryBaseDelaySeconds * 2^(attempt - 1)`, capped at an hour — right for a
@@ -102,7 +106,11 @@ Implementations live outside it, and application composition
   never runs it, and a hook that throws rolls back with the reschedule, which
   is then written again without it. Use it for bookkeeping that must track
   every attempt, not just the kind's eventual outcome (for example, the
-  action outbox's per-attempt delivery telemetry).
+  action outbox's per-attempt delivery telemetry). It does not run for an
+  attempt lost to a crashed or stalled worker: that attempt's lease simply
+  expires and no failure is ever reported for it, so a domain store that
+  counts attempts for its own records should count them at claim time, not by
+  counting hook calls.
 - **What a failure stores and reports.** `last_error` holds the error's class,
   plus an `AppError` code when there is one, for example
   `AppError [provider_unavailable]`. Never the message or stack, which can

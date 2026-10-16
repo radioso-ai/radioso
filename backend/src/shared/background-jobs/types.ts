@@ -125,6 +125,12 @@ export interface BackgroundJobHandlerRegistration {
    * never for an attempt whose claim was already taken over. A hook that throws rolls back with
    * the reschedule, which the runtime then writes again without it — a broken hook never blocks
    * the retry.
+   *
+   * Does not run for an attempt lost to a crashed or stalled worker (its lease simply expires and
+   * no failure is ever reported): that attempt is only visible as the gap between its `attempt`
+   * number and the next one this hook, or `onDeadLetter`, actually receives. A domain store that
+   * tracks attempt history for its own records should count attempts at claim time, not rely on
+   * this hook running once per attempt.
    */
   onAttemptFailed?(payload: unknown, context: BackgroundJobFailureContext): Promise<void>;
   /**
@@ -199,16 +205,18 @@ export type BackgroundJobCompletion = "deleted" | "requeued" | "superseded";
  */
 export interface BackgroundJobStore {
   /**
-   * Claims the job that has been due longest among `kinds` as of `asOf` — a waiting job whose time
-   * had come, or a running one whose lease had expired, by that instant — leases it for its kind's
-   * lease, and counts the attempt. Concurrent claimers never take the same job.
+   * Claims the job that has been due longest among `kinds` — a waiting job whose time has come, or
+   * a running one whose lease had expired — leases it for its kind's lease, and counts the attempt.
+   * Due is always decided by the store's own clock (the database's, for the generic store), never a
+   * caller-supplied instant: a caller's clock can skew from the store's and hide a job that is
+   * genuinely due. Concurrent claimers never take the same job.
    *
-   * `asOf` is fixed for a whole `drain()` call (its start time), not re-read per claim: a job
-   * retried mid-drain with a short delay becomes eligible only once that instant has passed, so one
-   * drain can never spend a job's whole retry budget on itself. It waits for the next wake, poll
-   * tick, or sweep instead.
+   * `excludeIds` names jobs a single `drain()` call has already claimed, so a job that same call
+   * just retried (even with a delay as short as a second) is not eligible again within that call,
+   * no matter how much wall-clock time the call's other claims spend before it loops back — it
+   * waits for the next wake, poll tick, or sweep instead of spending its whole retry budget on itself.
    */
-  claimNext(input: { kinds: readonly BackgroundJobClaimableKind[]; asOf: Date }): Promise<BackgroundJobClaim | null>;
+  claimNext(input: { kinds: readonly BackgroundJobClaimableKind[]; excludeIds?: readonly string[] }): Promise<BackgroundJobClaim | null>;
   /** Extends a live claim's lease from now. False when the claim was taken over. */
   renewLease(claim: BackgroundJobClaim, input: { leaseSeconds: number }): Promise<boolean>;
   /**

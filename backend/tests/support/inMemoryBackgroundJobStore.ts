@@ -70,15 +70,15 @@ export class InMemoryBackgroundJobStore implements BackgroundJobStore, Backgroun
     return { inserted: true, jobId: id };
   }
 
-  async claimNext(input: { kinds: readonly BackgroundJobClaimableKind[]; asOf: Date }): Promise<BackgroundJobClaim | null> {
-    const asOf = input.asOf.getTime();
+  async claimNext(input: { kinds: readonly BackgroundJobClaimableKind[]; excludeIds?: readonly string[] }): Promise<BackgroundJobClaim | null> {
     const now = this.clock.now().getTime();
     const leases = new Map(input.kinds.map((entry) => [entry.kind, entry.leaseSeconds]));
+    const excluded = new Set(input.excludeIds ?? []);
     const due = [...this.rows.values()]
-      .filter((row) => leases.has(row.kind))
+      .filter((row) => leases.has(row.kind) && !excluded.has(row.id))
       .filter((row) =>
-        (row.status === "pending" && row.availableAt.getTime() <= asOf) ||
-        (row.status === "running" && row.leaseExpiresAt !== null && row.leaseExpiresAt.getTime() < asOf))
+        (row.status === "pending" && row.availableAt.getTime() <= now) ||
+        (row.status === "running" && row.leaseExpiresAt !== null && row.leaseExpiresAt.getTime() < now))
       .sort((left, right) => left.availableAt.getTime() - right.availableAt.getTime())[0];
     if (!due) {
       return null;
@@ -88,8 +88,6 @@ export class InMemoryBackgroundJobStore implements BackgroundJobStore, Backgroun
     due.claimToken = randomUUID();
     // A rerun requested of an earlier run whose lease lapsed is covered by this run.
     due.rerunRequested = false;
-    // The lease granted runs from the actual clock, not `asOf` (the drain's start), so a long drain
-    // still grants a full lease rather than one that is already partly spent.
     due.leaseExpiresAt = new Date(now + leases.get(due.kind)! * 1_000);
     return {
       id: due.id,

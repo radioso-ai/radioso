@@ -69,7 +69,11 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
     expect(second.id).toBe(first.id);
   });
 
-  it("round-trips skill_name through enqueue and claimPending, defaulting to null when omitted", async () => {
+  // claimPending/markDispatched/markSkipped/recordFailure were deleted with ActionDispatcher
+  // (#1509): claimNext/complete/retry/deadLetter (the BackgroundJobStore conformance tests below)
+  // cover the same claim-fencing, retry, and terminal-failure behaviour over this table.
+
+  it("round-trips skill_name through enqueue and claimNext, defaulting to null when omitted", async () => {
     const named = await repository.enqueue({
       type: fixtureType,
       payload: { message: "call me" },
@@ -78,52 +82,13 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
     created.push(named.id);
     const unnamed = await enqueue();
 
-    const claimed = await repository.claimPending(10, 300);
-    const namedRow = claimed.find((row) => row.id === named.id);
-    const unnamedRow = claimed.find((row) => row.id === unnamed.id);
-    expect(namedRow?.skillName).toBe("contact_sales");
-    expect(unnamedRow?.skillName).toBeNull();
-  });
-
-  it("claimPending moves pending → in_progress exactly once and increments attempts", async () => {
-    const a = await enqueue();
-    const b = await enqueue();
-
-    const claimed = await repository.claimPending(10, 300);
-    expect(claimed.map((c) => c.id).sort()).toEqual([a.id, b.id].sort());
-    expect(claimed.every((c) => c.status === "in_progress" && c.attempts === 1)).toBe(true);
-
-    // already in_progress and lease not expired → nothing more to claim
-    expect(await repository.claimPending(10, 300)).toEqual([]);
-  });
-
-  it("markDispatched reports only a real matching-attempt transition", async () => {
-    const a = await enqueue();
-    const [claimed] = await repository.claimPending(10, 300);
-    await expect(repository.markDispatched(claimed.id, 999)).resolves.toBe(false); // wrong attempt → no-op
-    let status = (await database.query<{ status: string }>(`SELECT status FROM routine_action_requests WHERE id = $1`, [a.id]))[0]?.status;
-    expect(status).toBe("in_progress");
-
-    await expect(repository.markDispatched(claimed.id, claimed.attempts)).resolves.toBe(true);
-    status = (await database.query<{ status: string }>(`SELECT status FROM routine_action_requests WHERE id = $1`, [a.id]))[0]?.status;
-    expect(status).toBe("dispatched");
-
-    // A duplicate completion notification is not a second transition.
-    await expect(repository.markDispatched(claimed.id, claimed.attempts)).resolves.toBe(false);
-  });
-
-  it("recordFailure retries within budget, fails at the cap (CASE), and is superseded on stale attempt", async () => {
-    await enqueue();
-    const [retryable] = await repository.claimPending(10, 300);
-    expect(await repository.recordFailure(retryable.id, "boom", retryable.attempts, 3, 60)).toBe("retry");
-    // after a retry the row is 'pending' again, so a repeat with the same attempt no longer matches
-    expect(await repository.recordFailure(retryable.id, "boom", 999, 3, 60)).toBe("superseded");
-
-    await enqueue();
-    const claimed = await repository.claimPending(10, 300);
-    const fresh = claimed.find((c) => c.attempts === 1)!;
-    // maxAttempts == current attempts → CASE picks 'failed'
-    expect(await repository.recordFailure(fresh.id, "boom", fresh.attempts, fresh.attempts, 60)).toBe("failed");
+    const first = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }], asOf: new Date() });
+    const second = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }], asOf: new Date() });
+    const claimed = [first, second];
+    const namedRow = claimed.find((claim) => claim?.id === named.id);
+    const unnamedRow = claimed.find((claim) => claim?.id === unnamed.id);
+    expect((namedRow?.payload as { skillName: string | null } | undefined)?.skillName).toBe("contact_sales");
+    expect((unnamedRow?.payload as { skillName: string | null } | undefined)?.skillName).toBeNull();
   });
 
   it("getPendingDepthSnapshot counts pending/in_progress rows and reports the oldest pending row's timestamp", async () => {
@@ -140,8 +105,8 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
     // Claim one row so it moves to in_progress — it must drop out of pendingCount
     // and stop being a candidate for oldestPendingCreatedAt, but still count as
     // in-progress backlog (a stuck lease is exactly what an operator needs to see).
-    const claimed = await repository.claimPending(1, 300);
-    expect(claimed.map((c) => c.id)).toEqual([first.id]);
+    const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }], asOf: new Date() });
+    expect(claim?.id).toBe(first.id);
 
     const snapshot = await repository.getPendingDepthSnapshot();
     expect(snapshot.pendingCount).toBe(2);

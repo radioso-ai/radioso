@@ -150,6 +150,17 @@ Public chat and website embed rate limits are operator tuning knobs, not workspa
 
 The session limit applies to a visitor session, and covers starting one and sending a message. The global limit applies across public chat traffic for the process. The read limit covers the same visitor session polling for history, tail, and live updates, which happens far more often than sending a message, so it carries a higher default. All three are process-wide: Radioso does not read a per-workspace override, so set them to values every workspace on this deployment can share.
 
+## Voice session start rate limits
+
+A voice session start opens a session on the workspace's own voice vendor account, which the vendor bills, so it spends two small budgets of its own before the vendor is called. Both are process-wide, like the public chat limits.
+
+- `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS` defaults to 3 starts per visitor session and window. The budget follows the signed public session together with the request source, not a cookie.
+- `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS` defaults to 10 minutes.
+- `PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS` defaults to 30 starts per workspace and window.
+- `PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS` defaults to 60 seconds.
+
+Workspaces should also set their vendor agent's own concurrency and daily limits, which bound what a started session can cost at the vendor.
+
 ## Agent channel chat rate limits
 
 REST agent chat and MCP `ask` calls each spend two durable limits before model work starts. One bucket follows the agent-channel credential, while the other covers all agent-channel credentials in the workspace. This keeps a single leaked credential contained and prevents a credential pool from consuming a workspace's whole provider budget.

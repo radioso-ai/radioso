@@ -433,8 +433,11 @@ export const registerAssistantPublicChatPaths = (
     summary: "Start a voice session for the current public chat session",
     description: [
       "Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own API key for that vendor,",
-      "and returns the vendor's signed URL with a fresh Radioso session key. The key never leaves the backend.",
-      "Send the public session as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message.",
+      "and returns the vendor's signed URL with a fresh Radioso session key. The vendor key never leaves the backend.",
+      "Only a website embed public session may start one: send it as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message.",
+      "A browser on another origin calls `/api/public/chat/{token}/voice/sessions` on the Radioso app host, which answers the CORS preflight and relays here.",
+      "The signed URL is valid for 15 minutes and opens sessions for whoever holds it in that window, so it is a bearer credential: the response is `Cache-Control: no-store`.",
+      "Starts spend their own budgets, per visitor session and per workspace, before the vendor is called.",
     ].join(" "),
     operationId: "createPublicVoiceSession",
     security: [{ [security.anonymousSessionCookieScheme.name]: [] }],
@@ -466,15 +469,7 @@ export const registerAssistantPublicChatPaths = (
         },
       },
       404: {
-        description: "Public session not found, or the agent takes no voice sessions: voice is off or no vendor agent is bound",
-        content: {
-          "application/json": {
-            schema: schemas.ErrorResponseSchema,
-          },
-        },
-      },
-      409: {
-        description: "The workspace holds no readable API key for the agent's voice vendor: `voice_vendor_credential_missing` or `voice_vendor_credential_unreadable`, with `details.vendor`",
+        description: "Public session not found or not a website embed session, or the agent takes no voice sessions: voice is off or no vendor agent is bound",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
@@ -482,15 +477,15 @@ export const registerAssistantPublicChatPaths = (
         },
       },
       429: {
-        description: "Voice session start rate limit exceeded",
+        description: "The visitor session's or the workspace's voice session start budget is spent",
         content: {
           "application/json": {
             schema: schemas.RateLimitExceededSchema,
           },
         },
       },
-      502: {
-        description: "The voice vendor did not start the session: `voice_vendor_unavailable`, with `details.vendor`",
+      503: {
+        description: "`voice_unavailable`: the session could not be started (the workspace's vendor key is missing or unreadable, or the vendor did not start it)",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

@@ -53,9 +53,9 @@ import {
   VoiceTurnService,
   type VoiceSessionStartLookup,
   type VoiceSessionStartRegistry,
+  type VoiceSessionStore,
   type VoiceSessionVisitor,
 } from "../../src/modules/voiceChannel/public.js";
-import type { VoiceSessionStore } from "../../src/modules/voiceChannel/services/voiceTurnService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import {
   AgentRevisionRuntimeResolver,

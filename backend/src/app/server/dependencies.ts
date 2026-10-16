@@ -1251,6 +1251,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ...chat.backgroundJobHandlers,
     ...slackInboundJobs.backgroundJobHandlers,
   ]);
+  // One store for voice sessions: the turn's bindings, and the starts the turn and the session start share.
+  const voiceSessions = new VoiceSessionRepository(infrastructure.database.kysely);
+
   return {
     env,
     logger,
@@ -1362,7 +1365,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatHistoryService: chat.chatHistoryService,
     assistantChatService: chat.assistantChatService,
     voiceTurns: createVoiceChannelComposition({
-      db: infrastructure.database.kysely,
+      sessions: voiceSessions,
       assistantChatService: chat.assistantChatService,
       agentRepository: repositories.agentRepository,
       routineStates: new RoutineStateRepository(infrastructure.database.kysely),
@@ -1374,7 +1377,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
     voiceSessionStarts: createVoiceSessionStartComposition({
       agentRepository: repositories.agentRepository,
-      starts: new VoiceSessionRepository(infrastructure.database.kysely),
+      starts: voiceSessions,
       credentials: workspaceProviderCredentialsService,
       // Called through its own receiver, never detached from globalThis.
       fetch: (url, init) => globalThis.fetch(url, init),

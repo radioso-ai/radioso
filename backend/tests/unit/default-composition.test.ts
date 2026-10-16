@@ -16,7 +16,6 @@ import {
   DefaultTurnSelectionStrategy,
   HANDOFF_NOTIFY_ACTION_TYPE,
   COMPLETION_NOTIFY_ACTION_TYPE,
-  NoopActionDrainDispatcher,
   WEBHOOK_SEND_ACTION_TYPE,
 } from "../../src/modules/chat/composition.js";
 import { CloudTasksActionDrainDispatcher } from "../../src/modules/chat/infra/cloudTasksActionDrainDispatcher.js";
@@ -776,7 +775,7 @@ describe("default application composition", () => {
       ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
     }, createLogger() as any);
 
-    expect(dispatcher).toBeInstanceOf(NoopActionDrainDispatcher);
+    expect(dispatcher).toBeInstanceOf(NoopBackgroundJobWake);
   });
 
   it("stays no-op under cloud-tasks dispatch until ACTION_DISPATCH_TASK_QUEUE_NAME is configured (rollout-safe)", () => {
@@ -790,7 +789,7 @@ describe("default application composition", () => {
       ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
     }, createLogger() as any);
 
-    expect(dispatcher).toBeInstanceOf(NoopActionDrainDispatcher);
+    expect(dispatcher).toBeInstanceOf(NoopBackgroundJobWake);
   });
 
   it("selects the Cloud Tasks action drain dispatcher once the action queue name is configured", () => {

@@ -216,7 +216,6 @@
   "types|backend/src/modules/chat/retrievalSupport.ts|GroundingSummary",
   "types|backend/src/modules/chat/retrievalSupport.ts|GroundingVerdict",
   "types|backend/src/modules/chat/services/actionSuggestions/chatActionSuggestionService.ts|ChatActionSuggestionServiceOptions",
-  "types|backend/src/modules/chat/services/actions/drainTriggeringActionOutbox.ts|EnqueueingActionOutboxPort",
   "types|backend/src/modules/chat/services/actions/webhookSendActionHandler.ts|WebhookCompletionExportSkillLookup",
   "types|backend/src/modules/chat/services/actions/webhookSendActionHandler.ts|WebhookSendAgentLookup",
   "types|backend/src/modules/chat/services/actions/webhookSendActionHandler.ts|WebhookSendConversationLookup",

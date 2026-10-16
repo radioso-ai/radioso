@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import pg from "pg";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ActionRequestRepository } from "../../src/db/repositories/actionRequestRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -155,5 +155,121 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
     // third is not the actual oldest pending row (second is) — just proving the field
     // is a real timestamp read back from the table, not a hardcoded/derived value.
     expect(snapshot.oldestPendingCreatedAt!.getTime()).toBeLessThanOrEqual(oldestRow.created_at.getTime());
+  });
+
+  // `BackgroundJobStore` conformance (#1509): this table claimed, leased, completed, retried,
+  // and dead-lettered through the same methods the generic `background_jobs` store exposes, with
+  // no schema change. `ActionDispatcher` does not call these yet — see the class doc comment on
+  // `ActionRequestRepository` — but the fit itself is proven here, against real Postgres.
+  describe("BackgroundJobStore conformance", () => {
+    it("claimNext claims the oldest due row, fencing every write-back on that claim's token", async () => {
+      const row = await enqueue();
+
+      const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
+      expect(claim?.id).toBe(row.id);
+      expect(claim?.kind).toBe(fixtureType);
+      expect(claim?.attempt).toBe(1);
+
+      // Nothing else is due: the row is now `in_progress` with a fresh lease.
+      expect(await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] })).toBeNull();
+
+      // A stale claim (a worker that lost its row to another claimer) writes nothing back.
+      const staleClaim = { ...claim!, token: "999" };
+      expect(await repository.renewLease(staleClaim, { leaseSeconds: 300 })).toBe(false);
+      expect(await repository.complete(staleClaim)).toBe("superseded");
+      expect(await repository.retry(staleClaim, { error: "Error", delaySeconds: 60 })).toBeNull();
+      expect(await repository.deadLetter(staleClaim, { error: "Error" })).toBe(false);
+
+      // The real claim's token still works after the stale writes above were rejected.
+      expect(await repository.renewLease(claim!, { leaseSeconds: 300 })).toBe(true);
+    });
+
+    it("reclaims a stale in_progress row once its lease has elapsed, fencing the earlier attempt's token", async () => {
+      const row = await enqueue();
+      const first = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
+      expect(first?.attempt).toBe(1);
+
+      // Simulate a crashed worker: back-date the row past a short lease instead of waiting for one.
+      await database.query(`UPDATE routine_action_requests SET updated_at = now() - interval '10 seconds' WHERE id = $1`, [row.id]);
+
+      const second = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 1 }] });
+      expect(second?.id).toBe(row.id);
+      expect(second?.attempt).toBe(2);
+      expect(second?.token).not.toBe(first?.token);
+
+      // The first worker's claim is superseded; only the reclaiming worker's token completes it.
+      expect(await repository.complete(first!)).toBe("superseded");
+      expect(await repository.complete(second!)).toBe("deleted");
+    });
+
+    it("complete marks the row dispatched without deleting it (unlike the generic store)", async () => {
+      const row = await enqueue();
+      const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
+
+      expect(await repository.complete(claim!)).toBe("deleted");
+      const status = (await database.query<{ status: string }>(`SELECT status FROM routine_action_requests WHERE id = $1`, [row.id]))[0]?.status;
+      expect(status).toBe("dispatched");
+
+      // Already terminal: a second completion of the same claim is superseded, not a double transition.
+      expect(await repository.complete(claim!)).toBe("superseded");
+    });
+
+    it("retry reschedules the row pending at the given delay and records the error", async () => {
+      await enqueue();
+      const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
+
+      const availableAt = await repository.retry(claim!, { error: "provider_unavailable", delaySeconds: 60 });
+      expect(availableAt).toBeInstanceOf(Date);
+      expect(availableAt!.getTime()).toBeGreaterThan(Date.now() + 55_000);
+
+      const row = (await database.query<{ status: string; last_error: string | null; next_attempt_at: Date | null }>(
+        `SELECT status, last_error, next_attempt_at FROM routine_action_requests WHERE id = $1`,
+        [claim!.id],
+      ))[0];
+      expect(row?.status).toBe("pending");
+      expect(row?.last_error).toBe("provider_unavailable");
+      expect(row?.next_attempt_at).toBeInstanceOf(Date);
+
+      // Not due yet, so a fresh claim finds nothing.
+      expect(await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] })).toBeNull();
+    });
+
+    it("deadLetter marks the row terminally failed and keeps its payload, running the park hook once", async () => {
+      await enqueue();
+      const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
+      const onParked = vi.fn(async () => undefined);
+
+      expect(await repository.deadLetter(claim!, { error: "budget_exhausted" }, onParked)).toBe(true);
+      expect(onParked).toHaveBeenCalledOnce();
+
+      const row = (await database.query<{ status: string; last_error: string | null; payload: unknown }>(
+        `SELECT status, last_error, payload FROM routine_action_requests WHERE id = $1`,
+        [claim!.id],
+      ))[0];
+      expect(row?.status).toBe("failed");
+      expect(row?.last_error).toBe("budget_exhausted");
+      // Unlike the generic `background_jobs` store, the payload is kept for operator visibility.
+      expect(row?.payload).toEqual({ a: 1 });
+
+      // Superseded: the hook never runs for a claim that is no longer live.
+      const onParkedAgain = vi.fn(async () => undefined);
+      expect(await repository.deadLetter(claim!, { error: "budget_exhausted" }, onParkedAgain)).toBe(false);
+      expect(onParkedAgain).not.toHaveBeenCalled();
+    });
+
+    it("skip marks the row terminally skipped without consuming a retry — the outcome BackgroundJobStore has no slot for", async () => {
+      await enqueue();
+      const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
+
+      expect(await repository.skip(claim!, { reason: "mail_not_dispatched:driver=log" })).toBe(true);
+
+      const row = (await database.query<{ status: string; last_error: string | null; attempts: number }>(
+        `SELECT status, last_error, attempts FROM routine_action_requests WHERE id = $1`,
+        [claim!.id],
+      ))[0];
+      expect(row?.status).toBe("skipped");
+      expect(row?.last_error).toBe("mail_not_dispatched:driver=log");
+      expect(row?.attempts).toBe(1);
+    });
   });
 });

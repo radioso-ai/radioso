@@ -4,7 +4,7 @@ import { emailChannelConfigGaps, getEnv, parseEmailChannelConfig, type Env } fro
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
-import { createVoiceChannelComposition } from "../composition/voiceChannel.js";
+import { createVoiceChannelComposition, createVoiceSessionStartComposition } from "../composition/voiceChannel.js";
 import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
 import {
   createEmailChannelComposition,
@@ -1368,6 +1368,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       conversationOwnership: repositories.conversationOwnershipRepository,
       replies: repositories.messageRepository,
       auditService: infrastructure.auditService,
+      metricsRegistry: infrastructure.metricsRegistry,
+      logger,
+    }),
+    voiceSessionStarts: createVoiceSessionStartComposition({
+      agentRepository: repositories.agentRepository,
+      credentials: workspaceProviderCredentialsService,
+      // Called through its own receiver, never detached from globalThis.
+      fetch: (url, init) => globalThis.fetch(url, init),
       metricsRegistry: infrastructure.metricsRegistry,
       logger,
     }),

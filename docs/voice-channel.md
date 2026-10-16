@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
-description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with one conversation per voice session and authored lines that cover the wait."
-last_updated: 2026-10-15
+description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, and authored lines that cover the wait."
+last_updated: 2026-10-16
 ---
 
 # Voice Channel
@@ -46,6 +46,14 @@ Activity and the Inbox.
 
 ## Set it up
 
+A voice session runs over two connections. The voice runtime calls Radioso
+on every turn, with a REST credential for the agent. The page where the caller
+presses talk opens the session on the runtime, which takes the vendor's key
+and a session key. Radioso can open that session for the page, so your vendor
+key stays in the workspace; or your own backend can open it.
+
+### Connect the runtime to Radioso
+
 You need an agent and a REST credential for it.
 
 1. Open the agent's **Channels → API** card and create a REST credential.
@@ -72,9 +80,9 @@ service-account credential gets `401`.
 
 ### ElevenLabs
 
-ElevenLabs Agents uses the `elevenlabs` dialect. Three things connect it to a
-Radioso agent: the URL and the credential on the ElevenLabs agent, and a
-session key from the page that starts each session.
+ElevenLabs Agents uses the `elevenlabs` dialect. Three settings on the
+ElevenLabs agent connect it to a Radioso agent: the URL, the credential, and
+permission for each session to carry its session key.
 
 **The URL.** Set the custom LLM URL to
 `https://api.radioso.ai/api/v1/agents/<agent-id>/voice/elevenlabs/v1`.
@@ -97,11 +105,93 @@ Then reference it from the agent as
 An agent with no secret sends `Authorization: Bearer not_provided`, which
 Radioso answers with `401`.
 
-**The session key.** ElevenLabs sends no conversation id of its own, so the
-page that starts the session mints one and passes it in the custom LLM extra
-body. Allow that on the agent with
-`platform_settings.overrides.custom_llm_extra_body: true`, then start each
-session with a fresh key:
+**The session key.** ElevenLabs sends no conversation id of its own, so each
+session starts with a session key that ElevenLabs sends back on every turn in
+the custom LLM extra body. Allow that on the agent with
+`platform_settings.overrides.custom_llm_extra_body: true`. Radioso reads
+`elevenlabs_extra_body.session_key`, and `elevenlabs_extra_body.locale` when
+the session names the caller's language.
+
+### Start sessions from Radioso
+
+Radioso holds your ElevenLabs API key and opens each session for the page, so
+the page never sees the key and you run no backend of your own for it.
+
+1. In **Settings → Providers**, under **Voice runtime keys**, set the
+   ElevenLabs API key. Radioso encrypts it with `CONNECTOR_ENCRYPTION_KEY`,
+   like the model provider keys, and never shows it again. Workspace owners
+   and admins can set and remove it; `PUT` and `DELETE`
+   `/api/v1/settings/credentials/elevenlabs` do the same from the dashboard
+   session.
+2. On the agent's **Voice** card, turn on **Voice lines on calls**. Under
+   **Runtime**, keep **ElevenLabs** and enter the ElevenLabs agent id (the
+   `agent_…` id of the agent you connected above), then select **Save voice
+   settings**.
+3. On the page, start a public chat session the way the website embed does:
+   `POST /api/v1/public/chat/{token}/sessions` with
+   `{ "channel": "website_embed" }`, from an origin the website embed admits.
+   See [Public chat and embed](../docs-portal/content/api/public-chat-and-embed.mdx).
+4. Ask Radioso for a voice session with that public session, then open it with
+   the ElevenLabs client:
+
+   ```js
+   import { Conversation } from '@elevenlabs/client'
+
+   const start = await fetch(`https://api.radioso.ai/api/v1/public/chat/${launchToken}/voice/sessions`, {
+     method: 'POST',
+     headers: { 'content-type': 'application/json', 'x-radioso-public-session': publicSessionToken },
+     body: JSON.stringify({ locale: 'it' }),
+   }).then((response) => response.json())
+
+   const conversation = await Conversation.startSession({
+     signedUrl: start.signedUrl,
+     customLlmExtraBody: { session_key: start.sessionKey, locale: start.locale },
+   })
+   ```
+
+The start answers with the session the page opens:
+
+```json
+{
+  "vendor": "elevenlabs",
+  "signedUrl": "wss://api.elevenlabs.io/v1/convai/conversation?agent_id=agent_01jxk2v9qbe8n7r6t5w4&conversation_signature=…",
+  "sessionKey": "3f0c2a8e-5b1d-4c47-9a1e-0d6b2f7c9e41",
+  "locale": "it",
+  "expiresAt": "2026-10-16T12:15:00.000Z"
+}
+```
+
+`signedUrl` opens one session on your ElevenLabs agent until `expiresAt`, 15
+minutes after the start, so ask for a new one on every call and never store
+it. Each start mints a new `sessionKey`, so each call is its own
+conversation. `locale` is optional in the request. It tells Radioso which
+language the caller speaks, so bridge and fallback lines come in that
+language; leave it out and the response carries the agent's default locale,
+or `en`.
+
+Session starts have their own budget, sized like chat messages: by default 10
+a minute per visitor and 600 a minute per workspace
+(`PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS` and
+`PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` over
+`PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS`).
+
+| Status | `error.code` | What it means |
+|---|---|---|
+| `404` | `not_found` | The public session is missing or not valid from this origin, voice lines are off for the agent, or no runtime is bound. |
+| `409` | `voice_vendor_credential_missing` | The workspace has no ElevenLabs key. Set it under **Voice runtime keys**. |
+| `409` | `voice_vendor_credential_unreadable` | A key is stored but cannot be decrypted, usually after `CONNECTOR_ENCRYPTION_KEY` changed. Enter the key again. |
+| `429` | `rate_limit_exceeded` | The visitor or the workspace used up its session-start budget. |
+| `502` | `voice_vendor_unavailable` | ElevenLabs refused the start or did not answer within 5 seconds. The backend log line `Voice vendor refused the session start` carries ElevenLabs' status; `401` there means the stored key is wrong. |
+
+Ray can bind the runtime: ask it to connect the agent to your ElevenLabs agent
+and it drafts the whole `voice` block with `propose_agent_setting` for you to
+review. The API key is yours to enter in Settings; Ray never asks for it.
+
+### Start sessions from your own page
+
+When your page or backend opens the session itself, it mints the session key.
+A public ElevenLabs agent starts from its agent id; a private one needs a
+signed URL your backend requests with its ElevenLabs key:
 
 ```js
 import { Conversation } from '@elevenlabs/client'
@@ -112,17 +202,13 @@ const conversation = await Conversation.startSession({
 })
 ```
 
-`locale` is optional. It tells Radioso which language the caller speaks, so
-bridge and fallback lines come in that language; leave it out and the agent's
-default locale applies.
-
 Over the WebSocket API, send the same object as `custom_llm_extra_body` in
 the `conversation_initiation_client_data` message. ElevenLabs then sends it
-on every turn of the session as `elevenlabs_extra_body`, and Radioso reads
-`elevenlabs_extra_body.session_key`. Mint the key in the page: a dynamic
-variable such as `{{system__conversation_id}}` inside the extra body arrives
-as that literal text, which would put every call in one conversation.
-Radioso answers a session key that is a whole `{{…}}` placeholder with `400`.
+on every turn of the session as `elevenlabs_extra_body`. Mint the key in the
+page: a dynamic variable such as `{{system__conversation_id}}` inside the
+extra body arrives as that literal text, which would put every call in one
+conversation. Radioso answers a session key that is a whole `{{…}}`
+placeholder with `400`.
 
 ## Bridge lines and the turn limit
 
@@ -187,7 +273,8 @@ to the agent settings API yourself:
     "fallbackLine": {
       "en": "Sorry, this is taking much longer than it should, could you ask me again?",
       "it": "Scusa, ci sto mettendo troppo, puoi ripetere la domanda per favore?"
-    }
+    },
+    "runtime": { "vendor": "elevenlabs", "agentId": "agent_01jxk2v9qbe8n7r6t5w4" }
   }
 }
 ```
@@ -208,13 +295,16 @@ returns the block as `voice`, and the quick replies as `mechanicsReplies`.
 
 The block is replaced whole, whether the card, Ray, or your own request
 writes it: a request that carries `voice` must carry `enabled`,
-`bridgeLines` and `fallbackLine`, and a request without `voice` keeps the
-stored one. To turn voice off, send the block back with
+`bridgeLines`, `fallbackLine` and `runtime`, and a request without `voice`
+keeps the stored one. To turn voice off, send the block back with
 `"enabled": false`. Keys are language tags such as `en`, `it` or `pt-BR`, up
 to 10 for each map. Each style holds up to 5 lines, and every line is 1 to 200
 characters. The lines above follow the
 [first-sentence length rule](#elevenlabs-first-sentence-length) for the
-`elevenlabs` dialect. A new agent starts with `"enabled": false` and empty maps.
+`elevenlabs` dialect. `runtime` is the vendor agent a Radioso-started session
+opens: `vendor` is `elevenlabs`, and `agentId` is the vendor's own agent id, 1
+to 128 letters, digits, underscores and hyphens. `null` binds none. A new agent
+starts with `"enabled": false`, empty maps and `"runtime": null`.
 
 What happens on a turn while `enabled` is true:
 
@@ -577,6 +667,8 @@ that session key starts a new conversation.
   the same as a REST agent-channel client that disconnects, and the same
   utterance sent again within 30 seconds hears the saved reply. A turn still
   running well after the disconnect is cancelled.
-- The endpoint speaks the OpenAI chat-completions format voice runtimes call,
-  not Radioso's own API contract, so it is described on this page rather
-  than in the OpenAPI document or the TypeScript SDK.
+- The completions endpoint speaks the OpenAI chat-completions format voice
+  runtimes call, not Radioso's own API contract, so it is described on this
+  page rather than in the OpenAPI document or the TypeScript SDK. The session
+  start is Radioso's own contract: it is the `createPublicVoiceSession`
+  operation in the OpenAPI document.

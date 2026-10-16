@@ -139,11 +139,19 @@ export const publicChatFeedbackRateLimiter = (dependencies: PublicChatSessionBud
     }),
   });
 
-export const anonymousRateLimiters = (dependencies: AnonymousRateLimiterDependencies): RequestHandler[] => [
+const PUBLIC_CHAT_TURN_SCOPES = { session: "public.chat.session", workspace: "public.chat.global" } as const;
+// A voice session start opens a session on the workspace's own vendor account, so it spends its own
+// budgets, sized like the chat turn budgets: per browser (or source) and per workspace.
+const PUBLIC_VOICE_SESSION_START_SCOPES = { session: "public.voice.session_start", workspace: "public.voice.session_start.global" } as const;
+
+export const anonymousRateLimiters = (
+  dependencies: AnonymousRateLimiterDependencies,
+  scopes: { session: string; workspace: string } = PUBLIC_CHAT_TURN_SCOPES,
+): RequestHandler[] => [
   createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
-    scope: "public.chat.session",
+    scope: scopes.session,
     limit: dependencies.env.PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS,
     windowMs: dependencies.env.PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS,
     resolveSubjectKey: (req, res) => {
@@ -169,7 +177,7 @@ export const anonymousRateLimiters = (dependencies: AnonymousRateLimiterDependen
   createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
-    scope: "public.chat.global",
+    scope: scopes.workspace,
     limit: dependencies.env.PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS,
     windowMs: dependencies.env.PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS,
     resolveSubjectKey: (_req, res) => {
@@ -184,6 +192,9 @@ export const anonymousRateLimiters = (dependencies: AnonymousRateLimiterDependen
     }),
   }),
 ];
+
+export const publicVoiceSessionStartRateLimiters = (dependencies: AnonymousRateLimiterDependencies): RequestHandler[] =>
+  anonymousRateLimiters(dependencies, PUBLIC_VOICE_SESSION_START_SCOPES);
 
 export const resetRateLimiterState = () => {
   // Durable abuse control state is reset by test repository setup, so this is now a no-op.

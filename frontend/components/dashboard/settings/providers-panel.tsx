@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  AudioLines,
   Cpu,
   Key,
   MessageSquare,
@@ -52,6 +53,8 @@ import {
   llmProviderNames,
   llmProvidersApi,
   providerDisplayName,
+  voiceVendorNames,
+  type CredentialProviderName,
   type EnvProviderAvailability,
   type KnownModelsByProvider,
   type LlmCapabilityName,
@@ -109,9 +112,13 @@ const modelRowClassName =
   'grid gap-3 sm:grid-cols-[14rem_minmax(12rem,1fr)_minmax(12rem,1fr)_5.5rem] xl:grid-cols-[16rem_minmax(16rem,1fr)_minmax(18rem,1fr)_5.5rem]'
 
 const providerVisual: Record<
-  LlmProviderName,
+  CredentialProviderName,
   { monogram: string; tone: string }
 > = {
+  elevenlabs: {
+    monogram: 'EL',
+    tone: 'bg-violet-500/10 text-violet-600 ring-violet-500/30 dark:text-violet-300',
+  },
   openai: {
     monogram: 'OA',
     tone: 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300',
@@ -252,6 +259,12 @@ export function ProvidersPanel({
         onChange={reloadCredentials}
         emitSaveState={emitSaveState}
       />
+      <VoiceVendorCredentialsCard
+        encryptionConfigured={encryptionConfigured}
+        credentials={credentials}
+        onChange={reloadCredentials}
+        emitSaveState={emitSaveState}
+      />
       {models ? (
         <ModelsCard
           models={models}
@@ -283,13 +296,7 @@ function CredentialsCard({
 }) {
   const [editingProvider, setEditingProvider] = useState<LlmProviderName | null>(null)
 
-  const configuredByProvider = useMemo(() => {
-    const map = new Map<LlmProviderName, ProviderCredentialSummary>()
-    for (const credential of credentials) {
-      map.set(credential.provider, credential)
-    }
-    return map
-  }, [credentials])
+  const configuredByProvider = useConfiguredCredentials(credentials)
 
   return (
     <SettingsCard
@@ -321,10 +328,57 @@ function CredentialsCard({
               onStopEditing={() => setEditingProvider(null)}
               onChange={onChange}
               emitSaveState={emitSaveState}
+              notConfiguredHint="Add a key to use this provider in workspace models."
             />
           ))}
         </ul>
       </div>
+    </SettingsCard>
+  )
+}
+
+const useConfiguredCredentials = (credentials: ProviderCredentialSummary[]) =>
+  useMemo(() => new Map(credentials.map((credential) => [credential.provider, credential])), [credentials])
+
+/** Keys a voice runtime starts sessions with. Always the workspace's own: there is no deployment key to inherit. */
+function VoiceVendorCredentialsCard({
+  encryptionConfigured,
+  credentials,
+  onChange,
+  emitSaveState,
+}: {
+  encryptionConfigured: boolean
+  credentials: ProviderCredentialSummary[]
+  onChange: () => Promise<unknown>
+  emitSaveState: (state: SaveState) => void
+}) {
+  const [editingProvider, setEditingProvider] = useState<CredentialProviderName | null>(null)
+  const configuredByProvider = useConfiguredCredentials(credentials)
+
+  return (
+    <SettingsCard
+      id="voice-vendor-credentials"
+      icon={<AudioLines className="h-5 w-5 text-primary" />}
+      title="Voice runtime keys"
+      description="Radioso starts voice sessions with this key, so pages never hold it. Encrypted at rest and never shown again."
+    >
+      <ul className="divide-y divide-border/70 overflow-hidden rounded-xl border border-border bg-background/40">
+        {voiceVendorNames.map((provider) => (
+          <CredentialRow
+            key={`${provider}:${editingProvider === provider ? 'editing' : 'idle'}`}
+            provider={provider}
+            configured={configuredByProvider.get(provider) ?? null}
+            envAvailable={false}
+            disabled={!encryptionConfigured}
+            editing={editingProvider === provider}
+            onStartEditing={() => setEditingProvider(provider)}
+            onStopEditing={() => setEditingProvider(null)}
+            onChange={onChange}
+            emitSaveState={emitSaveState}
+            notConfiguredHint="Add a key so pages can start voice sessions on your ElevenLabs agents."
+          />
+        ))}
+      </ul>
     </SettingsCard>
   )
 }
@@ -339,8 +393,9 @@ function CredentialRow({
   onStopEditing,
   onChange,
   emitSaveState,
+  notConfiguredHint,
 }: {
-  provider: LlmProviderName
+  provider: CredentialProviderName
   configured: ProviderCredentialSummary | null
   envAvailable: boolean
   disabled: boolean
@@ -349,6 +404,7 @@ function CredentialRow({
   onStopEditing: () => void
   onChange: () => Promise<unknown>
   emitSaveState: (state: SaveState) => void
+  notConfiguredHint: string
 }) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -407,7 +463,7 @@ function CredentialRow({
     ? `Updated ${new Date(configured.updatedAt).toLocaleString()}`
     : envAvailable
       ? 'Inherits the deployment environment variable.'
-      : 'Add a key to use this provider in workspace models.'
+      : notConfiguredHint
 
   return (
     <li className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between">
@@ -586,7 +642,7 @@ function ModelRow({
   capability: LlmCapabilityName
   value: LlmCapabilityPreference | null
   managed: LlmManagedModel | null
-  credentialProviders: Set<LlmProviderName>
+  credentialProviders: ReadonlySet<CredentialProviderName>
   availableProviders: Set<LlmProviderName>
   knownModelsByProvider: KnownModelsByProvider
   onChange: () => Promise<unknown>

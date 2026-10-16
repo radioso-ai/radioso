@@ -1,8 +1,13 @@
+import { randomUUID } from "node:crypto";
+
 import type { ChatStreamEvent, ReplyInterruptionMarker } from "../../modules/chat/contracts/index.js";
 import {
   VoiceSessionRepository,
+  VoiceSessionStartService,
   VoiceTurnService,
+  createElevenLabsSessionStarter,
   type VoiceChatTurnRequest,
+  type VoiceSessionStartPort,
   type VoiceTurnNotes,
   type VoiceTurnPort,
 } from "../../modules/voiceChannel/public.js";
@@ -12,6 +17,19 @@ import { isHumanOwned, type ConversationOwnershipReader } from "../../modules/ha
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type { VoiceVendor } from "../../shared/domain/voiceVendor.js";
+
+type AgentVoiceProfileRepository = {
+  findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<Pick<AgentRecord, "voice" | "assistantDefaultLocale"> | null>;
+};
+
+/** The agent's voice block and default language, which both the turn and the session start read. */
+const voiceProfileSource = (agentRepository: AgentVoiceProfileRepository) => ({
+  findVoiceProfile: async ({ workspaceId, agentId }: { workspaceId: string; agentId: string }) => {
+    const agent = await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+    return agent ? { voice: agent.voice, defaultLocale: agent.assistantDefaultLocale } : null;
+  },
+});
 
 /**
  * Notes on a previous turn's stored reply. An interrupted reply is marked on the message first and
@@ -53,9 +71,7 @@ export const createVoiceChannelComposition = (deps: {
   assistantChatService: {
     streamAnswer(input: VoiceChatTurnRequest & { stream: true }): AsyncIterable<ChatStreamEvent>;
   };
-  agentRepository: {
-    findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<Pick<AgentRecord, "voice" | "assistantDefaultLocale"> | null>;
-  };
+  agentRepository: AgentVoiceProfileRepository;
   routineStates: { loadActive(input: { sessionId: string }): Promise<unknown> };
   conversationOwnership: ConversationOwnershipReader;
   replies: ReplyInterruptionMarker;
@@ -66,16 +82,38 @@ export const createVoiceChannelComposition = (deps: {
   new VoiceTurnService({
     sessions: new VoiceSessionRepository(deps.db),
     chat: { streamTurn: (request) => deps.assistantChatService.streamAnswer({ ...request, stream: true }) },
-    agents: {
-      findVoiceProfile: async ({ workspaceId, agentId }) => {
-        const agent = await deps.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
-        return agent ? { voice: agent.voice, defaultLocale: agent.assistantDefaultLocale } : null;
-      },
-    },
+    agents: voiceProfileSource(deps.agentRepository),
     // A conversation's routine state is keyed by the conversation id.
     routines: { isRoutineActive: async (conversationId) => (await deps.routineStates.loadActive({ sessionId: conversationId })) !== null },
     ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await deps.conversationOwnership.load(conversationId)) },
     notes: createVoiceTurnNotes({ replies: deps.replies, auditService: deps.auditService, logger: deps.logger }),
+    metrics: deps.metricsRegistry,
+    logger: deps.logger,
+  });
+
+/**
+ * Starts voice sessions on the vendor agent each Radioso agent is bound to: the ElevenLabs session
+ * starter over `fetch`, and the workspace's vendor key from the workspace credential store. A
+ * vendor key is always the workspace's own; there is no deployment fallback, so a workspace without
+ * one gets no session.
+ */
+export const createVoiceSessionStartComposition = (deps: {
+  agentRepository: AgentVoiceProfileRepository;
+  credentials: { getApiKey(workspaceId: string, provider: VoiceVendor): Promise<string | undefined> };
+  fetch: typeof globalThis.fetch;
+  metricsRegistry: MetricsRegistry | null;
+  logger: AppLogger;
+}): VoiceSessionStartPort =>
+  new VoiceSessionStartService({
+    agents: voiceProfileSource(deps.agentRepository),
+    credentials: {
+      read: async ({ workspaceId, vendor }) => {
+        const apiKey = await deps.credentials.getApiKey(workspaceId, vendor);
+        return apiKey ? { apiKey } : null;
+      },
+    },
+    starters: { elevenlabs: createElevenLabsSessionStarter({ fetch: deps.fetch }) },
+    newSessionKey: randomUUID,
     metrics: deps.metricsRegistry,
     logger: deps.logger,
   });

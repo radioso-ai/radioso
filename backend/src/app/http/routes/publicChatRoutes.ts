@@ -45,6 +45,7 @@ import {
   websiteEmbedLaunchDeniedAuditEvent,
 } from "../presenters/publicChatPresenter.js";
 import { resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
+import { registerPublicVoiceSessionRoute } from "./publicVoiceSessionRoute.js";
 
 type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   AppDependencies,
@@ -66,6 +67,7 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "workspaceRepository"
   | "accountAccessService"
   | "accessGrantService"
+  | "voiceSessionStarts"
 >;
 
 const verifyRequestSignedIdentity = async (
@@ -612,6 +614,9 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       next(error);
     }
   });
+
+  // POST /api/v1/public/chat/:token/voice/sessions — start a voice session for the visitor's session
+  registerPublicVoiceSessionRoute(router, { ...dependencies, publicSession: sessionMiddleware });
 
   // POST /api/v1/public/chat/:token — send a message
   router.post(

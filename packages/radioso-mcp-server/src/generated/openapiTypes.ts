@@ -4450,6 +4450,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/chat/{token}/voice/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a voice session for the current public chat session
+         * @description Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own API key for that vendor, and returns the vendor's signed URL with a fresh Radioso session key. The key never leaves the backend. Send the public session as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message.
+         */
+        post: operations["createPublicVoiceSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/chat/{token}/history/{conversationId}": {
         parameters: {
             query?: never;
@@ -5163,7 +5183,7 @@ export interface components {
         };
         WorkspaceProviderCredentialSummary: {
             /** @enum {string} */
-            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            provider: "openai" | "openai-compatible" | "gemini" | "claude" | "elevenlabs";
             /** Format: date-time */
             updatedAt: string;
         };
@@ -5380,7 +5400,7 @@ export interface components {
                 url: string;
             };
         };
-        /** @description How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. An update replaces the block whole. */
+        /** @description How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens; null binds none. An update replaces the block whole. */
         AgentVoiceSettings: {
             enabled: boolean;
             bridgeLines: {
@@ -5392,6 +5412,11 @@ export interface components {
             fallbackLine: {
                 [key: string]: string;
             };
+            runtime: {
+                /** @enum {string} */
+                vendor: "elevenlabs";
+                agentId: string;
+            } | null;
         };
         /** @description What the agent says, word for word, to a greeting, thanks, farewell, or acknowledgement, keyed by language tag (at most 10). Each locale entry holds every mechanic, each with at most 5 lines of 1 to 200 characters. When a turn is one of these mechanics and the agent has a line for it in the turn's language, the reply is an authored line, rotated per conversation. An update replaces the block whole. */
         AgentMechanicsReplies: {
@@ -6460,6 +6485,34 @@ export interface components {
                     supportedOperations: ("metadata" | "lookup" | "summarize")[];
                 };
             };
+        };
+        /** @description `locale` is the caller's language tag; without it the agent's default language applies, then `en`. */
+        PublicVoiceSessionRequest: {
+            locale?: string;
+        };
+        PublicVoiceSessionResponse: {
+            /**
+             * @description The voice runtime the session opens on: the agent's `voice.runtime.vendor`.
+             * @enum {string}
+             */
+            vendor: "elevenlabs";
+            /**
+             * Format: uri
+             * @description The vendor's URL that opens one session on the agent's vendor agent. Hand it to the vendor's client before `expiresAt`; never store or log it.
+             */
+            signedUrl: string;
+            /**
+             * Format: uuid
+             * @description Radioso's key for this session. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation; on `elevenlabs` it travels as the custom LLM extra body's `session_key`.
+             */
+            sessionKey: string;
+            /** @description The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`. */
+            locale: string;
+            /**
+             * Format: date-time
+             * @description When `signedUrl` stops opening sessions, when the vendor states it.
+             */
+            expiresAt?: string;
         };
         WorkspaceIngestionReprocessResponse: {
             /** Format: uuid */
@@ -15280,7 +15333,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                provider: "openai" | "openai-compatible" | "gemini" | "claude" | "elevenlabs";
             };
             cookie?: never;
         };
@@ -15331,7 +15384,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                provider: "openai" | "openai-compatible" | "gemini" | "claude" | "elevenlabs";
             };
             cookie?: never;
         };
@@ -29271,6 +29324,77 @@ export interface operations {
             };
             /** @description Public chat response is unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createPublicVoiceSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PublicVoiceSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Voice session started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicVoiceSessionResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Public session not found, or the agent takes no voice sessions: voice is off or no vendor agent is bound */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The workspace holds no readable API key for the agent's voice vendor: `voice_vendor_credential_missing` or `voice_vendor_credential_unreadable`, with `details.vendor` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Voice session start rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
+            /** @description The voice vendor did not start the session: `voice_vendor_unavailable`, with `details.vendor` */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

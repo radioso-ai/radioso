@@ -208,6 +208,7 @@ const accountScope = permanent("Permanent exclusion: this is account-scoped rath
 const endUserSurface = permanent("Permanent exclusion: this is an end-user or inbound integration surface, not an operator-copilot tool.");
 const authOrRegistration = permanent("Permanent exclusion: authentication and registration are not an operator-copilot surface.");
 const personalProfile = permanent("Permanent exclusion: a profile is the signed-in person's own identity, not workspace configuration; only that person edits their name.");
+const visitorVoiceSessionStart = permanent("Permanent exclusion: a visitor's page starts a voice session from the website embed's public session. The operator configures what it opens through the agent's voice block (voice.runtime, which propose_agent_setting covers) and the workspace's vendor key in Settings, which the never-list's provider_credential_writes keeps from Ray.");
 const agentDiscoveryDocument = permanent("Permanent exclusion: the public discovery documents are read by a visiting agent, not by an operator. They render what the operator already controls through the agent's card and walk-in settings, which `propose_agent_setting` covers.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
 const ambientOperatorRuntime = permanent("Permanent exclusion: this is ambient operator-dashboard runtime transport, not an action Ray may call.");
@@ -514,6 +515,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "tailPublicChatHistoryConversation",
     "streamPublicChatConversationEvents",
   ], endUserSurface),
+  createPublicVoiceSession: visitorVoiceSessionStart,
 
   listPendingDecisions: "workspace_triage",
   createAgentDirective: "propose_directive",

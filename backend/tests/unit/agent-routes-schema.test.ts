@@ -38,6 +38,7 @@ describe("agent route schema", () => {
       enabled: true,
       bridgeLines: { en: { acknowledge: ["Got it."], check: ["One moment."] } },
       fallbackLine: { en: "Sorry, could you ask me again?" },
+      runtime: null,
     };
 
     expect(agentBodySchema.parse({ voice }).voice).toEqual(voice);

@@ -16,6 +16,7 @@ const authored = {
     en: "Sorry, that is taking longer than it should. Could you ask me again?",
     "it-IT": "Scusa, ci sto mettendo troppo. Puoi ripetere la domanda?",
   },
+  runtime: { vendor: "elevenlabs", agentId: "agent_01jxk2v9qbe8n7r6t5w4" },
 };
 
 const lines = (count: number): string[] => Array.from({ length: count }, (_, index) => `Line ${index + 1}.`);
@@ -26,7 +27,7 @@ describe("agent voice settings", () => {
   });
 
   it("starts with voice off and nothing authored", () => {
-    expect(defaultAgentVoiceSettings()).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {} });
+    expect(defaultAgentVoiceSettings()).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
   });
 
   it("rejects more than five lines for one style", () => {
@@ -72,6 +73,33 @@ describe("agent voice settings", () => {
       ...authored,
       bridgeLines: { en: { check: ["One moment."] } },
     }).success).toBe(false);
+  });
+
+  it("binds the agent to one vendor agent, or to none", () => {
+    expect(agentVoiceSettingsSchema.parse({ ...authored, runtime: null }).runtime).toBeNull();
+    expect(agentVoiceSettingsSchema.parse({ ...authored, runtime: { vendor: "elevenlabs", agentId: "  agent_42  " } }).runtime)
+      .toEqual({ vendor: "elevenlabs", agentId: "agent_42" });
+  });
+
+  it.each([
+    ["an unknown vendor", { vendor: "vapi", agentId: "agent_42" }],
+    ["a blank vendor agent id", { vendor: "elevenlabs", agentId: "   " }],
+    ["a vendor agent id with a path or query in it", { vendor: "elevenlabs", agentId: "agent_42&branch_id=x" }],
+    ["a vendor agent id longer than 128 characters", { vendor: "elevenlabs", agentId: "a".repeat(129) }],
+  ])("rejects a runtime with %s", (_case, runtime) => {
+    expect(agentVoiceSettingsSchema.safeParse({ ...authored, runtime }).success).toBe(false);
+  });
+
+  it("requires the runtime key, so a block written without it cannot unbind the vendor agent", () => {
+    const { runtime: _runtime, ...withoutRuntime } = authored;
+
+    expect(agentVoiceSettingsSchema.safeParse(withoutRuntime).success).toBe(false);
+  });
+
+  it("reads a stored block written before the runtime binding as bound to no vendor agent", () => {
+    const { runtime: _runtime, ...storedWithoutRuntime } = authored;
+
+    expect(readStoredAgentVoiceSettings(storedWithoutRuntime)).toEqual({ ...authored, runtime: null });
   });
 
   it("reads a stored block back as authored, and anything unreadable as voice off", () => {

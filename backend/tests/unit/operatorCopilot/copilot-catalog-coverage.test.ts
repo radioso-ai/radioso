@@ -92,13 +92,22 @@ describe("operator copilot catalog coverage", () => {
       reason: expect.stringContaining("vendor-facing wire adapter"),
     });
   });
+  it("keeps the visitor's voice session start outside Ray's catalog, with the settings it reads named as Ray's to propose", () => {
+    expect(catalogCoverage.createPublicVoiceSession).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("voice.runtime, which propose_agent_setting covers"),
+    });
+    // The vendor key a start needs stays a secret Ray never writes.
+    expect(catalogCoverage.setWorkspaceProviderCredential).toEqual(catalogCoverage.removeWorkspaceProviderCredential);
+    expect(JSON.stringify(catalogCoverage.setWorkspaceProviderCredential)).toContain("provider_credential_writes");
+  });
   it("lets Ray author the agent's voice and mechanics replies blocks through both agent-settings tools", () => {
     expect(internalRuntimeCoverageExclusions).not.toHaveProperty("voiceSettingsBlock");
     expect(internalRuntimeCoverageExclusions).not.toHaveProperty("mechanicsRepliesBlock");
     // propose_agent_setting validates settingKey against this map; prepare_agent_settings carries this patch.
     expect(Object.keys(agentInputFieldSchemas)).toEqual(expect.arrayContaining(["voice", "mechanicsReplies"]));
     expect(agentReviewedSettingsPatchSchema.safeParse({
-      voice: { enabled: true, bridgeLines: {}, fallbackLine: {} },
+      voice: { enabled: true, bridgeLines: {}, fallbackLine: {}, runtime: null },
       mechanicsReplies: { en: { greeting: ["Hi!"], thanks: [], farewell: [], acknowledgement: [] } },
     }).success).toBe(true);
     // Both blocks replace whole, so each descriptor tells Ray to send the lines it keeps, and states
@@ -108,6 +117,9 @@ describe("operator copilot catalog coverage", () => {
       const description = catalog.find((descriptor) => descriptor.name === name)?.description;
       expect(description).toContain("replace the stored block whole");
       expect(description).toContain(`bridge or fallback line shorter than ${ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS} characters`);
+      // The runtime binding is Ray's to propose; the vendor key it needs is a secret Ray never writes.
+      expect(description).toContain("voice.runtime binds the agent to one vendor agent");
+      expect(description).toContain("the operator enters the vendor's API key in Settings");
     }
     // agent_configuration returns the live voice block beside the portable configuration.
     expect(catalog.find((descriptor) => descriptor.name === "agent_configuration")?.description).toContain("live voice settings");

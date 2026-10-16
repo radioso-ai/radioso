@@ -1,10 +1,14 @@
 import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type { VoiceVendor } from "../../shared/domain/voiceVendor.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
+
+/** A third-party account a workspace holds an API key for: a model provider or a voice vendor. */
+export type WorkspaceCredentialProvider = LlmProviderName | VoiceVendor;
 
 export interface WorkspaceProviderCredentialRecord {
   workspaceId: string;
-  provider: LlmProviderName;
+  provider: WorkspaceCredentialProvider;
   ciphertext: string;
   createdAt: Date;
   updatedAt: Date;
@@ -12,13 +16,13 @@ export interface WorkspaceProviderCredentialRecord {
 
 export interface WorkspaceProviderCredentialSummary {
   workspaceId: string;
-  provider: LlmProviderName;
+  provider: WorkspaceCredentialProvider;
   updatedAt: Date;
 }
 
 interface CredentialRow {
   workspace_id: string;
-  provider: LlmProviderName;
+  provider: WorkspaceCredentialProvider;
   ciphertext: string;
   created_at: Date;
   updated_at: Date;
@@ -26,7 +30,7 @@ interface CredentialRow {
 
 interface CredentialSummaryRow {
   workspace_id: string;
-  provider: LlmProviderName;
+  provider: WorkspaceCredentialProvider;
   updated_at: Date;
 }
 
@@ -50,15 +54,15 @@ const mapSummary = (row: CredentialSummaryRow): WorkspaceProviderCredentialSumma
 export interface WorkspaceProviderCredentialsRepositoryPort {
   findByWorkspaceAndProvider(
     workspaceId: string,
-    provider: LlmProviderName,
+    provider: WorkspaceCredentialProvider,
   ): Promise<WorkspaceProviderCredentialRecord | null>;
   listByWorkspace(workspaceId: string): Promise<WorkspaceProviderCredentialSummary[]>;
   upsert(input: {
     workspaceId: string;
-    provider: LlmProviderName;
+    provider: WorkspaceCredentialProvider;
     ciphertext: string;
   }): Promise<WorkspaceProviderCredentialRecord>;
-  remove(workspaceId: string, provider: LlmProviderName): Promise<boolean>;
+  remove(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<boolean>;
 }
 
 export class WorkspaceProviderCredentialsRepository
@@ -68,7 +72,7 @@ export class WorkspaceProviderCredentialsRepository
 
   async findByWorkspaceAndProvider(
     workspaceId: string,
-    provider: LlmProviderName,
+    provider: WorkspaceCredentialProvider,
   ): Promise<WorkspaceProviderCredentialRecord | null> {
     const row = await this.db
       .selectFrom("workspace_provider_credentials")
@@ -93,7 +97,7 @@ export class WorkspaceProviderCredentialsRepository
 
   async upsert(input: {
     workspaceId: string;
-    provider: LlmProviderName;
+    provider: WorkspaceCredentialProvider;
     ciphertext: string;
   }): Promise<WorkspaceProviderCredentialRecord> {
     const row = await this.db
@@ -115,7 +119,7 @@ export class WorkspaceProviderCredentialsRepository
     return mapRecord(row as CredentialRow);
   }
 
-  async remove(workspaceId: string, provider: LlmProviderName): Promise<boolean> {
+  async remove(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<boolean> {
     const result = await this.db
       .deleteFrom("workspace_provider_credentials")
       .where("workspace_id", "=", workspaceId)

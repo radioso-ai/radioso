@@ -2,6 +2,7 @@ import { createAgentBundleServices } from "../../src/app/composition/agentBundle
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
+import { createVoiceSessionStartComposition } from "../../src/app/composition/voiceChannel.js";
 import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { setTimeout as delay } from "node:timers/promises";
@@ -847,6 +848,8 @@ export const createTestDependencies = (overrides: {
   deliveryFailures?: AppDependencies["deliveryFailures"];
   /** Held replies and the decisions on them; omitted means a workspace with none. */
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
+  /** The `fetch` voice vendor session starters call; omitted means every vendor call fails as unreachable. */
+  voiceVendorFetch?: typeof globalThis.fetch;
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
   agentToolCatalog?: (readers: {
     agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
@@ -2855,6 +2858,15 @@ export const createTestDependencies = (overrides: {
       metrics: metricsRegistry,
       logger,
     }),
+    voiceSessionStarts: createVoiceSessionStartComposition({
+      agentRepository,
+      credentials: workspaceProviderCredentialsService,
+      fetch: overrides.voiceVendorFetch ?? (async () => {
+        throw new TypeError("Voice vendor calls are disabled in tests");
+      }),
+      metricsRegistry,
+      logger,
+    }),
     assistantHistoryService,
     retrievalSearchService,
     retrievalAnswerService,
@@ -2972,6 +2984,7 @@ export const createTestApp = (overrides: {
   emailChannel?: AppDependencies["emailChannel"];
   deliveryFailures?: AppDependencies["deliveryFailures"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
+  voiceVendorFetch?: typeof globalThis.fetch;
 } = {}) => {
   const {
     dependencies,

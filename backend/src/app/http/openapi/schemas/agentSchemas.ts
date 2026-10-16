@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
+import { publicVoiceSessionStartSchema } from "../../routes/publicVoiceSessionRoute.js";
 import { createRevisionCandidateBodySchema, publishRevisionBodySchema } from "../../routes/agentRevisionRequestSchemas.js";
 import {
   agentChannelChatSchema,
@@ -27,6 +28,7 @@ import {
 import { skillDisplayMetadataSchema, skillOutcomeStatusSchema } from "../../../../modules/skills/public.js";
 import { exactContentItemSchema } from "../../../../shared/domain/exactContent.js";
 import { LOCALE_TAG_PATTERN } from "../../../../shared/domain/locale.js";
+import { VOICE_VENDORS } from "../../../../shared/domain/voiceVendor.js";
 import { AGENT_BUNDLE_SCHEMA_VERSION } from "../../../../modules/agentBundle/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
@@ -121,7 +123,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     agentVoiceSettingsSchema.openapi({
       description:
         "How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag "
-        + "(at most 10 each); each style holds at most 5 lines of 1 to 200 characters. An update replaces the block whole.",
+        + "(at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one "
+        + "vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice "
+        + "session start opens; null binds none. An update replaces the block whole.",
     }),
   );
 
@@ -714,6 +718,28 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     publicChatSessionSchema,
   );
 
+  const PublicVoiceSessionRequestSchema = registry.register(
+    "PublicVoiceSessionRequest",
+    publicVoiceSessionStartSchema.openapi({
+      description: "`locale` is the caller's language tag; without it the agent's default language applies, then `en`.",
+    }),
+  );
+
+  const PublicVoiceSessionResponseSchema = registry.register(
+    "PublicVoiceSessionResponse",
+    z.object({
+      vendor: z.enum(VOICE_VENDORS).openapi({ description: "The voice runtime the session opens on: the agent's `voice.runtime.vendor`." }),
+      signedUrl: z.string().url().openapi({
+        description: "The vendor's URL that opens one session on the agent's vendor agent. Hand it to the vendor's client before `expiresAt`; never store or log it.",
+      }),
+      sessionKey: z.string().uuid().openapi({
+        description: "Radioso's key for this session. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation; on `elevenlabs` it travels as the custom LLM extra body's `session_key`.",
+      }),
+      locale: z.string().openapi({ description: "The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`." }),
+      expiresAt: z.string().datetime().optional().openapi({ description: "When `signedUrl` stops opening sessions, when the vendor states it." }),
+    }),
+  );
+
   const WorkspaceIngestionReprocessResponseSchema = registry.register(
     "WorkspaceIngestionReprocessResponse",
     z.object({
@@ -1172,6 +1198,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     RoutineValidationResultSchema,
     PublicChatSessionResponseSchema,
     PublicChatSessionRequestSchema,
+    PublicVoiceSessionRequestSchema,
+    PublicVoiceSessionResponseSchema,
     WorkspaceIngestionReprocessResponseSchema,
     AgentConfigRefPlaceholderSchema,
     AgentBundleAgentConfigSchema,

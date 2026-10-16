@@ -112,11 +112,15 @@ export {
 export { AnswerPresentationService } from "./services/answerPresentationService.js";
 export { createSkillOutcomeCapabilityProvider } from "./services/chatAnswerPresenter.js";
 export {
-  ActionDispatcher,
   ActionHandlerRegistry,
   type ActionHandler,
+  type ActionHandlerContext,
 } from "./services/actions/actionDispatcher.js";
-export { ActionDispatchWorker } from "./services/actions/actionDispatchWorker.js";
+export {
+  ACTION_DISPATCH_JOB,
+  createActionDispatchJobHandler,
+  type ActionDispatchPersistedOutcome,
+} from "./services/actions/actionDispatchJob.js";
 // The action outbox's drain push rides the generic job substrate's wake port (#1509) rather than
 // a bespoke lookalike — see `backend/src/shared/background-jobs/types.ts`.
 export {

@@ -234,6 +234,20 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
       expect(await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] })).toBeNull();
     });
 
+    it("retry runs the per-attempt hook once the reschedule lands, and never for a superseded claim", async () => {
+      await enqueue();
+      const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }], asOf: new Date() });
+      const onRetried = vi.fn(async () => undefined);
+
+      expect(await repository.retry(claim!, { error: "provider_unavailable", delaySeconds: 60 }, onRetried)).toBeInstanceOf(Date);
+      expect(onRetried).toHaveBeenCalledOnce();
+
+      // Superseded: the hook never runs for a claim that is no longer live.
+      const onRetriedAgain = vi.fn(async () => undefined);
+      expect(await repository.retry(claim!, { error: "provider_unavailable", delaySeconds: 60 }, onRetriedAgain)).toBeNull();
+      expect(onRetriedAgain).not.toHaveBeenCalled();
+    });
+
     it("deadLetter marks the row terminally failed and keeps its payload, running the park hook once", async () => {
       await enqueue();
       const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
@@ -257,11 +271,11 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
       expect(onParkedAgain).not.toHaveBeenCalled();
     });
 
-    it("skip marks the row terminally skipped without consuming a retry — the outcome BackgroundJobStore has no slot for", async () => {
+    it("complete with a skip outcome marks the row terminally skipped without consuming a retry", async () => {
       await enqueue();
       const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
 
-      expect(await repository.skip(claim!, { reason: "mail_not_dispatched:driver=log" })).toBe(true);
+      expect(await repository.complete(claim!, { skipped: "mail_not_dispatched:driver=log" })).toBe("deleted");
 
       const row = (await database.query<{ status: string; last_error: string | null; attempts: number }>(
         `SELECT status, last_error, attempts FROM routine_action_requests WHERE id = $1`,

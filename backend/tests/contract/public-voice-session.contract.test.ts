@@ -59,7 +59,9 @@ const embedWorkspace = async (options: {
         .send(startBody);
     return { publicSessionToken, startVoiceSession };
   };
-  return { ...created, operator, agentId, launchToken, anonymousChatToken, visitor };
+  /** What the website embed's launcher reads before it shows anything. */
+  const embedConfig = () => request(app).get(`/api/v1/public/chat/${launchToken}/embed-config`).set("Origin", SITE).expect(200);
+  return { ...created, operator, agentId, launchToken, anonymousChatToken, visitor, embedConfig };
 };
 
 const startOutcomes = (metrics: string): string[] =>
@@ -271,5 +273,27 @@ describe("public voice session start contract", () => {
     // The chat turn groups a new conversation by this key, exactly as the embed's own chat does.
     expect(chatTurns.mock.calls.map(([turn]) => turn.visitorKey)).toEqual([visitorKey, undefined, undefined]);
     expect(chatTurns.mock.calls[1]?.[0].conversationId).toEqual(expect.any(String));
+  });
+
+  it("tells the website embed it can talk when voice is on, a vendor agent is bound and the workspace holds the vendor key", async () => {
+    const { embedConfig } = await embedWorkspace();
+
+    const config = await embedConfig();
+
+    expect(config.body.voice).toEqual({ available: true });
+    expect(JSON.stringify(config.body)).not.toContain("agent_42");
+    expect(JSON.stringify(config.body)).not.toContain("elevenlabs");
+  });
+
+  it.each([
+    ["voice is off for the agent", { voice: { ...boundVoice, enabled: false } }],
+    ["the agent is bound to no vendor agent", { voice: { ...boundVoice, runtime: null } }],
+    ["the workspace holds no vendor key", { vendorKey: null }],
+  ])("tells the website embed it cannot talk when %s", async (_case, options) => {
+    const { embedConfig } = await embedWorkspace(options);
+
+    const config = await embedConfig();
+
+    expect(config.body.voice).toEqual({ available: false });
   });
 });

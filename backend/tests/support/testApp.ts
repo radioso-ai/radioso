@@ -2650,6 +2650,16 @@ export const createTestDependencies = (overrides: {
         listPublished: ({ agentId }) => routineDefinitionRepository.listActiveByAgent(agentId),
       },
     });
+  const voiceSessionStarts = createVoiceSessionStartComposition({
+    agentRepository,
+    starts: voiceSessions,
+    credentials: workspaceProviderCredentialsService,
+    fetch: overrides.voiceVendorFetch ?? (async () => {
+      throw new TypeError("Voice vendor calls are disabled in tests");
+    }),
+    metricsRegistry,
+    logger,
+  });
   const dependencies: AppDependencies = {
     env,
     agentBundleExportService: agentBundleServices.exportService,
@@ -2888,16 +2898,8 @@ export const createTestDependencies = (overrides: {
       metrics: metricsRegistry,
       logger,
     }),
-    voiceSessionStarts: createVoiceSessionStartComposition({
-      agentRepository,
-      starts: voiceSessions,
-      credentials: workspaceProviderCredentialsService,
-      fetch: overrides.voiceVendorFetch ?? (async () => {
-        throw new TypeError("Voice vendor calls are disabled in tests");
-      }),
-      metricsRegistry,
-      logger,
-    }),
+    voiceSessionStarts,
+    voiceSessionAvailability: voiceSessionStarts,
     assistantHistoryService,
     retrievalSearchService,
     retrievalAnswerService,

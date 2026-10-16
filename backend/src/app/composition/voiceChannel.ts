@@ -6,6 +6,7 @@ import {
   VoiceTurnService,
   createElevenLabsSessionStarter,
   type VoiceChatTurnRequest,
+  type VoiceSessionAvailabilityPort,
   type VoiceSessionStartLookup,
   type VoiceSessionStartPort,
   type VoiceSessionStartRegistry,
@@ -105,16 +106,20 @@ const isUnreadableCredential = (error: unknown): boolean =>
  * Starts voice sessions on the vendor agent each Radioso agent is bound to: the ElevenLabs session
  * starter over `fetch`, the workspace's vendor key from the workspace credential store, and a
  * registry of started sessions (`VoiceSessionRepository` in production). A vendor key is always the workspace's own; there is no
- * deployment fallback, so a workspace without one gets no session.
+ * deployment fallback, so a workspace without one gets no session. The same service tells a page
+ * whether to offer sessions, from the key's presence alone (`hasCredentials` decrypts nothing).
  */
 export const createVoiceSessionStartComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
   starts: VoiceSessionStartRegistry;
-  credentials: { getApiKey(workspaceId: string, provider: VoiceVendor): Promise<string | undefined> };
+  credentials: {
+    getApiKey(workspaceId: string, provider: VoiceVendor): Promise<string | undefined>;
+    hasCredentials(workspaceId: string, provider: VoiceVendor): Promise<boolean>;
+  };
   fetch: typeof globalThis.fetch;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
-}): VoiceSessionStartPort =>
+}): VoiceSessionStartPort & VoiceSessionAvailabilityPort =>
   new VoiceSessionStartService({
     agents: voiceProfileSource(deps.agentRepository),
     credentials: {
@@ -127,6 +132,7 @@ export const createVoiceSessionStartComposition = (deps: {
           throw error;
         }
       },
+      isStored: ({ workspaceId, vendor }) => deps.credentials.hasCredentials(workspaceId, vendor),
     },
     starters: { elevenlabs: createElevenLabsSessionStarter({ fetch: deps.fetch }) },
     starts: deps.starts,

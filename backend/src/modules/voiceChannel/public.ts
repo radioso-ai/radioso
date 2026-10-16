@@ -1,4 +1,5 @@
 export type {
+  VoiceSessionAvailabilityPort,
   VoiceSessionStartLookup,
   VoiceSessionStartPort,
   VoiceSessionStartRegistry,

@@ -66,7 +66,7 @@ import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { VisitorGeoResolver } from "../../shared/domain/visitorGeoResolver.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
-import type { VoiceSessionStartPort, VoiceTurnPort } from "../../modules/voiceChannel/public.js";
+import type { VoiceSessionAvailabilityPort, VoiceSessionStartPort, VoiceTurnPort } from "../../modules/voiceChannel/public.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { WebhookDestinationPublicAdapter } from "../../modules/webhooks/public.js";
@@ -338,6 +338,8 @@ export interface AppDependencies {
   /** One spoken caller turn on a voice session; vendor adapters mount over it. */
   voiceTurns: VoiceTurnPort;
   voiceSessionStarts: VoiceSessionStartPort;
+  /** Whether a page should offer a caller voice sessions with an agent; the website embed asks. */
+  voiceSessionAvailability: VoiceSessionAvailabilityPort;
   assistantHistoryService: AssistantHistoryService;
   retrievalSearchService: RetrievalSearchService;
   retrievalAnswerService: RetrievalAnswerService;

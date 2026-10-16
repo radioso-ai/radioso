@@ -58,22 +58,25 @@ const startedSession = {
 const vendorStandIn = async (page: Page) => {
   const sockets: WebSocketRoute[] = [];
   const initiations: Array<Record<string, unknown>> = [];
-  let closedByPage = 0;
+  const closedByPage = new Set<WebSocketRoute>();
   await page.routeWebSocket("wss://vendor.test/**", (socket) => {
     sockets.push(socket);
     socket.onMessage((message) => {
       const event = JSON.parse(String(message)) as Record<string, unknown>;
       if (event.type === "conversation_initiation_client_data") initiations.push(event);
     });
-    socket.onClose(() => {
-      closedByPage += 1;
+    socket.onClose((code, reason) => {
+      if (closedByPage.has(socket)) return;
+      closedByPage.add(socket);
+      // A close handler takes over the closing handshake; finish it so the page sees the close.
+      void socket.close({ code, reason });
     });
   });
   const send = (event: Record<string, unknown>) => sockets.at(-1)!.send(JSON.stringify(event));
   return {
     initiations: () => initiations,
     opened: () => sockets.length,
-    closedByPage: () => closedByPage,
+    closedByPage: () => closedByPage.size,
     accept: () => send({
       type: "conversation_initiation_metadata",
       conversation_initiation_metadata_event: { conversation_id: "conv_1", agent_output_audio_format: "pcm_16000", user_input_audio_format: "pcm_16000" },
@@ -139,7 +142,12 @@ const openEmbed = async (
   await page.locator(".radioso-launcher").click();
   const frame = page.frameLocator('iframe[src*="/embed-frame"]');
   await expect(frame.getByRole("textbox")).toBeVisible();
-  return { frame, voiceStarts };
+  const chatFrame = () => {
+    const found = page.frames().find((candidate) => candidate.url().includes("/embed-frame"));
+    if (!found) throw new Error("The chat frame is not on the page");
+    return found;
+  };
+  return { frame, voiceStarts, chatFrame };
 };
 
 const callStatus = (frame: ReturnType<Page["frameLocator"]>, text: string) => frame.getByRole("status").filter({ hasText: text });
@@ -263,6 +271,39 @@ test("End call while connecting goes back to Talk with no notice, and ends the s
   vendor.accept();
   await expect.poll(() => vendor.closedByPage()).toBe(1);
   await expect(frame.getByRole("status")).toHaveCount(0);
+});
+
+test("Talk pressed again while the last call still waits on the microphone starts once that call has let go", async ({ page, context }) => {
+  await context.grantPermissions(["microphone"]);
+  // The microphone prompt stays open until the test answers it, in every frame.
+  await page.addInitScript(() => {
+    const devices = navigator.mediaDevices;
+    if (!devices) return;
+    const ask = devices.getUserMedia.bind(devices);
+    let answer!: () => void;
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    Object.assign(window, { __answerMicrophonePrompt: () => answer() });
+    devices.getUserMedia = (constraints) => answered.then(() => ask(constraints));
+  });
+  const vendor = await vendorStandIn(page);
+  const { frame, voiceStarts, chatFrame } = await openEmbed(page, callsOffered);
+
+  await frame.getByRole("button", { name: "Talk" }).click();
+  await expect.poll(() => voiceStarts.length).toBe(1);
+  await frame.getByRole("button", { name: "End call" }).click();
+  await frame.getByRole("button", { name: "Talk" }).click();
+  await expect(callStatus(frame, "Connecting…")).toBeVisible();
+  expect(voiceStarts).toHaveLength(1);
+
+  await chatFrame().evaluate(() => (window as unknown as { __answerMicrophonePrompt: () => void }).__answerMicrophonePrompt());
+  await expect.poll(() => vendor.initiations()).toHaveLength(1);
+  vendor.accept();
+
+  await expect(callStatus(frame, "Listening")).toBeVisible();
+  expect(voiceStarts).toHaveLength(2);
+  expect(vendor.closedByPage()).toBe(1);
 });
 
 test("a session that cannot be started shows one line and keeps the Talk button", async ({ page, context }) => {

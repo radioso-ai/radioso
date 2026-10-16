@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { startPublicVoiceSession } from './api-public-voice'
 import { runVoiceCall, type VoiceCall } from './voice-call'
@@ -10,6 +10,8 @@ import {
   initialVoiceSessionState,
   isVoiceCallActive,
   voiceSessionReducer,
+  type VoiceSessionEvent,
+  type VoiceSessionState,
   type VoiceTranscriptLine,
 } from './voice-session'
 
@@ -30,42 +32,54 @@ export function useVoiceSession({
   precedingMessageIds: () => readonly string[]
   offered: boolean
 }) {
-  const [state, dispatch] = useReducer(voiceSessionReducer, initialVoiceSessionState)
+  const [state, setState] = useState<VoiceSessionState>(initialVoiceSessionState)
+  // The reducer's latest state, read where an event arrives so the call can be stopped the moment
+  // the reducer says it is over.
+  const stateRef = useRef<VoiceSessionState>(initialVoiceSessionState)
+  const apply = useCallback((event: VoiceSessionEvent): VoiceSessionState => {
+    const next = voiceSessionReducer(stateRef.current, event)
+    stateRef.current = next
+    setState(next)
+    return next
+  }, [])
   const [lines, setLines] = useState<readonly VoiceTranscriptLine[]>([])
   const callRef = useRef<VoiceCall | null>(null)
+  // The last call's `settled`: a new call waits for it, so a call stopped while its vendor still
+  // connects has let go of the microphone and its session before the next one asks for either.
+  const lastSettledRef = useRef<Promise<void>>(Promise.resolve())
   const lineCountRef = useRef(0)
 
   const stop = useCallback(() => {
     callRef.current?.stop()
     callRef.current = null
-    dispatch({ type: 'stop_pressed' })
-  }, [])
+    apply({ type: 'stop_pressed' })
+  }, [apply])
 
   /** Ends any call and forgets what was said: the conversation it belonged to was cleared. */
   const reset = useCallback(() => {
     callRef.current?.stop()
     callRef.current = null
     setLines([])
-    dispatch({ type: 'reset' })
-  }, [])
+    apply({ type: 'reset' })
+  }, [apply])
 
   const talk = useCallback(() => {
     if (callRef.current) return
-    dispatch({ type: 'talk_pressed' })
+    apply({ type: 'talk_pressed' })
     const call = runVoiceCall(
       {
         startSession: () => startPublicVoiceSession(token, { locale }),
         loadRuntimes: loadVoiceRuntimes,
+        after: lastSettledRef.current,
       },
       {
         onEvent: (event) => {
-          // A call that failed or dropped is over: stopping it drops whatever the vendor still
-          // delivers, and a new press may start another.
-          if (event.type === 'microphone_refused' || event.type === 'start_refused' || event.type === 'call_failed' || event.type === 'disconnected') {
+          // The reducer decides when a call is over; then nothing the vendor still delivers counts,
+          // and a new press may start another call.
+          if (!isVoiceCallActive(apply(event))) {
             call.stop()
             if (callRef.current === call) callRef.current = null
           }
-          dispatch(event)
         },
         onLine: (line) => {
           if (!line.text.trim() && line.corrects === undefined) return
@@ -77,7 +91,8 @@ export function useVoiceSession({
       },
     )
     callRef.current = call
-  }, [locale, precedingMessageIds, token])
+    lastSettledRef.current = call.settled
+  }, [apply, locale, precedingMessageIds, token])
 
   useEffect(() => {
     if (offered) prepareVoiceRuntimes()

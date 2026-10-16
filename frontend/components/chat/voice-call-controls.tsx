@@ -16,7 +16,7 @@ export function VoiceTalkButton({
   theme: WebsiteEmbedTheme
   copy: WebsiteEmbedCopy
   onPress: () => void
-  /** While the chat loads or a typed reply streams, as Send is. */
+  /** While the chat loads, a typed reply streams, or the agent is unavailable. */
   disabled?: boolean
 }) {
   return (

@@ -36,6 +36,7 @@ const callWith = (overrides: Partial<VoiceCallDependencies> & { openSession?: Vo
     startSession: overrides.startSession ?? vi.fn(async () => started),
     loadRuntimes: overrides.loadRuntimes ?? vi.fn(async () => ({ elevenlabs: { open } })),
     ...(overrides.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: overrides.connectTimeoutMs }),
+    ...(overrides.after === undefined ? {} : { after: overrides.after }),
   }
   const call = runVoiceCall(dependencies, { onEvent: (event) => events.push(event), onLine: (line) => lines.push(line) })
   return { call, dependencies, events, lines, open, end, vendor: () => callbacks!, signal: () => signal! }
@@ -224,5 +225,61 @@ describe('a voice call', () => {
 
     expect(startSession).not.toHaveBeenCalled()
     expect(events).toEqual([])
+  })
+
+  it('waits for the previous call to settle before it loads, starts or opens anything', async () => {
+    const previous = deferred<void>()
+    const loadRuntimes = vi.fn(async () => ({ elevenlabs: { open: vi.fn(async () => ({ end: vi.fn(async () => undefined) })) } }))
+    const startSession = vi.fn(async () => started)
+    callWith({ loadRuntimes, startSession, after: previous.promise })
+    await flush()
+
+    expect(loadRuntimes).not.toHaveBeenCalled()
+    previous.resolve()
+    await flush()
+
+    expect(loadRuntimes).toHaveBeenCalledTimes(1)
+    expect(startSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('settles only once a call stopped while its vendor connects has had that session ended', async () => {
+    const opening = deferred<{ end: () => Promise<void> }>()
+    const ending = deferred<void>()
+    const { call } = callWith({ openSession: () => opening.promise })
+    let settled = false
+    void call.settled.then(() => {
+      settled = true
+    })
+    await flush()
+
+    call.stop()
+    await flush()
+    expect(settled).toBe(false)
+
+    opening.resolve({ end: () => ending.promise })
+    await flush()
+    expect(settled).toBe(false)
+    ending.resolve()
+    await flush()
+    expect(settled).toBe(true)
+  })
+
+  it('settles a live call once it is stopped and its session has ended, and one that never opened at once', async () => {
+    const { call, vendor } = callWith()
+    let settled = false
+    void call.settled.then(() => {
+      settled = true
+    })
+    await flush()
+    vendor().onConnected()
+    await flush()
+    expect(settled).toBe(false)
+
+    call.stop()
+    await flush()
+    expect(settled).toBe(true)
+
+    const refused = callWith({ startSession: async () => ({ kind: 'refused' }) })
+    await expect(refused.call.settled).resolves.toBeUndefined()
   })
 })

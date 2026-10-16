@@ -18,6 +18,11 @@ export interface VoiceCallDependencies {
   loadRuntimes: () => Promise<Readonly<Record<VoiceVendor, VoiceRuntime>>>
   /** Overrides `VOICE_CALL_BEHAVIOR.connectTimeoutMs`, for tests. */
   connectTimeoutMs?: number
+  /**
+   * The previous call's `settled`: this call touches nothing until that one has let go of the
+   * microphone and its session, so two calls never hold either at once.
+   */
+  after?: Promise<void>
 }
 
 /**
@@ -35,6 +40,12 @@ interface VoiceCallObserver {
 export interface VoiceCall {
   /** Ends the call wherever it is: while its client loads, while Radioso starts it, while it connects, or live. */
   stop: () => void
+  /**
+   * Resolves once the call can touch nothing more: it never opened a session, or the session it
+   * opened has ended. A call stopped while its vendor still connects settles when that handshake
+   * gives up or opens and is ended.
+   */
+  settled: Promise<void>
 }
 
 /**
@@ -47,6 +58,8 @@ export interface VoiceCall {
 export function runVoiceCall(dependencies: VoiceCallDependencies, observer: VoiceCallObserver): VoiceCall {
   let stopped = false
   let session: VoiceRuntimeSession | null = null
+  let sessionClosed: Promise<void> = Promise.resolve()
+  let closeSession: (() => void) | null = null
   let connectTimer: ReturnType<typeof setTimeout> | null = null
   const opening = new AbortController()
   const clearConnectTimer = () => {
@@ -57,11 +70,13 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
     if (!stopped) observer.onEvent(event)
   }
   const finish = () => {
+    if (stopped) return
     stopped = true
     clearConnectTimer()
     opening.abort()
-    void session?.end().catch(() => undefined)
+    const open = session
     session = null
+    if (open) void open.end().catch(() => undefined).finally(() => closeSession?.())
   }
   const fail = () => {
     report({ type: 'call_failed' })
@@ -69,6 +84,9 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
   }
 
   const run = async () => {
+    await dependencies.after
+    if (stopped) return
+
     let runtimes: Readonly<Record<VoiceVendor, VoiceRuntime>>
     try {
       runtimes = await dependencies.loadRuntimes()
@@ -104,31 +122,32 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
             if (!stopped) observer.onLine(line)
           },
           onFailed: fail,
-          onDisconnected: () => report({ type: 'disconnected' }),
+          onDisconnected: () => {
+            report({ type: 'disconnected' })
+            finish()
+          },
         },
         opening.signal,
       )
       // Stopped while the vendor's client opened the session: end the session it opened.
       if (stopped) {
-        void opened.end().catch(() => undefined)
+        await opened.end().catch(() => undefined)
         return
       }
       clearConnectTimer()
       session = opened
+      sessionClosed = new Promise<void>((resolve) => {
+        closeSession = resolve
+      })
     } catch (error) {
       clearConnectTimer()
       report({ type: error instanceof VoiceMicrophoneUnavailableError ? 'microphone_refused' : 'start_refused' })
     }
   }
 
-  void run()
+  const settled = run().catch(() => undefined).then(() => sessionClosed)
 
-  return {
-    stop: () => {
-      if (stopped) return
-      finish()
-    },
-  }
+  return { stop: finish, settled }
 }
 
 /** The frame's permissions policy, where the browser exposes it (Chromium does). */

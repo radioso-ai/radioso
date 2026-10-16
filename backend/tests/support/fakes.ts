@@ -119,7 +119,6 @@ import {
   type RoutineDefinitionRepositoryPort,
   type RoutineDefinitionWriteGuard,
 } from "../../src/modules/routines/public.js";
-import type { LlmProviderName } from "../../src/shared/infra/llm/providerTypes.js";
 import type {
   EmailVerificationTokenRecord,
   EmailVerificationTokenRepositoryPort,

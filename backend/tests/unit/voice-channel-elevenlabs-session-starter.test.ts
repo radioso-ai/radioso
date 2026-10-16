@@ -137,7 +137,7 @@ describe("ElevenLabs session starter", () => {
 
   it("reports a request that never answers in time as a timeout", async () => {
     const { starter } = starterWith((init) => new Promise<Response>((_resolve, reject) => {
-      init.signal.addEventListener("abort", () => reject(init.signal.reason));
+      init.signal.addEventListener("abort", () => reject(new DOMException("The operation was aborted due to timeout", "TimeoutError")));
     }), 20);
 
     expect((await rejectionOf(starter.startSession({ vendorAgentId: "agent_42", region: "us", credential }))).reason).toBe("timeout");

@@ -19,25 +19,45 @@ const MICROPHONE_ERROR_NAMES = new Set(['NotAllowedError', 'NotFoundError', 'Not
 const isMicrophoneError = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'name' in error && MICROPHONE_ERROR_NAMES.has(String(error.name))
 
+type SocketWatcher = { vendorOrigin: string; onSocket: (socket: WebSocket) => void }
+
+/** Calls waiting for their handshake's socket, oldest first; each socket goes to one of them. */
+const socketWatchers = new Set<SocketWatcher>()
+let installedWatch: { native: typeof WebSocket; watched: typeof WebSocket } | null = null
+
 /**
  * Watches for the WebSocket the client opens to the signed URL's host while `open` runs. The
  * client takes no abort signal, and its handshake waits for the vendor's first message without a
- * bound; closing that socket is what makes it give up and release the microphone. Only this frame's
- * own constructor is wrapped, only for the call's handshake, and only sockets to the vendor's host
- * are touched.
+ * bound; closing that socket is what makes it give up and release the microphone. One wrapper
+ * over this frame's constructor serves every call that is opening, each socket goes to exactly one
+ * of them, and the native constructor comes back when the last one stops watching, so one call's
+ * abandon can never reach another call's socket.
  */
 const watchVendorSocket = (vendorOrigin: string, onSocket: (socket: WebSocket) => void): (() => void) => {
   if (typeof window === 'undefined' || typeof window.WebSocket !== 'function') return () => undefined
-  const NativeWebSocket = window.WebSocket
-  class WatchedWebSocket extends NativeWebSocket {
-    constructor(url: string | URL, protocols?: string | string[]) {
-      super(url, protocols)
-      if (new URL(String(url)).origin === vendorOrigin) onSocket(this)
+  if (!installedWatch) {
+    const NativeWebSocket = window.WebSocket
+    class WatchedWebSocket extends NativeWebSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols)
+        const origin = new URL(String(url)).origin
+        const watcher = [...socketWatchers].find((candidate) => candidate.vendorOrigin === origin)
+        if (watcher) {
+          socketWatchers.delete(watcher)
+          watcher.onSocket(this)
+        }
+      }
     }
+    window.WebSocket = WatchedWebSocket
+    installedWatch = { native: NativeWebSocket, watched: WatchedWebSocket }
   }
-  window.WebSocket = WatchedWebSocket
+  const watcher: SocketWatcher = { vendorOrigin, onSocket }
+  socketWatchers.add(watcher)
   return () => {
-    if (window.WebSocket === WatchedWebSocket) window.WebSocket = NativeWebSocket
+    socketWatchers.delete(watcher)
+    if (socketWatchers.size > 0 || !installedWatch) return
+    if (window.WebSocket === installedWatch.watched) window.WebSocket = installedWatch.native
+    installedWatch = null
   }
 }
 
@@ -53,7 +73,11 @@ export const elevenLabsVoiceRuntime: VoiceRuntime = {
     const stopWatching = watchVendorSocket(new URL(signedUrl).origin, (socket) => {
       stopWatching()
       callbacks.onConnecting()
-      abandonHandshake = () => socket.close()
+      // Closed on the next task, once the client has attached its listeners to the socket it is
+      // constructing right now, so it hears the close and gives up.
+      abandonHandshake = () => {
+        setTimeout(() => socket.close(), 0)
+      }
       if (signal.aborted) abandonHandshake()
       else signal.addEventListener('abort', abandonHandshake, { once: true })
     })

@@ -23,6 +23,7 @@ type CapturedOptions = {
 
 const callbacks = () => ({ onConnecting: vi.fn(), onConnected: vi.fn(), onModeChange: vi.fn(), onLine: vi.fn(), onFailed: vi.fn(), onDisconnected: vi.fn() })
 const openSignal = () => new AbortController().signal
+const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 /** Stands in for the browser's WebSocket so the adapter's handshake watch can be observed. */
 class FakeWebSocket {
@@ -145,6 +146,7 @@ describe('ElevenLabs voice runtime', () => {
 
     expect(reported.onConnecting).toHaveBeenCalledTimes(1)
     abandon.abort()
+    await nextTask()
 
     expect(vendorSocket.closed).toBe(1)
     expect(otherSocket.closed).toBe(0)
@@ -162,6 +164,34 @@ describe('ElevenLabs voice runtime', () => {
     abandon.abort()
 
     expect(vendorSocket!.closed).toBe(0)
+  })
+
+  it("keeps two overlapping calls apart: one call's abandon closes only its own socket, and the native constructor comes back", async () => {
+    const firstAbandon = new AbortController()
+    const secondAbandon = new AbortController()
+    const firstConnecting = callbacks()
+    const secondConnecting = callbacks()
+    const sockets: FakeWebSocket[] = []
+    const gates: Array<() => void> = []
+    startSession.mockImplementation(async (options: { signedUrl: string }) => {
+      await new Promise<void>((release) => gates.push(release))
+      sockets.push(new window.WebSocket(options.signedUrl) as unknown as FakeWebSocket)
+      return { endSession }
+    })
+
+    const first = elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test/one', sessionKey: 'k1', locale: 'en' }, firstConnecting, firstAbandon.signal)
+    const second = elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test/two', sessionKey: 'k2', locale: 'en' }, secondConnecting, secondAbandon.signal)
+    firstAbandon.abort()
+    gates[0]()
+    gates[1]()
+    await Promise.all([first, second])
+    await nextTask()
+
+    expect(sockets).toHaveLength(2)
+    expect(sockets.map((socket) => socket.closed)).toEqual([1, 0])
+    expect(firstConnecting.onConnecting).toHaveBeenCalledTimes(1)
+    expect(secondConnecting.onConnecting).toHaveBeenCalledTimes(1)
+    expect(window.WebSocket).toBe(FakeWebSocket)
   })
 
   it("restores the frame's WebSocket once the session is open", async () => {

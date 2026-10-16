@@ -9,6 +9,9 @@ import type { VoiceRuntimeCallbacks } from '@/lib/voice-runtime'
 const vendor = vi.hoisted(() => ({
   callbacks: null as VoiceRuntimeCallbacks | null,
   end: vi.fn(async () => undefined),
+  opens: 0,
+  /** When set, `open` waits on it, as the vendor's client does while the microphone prompt is open. */
+  hold: null as Promise<void> | null,
 }))
 
 vi.mock('@/lib/api-public-voice', () => ({
@@ -24,6 +27,8 @@ vi.mock('@/lib/voice-runtime', async (importActual) => ({
   loadVoiceRuntimes: vi.fn(async () => ({
     elevenlabs: {
       open: async (_input: unknown, callbacks: VoiceRuntimeCallbacks) => {
+        vendor.opens += 1
+        if (vendor.hold) await vendor.hold
         vendor.callbacks = callbacks
         return { end: vendor.end }
       },
@@ -58,6 +63,8 @@ describe('useVoiceSession', () => {
   beforeEach(async () => {
     vendor.callbacks = null
     vendor.end.mockClear()
+    vendor.opens = 0
+    vendor.hold = null
     container = document.createElement('div')
     root = createRoot(container)
     await act(async () => root.render(<Harness />))
@@ -115,5 +122,30 @@ describe('useVoiceSession', () => {
 
     expect(latest.state).toEqual({ status: 'idle' })
     expect(latest.isActive).toBe(false)
+  })
+
+  it('starts a call pressed while the last one still connects only after that one let go', async () => {
+    let release!: () => void
+    vendor.hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await act(async () => latest.talk())
+    await settle()
+    expect(vendor.opens).toBe(1)
+
+    await act(async () => latest.stop())
+    await act(async () => latest.talk())
+    await settle()
+    expect(latest.state).toEqual({ status: 'connecting' })
+    expect(vendor.opens).toBe(1)
+
+    vendor.hold = null
+    await act(async () => release())
+    await settle()
+
+    expect(vendor.end).toHaveBeenCalledTimes(1)
+    expect(vendor.opens).toBe(2)
+    await act(async () => vendor.callbacks!.onConnected())
+    expect(latest.state).toEqual({ status: 'live', mode: 'listening' })
   })
 })

@@ -1156,7 +1156,7 @@ function PublicChatContent({
                   isLoading={isLoading}
                   compact={isCompactKeyboardLayout}
                   accessory={voiceOffered ? (
-                    <VoiceTalkButton theme={theme} copy={copy} onPress={voice.talk} disabled={isLoading || isHydrating} />
+                    <VoiceTalkButton theme={theme} copy={copy} onPress={voice.talk} disabled={isLoading || isHydrating || isUnavailable} />
                   ) : null}
                 />
               )}

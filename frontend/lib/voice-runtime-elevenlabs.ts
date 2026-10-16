@@ -29,6 +29,9 @@ export const elevenLabsVoiceRuntime: VoiceRuntime = {
       onModeChange: ({ mode }) => callbacks.onModeChange(mode),
       onMessage: ({ role, message, response_id: responseId }) =>
         callbacks.onLine({ speaker: role === 'user' ? 'caller' : 'agent', text: message, ...(responseId ? { responseId } : {}) }),
+      // A reply the caller talked over arrives again here, cut to what was actually spoken.
+      onAgentResponseCorrection: ({ original_agent_response: original, corrected_agent_response: corrected, response_id: responseId }) =>
+        callbacks.onLine({ speaker: 'agent', text: corrected, corrects: original, ...(responseId ? { responseId } : {}) }),
       onDisconnect: () => callbacks.onDisconnected(),
     })
     return { end: () => conversation.endSession() }

@@ -16,6 +16,7 @@ type CapturedOptions = {
   onModeChange: (props: { mode: 'speaking' | 'listening' }) => void
   onMessage: (props: { message: string; role: 'user' | 'agent'; event_id: number; source: string; response_id?: string }) => void
   onDisconnect: (details: { reason: 'user' }) => void
+  onAgentResponseCorrection: (props: { original_agent_response: string; corrected_agent_response: string; event_id: number; response_id?: string }) => void
 }
 
 const callbacks = () => ({ onConnected: vi.fn(), onModeChange: vi.fn(), onLine: vi.fn(), onDisconnected: vi.fn() })
@@ -68,5 +69,19 @@ describe('ElevenLabs voice runtime', () => {
     ])
     expect(reported.onDisconnected).toHaveBeenCalledTimes(1)
     expect(endSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a reply the caller talked over as a line that corrects it to what was spoken', async () => {
+    const reported = callbacks()
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, reported)
+    const options = startSession.mock.calls[0][0] as CapturedOptions
+
+    options.onAgentResponseCorrection({ original_agent_response: 'We open at ten and close at four.', corrected_agent_response: 'We open at ten', event_id: 3, response_id: 'r1' })
+    options.onAgentResponseCorrection({ original_agent_response: 'Sure, one moment.', corrected_agent_response: 'Sure', event_id: 5 })
+
+    expect(reported.onLine.mock.calls).toEqual([
+      [{ speaker: 'agent', text: 'We open at ten', corrects: 'We open at ten and close at four.', responseId: 'r1' }],
+      [{ speaker: 'agent', text: 'Sure', corrects: 'Sure, one moment.' }],
+    ])
   })
 })

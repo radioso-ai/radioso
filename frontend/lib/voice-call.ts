@@ -55,6 +55,8 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
     }
 
     const start = await dependencies.startSession().catch((): VoiceSessionStart => ({ kind: 'refused' }))
+    // Stopped while Radioso started the session: the vendor holds no session yet, so none is
+    // opened and the signed URL goes unused until it expires. The start it spent stays spent.
     if (stopped) return
     if (start.kind === 'refused') {
       report({ type: 'start_refused' })
@@ -75,6 +77,7 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
           onDisconnected: () => report({ type: 'disconnected' }),
         },
       )
+      // Stopped while the vendor's client opened the session: end the session it opened.
       if (stopped) {
         void opened.end().catch(() => undefined)
         return

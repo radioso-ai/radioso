@@ -96,7 +96,7 @@ describe('a voice call', () => {
     expect(lines).toEqual([])
   })
 
-  it('ends a session that opens after the visitor already stopped', async () => {
+  it("ends the vendor's session when stopped while the vendor opens it", async () => {
     const opening = deferred<{ end: () => Promise<void> }>()
     const end = vi.fn(async () => undefined)
     const { call, events } = callWith({ openSession: () => opening.promise })
@@ -107,6 +107,20 @@ describe('a voice call', () => {
     await flush()
 
     expect(end).toHaveBeenCalledTimes(1)
+    expect(events).toEqual([])
+  })
+
+  it('opens no vendor session when stopped while Radioso starts one', async () => {
+    const starting = deferred<VoiceSessionStart>()
+    const loadRuntime = vi.fn()
+    const { call, events } = callWith({ startSession: () => starting.promise, loadRuntime })
+    await flush()
+
+    call.stop()
+    starting.resolve(started)
+    await flush()
+
+    expect(loadRuntime).not.toHaveBeenCalled()
     expect(events).toEqual([])
   })
 

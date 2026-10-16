@@ -76,7 +76,8 @@ export const defineBackgroundJob = <TPayload>(definition: {
   };
   if (
     policy.retryDelaysSeconds &&
-    (policy.retryDelaysSeconds.length === 0 || policy.retryDelaysSeconds.some((seconds) => !(seconds > 0)))
+    (policy.retryDelaysSeconds.length === 0 ||
+      policy.retryDelaysSeconds.some((seconds) => !(Number.isFinite(seconds) && seconds > 0)))
   ) {
     throw new Error(`Background job kind "${definition.kind}" needs a non-empty retryDelaysSeconds of positive seconds`);
   }

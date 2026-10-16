@@ -83,7 +83,7 @@ describeIntegration("email send fencing (Postgres, research B18)", () => {
   /** A reply the provider accepted, sent by a worker of its own. */
   const acceptedReply = async () => {
     const queued = await queuedReply();
-    expect(await workerNode().dispatch()).toMatchObject({ dispatched: 1 });
+    expect(await workerNode().dispatch()).toMatchObject({ completed: 1 });
     const intent = await sendIntentOf(database, queued.messageId);
     expect(intent).toMatchObject({ state: "accepted", nextReconcileAt: expect.any(Date) });
     return { ...queued, intent, providerMessageId: intent.providerMessageId ?? "" };
@@ -165,7 +165,7 @@ describeIntegration("email send fencing (Postgres, research B18)", () => {
     await posting.reached;
 
     halting.release();
-    expect(await staleDispatch).toMatchObject({ dispatched: 0, retried: 0, failed: 0 });
+    expect(await staleDispatch).toMatchObject({ completed: 0, retried: 0, deadLettered: 0 });
     const frozen = await sendIntentOf(database, messageId);
     expect(frozen).toMatchObject({ state: "queued", haltReason: null, providerMessageId: null });
     expect(frozen.request).not.toBeNull();
@@ -174,7 +174,7 @@ describeIntegration("email send fencing (Postgres, research B18)", () => {
     expect(stale.logger.messages()).toContain("email_send_left_to_freezing_claim");
 
     posting.release();
-    expect(await currentDispatch).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await currentDispatch).toMatchObject({ completed: 1, deadLettered: 0 });
     const [accepted, ...others] = await providerAcceptsUnder(spool.dir, key);
     expect(others).toEqual([]);
     expect(await sendIntentOf(database, messageId)).toMatchObject({ state: "accepted", haltReason: null, providerMessageId: accepted?.providerMessageId });
@@ -210,7 +210,7 @@ describeIntegration("email send fencing (Postgres, research B18)", () => {
     await database.execute(revocation, [domain.id]);
     paused.release();
 
-    expect(await dispatching).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await dispatching).toMatchObject({ completed: 1, deadLettered: 0 });
     expect(await sendIntentOf(database, messageId)).toMatchObject({ state: "halted", haltReason, request: null, providerMessageId: null });
     expect(sender.provider.sendKeys).toEqual([]);
     expect((await deliveryFailuresOf(database, conversationId)).map((failure) => [failure.message_id, failure.failure_kind])).toEqual([
@@ -231,7 +231,7 @@ describeIntegration("email send fencing (Postgres, research B18)", () => {
     expect(await lockWaiters(1)).toEqual([expect.stringMatching(/^UPDATE email_domains/u)]);
     paused.release();
 
-    expect(await dispatching).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await dispatching).toMatchObject({ completed: 1, deadLettered: 0 });
     await downgrading;
     expect(await sendIntentOf(database, messageId)).toMatchObject({ state: "accepted", haltReason: null });
     expect(await providerAcceptsUnder(spool.dir, key)).toHaveLength(1);
@@ -259,7 +259,7 @@ describeIntegration("email send fencing (Postgres, research B18)", () => {
     stalledCommit.release();
     await stalledPost.reached;
     lastCommit.release();
-    expect(await lastDispatch).toMatchObject({ dispatched: 0, failed: 1 });
+    expect(await lastDispatch).toMatchObject({ completed: 0, deadLettered: 1 });
     expect(await sendIntentOf(database, messageId)).toMatchObject({ state: "uncertain", outcomeUnknown: true, providerMessageId: null });
 
     // Attempt 4's provider call comes back accepted.
@@ -300,7 +300,7 @@ describeIntegration("email send fencing (Postgres, research B18)", () => {
     // The provider accepts the message and the answer is lost on the way back.
     sender.provider.loseNextResponse();
 
-    expect(await sender.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await sender.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
     const unknown = await sendIntentOf(database, messageId);
     expect(unknown).toMatchObject({ state: "queued", outcomeUnknown: true, providerMessageId: null, nextReconcileAt: expect.any(Date) });
@@ -324,7 +324,7 @@ describeIntegration("email send fencing (Postgres, research B18)", () => {
     // Neither a redelivered action nor a later sweep sends it again: only an operator may.
     await database.execute("UPDATE routine_action_requests SET status = 'pending' WHERE conversation_id = $1", [conversationId]);
     const redelivered = workerNode();
-    expect(await redelivered.dispatch()).toMatchObject({ dispatched: 1 });
+    expect(await redelivered.dispatch()).toMatchObject({ completed: 1 });
     expect(await redelivered.worker.sweep({ maxJobs: 5 })).toMatchObject({ reconciledSends: 0 });
     expect(redelivered.provider.sendKeys).toEqual([]);
     expect(await sendIntentOf(database, messageId)).toEqual(uncertain);
@@ -337,7 +337,7 @@ describeIntegration("email send fencing (Postgres, research B18)", () => {
     const key = emailSendKey.message(messageId);
     const sender = workerNode();
     sender.provider.loseNextResponse();
-    expect(await sender.dispatch()).toMatchObject({ dispatched: 1 });
+    expect(await sender.dispatch()).toMatchObject({ completed: 1 });
     const unknown = await sendIntentOf(database, messageId);
 
     await makeReconcileDue(database, unknown.id);

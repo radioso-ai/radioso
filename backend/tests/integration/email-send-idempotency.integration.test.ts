@@ -90,7 +90,7 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
   const acceptedReply = async (options: Parameters<typeof openEmailConversation>[2] = {}) => {
     const conversation = await openConversation(options);
     const messageId = await replyFromInbox(database, api, conversation, REPLY);
-    expect(await workerNode().dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await workerNode().dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
     const intent = await sendIntentOf(database, messageId);
     expect(intent.state).toBe("accepted");
     return { ...conversation, messageId, intent };
@@ -131,7 +131,7 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
     expect(api.actionDrain.pushes).toBe(pushesBefore + 1);
 
     const sender = workerNode();
-    expect(await sender.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await sender.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
     const intent = await sendIntentOf(database, messageId);
     const [accepted, ...otherAccepts] = await providerAcceptsUnder(spool.dir, emailSendKey.message(messageId));
@@ -206,7 +206,7 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
     // Sending again after setup is safe: nothing of the refused reply was written.
     await setSendingStatus(domain.id, "verified");
     expect((await api.reply(teammate, conversationId, { message: REPLY, expectedVersion })).status).toBe(201);
-    expect(await workerNode().dispatch()).toMatchObject({ dispatched: 1 });
+    expect(await workerNode().dispatch()).toMatchObject({ completed: 1 });
     expect((await outboxActionsOf(database, conversationId)).map((action) => action.status)).toEqual(["dispatched"]);
   });
 
@@ -220,7 +220,7 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
     );
 
     const redelivered = workerNode();
-    expect(await redelivered.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await redelivered.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
     expect(redelivered.provider.sendKeys).toEqual([]);
     expect(await providerAcceptsUnder(spool.dir, key)).toHaveLength(1);
@@ -234,7 +234,7 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
     await setSendingStatus(domain.id, "failed");
 
     const first = workerNode();
-    expect(await first.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await first.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
     expect(first.provider.sendKeys).toEqual([]);
     const halted = await sendIntentOf(database, messageId);
@@ -274,7 +274,7 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
     expect(api.actionDrain.pushes).toBe(pushesBefore + 1);
 
     const second = workerNode();
-    expect(await second.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await second.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
     expect(second.provider.sendKeys).toEqual([resendKey]);
     expect(await providerAcceptsUnder(spool.dir, resendKey)).toHaveLength(1);
@@ -293,7 +293,7 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
     const { conversationId, domain, teammate, workspaceId } = conversation;
     const messageId = await replyFromInbox(database, api, conversation, REPLY);
     await setSendingStatus(domain.id, "failed");
-    expect(await workerNode().dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await workerNode().dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
     // Two teammates read the same open failure.
     const [read] = (await api.decisions.list(workspaceId, { state: "open", limit: 10 })).items;
     expect(read).toMatchObject({ messageId, kind: "halted" });
@@ -302,7 +302,7 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
     await setSendingStatus(domain.id, "verified");
     await api.decisions.resolve(teammate, read.id, "resend");
     await setSendingStatus(domain.id, "failed");
-    expect(await workerNode().dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await workerNode().dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
     const [newer, ...otherOpen] = (await api.decisions.list(workspaceId, { state: "open", limit: 10 })).items;
     expect(otherOpen).toEqual([]);
     expect(newer).toMatchObject({ messageId, kind: "halted" });
@@ -338,7 +338,7 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
 
     // A teammate resends it; the resend is accepted, and no evidence settles it either.
     await api.decisions.resolve(teammate, first.id, "resend");
-    expect(await workerNode().dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await workerNode().dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
     const [, resend] = await sendIntentsOf(database, messageId);
     expect(resend).toMatchObject({ trigger: "audited_resend", state: "accepted" });
     await lookUpUnsettled(resend.id);
@@ -376,7 +376,7 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
     const { conversationId } = first;
     const sendReply = async (text: string) => {
       const messageId = await replyFromInbox(database, api, first, text);
-      expect(await workerNode().dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+      expect(await workerNode().dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
       return sendIntentOf(database, messageId);
     };
     const later = await sendReply("Following up: the invoice is attached.");

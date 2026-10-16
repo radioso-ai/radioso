@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { startPublicVoiceSession } from './api-public-voice'
-import { runVoiceCall, type VoiceCall } from './voice-call'
+import { canAskForMicrophone, readMicrophoneSignals, runVoiceCall, type VoiceCall } from './voice-call'
 import { loadVoiceRuntimes, prepareVoiceRuntimes } from './voice-runtime'
 import {
   appendVoiceTranscriptLine,
@@ -104,4 +104,23 @@ export function useVoiceSession({
   }, [])
 
   return { state, lines, isActive: isVoiceCallActive(state), talk, stop, reset }
+}
+
+/**
+ * Whether the frame can ask for a microphone, read once the panel would offer Talk: false until
+ * the browser has answered, so Talk never shows for a moment on a page that cannot use it.
+ */
+export function useCanAskForMicrophone(wanted: boolean): boolean {
+  const [canAsk, setCanAsk] = useState(false)
+  useEffect(() => {
+    if (!wanted) return
+    let active = true
+    void readMicrophoneSignals().then((signals) => {
+      if (active) setCanAsk(canAskForMicrophone(signals))
+    })
+    return () => {
+      active = false
+    }
+  }, [wanted])
+  return wanted && canAsk
 }

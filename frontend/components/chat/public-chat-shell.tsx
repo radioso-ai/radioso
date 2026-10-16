@@ -33,8 +33,7 @@ import { VoiceCallBar, VoiceCallNotice, VoiceTalkButton } from '@/components/cha
 import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 import { skillCatalogFromPublicIntakeActions } from '@/lib/skill-catalog'
-import { useVoiceSession } from '@/lib/use-voice-session'
-import { canAskForMicrophone } from '@/lib/voice-call'
+import { useCanAskForMicrophone, useVoiceSession } from '@/lib/use-voice-session'
 import { interleaveVoiceTranscript } from '@/lib/voice-session'
 import {
   answerFeedbackApi,
@@ -644,7 +643,8 @@ function PublicChatContent({
   }, [messages])
   const readMessageIdsNewestFirst = useCallback(() => messageIdsNewestFirstRef.current, [])
   // Talk needs both the agent's voice and a page that can ask for the microphone.
-  const voiceOffered = surface === 'embed' && voiceAvailable && canAskForMicrophone()
+  const microphoneAskable = useCanAskForMicrophone(surface === 'embed' && voiceAvailable)
+  const voiceOffered = surface === 'embed' && voiceAvailable && microphoneAskable
   const voice = useVoiceSession({ token: publicChatToken, locale: visitorLocale, precedingMessageIds: readMessageIdsNewestFirst, offered: voiceOffered })
   const { isActive: isVoiceCallActive, stop: stopVoiceCall, reset: resetVoiceCall } = voice
   useEffect(() => {

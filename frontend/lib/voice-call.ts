@@ -153,16 +153,49 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
 /** The frame's permissions policy, where the browser exposes it (Chromium does). */
 type DocumentWithFeaturePolicy = Document & { featurePolicy?: { allowsFeature?: (feature: string) => boolean } }
 
+/** What the page knows about whether it may use a microphone. */
+export interface MicrophoneSignals {
+  secureContext: boolean
+  mediaDevices: boolean
+  /** The frame's permissions policy for the microphone, where the browser exposes it. */
+  policyAllows?: boolean
+  /** The microphone permission's state, where the browser answers the query. */
+  permission?: PermissionState
+}
+
 /**
  * Whether this page can ask for a microphone at all: browsers offer one only to a secure context
  * (https, or localhost) with the media devices API, and only where the permissions policy allows
- * it, which a host page's `Permissions-Policy` header can deny to the frame. A page that cannot ask
- * shows no Talk button.
+ * it, which a host page's `Permissions-Policy` header can deny to the frame. Where the browser does
+ * not expose the policy, a denied microphone permission stands for it; where it exposes neither, the
+ * page can ask, and a refusal reads as the microphone line. A page that cannot ask shows no Talk.
  */
-export function canAskForMicrophone(): boolean {
-  return typeof window !== 'undefined'
-    && window.isSecureContext === true
-    && typeof navigator !== 'undefined'
-    && typeof navigator.mediaDevices?.getUserMedia === 'function'
-    && (document as DocumentWithFeaturePolicy).featurePolicy?.allowsFeature?.('microphone') !== false
+export function canAskForMicrophone(signals: MicrophoneSignals): boolean {
+  if (!signals.secureContext || !signals.mediaDevices) return false
+  if (signals.policyAllows !== undefined) return signals.policyAllows
+  return signals.permission !== 'denied'
+}
+
+// The DOM typings this frontend builds with do not list the microphone permission, which the
+// browsers that answer the query know.
+const MICROPHONE_PERMISSION = { name: 'microphone' } as unknown as PermissionDescriptor
+
+/** Reads the signals `canAskForMicrophone` decides on; the permission query only where the policy is unknown. */
+export async function readMicrophoneSignals(): Promise<MicrophoneSignals> {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return { secureContext: false, mediaDevices: false }
+  const featurePolicy = (document as DocumentWithFeaturePolicy).featurePolicy
+  const policyAllows = typeof featurePolicy?.allowsFeature === 'function' ? featurePolicy.allowsFeature('microphone') : undefined
+  const signals: MicrophoneSignals = {
+    secureContext: window.isSecureContext === true,
+    mediaDevices: typeof navigator.mediaDevices?.getUserMedia === 'function',
+    ...(policyAllows === undefined ? {} : { policyAllows }),
+  }
+  if (policyAllows !== undefined || typeof navigator.permissions?.query !== 'function') return signals
+  try {
+    const status = await navigator.permissions.query(MICROPHONE_PERMISSION)
+    return { ...signals, permission: status.state }
+  } catch {
+    // A browser that does not know the microphone permission answers nothing about it.
+    return signals
+  }
 }

@@ -7,14 +7,13 @@ const signedUrl = "wss://api.elevenlabs.io/v1/convai/conversation?agent_id=agent
 const now = Date.parse("2026-10-16T12:00:00.000Z");
 const credential = { apiKey: "xi-secret-0123456789" };
 
-const jsonResponse = (status: number, body: unknown) => ({
-  ok: status >= 200 && status < 300,
-  status,
-  json: async () => body,
-});
+type StarterFetch = Parameters<typeof createElevenLabsSessionStarter>[0]["fetch"];
 
-const starterWith = (respond: () => Promise<ReturnType<typeof jsonResponse>>) => {
-  const fetch = vi.fn((_url: string, _init: { method: "GET"; headers: Record<string, string>; signal: AbortSignal }) => respond());
+const jsonResponse = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+const starterWith = (respond: () => Promise<Response>) => {
+  const fetch = vi.fn<StarterFetch>(() => respond());
   return { fetch, starter: createElevenLabsSessionStarter({ fetch, now: () => now }) };
 };
 
@@ -24,8 +23,20 @@ const rejectionOf = async (promise: Promise<unknown>): Promise<VoiceVendorReques
   return error as VoiceVendorRequestError;
 };
 
+/** A body whose cancellation the test can see. */
+const trackedBody = (text: string) => {
+  const cancel = vi.fn();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(text));
+    },
+    cancel,
+  });
+  return { body, cancel };
+};
+
 describe("ElevenLabs session starter", () => {
-  it("asks ElevenLabs for a signed url for the vendor agent with the workspace key in xi-api-key", async () => {
+  it("asks ElevenLabs for a signed url for the vendor agent with the workspace key in xi-api-key, and follows no redirect", async () => {
     const { fetch, starter } = starterWith(async () => jsonResponse(200, { signed_url: signedUrl }));
 
     await starter.startSession({ vendorAgentId: "agent_42", credential });
@@ -35,6 +46,7 @@ describe("ElevenLabs session starter", () => {
     expect(url).toBe("https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=agent_42");
     expect(init.method).toBe("GET");
     expect(init.headers).toEqual({ "xi-api-key": credential.apiKey });
+    expect(init.redirect).toBe("error");
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
@@ -47,16 +59,18 @@ describe("ElevenLabs session starter", () => {
     });
   });
 
-  it("rejects with the vendor's status when ElevenLabs refuses the key or the agent", async () => {
-    const { starter } = starterWith(async () => jsonResponse(401, { detail: { status: "invalid_api_key" } }));
+  it("rejects with the vendor's status when ElevenLabs refuses the key or the agent, and releases the body", async () => {
+    const { body, cancel } = trackedBody(JSON.stringify({ detail: { status: "invalid_api_key" } }));
+    const { starter } = starterWith(async () => new Response(body, { status: 401 }));
 
     const error = await rejectionOf(starter.startSession({ vendorAgentId: "agent_42", credential }));
 
     expect(error.reason).toBe("rejected");
     expect(error.vendorStatus).toBe(401);
+    expect(cancel).toHaveBeenCalled();
   });
 
-  it("rejects as unreachable when the request never gets an answer", async () => {
+  it("rejects as unreachable when the request never gets an answer, a redirect included", async () => {
     const { starter } = starterWith(async () => {
       throw new TypeError("fetch failed");
     });
@@ -65,11 +79,27 @@ describe("ElevenLabs session starter", () => {
   });
 
   it.each([
-    ["a body that is not JSON", async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError("Unexpected token"); } })],
+    ["a body that is not JSON", async () => new Response("<html>Bad gateway</html>", { status: 200 })],
     ["a body without a signed url", async () => jsonResponse(200, { url: signedUrl })],
-    ["a signed url that is not a WebSocket url", async () => jsonResponse(200, { signed_url: "https://example.com/session" })],
+    ["a signed url that is not a WebSocket url", async () => jsonResponse(200, { signed_url: "https://api.elevenlabs.io/v1/convai/conversation" })],
+    ["a signed url on another host", async () => jsonResponse(200, { signed_url: "wss://evil.example.com/v1/convai/conversation?agent_id=agent_42" })],
+    ["a signed url on a lookalike host", async () => jsonResponse(200, { signed_url: "wss://api.elevenlabs.io.evil.example.com/v1/convai" })],
   ])("rejects %s as a malformed answer", async (_case, respond) => {
     const { starter } = starterWith(respond);
+
+    expect((await rejectionOf(starter.startSession({ vendorAgentId: "agent_42", credential }))).reason).toBe("malformed_response");
+  });
+
+  it("refuses a body declared larger than 16 KB without reading it", async () => {
+    const { body, cancel } = trackedBody(JSON.stringify({ signed_url: signedUrl }));
+    const { starter } = starterWith(async () => new Response(body, { status: 200, headers: { "content-length": String(64 * 1024) } }));
+
+    expect((await rejectionOf(starter.startSession({ vendorAgentId: "agent_42", credential }))).reason).toBe("malformed_response");
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  it("stops reading a body that grows past 16 KB", async () => {
+    const { starter } = starterWith(async () => new Response(JSON.stringify({ signed_url: signedUrl, padding: "x".repeat(32 * 1024) }), { status: 200 }));
 
     expect((await rejectionOf(starter.startSession({ vendorAgentId: "agent_42", credential }))).reason).toBe("malformed_response");
   });

@@ -191,8 +191,12 @@ const createDependencies = () =>
       start: vi.fn(),
       stop: vi.fn(async () => {}),
     },
-    actionDispatchWorker: {
+    actionDispatchJobRuntime: {
       start: vi.fn(),
+      stop: vi.fn().mockResolvedValue(undefined),
+    },
+    actionOutboxQueueDepthReporter: {
+      start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
     },
     backgroundJobRuntime: {
@@ -315,7 +319,8 @@ describe("runtime startup", () => {
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.vectorIndexReconciler?.start).toHaveBeenCalledOnce();
-    expect(dependencies.actionDispatchWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.actionDispatchJobRuntime.start).toHaveBeenCalledOnce();
+    expect(dependencies.actionOutboxQueueDepthReporter.start).toHaveBeenCalledOnce();
     expect(dependencies.backgroundJobRuntime.start).toHaveBeenCalledOnce();
     expect(dependencies.backgroundJobRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.copilotRetentionWorker.start).toHaveBeenCalledOnce();
@@ -334,7 +339,8 @@ describe("runtime startup", () => {
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.vectorIndexReconciler?.stop).toHaveBeenCalledOnce();
-    expect(dependencies.actionDispatchWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.actionDispatchJobRuntime.stop).toHaveBeenCalledOnce();
+    expect(dependencies.actionOutboxQueueDepthReporter.stop).toHaveBeenCalledOnce();
     expect(dependencies.backgroundJobRuntime.stop).toHaveBeenCalledOnce();
     expect(dependencies.backgroundJobRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.copilotRetentionWorker.stop).toHaveBeenCalledOnce();
@@ -767,7 +773,12 @@ describe("runtime startup", () => {
       { route: string } | { noPushCounterpart: string }
     > = {
       documentProcessingWorker: { route: "POST /internal/tasks/document-processing (and /recover)" },
-      actionDispatchWorker: { route: "POST /internal/tasks/actions/drain (and /recover)" },
+      actionDispatchJobRuntime: { route: "POST /internal/tasks/actions/drain (and /recover)" },
+      actionOutboxQueueDepthReporter: {
+        noPushCounterpart:
+          "reports the outbox's pending/in-progress depth on its own interval; not triggered by a " +
+          "discrete turn/job event, so there is nothing to push per-item",
+      },
       backgroundJobRuntime: { route: "POST /internal/tasks/background-jobs/drain (push and scheduled sweep)" },
       backgroundJobRetentionWorker: { route: "POST /internal/tasks/background-job-retention/sweep" },
       emailChannelWorker: { route: "POST /internal/tasks/email-channel/drain (and /sweep)" },

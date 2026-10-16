@@ -5,7 +5,7 @@ import type {
   BackgroundJobSkipped,
   BackgroundJobStore,
 } from "../../shared/background-jobs/index.js";
-import { currentTimestamp, nowPlusSeconds, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, nowMinusSeconds, nowPlusSeconds, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "failed" | "skipped";
@@ -147,14 +147,25 @@ export class ActionRequestRepository implements BackgroundJobStore {
   // `claimPending`'s `leaseSeconds` parameter) *is* the lease, so `renewLease` only has to refresh
   // that column.
 
-  async claimNext(input: { kinds: readonly BackgroundJobClaimableKind[] }): Promise<BackgroundJobClaim | null> {
+  /**
+   * Due is decided by Postgres's own `now()`, never a caller-supplied instant — mirrors
+   * `BackgroundJobRepository.claimNext` (#1535). `excludeIds` (the ids a single `drain()` call has
+   * already claimed) is a `NOT IN`, so a row due by this same `now()` is still skipped when the
+   * caller has already claimed it this call — the same same-drain reclaim guard the generic store
+   * provides, so a retry scheduled mid-drain with a short delay waits for the next wake or sweep
+   * instead of being reclaimed inside the same drain that just retried it.
+   */
+  async claimNext(input: {
+    kinds: readonly BackgroundJobClaimableKind[];
+    excludeIds?: readonly string[];
+  }): Promise<BackgroundJobClaim | null> {
     if (input.kinds.length === 0) {
       return null;
     }
     const kind = input.kinds[0].kind;
     const leaseSeconds = Math.min(...input.kinds.map((entry) => entry.leaseSeconds));
     return this.db.transaction().execute(async (trx) => {
-      const due = await trx
+      let query = trx
         .selectFrom("routine_action_requests")
         .select(["id", "next_attempt_at", "created_at"])
         .where((eb) =>
@@ -165,12 +176,11 @@ export class ActionRequestRepository implements BackgroundJobStore {
             ]),
             eb.and([eb("status", "=", "in_progress"), eb("updated_at", "<", nowMinusSeconds(leaseSeconds))]),
           ]),
-        )
-        .orderBy("created_at", "asc")
-        .limit(1)
-        .forUpdate()
-        .skipLocked()
-        .executeTakeFirst();
+        );
+      if (input.excludeIds && input.excludeIds.length > 0) {
+        query = query.where("id", "not in", [...input.excludeIds]);
+      }
+      const due = await query.orderBy("created_at", "asc").limit(1).forUpdate().skipLocked().executeTakeFirst();
       if (!due) {
         return null;
       }

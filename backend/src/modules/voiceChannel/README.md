@@ -46,8 +46,12 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   vendor's key (`presence`, which decrypts nothing and reads `unreadable`
   when the backend has no master key), `readiness` names the first missing
   piece for the dashboard (`GET /api/v1/agents/:agentId` returns it as
-  `voiceCallReadiness` to dashboard sessions) and `isAvailable` is the yes
-  or no the embed config may carry.
+  `voiceCallReadiness` to dashboard sessions, and leaves it out when the
+  credential store cannot be read) and `isAvailable` is the yes or no the
+  embed config may carry. Composition's
+  `refreshEmbedConfigsOnVoiceVendorKeyChange` drops the workspace's
+  CDN-cached embed configs when a voice vendor key is stored or removed, so
+  that yes or no follows the key at once.
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
   `voice_sessions`. The first binding wins.
 - `adapters/*` translate one wire to the domain port and back, and nothing

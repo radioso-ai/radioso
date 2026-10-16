@@ -593,6 +593,20 @@ export class AgentService {
     }
   }
 
+  /**
+   * Drops the CDN-cached embed config of every agent in the workspace, for a change outside the
+   * agents that the config still reflects: the voice vendor key whose presence decides whether the
+   * embed offers calls. Best effort, like every invalidation here.
+   */
+  async invalidateEmbedConfigs(workspaceId: string): Promise<void> {
+    if (!this.embedConfigCacheInvalidator) return;
+    const agents = await this.agentRepository.listByWorkspaceId(workspaceId);
+    for (const agent of agents) {
+      const embedToken = getWebsiteEmbedSurfaceSettings(agent).token;
+      if (embedToken) await this.embedConfigCacheInvalidator.invalidateForToken(embedToken);
+    }
+  }
+
   private async recordRecipientChange(
     workspace: WorkspaceRecord,
     previous: AgentRecord | null,

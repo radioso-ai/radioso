@@ -19,7 +19,7 @@ import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { isHumanOwned, type ConversationOwnershipReader } from "../../modules/handoff/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
-import type { VoiceVendor } from "../../shared/domain/voiceVendor.js";
+import { VOICE_VENDORS, type VoiceVendor } from "../../shared/domain/voiceVendor.js";
 import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
 
 type AgentVoiceProfileRepository = {
@@ -101,6 +101,21 @@ const isUnreadableCredential = (error: unknown): boolean =>
   error instanceof ProviderConfigurationError
   && typeof error.details === "object" && error.details !== null
   && (error.details as { kind?: unknown }).kind === "credential_unreadable";
+
+/**
+ * The embed config says whether the embed offers calls, which follows the voice vendor key's
+ * presence, and a CDN may hold it for minutes: storing or removing a voice vendor key drops the
+ * workspace's cached embed configs, so the Talk button follows at once. Model provider keys leave
+ * them alone.
+ */
+export const refreshEmbedConfigsOnVoiceVendorKeyChange = (deps: {
+  credentials: { onChange(listener: (change: { workspaceId: string; provider: string }) => Promise<void>): void };
+  embedConfigs: { invalidateEmbedConfigs(workspaceId: string): Promise<void> };
+}): void => {
+  deps.credentials.onChange(async ({ workspaceId, provider }) => {
+    if ((VOICE_VENDORS as readonly string[]).includes(provider)) await deps.embedConfigs.invalidateEmbedConfigs(workspaceId);
+  });
+};
 
 /**
  * Starts voice sessions on the vendor agent each Radioso agent is bound to: the ElevenLabs session

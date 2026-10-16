@@ -249,8 +249,10 @@ on the widget. Browsers
 give a microphone only to pages served over https (or from `localhost`), so a
 page served over plain http shows no button. The embed snippet stays the same.
 The embed learns about the switch from its config, which a browser keeps for a
-minute and a CDN in front of the app host for up to five, so the button can
-take that long to appear or disappear after a change.
+minute. Radioso Cloud's CDN keeps it for up to five, and Radioso drops the
+CDN's copy whenever the agent's settings change or the workspace stores or
+removes its ElevenLabs key, so the button appears or disappears within about a
+minute of a change.
 
 Ray can draft the agent's `voice` block, but it leaves this switch to you: it
 decides whether every visitor to your live site sees **Talk** and a microphone

@@ -331,4 +331,41 @@ describe("WorkspaceProviderCredentialsService", () => {
       expect(decryptField(enc, TEST_KEY)).toBe("hi");
     });
   });
+
+  describe("change listener", () => {
+    const actor = { accountId: "account-1" };
+    const configured: WorkspaceCredentialsEncryptionConfig = { key: TEST_KEY };
+
+    it("hears every key stored or removed, and nothing for a write that failed or a key that was not there", async () => {
+      const service = new WorkspaceProviderCredentialsService(createRepository(), createAudit(), configured);
+      const changes: Array<{ workspaceId: string; provider: string }> = [];
+      service.onChange(async (change) => {
+        changes.push(change);
+      });
+
+      await service.setApiKey({ workspaceId: WORKSPACE_ID, provider: "elevenlabs", apiKey: "xi-key", actor });
+      await service.removeApiKey(WORKSPACE_ID, "elevenlabs", actor);
+      await service.removeApiKey(WORKSPACE_ID, "elevenlabs", actor);
+      await expect(service.setApiKey({ workspaceId: WORKSPACE_ID, provider: "elevenlabs", apiKey: "   ", actor })).rejects.toThrow();
+
+      expect(changes).toEqual([
+        { workspaceId: WORKSPACE_ID, provider: "elevenlabs" },
+        { workspaceId: WORKSPACE_ID, provider: "elevenlabs" },
+      ]);
+    });
+
+    it("never fails the write when the listener fails, and logs it", async () => {
+      const logger = { warn: vi.fn() };
+      const service = new WorkspaceProviderCredentialsService(createRepository(), createAudit(), configured, logger);
+      service.onChange(async () => {
+        throw new Error("cdn down");
+      });
+
+      await expect(service.setApiKey({ workspaceId: WORKSPACE_ID, provider: "elevenlabs", apiKey: "xi-key", actor })).resolves.toBeUndefined();
+      expect(logger.warn).toHaveBeenCalledWith(
+        { workspaceId: WORKSPACE_ID, provider: "elevenlabs", errorClass: "Error" },
+        "Workspace credential change listener failed",
+      );
+    });
+  });
 });

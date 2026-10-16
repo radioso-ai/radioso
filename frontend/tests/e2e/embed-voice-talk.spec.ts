@@ -1,16 +1,18 @@
-import { expect, test, type Frame, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route, type WebSocketRoute } from "@playwright/test";
 
-// The website embed's Talk journey, driven through the real launcher and the real chat frame with
-// the network mocked at its edges: the embed config says whether the agent takes voice calls, the
-// session start answers as the backend would, and the vendor's browser client is swapped for a
-// stand-in the frame's own origin installs (`window.__radiosoVoiceRuntime`), so the test plays the
-// vendor: it connects, changes who is speaking, says lines and records being ended. The microphone
-// is Chromium's fake device behind a granted permission, so the frame's permissions policy and the
-// launcher's `allow="microphone"` delegation are both exercised.
+// The website embed's Talk journey, driven through the real launcher, the real chat frame and the
+// real ElevenLabs browser client, with the network mocked at its edges: the embed config says
+// whether the agent takes voice calls, the session start answers as the backend would, and the
+// vendor's WebSocket is a stand-in the test speaks the vendor's protocol through (handshake,
+// transcripts, audio, interruption, corrections, hang-up). The microphone is Chromium's fake device
+// behind a granted permission, so the frame's permissions policy, the launcher's
+// `allow="microphone"` delegation and the client's worklets under the frame's script policy all run.
 
 const TOKEN = "e2e-voice-token";
 const SIGNED_URL = "wss://vendor.test/v1/convai/conversation?agent_id=agent_42&conversation_signature=sig";
 const SESSION_KEY = "33333333-3333-4333-8333-333333333333";
+// A second and a half of silence at the vendor's default output format, 16 kHz 16-bit PCM.
+const SILENCE_PCM_16K = Buffer.alloc(48_000).toString("base64");
 
 test.use({
   launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] },
@@ -34,8 +36,6 @@ const bootstrapSessionPayload = () => ({
   resumeExpiresAt: new Date(Date.now() + 600_000).toISOString(),
 });
 
-type VoiceStartAnswer = { status: 200; body: unknown } | { status: 429 | 503; body: unknown };
-
 const startedSession = {
   vendor: "elevenlabs",
   signedUrl: SIGNED_URL,
@@ -44,39 +44,49 @@ const startedSession = {
   expiresAt: new Date(Date.now() + 900_000).toISOString(),
 };
 
-/** A vendor stand-in the frame picks up in place of the ElevenLabs client. */
-const installVendorStandIn = () => {
-  type Callbacks = {
-    onConnected: () => void;
-    onModeChange: (mode: string) => void;
-    onLine: (line: { speaker: string; text: string }) => void;
-    onDisconnected: () => void;
-  };
-  const record: { opened: Array<Record<string, unknown>>; ended: number; callbacks: Callbacks | null } = {
-    opened: [],
-    ended: 0,
-    callbacks: null,
-  };
-  Object.assign(window, {
-    __voiceTest: record,
-    __radiosoVoiceRuntime: {
-      open: async (input: Record<string, unknown>, callbacks: Callbacks) => {
-        record.opened.push(input);
-        record.callbacks = callbacks;
-        return {
-          end: async () => {
-            record.ended += 1;
-            callbacks.onDisconnected();
-          },
-        };
-      },
-    },
+/** The vendor's end of the call: what the client sent, and a way to answer as the vendor would. */
+const vendorStandIn = async (page: Page) => {
+  const sockets: WebSocketRoute[] = [];
+  const initiations: Array<Record<string, unknown>> = [];
+  let closedByPage = 0;
+  await page.routeWebSocket("wss://vendor.test/**", (socket) => {
+    sockets.push(socket);
+    socket.onMessage((message) => {
+      const event = JSON.parse(String(message)) as Record<string, unknown>;
+      if (event.type === "conversation_initiation_client_data") initiations.push(event);
+    });
+    socket.onClose(() => {
+      closedByPage += 1;
+    });
   });
+  const send = (event: Record<string, unknown>) => sockets.at(-1)!.send(JSON.stringify(event));
+  return {
+    initiations: () => initiations,
+    opened: () => sockets.length,
+    closedByPage: () => closedByPage,
+    accept: () => send({
+      type: "conversation_initiation_metadata",
+      conversation_initiation_metadata_event: { conversation_id: "conv_1", agent_output_audio_format: "pcm_16000", user_input_audio_format: "pcm_16000" },
+    }),
+    callerSays: (text: string, eventId: number) => send({ type: "user_transcript", user_transcription_event: { user_transcript: text, event_id: eventId } }),
+    agentAnswers: (text: string, eventId: number) => {
+      send({ type: "agent_response", agent_response_event: { agent_response: text, event_id: eventId } });
+      send({ type: "audio", audio_event: { audio_base_64: SILENCE_PCM_16K, event_id: eventId } });
+    },
+    callerTalksOver: (eventId: number, heard: { original: string; spoken: string }) => {
+      send({ type: "interruption", interruption_event: { event_id: eventId } });
+      send({
+        type: "agent_response_correction",
+        agent_response_correction_event: { original_agent_response: heard.original, corrected_agent_response: heard.spoken, event_id: eventId },
+      });
+    },
+    hangUp: () => sockets.at(-1)!.close({ code: 1000, reason: "agent ended the call" }),
+  };
 };
 
 const openEmbed = async (
   page: Page,
-  options: { voiceAvailable: boolean; voiceStart?: VoiceStartAnswer },
+  options: { voiceAvailable: boolean; voiceStart?: { status: number; body: unknown } },
 ) => {
   const voiceStarts: Array<{ headers: Record<string, string>; body: unknown }> = [];
   await page.route("**/backend/api/v1/**", (route) => route.fulfill({ status: 204, body: "" }));
@@ -87,30 +97,15 @@ const openEmbed = async (
     const answer = options.voiceStart ?? { status: 200, body: startedSession };
     await fulfillJson(route, answer.body, answer.status);
   });
-  await page.addInitScript(installVendorStandIn);
 
   await page.goto(`/embed-test?token=${TOKEN}`);
   await page.locator(".radioso-launcher").click();
   const frame = page.frameLocator('iframe[src*="/embed-frame"]');
   await expect(frame.getByRole("textbox")).toBeVisible();
-  return { frame, voiceStarts, chatFrame: () => page.frames().find((candidate) => candidate.url().includes("/embed-frame")) as Frame };
+  return { frame, voiceStarts };
 };
 
-const vendor = (chatFrame: Frame) => ({
-  connect: () => chatFrame.evaluate(() => (window as unknown as { __voiceTest: { callbacks: { onConnected: () => void } } }).__voiceTest.callbacks.onConnected()),
-  speak: (mode: "speaking" | "listening") =>
-    chatFrame.evaluate((next) => (window as unknown as { __voiceTest: { callbacks: { onModeChange: (mode: string) => void } } }).__voiceTest.callbacks.onModeChange(next), mode),
-  say: (speaker: "caller" | "agent", text: string) =>
-    chatFrame.evaluate(
-      (line) => (window as unknown as { __voiceTest: { callbacks: { onLine: (line: unknown) => void } } }).__voiceTest.callbacks.onLine(line),
-      { speaker, text },
-    ),
-  hangUp: () => chatFrame.evaluate(() => (window as unknown as { __voiceTest: { callbacks: { onDisconnected: () => void } } }).__voiceTest.callbacks.onDisconnected()),
-  record: () => chatFrame.evaluate(() => {
-    const record = (window as unknown as { __voiceTest: { opened: unknown[]; ended: number } }).__voiceTest;
-    return { opened: record.opened, ended: record.ended };
-  }),
-});
+const callStatus = (frame: ReturnType<Page["frameLocator"]>, text: string) => frame.getByRole("status").filter({ hasText: text });
 
 test("an agent without voice shows no Talk button", async ({ page }) => {
   const { frame } = await openEmbed(page, { voiceAvailable: false });
@@ -120,80 +115,114 @@ test("an agent without voice shows no Talk button", async ({ page }) => {
   await expect(page.locator('iframe[src*="/embed-frame"]')).not.toHaveAttribute("allow", /microphone/);
 });
 
-test("a visitor talks to the agent: connecting, listening, speaking, spoken lines, then End call", async ({ page, context }) => {
+test("a page that cannot ask for a microphone shows no Talk button", async ({ page }) => {
+  // What a host page served over plain http looks like to the frame: not a secure context.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "isSecureContext", { configurable: true, get: () => false });
+  });
+  const { frame } = await openEmbed(page, { voiceAvailable: true });
+
+  await expect(frame.getByRole("button", { name: "Send message" })).toBeVisible();
+  await expect(frame.getByRole("button", { name: "Talk" })).toHaveCount(0);
+});
+
+test("a visitor talks to the agent: connecting, listening, speaking, talking over a reply, then End call", async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
-  const { frame, voiceStarts, chatFrame } = await openEmbed(page, { voiceAvailable: true });
+  const vendor = await vendorStandIn(page);
+  const { frame, voiceStarts } = await openEmbed(page, { voiceAvailable: true });
   await expect(page.locator('iframe[src*="/embed-frame"]')).toHaveAttribute("allow", /microphone/);
 
   await frame.getByRole("button", { name: "Talk" }).click();
-  await expect(frame.getByRole("status").filter({ hasText: "Connecting…" })).toBeVisible();
-  await expect.poll(async () => (await vendor(chatFrame()).record()).opened.length).toBe(1);
-
+  await expect(callStatus(frame, "Connecting…")).toBeVisible();
+  await expect.poll(() => vendor.opened()).toBe(1);
   expect(voiceStarts).toHaveLength(1);
   expect(voiceStarts[0].headers["x-radioso-public-session"]).toBe("public-session-token");
-  expect((await vendor(chatFrame()).record()).opened[0]).toEqual({ signedUrl: SIGNED_URL, sessionKey: SESSION_KEY, locale: "en" });
+  await expect.poll(() => vendor.initiations()).toHaveLength(1);
+  expect(vendor.initiations()[0].custom_llm_extra_body).toEqual({ session_key: SESSION_KEY, locale: "en" });
 
-  await vendor(chatFrame()).connect();
-  await expect(frame.getByRole("status").filter({ hasText: "Listening" })).toBeVisible();
-  await vendor(chatFrame()).say("caller", "Are you open on Sunday?");
-  await vendor(chatFrame()).speak("speaking");
-  await expect(frame.getByRole("status").filter({ hasText: "Speaking" })).toBeVisible();
-  await vendor(chatFrame()).say("agent", "Yes, from ten until four.");
-  await vendor(chatFrame()).speak("listening");
-  await expect(frame.getByRole("status").filter({ hasText: "Listening" })).toBeVisible();
-
-  await expect(frame.getByText("Are you open on Sunday?")).toBeVisible();
-  await expect(frame.getByText("Yes, from ten until four.")).toBeVisible();
-  await expect(frame.getByText("Spoken")).toHaveCount(2);
-  // The composer gives way to the call bar while the call runs.
+  vendor.accept();
+  await expect(callStatus(frame, "Listening")).toBeVisible();
+  // The call bar stands in for the composer, and typing goes nowhere.
   await expect(frame.getByRole("textbox")).toHaveCount(0);
 
+  vendor.callerSays("Are you open on Sunday?", 1);
+  vendor.agentAnswers("We open at ten and close at four on Sundays.", 2);
+  await expect(callStatus(frame, "Speaking")).toBeVisible();
+  await expect(frame.getByText("We open at ten and close at four on Sundays.")).toBeVisible();
+
+  vendor.callerTalksOver(3, { original: "We open at ten and close at four on Sundays.", spoken: "We open at ten" });
+  await expect(callStatus(frame, "Listening")).toBeVisible();
+  await expect(frame.getByText("We open at ten", { exact: true })).toBeVisible();
+  await expect(frame.getByText("We open at ten and close at four on Sundays.")).toHaveCount(0);
+  await expect(frame.getByText("Are you open on Sunday?")).toBeVisible();
+  await expect(frame.getByText("Spoken")).toHaveCount(2);
+
   await frame.getByRole("button", { name: "End call" }).click();
-  await expect(frame.getByRole("status").filter({ hasText: "Call ended" })).toBeVisible();
+  await expect(callStatus(frame, "Call ended")).toBeVisible();
   await expect(frame.getByRole("button", { name: "Talk" })).toBeVisible();
   await expect(frame.getByRole("textbox")).toBeVisible();
-  expect((await vendor(chatFrame()).record()).ended).toBe(1);
+  await expect.poll(() => vendor.closedByPage()).toBe(1);
 });
 
 test("a call ends when the vendor hangs up", async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
-  const { frame, chatFrame } = await openEmbed(page, { voiceAvailable: true });
+  const vendor = await vendorStandIn(page);
+  const { frame } = await openEmbed(page, { voiceAvailable: true });
 
   await frame.getByRole("button", { name: "Talk" }).click();
-  await expect.poll(async () => (await vendor(chatFrame()).record()).opened.length).toBe(1);
-  await vendor(chatFrame()).connect();
-  await expect(frame.getByRole("status").filter({ hasText: "Listening" })).toBeVisible();
+  await expect.poll(() => vendor.initiations()).toHaveLength(1);
+  vendor.accept();
+  await expect(callStatus(frame, "Listening")).toBeVisible();
 
-  await vendor(chatFrame()).hangUp();
-  await expect(frame.getByRole("status").filter({ hasText: "Call ended" })).toBeVisible();
+  await vendor.hangUp();
+  await expect(callStatus(frame, "Call ended")).toBeVisible();
   await expect(frame.getByRole("button", { name: "Talk" })).toBeVisible();
 });
 
 test("closing the panel ends the call", async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
-  const { frame, chatFrame } = await openEmbed(page, { voiceAvailable: true });
+  const vendor = await vendorStandIn(page);
+  const { frame } = await openEmbed(page, { voiceAvailable: true });
 
   await frame.getByRole("button", { name: "Talk" }).click();
-  await expect.poll(async () => (await vendor(chatFrame()).record()).opened.length).toBe(1);
-  await vendor(chatFrame()).connect();
-  await expect(frame.getByRole("status").filter({ hasText: "Listening" })).toBeVisible();
+  await expect.poll(() => vendor.initiations()).toHaveLength(1);
+  vendor.accept();
+  await expect(callStatus(frame, "Listening")).toBeVisible();
 
   await page.locator(".radioso-launcher").click();
-  await expect.poll(async () => (await vendor(chatFrame()).record()).ended).toBe(1);
+  await expect.poll(() => vendor.closedByPage()).toBe(1);
+});
+
+test("End call while connecting goes back to Talk with no notice, and ends the session once the vendor opens it", async ({ page, context }) => {
+  await context.grantPermissions(["microphone"]);
+  const vendor = await vendorStandIn(page);
+  const { frame } = await openEmbed(page, { voiceAvailable: true });
+
+  await frame.getByRole("button", { name: "Talk" }).click();
+  await expect.poll(() => vendor.initiations()).toHaveLength(1);
+  await frame.getByRole("button", { name: "End call" }).click();
+
+  await expect(frame.getByRole("button", { name: "Talk" })).toBeVisible();
+  await expect(frame.getByRole("status")).toHaveCount(0);
+
+  vendor.accept();
+  await expect.poll(() => vendor.closedByPage()).toBe(1);
+  await expect(frame.getByRole("status")).toHaveCount(0);
 });
 
 test("a session that cannot be started shows one line and keeps the Talk button", async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
-  const { frame, chatFrame } = await openEmbed(page, {
+  const vendor = await vendorStandIn(page);
+  const { frame } = await openEmbed(page, {
     voiceAvailable: true,
     voiceStart: { status: 503, body: { error: { code: "voice_unavailable", message: "The voice session could not be started. Try again later." } } },
   });
 
   await frame.getByRole("button", { name: "Talk" }).click();
 
-  await expect(frame.getByRole("status").filter({ hasText: "Talking isn't available right now. Try again later." })).toBeVisible();
+  await expect(callStatus(frame, "Talking isn't available right now. Try again later.")).toBeVisible();
   await expect(frame.getByRole("button", { name: "Talk" })).toBeVisible();
-  expect((await vendor(chatFrame()).record()).opened).toEqual([]);
+  expect(vendor.opened()).toBe(0);
 });
 
 test("a refused microphone shows one line and spends no session start", async ({ page }) => {
@@ -209,7 +238,7 @@ test("a refused microphone shows one line and spends no session start", async ({
 
   await frame.getByRole("button", { name: "Talk" }).click();
 
-  await expect(frame.getByRole("status").filter({ hasText: "Talking needs your microphone." })).toBeVisible();
+  await expect(callStatus(frame, "Talking needs your microphone.")).toBeVisible();
   await expect(frame.getByRole("button", { name: "Talk" })).toBeVisible();
   expect(voiceStarts).toEqual([]);
 });

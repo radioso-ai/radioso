@@ -41,7 +41,8 @@ import {
 } from "../../modules/chat/composition.js";
 import { TestExecutionService } from "../../modules/test-execution/testExecution.js";
 import {
-  createFacetExtractionWorker,
+  createFacetExtractionBackgroundJobRuntime,
+  createFacetExtractionWorkspaceDrainWorker,
   FacetExtractionService,
   FacetExtractionWorkspaceDrainService,
 } from "../../modules/facets/composition.js";
@@ -656,25 +657,37 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
     realtimePublisherComposition.publisher,
   );
-  // Per-message facet extraction (topic census). This same durable worker serves
-  // the local poll loop, task recovery, and an operator-requested Pulse refresh.
-  const facetExtractionWorker = createFacetExtractionWorker({
+  // Per-message facet extraction (topic census). The extractor serves two paths over the same
+  // durable table: the generic job-port runtime below drains whatever is due, independent of any
+  // one workspace; `facetExtractionWorkspaceDrainWorker` serves an operator-requested Pulse
+  // refresh, scoped to one workspace's window (see that worker's doc comment for why it stays on
+  // its own path instead of the generic one).
+  const facetExtraction = composition.facetExtraction ?? new FacetExtractionService({
+    messages: repositories.messageRepository,
+    facets: repositories.messageFacetRepository,
+    embeddings: embeddingPorts,
+    inferenceFactory: createRewriteTierStructuredInferenceFactory(
+      { resolver: llmCapabilityResolver },
+      infrastructure.usageEventRecorder,
+    ),
+  });
+  const facetExtractionWorkspaceDrainWorker = createFacetExtractionWorkspaceDrainWorker({
     jobs: repositories.facetExtractionJobRepository,
-    extraction: composition.facetExtraction ?? new FacetExtractionService({
-      messages: repositories.messageRepository,
-      facets: repositories.messageFacetRepository,
-      embeddings: embeddingPorts,
-      inferenceFactory: createRewriteTierStructuredInferenceFactory(
-        { resolver: llmCapabilityResolver },
-        infrastructure.usageEventRecorder,
-      ),
-    }),
+    extraction: facetExtraction,
     logger,
-    pollIntervalMs: env.FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS,
     batchSize: env.FACET_EXTRACTION_WORKER_BATCH_SIZE,
     jobLeaseMs: env.FACET_EXTRACTION_JOB_LEASE_MS,
     telemetryService: infrastructure.telemetryService,
+  });
+  const facetExtractionBackgroundJobRuntime = createFacetExtractionBackgroundJobRuntime({
+    jobs: repositories.facetExtractionJobRepository,
+    extraction: facetExtraction,
+    logger,
+    metrics: infrastructure.metricsRegistry,
     errorReporter: infrastructure.errorReportingService,
+    telemetryService: infrastructure.telemetryService,
+    pollIntervalMs: env.FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS,
+    pollBatchSize: env.FACET_EXTRACTION_WORKER_BATCH_SIZE,
   });
   const facetExtractionWorkspaceDrain = new FacetExtractionWorkspaceDrainService(
     repositories.facetExtractionJobRepository,
@@ -1333,7 +1346,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentSourceReprocessService: documents.documentSourceReprocessService,
     documentProcessingWorker: documents.documentProcessingWorker,
     documentJobConsumer: documents.documentJobConsumer,
-    facetExtractionWorker,
+    facetExtractionBackgroundJobRuntime,
+    facetExtractionWorkspaceDrainWorker,
     facetExtractionWorkspaceDrain,
     websiteCrawlerProvider: documents.websiteCrawlerProvider,
     websiteCrawlJobService: documents.websiteCrawlJobService,

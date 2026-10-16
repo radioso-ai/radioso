@@ -29,7 +29,7 @@ const FACET_TASK_DRAIN_MAX_JOBS = 100;
 
 type DocumentWorkerTaskRouteDependencies = Pick<
   AppDependencies,
-  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain" | "copilotRetentionWorker" | "testExecutionRetentionWorker" | "approvalResumeEffectJournalRetentionWorker" | "revisionEvalRunRetentionWorker" | "slackInboundEventRetentionWorker" | "agentBundleImportCleanupWorker" | "credentialExpiryWarningLifecycle" | "periodicTaskHandlesById"
+  "documentProcessingWorker" | "facetExtractionBackgroundJobRuntime" | "facetExtractionWorkspaceDrainWorker" | "facetExtractionWorkspaceDrain" | "copilotRetentionWorker" | "testExecutionRetentionWorker" | "approvalResumeEffectJournalRetentionWorker" | "revisionEvalRunRetentionWorker" | "slackInboundEventRetentionWorker" | "agentBundleImportCleanupWorker" | "credentialExpiryWarningLifecycle" | "periodicTaskHandlesById"
 >;
 
 // Compatibility tombstone for Cloud Tasks pushes enqueued before the crawler
@@ -93,14 +93,14 @@ export const createDocumentWorkerTaskRoutes = (
       }
       await dependencies.documentProcessingWorker.runPostJobMaintenance(10);
 
-      // Cloud Run serves this worker as a request-driven task server, so the
-      // local worker runtime's facet poll loop is not alive in production.
-      // The durable facet queue uses the same claim/lease semantics as document
-      // recovery; drain one claim of at most this size whenever Scheduler wakes
-      // the service. The document-recovery budget must not multiply model-backed
-      // facet extraction work.
-      const processedFacetJobCount = await dependencies.facetExtractionWorker
-        ?.runOnce(new Date(), FACET_RECOVERY_MAX_JOBS) ?? 0;
+      // Cloud Run serves this worker as a request-driven task server, so the generic job-port
+      // runtime's local poll loop is not alive in production, and facet extraction has no push
+      // transport of its own (see the PR this piggyback shipped in, #1509). Drain a bounded claim
+      // of the per-message facet queue whenever Scheduler wakes the service; the document-recovery
+      // budget must not multiply model-backed facet extraction work.
+      const facetDrainResult = await dependencies.facetExtractionBackgroundJobRuntime
+        ?.drain({ maxJobs: FACET_RECOVERY_MAX_JOBS });
+      const processedFacetJobCount = facetDrainResult?.claimed ?? 0;
 
       res.status(200).json({ processedJobCount, processedFacetJobCount });
     } catch (error) {
@@ -114,12 +114,12 @@ export const createDocumentWorkerTaskRoutes = (
       res.status(400).json({ error: "invalid_task_payload" });
       return;
     }
-    if (!dependencies.facetExtractionWorker) {
+    if (!dependencies.facetExtractionWorkspaceDrainWorker) {
       res.status(503).json({ error: "facet_extraction_unavailable" });
       return;
     }
     try {
-      const processedJobCount = await dependencies.facetExtractionWorker.drainWorkspace({
+      const processedJobCount = await dependencies.facetExtractionWorkspaceDrainWorker.drainWorkspace({
         workspaceId: parsed.data.workspaceId,
         analysisStart: parsed.data.analysisStart,
         analysisEnd: parsed.data.analysisEnd,

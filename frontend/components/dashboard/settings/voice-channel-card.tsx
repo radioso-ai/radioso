@@ -13,12 +13,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { agentsApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { providerDisplayName, voiceVendorNames } from '@/lib/api-llm-providers'
 import {
   ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS,
   VOICE_MAX_LANGUAGES,
   VOICE_MAX_LINE_LENGTH,
   VOICE_MAX_LINES,
-  VOICE_RUNTIME_VENDORS,
   emptyVoiceLanguageLines,
   isBelowElevenLabsSpokenFloor,
   voiceSettingsFormAfterSave,
@@ -28,11 +28,9 @@ import {
   type VoiceBridgeStyle,
   type VoiceLanguageLines,
   type VoiceRuntimeForm,
-  type VoiceRuntimeVendor,
   type VoiceSettingsForm,
 } from '@/lib/voice-settings-form'
 
-const VOICE_RUNTIME_VENDOR_LABELS: Record<VoiceRuntimeVendor, string> = { elevenlabs: 'ElevenLabs' }
 /** The agent settings API's bound on a vendor agent id. */
 const VOICE_RUNTIME_AGENT_ID_MAX_LENGTH = 128
 
@@ -113,25 +111,25 @@ function VoiceLanguageEditor({
 
 /** The vendor agent a page's voice session opens; the vendor's key lives in workspace Settings. */
 function VoiceRuntimeEditor({ runtime, onChange }: { runtime: VoiceRuntimeForm; onChange: (next: VoiceRuntimeForm) => void }) {
-  const vendorLabel = VOICE_RUNTIME_VENDOR_LABELS[runtime.vendor]
+  const vendorLabel = providerDisplayName[runtime.vendor]
   return (
     <div className="space-y-3">
       <div className="space-y-0.5">
         <h4 className="text-sm font-semibold text-foreground">Runtime</h4>
         <p className="text-xs text-muted-foreground">
-          Pages start voice sessions on this {vendorLabel} agent while voice lines are on. Add the {vendorLabel} API key under Settings → Providers.
+          Calls open on this {vendorLabel} agent. Add the {vendorLabel} API key under Settings → Providers.
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="voiceRuntimeVendor" className="text-foreground">Voice runtime</Label>
-          <Select value={runtime.vendor} onValueChange={(value) => onChange({ ...runtime, vendor: VOICE_RUNTIME_VENDORS.find((vendor) => vendor === value) ?? runtime.vendor })}>
+          <Select value={runtime.vendor} onValueChange={(value) => onChange({ ...runtime, vendor: voiceVendorNames.find((vendor) => vendor === value) ?? runtime.vendor })}>
             <SelectTrigger id="voiceRuntimeVendor" className="w-full min-w-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {VOICE_RUNTIME_VENDORS.map((vendor) => (
-                <SelectItem key={vendor} value={vendor}>{VOICE_RUNTIME_VENDOR_LABELS[vendor]}</SelectItem>
+              {voiceVendorNames.map((vendor) => (
+                <SelectItem key={vendor} value={vendor}>{providerDisplayName[vendor]}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -208,8 +206,11 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
           {/* Edits typed while a save is in flight would be replaced by its response, so the editors wait for it. */}
           <fieldset disabled={saveState === 'saving'} className="min-w-0 space-y-5">
           <div className="flex items-center justify-between gap-4">
-            <Label htmlFor="voiceEnabled" className="text-foreground">Voice lines on calls</Label>
-            <Switch id="voiceEnabled" checked={form.enabled} onCheckedChange={(enabled) => edit({ ...form, enabled })} />
+            <div className="space-y-0.5">
+              <Label htmlFor="voiceEnabled" className="text-foreground">Voice channel</Label>
+              <p id="voiceEnabledHint" className="text-xs text-muted-foreground">Lets pages start calls, and calls hear the lines below.</p>
+            </div>
+            <Switch id="voiceEnabled" aria-describedby="voiceEnabledHint" checked={form.enabled} onCheckedChange={(enabled) => edit({ ...form, enabled })} />
           </div>
           <VoiceRuntimeEditor runtime={form.runtime} onChange={(runtime) => edit({ ...form, runtime })} />
           {form.languages.map((language, index) => (

@@ -136,8 +136,11 @@ does.
    settings**.
 3. Add the page's origin to the website embed's allowed origins. Only a
    website embed session can start a call, because only its origin is checked.
-4. On the page, start a website embed session, ask Radioso for a voice session
-   with it, then open the session with the ElevenLabs client:
+4. Put the website embed on the page. With the first three steps done, the
+   embed shows a **Talk** button and runs the call itself; see
+   [Talk from the website embed](#talk-from-the-website-embed). A page with
+   its own call controls starts a website embed session, asks Radioso for a
+   voice session with it, then opens the session with the ElevenLabs client:
 
    ```js
    import { Conversation } from '@elevenlabs/client'
@@ -224,6 +227,58 @@ outcomes.
 Ray can bind the runtime: ask it to connect the agent to your ElevenLabs agent
 and it drafts the whole `voice` block with `propose_agent_setting` for you to
 review. The API key is yours to enter in Settings; Ray never asks for it.
+
+### Talk from the website embed
+
+The website embed is a ready-made page for voice calls. When the agent's
+**Voice channel** is on, an ElevenLabs agent is bound under **Runtime**, and
+the workspace holds an ElevenLabs key under **Voice runtime keys**, the embed's
+composer shows a microphone button, **Talk**, beside Send. The embed snippet
+stays the same. The embed learns this from its config, which a browser keeps
+for a minute and a CDN in front of the app host for up to five, so the button
+can take that long to appear or disappear after you change one of the three.
+
+When a visitor presses **Talk**:
+
+1. The browser asks for the microphone. A visitor who refuses it, or has none,
+   reads "Talking needs your microphone." and the call spends none of the
+   start budget.
+2. The embed asks Radioso for a session with its public session, in the
+   language it asked the greeting in when it knows one, and opens the session
+   with the ElevenLabs client, which the embed downloads only at this point.
+3. The composer gives way to a call bar that reads **Connecting…**, then
+   **Listening** while the visitor talks and **Speaking** while the agent
+   answers, with **End call** beside it. The visitor can talk over the agent:
+   ElevenLabs stops the reply, and the Inbox marks it as interrupted.
+4. Each thing the visitor says and each reply appears in the panel as it
+   happens, marked **Spoken**. Those lines belong to the open panel; after a
+   reload the panel shows the text chat alone.
+
+The call ends when the visitor selects **End call**, closes the panel, or
+ElevenLabs closes the session; the panel then reads "Call ended" and offers
+**Talk** again. A start that Radioso turns down (any status in the table
+above) reads "Talking isn't available right now. Try again later." The call
+is its own conversation: the Inbox and Activity list it with the source
+**Voice**, next to the visitor's text chats.
+
+The embed's chat runs in an iframe on your Radioso app host, so the launcher
+grants that iframe the microphone with `allow="microphone"` when the agent
+takes voice calls. A host page that sends a `Permissions-Policy` header
+denying the microphone, such as `microphone=()`, takes it away again, and every
+visitor reads the microphone line. Allow it for the app host instead:
+
+```text
+Permissions-Policy: microphone=(self "https://app.radioso.ai")
+```
+
+The voice controls' wording is part of the embed copy, translated into the
+embed's built-in languages: `publicChatTalkLabel`, `publicChatEndCallLabel`,
+`publicChatVoiceConnectingStatus`, `publicChatVoiceListeningStatus`,
+`publicChatVoiceSpeakingStatus`, `publicChatVoiceEndedStatus`,
+`publicChatVoiceMicrophoneError`, `publicChatVoiceUnavailableError` and
+`publicChatSpokenLabel`. Override them like any other embed string, with
+`data-radioso-copy` on the script tag or in the agent's per-language copy
+packs.
 
 ### Start sessions from your own page
 

@@ -41,6 +41,10 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `voice.enabled` and `voice.runtime`, the workspace's key for that vendor
   through `VoiceVendorCredentialReader`, asks that vendor's
   `VoiceSessionStarter` for the session, and mints the session key (a UUID).
+  The same service is the `VoiceSessionAvailabilityPort`: by the gate a start
+  passes (`voice.enabled`, a bound `voice.runtime`) and the presence of that
+  vendor's key (`isStored`, which decrypts nothing), it says whether a page
+  should offer calls at all.
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
   `voice_sessions`. The first binding wins.
 - `adapters/*` translate one wire to the domain port and back, and nothing
@@ -106,7 +110,13 @@ helpers and the shared chat message limit from `app/http`
   (`app/http/middleware/publicVoiceSessionRateLimiter.ts`), and maps
   `VoiceSessionStartResult` to HTTP. A page on another origin reaches it
   through the frontend proxy `frontend/app/api/public/chat/[token]/voice/sessions/route.ts`,
-  which answers the CORS preflight.
+  which answers the CORS preflight. The website embed is its first-party
+  consumer: `GET /api/v1/public/chat/:token/embed-config` carries
+  `voice: { available }` from `AppDependencies.voiceSessionAvailability`, and
+  the embed's Talk button (`frontend/lib/use-voice-session.ts`, which runs the
+  call in `frontend/lib/voice-call.ts`) starts sessions through the relay with
+  the embed's public session and opens them in the browser with the vendor's
+  client.
 
 ## Decisions to keep
 

@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import { startPublicVoiceSession } from './api-public-voice'
-import { requestMicrophoneAccess, runVoiceCall, type VoiceCall } from './voice-call'
-import { loadVoiceRuntime, prepareVoiceRuntimes } from './voice-runtime'
+import { runVoiceCall, type VoiceCall } from './voice-call'
+import { loadVoiceRuntimes, prepareVoiceRuntimes } from './voice-runtime'
 import {
   appendVoiceTranscriptLine,
   initialVoiceSessionState,
@@ -46,15 +46,14 @@ export function useVoiceSession({
     dispatch({ type: 'talk_pressed' })
     const call = runVoiceCall(
       {
-        requestMicrophone: requestMicrophoneAccess,
         startSession: () => startPublicVoiceSession(token, { locale }),
-        loadRuntime: loadVoiceRuntime,
+        loadRuntimes: loadVoiceRuntimes,
       },
       {
         onEvent: (event) => {
           // A call that failed or dropped is over: stopping it drops whatever the vendor still
           // delivers, and a new press may start another.
-          if (event.type === 'microphone_refused' || event.type === 'start_refused' || event.type === 'disconnected') {
+          if (event.type === 'microphone_refused' || event.type === 'start_refused' || event.type === 'call_failed' || event.type === 'disconnected') {
             call.stop()
             if (callRef.current === call) callRef.current = null
           }

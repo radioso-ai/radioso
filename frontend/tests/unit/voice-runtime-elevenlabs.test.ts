@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const startSession = vi.fn()
 vi.mock('@elevenlabs/client', () => ({ Conversation: { startSession: (options: unknown) => startSession(options) } }))
 
 import { GET } from '@/app/voice-worklets/[name]/route'
+import { VoiceMicrophoneUnavailableError } from '@/lib/voice-runtime'
 import { elevenLabsVoiceRuntime } from '@/lib/voice-runtime-elevenlabs'
 
 type CapturedOptions = {
@@ -17,19 +18,38 @@ type CapturedOptions = {
   onMessage: (props: { message: string; role: 'user' | 'agent'; event_id: number; source: string; response_id?: string }) => void
   onDisconnect: (details: { reason: 'user' }) => void
   onAgentResponseCorrection: (props: { original_agent_response: string; corrected_agent_response: string; event_id: number; response_id?: string }) => void
+  onError: (message: string, context?: unknown) => void
 }
 
-const callbacks = () => ({ onConnected: vi.fn(), onModeChange: vi.fn(), onLine: vi.fn(), onDisconnected: vi.fn() })
+const callbacks = () => ({ onConnecting: vi.fn(), onConnected: vi.fn(), onModeChange: vi.fn(), onLine: vi.fn(), onFailed: vi.fn(), onDisconnected: vi.fn() })
+const openSignal = () => new AbortController().signal
+
+/** Stands in for the browser's WebSocket so the adapter's handshake watch can be observed. */
+class FakeWebSocket {
+  static created: FakeWebSocket[] = []
+  closed = 0
+  constructor(readonly url: string | URL) {
+    FakeWebSocket.created.push(this)
+  }
+  close() {
+    this.closed += 1
+  }
+}
 
 describe('ElevenLabs voice runtime', () => {
   const endSession = vi.fn(async () => undefined)
   beforeEach(() => {
     startSession.mockReset()
     startSession.mockResolvedValue({ endSession })
+    FakeWebSocket.created = []
+    vi.stubGlobal('window', { WebSocket: FakeWebSocket })
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it("opens the signed URL over a websocket with the session key and language in the custom LLM extra body", async () => {
-    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://api.elevenlabs.io/v1/convai/conversation?sig=1', sessionKey: 'session-key-1', locale: 'it' }, callbacks())
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://api.elevenlabs.io/v1/convai/conversation?sig=1', sessionKey: 'session-key-1', locale: 'it' }, callbacks(), openSignal())
 
     const options = startSession.mock.calls[0][0] as CapturedOptions
     expect(options.signedUrl).toBe('wss://api.elevenlabs.io/v1/convai/conversation?sig=1')
@@ -38,7 +58,7 @@ describe('ElevenLabs voice runtime', () => {
   })
 
   it('loads its worklets from paths the app host serves', async () => {
-    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks())
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks(), openSignal())
 
     const options = startSession.mock.calls[0][0] as CapturedOptions
     for (const path of [...Object.values(options.workletPaths), options.libsampleratePath]) {
@@ -51,7 +71,7 @@ describe('ElevenLabs voice runtime', () => {
 
   it("reports the vendor's connection, speaker, lines and disconnect, and ends the session", async () => {
     const reported = callbacks()
-    const session = await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, reported)
+    const session = await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, reported, openSignal())
     const options = startSession.mock.calls[0][0] as CapturedOptions
 
     options.onConnect({ conversationId: 'conv_1' })
@@ -73,7 +93,7 @@ describe('ElevenLabs voice runtime', () => {
 
   it('reports a reply the caller talked over as a line that corrects it to what was spoken', async () => {
     const reported = callbacks()
-    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, reported)
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, reported, openSignal())
     const options = startSession.mock.calls[0][0] as CapturedOptions
 
     options.onAgentResponseCorrection({ original_agent_response: 'We open at ten and close at four.', corrected_agent_response: 'We open at ten', event_id: 3, response_id: 'r1' })
@@ -83,5 +103,70 @@ describe('ElevenLabs voice runtime', () => {
       [{ speaker: 'agent', text: 'We open at ten', corrects: 'We open at ten and close at four.', responseId: 'r1' }],
       [{ speaker: 'agent', text: 'Sure', corrects: 'Sure, one moment.' }],
     ])
+  })
+
+  it("fails the call on a vendor error event, which may leave the socket open", async () => {
+    const reported = callbacks()
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, reported, openSignal())
+    const options = startSession.mock.calls[0][0] as CapturedOptions
+
+    options.onError('Server error', { reason: 'quota' })
+
+    expect(reported.onFailed).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['NotAllowedError', 'NotFoundError', 'NotReadableError'])("reads the client's %s as an unavailable microphone", async (name) => {
+    startSession.mockRejectedValue(Object.assign(new Error('getUserMedia failed'), { name }))
+
+    await expect(elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks(), openSignal()))
+      .rejects.toBeInstanceOf(VoiceMicrophoneUnavailableError)
+  })
+
+  it('passes any other failure through', async () => {
+    startSession.mockRejectedValue(new Error('Connection closed unexpectedly before session could be established.'))
+
+    await expect(elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks(), openSignal()))
+      .rejects.not.toBeInstanceOf(VoiceMicrophoneUnavailableError)
+  })
+
+  it("reports the vendor's handshake once its socket opens, and closes that socket alone when the call is abandoned", async () => {
+    const reported = callbacks()
+    const abandon = new AbortController()
+    const opening = new Promise((resolve) => {
+      startSession.mockImplementation(async () => {
+        const vendorSocket = new window.WebSocket('wss://vendor.test/v1/convai/conversation?sig=1')
+        const otherSocket = new window.WebSocket('wss://elsewhere.test/live')
+        resolve({ vendorSocket, otherSocket })
+        return new Promise(() => undefined)
+      })
+    })
+    void elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test/v1/convai/conversation?sig=1', sessionKey: 'k', locale: 'en' }, reported, abandon.signal)
+    const { vendorSocket, otherSocket } = (await opening) as { vendorSocket: FakeWebSocket; otherSocket: FakeWebSocket }
+
+    expect(reported.onConnecting).toHaveBeenCalledTimes(1)
+    abandon.abort()
+
+    expect(vendorSocket.closed).toBe(1)
+    expect(otherSocket.closed).toBe(0)
+  })
+
+  it('leaves an open session to its own end: aborting after it opened closes nothing', async () => {
+    const abandon = new AbortController()
+    let vendorSocket: FakeWebSocket | null = null
+    startSession.mockImplementation(async () => {
+      vendorSocket = new window.WebSocket('wss://vendor.test/v1/convai/conversation') as unknown as FakeWebSocket
+      return { endSession }
+    })
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test/v1/convai/conversation', sessionKey: 'k', locale: 'en' }, callbacks(), abandon.signal)
+
+    abandon.abort()
+
+    expect(vendorSocket!.closed).toBe(0)
+  })
+
+  it("restores the frame's WebSocket once the session is open", async () => {
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks(), openSignal())
+
+    expect(window.WebSocket).toBe(FakeWebSocket)
   })
 })

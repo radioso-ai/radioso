@@ -22,6 +22,8 @@ export type VoiceSessionEvent =
   | { type: 'talk_pressed' }
   | { type: 'microphone_refused' }
   | { type: 'start_refused' }
+  /** The vendor failed the call, or did not answer its handshake in time. */
+  | { type: 'call_failed' }
   | { type: 'connected' }
   | { type: 'mode_changed'; mode: VoiceMode }
   | { type: 'stop_pressed' }
@@ -41,6 +43,8 @@ export function voiceSessionReducer(state: VoiceSessionState, event: VoiceSessio
       return state.status === 'connecting' ? { status: 'failed', problem: 'microphone' } : state
     case 'start_refused':
       return state.status === 'connecting' ? { status: 'failed', problem: 'unavailable' } : state
+    case 'call_failed':
+      return isVoiceCallActive(state) ? { status: 'failed', problem: 'unavailable' } : state
     case 'connected':
       return state.status === 'connecting' ? { status: 'live', mode: 'listening' } : state
     case 'mode_changed':

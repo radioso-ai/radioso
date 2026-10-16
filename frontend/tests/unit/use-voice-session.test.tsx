@@ -18,12 +18,15 @@ vi.mock('@/lib/api-public-voice', () => ({
   })),
 }))
 
-vi.mock('@/lib/voice-runtime', () => ({
+vi.mock('@/lib/voice-runtime', async (importActual) => ({
+  ...(await importActual<typeof import('@/lib/voice-runtime')>()),
   prepareVoiceRuntimes: vi.fn(),
-  loadVoiceRuntime: vi.fn(async () => ({
-    open: async (_input: unknown, callbacks: VoiceRuntimeCallbacks) => {
-      vendor.callbacks = callbacks
-      return { end: vendor.end }
+  loadVoiceRuntimes: vi.fn(async () => ({
+    elevenlabs: {
+      open: async (_input: unknown, callbacks: VoiceRuntimeCallbacks) => {
+        vendor.callbacks = callbacks
+        return { end: vendor.end }
+      },
     },
   })),
 }))
@@ -55,10 +58,6 @@ describe('useVoiceSession', () => {
   beforeEach(async () => {
     vendor.callbacks = null
     vendor.end.mockClear()
-    Object.defineProperty(navigator, 'mediaDevices', {
-      configurable: true,
-      value: { getUserMedia: async () => ({ getTracks: () => [] }) },
-    })
     container = document.createElement('div')
     root = createRoot(container)
     await act(async () => root.render(<Harness />))

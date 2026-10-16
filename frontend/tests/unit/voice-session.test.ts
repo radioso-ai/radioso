@@ -36,6 +36,12 @@ describe('voice session state', () => {
     expect(run([{ type: 'talk_pressed' }, { type: 'stop_pressed' }])).toEqual({ status: 'idle' })
   })
 
+  it('fails a connecting or live call the vendor failed, with the unavailable line', () => {
+    expect(run([{ type: 'talk_pressed' }, { type: 'call_failed' }])).toEqual({ status: 'failed', problem: 'unavailable' })
+    expect(run([{ type: 'talk_pressed' }, { type: 'connected' }, { type: 'call_failed' }])).toEqual({ status: 'failed', problem: 'unavailable' })
+    expect(run([{ type: 'call_failed' }], { status: 'ended' })).toEqual({ status: 'ended' })
+  })
+
   it('ends a live call the vendor closed', () => {
     expect(run([{ type: 'talk_pressed' }, { type: 'connected' }, { type: 'disconnected' }])).toEqual({ status: 'ended' })
   })

@@ -100,6 +100,17 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
   }
 }
 
+/**
+ * Whether this page can ask for a microphone at all: browsers offer one only to a secure context
+ * (https, or localhost) with the media devices API. A page that cannot ask shows no Talk button.
+ */
+export function canAskForMicrophone(): boolean {
+  return typeof window !== 'undefined'
+    && window.isSecureContext === true
+    && typeof navigator !== 'undefined'
+    && typeof navigator.mediaDevices?.getUserMedia === 'function'
+}
+
 /** Asks for the microphone and lets it go at once: the vendor's client opens its own stream. */
 export async function requestMicrophoneAccess(): Promise<boolean> {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return false

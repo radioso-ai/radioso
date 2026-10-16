@@ -11,24 +11,22 @@ export function VoiceTalkButton({
   theme,
   copy,
   onPress,
-  hero = false,
 }: {
   theme: WebsiteEmbedTheme
   copy: WebsiteEmbedCopy
   onPress: () => void
-  hero?: boolean
 }) {
   return (
     <Button
       type="button"
       size="icon"
       variant="ghost"
-      className={`${hero ? 'h-11 w-11' : 'h-9 w-9'} shrink-0 rounded-full hover:opacity-80`}
+      className="h-9 w-9 shrink-0 rounded-full hover:opacity-80"
       onClick={onPress}
       title={copy.publicChatTalkLabel}
       style={{ color: theme.inputForeground }}
     >
-      <Mic className={hero ? 'h-5 w-5' : 'h-4 w-4'} aria-hidden="true" />
+      <Mic className="h-4 w-4" aria-hidden="true" />
       <span className="sr-only">{copy.publicChatTalkLabel}</span>
     </Button>
   )

@@ -555,6 +555,42 @@ describe('backend proxy route', () => {
     expect(denied.headers.get('access-control-allow-origin')).toBeNull()
   })
 
+  it('relays the visitor session cookie both ways on a voice session start, as the chat relay does', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Set-Cookie': 'anon_session_ws=abc; HttpOnly', 'X-Radioso-Anonymous-Session': 'abc' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { POST } = await import('@/app/api/public/chat/[token]/voice/sessions/route')
+    const response = await POST(new Request('https://frontend.example.com/api/public/chat/token-1/voice/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://radioso.ai', Cookie: 'anon_session_ws=abc' },
+      body: '{}',
+    }), { params: Promise.resolve({ token: 'token-1' }) })
+
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({ Cookie: 'anon_session_ws=abc' })
+    expect(response.headers.get('set-cookie')).toBe('anon_session_ws=abc; HttpOnly')
+    expect(response.headers.get('x-radioso-anonymous-session')).toBe('abc')
+  })
+
+  it('answers a voice session start with the backend\'s own code when the backend cannot be reached', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('getaddrinfo EAI_AGAIN backend')))
+
+    const { POST } = await import('@/app/api/public/chat/[token]/voice/sessions/route')
+    const response = await POST(new Request('https://frontend.example.com/api/public/chat/token-1/voice/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://radioso.ai' },
+      body: '{}',
+    }), { params: Promise.resolve({ token: 'token-1' }) })
+
+    expect(response.status).toBe(503)
+    expect((await response.json()).error.code).toBe('voice_unavailable')
+    expect(response.headers.get('cache-control')).toBe('no-store')
+  })
+
   it('forwards bearer auth for document search proxy requests', async () => {
     vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
 

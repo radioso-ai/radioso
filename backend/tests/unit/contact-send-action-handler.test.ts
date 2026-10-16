@@ -379,11 +379,10 @@ describe("ContactSendActionHandler.recordFailureOutcome", () => {
       { report },
     );
 
-    // A provider or webhook error is caught-and-stringified upstream (see
-    // ActionDispatcher) before it reaches recordFailureOutcome, so the handler
-    // cannot tell a bounded internal message from one that echoes a response
-    // body, a signed webhook URL, or a reply-to address — it must never forward
-    // that text verbatim to an external sink.
+    // A provider or webhook error is caught-and-stringified upstream (the background-job
+    // runtime's errorMessage) before it reaches recordFailureOutcome, so the handler cannot
+    // tell a bounded internal message from one that echoes a response body, a signed webhook
+    // URL, or a reply-to address — it must never forward that text verbatim to an external sink.
     const rawProviderError = "Webhook POST failed: https://hooks.example.com/contact?token=SUPER_SECRET_TOKEN (reply-to visitor@example.com)";
 
     await handler.recordFailureOutcome({

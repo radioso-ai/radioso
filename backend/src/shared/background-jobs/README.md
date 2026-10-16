@@ -58,18 +58,20 @@ Implementations live outside it, and application composition
   onto this runtime without a data migration, but it cannot express every
   access pattern the queue it replaces had.
 
-`backend/src/db/repositories/actionRequestRepository.ts` also implements
-`BackgroundJobStore`, over the chat module's own `routine_action_requests`
-table (#1509) — proof that this table can be claimed, leased, completed,
-retried, and dead-lettered the same way, with no schema change. The chat
-module's own `ActionDispatcher` does not run on this runtime yet: the table's
-flat (non-doubling) retry backoff, its per-attempt `recordFailureOutcome`
-hook (fired on every failed attempt, not just a terminal one), and its
-`skipped` terminal outcome have no equivalent here today. Growing this
-substrate to cover them — a per-kind backoff strategy, a per-attempt failure
-hook, and a `skipped` run outcome alongside `completed`/`retried`/
-`dead_lettered` — is the scoped follow-up; see the `ActionRequestRepository`
-class doc comment and `tests/integration/action-request-repository.integration.test.ts`.
+The action outbox (#1509) runs on this runtime too, over its own table:
+`backend/src/db/repositories/actionRequestRepository.ts` implements
+`BackgroundJobStore` over `routine_action_requests`, with no schema change —
+the fencing token is the row's own `attempts`, and the lease is the staleness
+of `updated_at`. One job kind, `chat.action_dispatch`, carries every action
+`type` (the real routing value travels inside the job's payload, since the
+table has no `kind` column); `backend/src/modules/chat/services/actions/
+actionDispatchJob.ts`'s `createActionDispatchJobHandler` resolves it against
+the existing `ActionHandlerRegistry` and reproduces the outbox's own retry
+contract through the port growth above: a flat 60 s `retryDelaysSeconds`,
+`onAttemptFailed`/`onDeadLetter` for the handler's two
+`recordFailureOutcome` outcomes, and a handler-returned `skipped` result for
+a transport that deliberately delivers nothing. `ActionHandler`
+implementations did not change.
 
 ## Semantics
 
@@ -139,7 +141,13 @@ class doc comment and `tests/integration/action-request-repository.integration.t
   `AppError [provider_unavailable]`. Never the message or stack, which can
   carry provider responses, conversation text, or credentials. The error
   reporter gets the same shape (kind, attempt, job id, that summary) and never
-  the error itself.
+  the error itself. `onAttemptFailed` and `onDeadLetter` additionally get
+  `errorMessage`: the underlying error's own message (`null` for a synthetic
+  failure such as a lease that expired with no run to blame). Unlike `error`,
+  this is never written anywhere by the substrate — it exists only so a
+  handler's hook can make its own bounded, structural extraction (a trailing
+  HTTP status code, say) from text that may itself carry a secret, the same
+  trust a handler's own `run` already has for the errors it throws.
 - **Dead letters.** After `maxAttempts` runs, a failure that cannot be retried,
   a payload that no longer parses, or attempts used up by crashed workers, the
   job is parked. The same write drops its payload: a dead letter keeps its kind,

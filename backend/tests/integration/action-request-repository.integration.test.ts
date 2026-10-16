@@ -122,10 +122,10 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
     expect(snapshot.oldestPendingCreatedAt!.getTime()).toBeLessThanOrEqual(oldestRow.created_at.getTime());
   });
 
-  // `BackgroundJobStore` conformance (#1509): this table claimed, leased, completed, retried,
+  // `BackgroundJobStore` conformance (#1509): this table is claimed, leased, completed, retried,
   // and dead-lettered through the same methods the generic `background_jobs` store exposes, with
-  // no schema change. `ActionDispatcher` does not call these yet — see the class doc comment on
-  // `ActionRequestRepository` — but the fit itself is proven here, against real Postgres.
+  // no schema change — this is the store the action-dispatch job runtime actually drains through
+  // (`actionDispatchJob.ts`), proven here against real Postgres.
   describe("BackgroundJobStore conformance", () => {
     it("claimNext claims the oldest due row, fencing every write-back on that claim's token", async () => {
       const row = await enqueue();

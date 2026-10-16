@@ -135,7 +135,11 @@ export const createActionDispatchJobHandler = (
           payload: payload.payload,
           context: toHandlerContext(payload, context.jobId, context.attempt),
           outcome: "retry",
-          error: context.error,
+          // `ActionDispatcher` handed its handlers the real caught-and-stringified error text
+          // (never the generic class-only summary); errorMessage reproduces that so a handler's
+          // own bounded extraction (`contactSendActionHandler`'s trailing HTTP status code) still
+          // works. Falls back to the summary only for a synthetic failure with no real error.
+          error: context.errorMessage ?? context.error,
         });
       },
       onDeadLetter: async (payload, context) => {
@@ -151,7 +155,7 @@ export const createActionDispatchJobHandler = (
           payload: payload.payload,
           context: toHandlerContext(payload, context.jobId, context.attempt),
           outcome: "failed",
-          error: context.error,
+          error: context.errorMessage ?? context.error,
         });
       },
     },

@@ -1405,6 +1405,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalDefaultsProvider,
     actionDispatchJobRuntime: chat.actionDispatchJobRuntime,
     actionOutboxQueueDepthReporter: chat.actionOutboxQueueDepthReporter,
+    reportActionOutboxQueueState: chat.reportActionOutboxQueueState,
     backgroundJobRuntime,
     backgroundJobRetentionWorker: backgroundJobs.retentionWorker,
     emailChannel: emailChannel ?? undefined,

@@ -112,7 +112,9 @@ helpers and the shared chat message limit from `app/http`
   through the frontend proxy `frontend/app/api/public/chat/[token]/voice/sessions/route.ts`,
   which answers the CORS preflight. The website embed is its first-party
   consumer: `GET /api/v1/public/chat/:token/embed-config` carries
-  `voice: { available }` from `AppDependencies.voiceSessionAvailability`, and
+  `voice: { available }`, true when the operator turned on the embed's
+  `voiceCallsOffered` switch (the agents module's website embed block) and
+  `AppDependencies.voiceSessionAvailability` says voice is ready, and
   the embed's Talk button (`frontend/lib/use-voice-session.ts`, which runs the
   call in `frontend/lib/voice-call.ts`) starts sessions through the relay with
   the embed's public session and opens them in the browser with the vendor's

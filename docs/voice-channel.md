@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, and authored lines that cover the wait."
-last_updated: 2026-10-16
+last_updated: 2026-10-17
 ---
 
 # Voice Channel
@@ -136,11 +136,12 @@ does.
    settings**.
 3. Add the page's origin to the website embed's allowed origins. Only a
    website embed session can start a call, because only its origin is checked.
-4. Put the website embed on the page. With the first three steps done, the
-   embed shows a **Talk** button and runs the call itself; see
+4. Put the website embed on the page. Turn on **Offer calls on the website**
+   and the embed shows a **Talk** button and runs the call itself; see
    [Talk from the website embed](#talk-from-the-website-embed). A page with
-   its own call controls starts a website embed session, asks Radioso for a
-   voice session with it, then opens the session with the ElevenLabs client:
+   its own call controls leaves that switch off, starts a website embed
+   session, asks Radioso for a voice session with it, then opens the session
+   with the ElevenLabs client:
 
    ```js
    import { Conversation } from '@elevenlabs/client'
@@ -230,15 +231,31 @@ review. The API key is yours to enter in Settings; Ray never asks for it.
 
 ### Talk from the website embed
 
-The website embed is a ready-made page for voice calls. When the agent's
-**Voice channel** is on, an ElevenLabs agent is bound under **Runtime**, and
-the workspace holds an ElevenLabs key under **Voice runtime keys**, the embed's
-composer shows a microphone button, **Talk**, beside Send. Browsers give a
-microphone only to pages served over https (or from `localhost`), so a page
-served over plain http shows no button. The embed snippet stays the same. The
-embed learns this from its config, which a browser keeps
-for a minute and a CDN in front of the app host for up to five, so the button
-can take that long to appear or disappear after you change one of the three.
+The website embed is a ready-made page for voice calls. Offering them is your
+choice, and it starts off:
+
+1. Get the agent's voice ready: the **Voice channel** on, an ElevenLabs agent
+   bound under **Runtime**, and an ElevenLabs key under **Voice runtime
+   keys**, as above.
+2. On the agent's **Web chat** page, under **Website widget**, turn on
+   **Offer calls on the website**. The switch turns on only once voice is
+   ready; until then it names the piece still missing. You can turn it off at
+   any time.
+
+The embed's composer then shows a microphone button, **Talk**, beside Send.
+The switch governs only the widget: a page of your own that starts sessions
+keeps working with it off, and getting voice ready for that page puts nothing
+on the widget. Browsers
+give a microphone only to pages served over https (or from `localhost`), so a
+page served over plain http shows no button. The embed snippet stays the same.
+The embed learns about the switch from its config, which a browser keeps for a
+minute and a CDN in front of the app host for up to five, so the button can
+take that long to appear or disappear after a change.
+
+Ray can draft the agent's `voice` block, but it leaves this switch to you: it
+puts a microphone prompt on your live site and spends your ElevenLabs minutes.
+The switch is `surfaceSettings.websiteEmbed.voiceCallsOffered` on
+`PUT /api/v1/agents/:agentId`, `false` unless you set it.
 
 When a visitor presses **Talk**:
 

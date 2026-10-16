@@ -176,13 +176,18 @@ export type VoiceSessionStartResult =
   | { kind: "failed" };
 
 /**
- * Whether an agent's voice is ready for sessions, and when it is not, the first piece missing in
- * the order an operator sets them up: the voice channel, the runtime binding, the vendor key, then
- * the backend's master key to read it.
+ * What can keep an agent's voice from being ready, in the order an operator sets them up: the voice
+ * channel, the runtime binding, the vendor key, then the backend's master key to read it. The API
+ * contract's `VoiceCallReadiness.missing` is this list.
  */
+export const VOICE_CALL_READINESS_GAPS = ["voice_channel", "runtime", "vendor_key", "encryption"] as const;
+
+export type VoiceCallReadinessGap = (typeof VOICE_CALL_READINESS_GAPS)[number];
+
+/** Whether an agent's voice is ready for sessions, and when it is not, the first piece missing. */
 export type VoiceCallReadiness =
   | { ready: true; missing: null }
-  | { ready: false; missing: "voice_channel" | "runtime" | "vendor_key" | "encryption" };
+  | { ready: false; missing: VoiceCallReadinessGap };
 
 /**
  * Whether an agent's voice is ready for sessions. It reads the agent's own `voice` block, which its

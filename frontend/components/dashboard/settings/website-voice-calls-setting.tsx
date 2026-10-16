@@ -87,7 +87,7 @@ export function WebsiteVoiceCallsSetting({ agentId }: { agentId: string }) {
         <div className="min-w-0">
           <Label htmlFor="websiteEmbedVoiceCalls" className="text-sm font-medium text-foreground">Offer calls on the website</Label>
           <p id="websiteEmbedVoiceCallsHint" className="mt-1 text-xs text-muted-foreground">
-            {ready ? 'Visitors see Talk beside Send and can talk to the agent.' : voiceCallReadinessHint(readiness?.missing ?? undefined, vendorName)}
+            {ready ? 'Visitors see Talk beside Send and can talk to the agent.' : voiceCallReadinessHint(readiness?.missing, vendorName)}
           </p>
         </div>
         <Switch

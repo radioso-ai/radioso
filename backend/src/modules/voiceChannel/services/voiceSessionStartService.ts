@@ -6,6 +6,7 @@ import type { AgentVoiceSettings } from "../../agents/public.js";
 import {
   VoiceVendorRequestError,
   type VoiceCallReadiness,
+  type VoiceCallReadinessGap,
   type VoiceSessionAvailabilityPort,
   type VoiceSessionStarter,
   type VoiceSessionStartPort,
@@ -57,8 +58,8 @@ const vendorErrorFields = (error: unknown) => ({
   ...(error instanceof VoiceVendorRequestError && error.vendorStatus !== undefined ? { vendorStatus: error.vendorStatus } : {}),
 });
 
-const READINESS_GAP_OF_OUTCOME = { voice_off: "voice_channel", no_runtime: "runtime" } as const;
-const READINESS_GAP_OF_PRESENCE = { missing: "vendor_key", unreadable: "encryption" } as const;
+const READINESS_GAP_OF_OUTCOME = { voice_off: "voice_channel", no_runtime: "runtime" } as const satisfies Record<string, VoiceCallReadinessGap>;
+const READINESS_GAP_OF_PRESENCE = { missing: "vendor_key", unreadable: "encryption" } as const satisfies Record<string, VoiceCallReadinessGap>;
 
 const FAILED_OUTCOME_OF_READING: Record<Exclude<VoiceVendorCredentialReading["kind"], "present">, VoiceSessionFailedOutcome> = {
   missing: "credential_missing",

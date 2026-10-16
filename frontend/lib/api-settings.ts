@@ -6,8 +6,8 @@ import {
 } from './api-types'
 import type {
   AgentListResponse,
+  AgentDetail,
   AgentSettings,
-  VoiceCallReadiness,
   AgentSettingsUpdate,
   AssistantBehaviorSettings,
   DocumentTypeCatalog,
@@ -249,8 +249,8 @@ export const agentsApi = {
     }, { withSession: true })
   },
 
-  async getAgent(agentId: string): Promise<AgentSettings & { voiceCallReadiness?: VoiceCallReadiness }> {
-    return request<AgentSettings & { voiceCallReadiness?: VoiceCallReadiness }>(`/agents/${agentId}`, {
+  async getAgent(agentId: string): Promise<AgentDetail> {
+    return request<AgentDetail>(`/agents/${agentId}`, {
       method: 'GET',
     }, { withSession: true })
   },

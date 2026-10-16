@@ -18,6 +18,7 @@ import {
   authoredDirectiveRouteValues,
   authoredDirectiveSurfaceValues,
 } from "../../../../modules/agents/public.js";
+import { VOICE_CALL_READINESS_GAPS } from "../../../../modules/voiceChannel/public.js";
 import type { AgentConfig } from "../../../../modules/agents/public.js";
 import {
   routineDefinitionDraftInputSchema,
@@ -167,7 +168,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     "VoiceCallReadiness",
     z.object({
       ready: z.boolean(),
-      missing: z.enum(["voice_channel", "runtime", "vendor_key", "encryption"]).nullable(),
+      missing: z.enum(VOICE_CALL_READINESS_GAPS).nullable(),
     }).openapi({
       description: "Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it.",
     }),

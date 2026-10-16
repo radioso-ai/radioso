@@ -661,6 +661,11 @@ export type VoiceCallReadiness = ApiSchemas['VoiceCallReadiness']
 export type AgentSettings = ApiSchemas['ConversationAgent'] & {
   assistantLinkUtmEnabled: boolean
 }
+
+/** One agent as `GET /agents/:agentId` returns it, with its voice readiness for a dashboard session. */
+export type AgentDetail = ApiSchemas['AgentDetail'] & {
+  assistantLinkUtmEnabled: boolean
+}
 export type AgentListResponse = ApiSchemas['AgentListResponse']
 export type AgentSettingsUpdate = ApiSchemas['ConversationAgentRequest'] & {
   assistantLinkUtmEnabled?: boolean

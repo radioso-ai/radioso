@@ -1,7 +1,9 @@
 import { expect, test, type Page, type Route, type WebSocketRoute } from "@playwright/test";
 
 // The website embed's Talk journey, driven through the real launcher, the real chat frame and the
-// real ElevenLabs browser client, with the network mocked at its edges: the embed config says
+// real ElevenLabs browser client, with the host page on 127.0.0.1 and the app host (the launcher
+// script and the chat frame) on localhost, so the frame is cross-origin as on a customer's site,
+// and the network mocked at its edges: the embed config says
 // whether the agent takes voice calls, the session start answers as the backend would, and the
 // vendor's WebSocket is a stand-in the test speaks the vendor's protocol through (handshake,
 // transcripts, audio, interruption, corrections, hang-up). The microphone is Chromium's fake device
@@ -15,7 +17,15 @@ const SESSION_KEY = "33333333-3333-4333-8333-333333333333";
 const SILENCE_PCM_16K = Buffer.alloc(48_000).toString("base64");
 
 test.use({
-  launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] },
+  launchOptions: {
+    args: [
+      "--use-fake-device-for-media-stream",
+      "--use-fake-ui-for-media-stream",
+      // The host page is served through the test's route, which Chromium treats as a public
+      // address; it would otherwise refuse that page the app host on the loopback address.
+      "--disable-features=LocalNetworkAccessChecks",
+    ],
+  },
 });
 
 const fulfillJson = (route: Route, body: unknown, status = 200) =>
@@ -95,7 +105,7 @@ const callsOffered: AgentVoice = { voiceReady: true, voiceCallsOffered: true };
 
 const openEmbed = async (
   page: Page,
-  options: AgentVoice & { voiceStart?: { status: number; body: unknown } },
+  options: AgentVoice & { voiceStart?: { status: number; body: unknown }; hostPermissionsPolicy?: string },
 ) => {
   const voiceStarts: Array<{ headers: Record<string, string>; body: unknown }> = [];
   await page.route("**/backend/api/v1/**", (route) => route.fulfill({ status: 204, body: "" }));
@@ -108,7 +118,24 @@ const openEmbed = async (
     await fulfillJson(route, answer.body, answer.status);
   });
 
-  await page.goto(`/embed-test?token=${TOKEN}`);
+  // The host page stands in for a customer's site, which is not served with the app's own security
+  // headers: no script policy that refuses the app host's launcher, and the site's own
+  // Permissions-Policy, or none.
+  await page.route((url) => url.pathname === "/embed-test", async (route) => {
+    const response = await route.fetch();
+    const headers = Object.fromEntries(Object.entries(response.headers())
+      .filter(([name]) => name !== "content-security-policy" && name !== "permissions-policy"));
+    await route.fulfill({
+      response,
+      headers: options.hostPermissionsPolicy ? { ...headers, "permissions-policy": options.hostPermissionsPolicy } : headers,
+    });
+  });
+
+  // The host page and the app host are two origins, as a customer's site and app.radioso.ai are.
+  const host = new URL(test.info().project.use.baseURL!);
+  const appHost = new URL(host);
+  appHost.hostname = "localhost";
+  await page.goto(`${host.origin}/embed-test?token=${TOKEN}&appOrigin=${encodeURIComponent(appHost.origin)}`);
   await page.locator(".radioso-launcher").click();
   const frame = page.frameLocator('iframe[src*="/embed-frame"]');
   await expect(frame.getByRole("textbox")).toBeVisible();
@@ -133,6 +160,13 @@ test("an agent whose voice is ready shows no Talk button until the operator offe
   await expect(page.locator('iframe[src*="/embed-frame"]')).not.toHaveAttribute("allow", /microphone/);
 });
 
+test("a host page whose Permissions-Policy denies the microphone shows no Talk button", async ({ page }) => {
+  const { frame } = await openEmbed(page, { ...callsOffered, hostPermissionsPolicy: "microphone=()" });
+
+  await expect(frame.getByRole("button", { name: "Send message" })).toBeVisible();
+  await expect(frame.getByRole("button", { name: "Talk" })).toHaveCount(0);
+});
+
 test("a page that cannot ask for a microphone shows no Talk button", async ({ page }) => {
   // What a host page served over plain http looks like to the frame: not a secure context.
   await page.addInitScript(() => {
@@ -148,7 +182,10 @@ test("a visitor talks to the agent: connecting, listening, speaking, talking ove
   await context.grantPermissions(["microphone"]);
   const vendor = await vendorStandIn(page);
   const { frame, voiceStarts } = await openEmbed(page, callsOffered);
-  await expect(page.locator('iframe[src*="/embed-frame"]')).toHaveAttribute("allow", /microphone/);
+  const chatFrame = page.locator('iframe[src*="/embed-frame"]');
+  await expect(chatFrame).toHaveAttribute("allow", /microphone/);
+  // The frame is on the app host, another origin than the page that embeds it.
+  await expect(chatFrame).toHaveAttribute("src", /^http:\/\/localhost:/);
 
   await frame.getByRole("button", { name: "Talk" }).click();
   await expect(callStatus(frame, "Connecting…")).toBeVisible();

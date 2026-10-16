@@ -33,6 +33,18 @@ const loadWorklet = (name: string, segments: readonly string[]) => {
   return worklet
 }
 
+/**
+ * Whether an `If-None-Match` header names this ETag: it may list several, and a proxy may have
+ * weakened any of them with `W/`, which still matches for a GET.
+ */
+const namesEtag = (ifNoneMatch: string | null, etag: string): boolean => {
+  if (!ifNoneMatch) return false
+  return ifNoneMatch.split(',').some((candidate) => {
+    const tag = candidate.trim()
+    return tag === '*' || tag.replace(/^W\//, '') === etag
+  })
+}
+
 export async function GET(request: Request, context: { params: Promise<{ name: string }> }) {
   const { name } = await context.params
   const segments = Object.hasOwn(WORKLET_FILES, name) ? WORKLET_FILES[name] : undefined
@@ -46,7 +58,7 @@ export async function GET(request: Request, context: { params: Promise<{ name: s
     ETag: etag,
     'X-Content-Type-Options': 'nosniff',
   }
-  if (request.headers.get('if-none-match') === etag) {
+  if (namesEtag(request.headers.get('if-none-match'), etag)) {
     return new Response(null, { status: 304, headers })
   }
   return new Response(source, { headers })

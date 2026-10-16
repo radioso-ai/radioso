@@ -32,6 +32,14 @@ describe('voice worklets route', () => {
     expect(again.status).toBe(304)
   })
 
+  it('answers 304 when a proxy weakened the validator or the browser lists several', async () => {
+    const etag = (await get('raw-audio-processor.js')).headers.get('etag')!
+
+    expect((await get('raw-audio-processor.js', { 'if-none-match': `W/${etag}` })).status).toBe(304)
+    expect((await get('raw-audio-processor.js', { 'if-none-match': `"older", W/${etag}` })).status).toBe(304)
+    expect((await get('raw-audio-processor.js', { 'if-none-match': '"older", "oldest"' })).status).toBe(200)
+  })
+
   it.each(['scribe-audio-processor.js', '..%2Fpackage.json', 'constructor', '__proto__'])('serves nothing it does not name: %s', async (name) => {
     expect((await get(name)).status).toBe(404)
   })

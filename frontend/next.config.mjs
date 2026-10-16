@@ -121,10 +121,11 @@ const nextConfig = {
         headers: embedSecurityHeaders,
       },
       {
-        // The embed test page hosts the launcher like a customer's site, so it can hand the frame
-        // its microphone.
+        // The embed test page hosts the launcher like a customer's site, which usually sends no
+        // microphone policy and so lets the launcher's `allow="microphone"` reach the frame, even
+        // when the frame is on another origin.
         source: "/embed-test",
-        headers: [{ key: "Permissions-Policy", value: voicePermissionsPolicy }],
+        headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=*, geolocation=()" }],
       },
       {
         source: "/oauth/operator-mcp/consent",

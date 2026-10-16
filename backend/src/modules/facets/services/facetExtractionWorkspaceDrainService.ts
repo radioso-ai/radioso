@@ -3,7 +3,7 @@ import type { FacetExtractionDrainDispatcher, FacetExtractionJobStore } from "..
 /**
  * Coordinates the durable facet queue with request-driven workers. It only decides
  * whether work remains and asks the transport for another bounded slice; job
- * claiming, retries, and extraction remain owned by `FacetExtractionWorker`.
+ * claiming, retries, and extraction remain owned by `FacetExtractionWorkspaceDrainWorker`.
  */
 export class FacetExtractionWorkspaceDrainService {
   constructor(

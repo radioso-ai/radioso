@@ -781,7 +781,7 @@ describe("runtime startup", () => {
           "the AMQP alternative to Cloud Tasks push (WORKER_DISPATCH_DRIVER=amqp) — a message-queue " +
           "puller, not something an HTTP push targets; mutually exclusive with the task-runtime push model",
       },
-      facetExtractionWorker: {
+      facetExtractionBackgroundJobRuntime: {
         route: "POST /internal/tasks/document-processing/recover",
       },
       copilotRetentionWorker: {

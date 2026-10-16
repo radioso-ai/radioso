@@ -22,7 +22,10 @@ import type {
   DocumentSourceReprocessService,
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
-import type { FacetExtractionWorker, FacetExtractionWorkspaceDrainService } from "../../modules/facets/composition.js";
+import type {
+  FacetExtractionWorkspaceDrainService,
+  FacetExtractionWorkspaceDrainWorker,
+} from "../../modules/facets/composition.js";
 import type { RetrievalMetadataFieldSourcePort } from "../../modules/settings/contracts/services.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { BackgroundJobRuntime } from "../../shared/background-jobs/index.js";
@@ -268,9 +271,11 @@ export interface AppDependencies {
   documentSourceReprocessService: DocumentSourceReprocessService;
   documentProcessingWorker: DocumentProcessingWorker;
   documentJobConsumer?: JobConsumerPort;
-  // Worker-process poll loop for per-message facet extraction. Absent until an
+  // The generic job-port runtime draining per-message facet extraction work. Absent until an
   // extraction implementation is registered through application composition.
-  facetExtractionWorker?: FacetExtractionWorker;
+  facetExtractionBackgroundJobRuntime?: BackgroundJobRuntime;
+  // Audience Pulse's workspace-scoped, operator-requested drain. Absent under the same condition.
+  facetExtractionWorkspaceDrainWorker?: FacetExtractionWorkspaceDrainWorker;
   facetExtractionWorkspaceDrain?: FacetExtractionWorkspaceDrainService;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   websiteCrawlJobService: WebsiteCrawlJobService;

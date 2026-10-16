@@ -327,7 +327,6 @@
   "types|backend/src/modules/externalSkills/oauth/oauthClient.ts|RefreshTokensInput",
   "types|backend/src/modules/externalSkills/services/externalSkillDefinitionService.ts|ExternalSkillDefinitionView",
   "types|backend/src/modules/facets/services/facetExtractionService.ts|FacetExtractionServiceDependencies",
-  "types|backend/src/modules/facets/services/facetExtractionWorker.ts|FacetExtractionWorkerOptions",
   "types|backend/src/modules/facets/services/prompt.ts|FacetExtractionModelOutput",
   "types|backend/src/modules/integrationConnections/repository.ts|IntegrationConnectionRow",
   "types|backend/src/modules/integrationOauth/public.ts|BuildAuthorizationUrlInput",

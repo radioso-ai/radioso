@@ -15,6 +15,7 @@ describe('settings tab metadata', () => {
 
     expect(settingsTabMetadata.providers.sections.map((section) => section.id)).toEqual([
       'provider-credentials',
+      'voice-vendor-credentials',
       'provider-models',
     ])
     expect(settingsTabMetadata['api-access'].sections.map((section) => section.id)).toEqual([

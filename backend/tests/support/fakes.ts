@@ -73,6 +73,7 @@ import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
   authoredDirectiveInputSchema,
+  changedAgentProposalFields,
   type AgentGreetingSnapshot,
   type AgentInput,
   type AgentRecord,
@@ -97,6 +98,7 @@ import type {
   AbuseControlRepositoryPort,
 } from "../../src/modules/security/contracts/abuseControl.js";
 import type {
+  WorkspaceCredentialProvider,
   WorkspaceProviderCredentialRecord,
   WorkspaceProviderCredentialSummary,
   WorkspaceProviderCredentialsRepositoryPort,
@@ -117,7 +119,6 @@ import {
   type RoutineDefinitionRepositoryPort,
   type RoutineDefinitionWriteGuard,
 } from "../../src/modules/routines/public.js";
-import type { LlmProviderName } from "../../src/shared/infra/llm/providerTypes.js";
 import type {
   EmailVerificationTokenRecord,
   EmailVerificationTokenRepositoryPort,
@@ -1385,17 +1386,8 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     }
     const previous = await this.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!previous) return { outcome: "targetDeleted" };
-    const value = (key: string): unknown => {
-      if (key === "assistantName") return previous.name;
-      if (key === "anonymousChatEnabled") return previous.surfaceSettings.anonymousChat.enabled;
-      if (key === "websiteEmbedEnabled") return previous.surfaceSettings.websiteEmbed.enabled;
-      if (key === "websiteEmbedAllowedOrigins") return previous.surfaceSettings.websiteEmbed.allowedOrigins;
-      if (key === "websiteEmbedLauncherLabel") return previous.surfaceSettings.websiteEmbed.launcherLabel;
-      if (key === "websiteEmbedLauncherPosition") return previous.surfaceSettings.websiteEmbed.launcherPosition;
-      return (previous as unknown as Record<string, unknown>)[key];
-    };
     const changed = "expectedFields" in guard
-      ? guard.expectedFields.filter((field) => JSON.stringify(value(field.key)) !== JSON.stringify(field.value)).map((field) => field.key)
+      ? changedAgentProposalFields(previous, guard.expectedFields)
       : previous.updatedAt.getTime() === guard.expectedUpdatedAt.getTime() ? [] : ["target"];
     if (changed.length) return { outcome: "changed", fields: changed };
     const lockedInput = guard.normalizeLocked?.(previous) ?? input;
@@ -1774,7 +1766,7 @@ export class InMemoryWorkspaceProviderCredentialsRepository
 
   async findByWorkspaceAndProvider(
     workspaceId: string,
-    provider: LlmProviderName,
+    provider: WorkspaceCredentialProvider,
   ): Promise<WorkspaceProviderCredentialRecord | null> {
     return this.items.get(`${workspaceId}:${provider}`) ?? null;
   }
@@ -1792,7 +1784,7 @@ export class InMemoryWorkspaceProviderCredentialsRepository
 
   async upsert(input: {
     workspaceId: string;
-    provider: LlmProviderName;
+    provider: WorkspaceCredentialProvider;
     ciphertext: string;
   }): Promise<WorkspaceProviderCredentialRecord> {
     const key = `${input.workspaceId}:${input.provider}`;
@@ -1808,7 +1800,7 @@ export class InMemoryWorkspaceProviderCredentialsRepository
     return record;
   }
 
-  async remove(workspaceId: string, provider: LlmProviderName): Promise<boolean> {
+  async remove(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<boolean> {
     return this.items.delete(`${workspaceId}:${provider}`);
   }
 }

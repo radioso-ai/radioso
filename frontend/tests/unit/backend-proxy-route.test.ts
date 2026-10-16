@@ -493,6 +493,104 @@ describe('backend proxy route', () => {
     expect(response.headers.get('x-upstream-private')).toBeNull()
   })
 
+  it('answers the preflight for a page starting a voice session with its public session header', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+
+    const { OPTIONS } = await import('@/app/api/public/chat/[token]/voice/sessions/route')
+
+    const response = await OPTIONS(new Request('https://frontend.example.com/api/public/chat/token-1/voice/sessions', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://radioso.ai',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type,x-radioso-public-session',
+      },
+    }))
+
+    expect(response.status).toBe(204)
+    expect(response.headers.get('access-control-allow-origin')).toBe('https://radioso.ai')
+    expect(response.headers.get('access-control-allow-methods')).toBe('OPTIONS, POST')
+    expect(response.headers.get('access-control-allow-headers')).toBe('Content-Type, X-Radioso-Public-Session')
+    expect(response.headers.get('vary')).toBe('Origin')
+  })
+
+  it('relays a voice session start with the page origin and public session, and passes back only what the backend allows', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    const started = { vendor: 'elevenlabs', signedUrl: 'wss://api.elevenlabs.io/v1/convai/conversation?sig', sessionKey: 'key-1', locale: 'it' }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(started), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': 'https://radioso.ai', 'X-Upstream-Private': 'no' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'not_found', message: 'Not found' } }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { POST } = await import('@/app/api/public/chat/[token]/voice/sessions/route')
+    const startFrom = (origin: string) => POST(new Request('https://frontend.example.com/api/public/chat/token-1/voice/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: origin, 'X-Radioso-Public-Session': 'session-token' },
+      body: JSON.stringify({ locale: 'it', apiKey: 'not-forwarded' }),
+    }), { params: Promise.resolve({ token: 'token-1' }) })
+
+    const allowed = await startFrom('https://radioso.ai')
+    const denied = await startFrom('https://denied.example.com')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BACKEND_URL}/api/v1/public/chat/token-1/voice/sessions`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ locale: 'it' }),
+        headers: expect.objectContaining({ Origin: 'https://radioso.ai', 'X-Radioso-Public-Session': 'session-token' }),
+      }),
+    )
+    expect(allowed.status).toBe(200)
+    expect(await allowed.json()).toEqual(started)
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('https://radioso.ai')
+    expect(allowed.headers.get('cache-control')).toBe('no-store')
+    expect(allowed.headers.get('x-upstream-private')).toBeNull()
+    expect(denied.status).toBe(404)
+    expect(denied.headers.get('access-control-allow-origin')).toBeNull()
+  })
+
+  it('relays the visitor session cookie both ways on a voice session start, as the chat relay does', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Set-Cookie': 'anon_session_ws=abc; HttpOnly', 'X-Radioso-Anonymous-Session': 'abc' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { POST } = await import('@/app/api/public/chat/[token]/voice/sessions/route')
+    const response = await POST(new Request('https://frontend.example.com/api/public/chat/token-1/voice/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://radioso.ai', Cookie: 'anon_session_ws=abc' },
+      body: '{}',
+    }), { params: Promise.resolve({ token: 'token-1' }) })
+
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({ Cookie: 'anon_session_ws=abc' })
+    expect(response.headers.get('set-cookie')).toBe('anon_session_ws=abc; HttpOnly')
+    expect(response.headers.get('x-radioso-anonymous-session')).toBe('abc')
+  })
+
+  it('answers a voice session start with the backend\'s own code when the backend cannot be reached', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('getaddrinfo EAI_AGAIN backend')))
+
+    const { POST } = await import('@/app/api/public/chat/[token]/voice/sessions/route')
+    const response = await POST(new Request('https://frontend.example.com/api/public/chat/token-1/voice/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://radioso.ai' },
+      body: '{}',
+    }), { params: Promise.resolve({ token: 'token-1' }) })
+
+    expect(response.status).toBe(503)
+    expect((await response.json()).error.code).toBe('voice_unavailable')
+    expect(response.headers.get('cache-control')).toBe('no-store')
+  })
+
   it('forwards bearer auth for document search proxy requests', async () => {
     vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
 

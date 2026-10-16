@@ -75,6 +75,45 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
     await expect(repository.findConversationId({ ...elevenlabs, workspaceId: randomUUID() })).resolves.toBeNull();
   });
 
+  it("holds a started session for its first turn, which binds the conversation onto it", async () => {
+    const session = { workspaceId, agentId, vendor: "elevenlabs", sessionKey: randomUUID() };
+    const visitor = { publicSessionId: randomUUID(), visitorKey: randomUUID() };
+    await repository.register({ session, visitor, expiresAt: new Date(Date.now() + 60_000) });
+
+    await expect(repository.findConversationId(session)).resolves.toBeNull();
+    await expect(repository.findStartedVisitor(session)).resolves.toEqual(visitor);
+
+    const conversationId = await insertConversation();
+    await expect(repository.bind(session, conversationId)).resolves.toBe(conversationId);
+    await expect(repository.bind(session, await insertConversation())).resolves.toBe(conversationId);
+    await expect(repository.findConversationId(session)).resolves.toBe(conversationId);
+    // Once bound, the session has its conversation, and the start is no longer waiting for a turn.
+    await expect(repository.findStartedVisitor(session)).resolves.toBeNull();
+  });
+
+  it("forgets a start whose first turn never came, and clears it out on the agent's next start", async () => {
+    const expired = { workspaceId, agentId, vendor: "elevenlabs", sessionKey: randomUUID() };
+    await repository.register({ session: expired, visitor: { publicSessionId: randomUUID(), visitorKey: null }, expiresAt: new Date(Date.now() - 1_000) });
+
+    await expect(repository.findStartedVisitor(expired)).resolves.toBeNull();
+
+    await repository.register({
+      session: { ...expired, sessionKey: randomUUID() },
+      visitor: { publicSessionId: randomUUID(), visitorKey: null },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const rows = await database.query("SELECT 1 FROM voice_sessions WHERE agent_id = $1 AND session_key = $2", [agentId, expired.sessionKey]);
+    expect(rows).toEqual([]);
+  });
+
+  it("does not let another agent's turn read a start", async () => {
+    const session = { workspaceId, agentId, vendor: "elevenlabs", sessionKey: randomUUID() };
+    await repository.register({ session, visitor: { publicSessionId: randomUUID(), visitorKey: null }, expiresAt: new Date(Date.now() + 60_000) });
+
+    await expect(repository.findStartedVisitor({ ...session, agentId: otherAgentId })).resolves.toBeNull();
+    await expect(repository.findStartedVisitor({ ...session, workspaceId: randomUUID() })).resolves.toBeNull();
+  });
+
   it("forgets the session when its conversation is deleted", async () => {
     const session = { workspaceId, agentId, vendor: "generic", sessionKey: `room_${randomUUID()}` };
     const conversationId = await insertConversation();

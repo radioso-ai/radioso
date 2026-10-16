@@ -37,6 +37,7 @@ export {
   rotatedPublicIdInput,
 } from "./services/agentPublicIdentity.js";
 export {
+  agentVoiceSettingsInputSchema,
   agentVoiceSettingsSchema,
   defaultAgentVoiceSettings,
   readStoredAgentVoiceSettings,
@@ -151,3 +152,4 @@ export {
   type NormalizedAuthoredDirectiveInput,
 } from "./authoredDirectives.js";
 export * from "./copilotPrimitiveRegistry.js";
+export { changedAgentProposalFields, storedAgentFieldReaders } from "./proposalFence.js";

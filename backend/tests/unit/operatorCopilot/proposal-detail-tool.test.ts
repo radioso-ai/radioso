@@ -110,7 +110,7 @@ describe("proposal_detail", () => {
   it("reads back a prepared agent-settings proposal, which names several settings rather than one key", async () => {
     const repository = new InMemoryCopilotRepository();
     const agentId = randomUUID();
-    const voice = { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["Let me check that for you, it only takes a moment."] } }, fallbackLine: {} };
+    const voice = { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["Let me check that for you, it only takes a moment."] } }, fallbackLine: {}, runtime: null };
     const service = new OperatorCopilotService({
       repository,
       currentAuthorization: context.currentAuthorization,
@@ -120,7 +120,7 @@ describe("proposal_detail", () => {
     const prepared = await repository.createProposal({
       workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, conversationId: undefined,
       targetType: "agent_setting",
-      targetRef: { agentId, expectedFields: [{ key: "voice", value: { enabled: false, bridgeLines: {}, fallbackLine: {} } }] },
+      targetRef: { agentId, expectedFields: [{ key: "voice", value: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null } }] },
       payload: { kind: "fields", patch: { voice } }, versionToken: "fields:current", evidence: null,
     } as never);
     const descriptor = { ...createProposalDetailTool({ getProposalDetail: service.getProposalDetail.bind(service) }), mcpDisposition: readDisposition };

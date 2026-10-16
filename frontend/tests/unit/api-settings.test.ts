@@ -49,7 +49,7 @@ const responseAgent = (behavior: AssistantBehaviorSettings): AgentSettings => ({
   greetingInstruction: '',
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
-  voice: { enabled: false, bridgeLines: {}, fallbackLine: {} },
+  voice: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null },
   mechanicsReplies: {},
   assistantBootstrapActive: false,
   surfaceSettings: {

@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-15
+last_updated: 2026-10-16
 ---
 
 # Code Map
@@ -386,8 +386,10 @@ a streaming chat turn and re-cuts the reply into sentence-sized speech, the
 turn policy that covers the wait with the agent's authored bridge and fallback
 lines read from the agent's `voice` settings block (which the agents module
 owns, stores and serves), the turn's outcome (`continue`, or
-`callback_requested` after a hand-off whose routine collected something), and
-the vendor adapters that bind that port to a wire.
+`callback_requested` after a hand-off whose routine collected something),
+the session start that opens a vendor session for a page on the workspace's
+own vendor key and mints its session key, and the vendor adapters that bind
+those ports to a wire or a vendor API.
 Voice enters the chat path as `sourceChannel: "voice"` with a `voice` channel
 context and the `latest_input_wins` supersession mode, which the chat turn
 registry and lifecycle implement (`chat/contracts/interruption.ts`), and reads
@@ -400,10 +402,12 @@ outside `adapters/`. The domain names no vendor.
 Public surfaces and key files:
 
 - `backend/src/modules/voiceChannel/public.ts`
-- `backend/src/modules/voiceChannel/domain.ts` — `VoiceTurnPort`, `VoiceTurnInput`, `VoiceTurnEvent`, `VoiceTurnOutcome`
+- `backend/src/modules/voiceChannel/domain.ts` — `VoiceTurnPort`, `VoiceTurnInput`, `VoiceTurnEvent`, `VoiceTurnOutcome`; `VoiceSessionStartPort`, `VoiceSessionStarter`, `VoiceVendorCredentialReader`
+- `backend/src/modules/voiceChannel/services/voiceSessionStartService.ts` and `adapters/elevenlabs/sessionStarter.ts` — the session start and the ElevenLabs signed-URL client; `backend/src/app/http/routes/publicVoiceSessionRoute.ts` mounts it at `POST /api/v1/public/chat/:token/voice/sessions` behind `middleware/publicVoiceSessionRateLimiter.ts`, and `frontend/app/api/public/chat/[token]/voice/sessions/route.ts` relays it cross-origin; started sessions wait for their first turn in `voice_sessions` (migration `227_voice_session_starts.sql`)
+- `backend/src/shared/domain/voiceVendor.ts` — `VOICE_VENDORS`, shared by the `voice.runtime` binding, the workspace credential store (`settingsCredentialsRoutes.ts`, migration `226_workspace_provider_credentials_voice_vendors.sql`) and the starters
 - `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`, `speechText.ts`, `voiceTurnPolicy.ts` (bridge and turn limit, `VOICE_BEHAVIOR`), `voiceTurnOutcome.ts` (outcome from chat's `done` event) and `voiceLines.ts`; `voiceSessionMemory.ts` (in-process per-session memory: newest request, last bridge, replayable exchange)
 - `backend/src/modules/agents/voiceSettings.ts` — the agent's `voice` block on `GET`/`PUT /api/v1/agents/:agentId`, read by the voice services as types from `agents/public.ts`
-- `frontend/components/dashboard/settings/voice-channel-card.tsx` (with `locale-lines-editor.tsx` and `frontend/lib/voice-settings-form.ts`) — the Voice card on the agent's Channels → API page, which saves the `voice` and `mechanicsReplies` blocks together
+- `frontend/components/dashboard/settings/voice-channel-card.tsx` (with `locale-lines-editor.tsx` and `frontend/lib/voice-settings-form.ts`) — the Voice card on the agent's Channels → API page, which saves the `voice` and `mechanicsReplies` blocks together, `runtime` included; the ElevenLabs key is the **Voice runtime keys** card in `providers-panel.tsx`
 - `backend/src/modules/voiceChannel/persistence/voiceSessionRepository.ts` (`voice_sessions`, migration `214_voice_sessions.sql`)
 - `backend/src/modules/voiceChannel/adapters/openaiCompletions/` — dialects as data, request schema, SSE presenter, route
 - `backend/src/app/composition/voiceChannel.ts` and `backend/src/app/http/routes/agentVoiceRoute.ts` (mounted beside the REST agent channel)
@@ -412,12 +416,13 @@ Public surfaces and key files:
 Useful searches:
 
 - `rg "voiceTurns|VoiceTurn|voice_sessions|VOICE_SOURCE_CHANNEL" backend/src backend/tests`
+- `rg "voiceSessionStarts|VoiceSessionStart|VOICE_VENDORS" backend/src backend/tests`
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts`
-- `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts`
-- `cd frontend && pnpm exec playwright test tests/e2e/voice-settings.spec.ts`
+- `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts tests/contract/public-voice-session.contract.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/voice-settings.spec.ts tests/e2e/provider-settings.spec.ts`
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
 
 Related docs:

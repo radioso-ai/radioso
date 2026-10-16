@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  agentInputFieldSchemas,
   agentVoiceSettingsSchema,
+  changedAgentProposalFields,
   defaultAgentVoiceSettings,
   readStoredAgentVoiceSettings,
+  type AgentRecord,
 } from "../../src/modules/agents/public.js";
 
 const authored = {
@@ -16,6 +19,7 @@ const authored = {
     en: "Sorry, that is taking longer than it should. Could you ask me again?",
     "it-IT": "Scusa, ci sto mettendo troppo. Puoi ripetere la domanda?",
   },
+  runtime: { vendor: "elevenlabs" as const, agentId: "agent_01jxk2v9qbe8n7r6t5w4", region: "eu" as const },
 };
 
 const lines = (count: number): string[] => Array.from({ length: count }, (_, index) => `Line ${index + 1}.`);
@@ -26,7 +30,7 @@ describe("agent voice settings", () => {
   });
 
   it("starts with voice off and nothing authored", () => {
-    expect(defaultAgentVoiceSettings()).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {} });
+    expect(defaultAgentVoiceSettings()).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
   });
 
   it("rejects more than five lines for one style", () => {
@@ -72,6 +76,62 @@ describe("agent voice settings", () => {
       ...authored,
       bridgeLines: { en: { check: ["One moment."] } },
     }).success).toBe(false);
+  });
+
+  it("binds the agent to one vendor agent, or to none", () => {
+    expect(agentVoiceSettingsSchema.parse({ ...authored, runtime: null }).runtime).toBeNull();
+    expect(agentVoiceSettingsSchema.parse({ ...authored, runtime: { vendor: "elevenlabs", agentId: "  agent_42  ", region: "in" } }).runtime)
+      .toEqual({ vendor: "elevenlabs", agentId: "agent_42", region: "in" });
+  });
+
+  it.each([
+    ["an unknown vendor", { vendor: "vapi", agentId: "agent_42" }],
+    ["a blank vendor agent id", { vendor: "elevenlabs", agentId: "   " }],
+    ["a vendor agent id with a path or query in it", { vendor: "elevenlabs", agentId: "agent_42&branch_id=x" }],
+    ["a vendor agent id longer than 128 characters", { vendor: "elevenlabs", agentId: "a".repeat(129) }],
+    ["a key the binding does not name, such as an API key", { vendor: "elevenlabs", agentId: "agent_42", apiKey: "xi-secret" }],
+    ["a region the vendor has no host for", { vendor: "elevenlabs", agentId: "agent_42", region: "mars" }],
+  ])("refuses a runtime with %s", (_case, runtime) => {
+    expect(agentInputFieldSchemas.voice.safeParse({ ...authored, runtime }).success).toBe(false);
+  });
+
+  it("accepts a written block without runtime as bound to no vendor agent, so writers that predate the binding keep working", () => {
+    const { runtime: _runtime, ...withoutRuntime } = authored;
+
+    expect(agentInputFieldSchemas.voice.safeParse(withoutRuntime).success).toBe(true);
+  });
+
+  it("reads a stored binding written before regions as in the vendor's default region", () => {
+    expect(readStoredAgentVoiceSettings({ ...authored, runtime: { vendor: "elevenlabs", agentId: "agent_42" } }).runtime)
+      .toEqual({ vendor: "elevenlabs", agentId: "agent_42", region: "us" });
+  });
+
+  it("reads a stored block written before the runtime binding as bound to no vendor agent", () => {
+    const { runtime: _runtime, ...storedWithoutRuntime } = authored;
+
+    expect(readStoredAgentVoiceSettings(storedWithoutRuntime)).toEqual({ ...authored, runtime: null });
+  });
+
+  it("fences a proposal prepared before the runtime binding on the block as stored, so a missing runtime and null compare equal", () => {
+    const { runtime: _runtime, ...preparedBefore } = authored;
+    const agentWith = (voice: unknown) => ({ voice, name: "Help Desk" }) as unknown as AgentRecord;
+
+    expect(changedAgentProposalFields(agentWith({ ...authored, runtime: null }), [{ key: "voice", value: preparedBefore }])).toEqual([]);
+    // A bound runtime is a real difference, and other settings compare as they are.
+    expect(changedAgentProposalFields(agentWith(authored), [{ key: "voice", value: preparedBefore }])).toEqual(["voice"]);
+    expect(changedAgentProposalFields(agentWith(authored), [{ key: "name", value: "Help Desk" }])).toEqual([]);
+    expect(changedAgentProposalFields(agentWith(authored), [{ key: "name", value: "Sales" }])).toEqual(["name"]);
+  });
+
+  it("refuses a written block with a key it does not name, and says which", () => {
+    const result = agentInputFieldSchemas.voice.safeParse({ ...authored, apiKey: "xi-secret" });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual([expect.objectContaining({ code: "unrecognized_keys", keys: ["apiKey"] })]);
+  });
+
+  it("still reads a stored block with a key it does not name", () => {
+    expect(readStoredAgentVoiceSettings({ ...authored, laterSetting: true })).toEqual(authored);
   });
 
   it("reads a stored block back as authored, and anything unreadable as voice off", () => {

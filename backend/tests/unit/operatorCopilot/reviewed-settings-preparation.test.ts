@@ -43,13 +43,13 @@ describe("reviewed settings preparation", () => {
 
   it("carries the voice and mechanics replies blocks in the reviewed agent patch", async () => {
     const deps = proposalDependencies();
-    const voice = { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["Let me check that for you, it only takes a moment."] } }, fallbackLine: {} };
+    const voice = { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["Let me check that for you, it only takes a moment."] } }, fallbackLine: {}, runtime: null };
     const mechanicsReplies = { en: { greeting: ["Hi! How can I help?"], thanks: [], farewell: [], acknowledgement: [] } };
     const prepareFieldsProposal = vi.fn(async () => ({
       targetAgentId: agentId, agentName: "Support", normalizedPatch: { voice, mechanicsReplies },
-      expectedFields: [{ key: "voice", value: { enabled: false, bridgeLines: {}, fallbackLine: {} } }, { key: "mechanicsReplies", value: {} }],
+      expectedFields: [{ key: "voice", value: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null } }, { key: "mechanicsReplies", value: {} }],
       changes: [
-        { key: "voice", current: { enabled: false, bridgeLines: {}, fallbackLine: {} }, proposed: voice, lifecycle: "live" as const, reach: false },
+        { key: "voice", current: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null }, proposed: voice, lifecycle: "live" as const, reach: false },
         { key: "mechanicsReplies", current: {}, proposed: mechanicsReplies, lifecycle: "live" as const, reach: false },
       ],
       unchanged: [],

@@ -987,7 +987,7 @@ describe("voice completions route outcomes", () => {
         },
         agents: {
           findVoiceProfile: async () => ({
-            voice: { enabled: true, bridgeLines: {}, fallbackLine: { en: fallback } },
+            voice: { enabled: true, bridgeLines: {}, fallbackLine: { en: fallback }, runtime: null },
             defaultLocale: null,
           }),
         },

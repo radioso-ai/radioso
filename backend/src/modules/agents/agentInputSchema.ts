@@ -2,7 +2,7 @@ import { z, type ZodType } from "zod";
 
 import { agentSurfacePositions, type AgentInput } from "./domain.js";
 import { agentMechanicsRepliesSchema } from "./mechanicsReplies.js";
-import { agentVoiceSettingsSchema } from "./voiceSettings.js";
+import { agentVoiceSettingsInputSchema } from "./voiceSettings.js";
 
 export const agentInputThemeSchema = z.object({
   brand: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
@@ -93,8 +93,8 @@ export const agentInputFieldSchemas = {
     }).optional(),
     extensions: z.record(z.unknown()).optional(),
   }),
-  /** Replaced whole: every key is required, so a value names every line the agent keeps. */
-  voice: agentVoiceSettingsSchema,
+  /** Replaced whole: a value names every line the agent keeps; `runtime` alone defaults, to null. */
+  voice: agentVoiceSettingsInputSchema,
   /** Replaced whole, like `voice`: a value names every locale and mechanic the agent keeps. */
   mechanicsReplies: agentMechanicsRepliesSchema,
   /**

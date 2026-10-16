@@ -1938,10 +1938,13 @@ export interface Visitors {
 
 export interface VoiceSessions {
   agent_id: string;
-  conversation_id: string;
+  conversation_id: string | null;
   created_at: Generated<Timestamp>;
   id: Generated<string>;
   session_key: string;
+  start_expires_at: Timestamp | null;
+  started_public_session_id: string | null;
+  started_visitor_key: string | null;
   vendor: string;
   workspace_id: string;
 }

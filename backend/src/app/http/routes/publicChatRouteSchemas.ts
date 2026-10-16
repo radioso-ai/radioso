@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isLocaleTag } from "../../../shared/domain/locale.js";
+
 import { chatMessageSchema } from "../schemas/textInputLimits.js";
 
 const localeHintSchema = z.string().trim().max(35);
@@ -118,3 +120,9 @@ export const publicChatSessionSchema = z.object({
   pageContext: pageContextSchema,
   clientContextCapabilities: clientContextCapabilitiesSchema,
 });
+
+/** A voice session start for the visitor's public session. */
+export const publicVoiceSessionStartSchema = z.object({
+  /** The caller's language as a language tag; the agent's default language applies without one. */
+  locale: z.string().trim().refine(isLocaleTag, { message: "Must be a language tag such as en or it-IT" }).optional(),
+}).strict();

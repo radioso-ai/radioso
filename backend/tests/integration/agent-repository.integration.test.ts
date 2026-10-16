@@ -261,6 +261,7 @@ describeIntegration("AgentRepository (Postgres)", () => {
       enabled: true,
       bridgeLines: { en: { acknowledge: ["Got it."], check: ["One moment."] } },
       fallbackLine: { en: "Sorry, could you ask me again?" },
+      runtime: { vendor: "elevenlabs" as const, agentId: "agent_01jxk2v9qbe8n7r6t5w4", region: "eu" as const },
     };
     const created = await repository.create(workspaceId, { name: "Voice", voice });
 
@@ -334,6 +335,17 @@ describeIntegration("AgentRepository (Postgres)", () => {
     await expect(repository.applyProposalPatch(agent.id, workspaceId, { assistantDefaultLocale: "fi" }, {
       expectedFields: [{ key: "assistantDefaultLocale", value: "en" }],
     })).resolves.toEqual({ outcome: "changed", fields: ["assistantDefaultLocale"] });
+  });
+
+  it("applies a voice proposal prepared before the runtime binding, whose expected block has no runtime", async () => {
+    const voice = { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["One moment."] } }, fallbackLine: {} };
+    const agent = await repository.create(workspaceId, { name: "Voice proposal fence", voice: { ...voice, runtime: null } });
+
+    const applied = await repository.applyProposalPatch(agent.id, workspaceId, { voice: { ...voice, enabled: false, runtime: null } }, {
+      expectedFields: [{ key: "voice", value: voice }],
+    });
+
+    expect(applied).toMatchObject({ outcome: "applied", agent: { voice: { enabled: false, runtime: null } } });
   });
 
   it("keeps timestamp-era proposal writes as a row-version fence", async () => {
@@ -502,8 +514,15 @@ describeIntegration("AgentRepository (Postgres)", () => {
       workspaceId,
     );
 
-    expect(predates?.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {} });
-    expect(unreadable?.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {} });
+    expect(predates?.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
+    expect(unreadable?.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
+  });
+
+  it("keeps a stored voice block written before the runtime binding, bound to no vendor agent", async () => {
+    const storedBlock = { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["One moment."] } }, fallbackLine: {} };
+    const agent = await repository.findByIdAndWorkspaceId(await seedAgentRow({ behaviorSettings: { voice: storedBlock } }), workspaceId);
+
+    expect(agent?.voice).toEqual({ ...storedBlock, runtime: null });
   });
 
   it("parses retrieval-miss handoff behavior from behavior settings", async () => {

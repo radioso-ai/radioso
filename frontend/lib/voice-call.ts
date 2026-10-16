@@ -154,7 +154,7 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
 type DocumentWithFeaturePolicy = Document & { featurePolicy?: { allowsFeature?: (feature: string) => boolean } }
 
 /** What the page knows about whether it may use a microphone. */
-export interface MicrophoneSignals {
+interface MicrophoneSignals {
   secureContext: boolean
   mediaDevices: boolean
   /** The frame's permissions policy for the microphone, where the browser exposes it. */

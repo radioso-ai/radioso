@@ -9,7 +9,7 @@ export interface VoiceCallDependencies {
   loadRuntime: (vendor: VoiceVendor) => Promise<VoiceRuntime>
 }
 
-export interface VoiceCallObserver {
+interface VoiceCallObserver {
   onEvent: (event: VoiceSessionEvent) => void
   onLine: (line: VoiceRuntimeLine) => void
 }

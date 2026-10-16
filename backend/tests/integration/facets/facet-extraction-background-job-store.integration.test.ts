@@ -1,22 +1,47 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { FacetExtractionJobRepository } from "../../../src/db/repositories/facetExtractionJobRepository.js";
+import type { FacetExtractionOutcome, FacetExtractionPort } from "../../../src/modules/facets/contracts.js";
+import {
+  createFacetExtractionBackgroundJobRuntime,
+} from "../../../src/modules/facets/composition.js";
 import {
   FACET_EXTRACTION_JOB,
   FacetExtractionBackgroundJobStore,
 } from "../../../src/modules/facets/infra/facetExtractionBackgroundJobStore.js";
 import { Database } from "../../../src/shared/infra/database.js";
-import {
-  backgroundJobHandler,
-  BackgroundJobRuntime,
-  NonRetryableBackgroundJobError,
-} from "../../../src/shared/background-jobs/index.js";
+import type { TelemetryEventInput, TelemetryService } from "../../../src/shared/observability/telemetry/telemetryService.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
-const silentLogger = { debug: () => undefined, warn: () => undefined, error: () => undefined };
+const silentLogger = { info: () => undefined, debug: () => undefined, warn: () => undefined, error: () => undefined };
+const JOB_LEASE_MS = 300_000;
+
+/** A `FacetExtractionPort` whose next `extract()` call is set per test, including throwing. */
+const buildStubExtraction = (): { port: FacetExtractionPort; next(behavior: () => Promise<FacetExtractionOutcome>): void } => {
+  let behavior: () => Promise<FacetExtractionOutcome> = () => Promise.resolve({ status: "extracted" });
+  return {
+    port: { extract: () => behavior() },
+    next(nextBehavior) {
+      behavior = nextBehavior;
+    },
+  };
+};
+
+const buildRecordingTelemetry = (): { telemetryService: Pick<TelemetryService, "emit">; events: TelemetryEventInput[] } => {
+  const events: TelemetryEventInput[] = [];
+  return {
+    telemetryService: {
+      emit: async (event) => {
+        events.push(event);
+        return null;
+      },
+    },
+    events,
+  };
+};
 
 /**
  * Exercises `FacetExtractionBackgroundJobStore` against real Postgres: the generic runtime's
@@ -96,11 +121,10 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
     const { jobId, messageId } = await enqueueOne();
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
 
-    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
+    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
     expect(claim).not.toBeNull();
     expect(claim).toMatchObject({ id: jobId, payload: { messageId, workspaceId } });
 
-    store.recordOutcome(claim!.id, { status: "extracted" });
     await expect(store.complete(claim!)).resolves.toBe("deleted");
 
     const row = await readRow(jobId);
@@ -115,10 +139,9 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
   it("marks a skipped outcome with its reason instead of completed", async () => {
     const { jobId } = await enqueueOne();
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
-    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
+    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
 
-    store.recordOutcome(claim!.id, { status: "skipped", reason: "empty_message" });
-    await store.complete(claim!);
+    await store.complete(claim!, { skipped: "empty_message" });
 
     const row = await readRow(jobId);
     expect(row.status).toBe("skipped");
@@ -128,7 +151,7 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
   it("schedules a retry at the delay the runtime computed, and the job is claimable again once due", async () => {
     const { jobId } = await enqueueOne();
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
-    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
+    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
 
     const availableAt = await store.retry(claim!, { error: "Error [provider_unavailable]", delaySeconds: 0 });
     expect(availableAt).toBeInstanceOf(Date);
@@ -137,14 +160,14 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
     expect(row.status).toBe("queued");
     expect(row.last_error).toBe("Error [provider_unavailable]");
 
-    const reclaimed = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
+    const reclaimed = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
     expect(reclaimed).toMatchObject({ id: jobId, attempt: 2 });
   });
 
   it("dead-letters a job terminally, keeping its identifiers unlike the generic store's dropped payload", async () => {
     const { jobId, messageId } = await enqueueOne();
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
-    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
+    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
 
     await expect(store.deadLetter(claim!, { error: "NonRetryableBackgroundJobError" })).resolves.toBe(true);
 
@@ -153,14 +176,14 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
     expect(row.message_id).toBe(messageId);
     expect(row.claimed_at).toBeNull();
 
-    const reclaimAttempt = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
+    const reclaimAttempt = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
     expect(reclaimAttempt).toBeNull();
   });
 
-  it("fences every write back to a claim that another worker has already taken over", async () => {
+  it("fences every write back to a claim that another worker has already taken over (attempt and claimed_at both move)", async () => {
     const { jobId } = await enqueueOne();
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
-    const staleClaim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
+    const staleClaim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
 
     // Simulate a second worker reclaiming the same row after the lease lapsed: a fresh
     // `claimed_at` and attempt, exactly what `claimNext`'s own stale-claim sweep would do.
@@ -169,7 +192,6 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
       [jobId],
     );
 
-    store.recordOutcome(staleClaim!.id, { status: "extracted" });
     await expect(store.complete(staleClaim!)).resolves.toBe("superseded");
     await expect(store.retry(staleClaim!, { error: "Error", delaySeconds: 10 })).resolves.toBeNull();
     await expect(store.deadLetter(staleClaim!, { error: "Error" })).resolves.toBe(false);
@@ -178,43 +200,153 @@ describeIntegration("FacetExtractionBackgroundJobStore (Postgres)", () => {
     expect(row.status).toBe("processing");
   });
 
-  it("runs end to end through the real BackgroundJobRuntime: success, a retried failure, then a dead letter", async () => {
-    const store = new FacetExtractionBackgroundJobStore(repository, FACET_EXTRACTION_JOB.policy.maxAttempts);
-    let behavior: "succeed" | "retryable" | "permanent" = "succeed";
-    const handler = backgroundJobHandler(FACET_EXTRACTION_JOB, async (_payload, context) => {
-      if (behavior === "succeed") {
-        store.recordOutcome(context.jobId, { status: "extracted" });
-        return;
-      }
-      if (behavior === "permanent") {
-        throw new NonRetryableBackgroundJobError("permanent failure");
-      }
-      throw new Error("transient failure");
-    });
-    const runtime = new BackgroundJobRuntime({ store, handlers: [handler], logger: silentLogger });
+  it("fences a write back to a claim whose claimed_at alone moved, attempt_count unchanged", async () => {
+    const { jobId } = await enqueueOne();
+    const store = new FacetExtractionBackgroundJobStore(repository, 3);
+    const staleClaim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
 
-    const succeeded = await enqueueOne();
-    const retried = await enqueueOne();
-    const deadLettered = await enqueueOne();
+    // Only claimed_at moves — attempt_count stays put. The fence must still catch this: it
+    // matches on both columns, not attempt_count alone.
+    await database.query(`UPDATE facet_extraction_jobs SET claimed_at = now() WHERE id = $1`, [jobId]);
+    const rowBefore = await readRow(jobId);
+    expect(rowBefore.attempt_count).toBe(staleClaim!.attempt);
 
-    behavior = "succeed";
-    await runtime.drain({ maxJobs: 1 });
-    expect((await readRow(succeeded.jobId)).status).toBe("completed");
+    await expect(store.complete(staleClaim!)).resolves.toBe("superseded");
 
-    behavior = "retryable";
-    await runtime.drain({ maxJobs: 1 });
-    const retriedRow = await readRow(retried.jobId);
-    expect(retriedRow.status).toBe("queued");
-    expect(retriedRow.attempt_count).toBe(1);
-
-    behavior = "permanent";
-    await runtime.drain({ maxJobs: 1 });
-    expect((await readRow(deadLettered.jobId)).status).toBe("failed");
+    const row = await readRow(jobId);
+    expect(row.status).toBe("processing");
   });
 
   it("returns nothing once the queue is empty", async () => {
     const store = new FacetExtractionBackgroundJobStore(repository, 3);
-    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }] });
+    const claim = await store.claimNext({ kinds: [{ kind: FACET_EXTRACTION_JOB.kind, leaseSeconds: 300 }], asOf: new Date() });
     expect(claim).toBeNull();
+  });
+
+  /**
+   * The real composition factory end to end, with a stub extractor standing in for the model
+   * and embedding calls `FacetExtractionService` would otherwise make. Ports the pre-existing
+   * worker's permanent-failure, 429-retry, credential, and attempt-budget behaviour onto this
+   * path, plus the telemetry each outcome emits.
+   */
+  describe("createFacetExtractionBackgroundJobRuntime (real factory, stub extractor)", () => {
+    it("extracts, marks the row completed, and emits completed telemetry", async () => {
+      const { jobId } = await enqueueOne();
+      const extraction = buildStubExtraction();
+      const { telemetryService, events } = buildRecordingTelemetry();
+      const runtime = createFacetExtractionBackgroundJobRuntime({
+        jobs: repository, extraction: extraction.port, logger: silentLogger, telemetryService, jobLeaseMs: JOB_LEASE_MS,
+      })!;
+
+      await runtime.drain({ maxJobs: 1 });
+
+      expect((await readRow(jobId)).status).toBe("completed");
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ eventType: "facet.extraction.job_completed", tags: { outcome: "completed" } });
+      expect(events[0].metrics?.durationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it("skips, marks the row skipped with the reason, and emits skipped telemetry", async () => {
+      const { jobId } = await enqueueOne();
+      const extraction = buildStubExtraction();
+      extraction.next(() => Promise.resolve({ status: "skipped", reason: "empty_message" }));
+      const { telemetryService, events } = buildRecordingTelemetry();
+      const runtime = createFacetExtractionBackgroundJobRuntime({
+        jobs: repository, extraction: extraction.port, logger: silentLogger, telemetryService, jobLeaseMs: JOB_LEASE_MS,
+      })!;
+
+      await runtime.drain({ maxJobs: 1 });
+
+      const row = await readRow(jobId);
+      expect(row.status).toBe("skipped");
+      expect(row.last_error).toBe("empty_message");
+      expect(events[0]).toMatchObject({
+        eventType: "facet.extraction.job_skipped",
+        tags: { outcome: "skipped" },
+        metadata: { reason: "empty_message" },
+      });
+    });
+
+    it("dead-letters a permanent (credential, 401) failure immediately and tags it failed_permanent", async () => {
+      const { jobId } = await enqueueOne();
+      const extraction = buildStubExtraction();
+      extraction.next(() => Promise.reject(Object.assign(new Error("bad key"), { status: 401 })));
+      const { telemetryService, events } = buildRecordingTelemetry();
+      const runtime = createFacetExtractionBackgroundJobRuntime({
+        jobs: repository, extraction: extraction.port, logger: silentLogger, telemetryService, jobLeaseMs: JOB_LEASE_MS,
+      })!;
+
+      await runtime.drain({ maxJobs: 1 });
+
+      const row = await readRow(jobId);
+      expect(row.status).toBe("failed");
+      expect(row.attempt_count).toBe(1);
+      expect(events[0]).toMatchObject({ eventType: "facet.extraction.job_failed", tags: { outcome: "failed_permanent" } });
+    });
+
+    it("dead-letters a permanent (400) failure immediately without spending the retry budget", async () => {
+      const { jobId } = await enqueueOne();
+      const extraction = buildStubExtraction();
+      extraction.next(() => Promise.reject(Object.assign(new Error("invalid request"), { status: 400 })));
+      const { telemetryService } = buildRecordingTelemetry();
+      const runtime = createFacetExtractionBackgroundJobRuntime({
+        jobs: repository, extraction: extraction.port, logger: silentLogger, telemetryService, jobLeaseMs: JOB_LEASE_MS,
+      })!;
+
+      await runtime.drain({ maxJobs: 1 });
+
+      const row = await readRow(jobId);
+      expect(row.status).toBe("failed");
+      expect(row.attempt_count).toBe(1);
+    });
+
+    it("retries a rate-limited (429) failure using the first step of the exact old schedule (1s), then succeeds", async () => {
+      const { jobId } = await enqueueOne();
+      const extraction = buildStubExtraction();
+      extraction.next(() => Promise.reject(Object.assign(new Error("rate limited"), { status: 429 })));
+      const { telemetryService, events } = buildRecordingTelemetry();
+      const runtime = createFacetExtractionBackgroundJobRuntime({
+        jobs: repository, extraction: extraction.port, logger: silentLogger, telemetryService, jobLeaseMs: JOB_LEASE_MS,
+      })!;
+
+      await runtime.drain({ maxJobs: 1 });
+
+      const retriedRow = await readRow(jobId);
+      expect(retriedRow.status).toBe("queued");
+      expect(retriedRow.attempt_count).toBe(1);
+      const scheduledInMs = retriedRow.scheduled_at.getTime() - Date.now();
+      // The exact pre-existing first step (1s), not the port's doubling default.
+      expect(scheduledInMs).toBeGreaterThan(0);
+      expect(scheduledInMs).toBeLessThanOrEqual(1_500);
+      expect(events[0]).toMatchObject({ eventType: "facet.extraction.job_failed", tags: { outcome: "retry_scheduled" } });
+
+      extraction.next(() => Promise.resolve({ status: "extracted" }));
+      await database.query(`UPDATE facet_extraction_jobs SET scheduled_at = now() WHERE id = $1`, [jobId]);
+      await runtime.drain({ maxJobs: 1 });
+      expect((await readRow(jobId)).status).toBe("completed");
+    });
+
+    it("dead-letters once the attempt budget is spent on an ordinary (non-permanent) failure, tagged failed (not failed_permanent)", async () => {
+      const { jobId } = await enqueueOne();
+      const extraction = buildStubExtraction();
+      extraction.next(() => Promise.reject(new Error("still failing")));
+      const { telemetryService, events } = buildRecordingTelemetry();
+      const runtime = createFacetExtractionBackgroundJobRuntime({
+        jobs: repository, extraction: extraction.port, logger: silentLogger, telemetryService, jobLeaseMs: JOB_LEASE_MS,
+      })!;
+
+      for (let attempt = 0; attempt < FACET_EXTRACTION_JOB.policy.maxAttempts; attempt += 1) {
+        await runtime.drain({ maxJobs: 1 });
+        if (attempt < FACET_EXTRACTION_JOB.policy.maxAttempts - 1) {
+          await database.query(`UPDATE facet_extraction_jobs SET scheduled_at = now() WHERE id = $1`, [jobId]);
+        }
+      }
+
+      const row = await readRow(jobId);
+      expect(row.status).toBe("failed");
+      expect(row.attempt_count).toBe(FACET_EXTRACTION_JOB.policy.maxAttempts);
+      const failureEvents = events.filter((event) => event.eventType === "facet.extraction.job_failed");
+      expect(failureEvents.at(-1)).toMatchObject({ tags: { outcome: "failed" } });
+    });
   });
 });

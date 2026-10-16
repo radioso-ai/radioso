@@ -337,11 +337,16 @@ export const VOICE_BEHAVIOR = {
   // this window the channel speaks the stored answer again instead of running
   // and storing a second turn; past it, an identical utterance is a new question.
   replayWindowMs: 30_000,
-  // A session Radioso starts for a page records the visitor who asked for it, so the session's first
-  // turn joins that visitor. The record waits this long for the first turn: the page opens the
-  // session as soon as it has it, and an ElevenLabs signed URL stops opening sessions after 15
-  // minutes anyway.
-  sessionStartTtlMs: 15 * 60_000,
+  // ElevenLabs documents that a signed URL opens sessions for 15 minutes after it is issued. The
+  // ElevenLabs session starter reports a start's expiresAt from it.
+  elevenLabsSignedUrlValidityMs: 15 * 60_000,
+  // A session Radioso starts for a page records the visitor who asked for it, so the session's
+  // first turn joins that visitor. The URL's validity bounds when the page may open the session,
+  // not when its first turn arrives: a session opened near the end of the window, whose caller
+  // listens to a greeting and thinks before speaking, has its first turn later still. A record that
+  // expired first would let that call join no visitor, silently, so it outlives the URL by a wide
+  // margin. An expired record only ever costs that correlation.
+  sessionStartTtlMs: 60 * 60_000,
 } as const;
 
 export const DOCUMENT_BEHAVIOR = {

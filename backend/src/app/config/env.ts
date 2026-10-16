@@ -271,6 +271,9 @@ const envSchema = z.object({
   // request source together) and per workspace.
   PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
   PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(600_000),
+  // The same budget per request source, across every public session it holds: minting a fresh
+  // public session for each start refills the session budget, never this one.
+  PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
   PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(30),
   PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   // Agent-channel turns spend provider and retrieval budget. A single credential

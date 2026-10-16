@@ -126,7 +126,8 @@ helpers and the shared chat message limit from `app/http`
   `shared/domain/voiceVendor.ts`, which the runtime binding, the credential
   store and the starters share. Starts spend their own budgets before the
   vendor call: per visitor session (signed public session id plus request
-  source) and per workspace, `PUBLIC_VOICE_SESSION_START_*` in `env.ts`.
+  source), per request source alone (so re-minting public sessions does not
+  refill it), and per workspace, `PUBLIC_VOICE_SESSION_START_*` in `env.ts`.
 - **The signed URL is a bearer credential.** An ElevenLabs signed URL is valid
   for 15 minutes and opens sessions for whoever holds it until then, so it
   goes only to the page that asked, with `Cache-Control: no-store`, and never
@@ -140,7 +141,9 @@ helpers and the shared chat message limit from `app/http`
   answer.
 - **The session key is a correlation handle.** The start mints it (a UUID) and
   records it in `voice_sessions` with the visitor's public session and visitor
-  key until `VOICE_BEHAVIOR.sessionStartTtlMs` (15 minutes); the session's
+  key until `VOICE_BEHAVIOR.sessionStartTtlMs` (60 minutes: the signed URL's
+  15 minutes, `elevenLabsSignedUrlValidityMs`, bound the session's open, not
+  its first turn); the session's
   first turn reads that visitor and passes its grouping key (the visitor key,
   else the public session id, as the embed's chat does) to chat, so the call
   joins the website visitor, then binds the conversation onto the same row. It

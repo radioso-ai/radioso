@@ -13,7 +13,7 @@ import type { AgentSkillSettingsRegistry } from "./skillSettings.js";
 import type { AuthoredDirective } from "./authoredDirectives.js";
 import type { AgentSkillSpine } from "../agentSkills/public.js";
 import {
-  agentVoiceSettingsSchema,
+  agentVoiceSettingsInputSchema,
   defaultAgentVoiceSettings,
   type AgentVoiceSettings,
 } from "./voiceSettings.js";
@@ -427,7 +427,7 @@ const normalizeVoiceSettings = (value: unknown): AgentVoiceSettings => {
   if (value === undefined || value === null) {
     return defaultAgentVoiceSettings();
   }
-  const parsed = agentVoiceSettingsSchema.safeParse(value);
+  const parsed = agentVoiceSettingsInputSchema.safeParse(value);
   if (!parsed.success) {
     throw badRequest("voice settings are invalid", parsed.error.flatten());
   }

@@ -2,7 +2,7 @@ import { z, type ZodType } from "zod";
 
 import { agentSurfacePositions, type AgentInput } from "./domain.js";
 import { agentMechanicsRepliesSchema } from "./mechanicsReplies.js";
-import { agentVoiceSettingsSchema } from "./voiceSettings.js";
+import { agentVoiceSettingsInputSchema, expectedAgentVoiceSettingsValue } from "./voiceSettings.js";
 
 export const agentInputThemeSchema = z.object({
   brand: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
@@ -93,8 +93,8 @@ export const agentInputFieldSchemas = {
     }).optional(),
     extensions: z.record(z.unknown()).optional(),
   }),
-  /** Replaced whole: every key is required, so a value names every line the agent keeps. */
-  voice: agentVoiceSettingsSchema,
+  /** Replaced whole: a value names every line the agent keeps; `runtime` alone defaults, to null. */
+  voice: agentVoiceSettingsInputSchema,
   /** Replaced whole, like `voice`: a value names every locale and mechanic the agent keeps. */
   mechanicsReplies: agentMechanicsRepliesSchema,
   /**
@@ -168,3 +168,10 @@ export const agentSettingProposalEffect = (key: AgentReviewedSettingsKey): {
   lifecycle: key === "customInstruction" ? "agent_draft" : "live",
   reach: key === "agentCardEnabled" || key === "publicAgentAccessEnabled",
 });
+
+/**
+ * A reviewed proposal's expected value as the stored field reads it, for the apply-time fence.
+ * `voice` gained `runtime` with a default, so a value captured before it compares with that default.
+ */
+export const expectedAgentFieldValue = (key: string, value: unknown): unknown =>
+  key === "voice" ? expectedAgentVoiceSettingsValue(value) : value;

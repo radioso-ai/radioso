@@ -28,6 +28,7 @@ import {
   type AgentGreetingSnapshot,
   readStoredAgentVoiceSettings,
   readStoredAgentMechanicsReplies,
+  expectedAgentFieldValue,
 } from "../../modules/agents/public.js";
 import { parseDirectiveLifecycle } from "../../modules/directives/public.js";
 import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
@@ -855,7 +856,7 @@ export class AgentRepository implements AgentRepositoryPort {
       const previous = mapAgent(row, this.surfaceExtensions, this.skillSettings);
       if ("expectedFields" in guard) {
         const changed = guard.expectedFields
-          .filter((field) => JSON.stringify(proposalFieldValue(previous, field.key)) !== JSON.stringify(field.value))
+          .filter((field) => JSON.stringify(proposalFieldValue(previous, field.key)) !== JSON.stringify(expectedAgentFieldValue(field.key, field.value)))
           .map((field) => field.key);
         if (changed.length > 0) return { outcome: "changed", fields: changed };
       } else if (previous.updatedAt.getTime() !== guard.expectedUpdatedAt.getTime()) {

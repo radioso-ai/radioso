@@ -107,7 +107,8 @@ export class WorkspaceProviderCredentialsService {
   async getApiKey(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<string | undefined> {
     const record = await this.repository.findByWorkspaceAndProvider(workspaceId, provider);
     if (!record) {
-      // No stored workspace credential — callers fall back to the env-default key.
+      // No stored workspace credential. A model provider caller may fall back to its deployment
+      // key; a voice vendor has none, so its caller starts no session.
       return undefined;
     }
     if (!this.isEncryptionConfigured()) {

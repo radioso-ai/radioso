@@ -73,6 +73,7 @@ import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
   authoredDirectiveInputSchema,
+  expectedAgentFieldValue,
   type AgentGreetingSnapshot,
   type AgentInput,
   type AgentRecord,
@@ -1395,7 +1396,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       return (previous as unknown as Record<string, unknown>)[key];
     };
     const changed = "expectedFields" in guard
-      ? guard.expectedFields.filter((field) => JSON.stringify(value(field.key)) !== JSON.stringify(field.value)).map((field) => field.key)
+      ? guard.expectedFields.filter((field) => JSON.stringify(value(field.key)) !== JSON.stringify(expectedAgentFieldValue(field.key, field.value))).map((field) => field.key)
       : previous.updatedAt.getTime() === guard.expectedUpdatedAt.getTime() ? [] : ["target"];
     if (changed.length) return { outcome: "changed", fields: changed };
     const lockedInput = guard.normalizeLocked?.(previous) ?? input;

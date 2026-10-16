@@ -27,6 +27,7 @@ export {
 export {
   AGENT_CONFIG_FULL_TEXT_FIELD_PATHS,
   agentInputFieldSchemas,
+  expectedAgentFieldValue,
   agentInputThemeSchema,
   agentReviewedSettingsPatchSchema,
   type AgentReviewedSettingsPatch,
@@ -37,6 +38,7 @@ export {
   rotatedPublicIdInput,
 } from "./services/agentPublicIdentity.js";
 export {
+  agentVoiceSettingsInputSchema,
   agentVoiceSettingsSchema,
   defaultAgentVoiceSettings,
   readStoredAgentVoiceSettings,

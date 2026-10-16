@@ -45,6 +45,7 @@ describeIntegration("AgentRepository (Postgres)", () => {
     theme: defaultAgentEmbedTheme(),
     copy: {},
     expertOverrides: {},
+    voiceCallsOffered: false,
   });
 
   // Seed an agents row directly so the read path parses hand-crafted on-disk JSONB. The

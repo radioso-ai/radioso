@@ -48,6 +48,7 @@ const minimalAgent = (): ConversationAgent => ({
       theme: { brand: "#000", brandText: "#fff", surface: "#fff", text: "#000" },
       copy: {},
       expertOverrides: {},
+      voiceCallsOffered: false,
     },
     extensions: {},
   },

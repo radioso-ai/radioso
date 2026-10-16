@@ -99,6 +99,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
       expertOverrides: {
         sales: "Route to sales.",
       },
+      voiceCallsOffered: false,
     },
     extensions: {
       websiteEmbed: {

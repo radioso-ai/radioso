@@ -51,6 +51,7 @@ export const conversationQualityAgent: ConversationAgent = {
       theme: { brand: "#000000", brandText: "#ffffff", surface: "#ffffff", text: "#000000" },
       copy: {},
       expertOverrides: {},
+      voiceCallsOffered: false,
     },
     extensions: {},
   },

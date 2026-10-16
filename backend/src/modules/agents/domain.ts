@@ -222,6 +222,11 @@ export interface WebsiteEmbedSurfaceSettings extends PublicAgentSurfaceSettings 
   theme: AgentEmbedTheme;
   copy: AgentEmbedCopyPacks;
   expertOverrides: AgentEmbedExpertOverrides;
+  /**
+   * The operator offers voice calls from this embed: its composer shows Talk when the agent's voice
+   * is also ready (on, bound to a runtime, the vendor key stored). Off until the operator turns it on.
+   */
+  voiceCallsOffered: boolean;
 }
 
 /**
@@ -811,6 +816,7 @@ export const defaultWebsiteEmbedSurfaceSettings = (): WebsiteEmbedSurfaceSetting
   theme: defaultAgentEmbedTheme(),
   copy: {},
   expertOverrides: {},
+  voiceCallsOffered: false,
 });
 
 export const normalizeWebsiteEmbedSurfaceSettings = (
@@ -839,6 +845,7 @@ export const normalizeWebsiteEmbedSurfaceSettings = (
     theme: normalizeEmbedTheme(record.theme ?? options.themeFallback),
     copy: normalizeEmbedCopy(record.copy),
     expertOverrides: normalizeEmbedExpertOverrides(record.expertOverrides),
+    voiceCallsOffered: record.voiceCallsOffered === true,
   };
 };
 

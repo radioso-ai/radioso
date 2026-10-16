@@ -22,6 +22,8 @@ const vendorAnswering = (status: number, body: unknown) =>
  */
 const embedWorkspace = async (options: {
   voice?: object;
+  /** The operator's switch on the website embed: whether it offers calls. */
+  voiceCallsOffered?: boolean;
   vendorKey?: string | null;
   vendorFetch?: VendorFetch;
   envOverrides?: Partial<Env>;
@@ -39,7 +41,10 @@ const embedWorkspace = async (options: {
   const anonymousChatToken = new URL(settings.body.anonymousChatUrl as string).pathname.split("/").at(-1)!;
   const agents = await request(app).get("/api/v1/agents").set(dashboard).expect(200);
   const agentId = (agents.body.agents as Array<{ id: string; isDefault: boolean }>).find((agent) => agent.isDefault)!.id;
-  await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ voice: options.voice ?? boundVoice }).expect(200);
+  await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({
+    voice: options.voice ?? boundVoice,
+    ...(options.voiceCallsOffered === undefined ? {} : { surfaceSettings: { websiteEmbed: { voiceCallsOffered: options.voiceCallsOffered } } }),
+  }).expect(200);
   const vendorKey = options.vendorKey === undefined ? VENDOR_KEY : options.vendorKey;
   if (vendorKey) {
     await request(app).put("/api/v1/settings/credentials/elevenlabs").set(dashboard).send({ apiKey: vendorKey }).expect(204);
@@ -61,7 +66,7 @@ const embedWorkspace = async (options: {
   };
   /** What the website embed's launcher reads before it shows anything. */
   const embedConfig = () => request(app).get(`/api/v1/public/chat/${launchToken}/embed-config`).set("Origin", SITE).expect(200);
-  return { ...created, operator, agentId, launchToken, anonymousChatToken, visitor, embedConfig };
+  return { ...created, operator, dashboard, agentId, launchToken, anonymousChatToken, visitor, embedConfig };
 };
 
 const startOutcomes = (metrics: string): string[] =>
@@ -275,8 +280,8 @@ describe("public voice session start contract", () => {
     expect(chatTurns.mock.calls[1]?.[0].conversationId).toEqual(expect.any(String));
   });
 
-  it("tells the website embed it can talk when voice is on, a vendor agent is bound and the workspace holds the vendor key", async () => {
-    const { embedConfig } = await embedWorkspace();
+  it("tells the website embed it can talk when the operator offers calls there and the agent's voice is ready", async () => {
+    const { embedConfig } = await embedWorkspace({ voiceCallsOffered: true });
 
     const config = await embedConfig();
 
@@ -286,14 +291,31 @@ describe("public voice session start contract", () => {
   });
 
   it.each([
-    ["voice is off for the agent", { voice: { ...boundVoice, enabled: false } }],
-    ["the agent is bound to no vendor agent", { voice: { ...boundVoice, runtime: null } }],
-    ["the workspace holds no vendor key", { vendorKey: null }],
+    ["the operator has not offered calls on the website, though voice is ready", {}],
+    ["the operator turned calls off, though voice is ready", { voiceCallsOffered: false }],
+    ["voice is off for the agent", { voiceCallsOffered: true, voice: { ...boundVoice, enabled: false } }],
+    ["the agent is bound to no vendor agent", { voiceCallsOffered: true, voice: { ...boundVoice, runtime: null } }],
+    ["the workspace holds no vendor key", { voiceCallsOffered: true, vendorKey: null }],
   ])("tells the website embed it cannot talk when %s", async (_case, options) => {
     const { embedConfig } = await embedWorkspace(options);
 
     const config = await embedConfig();
 
     expect(config.body.voice).toEqual({ available: false });
+  });
+
+  it("keeps the switch on the agent's website embed block, off until the operator turns it on, and untouched by other embed edits", async () => {
+    const { app, dashboard, agentId } = await embedWorkspace();
+    const readSwitch = async () =>
+      (await request(app).get(`/api/v1/agents/${agentId}`).set(dashboard).expect(200)).body.surfaceSettings.websiteEmbed.voiceCallsOffered;
+
+    expect(await readSwitch()).toBe(false);
+
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ surfaceSettings: { websiteEmbed: { voiceCallsOffered: true } } }).expect(200);
+    expect(await readSwitch()).toBe(true);
+
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ surfaceSettings: { websiteEmbed: { launcherLabel: "Ask us" } } }).expect(200);
+    await request(app).put("/api/v1/settings/general").set(dashboard).send({ websiteEmbedLauncherLabel: "Talk to us" }).expect(200);
+    expect(await readSwitch()).toBe(true);
   });
 });

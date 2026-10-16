@@ -14,9 +14,12 @@ import type {
  * The workspace-settings fields a proposal may carry: the assistant's own wording, and the public
  * channels it answers on. Deliberately absent are the fields whose write is not a settings change
  * at all — the anonymous-chat and embed tokens (rotation is never-list), the assistant logo (Ray
- * can neither produce the bytes nor judge the result), and the embed theme, copy packs, and expert
- * overrides, which are visual design rather than configuration Ray can reason about. Leaving them
- * off the payload means no adapter written against it can touch them.
+ * can neither produce the bytes nor judge the result), the embed theme, copy packs, and expert
+ * overrides, which are visual design rather than configuration Ray can reason about, and the
+ * embed's `voiceCallsOffered` switch: offering calls puts a microphone prompt on the operator's
+ * live site and spends the workspace's own voice vendor minutes, so it is the operator's choice in
+ * the dashboard, like the vendor key it depends on. Leaving them off the payload means no adapter
+ * written against it can touch them.
  */
 const copilotWorkspaceSettingFields = {
   assistantName: z.string().trim().min(1).max(200),

@@ -78,6 +78,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         }),
         copy: z.record(z.record(z.string())),
         expertOverrides: z.record(z.string()),
+        voiceCallsOffered: z.boolean().openapi({
+          description: "The operator offers voice calls from the website embed: its composer shows Talk while the agent's voice is also on, bound to a runtime and the workspace holds the vendor key. Defaults to false.",
+        }),
       }),
     }),
   );
@@ -290,6 +293,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
           }).optional(),
           copy: z.record(z.record(z.string())).optional(),
           expertOverrides: z.record(z.string()).optional(),
+          voiceCallsOffered: z.boolean().optional(),
         }).optional(),
       }).optional(),
     }),
@@ -826,6 +830,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     theme: AgentBundleThemeSchema,
     copy: z.record(z.record(z.string())),
     expertOverrides: z.record(z.string()),
+    voiceCallsOffered: z.boolean().optional(),
   });
 
   const AgentBundleAuthoredDirectiveSchema = registry.register(

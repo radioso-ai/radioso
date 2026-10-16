@@ -644,7 +644,7 @@ function PublicChatContent({
   }, [messages])
   const readLastMessageId = useCallback(() => lastMessageIdRef.current, [])
   const voiceOffered = surface === 'embed' && voiceAvailable
-  const voice = useVoiceSession({ token: publicChatToken, locale: visitorLocale, currentMessageId: readLastMessageId })
+  const voice = useVoiceSession({ token: publicChatToken, locale: visitorLocale, currentMessageId: readLastMessageId, offered: voiceOffered })
   const { isActive: isVoiceCallActive, stop: stopVoiceCall } = voice
   useEffect(() => {
     if (!panelOpen && isVoiceCallActive) stopVoiceCall()

@@ -1,11 +1,25 @@
-import type { PublicVoiceSessionStart, VoiceVendor } from './api-public-voice'
-import type { VoiceRuntime, VoiceRuntimeLine, VoiceRuntimeSession } from './voice-runtime'
+import type { VoiceRuntime, VoiceRuntimeLine, VoiceRuntimeSession, VoiceVendor } from './voice-runtime'
 import type { VoiceSessionEvent } from './voice-session'
+
+/** What the page needs to open the session on the vendor; `signedUrl` is a bearer credential. */
+export interface StartedVoiceSession {
+  vendor: VoiceVendor
+  signedUrl: string
+  sessionKey: string
+  locale: string
+}
+
+/**
+ * How a session start ended, as the visitor can act on it. `refused` covers every answer that is
+ * not a session (voice off, a start budget spent, a vendor that would not start one, a network
+ * that failed): the visitor reads one line for all of them, and the backend's metric says which.
+ */
+export type VoiceSessionStart = { kind: 'started'; session: StartedVoiceSession } | { kind: 'refused' }
 
 export interface VoiceCallDependencies {
   /** Resolves true once the visitor lets the page use a microphone, false when they refuse or have none. */
   requestMicrophone: () => Promise<boolean>
-  startSession: () => Promise<PublicVoiceSessionStart>
+  startSession: () => Promise<VoiceSessionStart>
   loadRuntime: (vendor: VoiceVendor) => Promise<VoiceRuntime>
 }
 
@@ -40,7 +54,7 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
       return
     }
 
-    const start = await dependencies.startSession().catch((): PublicVoiceSessionStart => ({ kind: 'refused' }))
+    const start = await dependencies.startSession().catch((): VoiceSessionStart => ({ kind: 'refused' }))
     if (stopped) return
     if (start.kind === 'refused') {
       report({ type: 'start_refused' })

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import { startPublicVoiceSession } from './api-public-voice'
 import { requestMicrophoneAccess, runVoiceCall, type VoiceCall } from './voice-call'
-import { loadVoiceRuntime } from './voice-runtime'
+import { loadVoiceRuntime, prepareVoiceRuntimes } from './voice-runtime'
 import {
   appendVoiceTranscriptLine,
   initialVoiceSessionState,
@@ -16,16 +16,19 @@ import {
 /**
  * One visitor's voice calls from the website embed: the call's visible state, the lines said on
  * it, and Talk and Stop. A call ends when the panel unmounts; the caller ends it on panel close.
- * `currentMessageId` reads the newest chat message, which each transcript line follows.
+ * `currentMessageId` reads the newest chat message, which each transcript line follows; `offered`
+ * says the panel shows Talk, which is when a platform that needs the vendor client early gets it.
  */
 export function useVoiceSession({
   token,
   locale,
   currentMessageId,
+  offered,
 }: {
   token: string
   locale?: string
   currentMessageId: () => string | null
+  offered: boolean
 }) {
   const [state, dispatch] = useReducer(voiceSessionReducer, initialVoiceSessionState)
   const [lines, setLines] = useState<VoiceTranscriptLine[]>([])
@@ -69,6 +72,10 @@ export function useVoiceSession({
     )
     callRef.current = call
   }, [locale, token])
+
+  useEffect(() => {
+    if (offered) prepareVoiceRuntimes()
+  }, [offered])
 
   useEffect(() => () => {
     callRef.current?.stop()

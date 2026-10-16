@@ -84,7 +84,7 @@ const sessionRuntimeOf = <Runtime>(voice: { enabled: boolean; runtime: Runtime |
 export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSessionAvailabilityPort {
   constructor(private readonly dependencies: VoiceSessionStartServiceDependencies) {}
 
-  async isAvailable(input: { workspaceId: string; voice: { enabled: boolean; runtime: { vendor: VoiceVendor } | null } }): Promise<boolean> {
+  async isAvailable(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<boolean> {
     const binding = sessionRuntimeOf(input.voice);
     if (binding.kind === "unavailable") return false;
     const { workspaceId } = input;

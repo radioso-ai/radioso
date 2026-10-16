@@ -1,5 +1,12 @@
-import type { VoiceVendor } from './api-public-voice'
 import type { VoiceMode } from './voice-session'
+
+/** The voice runtimes the chat panel can open a session on. */
+const VOICE_VENDORS = ['elevenlabs'] as const
+
+export type VoiceVendor = (typeof VOICE_VENDORS)[number]
+
+export const isVoiceVendor = (value: unknown): value is VoiceVendor =>
+  typeof value === 'string' && (VOICE_VENDORS as readonly string[]).includes(value)
 
 /** One finished line of the call: what the caller said, or the agent's reply. */
 export interface VoiceRuntimeLine {
@@ -56,4 +63,24 @@ const installedRuntime = (): VoiceRuntime | null => {
 export const loadVoiceRuntime = (vendor: VoiceVendor): Promise<VoiceRuntime> => {
   const installed = installedRuntime()
   return installed ? Promise.resolve(installed) : VOICE_RUNTIME_LOADERS[vendor]()
+}
+
+const IOS_PLATFORMS = ['iPad Simulator', 'iPhone Simulator', 'iPod Simulator', 'iPad', 'iPhone', 'iPod']
+
+/** iPhone, iPad and iPod, including an iPad that reports itself as a Mac with touch. */
+const isIosDevice = (): boolean =>
+  typeof navigator !== 'undefined'
+  && typeof document !== 'undefined'
+  && (IOS_PLATFORMS.includes(navigator.platform) || (navigator.userAgent.includes('Mac') && 'ontouchend' in document))
+
+/**
+ * Loads the vendor clients ahead of the first call where the browser needs it. On iOS a client
+ * unlocks audio during the tap that starts a call, and only a client already in the page sees
+ * that tap; everywhere else the client loads when the call starts.
+ */
+export const prepareVoiceRuntimes = (): void => {
+  if (!isIosDevice()) return
+  for (const vendor of VOICE_VENDORS) {
+    void loadVoiceRuntime(vendor).catch(() => undefined)
+  }
 }

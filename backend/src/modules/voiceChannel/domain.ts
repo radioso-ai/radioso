@@ -1,6 +1,7 @@
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 import type { VoiceVendor, VoiceVendorRegion } from "../../shared/domain/voiceVendor.js";
+import type { AgentVoiceSettings } from "../agents/public.js";
 
 export type VoiceTransport = "phone" | "web";
 
@@ -175,7 +176,7 @@ export type VoiceSessionStartResult =
  * that it can talk and nothing about the vendor or the key.
  */
 export interface VoiceSessionAvailabilityPort {
-  isAvailable(input: { workspaceId: string; voice: { enabled: boolean; runtime: { vendor: VoiceVendor } | null } }): Promise<boolean>;
+  isAvailable(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<boolean>;
 }
 
 export interface VoiceSessionStartPort {

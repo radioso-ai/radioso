@@ -403,6 +403,7 @@ Public surfaces and key files:
 - `backend/src/modules/voiceChannel/domain.ts` — `VoiceTurnPort`, `VoiceTurnInput`, `VoiceTurnEvent`, `VoiceTurnOutcome`
 - `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`, `speechText.ts`, `voiceTurnPolicy.ts` (bridge and turn limit, `VOICE_BEHAVIOR`), `voiceTurnOutcome.ts` (outcome from chat's `done` event) and `voiceLines.ts`; `voiceSessionMemory.ts` (in-process per-session memory: newest request, last bridge, replayable exchange)
 - `backend/src/modules/agents/voiceSettings.ts` — the agent's `voice` block on `GET`/`PUT /api/v1/agents/:agentId`, read by the voice services as types from `agents/public.ts`
+- `frontend/components/dashboard/settings/voice-channel-card.tsx` (with `locale-lines-editor.tsx` and `frontend/lib/voice-settings-form.ts`) — the Voice card on the agent's Channels → API page, which saves the `voice` and `mechanicsReplies` blocks together
 - `backend/src/modules/voiceChannel/persistence/voiceSessionRepository.ts` (`voice_sessions`, migration `214_voice_sessions.sql`)
 - `backend/src/modules/voiceChannel/adapters/openaiCompletions/` — dialects as data, request schema, SSE presenter, route
 - `backend/src/app/composition/voiceChannel.ts` and `backend/src/app/http/routes/agentVoiceRoute.ts` (mounted beside the REST agent channel)
@@ -416,6 +417,7 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts`
 - `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/voice-settings.spec.ts`
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
 
 Related docs:

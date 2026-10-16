@@ -106,3 +106,40 @@ describe("agent voice settings contract", () => {
     expect(refetched.body.voice).toEqual(voice);
   });
 });
+
+const mechanicsReplies = {
+  en: { greeting: ["Hi! How can I help?"], thanks: ["You are welcome!"], farewell: [], acknowledgement: [] },
+};
+
+describe("agent mechanics replies contract", () => {
+  it("clears the block with an explicit empty one", async () => {
+    const { app, authorization, agentId } = await agentWithToken("agent-mechanics-clear@example.com");
+    await request(app).put(`/api/v1/agents/${agentId}`).set("Authorization", authorization).send({ mechanicsReplies }).expect(200);
+
+    const cleared = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({ mechanicsReplies: {} })
+      .expect(200);
+    const refetched = await request(app).get(`/api/v1/agents/${agentId}`).set("Authorization", authorization).expect(200);
+
+    expect(cleared.body.mechanicsReplies).toEqual({});
+    expect(refetched.body.mechanicsReplies).toEqual({});
+  });
+
+  it("keeps the block when an update leaves it out", async () => {
+    const { app, authorization, agentId } = await agentWithToken("agent-mechanics-omitted@example.com");
+    await request(app).put(`/api/v1/agents/${agentId}`).set("Authorization", authorization).send({ mechanicsReplies }).expect(200);
+
+    // The Voice card sends both blocks; every other save sends neither.
+    await request(app).put(`/api/v1/agents/${agentId}`).set("Authorization", authorization).send({ voice }).expect(200);
+    const saved = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({ citationDisplayEnabled: false })
+      .expect(200);
+
+    expect(saved.body.mechanicsReplies).toEqual(mechanicsReplies);
+    expect(saved.body.voice).toEqual(voice);
+  });
+});

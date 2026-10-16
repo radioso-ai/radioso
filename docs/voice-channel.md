@@ -128,8 +128,35 @@ Radioso answers a session key that is a whole `{{…}}` placeholder with `400`.
 
 On a call, silence sounds like a dropped line. A grounded answer can take a
 second or two to start, so you give the agent a few short lines to say while
-it works, and one line to say if the answer takes far too long. They live in
-the agent's `voice` settings block:
+it works, and one line to say if the answer takes far too long.
+
+You write them in the **Voice** card, below the Agent API card on the agent's
+**Channels → API** page:
+
+1. Turn on **Voice lines on calls**.
+2. Add a language, such as English. Each language carries its own lines.
+3. Under **Bridge lines**, add **Check** lines, which the agent says while it
+   looks an answer up, and **Acknowledge** lines, which it says inside a
+   routine once the caller has answered a step.
+4. Write the **Fallback line**, which the caller hears when nothing is ready
+   at 10 seconds.
+5. Select **Save voice settings**.
+
+On the `elevenlabs` dialect, bridge and fallback lines follow the
+[first-sentence length rule](#elevenlabs-first-sentence-length). The card
+warns under any line that falls short and still saves it, since other dialects
+speak a short line at once.
+
+The same card holds the agent's **Quick replies**: the lines it says word for
+word to a greeting, thanks, farewell, or acknowledgement, in chat as well as
+on calls. The card saves both blocks together.
+
+Ray can make the same change. Ask it to turn voice on or to add a bridge line,
+and it drafts the whole block with `propose_agent_setting` for you to review
+and apply.
+
+The card writes the agent's `voice` settings block, which you can also send
+to the agent settings API yourself:
 
 ```json
 {
@@ -165,8 +192,8 @@ the agent's `voice` settings block:
 }
 ```
 
-Set it with the agent settings API, using a personal token or a
-service-account credential from **Settings → API access**:
+Send it with a personal token or a service-account credential from
+**Settings → API access**:
 
 ```bash
 curl -sS -X PUT \
@@ -177,17 +204,17 @@ curl -sS -X PUT \
 ```
 
 where `voice.json` holds the object above. `GET /api/v1/agents/<agent-id>`
-returns the block as `voice`. The dashboard has no editor for it; saving other
-agent settings from the dashboard leaves it as it is.
+returns the block as `voice`, and the quick replies as `mechanicsReplies`.
 
-The block is replaced whole: a request that carries `voice` must carry
-`enabled`, `bridgeLines` and `fallbackLine`, and a request without `voice`
-keeps the stored one. To turn voice off, send the block back with
+The block is replaced whole, whether the card, Ray, or your own request
+writes it: a request that carries `voice` must carry `enabled`,
+`bridgeLines` and `fallbackLine`, and a request without `voice` keeps the
+stored one. To turn voice off, send the block back with
 `"enabled": false`. Keys are language tags such as `en`, `it` or `pt-BR`, up
 to 10 for each map. Each style holds up to 5 lines, and every line is 1 to 200
-characters. For the `elevenlabs` dialect, write each line as one sentence of at
-least 45 characters, like the lines above (see [Dialects](#dialects)). A new
-agent starts with `"enabled": false` and empty maps.
+characters. The lines above follow the
+[first-sentence length rule](#elevenlabs-first-sentence-length) for the
+`elevenlabs` dialect. A new agent starts with `"enabled": false` and empty maps.
 
 What happens on a turn while `enabled` is true:
 
@@ -368,7 +395,17 @@ zero-width space, it stops at the end of the reply or when the runtime hangs
 up, and the stored reply never contains it. The `generic` dialect sends
 neither.
 
-ElevenLabs also holds the first sentence of a reply until it has about 45
+The session key must name one call. A value that spans calls, such as a
+user id, would run every call of that user in one conversation, so no dialect
+falls back to one.
+
+Use `generic` for a runtime you control, such as LiveKit Agents or Pipecat:
+set the header to your own session id on every request of the session. A
+session key is opaque to Radioso and can be up to 256 characters.
+
+### ElevenLabs first-sentence length
+
+ElevenLabs holds the first sentence of a reply until it has about 45
 characters of text (observed 2026-10-13: 26 characters waited for the next
 sentence, 46 and 57 did not; invisible padding and two short sentences do not
 count). Write every bridge line and fallback line as a full sentence of at
@@ -377,14 +414,6 @@ this dialect, a style that has lines of both lengths speaks only its lines of
 45 characters or more. A style with none that long still speaks its shorter
 line, and the server logs `voice.bridge_line_below_vendor_minimum` at warn once
 per agent, naming the agent and the two lengths.
-
-The session key must name one call. A value that spans calls, such as a
-user id, would run every call of that user in one conversation, so no dialect
-falls back to one.
-
-Use `generic` for a runtime you control, such as LiveKit Agents or Pipecat:
-set the header to your own session id on every request of the session. A
-session key is opaque to Radioso and can be up to 256 characters.
 
 ## Request
 

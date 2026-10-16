@@ -197,6 +197,17 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
     expect(await row(id)).toMatchObject({ status: "running", attempts: 2, last_error: null, claim_token: fresh!.token });
   });
 
+  it("excludes ids already claimed this call, even once the row is genuinely due by the database's own clock", async () => {
+    const id = await insert("s1");
+    const claim = await repository.claimNext({ kinds: KINDS });
+    expect(claim?.id).toBe(id);
+    // The lease has expired: by the database's own now(), the row is due again.
+    await expireLease(id);
+
+    expect(await repository.claimNext({ kinds: KINDS, excludeIds: [id] })).toBeNull();
+    expect(await repository.claimNext({ kinds: KINDS })).toMatchObject({ id, attempt: 2 });
+  });
+
   it("deletes a completed job", async () => {
     const id = await insert("s1");
     const claim = await repository.claimNext({ kinds: KINDS });
@@ -227,6 +238,40 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
     const claim = await repository.claimNext({ kinds: KINDS });
 
     await expect(repository.retry(claim!, { error: "x".repeat(500), delaySeconds: 30 })).rejects.toThrow();
+  });
+
+  it("commits a retry hook's writes with the reschedule, and rolls both back when the hook throws", async () => {
+    const id = await insert("s1", { idempotencyKey: "s1" });
+    const claim = await repository.claimNext({ kinds: KINDS });
+    const markerCount = async () =>
+      Number((await database.query<{ count: string }>("SELECT count(*) AS count FROM background_jobs WHERE kind = 'test.event'"))[0].count);
+
+    await expect(repository.retry(claim!, { error: "Error", delaySeconds: 10 }, async (transaction) => {
+      await repository.insert(backgroundJobRequest(EVENT, { subjectId: "marker" }), transaction);
+      throw new Error("hook failed");
+    })).rejects.toThrow("hook failed");
+    expect(await markerCount()).toBe(0);
+    expect(await row(id)).toMatchObject({ status: "running", attempts: 1, last_error: null });
+
+    const availableAt = await repository.retry(claim!, { error: "Error", delaySeconds: 10 }, async (transaction) => {
+      await repository.insert(backgroundJobRequest(EVENT, { subjectId: "marker" }), transaction);
+    });
+    expect(availableAt).not.toBeNull();
+    expect(await markerCount()).toBe(1);
+    expect(await row(id)).toMatchObject({ status: "pending", last_error: "Error", claim_token: null });
+  });
+
+  it("never runs the retry hook for a claim that was taken over", async () => {
+    const id = await insert("s1");
+    const stale = await repository.claimNext({ kinds: KINDS });
+    await expireLease(id);
+    await repository.claimNext({ kinds: KINDS });
+    let hookRan = false;
+
+    expect(await repository.retry(stale!, { error: "Error", delaySeconds: 10 }, async () => {
+      hookRan = true;
+    })).toBeNull();
+    expect(hookRan).toBe(false);
   });
 
   it("drops a dead-lettered job's payload in the same write, keeping its kind, key, attempts and error", async () => {

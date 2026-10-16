@@ -6,6 +6,7 @@ import type {
   BackgroundJobCompletion,
   BackgroundJobEnqueueReceipt,
   BackgroundJobRequest,
+  BackgroundJobSkipped,
   BackgroundJobStore,
   BackgroundJobWriter,
 } from "../../shared/background-jobs/index.js";
@@ -89,12 +90,18 @@ export class BackgroundJobRepository implements BackgroundJobStore, BackgroundJo
     return written && written.status === "pending" ? { inserted: true, jobId: written.id } : { inserted: false };
   }
 
-  async claimNext(input: { kinds: readonly BackgroundJobClaimableKind[] }): Promise<BackgroundJobClaim | null> {
+  /**
+   * Due is decided by the database's own `now()`, never a caller-supplied instant: a worker's clock
+   * can skew from the database's and hide a job that genuinely became due. `excludeIds` (the ids a
+   * single `drain()` call has already claimed) is a `NOT IN`, so a row due by this same `now()` is
+   * still skipped when the caller has already claimed it this call.
+   */
+  async claimNext(input: { kinds: readonly BackgroundJobClaimableKind[]; excludeIds?: readonly string[] }): Promise<BackgroundJobClaim | null> {
     if (input.kinds.length === 0) {
       return null;
     }
     return this.db.transaction().execute(async (trx) => {
-      const due = await trx
+      let query = trx
         .selectFrom("background_jobs")
         .select(["id", "kind"])
         .where("kind", "in", input.kinds.map((entry) => entry.kind))
@@ -102,7 +109,11 @@ export class BackgroundJobRepository implements BackgroundJobStore, BackgroundJo
           eb.or([
             eb.and([eb("status", "=", "pending"), eb("available_at", "<=", currentTimestamp())]),
             eb.and([eb("status", "=", "running"), eb("lease_expires_at", "<", currentTimestamp())]),
-          ]))
+          ]));
+      if (input.excludeIds && input.excludeIds.length > 0) {
+        query = query.where("id", "not in", [...input.excludeIds]);
+      }
+      const due = await query
         .orderBy("available_at", "asc")
         .limit(1)
         .forUpdate()
@@ -146,7 +157,8 @@ export class BackgroundJobRepository implements BackgroundJobStore, BackgroundJo
    * and its outcome decides: a committed rerun request returns the job to waiting, due now, with a
    * fresh attempt budget; otherwise the job is deleted.
    */
-  async complete(claim: BackgroundJobClaim): Promise<BackgroundJobCompletion> {
+  /** No distinct "skipped" state here: a handler-returned skip completes exactly like success does. */
+  async complete(claim: BackgroundJobClaim, _outcome?: BackgroundJobSkipped): Promise<BackgroundJobCompletion> {
     return this.db.transaction().execute(async (trx) => {
       const current = await trx
         .selectFrom("background_jobs")
@@ -179,23 +191,37 @@ export class BackgroundJobRepository implements BackgroundJobStore, BackgroundJo
     });
   }
 
-  /** A rerun requested during this run is covered by the retry, which reads state when it runs. */
-  async retry(claim: BackgroundJobClaim, input: { error: string; delaySeconds: number }): Promise<Date | null> {
-    const row = await this.db
-      .updateTable("background_jobs")
-      .set({
-        ...released,
-        status: "pending",
-        available_at: nowPlusSeconds(input.delaySeconds),
-        last_error: input.error,
-        updated_at: currentTimestamp(),
-      })
-      .where("id", "=", claim.id)
-      .where("claim_token", "=", claim.token)
-      .where("status", "=", "running")
-      .returning("available_at")
-      .executeTakeFirst();
-    return row ? new Date(row.available_at) : null;
+  /**
+   * A rerun requested during this run is covered by the retry, which reads state when it runs.
+   * `onRetried` runs in the same transaction once the reschedule actually lands, mirroring
+   * `deadLetter`'s `onParked`: a hook that throws rolls back the reschedule along with it.
+   */
+  async retry(
+    claim: BackgroundJobClaim,
+    input: { error: string; delaySeconds: number },
+    onRetried?: (transaction: Db) => Promise<void>,
+  ): Promise<Date | null> {
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx
+        .updateTable("background_jobs")
+        .set({
+          ...released,
+          status: "pending",
+          available_at: nowPlusSeconds(input.delaySeconds),
+          last_error: input.error,
+          updated_at: currentTimestamp(),
+        })
+        .where("id", "=", claim.id)
+        .where("claim_token", "=", claim.token)
+        .where("status", "=", "running")
+        .returning("available_at")
+        .executeTakeFirst();
+      if (!row) {
+        return null;
+      }
+      await onRetried?.(trx);
+      return new Date(row.available_at);
+    });
   }
 
   /**

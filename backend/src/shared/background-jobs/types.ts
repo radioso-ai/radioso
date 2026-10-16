@@ -31,8 +31,20 @@ export interface BackgroundJobPolicy {
    * when it passes. Always shorter than the lease, so a run is abandoned before its lease could lapse.
    */
   readonly timeoutSeconds: number;
-  /** The wait before the first retry; it doubles with each failed run, up to a fixed ceiling. */
+  /**
+   * The wait before the first retry, doubling with each further failed attempt up to a fixed
+   * ceiling — the default schedule, right for a provider call whose transient failures cluster.
+   * Unused once {@link retryDelaysSeconds} is set.
+   */
   readonly retryBaseDelaySeconds: number;
+  /**
+   * An explicit retry-delay schedule in seconds, indexed by attempt (the 1st retry takes
+   * `retryDelaysSeconds[0]`, the 2nd `retryDelaysSeconds[1]`, ...); the last entry repeats for
+   * every attempt past the end of the list. Set this when a kind's existing retry contract is not
+   * the default doubling schedule — a flat 60 s backoff is `[60]`, a three-step schedule is
+   * `[1, 5, 15]`. Omit to use doubling.
+   */
+  readonly retryDelaysSeconds?: readonly number[];
 }
 
 /**
@@ -76,17 +88,23 @@ export interface BackgroundJobContext {
   readonly signal: AbortSignal;
 }
 
-/** What a kind's dead-letter hook learns about the job it parks. */
-export interface BackgroundJobDeadLetterContext {
+/**
+ * What a kind's failure hook learns about the run that failed: the error summary, and a
+ * transaction scoped to that run's write-back, so hook writes commit or roll back with it.
+ * Shared by {@link BackgroundJobHandlerRegistration.onAttemptFailed} (a retryable attempt) and
+ * `onDeadLetter` (the terminal one) — the two moments carry the same facts.
+ */
+export interface BackgroundJobFailureContext {
   readonly jobId: string;
-  /** The attempt that parked the job. */
+  /** The attempt that failed. */
   readonly attempt: number;
   readonly idempotencyKey: string | null;
   /** The stored error summary: the error's class and an application error code, never its message. */
   readonly error: string;
   /**
-   * The transaction that parks the job. Writes made through it commit with the dead letter, so they
-   * happen exactly once; a hook that throws rolls them back and the job is parked without them.
+   * The transaction that writes back this attempt's outcome (a retry's reschedule, or the park).
+   * Writes made through it commit with that outcome, so they happen exactly once; a hook that
+   * throws rolls them back and the outcome is written again without it.
    */
   readonly transaction: Db;
 }
@@ -95,13 +113,41 @@ export interface BackgroundJobDeadLetterContext {
 export interface BackgroundJobHandlerRegistration {
   readonly kind: string;
   readonly policy: BackgroundJobPolicy;
-  /** Checks the stored payload against the kind's schema, then runs the handler. */
-  run(payload: unknown, context: BackgroundJobContext): Promise<void>;
+  /**
+   * Checks the stored payload against the kind's schema, then runs the handler. Resolves with
+   * {@link BackgroundJobSkipped} when the handler ran to completion but deliberately delivered
+   * nothing — the store records that distinctly from an ordinary completion.
+   */
+  run(payload: unknown, context: BackgroundJobContext): Promise<BackgroundJobSkipped | void>;
+  /**
+   * Runs once per failed attempt that the runtime is about to retry (not the terminal one —
+   * see `onDeadLetter`), fenced the same way: it runs only once the retry is actually scheduled,
+   * never for an attempt whose claim was already taken over. A hook that throws rolls back with
+   * the reschedule, which the runtime then writes again without it — a broken hook never blocks
+   * the retry.
+   *
+   * Does not run for an attempt lost to a crashed or stalled worker (its lease simply expires and
+   * no failure is ever reported): that attempt is only visible as the gap between its `attempt`
+   * number and the next one this hook, or `onDeadLetter`, actually receives. A domain store that
+   * tracks attempt history for its own records should count attempts at claim time, not rely on
+   * this hook running once per attempt.
+   */
+  onAttemptFailed?(payload: unknown, context: BackgroundJobFailureContext): Promise<void>;
   /**
    * Runs once, inside the transaction that dead-letters a job of this kind, whatever parked it.
    * Receives the parsed payload, or null when the stored payload no longer parses.
    */
-  onDeadLetter?(payload: unknown, context: BackgroundJobDeadLetterContext): Promise<void>;
+  onDeadLetter?(payload: unknown, context: BackgroundJobFailureContext): Promise<void>;
+}
+
+/**
+ * A handler resolves `run` with this to mean "the work is done, but nothing was delivered by
+ * design" (a configured transport that deliberately didn't send) — distinct from an ordinary
+ * completion. The generic `background_jobs` store may treat it the same as completion (delete);
+ * a store backing a table with its own `skipped` state (#1509's action outbox) records it there.
+ */
+export interface BackgroundJobSkipped {
+  readonly skipped: string;
 }
 
 /**
@@ -160,16 +206,36 @@ export type BackgroundJobCompletion = "deleted" | "requeued" | "superseded";
 export interface BackgroundJobStore {
   /**
    * Claims the job that has been due longest among `kinds` — a waiting job whose time has come, or
-   * a running one whose lease expired — leases it for its kind's lease, and counts the attempt.
-   * Concurrent claimers never take the same job.
+   * a running one whose lease had expired — leases it for its kind's lease, and counts the attempt.
+   * Due is always decided by the store's own clock (the database's, for the generic store), never a
+   * caller-supplied instant: a caller's clock can skew from the store's and hide a job that is
+   * genuinely due. Concurrent claimers never take the same job.
+   *
+   * `excludeIds` names jobs a single `drain()` call has already claimed, so a job that same call
+   * just retried (even with a delay as short as a second) is not eligible again within that call,
+   * no matter how much wall-clock time the call's other claims spend before it loops back — it
+   * waits for the next wake, poll tick, or sweep instead of spending its whole retry budget on itself.
    */
-  claimNext(input: { kinds: readonly BackgroundJobClaimableKind[] }): Promise<BackgroundJobClaim | null>;
+  claimNext(input: { kinds: readonly BackgroundJobClaimableKind[]; excludeIds?: readonly string[] }): Promise<BackgroundJobClaim | null>;
   /** Extends a live claim's lease from now. False when the claim was taken over. */
   renewLease(claim: BackgroundJobClaim, input: { leaseSeconds: number }): Promise<boolean>;
-  /** Removes a finished job, or returns it to waiting when a rerun was requested while it ran. */
-  complete(claim: BackgroundJobClaim): Promise<BackgroundJobCompletion>;
-  /** Returns the job to waiting, due after `delaySeconds`. Resolves the new due time, or null when superseded. */
-  retry(claim: BackgroundJobClaim, input: { error: string; delaySeconds: number }): Promise<Date | null>;
+  /**
+   * Removes a finished job, or returns it to waiting when a rerun was requested while it ran.
+   * `outcome` carries a {@link BackgroundJobSkipped} reason when the handler resolved with one;
+   * a store with no distinct "skipped" state may just complete the job as usual.
+   */
+  complete(claim: BackgroundJobClaim, outcome?: BackgroundJobSkipped): Promise<BackgroundJobCompletion>;
+  /**
+   * Returns the job to waiting, due after `delaySeconds`. Resolves the new due time, or null when
+   * superseded. `onRetried` runs in the same write-back as the reschedule, once it actually lands
+   * (never for a superseded claim); if it throws, the reschedule rolls back with it and the caller
+   * must call `retry` again without a hook to still reschedule the job.
+   */
+  retry(
+    claim: BackgroundJobClaim,
+    input: { error: string; delaySeconds: number },
+    onRetried?: (transaction: Db) => Promise<void>,
+  ): Promise<Date | null>;
   /**
    * Parks the job with its last error and drops its payload, which can carry conversation content.
    * `onParked` runs in the same transaction after the row is parked; if it throws, nothing is parked

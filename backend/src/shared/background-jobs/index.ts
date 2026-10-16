@@ -6,6 +6,7 @@ export type {
   BackgroundJobHandlerRegistration,
   BackgroundJobQueue,
   BackgroundJobRequest,
+  BackgroundJobSkipped,
   BackgroundJobStore,
   BackgroundJobWakePort,
   BackgroundJobWriter,

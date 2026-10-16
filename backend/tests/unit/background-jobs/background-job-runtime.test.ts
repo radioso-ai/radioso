@@ -109,7 +109,7 @@ describe("BackgroundJobRuntime", () => {
     const result = await runtime.drain({ maxJobs: 5 });
 
     expect(handled).toEqual([{ payload: { subjectId: "s1" }, attempt: 1, aborted: false }]);
-    expect(result).toEqual({ claimed: 1, completed: 1, requeued: 0, retried: 0, deadLettered: 0, superseded: 0 });
+    expect(result).toEqual({ claimed: 1, completed: 1, skipped: 0, requeued: 0, retried: 0, deadLettered: 0, superseded: 0 });
     expect(store.rows.size).toBe(0);
   });
 
@@ -554,6 +554,277 @@ describe("BackgroundJobRuntime", () => {
     });
   });
 
+  describe("retry backoff schedule", () => {
+    it("rejects a retryDelaysSeconds entry that is not a positive, finite number of seconds", () => {
+      expect(() =>
+        defineBackgroundJob({
+          kind: "test.infinite_backoff",
+          payload: z.object({ value: z.number() }),
+          onDuplicateKey: "ignore",
+          retryDelaysSeconds: [Infinity],
+        }),
+      ).toThrow(/needs a non-empty retryDelaysSeconds of positive seconds/);
+      expect(() =>
+        defineBackgroundJob({
+          kind: "test.non_positive_backoff",
+          payload: z.object({ value: z.number() }),
+          onDuplicateKey: "ignore",
+          retryDelaysSeconds: [5, 0],
+        }),
+      ).toThrow(/needs a non-empty retryDelaysSeconds of positive seconds/);
+    });
+
+    it("retries at a flat delay every time when the kind declares a one-entry schedule", async () => {
+      const FLAT = defineBackgroundJob({
+        kind: "test.flat_backoff",
+        payload: z.object({ value: z.number() }),
+        onDuplicateKey: "ignore",
+        maxAttempts: 3,
+        leaseSeconds: 60,
+        timeoutSeconds: 50,
+        // Ignored once retryDelaysSeconds is set — proves the schedule, not the base delay, wins.
+        retryBaseDelaySeconds: 30,
+        retryDelaysSeconds: [60],
+      });
+      const { queue, runtime, store } = setup([
+        backgroundJobHandler(FLAT, async () => {
+          throw new Error("still failing");
+        }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(FLAT, { value: 1 }));
+
+      await runtime.drain({ maxJobs: 1 });
+      expect(onlyRow(store).availableAt).toEqual(new Date(START.getTime() + 60_000));
+
+      vi.setSystemTime(Date.now() + 60_000);
+      await runtime.drain({ maxJobs: 1 });
+      // Still 60 s, not 120 s — a doubling schedule would have grown it.
+      expect(onlyRow(store).availableAt).toEqual(new Date(Date.now() + 60_000));
+    });
+
+    it("repeats a multi-step schedule's last entry once attempts run past it", async () => {
+      const STEPPED = defineBackgroundJob({
+        kind: "test.stepped_backoff",
+        payload: z.object({ value: z.number() }),
+        onDuplicateKey: "ignore",
+        maxAttempts: 5,
+        leaseSeconds: 60,
+        timeoutSeconds: 50,
+        retryDelaysSeconds: [1, 5, 15],
+      });
+      const { queue, runtime, store } = setup([
+        backgroundJobHandler(STEPPED, async () => {
+          throw new Error("still failing");
+        }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(STEPPED, { value: 1 }));
+
+      const delaysSeconds: number[] = [];
+      for (let attempt = 1; attempt <= 4; attempt += 1) {
+        const before = Date.now();
+        await runtime.drain({ maxJobs: 1 });
+        delaysSeconds.push((onlyRow(store).availableAt.getTime() - before) / 1_000);
+        vi.setSystemTime(onlyRow(store).availableAt);
+      }
+      expect(delaysSeconds).toEqual([1, 5, 15, 15]);
+    });
+
+    it("keeps doubling by default for a kind with no explicit schedule (unchanged behaviour)", async () => {
+      const { queue, runtime, store } = setup([
+        backgroundJobHandler(REFRESH, async () => {
+          throw new Error("still failing");
+        }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+
+      await runtime.drain({ maxJobs: 1 });
+      expect(onlyRow(store).availableAt).toEqual(new Date(START.getTime() + 10_000));
+      vi.setSystemTime(Date.now() + 10_000);
+
+      await runtime.drain({ maxJobs: 1 });
+      expect(onlyRow(store).availableAt).toEqual(new Date(Date.now() + 20_000));
+    });
+  });
+
+  describe("same-drain reclaim guard", () => {
+    it("does not reclaim a job this same drain call already retried, even once another claim's processing has made it due", async () => {
+      const FAST_RETRY = defineBackgroundJob({
+        kind: "test.fast_retry",
+        payload: z.object({ value: z.number() }),
+        onDuplicateKey: "ignore",
+        maxAttempts: 5,
+        leaseSeconds: 60,
+        timeoutSeconds: 50,
+        retryDelaysSeconds: [1],
+      });
+      const attempts: number[] = [];
+      const { queue, runtime, store } = setup([
+        backgroundJobHandler(FAST_RETRY, async (_payload, context) => {
+          attempts.push(context.attempt);
+          // Stands in for the wall-clock time a recovery sweep's other claims take to run: with
+          // fake timers otherwise frozen, nothing else would ever make this job's 1 s retry due
+          // again inside this same drain() call, so the test would pass even with the identity
+          // guard removed. Advancing the clock here, mid-drain, is what actually makes job 1's
+          // retry due again while job 2 is still being processed.
+          vi.setSystemTime(Date.now() + 1_500);
+          throw new Error("still failing");
+        }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(FAST_RETRY, { value: 1 }));
+      await queue.enqueue(backgroundJobRequest(FAST_RETRY, { value: 2 }));
+
+      // Without the identity guard, job 1's retry (due in 1 s) is already due by the time job 2's
+      // handler finishes (1.5 s later, still inside this same drain() call), and a third iteration
+      // would reclaim it as attempt 2 before this call returns.
+      const result = await runtime.drain({ maxJobs: 5 });
+
+      expect(attempts).toEqual([1, 1]);
+      expect(result).toMatchObject({ claimed: 2, retried: 2 });
+      expect([...store.rows.values()]).toHaveLength(2);
+
+      // The next drain call — the next wake, poll tick, or sweep — claims whichever job is due now.
+      expect(await runtime.drain({ maxJobs: 1 })).toMatchObject({ claimed: 1, retried: 1 });
+      expect(attempts).toHaveLength(3);
+    });
+  });
+
+  describe("per-attempt failure hook", () => {
+    const attemptFailedCalls = () => {
+      const calls: { payload: unknown; idempotencyKey: string | null; attempt: number; error: string; hasTransaction: boolean }[] = [];
+      const onAttemptFailed = vi.fn(async (payload: unknown, context: {
+        idempotencyKey: string | null;
+        attempt: number;
+        error: string;
+        transaction: unknown;
+      }) => {
+        calls.push({
+          payload,
+          idempotencyKey: context.idempotencyKey,
+          attempt: context.attempt,
+          error: context.error,
+          hasTransaction: context.transaction !== undefined,
+        });
+      });
+      return { calls, onAttemptFailed };
+    };
+
+    it("runs once per retried attempt, never the terminal attempt that dead-letters the job", async () => {
+      const { calls, onAttemptFailed } = attemptFailedCalls();
+      const onDeadLetter = vi.fn(async () => {});
+      const { queue, runtime } = setup([
+        backgroundJobHandler(REFRESH, async () => {
+          throw new Error("still failing");
+        }, { onAttemptFailed, onDeadLetter }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" }));
+
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        await runtime.drain({ maxJobs: 1 });
+        vi.setSystemTime(Date.now() + 3_600_000);
+      }
+
+      // maxAttempts is 3: attempts 1 and 2 are retried (the hook runs); attempt 3 dead-letters
+      // (only onDeadLetter runs for it).
+      expect(calls).toEqual([
+        { payload: { subjectId: "s1" }, idempotencyKey: "s1", attempt: 1, error: "Error", hasTransaction: true },
+        { payload: { subjectId: "s1" }, idempotencyKey: "s1", attempt: 2, error: "Error", hasTransaction: true },
+      ]);
+      expect(onDeadLetter).toHaveBeenCalledTimes(1);
+      expect(onDeadLetter).toHaveBeenCalledWith({ subjectId: "s1" }, expect.objectContaining({ attempt: 3 }));
+    });
+
+    it("is not run by an attempt whose claim was taken over, so a stale worker's late failure writes nothing", async () => {
+      const { calls, onAttemptFailed } = attemptFailedCalls();
+      const { store, queue, logger } = setup([]);
+      const RETRY_RACE = defineBackgroundJob({
+        kind: "test.retry_race",
+        payload: z.object({ eventId: z.string() }),
+        onDuplicateKey: "ignore",
+        maxAttempts: 5,
+        leaseSeconds: 60,
+        timeoutSeconds: 50,
+      });
+      const hold = barrier();
+      // Two handler registrations for the same kind, one per runtime, so the reclaiming worker's
+      // attempt fails (and the hook can run) without waiting on the stale worker's barrier.
+      const stalledHandler = backgroundJobHandler(RETRY_RACE, async () => {
+        await hold.released;
+        throw new Error("failed after its claim was taken over");
+      }, { onAttemptFailed });
+      const otherHandler = backgroundJobHandler(RETRY_RACE, async () => {
+        throw new Error("reclaimed and retried");
+      }, { onAttemptFailed });
+      const stalled = new BackgroundJobRuntime({ store, handlers: [stalledHandler], logger, now: clock.now });
+      const other = new BackgroundJobRuntime({ store, handlers: [otherHandler], logger, now: clock.now });
+      await queue.enqueue(backgroundJobRequest(RETRY_RACE, { eventId: "e1" }, { idempotencyKey: "e1" }));
+
+      const staleDrain = stalled.drain({ maxJobs: 1 });
+      await vi.advanceTimersByTimeAsync(0);
+      vi.setSystemTime(Date.now() + 61_000);
+      // The other worker reclaims the stale lease; its own attempt budget is not spent, so it retries
+      // and its hook runs.
+      expect(await other.drain({ maxJobs: 1 })).toMatchObject({ retried: 1 });
+
+      // The stale worker's claim was released by the reclaim's retry, so its own late failure
+      // finds no matching row to fence on: nothing is written, and its hook never runs.
+      hold.release();
+      expect(await staleDrain).toMatchObject({ retried: 0, superseded: 1 });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({ attempt: 2 });
+    });
+
+    it("a hook that throws rolls back the reschedule, which is then written again without it", async () => {
+      const { queue, runtime, store, errorReporter } = setup([
+        backgroundJobHandler(SHORT, async () => {
+          throw new Error("still failing on SENTINEL-attempt-text");
+        }, {
+          onAttemptFailed: async () => {
+            throw new Error("hook failed on SENTINEL-hook-text");
+          },
+        }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(SHORT, { value: 1 }));
+
+      expect(await runtime.drain({ maxJobs: 1 })).toMatchObject({ retried: 1 });
+      expect(onlyRow(store)).toMatchObject({ status: "pending", lastError: "Error" });
+      expect(errorReporter.report).toHaveBeenCalledWith({
+        errorType: "background_job.attempt_failed_hook_failed",
+        severity: "error",
+        metadata: expect.objectContaining({ kind: "test.short", hookError: "Error" }),
+      });
+      expect(JSON.stringify(errorReporter.report.mock.calls)).not.toContain("SENTINEL");
+    });
+  });
+
+  describe("skipped outcome", () => {
+    it("records a handler-returned skip distinctly from an ordinary completion", async () => {
+      const { queue, runtime, store, metrics, logger } = setup([
+        backgroundJobHandler(REFRESH, async () => ({ skipped: "transport_disabled" })),
+      ]);
+      const completeSpy = vi.spyOn(store, "complete");
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+
+      const result = await runtime.drain({ maxJobs: 1 });
+
+      expect(result).toMatchObject({ claimed: 1, completed: 0, skipped: 1 });
+      // The runtime passes the handler's skip reason through to the store's completion call, so a
+      // store with its own "skipped" row state (the action outbox's) can record it there.
+      expect(completeSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "test.refresh" }),
+        { skipped: "transport_disabled" },
+      );
+      // The generic store has no distinct "skipped" row state, so it completes exactly like success.
+      expect(store.rows.size).toBe(0);
+      expect(metrics.incrementCounter).toHaveBeenCalledWith("background_jobs_total", expect.objectContaining({
+        labels: { kind: "test.refresh", outcome: "skipped" },
+      }));
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "skipped" }),
+        expect.stringContaining("skipped"),
+      );
+    });
+  });
+
   describe("time budget", () => {
     it("leaves a pushed drain room for a kind at the longest deadline, even after time has passed before admission", async () => {
       expect(BACKGROUND_JOB_DRAIN_BUDGET_SECONDS).toBeGreaterThan(BACKGROUND_JOB_MAX_TIMEOUT_SECONDS);
@@ -566,6 +837,9 @@ describe("BackgroundJobRuntime", () => {
       });
       const { queue, runtime } = setup([backgroundJobHandler(LONGEST, async () => {})]);
       await queue.enqueue(backgroundJobRequest(LONGEST, { eventId: "e1" }));
+      // Some time passes between the enqueue and the request whose drain claims it, so "10 s before
+      // admission" lands after the job became due, not before it existed.
+      vi.setSystemTime(Date.now() + 20_000);
       // The request arrived 10 s before the drain's first admission check (auth, body parsing, a cold start).
       const startedAt = Date.now() - 10_000;
 

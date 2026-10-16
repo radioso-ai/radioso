@@ -41,7 +41,7 @@ export const ACTION_DISPATCH_JOB = defineBackgroundJob({
 });
 
 /** The registry slice this adapter needs: resolving a handler by the row's own action `type`. */
-export interface ActionHandlerResolver {
+interface ActionHandlerResolver {
   resolve(type: string): ActionHandler | null;
 }
 

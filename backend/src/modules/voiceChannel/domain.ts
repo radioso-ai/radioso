@@ -93,11 +93,17 @@ export type VoiceVendorCredentialReading =
   | { kind: "missing" }
   | { kind: "unreadable" };
 
+/**
+ * Whether the workspace stores a key for a vendor, without decrypting it: `unreadable` is a key
+ * stored while the backend has no master key to decrypt it with.
+ */
+export type VoiceVendorCredentialPresence = "stored" | "missing" | "unreadable";
+
 export interface VoiceVendorCredentialReader {
   /** Rejects only when the credential store cannot be read at all. */
   read(input: { workspaceId: string; vendor: VoiceVendor }): Promise<VoiceVendorCredentialReading>;
-  /** Whether the workspace stores a key for the vendor. Presence only: it decrypts nothing. */
-  isStored(input: { workspaceId: string; vendor: VoiceVendor }): Promise<boolean>;
+  /** Presence only: it decrypts nothing. Rejects only when the credential store cannot be read. */
+  presence(input: { workspaceId: string; vendor: VoiceVendor }): Promise<VoiceVendorCredentialPresence>;
 }
 
 /** What a vendor hands back for a page to open a session on its agent. */
@@ -170,12 +176,24 @@ export type VoiceSessionStartResult =
   | { kind: "failed" };
 
 /**
- * Whether a page may offer the caller a voice session with an agent: the agent's voice is on, a
- * vendor agent is bound, and the workspace stores that vendor's key. It reads the agent's own
- * `voice` block, which its caller already holds, and only the key's presence, so a page learns
- * that it can talk and nothing about the vendor or the key.
+ * Whether an agent's voice is ready for sessions, and when it is not, the first piece missing in
+ * the order an operator sets them up: the voice channel, the runtime binding, the vendor key, then
+ * the backend's master key to read it.
+ */
+export type VoiceCallReadiness =
+  | { ready: true; missing: null }
+  | { ready: false; missing: "voice_channel" | "runtime" | "vendor_key" | "encryption" };
+
+/**
+ * Whether an agent's voice is ready for sessions. It reads the agent's own `voice` block, which its
+ * caller already holds, and only the key's presence. `readiness` says what is missing, for the
+ * operator's dashboard; `isAvailable` is the yes or no a page may learn, and names nothing about
+ * the vendor or the key.
  */
 export interface VoiceSessionAvailabilityPort {
+  /** Rejects when the credential store cannot be read. */
+  readiness(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<VoiceCallReadiness>;
+  /** Never rejects: a store that cannot be read reads as not ready, and is logged. */
   isAvailable(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<boolean>;
 }
 

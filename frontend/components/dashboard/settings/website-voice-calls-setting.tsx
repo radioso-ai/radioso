@@ -6,10 +6,12 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { agentsApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { llmProvidersApi } from '@/lib/api-llm-providers'
-import { voiceCallReadiness, voiceCallReadinessHint, type VoiceCallReadiness } from '@/lib/voice-call-readiness'
+import { providerDisplayName } from '@/lib/api-llm-providers'
+import type { VoiceCallReadiness } from '@/lib/api-types'
+import { voiceCallReadinessHint } from '@/lib/voice-call-readiness'
 
-type Loaded = { offered: boolean; readiness: VoiceCallReadiness }
+/** `readiness` is the backend's; absent, the page treats voice as not ready and names every piece. */
+type Loaded = { offered: boolean; readiness: VoiceCallReadiness | null; vendorName: string }
 
 /**
  * The website widget's switch for voice calls: on, the embed shows Talk while the agent's voice is
@@ -23,19 +25,13 @@ export function WebsiteVoiceCallsSetting({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     let active = true
-    Promise.all([
-      agentsApi.getAgent(agentId),
-      // A teammate who cannot read the stored keys still sees the switch, with every piece named.
-      llmProvidersApi.listCredentials().then(
-        (list) => list.credentials.map((credential) => credential.provider as string),
-        () => null,
-      ),
-    ]).then(
-      ([agent, storedProviders]) => {
+    agentsApi.getAgent(agentId).then(
+      (agent) => {
         if (!active) return
         setLoaded({
           offered: agent.surfaceSettings.websiteEmbed.voiceCallsOffered,
-          readiness: voiceCallReadiness({ voice: agent.voice, storedProviders }),
+          readiness: agent.voiceCallReadiness ?? null,
+          vendorName: agent.voice.runtime ? providerDisplayName[agent.voice.runtime.vendor] : 'vendor',
         })
       },
       (loadError: unknown) => {
@@ -66,14 +62,15 @@ export function WebsiteVoiceCallsSetting({ agentId }: { agentId: string }) {
     }
   }
 
-  const { offered, readiness } = loaded
+  const { offered, readiness, vendorName } = loaded
+  const ready = readiness?.ready === true
   return (
     <div className="mt-5 rounded-xl border border-border bg-background/60 p-4">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <Label htmlFor="websiteEmbedVoiceCalls" className="text-sm font-medium text-foreground">Offer calls on the website</Label>
           <p id="websiteEmbedVoiceCallsHint" className="mt-1 text-xs text-muted-foreground">
-            {readiness.ready ? 'Visitors see Talk beside Send and can talk to the agent.' : voiceCallReadinessHint(readiness)}
+            {ready ? 'Visitors see Talk beside Send and can talk to the agent.' : voiceCallReadinessHint(readiness?.missing ?? undefined, vendorName)}
           </p>
         </div>
         <Switch
@@ -81,7 +78,7 @@ export function WebsiteVoiceCallsSetting({ agentId }: { agentId: string }) {
           aria-describedby="websiteEmbedVoiceCallsHint"
           checked={offered}
           onCheckedChange={(checked) => void save(checked)}
-          disabled={isSaving || (!readiness.ready && !offered)}
+          disabled={isSaving || (!ready && !offered)}
         />
       </div>
       {error ? <p className="mt-2 text-xs text-destructive" role="alert">{error}</p> : null}

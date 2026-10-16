@@ -345,6 +345,13 @@ describe("serializeAgentConfig", () => {
     }]);
   });
 
+  it("never exports the website embed's calls switch on, so an import cannot offer calls on another site", () => {
+    const agent = fullyConfiguredAgent();
+    agent.surfaceSettings.websiteEmbed.voiceCallsOffered = true;
+
+    expect(serializeAgentConfig(agent).surfaceSettings.websiteEmbed.voiceCallsOffered).toBe(false);
+  });
+
   it("classifies portability and never emits raw secret or reference values", () => {
     const config = serializeAgentConfig(fullyConfiguredAgent());
 

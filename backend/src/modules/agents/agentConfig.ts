@@ -600,7 +600,8 @@ const serializeWebsiteEmbed = (websiteEmbed: WebsiteEmbedSurfaceSettings): Websi
   theme: cloneJson(websiteEmbed.theme),
   copy: cloneJson(websiteEmbed.copy),
   expertOverrides: cloneJson(websiteEmbed.expertOverrides),
-  voiceCallsOffered: websiteEmbed.voiceCallsOffered,
+  // Offering calls is the destination operator's own choice, like the token it needs: never exported on.
+  voiceCallsOffered: false,
 });
 
 const serializeSurfaceExtensions = (extensions: Record<string, unknown>): Record<string, unknown> => {

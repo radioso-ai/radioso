@@ -2398,6 +2398,24 @@ components:
         type: string
         pattern: ^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$
       maxProperties: 10
+    VoiceCallReadiness:
+      type: object
+      properties:
+        ready:
+          type: boolean
+        missing:
+          type:
+            - string
+            - "null"
+          enum:
+            - voice_channel
+            - runtime
+            - vendor_key
+            - encryption
+      required:
+        - ready
+        - missing
+      description: "Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it."
     ConversationAgent:
       allOf:
         - $ref: "#/components/schemas/Agent"
@@ -2561,6 +2579,15 @@ components:
             - chatModelOverride
             - skillSettings
             - surfaceSettings
+    AgentDetail:
+      allOf:
+        - $ref: "#/components/schemas/ConversationAgent"
+        - type: object
+          properties:
+            voiceCallReadiness:
+              allOf:
+                - $ref: "#/components/schemas/VoiceCallReadiness"
+                - description: "Present for dashboard sessions: whether the agent's voice is ready for the website embed's calls switch."
     AgentListResponse:
       type: object
       properties:
@@ -23191,7 +23218,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ConversationAgent"
+                $ref: "#/components/schemas/AgentDetail"
         "401":
           description: Authentication required
           content:

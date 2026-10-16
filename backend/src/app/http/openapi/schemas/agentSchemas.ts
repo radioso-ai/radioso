@@ -163,6 +163,16 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const VoiceCallReadinessSchema = registry.register(
+    "VoiceCallReadiness",
+    z.object({
+      ready: z.boolean(),
+      missing: z.enum(["voice_channel", "runtime", "vendor_key", "encryption"]).nullable(),
+    }).openapi({
+      description: "Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it.",
+    }),
+  );
+
   const ConversationAgentSchema = registry.register(
     "ConversationAgent",
     AgentSchema.extend({
@@ -213,6 +223,15 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       }).nullable(),
       skillSettings: z.record(z.unknown()),
       surfaceSettings: ConversationAgentSurfaceSettingsSchema,
+    }),
+  );
+
+  const AgentDetailSchema = registry.register(
+    "AgentDetail",
+    ConversationAgentSchema.extend({
+      voiceCallReadiness: VoiceCallReadinessSchema.optional().openapi({
+        description: "Present for dashboard sessions: whether the agent's voice is ready for the website embed's calls switch.",
+      }),
     }),
   );
 
@@ -1168,6 +1187,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     ConversationAgentSurfaceSettingsSchema,
     AgentSourceScopeSchema,
     ConversationAgentSchema,
+    AgentDetailSchema,
     AgentListResponseSchema,
     ConversationAgentRequestSchema,
     AgentChannelLifecycleSchema,

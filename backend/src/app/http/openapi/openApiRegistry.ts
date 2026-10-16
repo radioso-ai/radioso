@@ -182,6 +182,7 @@ export interface OpenApiSchemaCatalog {
   ConnectorValidationIssueSchema: z.ZodTypeAny;
   ConversationAgentRequestSchema: z.ZodTypeAny;
   ConversationAgentSchema: z.ZodTypeAny;
+  AgentDetailSchema: z.ZodTypeAny;
   ConversationAgentSurfaceSettingsSchema: z.ZodTypeAny;
   conversationParamsSchema: RouteParameterSchema;
   visitorConversationsParamsSchema: RouteParameterSchema;

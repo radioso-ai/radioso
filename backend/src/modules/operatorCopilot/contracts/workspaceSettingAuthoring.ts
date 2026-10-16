@@ -16,9 +16,10 @@ import type {
  * at all — the anonymous-chat and embed tokens (rotation is never-list), the assistant logo (Ray
  * can neither produce the bytes nor judge the result), the embed theme, copy packs, and expert
  * overrides, which are visual design rather than configuration Ray can reason about, and the
- * embed's `voiceCallsOffered` switch: offering calls puts a microphone prompt on the operator's
- * live site and spends the workspace's own voice vendor minutes, so it is the operator's choice in
- * the dashboard, like the vendor key it depends on. Leaving them off the payload means no adapter
+ * embed's `voiceCallsOffered` switch, which decides whether every visitor to the operator's live
+ * site sees a Talk button and a microphone prompt: that is the operator's choice in the dashboard.
+ * The switch governs only the button; whether calls can start at all is voice readiness, which
+ * Ray reaches through the agent's `voice` block. Leaving them off the payload means no adapter
  * written against it can touch them.
  */
 const copilotWorkspaceSettingFields = {

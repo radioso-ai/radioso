@@ -107,7 +107,8 @@ const isUnreadableCredential = (error: unknown): boolean =>
  * starter over `fetch`, the workspace's vendor key from the workspace credential store, and a
  * registry of started sessions (`VoiceSessionRepository` in production). A vendor key is always the workspace's own; there is no
  * deployment fallback, so a workspace without one gets no session. The same service tells a page
- * whether to offer sessions, from the key's presence alone (`hasCredentials` decrypts nothing).
+ * whether to offer sessions, from the key's presence alone (`hasCredentials` decrypts nothing) and
+ * whether the backend holds the master key to read it.
  */
 export const createVoiceSessionStartComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
@@ -115,6 +116,7 @@ export const createVoiceSessionStartComposition = (deps: {
   credentials: {
     getApiKey(workspaceId: string, provider: VoiceVendor): Promise<string | undefined>;
     hasCredentials(workspaceId: string, provider: VoiceVendor): Promise<boolean>;
+    isEncryptionConfigured(): boolean;
   };
   fetch: typeof globalThis.fetch;
   metricsRegistry: MetricsRegistry | null;
@@ -132,7 +134,10 @@ export const createVoiceSessionStartComposition = (deps: {
           throw error;
         }
       },
-      isStored: ({ workspaceId, vendor }) => deps.credentials.hasCredentials(workspaceId, vendor),
+      presence: async ({ workspaceId, vendor }) => {
+        if (!await deps.credentials.hasCredentials(workspaceId, vendor)) return "missing";
+        return deps.credentials.isEncryptionConfigured() ? "stored" : "unreadable";
+      },
     },
     starters: { elevenlabs: createElevenLabsSessionStarter({ fetch: deps.fetch }) },
     starts: deps.starts,

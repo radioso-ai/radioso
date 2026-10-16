@@ -9,8 +9,8 @@ import {
 } from "./dashboard-fixtures";
 
 // The website widget's "Offer calls on the website" switch: the operator's own choice, which the
-// dashboard lets them switch on only once the agent's voice is ready (on, a runtime bound, the
-// vendor key stored), and which it saves on the agent's website embed block.
+// dashboard lets them switch on only once the backend says the agent's voice is ready, and which
+// it saves on the agent's website embed block.
 
 const readyVoice = {
   enabled: true,
@@ -35,7 +35,7 @@ test("an operator offers calls on the website once voice is ready, and the choic
     platformSettings,
     agentUpdates,
     agentSettingsOverrides: { voice: readyVoice },
-    storedProviderCredentials: ["elevenlabs"],
+    voiceCallReadiness: { ready: true, missing: null },
   });
   await openWebChat(page);
 
@@ -65,14 +65,18 @@ test("the switch stays off with one line naming what voice still needs", async (
   await expect(page.getByText("Turn on the voice channel on the API page first.")).toBeVisible();
 });
 
-test("a bound runtime without the vendor key asks for the key", async ({ page }) => {
+for (const [missing, hint] of [
+  ["vendor_key", "Store the ElevenLabs key under Settings → Providers first."],
+  ["encryption", "Radioso cannot read the stored ElevenLabs key. Set CONNECTOR_ENCRYPTION_KEY, then enter the key again."],
+] as const) test(`a bound runtime whose ${missing} is missing says so`, async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     platformSettings: basePlatformSettings(),
     agentSettingsOverrides: { voice: readyVoice },
+    voiceCallReadiness: { ready: false, missing },
   });
   await openWebChat(page);
 
   await expect(page.getByRole("switch", { name: "Offer calls on the website" })).toBeDisabled();
-  await expect(page.getByText("Store the ElevenLabs key under Settings → Providers first.")).toBeVisible();
+  await expect(page.getByText(hint)).toBeVisible();
 });

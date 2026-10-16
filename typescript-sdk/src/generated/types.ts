@@ -5456,6 +5456,12 @@ export interface components {
                 acknowledgement: string[];
             };
         };
+        /** @description Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it. */
+        VoiceCallReadiness: {
+            ready: boolean;
+            /** @enum {string|null} */
+            missing: "voice_channel" | "runtime" | "vendor_key" | "encryption" | null;
+        };
         ConversationAgent: components["schemas"]["Agent"] & {
             isDefault: boolean;
             customInstruction: string;
@@ -5510,6 +5516,9 @@ export interface components {
                 [key: string]: unknown;
             };
             surfaceSettings: components["schemas"]["ConversationAgentSurfaceSettings"];
+        };
+        AgentDetail: components["schemas"]["ConversationAgent"] & {
+            voiceCallReadiness?: components["schemas"]["VoiceCallReadiness"] & unknown;
         };
         AgentListResponse: {
             agents: components["schemas"]["ConversationAgent"][];
@@ -15902,7 +15911,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConversationAgent"];
+                    "application/json": components["schemas"]["AgentDetail"];
                 };
             };
             /** @description Authentication required */

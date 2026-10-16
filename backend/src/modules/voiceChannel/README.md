@@ -43,8 +43,11 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `VoiceSessionStarter` for the session, and mints the session key (a UUID).
   The same service is the `VoiceSessionAvailabilityPort`: by the gate a start
   passes (`voice.enabled`, a bound `voice.runtime`) and the presence of that
-  vendor's key (`isStored`, which decrypts nothing), it says whether a page
-  should offer calls at all.
+  vendor's key (`presence`, which decrypts nothing and reads `unreadable`
+  when the backend has no master key), `readiness` names the first missing
+  piece for the dashboard (`GET /api/v1/agents/:agentId` returns it as
+  `voiceCallReadiness` to dashboard sessions) and `isAvailable` is the yes
+  or no the embed config may carry.
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
   `voice_sessions`. The first binding wins.
 - `adapters/*` translate one wire to the domain port and back, and nothing

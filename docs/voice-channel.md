@@ -253,9 +253,15 @@ minute and a CDN in front of the app host for up to five, so the button can
 take that long to appear or disappear after a change.
 
 Ray can draft the agent's `voice` block, but it leaves this switch to you: it
-puts a microphone prompt on your live site and spends your ElevenLabs minutes.
-The switch is `surfaceSettings.websiteEmbed.voiceCallsOffered` on
-`PUT /api/v1/agents/:agentId`, `false` unless you set it.
+decides whether every visitor to your live site sees **Talk** and a microphone
+prompt. The switch is `surfaceSettings.websiteEmbed.voiceCallsOffered` on
+`PUT /api/v1/agents/:agentId`, `false` unless you set it, and each change is
+recorded in the audit log as `website_embed.voice_calls_offered.changed`. An
+agent bundle always exports it as `false`, so an imported agent offers no calls
+until you turn them on. For a dashboard session, `GET /api/v1/agents/:agentId`
+also returns `voiceCallReadiness`: `{ "ready": true, "missing": null }`, or the
+first missing piece as `voice_channel`, `runtime`, `vendor_key` or
+`encryption` (a key is stored but `CONNECTOR_ENCRYPTION_KEY` is not set).
 
 When a visitor presses **Talk**:
 

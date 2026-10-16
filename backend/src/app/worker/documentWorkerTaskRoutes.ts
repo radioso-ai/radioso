@@ -21,9 +21,9 @@ const facetDrainTaskSchema = z.object({
   analysisEnd: z.coerce.date(),
 });
 
-// One recovery request must have a predictable LLM-work budget even when the
-// facet worker's normal poll-loop batch size is configured much higher. A
-// stricter worker configuration remains authoritative.
+// One recovery request must have a predictable LLM-work budget even when the generic
+// job-port runtime's own poll-loop batch size (FACET_EXTRACTION_WORKER_BATCH_SIZE) is
+// configured much higher. This fixed recovery cap remains authoritative on Cloud Run.
 const FACET_RECOVERY_MAX_JOBS = 10;
 const FACET_TASK_DRAIN_MAX_JOBS = 100;
 

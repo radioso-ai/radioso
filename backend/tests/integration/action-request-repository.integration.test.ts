@@ -169,6 +169,31 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
       expect(await repository.complete(second!)).toBe("deleted");
     });
 
+    it("never hands the same row to two concurrent claimers (FOR UPDATE SKIP LOCKED)", async () => {
+      const rows = await Promise.all(Array.from({ length: 20 }, () => enqueue()));
+      const ids = rows.map((row) => row.id);
+
+      const claims = await Promise.all(
+        Array.from({ length: 30 }, () => repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] })),
+      );
+
+      const claimedIds = claims.flatMap((claim) => (claim ? [claim.id] : []));
+      expect(claimedIds).toHaveLength(20);
+      expect(new Set(claimedIds)).toEqual(new Set(ids));
+    });
+
+    it("renewLease genuinely extends the lease, so a short-lease claimNext right after does not reclaim it", async () => {
+      await enqueue();
+      const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 1 }] });
+      expect(claim).not.toBeNull();
+
+      expect(await repository.renewLease(claim!, { leaseSeconds: 300 })).toBe(true);
+
+      // Renewal refreshed `updated_at` to now; a claimer using the same 1 s lease right after
+      // must see the row as still held, not stale, so it finds nothing to reclaim.
+      expect(await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 1 }] })).toBeNull();
+    });
+
     it("excludes ids already claimed this call, even once the row is genuinely due by the database's own clock", async () => {
       const row = await enqueue();
       const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });

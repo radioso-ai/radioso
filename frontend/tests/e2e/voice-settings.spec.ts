@@ -44,6 +44,8 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
   await voiceSwitch.click();
   await expect(card.getByLabel("Voice runtime")).toContainText("ElevenLabs");
   await card.getByLabel("ElevenLabs agent id").fill(`  ${VENDOR_AGENT_ID}  `);
+  await card.getByLabel("Data residency").click();
+  await page.getByRole("option", { name: "European Union" }).click();
 
   const english = await addLanguage(card, "English");
   await english.getByRole("button", { name: "Add check line" }).click();
@@ -81,7 +83,7 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
           it: { acknowledge: [], check: [ITALIAN_BRIDGE_LINE] },
         },
         fallbackLine: {},
-        runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID },
+        runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID, region: "eu" },
       },
       mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } },
     },
@@ -90,7 +92,7 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
         enabled: true,
         bridgeLines: { en: { acknowledge: [], check: [BRIDGE_LINE] } },
         fallbackLine: { en: FALLBACK_LINE },
-        runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID },
+        runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID, region: "eu" },
       },
       mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } },
     },
@@ -101,6 +103,7 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
   const reloaded = page.locator("#voice-channel");
   await expect(reloaded.getByRole("switch", { name: "Voice channel" })).toBeChecked();
   await expect(reloaded.getByLabel("ElevenLabs agent id")).toHaveValue(VENDOR_AGENT_ID);
+  await expect(reloaded.getByLabel("Data residency")).toContainText("European Union");
   const reloadedEnglish = reloaded.getByRole("group", { name: "Voice lines: English" });
   await expect(reloadedEnglish.getByRole("textbox", { name: "Check line 1" })).toHaveValue(BRIDGE_LINE);
   await expect(reloadedEnglish.getByRole("textbox", { name: "Check line 2" })).toHaveCount(0);
@@ -120,7 +123,7 @@ test("an operator unbinds the ElevenLabs agent, clears the voice lines, then the
         enabled: true,
         bridgeLines: { en: { acknowledge: [], check: [BRIDGE_LINE] } },
         fallbackLine: { en: FALLBACK_LINE },
-        runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID },
+        runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID, region: "eu" },
       },
       mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } },
     },

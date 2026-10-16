@@ -97,7 +97,7 @@ describe("copilot agent readers", () => {
       enabled: true,
       bridgeLines: { en: { acknowledge: [], check: ["Let me check that for you, it only takes a moment."] } },
       fallbackLine: { en: "Sorry, this is taking much longer than it should, could you ask me again?" },
-      runtime: { vendor: "elevenlabs" as const, agentId: "agent_01jxk2v9qbe8n7r6t5w4" },
+      runtime: { vendor: "elevenlabs" as const, agentId: "agent_01jxk2v9qbe8n7r6t5w4", region: "us" as const },
     };
     const ports = dependencies(undefined, resolvedAgent(undefined, { voice }));
     const tool = ports.descriptors.find((descriptor) => descriptor.name === "agent_configuration")!;

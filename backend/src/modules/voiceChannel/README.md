@@ -108,7 +108,7 @@ helpers and the shared chat message limit from `app/http`
 ## Decisions to keep
 
 - **Session start.** The voice domain owns the ports: `VoiceSessionStarter`
-  (`startSession({ vendorAgentId, credential })` → `{ signedUrl, expiresAt? }`,
+  (`startSession({ vendorAgentId, region, credential })` → `{ signedUrl, expiresAt? }`,
   one adapter per vendor), `VoiceVendorCredentialReader`
   (`read({ workspaceId, vendor })` → `present`, `missing` or `unreadable`;
   it rejects only when the store cannot be read), and the start registry
@@ -131,8 +131,13 @@ helpers and the shared chat message limit from `app/http`
   for 15 minutes and opens sessions for whoever holds it until then, so it
   goes only to the page that asked, with `Cache-Control: no-store`, and never
   into a log, metric or row. The ElevenLabs starter follows no redirect, reads
-  at most 16 KB, and returns only a `wss://` URL on an allow-listed host
-  (`api.elevenlabs.io`).
+  at most 16 KB, and returns only a `wss://` URL on the host of the account's
+  data residency region. One table in the adapter maps `voice.runtime.region`
+  (`us`, `eu`, `in`, `sg`) to the host the request goes to and the signed URL
+  must be on, so a start for an EU account calls
+  `api.eu.residency.elevenlabs.io` and refuses a URL from any other host. A
+  body that stalls past the 5 s request limit is a `timeout`, not a malformed
+  answer.
 - **The session key is a correlation handle.** The start mints it (a UUID) and
   records it in `voice_sessions` with the visitor's public session and visitor
   key until `VOICE_BEHAVIOR.sessionStartTtlMs` (15 minutes); the session's

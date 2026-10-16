@@ -1,11 +1,17 @@
 import { request } from './api-client'
+import type { AgentVoiceSettings } from './api-types'
 
 export const llmProviderNames = ['openai', 'openai-compatible', 'gemini', 'claude'] as const
 export type LlmProviderName = (typeof llmProviderNames)[number]
 
+/** The voice runtimes the API names, from the generated contract. */
+export type VoiceVendorName = NonNullable<AgentVoiceSettings['runtime']>['vendor']
+/** Every vendor the contract names, and only those: a vendor added to the API fails this list's type until it is here. */
+const listEveryVoiceVendor = <const Names extends readonly VoiceVendorName[]>(
+  names: Names & (Exclude<VoiceVendorName, Names[number]> extends never ? unknown : never),
+) => names
 /** Voice runtimes whose key the workspace holds beside its model provider keys; none has a deployment fallback. */
-export const voiceVendorNames = ['elevenlabs'] as const
-export type VoiceVendorName = (typeof voiceVendorNames)[number]
+export const voiceVendorNames = listEveryVoiceVendor(['elevenlabs'])
 export type CredentialProviderName = LlmProviderName | VoiceVendorName
 
 export const llmCapabilityNames = ['chat', 'rewrite', 'rerank'] as const

@@ -5405,7 +5405,7 @@ export interface components {
                 url: string;
             };
         };
-        /** @description How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens; null binds none. An update replaces the block whole. */
+        /** @description How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); null binds none. An update replaces the block whole. */
         AgentVoiceSettings: {
             enabled: boolean;
             bridgeLines: {
@@ -5421,9 +5421,11 @@ export interface components {
                 /** @enum {string} */
                 vendor: "elevenlabs";
                 agentId: string;
+                /** @enum {string} */
+                region: "us" | "eu" | "in" | "sg";
             } | null;
         };
-        /** @description The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, which binds the agent to no vendor agent. The update replaces the block whole. */
+        /** @description The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, which binds the agent to no vendor agent, and `runtime.region` may be left out for the vendor's default region, `us`. A key either object does not name is refused. The update replaces the block whole. */
         AgentVoiceSettingsUpdate: {
             enabled: boolean;
             bridgeLines: {
@@ -5439,6 +5441,8 @@ export interface components {
                 /** @enum {string} */
                 vendor: "elevenlabs";
                 agentId: string;
+                /** @enum {string} */
+                region?: "us" | "eu" | "in" | "sg";
             } | null;
         };
         /** @description What the agent says, word for word, to a greeting, thanks, farewell, or acknowledgement, keyed by language tag (at most 10). Each locale entry holds every mechanic, each with at most 5 lines of 1 to 200 characters. When a turn is one of these mechanics and the agent has a line for it in the turn's language, the reply is an authored line, rotated per conversation. An update replaces the block whole. */
@@ -6533,7 +6537,7 @@ export interface components {
             locale: string;
             /**
              * Format: date-time
-             * @description When `signedUrl` stops opening sessions, when the vendor states it.
+             * @description When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL.
              */
             expiresAt?: string;
         };

@@ -9,7 +9,7 @@ import { adminSessionHeaders, createTestApp, issueTestSession } from "../support
 const SITE = "https://example.com";
 const VENDOR_KEY = "xi-workspace-secret-0123456789";
 const SIGNED_URL = "wss://api.elevenlabs.io/v1/convai/conversation?agent_id=agent_42&conversation_signature=sig";
-const boundVoice = { enabled: true, bridgeLines: {}, fallbackLine: {}, runtime: { vendor: "elevenlabs", agentId: "agent_42" } };
+const boundVoice = { enabled: true, bridgeLines: {}, fallbackLine: {}, runtime: { vendor: "elevenlabs", agentId: "agent_42", region: "us" } };
 
 type VendorFetch = typeof globalThis.fetch;
 
@@ -86,6 +86,17 @@ describe("public voice session start contract", () => {
     const [url, init] = vendorFetch.mock.calls[0];
     expect(url).toBe("https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=agent_42");
     expect(init?.headers).toEqual({ "xi-api-key": VENDOR_KEY });
+  });
+
+  it("starts an EU-residency account's session on the EU host", async () => {
+    const euSignedUrl = "wss://api.eu.residency.elevenlabs.io/v1/convai/conversation?agent_id=agent_42&conversation_signature=sig";
+    const vendorFetch = vendorAnswering(200, { signed_url: euSignedUrl });
+    const { visitor } = await embedWorkspace({ vendorFetch, voice: { ...boundVoice, runtime: { ...boundVoice.runtime, region: "eu" } } });
+
+    const response = await (await visitor()).startVoiceSession().expect(200);
+
+    expect(vendorFetch.mock.calls[0][0]).toBe("https://api.eu.residency.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=agent_42");
+    expect(response.body.signedUrl).toBe(euSignedUrl);
   });
 
   it("mints a new session key for every start", async () => {

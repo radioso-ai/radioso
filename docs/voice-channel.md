@@ -127,8 +127,12 @@ does.
    `/api/v1/settings/credentials/elevenlabs` do the same from the dashboard
    session.
 2. On the agent's **Voice** card, turn on **Voice channel**. Under
-   **Runtime**, keep **ElevenLabs** and enter the ElevenLabs agent id (the
-   `agent_…` id of the agent you connected above), then select **Save voice
+   **Runtime**, keep **ElevenLabs**, enter the ElevenLabs agent id (the
+   `agent_…` id of the agent you connected above), and pick the **Data
+   residency** of your ElevenLabs account: United States (the default),
+   European Union, India or Singapore. An account on ElevenLabs data residency
+   lives only on its region's host (`api.eu.residency.elevenlabs.io` for the
+   EU), so a wrong region reads like a wrong key. Then select **Save voice
    settings**.
 3. Add the page's origin to the website embed's allowed origins. Only a
    website embed session can start a call, because only its origin is checked.
@@ -172,7 +176,8 @@ The start answers with the session the page opens:
 }
 ```
 
-`signedUrl` is valid until `expiresAt`, 15 minutes after the start, and
+`signedUrl` is valid until `expiresAt`, which Radioso sets 15 minutes after
+the start from the validity ElevenLabs documents, and
 ElevenLabs lets anyone holding it open sessions on your agent until then. Treat
 it as a credential: hand it to the ElevenLabs client once, and never store, log
 or share it. The response carries `Cache-Control: no-store`.
@@ -332,9 +337,11 @@ to 10 for each map. Each style holds up to 5 lines, and every line is 1 to 200
 characters. The lines above follow the
 [first-sentence length rule](#elevenlabs-first-sentence-length) for the
 `elevenlabs` dialect. `runtime` is the vendor agent a Radioso-started session
-opens: `vendor` is `elevenlabs`, and `agentId` is the vendor's own agent id, 1
-to 128 letters, digits, underscores and hyphens; any other key in it is
-refused. `null` binds none. A new agent
+opens: `vendor` is `elevenlabs`, `agentId` is the vendor's own agent id, 1 to
+128 letters, digits, underscores and hyphens, and `region` is the ElevenLabs
+account's data residency region, `us` (the default when you leave it out),
+`eu`, `in` or `sg`; any other key in it is refused, as is any key the `voice`
+block itself does not name. `null` binds none. A new agent
 starts with `"enabled": false`, empty maps and `"runtime": null`.
 
 What happens on a turn while `enabled` is true:

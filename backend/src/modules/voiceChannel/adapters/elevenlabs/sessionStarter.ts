@@ -1,18 +1,26 @@
 import { z } from "zod";
 
+import type { VoiceVendorRegion } from "../../../../shared/domain/voiceVendor.js";
 import { VoiceVendorRequestError, type VoiceSessionStarter } from "../../domain.js";
 
-const SIGNED_URL_ENDPOINT = "https://api.elevenlabs.io/v1/convai/conversation/get-signed-url";
+/**
+ * The ElevenLabs host that serves an account in each data residency region, as ElevenLabs
+ * documents them. The signed-URL request goes to the account's host, and the signed URL handed to
+ * the browser must be on that same host: the page opens whatever URL it gets, so one from any
+ * other host is refused rather than passed on.
+ */
+const API_HOST_OF_REGION: Readonly<Record<VoiceVendorRegion, string>> = {
+  us: "api.elevenlabs.io",
+  eu: "api.eu.residency.elevenlabs.io",
+  in: "api.in.residency.elevenlabs.io",
+  sg: "api.sg.residency.elevenlabs.io",
+};
+const SIGNED_URL_PATH = "/v1/convai/conversation/get-signed-url";
 /** ElevenLabs states that a signed URL opens sessions for 15 minutes after it is issued. */
 const SIGNED_URL_VALIDITY_MS = 15 * 60_000;
 const REQUEST_TIMEOUT_MS = 5_000;
 /** A signed-URL answer is a few hundred bytes; anything far larger is not one. */
 const MAX_RESPONSE_BYTES = 16 * 1024;
-/**
- * The hosts whose signed URLs the starter hands a browser. The page opens whatever URL it gets, so
- * one from any other host is refused rather than passed on.
- */
-const SIGNED_URL_HOSTS: ReadonlySet<string> = new Set(["api.elevenlabs.io"]);
 
 /**
  * The slice of `fetch` the starter uses, so tests and composition can hand in their own. A redirect
@@ -26,10 +34,10 @@ type SignedUrlFetch = (
 
 const signedUrlResponseSchema = z.object({ signed_url: z.string() });
 
-const isAllowedSignedUrl = (value: string): boolean => {
+const isSignedUrlOnHost = (value: string, host: string): boolean => {
   try {
     const url = new URL(value);
-    return url.protocol === "wss:" && SIGNED_URL_HOSTS.has(url.hostname);
+    return url.protocol === "wss:" && url.hostname === host;
   } catch {
     return false;
   }
@@ -64,7 +72,7 @@ const readBoundedText = async (response: Response): Promise<string | null> => {
   return Buffer.concat(chunks).toString("utf8");
 };
 
-const parseSignedUrl = (text: string): string | null => {
+const parseSignedUrl = (text: string, host: string): string | null => {
   let body: unknown;
   try {
     body = JSON.parse(text);
@@ -72,8 +80,12 @@ const parseSignedUrl = (text: string): string | null => {
     return null;
   }
   const parsed = signedUrlResponseSchema.safeParse(body);
-  return parsed.success && isAllowedSignedUrl(parsed.data.signed_url) ? parsed.data.signed_url : null;
+  return parsed.success && isSignedUrlOnHost(parsed.data.signed_url, host) ? parsed.data.signed_url : null;
 };
+
+/** A body read that failed: the request's time ran out mid-body, or the connection broke. */
+const bodyReadFailure = (error: unknown, signal: AbortSignal, status: number): VoiceVendorRequestError =>
+  new VoiceVendorRequestError(signal.aborted || (error instanceof Error && error.name === "TimeoutError") ? "timeout" : "unreachable", status);
 
 /**
  * Opens ElevenLabs Agents sessions: one signed URL per session, requested with the workspace's
@@ -82,27 +94,38 @@ const parseSignedUrl = (text: string): string | null => {
 export const createElevenLabsSessionStarter = (dependencies: {
   fetch: SignedUrlFetch;
   now?: () => number;
+  /** The whole request's limit, answer body included; tests only. */
+  requestTimeoutMs?: number;
 }): VoiceSessionStarter => ({
-  startSession: async ({ vendorAgentId, credential }) => {
+  startSession: async ({ vendorAgentId, region, credential }) => {
     const requestedAt = (dependencies.now ?? Date.now)();
-    const url = `${SIGNED_URL_ENDPOINT}?${new URLSearchParams({ agent_id: vendorAgentId }).toString()}`;
+    const host = API_HOST_OF_REGION[region];
+    const url = `https://${host}${SIGNED_URL_PATH}?${new URLSearchParams({ agent_id: vendorAgentId }).toString()}`;
+    const signal = AbortSignal.timeout(dependencies.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
     let response: Response;
     try {
       response = await dependencies.fetch(url, {
         method: "GET",
         headers: { "xi-api-key": credential.apiKey },
         redirect: "error",
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal,
       });
-    } catch {
-      throw new VoiceVendorRequestError("unreachable");
+    } catch (error) {
+      throw signal.aborted || (error instanceof Error && error.name === "TimeoutError")
+        ? new VoiceVendorRequestError("timeout")
+        : new VoiceVendorRequestError("unreachable");
     }
     if (!response.ok) {
       await discardBody(response);
       throw new VoiceVendorRequestError("rejected", response.status);
     }
-    const text = await readBoundedText(response).catch(() => null);
-    const signedUrl = text === null ? null : parseSignedUrl(text);
+    let text: string | null;
+    try {
+      text = await readBoundedText(response);
+    } catch (error) {
+      throw bodyReadFailure(error, signal, response.status);
+    }
+    const signedUrl = text === null ? null : parseSignedUrl(text, host);
     if (!signedUrl) {
       throw new VoiceVendorRequestError("malformed_response", response.status);
     }

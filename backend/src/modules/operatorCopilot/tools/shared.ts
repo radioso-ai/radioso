@@ -139,7 +139,7 @@ export const agentSettingReachNote = "Two settings change who can reach the agen
  */
 export const agentSettingWholeBlockNote = "voice and mechanicsReplies replace the stored block whole, so send every line the agent keeps, as agent_configuration shows them. "
   + `On the elevenlabs voice dialect a bridge or fallback line shorter than ${ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS} characters waits for the answer, so write each as one full sentence at least that long. `
-  + "voice.runtime binds the agent to one vendor agent ({ vendor: \"elevenlabs\", agentId: the ElevenLabs agent id }) or to none (null), and a page can start voice sessions only while voice.enabled is true and a runtime is bound; "
+  + "voice.runtime binds the agent to one vendor agent ({ vendor: \"elevenlabs\", agentId: the ElevenLabs agent id, region: the data residency region of the ElevenLabs account, \"us\" (the default), \"eu\", \"in\" or \"sg\" }) or to none (null), and a page can start voice sessions only while voice.enabled is true and a runtime is bound; "
   + "keep the stored runtime unless the operator asks to change it. Starting a session also needs the workspace's key for that vendor: the operator enters the vendor's API key in Settings, and you never ask for or write it.";
 
 export const scopedAgentDraftPublicationNote = "It drafts a proposal for operator review and changes nothing until the operator applies it. Applying a scoped authoring change saves a private agent draft. The current published revision and ongoing conversations are retained; use Review & Publish before new customer conversations use the change. Unversioned/live fields remain live.";

@@ -19,6 +19,8 @@ import {
   VOICE_MAX_LANGUAGES,
   VOICE_MAX_LINE_LENGTH,
   VOICE_MAX_LINES,
+  VOICE_RUNTIME_AGENT_ID_MAX_LENGTH,
+  VOICE_RUNTIME_REGIONS,
   emptyVoiceLanguageLines,
   isBelowElevenLabsSpokenFloor,
   voiceSettingsFormAfterSave,
@@ -28,11 +30,16 @@ import {
   type VoiceBridgeStyle,
   type VoiceLanguageLines,
   type VoiceRuntimeForm,
+  type VoiceRuntimeRegion,
   type VoiceSettingsForm,
 } from '@/lib/voice-settings-form'
 
-/** The agent settings API's bound on a vendor agent id. */
-const VOICE_RUNTIME_AGENT_ID_MAX_LENGTH = 128
+const VOICE_RUNTIME_REGION_LABELS: Record<VoiceRuntimeRegion, string> = {
+  us: 'United States (default)',
+  eu: 'European Union',
+  in: 'India',
+  sg: 'Singapore',
+}
 
 const BRIDGE_STYLE_LABELS: ReadonlyArray<[VoiceBridgeStyle, string]> = [
   ['check', 'Check'],
@@ -120,7 +127,7 @@ function VoiceRuntimeEditor({ runtime, onChange }: { runtime: VoiceRuntimeForm; 
           Calls open on this {vendorLabel} agent. Add the {vendorLabel} API key under Settings → Providers.
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <div className="space-y-2">
           <Label htmlFor="voiceRuntimeVendor" className="text-foreground">Voice runtime</Label>
           <Select value={runtime.vendor} onValueChange={(value) => onChange({ ...runtime, vendor: voiceVendorNames.find((vendor) => vendor === value) ?? runtime.vendor })}>
@@ -144,6 +151,19 @@ function VoiceRuntimeEditor({ runtime, onChange }: { runtime: VoiceRuntimeForm; 
             autoComplete="off"
             onChange={(event) => onChange({ ...runtime, agentId: event.target.value })}
           />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="voiceRuntimeRegion" className="text-foreground">Data residency</Label>
+          <Select value={runtime.region} onValueChange={(value) => onChange({ ...runtime, region: VOICE_RUNTIME_REGIONS.find((region) => region === value) ?? runtime.region })}>
+            <SelectTrigger id="voiceRuntimeRegion" className="w-full min-w-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {VOICE_RUNTIME_REGIONS.map((region) => (
+                <SelectItem key={region} value={region}>{VOICE_RUNTIME_REGION_LABELS[region]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
     </div>

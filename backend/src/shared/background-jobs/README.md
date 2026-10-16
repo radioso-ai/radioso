@@ -67,7 +67,11 @@ of `updated_at`. One job kind, `chat.action_dispatch`, carries every action
 table has no `kind` column); `backend/src/modules/chat/services/actions/
 actionDispatchJob.ts`'s `createActionDispatchJobHandler` resolves it against
 the existing `ActionHandlerRegistry` and reproduces the outbox's own retry
-contract through the port growth above: a flat 60 s `retryDelaysSeconds`,
+contract through the port growth above: a growing `retryDelaysSeconds`
+(`[60, 120, 300, 600]`, about 18 minutes across 4 retries — this runtime
+wakes a retry at its own `availableAt`, so a flat 60 s schedule would
+exhaust all 5 attempts in about 4 minutes instead of riding out a longer
+outage the way the old poll-driven worker's effective window did),
 `onAttemptFailed`/`onDeadLetter` for the handler's two
 `recordFailureOutcome` outcomes, and a handler-returned `skipped` result for
 a transport that deliberately delivers nothing. `ActionHandler`

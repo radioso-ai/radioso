@@ -4,8 +4,13 @@ import { z } from "zod";
 import { BACKGROUND_JOB_DRAIN_BUDGET_SECONDS } from "../../shared/background-jobs/index.js";
 import type { AppDependencies } from "../server/types.js";
 
-/** A pushed wake stands for one job: one dispatch per push, mirroring the shared background-job drain route. */
-const DEFAULT_DRAIN_MAX_JOBS = 1;
+/**
+ * One pushed wake drains a full batch, not a single row: a turn that enqueues several actions
+ * (for example two routine steps that each dispatch) still sends only one push, so a push that
+ * stopped at one job left every action after the first waiting for the next push or the recovery
+ * sweep. Matches `ActionDispatchWorker`'s old per-drain batch size.
+ */
+const DEFAULT_DRAIN_MAX_JOBS = 20;
 
 /** Mirrors `backgroundJobWorkerTaskRoutes.ts`'s drain budget: long enough for one drain request,
  *  short enough that Cloud Tasks and Cloud Scheduler never retry a drain still in flight. */
@@ -15,9 +20,14 @@ const drainSchema = z.object({
   maxJobs: z.number().int().min(1).max(50).default(DEFAULT_DRAIN_MAX_JOBS),
 }).default({});
 
-/** The recovery sweep's own default, carried over from `ActionDispatchWorker`'s batch size. */
+/**
+ * The recovery sweep's own default: well above one push's batch, since this route exists to
+ * clear a backlog a push never reached (lost pushes, a worker outage). `ActionDispatchWorker`'s
+ * old recovery route achieved an equivalent ceiling by looping up to 10 batches of 20 rows; this
+ * route's `maxJobs` already bounds individual rows directly, so the same ceiling is one number.
+ */
 const drainRecoverySchema = z.object({
-  maxJobs: z.number().int().min(1).max(50).default(5),
+  maxJobs: z.number().int().min(1).max(500).default(200),
 }).default({});
 
 type ActionDispatchWorkerTaskRouteDependencies = Pick<AppDependencies, "actionDispatchJobRuntime">;

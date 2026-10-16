@@ -2,12 +2,13 @@ import type { z } from "zod";
 
 import type {
   BackgroundJobContext,
-  BackgroundJobDeadLetterContext,
   BackgroundJobDuplicateKeyMode,
+  BackgroundJobFailureContext,
   BackgroundJobHandlerRegistration,
   BackgroundJobKind,
   BackgroundJobPolicy,
   BackgroundJobRequest,
+  BackgroundJobSkipped,
 } from "./types.js";
 
 /**
@@ -71,7 +72,15 @@ export const defineBackgroundJob = <TPayload>(definition: {
     leaseSeconds: definition.leaseSeconds ?? DEFAULT_POLICY.leaseSeconds,
     timeoutSeconds: definition.timeoutSeconds ?? DEFAULT_POLICY.timeoutSeconds,
     retryBaseDelaySeconds: definition.retryBaseDelaySeconds ?? DEFAULT_POLICY.retryBaseDelaySeconds,
+    ...(definition.retryDelaysSeconds ? { retryDelaysSeconds: definition.retryDelaysSeconds } : {}),
   };
+  if (
+    policy.retryDelaysSeconds &&
+    (policy.retryDelaysSeconds.length === 0 ||
+      policy.retryDelaysSeconds.some((seconds) => !(Number.isFinite(seconds) && seconds > 0)))
+  ) {
+    throw new Error(`Background job kind "${definition.kind}" needs a non-empty retryDelaysSeconds of positive seconds`);
+  }
   if (!Number.isInteger(policy.maxAttempts) || policy.maxAttempts < 1) {
     throw new Error(`Background job kind "${definition.kind}" needs at least one attempt`);
   }
@@ -108,19 +117,26 @@ export const backgroundJobRequest = <TPayload>(
 
 /**
  * Registers the function that runs one kind. The runtime parses each stored payload before calling
- * it. `onDeadLetter` runs once when a job of the kind is dead-lettered, for any reason: its last
+ * it; `handle` resolves with a {@link BackgroundJobSkipped} to mean "done, but delivered nothing by
+ * design." `onAttemptFailed` runs once per attempt the runtime is about to retry (not the terminal
+ * one). `onDeadLetter` runs once when a job of the kind is dead-lettered, for any reason: its last
  * attempt failed or passed its deadline, it failed for good, its stored payload no longer parses
- * (the hook then gets `null`), or its attempts ran out on crashed workers. Keep it to a quick write
- * through `context.transaction`.
+ * (both hooks then get `null`), or its attempts ran out on crashed workers. Keep either hook to a
+ * quick write through `context.transaction`.
  */
 export const backgroundJobHandler = <TPayload>(
   job: BackgroundJobKind<TPayload>,
-  handle: (payload: TPayload, context: BackgroundJobContext) => Promise<void>,
+  handle: (payload: TPayload, context: BackgroundJobContext) => Promise<BackgroundJobSkipped | void>,
   options: {
-    onDeadLetter?: (payload: TPayload | null, context: BackgroundJobDeadLetterContext) => Promise<void>;
+    onAttemptFailed?: (payload: TPayload | null, context: BackgroundJobFailureContext) => Promise<void>;
+    onDeadLetter?: (payload: TPayload | null, context: BackgroundJobFailureContext) => Promise<void>;
   } = {},
 ): BackgroundJobHandlerRegistration => {
-  const onDeadLetter = options.onDeadLetter;
+  const { onAttemptFailed, onDeadLetter } = options;
+  const parseForHook = (payload: unknown): TPayload | null => {
+    const parsed = job.payload.safeParse(payload);
+    return parsed.success ? parsed.data : null;
+  };
   return {
     kind: job.kind,
     policy: job.policy,
@@ -129,13 +145,19 @@ export const backgroundJobHandler = <TPayload>(
       if (!parsed.success) {
         throw new InvalidBackgroundJobPayloadError(job.kind);
       }
-      await handle(parsed.data, context);
+      return handle(parsed.data, context);
     },
+    ...(onAttemptFailed
+      ? {
+          onAttemptFailed: async (payload: unknown, context: BackgroundJobFailureContext) => {
+            await onAttemptFailed(parseForHook(payload), context);
+          },
+        }
+      : {}),
     ...(onDeadLetter
       ? {
-          onDeadLetter: async (payload: unknown, context: BackgroundJobDeadLetterContext) => {
-            const parsed = job.payload.safeParse(payload);
-            await onDeadLetter(parsed.success ? parsed.data : null, context);
+          onDeadLetter: async (payload: unknown, context: BackgroundJobFailureContext) => {
+            await onDeadLetter(parseForHook(payload), context);
           },
         }
       : {}),

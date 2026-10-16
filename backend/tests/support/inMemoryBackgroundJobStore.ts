@@ -6,6 +6,7 @@ import type {
   BackgroundJobCompletion,
   BackgroundJobEnqueueReceipt,
   BackgroundJobRequest,
+  BackgroundJobSkipped,
   BackgroundJobStore,
   BackgroundJobWriter,
 } from "../../src/shared/background-jobs/index.js";
@@ -69,11 +70,12 @@ export class InMemoryBackgroundJobStore implements BackgroundJobStore, Backgroun
     return { inserted: true, jobId: id };
   }
 
-  async claimNext(input: { kinds: readonly BackgroundJobClaimableKind[] }): Promise<BackgroundJobClaim | null> {
+  async claimNext(input: { kinds: readonly BackgroundJobClaimableKind[]; excludeIds?: readonly string[] }): Promise<BackgroundJobClaim | null> {
     const now = this.clock.now().getTime();
     const leases = new Map(input.kinds.map((entry) => [entry.kind, entry.leaseSeconds]));
+    const excluded = new Set(input.excludeIds ?? []);
     const due = [...this.rows.values()]
-      .filter((row) => leases.has(row.kind))
+      .filter((row) => leases.has(row.kind) && !excluded.has(row.id))
       .filter((row) =>
         (row.status === "pending" && row.availableAt.getTime() <= now) ||
         (row.status === "running" && row.leaseExpiresAt !== null && row.leaseExpiresAt.getTime() < now))
@@ -105,7 +107,8 @@ export class InMemoryBackgroundJobStore implements BackgroundJobStore, Backgroun
     return true;
   }
 
-  async complete(claim: BackgroundJobClaim): Promise<BackgroundJobCompletion> {
+  /** No distinct "skipped" row state: a handler-returned skip completes exactly like success does. */
+  async complete(claim: BackgroundJobClaim, _outcome?: BackgroundJobSkipped): Promise<BackgroundJobCompletion> {
     const row = this.current(claim);
     if (!row) return "superseded";
     if (row.rerunRequested) {
@@ -119,9 +122,15 @@ export class InMemoryBackgroundJobStore implements BackgroundJobStore, Backgroun
     return "deleted";
   }
 
-  async retry(claim: BackgroundJobClaim, input: { error: string; delaySeconds: number }): Promise<Date | null> {
+  /** Mirrors `deadLetter`: the hook runs before the row changes, so a throw leaves it as it was. */
+  async retry(
+    claim: BackgroundJobClaim,
+    input: { error: string; delaySeconds: number },
+    onRetried?: (transaction: Db) => Promise<void>,
+  ): Promise<Date | null> {
     const row = this.current(claim);
     if (!row) return null;
+    await onRetried?.(IN_MEMORY_TRANSACTION);
     this.release(row);
     row.lastError = input.error;
     row.availableAt = new Date(this.clock.now().getTime() + input.delaySeconds * 1_000);

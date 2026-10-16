@@ -8,7 +8,7 @@ import { AppError } from "../../../src/shared/domain/errors.js";
 import { WORKER_TASK_AUTH_HEADER } from "../../../src/shared/infra/workerTaskAuth.js";
 import { createTestDependencies } from "../../support/testApp.js";
 
-const drained = { claimed: 1, completed: 1, requeued: 0, retried: 0, deadLettered: 0, superseded: 0 };
+const drained = { claimed: 1, completed: 1, skipped: 0, requeued: 0, retried: 0, deadLettered: 0, superseded: 0 };
 const taskToken = "0123456789abcdef0123456789abcdef";
 const DRAIN_PATH = "/internal/tasks/background-jobs/drain";
 const RETENTION_PATH = "/internal/tasks/background-job-retention/sweep";
@@ -111,7 +111,7 @@ describe("background job routes on the worker task server", () => {
     const response = await request(app).post(DRAIN_PATH).set(WORKER_TASK_AUTH_HEADER, taskToken).send({});
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ claimed: 0, completed: 0, requeued: 0, retried: 0, deadLettered: 0, superseded: 0 });
+    expect(response.body).toEqual({ claimed: 0, completed: 0, skipped: 0, requeued: 0, retried: 0, deadLettered: 0, superseded: 0 });
     expect(drain).toHaveBeenCalledWith({ maxJobs: 1, budgetMs: 270_000, startedAt: expect.any(Number) });
   });
 

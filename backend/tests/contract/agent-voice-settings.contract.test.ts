@@ -71,6 +71,19 @@ describe("agent voice settings contract", () => {
     expect(updated.body.voice).toEqual({ ...withoutRuntime, runtime: null });
   });
 
+  it("refuses a voice block carrying a key it does not name, naming the key", async () => {
+    const { app, authorization, agentId } = await agentWithToken("agent-voice-extra-key@example.com");
+
+    const refused = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({ voice: { ...voice, apiKey: "xi-secret-0123456789" } })
+      .expect(400);
+
+    expect(JSON.stringify(refused.body.error)).toContain("apiKey");
+    expect(JSON.stringify(refused.body)).not.toContain("xi-secret-0123456789");
+  });
+
   it("keeps the voice block when a dashboard save sends the other settings without it", async () => {
     const { app, authorization, dashboard, agentId } = await agentWithToken("agent-voice-dashboard-save@example.com");
     await request(app).put(`/api/v1/agents/${agentId}`).set("Authorization", authorization).send({ voice }).expect(200);

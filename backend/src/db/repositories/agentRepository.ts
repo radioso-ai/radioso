@@ -26,9 +26,8 @@ import {
   type AuthoredDirectiveInput,
   type NormalizedAuthoredDirectiveInput,
   type AgentGreetingSnapshot,
-  readStoredAgentVoiceSettings,
-  readStoredAgentMechanicsReplies,
-  expectedAgentFieldValue,
+  changedAgentProposalFields,
+  storedAgentFieldReaders,
 } from "../../modules/agents/public.js";
 import { parseDirectiveLifecycle } from "../../modules/directives/public.js";
 import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
@@ -552,8 +551,8 @@ const mapAgent = (
     greetingInstruction: readString(greeting, "greetingInstruction"),
     assistantDefaultLocale: readString(greeting, "assistantDefaultLocale") ?? null,
     proactiveGreetingEnabled: readBoolean(greeting, "proactiveGreetingEnabled"),
-    voice: readStoredAgentVoiceSettings(behavior.voice),
-    mechanicsReplies: readStoredAgentMechanicsReplies(behavior.mechanicsReplies),
+    voice: storedAgentFieldReaders.voice(behavior.voice),
+    mechanicsReplies: storedAgentFieldReaders.mechanicsReplies(behavior.mechanicsReplies),
     chatModelOverride: chatOverride,
     publicId: row.public_id,
     publicDescription: row.public_description,
@@ -605,15 +604,6 @@ export type AgentProposalCasOutcome =
 export type AgentProposalCasGuard =
   | { readonly expectedFields: ReadonlyArray<{ key: string; value: unknown }>; readonly expectedDefaultAgentId?: string; readonly normalizeLocked?: (current: AgentRecord) => AgentInput; readonly onCommitted?: OwnerCommitHook<{ readonly agentId: string }> }
   | { readonly expectedUpdatedAt: Date; readonly expectedDefaultAgentId?: string; readonly normalizeLocked?: (current: AgentRecord) => AgentInput; readonly onCommitted?: OwnerCommitHook<{ readonly agentId: string }> };
-
-const proposalFieldValue = (agent: AgentRecord, key: string): unknown => {
-  if (key === "anonymousChatEnabled") return agent.surfaceSettings.anonymousChat.enabled;
-  if (key === "websiteEmbedEnabled") return agent.surfaceSettings.websiteEmbed.enabled;
-  if (key === "websiteEmbedAllowedOrigins") return agent.surfaceSettings.websiteEmbed.allowedOrigins;
-  if (key === "websiteEmbedLauncherLabel") return agent.surfaceSettings.websiteEmbed.launcherLabel;
-  if (key === "websiteEmbedLauncherPosition") return agent.surfaceSettings.websiteEmbed.launcherPosition;
-  return (agent as unknown as Record<string, unknown>)[key];
-};
 
 export interface AgentDirectiveUpdateOptions {
   expectedUpdatedAt?: Date;
@@ -855,9 +845,7 @@ export class AgentRepository implements AgentRepositoryPort {
 
       const previous = mapAgent(row, this.surfaceExtensions, this.skillSettings);
       if ("expectedFields" in guard) {
-        const changed = guard.expectedFields
-          .filter((field) => JSON.stringify(proposalFieldValue(previous, field.key)) !== JSON.stringify(expectedAgentFieldValue(field.key, field.value)))
-          .map((field) => field.key);
+        const changed = changedAgentProposalFields(previous, guard.expectedFields);
         if (changed.length > 0) return { outcome: "changed", fields: changed };
       } else if (previous.updatedAt.getTime() !== guard.expectedUpdatedAt.getTime()) {
         return { outcome: "changed", fields: ["target"] };

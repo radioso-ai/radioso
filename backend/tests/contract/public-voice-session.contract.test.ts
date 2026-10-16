@@ -195,7 +195,10 @@ describe("public voice session start contract", () => {
 
   it("gives each visitor session its own small budget, which a fresh cookie does not refill", async () => {
     const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
-    const { visitor } = await embedWorkspace({ vendorFetch, envOverrides: { PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS: 2 } });
+    const { visitor } = await embedWorkspace({
+      vendorFetch,
+      envOverrides: { PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS: 2, PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 10 },
+    });
     const first = await visitor();
     const second = await visitor();
 
@@ -213,9 +216,24 @@ describe("public voice session start contract", () => {
     expect(vendorFetch).toHaveBeenCalledTimes(4);
   });
 
+  it("runs a caller out of starts at its source budget, however many public sessions it mints", async () => {
+    const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
+    const { visitor } = await embedWorkspace({ vendorFetch });
+
+    // Each start comes from a fresh public session, so each session budget is untouched.
+    for (let start = 0; start < 3; start += 1) await (await visitor()).startVoiceSession().expect(200);
+    const limited = await (await visitor()).startVoiceSession().expect(429);
+
+    expect(limited.body.error.code).toBe("rate_limit_exceeded");
+    expect(vendorFetch).toHaveBeenCalledTimes(3);
+  });
+
   it("caps the workspace's starts across visitors", async () => {
     const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
-    const { visitor } = await embedWorkspace({ vendorFetch, envOverrides: { PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 2 } });
+    const { visitor } = await embedWorkspace({
+      vendorFetch,
+      envOverrides: { PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 2, PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 10 },
+    });
 
     await (await visitor()).startVoiceSession().expect(200);
     await (await visitor()).startVoiceSession().expect(200);

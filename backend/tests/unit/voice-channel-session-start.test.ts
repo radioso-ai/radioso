@@ -74,7 +74,7 @@ describe("voice session start", () => {
     expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "started" }]);
   });
 
-  it("records the minted key with the visitor who asked for it before asking the vendor, until the start expires", async () => {
+  it("records the minted key with the visitor who asked for it before asking the vendor, for well past the URL's validity", async () => {
     const { service, register, startSession } = serviceWith();
 
     await service.start({ workspaceId, agentId, visitor });
@@ -82,7 +82,7 @@ describe("voice session start", () => {
     expect(register).toHaveBeenCalledWith({
       session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey },
       visitor,
-      expiresAt: new Date(now + 15 * 60_000),
+      expiresAt: new Date(now + 60 * 60_000),
     });
     expect(register.mock.invocationCallOrder[0]).toBeLessThan(startSession.mock.invocationCallOrder[0]);
   });

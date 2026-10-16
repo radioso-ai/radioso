@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { VOICE_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 import type { VoiceVendorRegion } from "../../../../shared/domain/voiceVendor.js";
 import { VoiceVendorRequestError, type VoiceSessionStarter } from "../../domain.js";
 
@@ -16,8 +17,6 @@ const API_HOST_OF_REGION: Readonly<Record<VoiceVendorRegion, string>> = {
   sg: "api.sg.residency.elevenlabs.io",
 };
 const SIGNED_URL_PATH = "/v1/convai/conversation/get-signed-url";
-/** ElevenLabs states that a signed URL opens sessions for 15 minutes after it is issued. */
-const SIGNED_URL_VALIDITY_MS = 15 * 60_000;
 const REQUEST_TIMEOUT_MS = 5_000;
 /** A signed-URL answer is a few hundred bytes; anything far larger is not one. */
 const MAX_RESPONSE_BYTES = 16 * 1024;
@@ -129,6 +128,6 @@ export const createElevenLabsSessionStarter = (dependencies: {
     if (!signedUrl) {
       throw new VoiceVendorRequestError("malformed_response", response.status);
     }
-    return { signedUrl, expiresAt: new Date(requestedAt + SIGNED_URL_VALIDITY_MS) };
+    return { signedUrl, expiresAt: new Date(requestedAt + VOICE_BEHAVIOR.elevenLabsSignedUrlValidityMs) };
   },
 });

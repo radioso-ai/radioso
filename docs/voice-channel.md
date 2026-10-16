@@ -185,18 +185,23 @@ or share it. The response carries `Cache-Control: no-store`.
 `sessionKey` is a correlation handle, not a credential. ElevenLabs sends it
 back on every turn, so the call is one conversation, and the call's first turn
 joins the website visitor who started it, so the Inbox and Activity show the
-call next to that visitor's chats. Each start mints a new key. `locale` is
+call next to that visitor's chats. Radioso remembers that visitor for an hour
+after the start, well past the URL's 15 minutes; a call whose first turn comes
+later still is its own conversation with no visitor. Each start mints a new key. `locale` is
 optional in the request. It tells Radioso which language the caller speaks, so
 bridge and fallback lines come in that language; leave it out and the response
 carries the agent's default locale, or `en`.
 
 Every start opens a session ElevenLabs bills to your account, so starts spend
 their own small budgets before ElevenLabs is called: by default 3 per visitor
-session every 10 minutes, and 30 a minute per workspace. Operators tune them
-with `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS`,
+session and 3 per visitor address every 10 minutes, so minting a new public
+session for each start runs out just the same, and 30 a minute per workspace.
+Operators tune them with `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS`,
+`PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS`,
 `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS`,
 `PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS` and
-`PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS`. Set the
+`PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS`. Visitors behind
+one office network share an address, and so share its budget. Set the
 ElevenLabs agent's concurrency and daily call limits too: they bound what a
 leaked signed URL or a busy day can cost.
 

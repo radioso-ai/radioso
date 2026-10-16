@@ -9,6 +9,7 @@ export interface PublicVoiceSessionRateLimiterDependencies {
   env: Pick<Env,
     | "PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS"
     | "PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS"
+    | "PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS"
     | "PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS"
     | "PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS"
   >;
@@ -30,11 +31,12 @@ const subjectOf = (req: Parameters<RequestHandler>[0], res: Parameters<RequestHa
 };
 
 /**
- * Spends a voice session start's two budgets in one consumption, before the vendor is called: the
- * visitor's and the workspace's. The visitor budget is keyed on the signed public session id
- * together with the request source, never on the rate-limit cookie, which the public session check
- * mints afresh for a caller that sends none. Runs after that check; a request it left without a
- * session or a source is refused rather than let through unlimited.
+ * Spends a voice session start's three budgets in one consumption, before the vendor is called.
+ * The visitor's two: one keyed on the signed public session id together with the request source,
+ * and one on the request source alone, so a caller that mints a fresh public session for each
+ * start still runs out; neither reads the rate-limit cookie, which the public session check mints
+ * afresh for a caller that sends none. And the workspace's. Runs after that check; a request it
+ * left without a session or a source is refused rather than let through unlimited.
  */
 export const publicVoiceSessionStartRateLimiter = (dependencies: PublicVoiceSessionRateLimiterDependencies): RequestHandler[] => [
   (req, res, next) => {
@@ -51,6 +53,12 @@ export const publicVoiceSessionStartRateLimiter = (dependencies: PublicVoiceSess
           scope: "public.voice.session_start",
           subjectKey: `${subject.workspaceId}:session:${subject.publicSessionId}:source:${subject.sourceDigest}`,
           limit: dependencies.env.PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS,
+          windowMs: dependencies.env.PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS,
+        },
+        {
+          scope: "public.voice.session_start.source",
+          subjectKey: `${subject.workspaceId}:source:${subject.sourceDigest}`,
+          limit: dependencies.env.PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS,
           windowMs: dependencies.env.PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS,
         },
         {

@@ -313,6 +313,13 @@ export interface AppDependencies {
   /** Reports the outbox's pending/in-progress depth on its own interval, not tied to a drain. */
   actionOutboxQueueDepthReporter: PeriodicTaskRunner;
   /**
+   * Emits the same outbox depth/oldest-pending-age signal on demand — best-effort, never throws.
+   * The poll worker's interval (`actionOutboxQueueDepthReporter`) covers the local/dev runtime;
+   * the push worker's task route calls this directly after every pushed drain and sweep, since
+   * Cloud Run only runs that process while a request is in flight and never starts an interval.
+   */
+  reportActionOutboxQueueState: () => Promise<void>;
+  /**
    * Runs durable background jobs (`background_jobs`): a poll loop in the worker runtime, the
    * `/internal/tasks/background-jobs/drain` route in the worker-task runtime. Present in every
    * dependency build; only the worker runtimes start or drain it.

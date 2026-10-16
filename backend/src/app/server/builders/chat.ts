@@ -577,34 +577,41 @@ export const buildChatServices = (input: {
     errorReporter: input.errorReporter,
   });
   // Outbox depth / oldest-pending-age — the operator-alertable signal for a stuck outbox.
-  // Reported on its own interval, not tied to a drain: unlike an edge-triggered log, a
-  // permanently stuck backlog never produces another claim to report on, so a stale gauge
-  // would hide it. `ActionDispatchWorker`'s own interval (5 s) carries over unchanged.
+  // Shared by the poll worker's own interval (below, `ActionDispatchWorker`'s old 5 s carried
+  // over unchanged) and the push worker's task route (`actionDispatchWorkerTaskRoutes.ts`),
+  // which has no interval of its own — Cloud Run's push worker only runs while a request is in
+  // flight, so without this call after every pushed drain and sweep, production never emits
+  // this signal at all. Best-effort and self-contained: never throws, so a reporting failure
+  // never fails the drain or sweep request it rides on.
+  const reportActionOutboxQueueState = async (): Promise<void> => {
+    try {
+      const snapshot = await actionOutbox.getPendingDepthSnapshot();
+      const oldestPendingAgeMs = snapshot.oldestPendingCreatedAt
+        ? Math.max(0, Date.now() - snapshot.oldestPendingCreatedAt.getTime())
+        : 0;
+      await input.telemetryService.emit({
+        eventType: "action.dispatch.queue_state",
+        metrics: {
+          pendingCount: snapshot.pendingCount,
+          inProgressCount: snapshot.inProgressCount,
+          oldestPendingAgeMs,
+        },
+      });
+    } catch (error) {
+      input.logger.error(
+        { err: error instanceof Error ? error.message : String(error) },
+        "Action dispatch queue-depth reporting failed",
+      );
+    }
+  };
+  // Reported on its own interval in the poll worker, not tied to a drain: unlike an
+  // edge-triggered log, a permanently stuck backlog never produces another claim to report on,
+  // so a stale gauge would hide it.
   const actionOutboxQueueDepthReporter = new PeriodicTaskRunner({
     id: "action-outbox-queue-depth",
     intervalMs: 5_000,
     logger: input.logger,
-    run: async () => {
-      try {
-        const snapshot = await actionOutbox.getPendingDepthSnapshot();
-        const oldestPendingAgeMs = snapshot.oldestPendingCreatedAt
-          ? Math.max(0, Date.now() - snapshot.oldestPendingCreatedAt.getTime())
-          : 0;
-        await input.telemetryService.emit({
-          eventType: "action.dispatch.queue_state",
-          metrics: {
-            pendingCount: snapshot.pendingCount,
-            inProgressCount: snapshot.inProgressCount,
-            oldestPendingAgeMs,
-          },
-        });
-      } catch (error) {
-        input.logger.error(
-          { err: error instanceof Error ? error.message : String(error) },
-          "Action dispatch queue-depth reporting failed",
-        );
-      }
-    },
+    run: reportActionOutboxQueueState,
   });
 // Routine machinery (spec 070 / #520). The owning routines module loads the
   // per-turn catalog, applies capability gates, and assembles the runtime ports.
@@ -1052,6 +1059,7 @@ export const buildChatServices = (input: {
     retrievalAnswerService,
     actionDispatchJobRuntime,
     actionOutboxQueueDepthReporter,
+    reportActionOutboxQueueState,
     // The chat-owned kinds the worker's background job runtime runs.
     backgroundJobHandlers: [conversationSummaryRefreshHandler(conversationSummaryService)],
     // For producers outside the turn that write the outbox in their own transaction (a

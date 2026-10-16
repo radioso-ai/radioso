@@ -2823,6 +2823,7 @@ export const createTestDependencies = (overrides: {
     revisionEvalRunService,
     actionDispatchJobRuntime,
     actionOutboxQueueDepthReporter,
+    reportActionOutboxQueueState: async () => undefined,
     // Background jobs never run in tests; a runtime with no handlers claims nothing.
     backgroundJobRuntime: new BackgroundJobRuntime({
       store: {

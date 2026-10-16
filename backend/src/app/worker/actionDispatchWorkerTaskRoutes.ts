@@ -30,7 +30,10 @@ const drainRecoverySchema = z.object({
   maxJobs: z.number().int().min(1).max(500).default(200),
 }).default({});
 
-type ActionDispatchWorkerTaskRouteDependencies = Pick<AppDependencies, "actionDispatchJobRuntime">;
+type ActionDispatchWorkerTaskRouteDependencies = Pick<
+  AppDependencies,
+  "actionDispatchJobRuntime" | "reportActionOutboxQueueState"
+>;
 
 export const createActionDispatchWorkerTaskRoutes = (
   dependencies: ActionDispatchWorkerTaskRouteDependencies,
@@ -50,11 +53,17 @@ export const createActionDispatchWorkerTaskRoutes = (
       return;
     }
     try {
-      res.status(200).json(await dependencies.actionDispatchJobRuntime.drain({
+      const result = await dependencies.actionDispatchJobRuntime.drain({
         maxJobs: parsed.data.maxJobs,
         budgetMs: DRAIN_BUDGET_MS,
         startedAt,
-      }));
+      });
+      // The push worker runs no interval of its own (Cloud Run only runs this process while a
+      // request is in flight), so this is the only place production emits the outbox's
+      // depth/oldest-pending-age signal. Best-effort: never throws, never delays the response on
+      // a reporting failure.
+      await dependencies.reportActionOutboxQueueState();
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }
@@ -72,11 +81,13 @@ export const createActionDispatchWorkerTaskRoutes = (
       return;
     }
     try {
-      res.status(200).json(await dependencies.actionDispatchJobRuntime.drain({
+      const result = await dependencies.actionDispatchJobRuntime.drain({
         maxJobs: parsed.data.maxJobs,
         budgetMs: DRAIN_BUDGET_MS,
         startedAt,
-      }));
+      });
+      await dependencies.reportActionOutboxQueueState();
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

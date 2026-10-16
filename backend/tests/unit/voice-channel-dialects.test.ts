@@ -10,6 +10,8 @@ import {
   heardUntilFor,
 } from "../../src/modules/voiceChannel/adapters/openaiCompletions/requestSchema.js";
 import { heardPrefixLength } from "../../src/modules/voiceChannel/services/speechText.js";
+import { ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS } from "../../src/modules/voiceChannel/public.js";
+import { readFileSync } from "node:fs";
 
 const dialect = (id: string): CompletionsDialect => {
   const found = findCompletionsDialect(id);
@@ -23,6 +25,7 @@ describe("completions dialects", () => {
     expect(dialect("generic")).toMatchObject({ id: "generic" });
     // ElevenLabs holds a first sentence shorter than about 45 characters until more text arrives.
     expect(dialect("elevenlabs").minReleasableSentenceChars).toBe(45);
+    expect(dialect("elevenlabs").minReleasableSentenceChars).toBe(ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS);
     expect(dialect("generic")).not.toHaveProperty("minReleasableSentenceChars");
     expect(findCompletionsDialect("vapi")).toBeNull();
     expect(findCompletionsDialect("toString")).toBeNull();
@@ -139,5 +142,16 @@ describe("completions dialects", () => {
       expect(heardPrefixLength("We open at nine!", "We open at nine")).toBeNull();
       expect(heardPrefixLength("We open at nine.", "We close at")).toBeNull();
     });
+  });
+});
+
+describe("the elevenlabs first-sentence floor outside the voice module", () => {
+  // frontend/lib/voice-settings-form.ts is a separate workspace package with no shared contract
+  // package for this number, so the Voice card's mirror is read as source text and pinned here.
+  it("is the number the dashboard's Voice card warns at", () => {
+    const source = readFileSync(new URL("../../../frontend/lib/voice-settings-form.ts", import.meta.url), "utf8");
+    const mirrored = source.match(/export const ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS = (\d+)/)?.[1];
+    if (!mirrored) throw new Error("ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS moved out of frontend/lib/voice-settings-form.ts; update this test.");
+    expect(Number(mirrored)).toBe(ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS);
   });
 });

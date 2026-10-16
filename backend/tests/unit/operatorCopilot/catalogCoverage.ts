@@ -243,18 +243,7 @@ export const internalRuntimeCoverageExclusions = {
   // `POST /api/v1/agents/:agentId/voice/:dialect/v1/chat/completions` speaks a vendor-owned OpenAI wire
   // format, not Radioso's API contract, so it has no OpenAPI operation for the catalog map above.
   voiceCompletionsAdapter: deferred(
-    "Deferred exclusion: vendor-facing wire adapter; operators configure what it says through the agent's voice settings block (voiceSettingsBlock).",
-  ),
-  // The agent's `voice` block rides on `updateAgent`, but `propose_agent_setting` cannot reach it by
-  // name (it is absent from agentInputFieldSchemas) and `prepare_agent_settings` does not carry it.
-  voiceSettingsBlock: deferred(
-    "Deferred exclusion: voice settings are authored through the settings API until the voice settings UI and Ray descriptor arrive.",
-  ),
-  // The agent's `mechanicsReplies` block rides on `updateAgent`, but `propose_agent_setting` cannot
-  // reach it by name (it is absent from agentInputFieldSchemas) and `prepare_agent_settings` does
-  // not carry it. Ray still reads it through agent_configuration, where it is a portable field.
-  mechanicsRepliesBlock: deferred(
-    "Deferred exclusion: authored mechanics replies are written through the settings API until a settings UI and a reviewed Ray descriptor exist; Ray reads them through agent_configuration.",
+    "Deferred exclusion: vendor-facing wire adapter; operators configure what it says through the agent's `voice` block, which propose_agent_setting and prepare_agent_settings carry.",
   ),
 } as const;
 

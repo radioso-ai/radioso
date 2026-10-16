@@ -89,12 +89,14 @@ helpers and the shared chat message limit from `app/http`
   `createAgentChannelChatResponse`, is Radioso's own contract and is
   registered.) The `voice` member of `ConversationChannelContext` is in
   OpenAPI, because history responses return it.
-- **Ray coverage.** The route and the settings block are deferred exclusions
-  in `tests/unit/operatorCopilot/catalogCoverage.ts`
-  (`internalRuntimeCoverageExclusions.voiceCompletionsAdapter`,
-  `voiceSettingsBlock`). `voice` is left out of `agentInputFieldSchemas`, so
-  `propose_agent_setting` refuses it by name; `fieldParity.ts` records the gap
-  for it and for `prepare_agent_settings`.
+- **Ray coverage.** The route is a deferred exclusion in
+  `tests/unit/operatorCopilot/catalogCoverage.ts`
+  (`internalRuntimeCoverageExclusions.voiceCompletionsAdapter`): a voice
+  runtime calls it, an operator does not. The settings block it reads is Ray's
+  to author: `voice` has an `agentInputFieldSchemas` entry, so
+  `propose_agent_setting` and `prepare_agent_settings` carry it whole, and
+  `agent_configuration` returns the stored block. Operators edit it in the
+  Voice card on the agent's Channels → API page.
 - **Turn policy.** Runs only while the agent's `voice.enabled` is true; with
   voice off a turn runs exactly as a plain chat turn. The bridge fires when the
   turn starts searching, 400 ms after it starts composing without speech, or
@@ -119,8 +121,10 @@ helpers and the shared chat message limit from `app/http`
   start and `check` otherwise; a session's first turn has no routine. Lines
   rotate per policy turn within the process. A runtime that holds a first
   sentence shorter than some length (`minReleasableSentenceChars` on the
-  dialect, 45 on `elevenlabs`, carried on `VoiceTurnInput`) gets only the
-  style's lines that reach it; when none does, the shorter line is spoken and
+  dialect; `ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS`, 45, on `elevenlabs`,
+  exported from `public.ts` for the Voice card and Ray's descriptors; carried
+  on `VoiceTurnInput`) gets only the style's lines that reach it; when none
+  does, the shorter line is spoken and
   the service warns once per agent per process. The locale is the request's
   (`VoiceTurnInput.locale`, read by the dialect), else the agent's
   `assistantDefaultLocale`, else `en`; chat stores no response language per

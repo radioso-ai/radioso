@@ -90,6 +90,23 @@ describe("copilot agent readers", () => {
     expect(serialized).not.toContain("https://private.example.com");
   });
 
+  it("returns the agent's voice block with its configuration, so a whole-block proposal starts from what is stored", async () => {
+    // `voice` is left out of the portable config (a materialized agent starts with voice off), and
+    // propose_agent_setting replaces it whole: without it here Ray would draft over lines it never saw.
+    const voice = {
+      enabled: true,
+      bridgeLines: { en: { acknowledge: [], check: ["Let me check that for you, it only takes a moment."] } },
+      fallbackLine: { en: "Sorry, this is taking much longer than it should, could you ask me again?" },
+    };
+    const ports = dependencies(undefined, resolvedAgent(undefined, { voice }));
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "agent_configuration")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")).invoke({}, {} as never) as { agent: Record<string, unknown> };
+
+    expect(result.agent.voice).toEqual(voice);
+    expect(result.agent.mechanicsReplies).toEqual({});
+  });
+
   it("reports whether a directive is enabled, in both the summary list and the detail view", async () => {
     const directives = [
       authoredDirective({

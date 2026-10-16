@@ -138,7 +138,11 @@ Both transports reach the same port through the same adapters; only outcome deri
 | `transfer.target` | string | E.164 number or SIP URI; the only source of a transfer destination |
 | `transfer.hours` | optional schedule | outside hours → callback instead of transfer; Phase 0 |
 
-Bridge delay and turn limit are composition constants, not settings. The block is settings-as-data (spec 079) and ships a Ray tool descriptor or a stated coverage-map exclusion.
+Bridge delay and turn limit are composition constants, not settings. The block is settings-as-data (spec 079).
+
+Operators edit it in the **Voice** card on the agent's Channels → API page (`frontend/components/dashboard/settings/voice-channel-card.tsx`), which saves `voice` and the agent's `mechanicsReplies` block together through `PUT /api/v1/agents/:agentId`, each replaced whole. The card states one rule inline: a bridge or fallback line is one full sentence of at least `ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS` characters (45, exported from `voiceChannel/public.ts` and read by the `elevenlabs` dialect), the shortest first sentence that dialect speaks before the answer arrives. It warns under a shorter line without blocking the save, since other dialects have no floor. The frontend mirrors the number in `frontend/lib/voice-settings-form.ts`, and `tests/unit/voice-channel-dialects.test.ts` pins the mirror to the export.
+
+Ray's descriptors: both blocks are entries of `agentInputFieldSchemas` and of `agentReviewedSettingsPatchSchema` (`backend/src/modules/agents/agentInputSchema.ts`), so `propose_agent_setting` (`settingKey: "voice"` or `"mechanicsReplies"`) and `prepare_agent_settings` carry each as a whole-block, live, reach-neutral change. Both descriptions carry `agentSettingWholeBlockNote` (`operatorCopilot/tools/shared.ts`, which states the same floor from the same export), and `agent_configuration` returns the stored `voice` block beside the portable config so a proposal starts from what is stored.
 
 ## 7. Conversation record
 

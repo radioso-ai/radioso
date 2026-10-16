@@ -17,6 +17,7 @@ import type { CopilotRepositoryPort } from "../service.js";
 import { summarizeProposalEvidence } from "../proposalEvidence.js";
 import { resolveProposalEvidence, type ProposalChange, type ProposalEvidenceDependencies } from "../services/proposalEvidenceService.js";
 import { badRequest } from "../../../shared/domain/errors.js";
+import { ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS } from "../../voiceChannel/public.js";
 
 export interface CopilotAgentListItem {
   readonly id: string;
@@ -130,6 +131,10 @@ export const requiredCopilotConversation = (context: { copilotConversationId?: s
  * is what makes the operator's review of those two an informed one.
  */
 export const agentSettingReachNote = "Two settings change who can reach the agent rather than how it answers: agentCardEnabled publishes its public cards, and publicAgentAccessEnabled lets any AI agent connect with no credential (it needs agentCardEnabled on too). When proposing either, say in the rationale what it opens or closes.";
+
+/** `voice` and `mechanicsReplies` are nested blocks with no merge: a value is the whole new block. */
+export const agentSettingWholeBlockNote = "voice and mechanicsReplies replace the stored block whole, so send every line the agent keeps, as agent_configuration shows them. "
+  + `On the elevenlabs voice dialect a bridge or fallback line shorter than ${ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS} characters waits for the answer, so write each as one full sentence at least that long.`;
 
 export const scopedAgentDraftPublicationNote = "It drafts a proposal for operator review and changes nothing until the operator applies it. Applying a scoped authoring change saves a private agent draft. The current published revision and ongoing conversations are retained; use Review & Publish before new customer conversations use the change. Unversioned/live fields remain live.";
 export const copilotProposalOrigin = (context: { copilotConversationId?: string; operatorMcpInvocationId?: string }) => {

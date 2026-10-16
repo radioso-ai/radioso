@@ -47,25 +47,7 @@ const VOICE_RUNTIME_LOADERS: Record<VoiceVendor, () => Promise<VoiceRuntime>> = 
   elevenlabs: async () => (await import('./voice-runtime-elevenlabs')).elevenLabsVoiceRuntime,
 }
 
-/**
- * A runtime that a script on the chat frame's own origin installed in place of the vendor's. The
- * end-to-end tests install one so they can drive a call without a vendor; a host page cannot reach
- * the frame's window, so it cannot install one.
- */
-const RUNTIME_OVERRIDE_KEY = '__radiosoVoiceRuntime'
-
-const installedRuntime = (): VoiceRuntime | null => {
-  if (typeof window === 'undefined') return null
-  const candidate = (window as unknown as Record<string, unknown>)[RUNTIME_OVERRIDE_KEY]
-  return candidate && typeof candidate === 'object' && typeof (candidate as VoiceRuntime).open === 'function'
-    ? (candidate as VoiceRuntime)
-    : null
-}
-
-export const loadVoiceRuntime = (vendor: VoiceVendor): Promise<VoiceRuntime> => {
-  const installed = installedRuntime()
-  return installed ? Promise.resolve(installed) : VOICE_RUNTIME_LOADERS[vendor]()
-}
+export const loadVoiceRuntime = (vendor: VoiceVendor): Promise<VoiceRuntime> => VOICE_RUNTIME_LOADERS[vendor]()
 
 const IOS_PLATFORMS = ['iPad Simulator', 'iPhone Simulator', 'iPod Simulator', 'iPad', 'iPhone', 'iPod']
 

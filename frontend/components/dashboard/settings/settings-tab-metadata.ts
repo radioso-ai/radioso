@@ -69,6 +69,11 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
         summary: 'Workspace API keys for OpenAI, Anthropic, Gemini, and OpenAI-compatible endpoints.',
       },
       {
+        id: 'voice-vendor-credentials',
+        label: 'Voice runtime keys',
+        summary: 'The ElevenLabs API key Radioso starts voice sessions with.',
+      },
+      {
         id: 'provider-models',
         label: 'Models',
         summary: 'Per-capability provider and model selection, including the workspace embedding model.',

@@ -1,5 +1,7 @@
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
+import type { VoiceVendor } from "../../shared/domain/voiceVendor.js";
+
 export type VoiceTransport = "phone" | "web";
 
 /** One voice session, which maps to exactly one conversation. */
@@ -78,3 +80,58 @@ export interface VoiceTurnPort {
 }
 
 export type VoiceChannelContext = Extract<ConversationChannelContext, { provider: "voice" }>;
+
+/** A vendor's API key, held by the workspace and read only to start that vendor's sessions. */
+export interface VoiceVendorCredential {
+  apiKey: string;
+}
+
+export interface VoiceVendorCredentialReader {
+  /** Null when the workspace holds no key for the vendor; throws when one is stored but cannot be read. */
+  read(input: { workspaceId: string; vendor: VoiceVendor }): Promise<VoiceVendorCredential | null>;
+}
+
+/** What a vendor hands back for a page to open a session on its agent. */
+export interface VoiceVendorSession {
+  /** The vendor's single-use URL for opening the session. A bearer: never logged. */
+  signedUrl: string;
+  /** When the URL stops opening sessions, when the vendor states it. */
+  expiresAt?: Date;
+}
+
+/** Opens sessions on one vendor's agents. One adapter per vendor implements it. */
+export interface VoiceSessionStarter {
+  startSession(input: { vendorAgentId: string; credential: VoiceVendorCredential }): Promise<VoiceVendorSession>;
+}
+
+/**
+ * A vendor call that did not give a session: the vendor answered with an error (`vendorStatus` is
+ * its HTTP status), never answered, or answered with something that is not a session.
+ */
+export class VoiceVendorRequestError extends Error {
+  constructor(
+    readonly reason: "rejected" | "unreachable" | "malformed_response",
+    readonly vendorStatus?: number,
+  ) {
+    super(vendorStatus === undefined ? `Voice vendor session start failed: ${reason}` : `Voice vendor session start failed: ${reason} (${vendorStatus})`);
+    this.name = new.target.name;
+  }
+}
+
+/**
+ * How a session start ended. `started` carries what the page needs to open the session: the
+ * vendor's URL, the session key the voice runtime sends back on every turn, and the caller's
+ * language. `unavailable`: the agent takes no voice sessions (it is gone, voice is off, or no vendor
+ * agent is bound). The two credential kinds and `vendor_failed` name the bound vendor.
+ */
+export type VoiceSessionStartResult =
+  | { kind: "started"; vendor: VoiceVendor; signedUrl: string; sessionKey: string; locale: string; expiresAt?: Date }
+  | { kind: "unavailable" }
+  | { kind: "credential_missing"; vendor: VoiceVendor }
+  | { kind: "credential_unreadable"; vendor: VoiceVendor }
+  | { kind: "vendor_failed"; vendor: VoiceVendor };
+
+export interface VoiceSessionStartPort {
+  /** Starts a voice session for one agent. `locale` is the caller's language tag, when the page names one. */
+  start(input: { workspaceId: string; agentId: string; locale?: string }): Promise<VoiceSessionStartResult>;
+}

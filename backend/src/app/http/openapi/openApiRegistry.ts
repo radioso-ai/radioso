@@ -292,6 +292,8 @@ export interface OpenApiSchemaCatalog {
   PlatformSettingsResponseSchema: z.ZodTypeAny;
   PublicChatRequestSchema: z.ZodTypeAny;
   PublicChatSessionRequestSchema: z.ZodTypeAny;
+  PublicVoiceSessionRequestSchema: z.ZodTypeAny;
+  PublicVoiceSessionResponseSchema: z.ZodTypeAny;
   PublicChatSessionResponseSchema: z.ZodTypeAny;
   PublicChatConversationTailSchema: z.ZodTypeAny;
   PublicChatConversationDetailSchema: z.ZodTypeAny;

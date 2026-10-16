@@ -42,6 +42,7 @@ import {
   providerDisplayName,
   type EnvProviderAvailability,
   type KnownModelsByProvider,
+  type CredentialProviderName,
   type LlmProviderName,
 } from '@/lib/api-llm-providers'
 
@@ -75,7 +76,7 @@ function ChatModelOverrideBlock({
   const model = value?.model ?? ''
   const enabled = value !== null
   const [knownModelsByProvider, setKnownModelsByProvider] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
-  const [credentialProviders, setCredentialProviders] = useState<Set<LlmProviderName>>(() => new Set())
+  const [credentialProviders, setCredentialProviders] = useState<ReadonlySet<CredentialProviderName>>(() => new Set())
   const [envProviderAvailability, setEnvProviderAvailability] = useState<EnvProviderAvailability>(
     emptyEnvProviderAvailability,
   )

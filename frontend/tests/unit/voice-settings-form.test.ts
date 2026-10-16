@@ -21,7 +21,9 @@ const voice: AgentVoiceSettings = {
     en: 'Sorry, this is taking much longer than it should, could you ask me again?',
     it: 'Scusa, ci sto mettendo troppo, puoi ripetere la domanda per favore?',
   },
+  runtime: { vendor: 'elevenlabs', agentId: 'agent_01jxk2v9qbe8n7r6t5w4' },
 }
+const unbound = { vendor: 'elevenlabs', agentId: '' } as const
 const mechanicsReplies: AgentMechanicsReplies = {
   'pt-BR': { greeting: ['Olá! Como posso ajudar?'], thanks: [], farewell: [], acknowledgement: [] },
   en: { greeting: ['Hi! How can I help?'], thanks: ['You are welcome!'], farewell: [], acknowledgement: [] },
@@ -50,6 +52,7 @@ describe('voice settings form', () => {
   it('trims lines, drops blank ones, and leaves a language out of a block it has nothing in', () => {
     const update = voiceSettingsUpdateFromForm({
       enabled: false,
+      runtime: unbound,
       languages: [
         {
           locale: 'en',
@@ -67,13 +70,15 @@ describe('voice settings form', () => {
         enabled: false,
         bridgeLines: { en: { acknowledge: [], check: ['Let me check that for you, it only takes a moment.'] } },
         fallbackLine: { it: 'Scusa, ci sto mettendo troppo.' },
+        runtime: null,
       },
       mechanicsReplies: { en: { greeting: ['Hi!'], thanks: [], farewell: [], acknowledgement: [] } },
     })
   })
 
   it('reads an agent with nothing authored as voice off and no languages', () => {
-    expect(voiceSettingsFormFromAgent({ enabled: false, bridgeLines: {}, fallbackLine: {} }, {})).toEqual({ enabled: false, languages: [] })
+    expect(voiceSettingsFormFromAgent({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null }, {}))
+      .toEqual({ enabled: false, runtime: unbound, languages: [] })
   })
 
   it('writes every bridge style and every reply kind the form knows', () => {
@@ -81,7 +86,7 @@ describe('voice settings form', () => {
     for (const style of VOICE_BRIDGE_STYLES) language.bridgeLines[style] = [`A ${style} line.`]
     for (const kind of MECHANICS_REPLY_KINDS) language.mechanicsReplies[kind] = [`A ${kind} line.`]
 
-    const update = voiceSettingsUpdateFromForm({ enabled: true, languages: [language] })
+    const update = voiceSettingsUpdateFromForm({ enabled: true, runtime: unbound, languages: [language] })
 
     expect(Object.keys(update.voice.bridgeLines.en).sort()).toEqual([...VOICE_BRIDGE_STYLES].sort())
     expect(Object.keys(update.mechanicsReplies.en).sort()).toEqual([...MECHANICS_REPLY_KINDS].sort())
@@ -90,6 +95,7 @@ describe('voice settings form', () => {
   it('keeps a language with nothing in it across a save, in the order the operator added it', () => {
     const form = {
       enabled: true,
+      runtime: unbound,
       languages: [
         { ...emptyVoiceLanguageLines('en'), bridgeLines: { check: ['  Let me check that for you, it only takes a moment. ', ''], acknowledge: [] } },
         emptyVoiceLanguageLines('it'),
@@ -106,11 +112,24 @@ describe('voice settings form', () => {
   })
 
   it('takes enabled and every line from the server after a save, adding any language only the server has', () => {
-    const after = voiceSettingsFormAfterSave({ enabled: true, languages: [emptyVoiceLanguageLines('it')] }, voice, mechanicsReplies)
+    const after = voiceSettingsFormAfterSave({ enabled: true, runtime: unbound, languages: [emptyVoiceLanguageLines('it')] }, voice, mechanicsReplies)
 
     expect(after.enabled).toBe(true)
+    expect(after.runtime).toEqual(voice.runtime)
     expect(after.languages.map((language) => language.locale)).toEqual(['it', 'en', 'pt-BR'])
     expect(after.languages[0].fallbackLine).toBe(voice.fallbackLine.it)
+  })
+
+  it('reads the bound vendor agent into the form', () => {
+    expect(voiceSettingsFormFromAgent(voice, mechanicsReplies).runtime).toEqual({ vendor: 'elevenlabs', agentId: 'agent_01jxk2v9qbe8n7r6t5w4' })
+  })
+
+  it('binds the trimmed vendor agent id, and binds none when the id is blank', () => {
+    const form = voiceSettingsFormFromAgent(voice, mechanicsReplies)
+
+    expect(voiceSettingsUpdateFromForm({ ...form, runtime: { vendor: 'elevenlabs', agentId: '  agent_42  ' } }).voice.runtime)
+      .toEqual({ vendor: 'elevenlabs', agentId: 'agent_42' })
+    expect(voiceSettingsUpdateFromForm({ ...form, runtime: { vendor: 'elevenlabs', agentId: '   ' } }).voice.runtime).toBeNull()
   })
 
   it('flags a line shorter than the ElevenLabs first-sentence floor, counting characters rather than code units', () => {

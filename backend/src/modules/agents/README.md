@@ -17,7 +17,11 @@ decides which revision a test runs when the operator names none. Writer modules 
 validation and use the shared draft-mutation boundary.
 
 Agents also store and serve the `voice` settings block (`voiceSettings.ts`):
-its schema, the voice-off default, and a tolerant reader for stored blocks. It
+its schema, the voice-off default, and a tolerant reader for stored blocks (a
+stored block without `runtime` reads as bound to no vendor agent). `runtime`
+names the vendor agent a voice session start opens, by a vendor from
+`shared/domain/voiceVendor.ts`; the vendor's key is a workspace credential,
+not part of the block. It
 lives in `behavior_settings.voice` and travels on `GET`/`PUT /api/v1/agents/:agentId`,
 which the dashboard's Voice card (`frontend/components/dashboard/settings/voice-channel-card.tsx`)
 writes. It has an `agentInputFieldSchemas` entry and a place in the reviewed patch, so Ray

@@ -261,6 +261,7 @@ describeIntegration("AgentRepository (Postgres)", () => {
       enabled: true,
       bridgeLines: { en: { acknowledge: ["Got it."], check: ["One moment."] } },
       fallbackLine: { en: "Sorry, could you ask me again?" },
+      runtime: { vendor: "elevenlabs" as const, agentId: "agent_01jxk2v9qbe8n7r6t5w4" },
     };
     const created = await repository.create(workspaceId, { name: "Voice", voice });
 
@@ -502,8 +503,15 @@ describeIntegration("AgentRepository (Postgres)", () => {
       workspaceId,
     );
 
-    expect(predates?.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {} });
-    expect(unreadable?.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {} });
+    expect(predates?.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
+    expect(unreadable?.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
+  });
+
+  it("keeps a stored voice block written before the runtime binding, bound to no vendor agent", async () => {
+    const storedBlock = { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["One moment."] } }, fallbackLine: {} };
+    const agent = await repository.findByIdAndWorkspaceId(await seedAgentRow({ behaviorSettings: { voice: storedBlock } }), workspaceId);
+
+    expect(agent?.voice).toEqual({ ...storedBlock, runtime: null });
   });
 
   it("parses retrieval-miss handoff behavior from behavior settings", async () => {

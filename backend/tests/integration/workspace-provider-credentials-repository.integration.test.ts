@@ -60,4 +60,18 @@ describeIntegration("WorkspaceProviderCredentialsRepository (Postgres)", () => {
     expect(await repository.remove(workspaceId, "openai")).toBe(false);
     expect(await repository.findByWorkspaceAndProvider(workspaceId, "openai")).toBeNull();
   });
+
+  it("holds a voice vendor key beside the model provider keys", async () => {
+    await repository.upsert({ workspaceId, provider: "elevenlabs", ciphertext: "xi-1" });
+
+    expect((await repository.findByWorkspaceAndProvider(workspaceId, "elevenlabs"))?.ciphertext).toBe("xi-1");
+    expect(await repository.remove(workspaceId, "elevenlabs")).toBe(true);
+  });
+
+  it("refuses a provider outside the model providers and voice vendors", async () => {
+    await expect(database.query(
+      `INSERT INTO workspace_provider_credentials (workspace_id, provider, ciphertext) VALUES ($1, 'vapi', 'x')`,
+      [workspaceId],
+    )).rejects.toThrow(/workspace_provider_credentials_provider_check/);
+  });
 });

@@ -9,6 +9,7 @@ import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-setti
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { agentsApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
@@ -17,6 +18,7 @@ import {
   VOICE_MAX_LANGUAGES,
   VOICE_MAX_LINE_LENGTH,
   VOICE_MAX_LINES,
+  VOICE_RUNTIME_VENDORS,
   emptyVoiceLanguageLines,
   isBelowElevenLabsSpokenFloor,
   voiceSettingsFormAfterSave,
@@ -25,8 +27,14 @@ import {
   type MechanicsReplyKind,
   type VoiceBridgeStyle,
   type VoiceLanguageLines,
+  type VoiceRuntimeForm,
+  type VoiceRuntimeVendor,
   type VoiceSettingsForm,
 } from '@/lib/voice-settings-form'
+
+const VOICE_RUNTIME_VENDOR_LABELS: Record<VoiceRuntimeVendor, string> = { elevenlabs: 'ElevenLabs' }
+/** The agent settings API's bound on a vendor agent id. */
+const VOICE_RUNTIME_AGENT_ID_MAX_LENGTH = 128
 
 const BRIDGE_STYLE_LABELS: ReadonlyArray<[VoiceBridgeStyle, string]> = [
   ['check', 'Check'],
@@ -103,6 +111,47 @@ function VoiceLanguageEditor({
   )
 }
 
+/** The vendor agent a page's voice session opens; the vendor's key lives in workspace Settings. */
+function VoiceRuntimeEditor({ runtime, onChange }: { runtime: VoiceRuntimeForm; onChange: (next: VoiceRuntimeForm) => void }) {
+  const vendorLabel = VOICE_RUNTIME_VENDOR_LABELS[runtime.vendor]
+  return (
+    <div className="space-y-3">
+      <div className="space-y-0.5">
+        <h4 className="text-sm font-semibold text-foreground">Runtime</h4>
+        <p className="text-xs text-muted-foreground">
+          Pages start voice sessions on this {vendorLabel} agent while voice lines are on. Add the {vendorLabel} API key under Settings → Providers.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="voiceRuntimeVendor" className="text-foreground">Voice runtime</Label>
+          <Select value={runtime.vendor} onValueChange={(value) => onChange({ ...runtime, vendor: VOICE_RUNTIME_VENDORS.find((vendor) => vendor === value) ?? runtime.vendor })}>
+            <SelectTrigger id="voiceRuntimeVendor" className="w-full min-w-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {VOICE_RUNTIME_VENDORS.map((vendor) => (
+                <SelectItem key={vendor} value={vendor}>{VOICE_RUNTIME_VENDOR_LABELS[vendor]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="voiceRuntimeAgentId" className="text-foreground">{vendorLabel} agent id</Label>
+          <Input
+            id="voiceRuntimeAgentId"
+            value={runtime.agentId}
+            maxLength={VOICE_RUNTIME_AGENT_ID_MAX_LENGTH}
+            placeholder="agent_…"
+            autoComplete="off"
+            onChange={(event) => onChange({ ...runtime, agentId: event.target.value })}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /**
  * The agent's `voice` and `mechanicsReplies` blocks, saved together and replaced whole. Render it
  * keyed by `agentId`: a save replaces both blocks, so one agent's form must never outlive a switch
@@ -150,7 +199,7 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
       id="voice-channel"
       icon={<AudioLines className="h-5 w-5 text-primary" />}
       title="Voice"
-      description="Bridge lines for calls, and word-for-word quick replies on every channel."
+      description="The vendor agent calls open on, bridge lines for calls, and word-for-word quick replies on every channel."
     >
       {loadError ? <p className="text-sm text-destructive" role="alert">{loadError}</p> : null}
       {!form && !loadError ? <p className="text-sm text-muted-foreground">Loading voice settings…</p> : null}
@@ -162,6 +211,7 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
             <Label htmlFor="voiceEnabled" className="text-foreground">Voice lines on calls</Label>
             <Switch id="voiceEnabled" checked={form.enabled} onCheckedChange={(enabled) => edit({ ...form, enabled })} />
           </div>
+          <VoiceRuntimeEditor runtime={form.runtime} onChange={(runtime) => edit({ ...form, runtime })} />
           {form.languages.map((language, index) => (
             <VoiceLanguageEditor
               key={language.locale}

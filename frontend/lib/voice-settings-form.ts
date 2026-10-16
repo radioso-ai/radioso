@@ -25,6 +25,15 @@ export const isBelowElevenLabsSpokenFloor = (line: string): boolean => {
   return text.length > 0 && Array.from(text).length < ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS
 }
 
+export type VoiceRuntimeVendor = NonNullable<AgentVoiceSettings['runtime']>['vendor']
+export const VOICE_RUNTIME_VENDORS: readonly VoiceRuntimeVendor[] = ['elevenlabs']
+
+/** The vendor agent a Radioso-started voice session opens; a blank `agentId` binds none. */
+export interface VoiceRuntimeForm {
+  vendor: VoiceRuntimeVendor
+  agentId: string
+}
+
 /** One language's lines across the `voice` and `mechanicsReplies` blocks. */
 export interface VoiceLanguageLines {
   locale: string
@@ -35,6 +44,7 @@ export interface VoiceLanguageLines {
 
 export interface VoiceSettingsForm {
   enabled: boolean
+  runtime: VoiceRuntimeForm
   languages: VoiceLanguageLines[]
 }
 
@@ -53,6 +63,7 @@ export const voiceSettingsFormFromAgent = (voice: AgentVoiceSettings, mechanicsR
   const locales = [...new Set([...Object.keys(voice.bridgeLines), ...Object.keys(voice.fallbackLine), ...Object.keys(mechanicsReplies)])]
   return {
     enabled: voice.enabled,
+    runtime: voice.runtime ? { ...voice.runtime } : { vendor: VOICE_RUNTIME_VENDORS[0], agentId: '' },
     languages: locales.map((locale) => ({
       locale,
       bridgeLines: linesOf(VOICE_BRIDGE_STYLES, voice.bridgeLines[locale]),
@@ -74,7 +85,9 @@ const authoredLinesOf = <Kind extends string>(kinds: readonly Kind[], source: Re
  * them. Blank lines are dropped, and a language with nothing in a block is left out of that block.
  */
 export const voiceSettingsUpdateFromForm = (form: VoiceSettingsForm): { voice: AgentVoiceSettings; mechanicsReplies: AgentMechanicsReplies } => {
-  const voice: AgentVoiceSettings = { enabled: form.enabled, bridgeLines: {}, fallbackLine: {} }
+  const agentId = form.runtime.agentId.trim()
+  const runtime = agentId ? { vendor: form.runtime.vendor, agentId } : null
+  const voice: AgentVoiceSettings = { enabled: form.enabled, bridgeLines: {}, fallbackLine: {}, runtime }
   const mechanicsReplies: AgentMechanicsReplies = {}
   for (const language of form.languages) {
     const bridgeLines = authoredLinesOf(VOICE_BRIDGE_STYLES, language.bridgeLines)
@@ -88,7 +101,7 @@ export const voiceSettingsUpdateFromForm = (form: VoiceSettingsForm): { voice: A
 }
 
 /**
- * The form once a save returns: `enabled` and every language's lines as the server stored them,
+ * The form once a save returns: `enabled`, the runtime and every language's lines as the server stored them,
  * with the form's own language list kept, so a language added with nothing in it yet stays until
  * the operator removes it.
  */
@@ -97,5 +110,9 @@ export const voiceSettingsFormAfterSave = (form: VoiceSettingsForm, voice: Agent
   const savedByLocale = new Map(saved.languages.map((language) => [language.locale, language]))
   const kept = form.languages.map((language) => savedByLocale.get(language.locale) ?? emptyVoiceLanguageLines(language.locale))
   const keptLocales = new Set(kept.map((language) => language.locale))
-  return { enabled: saved.enabled, languages: [...kept, ...saved.languages.filter((language) => !keptLocales.has(language.locale))] }
+  return {
+    enabled: saved.enabled,
+    runtime: saved.runtime,
+    languages: [...kept, ...saved.languages.filter((language) => !keptLocales.has(language.locale))],
+  }
 }

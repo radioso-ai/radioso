@@ -427,6 +427,80 @@ export const registerAssistantPublicChatPaths = (
   });
 
   registry.registerPath({
+    method: "post",
+    path: "/api/v1/public/chat/{token}/voice/sessions",
+    tags: ["Assistant"],
+    summary: "Start a voice session for the current public chat session",
+    description: [
+      "Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own API key for that vendor,",
+      "and returns the vendor's signed URL with a fresh Radioso session key. The key never leaves the backend.",
+      "Send the public session as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message.",
+    ].join(" "),
+    operationId: "createPublicVoiceSession",
+    security: [{ [security.anonymousSessionCookieScheme.name]: [] }],
+    request: {
+      params: schemas.tokenPathParamsSchema,
+      body: {
+        content: {
+          "application/json": {
+            schema: schemas.PublicVoiceSessionRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Voice session started",
+        content: {
+          "application/json": {
+            schema: schemas.PublicVoiceSessionResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Public session not found, or the agent takes no voice sessions: voice is off or no vendor agent is bound",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      409: {
+        description: "The workspace holds no readable API key for the agent's voice vendor: `voice_vendor_credential_missing` or `voice_vendor_credential_unreadable`, with `details.vendor`",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      429: {
+        description: "Voice session start rate limit exceeded",
+        content: {
+          "application/json": {
+            schema: schemas.RateLimitExceededSchema,
+          },
+        },
+      },
+      502: {
+        description: "The voice vendor did not start the session: `voice_vendor_unavailable`, with `details.vendor`",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "get",
     path: "/api/v1/public/chat/{token}",
     tags: ["Assistant"],

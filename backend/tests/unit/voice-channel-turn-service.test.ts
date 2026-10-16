@@ -318,7 +318,7 @@ describe("VoiceTurnService", () => {
 
   it.each([
     ["off", defaultAgentVoiceSettings()],
-    ["on", { enabled: true, bridgeLines: {}, fallbackLine: {} }],
+    ["on", { enabled: true, bridgeLines: {}, fallbackLine: {}, runtime: null }],
   ])("fails a turn whose chat stream ends without done or cancelled, with voice %s", async (_label, voice) => {
     const logger = fakeLogger();
     const service = new VoiceTurnService({ ...voiceOff,
@@ -534,6 +534,7 @@ describe("VoiceTurnService", () => {
         it: { acknowledge: ["Perfetto."], check: ["Controllo subito."] },
       },
       fallbackLine: { en: "Sorry, could you ask me again?" },
+      runtime: null,
     };
 
     /** A chat turn whose events arrive at the given times on the fake clock. */
@@ -849,6 +850,7 @@ describe("VoiceTurnService", () => {
       enabled: true,
       bridgeLines: { en: { acknowledge: ["Got it."], check: ["Let me check that for you."] } },
       fallbackLine: { en: "Sorry, could you ask me again?" },
+      runtime: null,
     };
     const assistantMessageId = "66666666-6666-4666-8666-666666666666";
 

@@ -132,9 +132,15 @@ export const requiredCopilotConversation = (context: { copilotConversationId?: s
  */
 export const agentSettingReachNote = "Two settings change who can reach the agent rather than how it answers: agentCardEnabled publishes its public cards, and publicAgentAccessEnabled lets any AI agent connect with no credential (it needs agentCardEnabled on too). When proposing either, say in the rationale what it opens or closes.";
 
-/** `voice` and `mechanicsReplies` are nested blocks with no merge: a value is the whole new block. */
+/**
+ * `voice` and `mechanicsReplies` are nested blocks with no merge: a value is the whole new block.
+ * `voice.runtime` is a binding Ray may propose; the vendor key a session start also needs is a
+ * secret (the never-list's `provider_credential_writes`), so the note sends the operator to Settings.
+ */
 export const agentSettingWholeBlockNote = "voice and mechanicsReplies replace the stored block whole, so send every line the agent keeps, as agent_configuration shows them. "
-  + `On the elevenlabs voice dialect a bridge or fallback line shorter than ${ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS} characters waits for the answer, so write each as one full sentence at least that long.`;
+  + `On the elevenlabs voice dialect a bridge or fallback line shorter than ${ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS} characters waits for the answer, so write each as one full sentence at least that long. `
+  + "voice.runtime binds the agent to one vendor agent ({ vendor: \"elevenlabs\", agentId: the ElevenLabs agent id }) or to none (null), and a page can start voice sessions only while voice.enabled is true and a runtime is bound; "
+  + "keep the stored runtime unless the operator asks to change it. Starting a session also needs the workspace's key for that vendor: the operator enters the vendor's API key in Settings, and you never ask for or write it.";
 
 export const scopedAgentDraftPublicationNote = "It drafts a proposal for operator review and changes nothing until the operator applies it. Applying a scoped authoring change saves a private agent draft. The current published revision and ongoing conversations are retained; use Review & Publish before new customer conversations use the change. Unversioned/live fields remain live.";
 export const copilotProposalOrigin = (context: { copilotConversationId?: string; operatorMcpInvocationId?: string }) => {

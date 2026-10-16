@@ -13,6 +13,7 @@ const voice = {
     en: "Sorry, that is taking longer than it should. Could you ask me again?",
     it: "Scusa, ci sto mettendo troppo. Puoi ripetere la domanda?",
   },
+  runtime: { vendor: "elevenlabs", agentId: "agent_01jxk2v9qbe8n7r6t5w4" },
 };
 
 const agentWithToken = async (email: string) => {
@@ -37,7 +38,7 @@ describe("agent voice settings contract", () => {
   it("starts an agent with voice off and nothing authored", async () => {
     const { created } = await agentWithToken("agent-voice-default@example.com");
 
-    expect(created.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {} });
+    expect(created.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
   });
 
   it("round-trips the voice block through the agent settings API", async () => {

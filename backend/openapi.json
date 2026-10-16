@@ -2434,7 +2434,8 @@
               "openai",
               "openai-compatible",
               "gemini",
-              "claude"
+              "claude",
+              "elevenlabs"
             ]
           },
           "updatedAt": {
@@ -3376,14 +3377,39 @@
               "minLength": 1,
               "maxLength": 200
             }
+          },
+          "runtime": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "vendor": {
+                "type": "string",
+                "enum": [
+                  "elevenlabs"
+                ]
+              },
+              "agentId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            },
+            "required": [
+              "vendor",
+              "agentId"
+            ]
           }
         },
         "required": [
           "enabled",
           "bridgeLines",
-          "fallbackLine"
+          "fallbackLine",
+          "runtime"
         ],
-        "description": "How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. An update replaces the block whole."
+        "description": "How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens; null binds none. An update replaces the block whole."
       },
       "AgentMechanicsReplies": {
         "type": "object",
@@ -8520,6 +8546,53 @@
         },
         "required": [
           "channel"
+        ]
+      },
+      "PublicVoiceSessionRequest": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "description": "`locale` is the caller's language tag; without it the agent's default language applies, then `en`."
+      },
+      "PublicVoiceSessionResponse": {
+        "type": "object",
+        "properties": {
+          "vendor": {
+            "type": "string",
+            "enum": [
+              "elevenlabs"
+            ],
+            "description": "The voice runtime the session opens on: the agent's `voice.runtime.vendor`."
+          },
+          "signedUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "The vendor's URL that opens one session on the agent's vendor agent. Hand it to the vendor's client before `expiresAt`; never store or log it."
+          },
+          "sessionKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Radioso's key for this session. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation; on `elevenlabs` it travels as the custom LLM extra body's `session_key`."
+          },
+          "locale": {
+            "type": "string",
+            "description": "The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When `signedUrl` stops opening sessions, when the vendor states it."
+          }
+        },
+        "required": [
+          "vendor",
+          "signedUrl",
+          "sessionKey",
+          "locale"
         ]
       },
       "WorkspaceIngestionReprocessResponse": {
@@ -33713,7 +33786,8 @@
                 "openai",
                 "openai-compatible",
                 "gemini",
-                "claude"
+                "claude",
+                "elevenlabs"
               ]
             },
             "required": true,
@@ -33786,7 +33860,8 @@
                 "openai",
                 "openai-compatible",
                 "gemini",
-                "claude"
+                "claude",
+                "elevenlabs"
               ]
             },
             "required": true,
@@ -58219,6 +58294,103 @@
           }
         },
         "description": "Anonymous session continuity is maintained by an HttpOnly cookie set by the server.\n\nThe cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential."
+      }
+    },
+    "/api/v1/public/chat/{token}/voice/sessions": {
+      "post": {
+        "tags": [
+          "Assistant"
+        ],
+        "summary": "Start a voice session for the current public chat session",
+        "description": "Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own API key for that vendor, and returns the vendor's signed URL with a fresh Radioso session key. The key never leaves the backend. Send the public session as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message.",
+        "operationId": "createPublicVoiceSession",
+        "security": [
+          {
+            "anonymousSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicVoiceSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Voice session started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicVoiceSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Public session not found, or the agent takes no voice sessions: voice is off or no vendor agent is bound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The workspace holds no readable API key for the agent's voice vendor: `voice_vendor_credential_missing` or `voice_vendor_credential_unreadable`, with `details.vendor`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Voice session start rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitExceededResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The voice vendor did not start the session: `voice_vendor_unavailable`, with `details.vendor`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/public/chat/{token}/history/{conversationId}": {

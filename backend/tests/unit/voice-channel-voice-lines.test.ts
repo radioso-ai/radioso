@@ -11,6 +11,7 @@ const settings: AgentVoiceSettings = {
     "pt-BR": { acknowledge: [], check: ["Só um momento."] },
   },
   fallbackLine: { en: "Sorry, could you ask me again?", "it-CH": "Scusi, può ripetere?" },
+  runtime: null,
 };
 
 const choose = (turn: Partial<Parameters<typeof chooseVoiceTurnLines>[1]> = {}) =>
@@ -49,6 +50,7 @@ describe("voice turn lines", () => {
       enabled: true,
       bridgeLines: { en: { acknowledge: ["[1]"], check: ["One moment[?]."] } },
       fallbackLine: { en: "Sorry [[2]], ask me again." },
+      runtime: null,
     };
 
     expect(chooseVoiceTurnLines(marked, { locale: "en", routineActive: false, rotation: 0 })).toEqual({
@@ -64,6 +66,7 @@ describe("voice turn lines", () => {
       enabled: true,
       bridgeLines: { en: { acknowledge: ["Got it."], check: ["One moment.", long, "Looking into it."] } },
       fallbackLine: {},
+      runtime: null,
     };
     const turn = { locale: "en", routineActive: false, minReleasableChars: 45 };
 

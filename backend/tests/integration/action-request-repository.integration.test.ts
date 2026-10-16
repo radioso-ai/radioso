@@ -182,15 +182,24 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
       expect(new Set(claimedIds)).toEqual(new Set(ids));
     });
 
-    it("renewLease genuinely extends the lease, so a short-lease claimNext right after does not reclaim it", async () => {
-      await enqueue();
+    it("renewLease genuinely extends the lease: a back-dated claim is reclaimable, but not once renewed", async () => {
+      // Control: a claim back-dated past its lease, with no renewal, is genuinely stale and is
+      // reclaimed — proves the back-dating below would be caught if renewLease did nothing.
+      const controlRow = await enqueue();
+      const controlClaim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 1 }] });
+      expect(controlClaim).not.toBeNull();
+      await database.query(`UPDATE routine_action_requests SET updated_at = now() - interval '10 seconds' WHERE id = $1`, [controlRow.id]);
+      expect(await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 1 }] })).toMatchObject({ id: controlRow.id });
+
+      // Same setup, but renewed before the re-check: renewLease must refresh `updated_at` to now,
+      // not just return true, so the same back-dating no longer makes the row look stale.
+      const row = await enqueue();
       const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 1 }] });
       expect(claim).not.toBeNull();
+      await database.query(`UPDATE routine_action_requests SET updated_at = now() - interval '10 seconds' WHERE id = $1`, [row.id]);
 
       expect(await repository.renewLease(claim!, { leaseSeconds: 300 })).toBe(true);
 
-      // Renewal refreshed `updated_at` to now; a claimer using the same 1 s lease right after
-      // must see the row as still held, not stale, so it finds nothing to reclaim.
       expect(await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 1 }] })).toBeNull();
     });
 

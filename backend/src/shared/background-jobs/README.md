@@ -58,6 +58,19 @@ Implementations live outside it, and application composition
   onto this runtime without a data migration, but it cannot express every
   access pattern the queue it replaces had.
 
+`backend/src/db/repositories/actionRequestRepository.ts` also implements
+`BackgroundJobStore`, over the chat module's own `routine_action_requests`
+table (#1509) — proof that this table can be claimed, leased, completed,
+retried, and dead-lettered the same way, with no schema change. The chat
+module's own `ActionDispatcher` does not run on this runtime yet: the table's
+flat (non-doubling) retry backoff, its per-attempt `recordFailureOutcome`
+hook (fired on every failed attempt, not just a terminal one), and its
+`skipped` terminal outcome have no equivalent here today. Growing this
+substrate to cover them — a per-kind backoff strategy, a per-attempt failure
+hook, and a `skipped` run outcome alongside `completed`/`retried`/
+`dead_lettered` — is the scoped follow-up; see the `ActionRequestRepository`
+class doc comment and `tests/integration/action-request-repository.integration.test.ts`.
+
 ## Semantics
 
 - **Duplicate keys, per kind.** Every kind declares what an enqueue does when a

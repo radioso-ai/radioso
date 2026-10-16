@@ -42,8 +42,6 @@ import { DefaultAllowCapabilityPolicy } from "../../shared/domain/capabilityPoli
 import { StaticActionCapabilityMap, type ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import {
   DefaultTurnSelectionStrategy,
-  NoopActionDrainDispatcher,
-  type ActionDrainDispatcherPort,
   type TurnSelectionStrategy,
 } from "../../modules/chat/composition.js";
 import { CloudTasksActionDrainDispatcher } from "../../modules/chat/infra/cloudTasksActionDrainDispatcher.js";
@@ -334,12 +332,16 @@ export const createDefaultDocumentJobDispatcher = (
 
 /**
  * Selects how a turn that just emitted a conversation action (spec 070's outbox)
- * pushes a drain hint. Mirrors `createDefaultDocumentJobDispatcher`'s cloud-tasks
- * gate, but with no AMQP branch (not needed: the interval-loop poller already
+ * pushes a drain hint, through the generic job substrate's wake port (#1509) rather
+ * than a bespoke lookalike. Mirrors `createDefaultBackgroundJobWake`'s cloud-tasks
+ * gate, but targets the action outbox's own `conversation_actions` queue and
+ * `/internal/tasks/actions/drain` route instead of the shared background-jobs
+ * queue, so that queue's provider-facing rate limits (`queue.tf`) only ever bound
+ * action deliveries. No AMQP branch (not needed: the interval-loop poller already
  * drains locally) and no requiredness coupling to `WORKER_DISPATCH_DRIVER` in
- * `env.ts` — `ACTION_DISPATCH_TASK_QUEUE_NAME` unset degrades to the no-op
- * dispatcher rather than failing startup, so a backend deploy is never blocked on
- * the Terraform queue/scheduler that provisions the push path landing first.
+ * `env.ts` — `ACTION_DISPATCH_TASK_QUEUE_NAME` unset degrades to the no-op wake
+ * rather than failing startup, so a backend deploy is never blocked on the
+ * Terraform queue/scheduler that provisions the push path landing first.
  */
 export const createDefaultActionDrainDispatcher = (
   env: Pick<Env,
@@ -352,7 +354,7 @@ export const createDefaultActionDrainDispatcher = (
     | "ACTION_DISPATCH_TASK_QUEUE_NAME"
   >,
   logger: AppLogger,
-): ActionDrainDispatcherPort =>
+): BackgroundJobWakePort =>
   env.WORKER_DISPATCH_DRIVER === "cloud-tasks" && env.ACTION_DISPATCH_TASK_QUEUE_NAME
     ? new CloudTasksActionDrainDispatcher({
         projectId: env.GOOGLE_CLOUD_PROJECT!,
@@ -363,7 +365,7 @@ export const createDefaultActionDrainDispatcher = (
         workerTaskAuthToken: env.WORKER_TASK_AUTH_TOKEN!,
         logger,
       })
-    : new NoopActionDrainDispatcher();
+    : new NoopBackgroundJobWake();
 
 /**
  * Selects how a background job wakes the worker task server: a Cloud Task on the background job

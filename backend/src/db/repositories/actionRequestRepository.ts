@@ -1,3 +1,9 @@
+import type {
+  BackgroundJobClaim,
+  BackgroundJobClaimableKind,
+  BackgroundJobCompletion,
+  BackgroundJobStore,
+} from "../../shared/background-jobs/index.js";
 import { currentTimestamp, nowMinusSeconds, nowPlusSeconds, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
@@ -76,8 +82,16 @@ const mapRecord = (row: ActionRequestRow): ActionRequestRecord => ({
  * with the turn) and a worker drains them. Enqueue is **idempotent** on
  * `idempotencyKey` so a retried turn does not double-emit. The repository owns the
  * row lifecycle (pending → dispatched/failed/skipped); routing to handlers is the dispatcher.
+ *
+ * Also implements `BackgroundJobStore` (#1509): proof that this table can be claimed, leased,
+ * completed, retried, and dead-lettered exactly the way the generic `background_jobs` store is,
+ * with no schema change — see `claimNext` through `deadLetter` below and
+ * `tests/integration/action-request-repository.integration.test.ts`. `ActionDispatcher` does not
+ * use these methods yet: the chat module README explains the two behaviors `BackgroundJobRuntime`
+ * cannot yet reproduce (this table's flat retry backoff and its per-attempt
+ * `recordFailureOutcome` hook), plus the `skipped` terminal outcome the runtime has no slot for.
  */
-export class ActionRequestRepository {
+export class ActionRequestRepository implements BackgroundJobStore {
   constructor(private readonly db: Db) {}
 
   /** Idempotent enqueue; returns the row id (existing one when the key already exists). */
@@ -254,7 +268,194 @@ export class ActionRequestRepository {
       oldestPendingCreatedAt: row?.oldest_pending_created_at ? new Date(row.oldest_pending_created_at) : null,
     };
   }
+
+  // ── BackgroundJobStore conformance ────────────────────────────────────
+  //
+  // The fencing token is this row's `attempts` *after* the claiming increment, stringified —
+  // the same value `claimPending`/`markDispatched`/`recordFailure` already fence a stale worker
+  // on, just carried through `BackgroundJobClaim.token` instead of a separate parameter. There is
+  // no `lease_expires_at` column: a claim's staleness check against `updated_at` (mirroring
+  // `claimPending`'s `leaseSeconds` parameter) *is* the lease, so `renewLease` only has to refresh
+  // that column. When `kinds` carries more than one lease value, the lowest one is used for every
+  // candidate row — safe (never reclaims a row before its own kind's lease would allow) but more
+  // eager than a per-kind threshold would be; every registered action type shares one lease today,
+  // so this never binds in practice.
+
+  async claimNext(input: { kinds: readonly BackgroundJobClaimableKind[] }): Promise<BackgroundJobClaim | null> {
+    if (input.kinds.length === 0) {
+      return null;
+    }
+    const types = input.kinds.map((entry) => entry.kind);
+    const leaseSeconds = Math.min(...input.kinds.map((entry) => entry.leaseSeconds));
+    return this.db.transaction().execute(async (trx) => {
+      const due = await trx
+        .selectFrom("routine_action_requests")
+        .select(["id", "next_attempt_at", "created_at"])
+        .where("type", "in", types)
+        .where((eb) =>
+          eb.or([
+            eb.and([
+              eb("status", "=", "pending"),
+              eb.or([eb("next_attempt_at", "is", null), eb("next_attempt_at", "<=", currentTimestamp())]),
+            ]),
+            eb.and([eb("status", "=", "in_progress"), eb("updated_at", "<", nowMinusSeconds(leaseSeconds))]),
+          ]),
+        )
+        .orderBy("created_at", "asc")
+        .limit(1)
+        .forUpdate()
+        .skipLocked()
+        .executeTakeFirst();
+      if (!due) {
+        return null;
+      }
+      const claimed = await trx
+        .updateTable("routine_action_requests")
+        .set((eb) => ({ status: "in_progress", attempts: eb("attempts", "+", 1), updated_at: currentTimestamp() }))
+        .where("id", "=", due.id)
+        .returning(jobClaimColumns)
+        .executeTakeFirstOrThrow();
+      return mapJobClaim(claimed as JobClaimRow, due.next_attempt_at ?? due.created_at);
+    });
+  }
+
+  // `leaseSeconds` is accepted for interface parity but unused: the next `claimNext` call applies
+  // its own `kinds[].leaseSeconds` when it re-evaluates staleness, so renewing is just "I am still
+  // alive now" — the lease's *size* is re-applied at claim time, not stored on this row.
+  async renewLease(claim: BackgroundJobClaim, _input: { leaseSeconds: number }): Promise<boolean> {
+    const result = await this.db
+      .updateTable("routine_action_requests")
+      .set({ updated_at: currentTimestamp() })
+      .where("id", "=", claim.id)
+      .where("attempts", "=", Number(claim.token))
+      .where("status", "=", "in_progress")
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
+  }
+
+  /**
+   * Marks the row `dispatched`. Unlike the generic store's `complete`, nothing is deleted — a
+   * dispatched row stays readable the same way a `failed` one does (operator visibility,
+   * `liveIdempotencyKeys`) — so "deleted" below means "no longer live," not a row removal.
+   */
+  async complete(claim: BackgroundJobClaim): Promise<BackgroundJobCompletion> {
+    const result = await this.db
+      .updateTable("routine_action_requests")
+      .set({ status: "dispatched", updated_at: currentTimestamp() })
+      .where("id", "=", claim.id)
+      .where("attempts", "=", Number(claim.token))
+      .where("status", "=", "in_progress")
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0 ? "deleted" : "superseded";
+  }
+
+  async retry(claim: BackgroundJobClaim, input: { error: string; delaySeconds: number }): Promise<Date | null> {
+    const row = await this.db
+      .updateTable("routine_action_requests")
+      .set({
+        status: "pending",
+        next_attempt_at: nowPlusSeconds(input.delaySeconds),
+        last_error: input.error,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", claim.id)
+      .where("attempts", "=", Number(claim.token))
+      .where("status", "=", "in_progress")
+      .returning("next_attempt_at")
+      .executeTakeFirst();
+    return row?.next_attempt_at ? new Date(row.next_attempt_at) : null;
+  }
+
+  /**
+   * Marks the row terminally `failed`. Unlike the generic store's `deadLetter`, the payload is
+   * kept — this table's existing contract (see `recordFailure`) is that a terminal failure stays
+   * readable for operator visibility, exactly as today.
+   */
+  async deadLetter(
+    claim: BackgroundJobClaim,
+    input: { error: string },
+    onParked?: (transaction: Db) => Promise<void>,
+  ): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const result = await trx
+        .updateTable("routine_action_requests")
+        .set({ status: "failed", last_error: input.error, updated_at: currentTimestamp() })
+        .where("id", "=", claim.id)
+        .where("attempts", "=", Number(claim.token))
+        .where("status", "=", "in_progress")
+        .executeTakeFirst();
+      if (Number(result.numUpdatedRows) === 0) {
+        return false;
+      }
+      await onParked?.(trx);
+      return true;
+    });
+  }
+
+  /**
+   * Not part of `BackgroundJobStore` — the generic runtime has no outcome for "the handler ran
+   * to completion, but its configured transport deliberately did not deliver"
+   * (`ActionDispatchSkippedError`). Implemented and tested here anyway so that gap is a known,
+   * verified fact about this table rather than an assumption; a future runtime change could use
+   * it the same way `deadLetter` is used today.
+   */
+  async skip(claim: BackgroundJobClaim, input: { reason: string }): Promise<boolean> {
+    const result = await this.db
+      .updateTable("routine_action_requests")
+      .set({ status: "skipped", last_error: input.reason, updated_at: currentTimestamp() })
+      .where("id", "=", claim.id)
+      .where("attempts", "=", Number(claim.token))
+      .where("status", "=", "in_progress")
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
+  }
 }
+
+interface JobClaimRow {
+  id: string;
+  type: string;
+  payload: Record<string, unknown> | null;
+  workspace_id: string | null;
+  account_id: string | null;
+  conversation_id: string | null;
+  idempotency_key: string | null;
+  skill_name: string | null;
+  attempts: number;
+}
+
+const jobClaimColumns = [
+  "id",
+  "type",
+  "payload",
+  "workspace_id",
+  "account_id",
+  "conversation_id",
+  "idempotency_key",
+  "skill_name",
+  "attempts",
+] as const;
+
+/**
+ * The generic store's `payload` is an opaque per-kind blob; this table's claim carries its
+ * `payload` column alongside the routing columns (`workspaceId`, `accountId`, ...) that
+ * `ActionHandlerContext` needs, since the generic port has nowhere else to put them.
+ */
+const mapJobClaim = (row: JobClaimRow, availableAt: Date): BackgroundJobClaim => ({
+  id: row.id,
+  kind: row.type,
+  payload: {
+    payload: row.payload ?? {},
+    workspaceId: row.workspace_id,
+    accountId: row.account_id,
+    conversationId: row.conversation_id,
+    idempotencyKey: row.idempotency_key,
+    skillName: row.skill_name,
+  },
+  attempt: row.attempts,
+  idempotencyKey: row.idempotency_key,
+  token: String(row.attempts),
+  availableAt: new Date(availableAt),
+});
 
 const actionRequestColumns = [
   "id",

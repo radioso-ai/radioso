@@ -58,6 +58,19 @@ describe("agent voice settings contract", () => {
     expect(refetched.body.voice).toEqual(voice);
   });
 
+  it("stores a block written without runtime as bound to no vendor agent", async () => {
+    const { app, authorization, agentId } = await agentWithToken("agent-voice-without-runtime@example.com");
+    const { runtime: _runtime, ...withoutRuntime } = voice;
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({ voice: withoutRuntime })
+      .expect(200);
+
+    expect(updated.body.voice).toEqual({ ...withoutRuntime, runtime: null });
+  });
+
   it("keeps the voice block when a dashboard save sends the other settings without it", async () => {
     const { app, authorization, dashboard, agentId } = await agentWithToken("agent-voice-dashboard-save@example.com");
     await request(app).put(`/api/v1/agents/${agentId}`).set("Authorization", authorization).send({ voice }).expect(200);

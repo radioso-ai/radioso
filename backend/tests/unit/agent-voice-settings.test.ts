@@ -96,7 +96,7 @@ describe("agent voice settings", () => {
   it("accepts a written block without runtime as bound to no vendor agent, so writers that predate the binding keep working", () => {
     const { runtime: _runtime, ...withoutRuntime } = authored;
 
-    expect(agentInputFieldSchemas.voice.parse(withoutRuntime)).toEqual({ ...authored, runtime: null });
+    expect(agentInputFieldSchemas.voice.safeParse(withoutRuntime).success).toBe(true);
   });
 
   it("reads a stored block written before the runtime binding as bound to no vendor agent", () => {

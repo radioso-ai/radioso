@@ -159,6 +159,7 @@ export function InboxResponseView({
     conversationId: conversationId ?? '',
     enabled: conversationId !== null,
     intervalMs: 1000,
+    onNotFound: onItemNotFound,
   })
 
   const {

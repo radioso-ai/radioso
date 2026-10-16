@@ -884,6 +884,8 @@ export const createTestDependencies = (overrides: {
   emailChannel?: AppDependencies["emailChannel"];
   /** Delivery failures and the decisions on them; omitted means an empty in-memory store no channel resolves. */
   deliveryFailures?: AppDependencies["deliveryFailures"];
+  /** Conversation and visitor erasure; omitted means every erasure is refused as not found. */
+  conversationErasure?: AppDependencies["conversationErasure"];
   /** Held replies and the decisions on them; omitted means a workspace with none. */
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   /** The `fetch` voice vendor session starters call; omitted means every vendor call fails as unreachable. */
@@ -2919,6 +2921,12 @@ export const createTestDependencies = (overrides: {
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,
     assistantHistoryService,
+    conversationErasure: overrides.conversationErasure ?? {
+      // The in-memory app has no transaction to erase in; the Postgres erasure is covered by
+      // tests/integration/conversation-erasure.integration.test.ts.
+      eraseConversation: async () => { throw notFound("Conversation not found"); },
+      eraseVisitor: async () => { throw notFound("Visitor not found"); },
+    },
     retrievalSearchService,
     retrievalAnswerService,
     retrievalDefaultsProvider,
@@ -3035,6 +3043,7 @@ export const createTestApp = (overrides: {
   agentToolCatalog?: NonNullable<Parameters<typeof createTestDependencies>[0]>["agentToolCatalog"];
   emailChannel?: AppDependencies["emailChannel"];
   deliveryFailures?: AppDependencies["deliveryFailures"];
+  conversationErasure?: AppDependencies["conversationErasure"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   voiceVendorFetch?: typeof globalThis.fetch;
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };

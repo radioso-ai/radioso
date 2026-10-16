@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
+import type { ConversationErasureActor } from "../../../modules/privacy/public.js";
 import {
   resolveActivityReadScope,
   type ConversationActivityReadScope,
@@ -25,13 +26,32 @@ import {
 
 type HistoryRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
-  "assistantHistoryService" | "documentSearchHistoryService"
+  "assistantHistoryService" | "documentSearchHistoryService" | "conversationErasure"
 >;
+
+/**
+ * Who asked for an erasure: the signed-in teammate, or a personal credential's owner. A service
+ * account has no person behind it; its credential joins the audit event from the request's own audit
+ * context.
+ */
+const erasureActor = (res: Response): ConversationErasureActor => {
+  const { accountId, userId, authPrincipal } = res.locals as {
+    accountId: string;
+    userId?: string;
+    authPrincipal?: { type: string; userId?: unknown };
+  };
+  if (userId) return { accountId, userId };
+  if (authPrincipal?.type === "personal_api_credential" && typeof authPrincipal.userId === "string") {
+    return { accountId, userId: authPrincipal.userId };
+  }
+  return { accountId, userId: null };
+};
 
 export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
   const historyRead = requireWorkspacePermission(dependencies, "workspace.history.read");
+  const historyDelete = requireWorkspacePermission(dependencies, "workspace.history.delete");
   // A conversation's activity carries feedback triage outcomes only to a caller who may read them.
   const activityScope = (res: Response): Promise<ConversationActivityReadScope> =>
     resolveActivityReadScope((permission) => holdsWorkspacePermission(dependencies, res, permission));
@@ -166,6 +186,25 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
     }
   });
 
+  router.delete("/chat/:conversationId", workspaceSession, historyDelete, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedParams = conversationParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      await dependencies.conversationErasure.eraseConversation({
+        workspaceId,
+        conversationId: parsedParams.data.conversationId,
+        actor: erasureActor(res),
+      });
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/chat/:conversationId/tail", workspaceSession, historyRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
@@ -210,6 +249,25 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         parsedQuery.data,
       );
       res.status(200).json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/visitors/:visitorId", workspaceSession, historyDelete, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedParams = visitorConversationsParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      await dependencies.conversationErasure.eraseVisitor({
+        workspaceId,
+        visitorId: parsedParams.data.visitorId,
+        actor: erasureActor(res),
+      });
+      res.status(204).end();
     } catch (error) {
       next(error);
     }

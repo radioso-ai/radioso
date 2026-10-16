@@ -3064,7 +3064,7 @@ CREATE TABLE public.notification_delivery_outcomes (
     request_id uuid NOT NULL,
     recipient_digest text NOT NULL,
     workspace_id uuid NOT NULL,
-    conversation_id uuid NOT NULL,
+    conversation_id uuid,
     usage_date date NOT NULL,
     requested_email_count integer NOT NULL,
     reserved_email_count integer NOT NULL,
@@ -7590,6 +7590,13 @@ CREATE INDEX email_domains_workspace_idx ON public.email_domains USING btree (wo
 
 
 --
+-- Name: email_inbound_deliveries_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_inbound_deliveries_conversation_idx ON public.email_inbound_deliveries USING btree (conversation_id) WHERE (conversation_id IS NOT NULL);
+
+
+--
 -- Name: email_inbound_deliveries_event_mailbox_uniq; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7608,6 +7615,13 @@ CREATE UNIQUE INDEX email_inbound_deliveries_event_unrouted_uniq ON public.email
 --
 
 CREATE INDEX email_inbound_deliveries_mailbox_created_idx ON public.email_inbound_deliveries USING btree (mailbox_id, created_at DESC);
+
+
+--
+-- Name: email_inbound_deliveries_planned_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_inbound_deliveries_planned_conversation_idx ON public.email_inbound_deliveries USING btree (planned_conversation_id) WHERE (planned_conversation_id IS NOT NULL);
 
 
 --
@@ -7727,6 +7741,13 @@ CREATE UNIQUE INDEX email_send_intents_provider_message_uniq ON public.email_sen
 --
 
 CREATE INDEX email_send_intents_reconcile_due_idx ON public.email_send_intents USING btree (next_reconcile_at) WHERE ((state = ANY (ARRAY['queued'::text, 'accepted'::text, 'uncertain'::text])) AND (next_reconcile_at IS NOT NULL));
+
+
+--
+-- Name: email_skill_activity_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_skill_activity_conversation_idx ON public.email_skill_activity USING btree (workspace_id, conversation_id) WHERE (conversation_id IS NOT NULL);
 
 
 --
@@ -8843,6 +8864,13 @@ CREATE INDEX notification_delivery_outcomes_conversation_idx ON public.notificat
 
 
 --
+-- Name: notification_delivery_outcomes_conversation_link_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_delivery_outcomes_conversation_link_idx ON public.notification_delivery_outcomes USING btree (conversation_id) WHERE (conversation_id IS NOT NULL);
+
+
+--
 -- Name: notification_delivery_outcomes_workspace_day_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8906,6 +8934,13 @@ CREATE INDEX operator_mcp_transactions_expiry_idx ON public.operator_mcp_authori
 
 
 --
+-- Name: pending_decisions_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pending_decisions_conversation_idx ON public.pending_decisions USING btree (conversation_id);
+
+
+--
 -- Name: pending_decisions_deadline_pending_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8927,6 +8962,13 @@ CREATE UNIQUE INDEX pending_decisions_one_open_gate_idx ON public.pending_decisi
 
 
 --
+-- Name: pending_decisions_session_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pending_decisions_session_idx ON public.pending_decisions USING btree (session_id);
+
+
+--
 -- Name: pending_decisions_workspace_pending_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8945,6 +8987,13 @@ CREATE UNIQUE INDEX revision_eval_runs_idempotency_key_key ON public.revision_ev
 --
 
 CREATE INDEX routine_action_requests_claimable_idx ON public.routine_action_requests USING btree (created_at) WHERE (status = ANY (ARRAY['pending'::text, 'in_progress'::text]));
+
+
+--
+-- Name: routine_action_requests_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX routine_action_requests_conversation_idx ON public.routine_action_requests USING btree (conversation_id) WHERE (conversation_id IS NOT NULL);
 
 
 --
@@ -8990,10 +9039,24 @@ CREATE INDEX slack_inbound_events_received_at_idx ON public.slack_inbound_events
 
 
 --
+-- Name: topic_memberships_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX topic_memberships_message_idx ON public.topic_memberships USING btree (message_id);
+
+
+--
 -- Name: uq_slack_channel_bindings_install_channel; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX uq_slack_channel_bindings_install_channel ON public.slack_channel_bindings USING btree (installation_id, channel_id) NULLS NOT DISTINCT;
+
+
+--
+-- Name: usage_events_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX usage_events_message_idx ON public.usage_events USING btree (message_id) WHERE (message_id IS NOT NULL);
 
 
 --
@@ -10842,6 +10905,14 @@ ALTER TABLE public.chunks
 
 
 --
+-- Name: clarification_states clarification_states_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.clarification_states
+    ADD CONSTRAINT clarification_states_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
 -- Name: connector_configs connector_configs_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10895,6 +10966,14 @@ ALTER TABLE ONLY public.context_identity_nonces
 
 ALTER TABLE ONLY public.context_variable_values
     ADD CONSTRAINT context_variable_values_variable_id_fkey FOREIGN KEY (variable_id) REFERENCES public.context_variables(id) ON DELETE CASCADE;
+
+
+--
+-- Name: context_variables context_variables_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.context_variables
+    ADD CONSTRAINT context_variables_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -11127,6 +11206,14 @@ ALTER TABLE ONLY public.copilot_replay_evidence
 
 ALTER TABLE ONLY public.copilot_replay_evidence
     ADD CONSTRAINT copilot_replay_evidence_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: directive_states directive_states_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.directive_states
+    ADD CONSTRAINT directive_states_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
 
 
 --
@@ -11650,6 +11737,14 @@ ALTER TABLE ONLY public.messages
 
 
 --
+-- Name: notification_delivery_outcomes notification_delivery_outcomes_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_delivery_outcomes
+    ADD CONSTRAINT notification_delivery_outcomes_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE SET NULL;
+
+
+--
 -- Name: notification_recipient_confirmation_daily_usage notification_recipient_confirmation_daily_usa_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11882,11 +11977,27 @@ ALTER TABLE ONLY public.password_reset_tokens
 
 
 --
+-- Name: pending_decisions pending_decisions_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_decisions
+    ADD CONSTRAINT pending_decisions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
 -- Name: pending_decisions pending_decisions_decided_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pending_decisions
     ADD CONSTRAINT pending_decisions_decided_by_user_id_fkey FOREIGN KEY (decided_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: pending_decisions pending_decisions_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_decisions
+    ADD CONSTRAINT pending_decisions_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
 
 
 --
@@ -11962,6 +12073,14 @@ ALTER TABLE ONLY public.revision_eval_runs
 
 
 --
+-- Name: routine_action_requests routine_action_requests_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_action_requests
+    ADD CONSTRAINT routine_action_requests_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
 -- Name: routine_completion_export routine_completion_export_definition_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11983,6 +12102,14 @@ ALTER TABLE ONLY public.routine_definition
 
 ALTER TABLE ONLY public.routine_slot
     ADD CONSTRAINT routine_slot_definition_id_fkey FOREIGN KEY (definition_id) REFERENCES public.routine_definition(id) ON DELETE CASCADE;
+
+
+--
+-- Name: routine_states routine_states_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_states
+    ADD CONSTRAINT routine_states_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
 
 
 --

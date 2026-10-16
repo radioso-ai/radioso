@@ -258,8 +258,9 @@ export const createApiNode = (
   app.use("/api/v1/history", createHistoryRoutes({
     ...sessionDependencies(sessions),
     assistantHistoryService: new AssistantHistoryService(history),
-    // Document-search history is not read through this node.
+    // Document-search history is not read through this node, and nothing here erases a conversation.
     documentSearchHistoryService: {} as AppDependencies["documentSearchHistoryService"],
+    conversationErasure: {} as AppDependencies["conversationErasure"],
   }));
   app.use(createErrorHandler());
 

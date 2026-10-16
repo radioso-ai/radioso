@@ -180,13 +180,53 @@ describe("ChatTurnLifecycle conversation summary refresh (#866)", () => {
   });
 });
 
+/** The conversation every refresh job below names, as the conversation store finds it. */
+const presentConversation = { findByIdAndWorkspaceId: async () => ({ id: "conv_1" }) as never };
+
 describe("conversation summary refresh job", () => {
+  it("ends skipped without a refresh when its conversation was erased before it ran", async () => {
+    const refresh = vi.fn(async () => {});
+
+    const outcome = await conversationSummaryRefreshHandler({ refresh }, { findByIdAndWorkspaceId: async () => null }).run(
+      { workspaceId: "ws_1", conversationId: "conv_1" },
+      { jobId: "job_1", attempt: 1, signal: new AbortController().signal },
+    );
+
+    expect(outcome).toEqual({ skipped: "conversation_not_found" });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("ends skipped instead of retrying when its conversation was erased while it ran", async () => {
+    let present = true;
+    const refresh = vi.fn(async () => {
+      present = false;
+      throw new Error("insert or update on table \"conversation_summaries\" violates foreign key constraint");
+    });
+    const conversations = { findByIdAndWorkspaceId: async () => (present ? ({ id: "conv_1" }) as never : null) };
+
+    const outcome = await conversationSummaryRefreshHandler({ refresh }, conversations).run(
+      { workspaceId: "ws_1", conversationId: "conv_1" },
+      { jobId: "job_1", attempt: 1, signal: new AbortController().signal },
+    );
+
+    expect(outcome).toEqual({ skipped: "conversation_not_found" });
+  });
+
+  it("still fails a refresh whose conversation exists, so the job retries", async () => {
+    const refresh = vi.fn(async () => { throw new Error("provider exploded"); });
+
+    await expect(conversationSummaryRefreshHandler({ refresh }, presentConversation).run(
+      { workspaceId: "ws_1", conversationId: "conv_1" },
+      { jobId: "job_1", attempt: 1, signal: new AbortController().signal },
+    )).rejects.toThrow("provider exploded");
+  });
+
   it("runs the summary updater for the conversation it names", async () => {
     const refresh = vi.fn(async () => {});
 
     const signal = new AbortController().signal;
 
-    await conversationSummaryRefreshHandler({ refresh }).run(
+    await conversationSummaryRefreshHandler({ refresh }, presentConversation).run(
       { workspaceId: "ws_1", conversationId: "conv_1", accountId: "acct_1" },
       { jobId: "job_1", attempt: 1, signal },
     );
@@ -197,7 +237,7 @@ describe("conversation summary refresh job", () => {
   it("gives a turn with no account an anonymous refresh", async () => {
     const refresh = vi.fn(async () => {});
 
-    await conversationSummaryRefreshHandler({ refresh }).run(
+    await conversationSummaryRefreshHandler({ refresh }, presentConversation).run(
       { workspaceId: "ws_1", conversationId: "conv_1" },
       { jobId: "job_1", attempt: 1, signal: new AbortController().signal },
     );
@@ -233,7 +273,7 @@ describe("conversation summary refresh job", () => {
     );
     const runtime = new BackgroundJobRuntime({
       store,
-      handlers: [conversationSummaryRefreshHandler(updater)],
+      handlers: [conversationSummaryRefreshHandler(updater, presentConversation)],
       logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
       now: clock.now,
     });

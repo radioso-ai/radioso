@@ -6,6 +6,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { NotificationDeliveryOutcomeRepository } from "../../src/db/repositories/notificationDeliveryOutcomeRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
+import { seedConversations } from "./support/conversationSeed.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
@@ -41,11 +42,18 @@ describeIntegration("NotificationDeliveryOutcomeRepository (Postgres)", () => {
     }
   }, 30_000);
 
-  const reserve = (overrides: Partial<Parameters<NotificationDeliveryOutcomeRepository["reserve"]>[0]> = {}) =>
+  /** An outcome names the conversation whose notice it admitted. */
+  const newConversation = async (): Promise<string> => {
+    const conversationId = randomUUID();
+    await seedConversations(database, [conversationId]);
+    return conversationId;
+  };
+
+  const reserve = async (overrides: Partial<Parameters<NotificationDeliveryOutcomeRepository["reserve"]>[0]> = {}) =>
     repository.reserve({
       requestId: randomUUID(),
       workspaceId: randomUUID(),
-      conversationId: randomUUID(),
+      conversationId: overrides.conversationId ?? await newConversation(),
       usageDate: new Date("2026-10-11T00:00:00.000Z"),
       recipientDigest: "recipient-set-default",
       requestedEmailCount: 1,
@@ -56,7 +64,7 @@ describeIntegration("NotificationDeliveryOutcomeRepository (Postgres)", () => {
 
   it("atomically admits only the conversation dispatch allowance under concurrency", async () => {
     const workspaceId = randomUUID();
-    const conversationId = randomUUID();
+    const conversationId = await newConversation();
     const outcomes = await Promise.all(Array.from({ length: 12 }, () => reserve({
       workspaceId,
       conversationId,
@@ -72,7 +80,6 @@ describeIntegration("NotificationDeliveryOutcomeRepository (Postgres)", () => {
     const workspaceId = randomUUID();
     const outcomes = await Promise.all(Array.from({ length: 12 }, () => reserve({
       workspaceId,
-      conversationId: randomUUID(),
       requestedEmailCount: 1,
       dailyEmailLimit: 5,
       conversationDispatchLimit: 5,
@@ -84,9 +91,9 @@ describeIntegration("NotificationDeliveryOutcomeRepository (Postgres)", () => {
 
   it("reads a workspace's emails sent today and how many requests the daily cap stopped", async () => {
     const workspaceId = randomUUID();
-    await reserve({ workspaceId, conversationId: randomUUID(), requestedEmailCount: 2, dailyEmailLimit: 3 });
-    await reserve({ workspaceId, conversationId: randomUUID(), requestedEmailCount: 2, dailyEmailLimit: 3 });
-    await reserve({ workspaceId: randomUUID(), conversationId: randomUUID(), requestedEmailCount: 1, dailyEmailLimit: 3 });
+    await reserve({ workspaceId, requestedEmailCount: 2, dailyEmailLimit: 3 });
+    await reserve({ workspaceId, requestedEmailCount: 2, dailyEmailLimit: 3 });
+    await reserve({ workspaceId: randomUUID(), requestedEmailCount: 1, dailyEmailLimit: 3 });
 
     await expect(repository.readDailyUsage({ workspaceId, usageDate: new Date("2026-10-11T00:00:00.000Z") }))
       .resolves.toEqual({ reservedEmails: 2, cappedRequests: 1 });
@@ -96,7 +103,7 @@ describeIntegration("NotificationDeliveryOutcomeRepository (Postgres)", () => {
 
   it("reserves the extra emails a replay can now send, and caps a replay that would exceed the day", async () => {
     const workspaceId = randomUUID();
-    const conversationId = randomUUID();
+    const conversationId = await newConversation();
     const requestId = randomUUID();
     const first = await reserve({ requestId, workspaceId, conversationId, requestedEmailCount: 0, dailyEmailLimit: 4 });
     const toppedUp = await reserve({ requestId, workspaceId, conversationId, requestedEmailCount: 3, dailyEmailLimit: 4 });
@@ -107,8 +114,8 @@ describeIntegration("NotificationDeliveryOutcomeRepository (Postgres)", () => {
       .resolves.toMatchObject({ reservedEmails: 3 });
 
     const otherRequest = randomUUID();
-    await reserve({ requestId: otherRequest, workspaceId, conversationId: randomUUID(), requestedEmailCount: 0, dailyEmailLimit: 4 });
-    const overLimit = await reserve({ requestId: otherRequest, workspaceId, conversationId: randomUUID(), requestedEmailCount: 2, dailyEmailLimit: 4 });
+    await reserve({ requestId: otherRequest, workspaceId, requestedEmailCount: 0, dailyEmailLimit: 4 });
+    const overLimit = await reserve({ requestId: otherRequest, workspaceId, requestedEmailCount: 2, dailyEmailLimit: 4 });
 
     expect(overLimit).toMatchObject({ dispatchAllowed: true, emailAllowed: false, reason: "workspace_daily_email_cap" });
     await expect(repository.readDailyUsage({ workspaceId, usageDate: new Date("2026-10-11T00:00:00.000Z") }))
@@ -117,7 +124,7 @@ describeIntegration("NotificationDeliveryOutcomeRepository (Postgres)", () => {
 
   it("reserves recipient attempts atomically and replays the same request without double counting", async () => {
     const workspaceId = randomUUID();
-    const conversationId = randomUUID();
+    const conversationId = await newConversation();
     const requestId = randomUUID();
     const first = await reserve({ requestId, workspaceId, conversationId, requestedEmailCount: 2, dailyEmailLimit: 3 });
     const replay = await reserve({ requestId, workspaceId, conversationId, requestedEmailCount: 2, dailyEmailLimit: 3 });
@@ -135,7 +142,7 @@ describeIntegration("NotificationDeliveryOutcomeRepository (Postgres)", () => {
 
   it("counts a recipient-set change on a replay as a new admission", async () => {
     const workspaceId = randomUUID();
-    const conversationId = randomUUID();
+    const conversationId = await newConversation();
     const requestId = randomUUID();
 
     const first = await reserve({

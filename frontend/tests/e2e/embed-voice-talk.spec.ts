@@ -81,6 +81,7 @@ const vendorStandIn = async (page: Page) => {
       });
     },
     hangUp: () => sockets.at(-1)!.close({ code: 1000, reason: "agent ended the call" }),
+    fails: (message: string) => send({ type: "error", error_event: { error_type: "internal_error", message } }),
   };
 };
 
@@ -242,20 +243,55 @@ test("a session that cannot be started shows one line and keeps the Talk button"
   expect(vendor.opened()).toBe(0);
 });
 
-test("a refused microphone shows one line and spends no session start", async ({ page }) => {
-  await page.addInitScript(() => {
+test("a vendor error that leaves the socket open ends the call with the unavailable line", async ({ page, context }) => {
+  await context.grantPermissions(["microphone"]);
+  const vendor = await vendorStandIn(page);
+  const { frame } = await openEmbed(page, callsOffered);
+
+  await frame.getByRole("button", { name: "Talk" }).click();
+  await expect.poll(() => vendor.initiations()).toHaveLength(1);
+  vendor.accept();
+  await expect(callStatus(frame, "Listening")).toBeVisible();
+
+  vendor.fails("The agent could not continue.");
+
+  await expect(callStatus(frame, "Talking isn't available right now. Try again later.")).toBeVisible();
+  await expect(frame.getByRole("button", { name: "Talk" })).toBeVisible();
+  await expect.poll(() => vendor.closedByPage()).toBe(1);
+});
+
+test("a vendor that never answers the handshake gives up after the connect timeout and lets the microphone go", async ({ page, context }) => {
+  test.setTimeout(60_000);
+  await context.grantPermissions(["microphone"]);
+  const vendor = await vendorStandIn(page);
+  const { frame } = await openEmbed(page, callsOffered);
+
+  await frame.getByRole("button", { name: "Talk" }).click();
+  await expect.poll(() => vendor.initiations()).toHaveLength(1);
+  await expect(callStatus(frame, "Connecting…")).toBeVisible();
+
+  // VOICE_CALL_BEHAVIOR.connectTimeoutMs is 10 seconds.
+  await expect(callStatus(frame, "Talking isn't available right now. Try again later.")).toBeVisible({ timeout: 20_000 });
+  await expect.poll(() => vendor.closedByPage()).toBe(1);
+});
+
+for (const [situation, errorName] of [["a refused microphone", "NotAllowedError"], ["a missing microphone", "NotFoundError"]] as const) test(`${situation} shows one line`, async ({ page }) => {
+  await page.addInitScript((name) => {
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
-        getUserMedia: () => Promise.reject(new DOMException("Permission denied", "NotAllowedError")),
+        getUserMedia: () => Promise.reject(new DOMException("The microphone is not available", name)),
       },
     });
-  });
+  }, errorName);
+  const vendor = await vendorStandIn(page);
   const { frame, voiceStarts } = await openEmbed(page, callsOffered);
 
   await frame.getByRole("button", { name: "Talk" }).click();
 
   await expect(callStatus(frame, "Talking needs your microphone.")).toBeVisible();
   await expect(frame.getByRole("button", { name: "Talk" })).toBeVisible();
-  expect(voiceStarts).toEqual([]);
+  // The vendor's client asks for the microphone once the session is started, so the start is spent.
+  expect(voiceStarts).toHaveLength(1);
+  expect(vendor.opened()).toBe(0);
 });

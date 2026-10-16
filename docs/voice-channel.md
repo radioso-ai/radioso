@@ -259,14 +259,17 @@ The switch is `surfaceSettings.websiteEmbed.voiceCallsOffered` on
 
 When a visitor presses **Talk**:
 
-1. The browser asks for the microphone. A visitor who refuses it, or has none,
-   reads "Talking needs your microphone." and the call spends none of the
-   start budget.
+1. The embed loads the ElevenLabs client. A client that cannot load ends the
+   call before it spends a start.
 2. The embed asks Radioso for a session with its public session, in the
    language it asked the greeting in when it knows one, and opens the session
-   with the ElevenLabs client. The embed downloads that client at this point;
-   on an iPhone or iPad it downloads it as soon as the panel offers **Talk**,
-   because the client unlocks audio during the tap that starts the call.
+   with the ElevenLabs client, which asks the browser for the microphone. A
+   visitor who refuses it, or has none, reads "Talking needs your
+   microphone."; that call's start still counts against the visitor's
+   budget. On an iPhone or iPad the embed loads the client as soon as the
+   panel offers **Talk**: there the client creates its audio on the page's
+   first tap and discards it after 30 seconds, so a call's audio plays only
+   when the session opens within 30 seconds of that tap.
 3. The composer gives way to a call bar that reads **Connecting…**, then
    **Listening** while the visitor talks and **Speaking** while the agent
    answers, with **End call** beside it. The visitor can talk over the agent:
@@ -279,16 +282,19 @@ When a visitor presses **Talk**:
 The call ends when the visitor selects **End call**, closes the panel, or
 ElevenLabs closes the session; the panel then reads "Call ended" and offers
 **Talk** again. **End call** while the call is still connecting goes straight
-back to **Talk**; the start it made still counts against the visitor's budget. A start that Radioso turns down (any status in the table
-above) reads "Talking isn't available right now. Try again later." The call
+back to **Talk**; the start it made still counts against the visitor's
+budget. A start that Radioso turns down (any status in the table above), an
+error ElevenLabs reports during the call, and an ElevenLabs handshake that
+gets no answer within 10 seconds of the microphone being granted all end the
+call with "Talking isn't available right now. Try again later." The call
 is its own conversation: the Inbox and Activity list it with the source
 **Voice**, next to the visitor's text chats.
 
 The embed's chat runs in an iframe on your Radioso app host, so the launcher
 grants that iframe the microphone with `allow="microphone"` when the agent
 takes voice calls. A host page that sends a `Permissions-Policy` header
-denying the microphone, such as `microphone=()`, takes it away again, and every
-visitor reads the microphone line. Allow it for the app host instead:
+denying the microphone, such as `microphone=()`, takes it away again, and the
+embed then shows no **Talk** button. Allow it for the app host instead:
 
 ```text
 Permissions-Policy: microphone=(self "https://app.radioso.ai")

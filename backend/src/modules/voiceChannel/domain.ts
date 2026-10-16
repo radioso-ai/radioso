@@ -95,6 +95,8 @@ export type VoiceVendorCredentialReading =
 export interface VoiceVendorCredentialReader {
   /** Rejects only when the credential store cannot be read at all. */
   read(input: { workspaceId: string; vendor: VoiceVendor }): Promise<VoiceVendorCredentialReading>;
+  /** Whether the workspace stores a key for the vendor. Presence only: it decrypts nothing. */
+  isStored(input: { workspaceId: string; vendor: VoiceVendor }): Promise<boolean>;
 }
 
 /** What a vendor hands back for a page to open a session on its agent. */
@@ -165,6 +167,16 @@ export type VoiceSessionStartResult =
   | { kind: "started"; vendor: VoiceVendor; signedUrl: string; sessionKey: string; locale: string; expiresAt?: Date }
   | { kind: "unavailable" }
   | { kind: "failed" };
+
+/**
+ * Whether a page may offer the caller a voice session with an agent: the agent's voice is on, a
+ * vendor agent is bound, and the workspace stores that vendor's key. It reads the agent's own
+ * `voice` block, which its caller already holds, and only the key's presence, so a page learns
+ * that it can talk and nothing about the vendor or the key.
+ */
+export interface VoiceSessionAvailabilityPort {
+  isAvailable(input: { workspaceId: string; voice: { enabled: boolean; runtime: { vendor: VoiceVendor } | null } }): Promise<boolean>;
+}
 
 export interface VoiceSessionStartPort {
   /** Starts a voice session for one agent and visitor. `locale` is the caller's language tag, when the page names one. */

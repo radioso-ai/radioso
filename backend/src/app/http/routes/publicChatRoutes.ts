@@ -69,6 +69,7 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & PublicVoic
   | "accountAccessService"
   | "accessGrantService"
   | "voiceSessionStarts"
+  | "voiceSessionAvailability"
 >;
 
 const verifyRequestSignedIdentity = async (
@@ -273,6 +274,11 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         // (declared via Vary so a CDN keys on it) and not by Accept-Language —
         // built-in locale packs are resolved client-side in the launcher, so `copy`
         // carries only the operator's per-locale packs.
+        // Whether the embed shows a Talk button; it names neither the vendor nor its agent.
+        const voiceAvailable = await dependencies.voiceSessionAvailability.isAvailable({
+          workspaceId: agent.workspaceId,
+          voice: agent.voice,
+        });
         res.setHeader("Vary", "Origin");
         res.setHeader("Cache-Control", "public, max-age=300");
         res.status(200).json({
@@ -288,6 +294,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           expertOverrides: websiteEmbed.expertOverrides,
           assistantLogoUrl: buildAssistantLogoUrl(req, launchToken, agent.logo),
           proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
+          voice: { available: voiceAvailable },
           // FR-023: present only when this agent actually publishes a card, so the
           // launcher never advertises a document that answers 404. The base is the
           // deployment's public API origin, which is where `/.well-known` is served.

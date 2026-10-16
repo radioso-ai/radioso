@@ -1253,6 +1253,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   ]);
   // One store for voice sessions: the turn's bindings, and the starts the turn and the session start share.
   const voiceSessions = new VoiceSessionRepository(infrastructure.database.kysely);
+  // One service starts sessions and tells the website embed whether to offer them, by the same gate.
+  const voiceSessionStarts = createVoiceSessionStartComposition({
+    agentRepository: repositories.agentRepository,
+    starts: voiceSessions,
+    credentials: workspaceProviderCredentialsService,
+    // Called through its own receiver, never detached from globalThis.
+    fetch: (url, init) => globalThis.fetch(url, init),
+    metricsRegistry: infrastructure.metricsRegistry,
+    logger,
+  });
 
   return {
     env,
@@ -1375,15 +1385,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       metricsRegistry: infrastructure.metricsRegistry,
       logger,
     }),
-    voiceSessionStarts: createVoiceSessionStartComposition({
-      agentRepository: repositories.agentRepository,
-      starts: voiceSessions,
-      credentials: workspaceProviderCredentialsService,
-      // Called through its own receiver, never detached from globalThis.
-      fetch: (url, init) => globalThis.fetch(url, init),
-      metricsRegistry: infrastructure.metricsRegistry,
-      logger,
-    }),
+    voiceSessionStarts,
+    voiceSessionAvailability: voiceSessionStarts,
     assistantHistoryService: chat.assistantHistoryService,
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,

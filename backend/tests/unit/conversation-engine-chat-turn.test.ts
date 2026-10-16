@@ -141,6 +141,7 @@ const agent = (): AgentRecord => ({
       },
       copy: {},
       expertOverrides: {},
+      voiceCallsOffered: false,
     },
     extensions: {},
   },

@@ -274,11 +274,10 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         // (declared via Vary so a CDN keys on it) and not by Accept-Language —
         // built-in locale packs are resolved client-side in the launcher, so `copy`
         // carries only the operator's per-locale packs.
-        // Whether the embed shows a Talk button; it names neither the vendor nor its agent.
-        const voiceAvailable = await dependencies.voiceSessionAvailability.isAvailable({
-          workspaceId: agent.workspaceId,
-          voice: agent.voice,
-        });
+        // Whether the embed shows a Talk button: the operator offers calls here and the agent's
+        // voice is ready. It names neither the vendor nor its agent.
+        const voiceAvailable = websiteEmbed.voiceCallsOffered
+          && await dependencies.voiceSessionAvailability.isAvailable({ workspaceId: agent.workspaceId, voice: agent.voice });
         res.setHeader("Vary", "Origin");
         res.setHeader("Cache-Control", "public, max-age=300");
         res.status(200).json({

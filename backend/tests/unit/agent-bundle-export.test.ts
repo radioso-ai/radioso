@@ -52,6 +52,7 @@ const baseAgent = (): ConversationAgent => ({
       theme: { brand: "#445566", brandText: "#ffffff", surface: "#ffffff", text: "#111111" },
       copy: {},
       expertOverrides: {},
+      voiceCallsOffered: false,
     },
     extensions: {},
   },

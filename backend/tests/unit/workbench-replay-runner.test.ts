@@ -197,6 +197,7 @@ const agent = (): ConversationAgent => ({
       },
       copy: {},
       expertOverrides: {},
+      voiceCallsOffered: false,
     },
     extensions: {},
   },

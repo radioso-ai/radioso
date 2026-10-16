@@ -155,6 +155,7 @@ const configuredAgent = (): ConversationAgent => ({
       },
       copy: {},
       expertOverrides: {},
+      voiceCallsOffered: false,
     },
     extensions: {},
   },

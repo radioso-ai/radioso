@@ -111,6 +111,7 @@ describe("settings services", () => {
         },
         copy: {},
         expertOverrides: {},
+        voiceCallsOffered: false,
       },
       extensions: {},
     },

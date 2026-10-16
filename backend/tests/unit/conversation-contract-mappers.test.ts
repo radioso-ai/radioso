@@ -72,6 +72,7 @@ const agent = (overrides: Partial<AgentRecord> = {}): AgentRecord => ({
       },
       copy: {},
       expertOverrides: {},
+      voiceCallsOffered: false,
     },
     extensions: {},
   },

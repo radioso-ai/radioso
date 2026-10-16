@@ -5383,6 +5383,8 @@ export interface components {
                 expertOverrides: {
                     [key: string]: string;
                 };
+                /** @description The operator offers voice calls from the website embed: its composer shows Talk while the agent's voice is also on, bound to a runtime and the workspace holds the vendor key. Defaults to false. */
+                voiceCallsOffered: boolean;
             };
         };
         AgentSourceScope: {
@@ -5586,6 +5588,7 @@ export interface components {
                     expertOverrides?: {
                         [key: string]: string;
                     };
+                    voiceCallsOffered?: boolean;
                 };
             };
         };
@@ -6685,6 +6688,7 @@ export interface components {
                     expertOverrides: {
                         [key: string]: string;
                     };
+                    voiceCallsOffered?: boolean;
                 };
                 /** @description Surface extensions keyed by extension id; shape is owned by the contributing extension. */
                 extensions: {
@@ -6951,6 +6955,7 @@ export interface components {
                     expertOverrides: {
                         [key: string]: string;
                     };
+                    voiceCallsOffered?: boolean;
                 };
                 /** @description Surface extensions keyed by extension id; shape is owned by the contributing extension. */
                 extensions: {

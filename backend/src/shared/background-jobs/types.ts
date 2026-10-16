@@ -102,6 +102,17 @@ export interface BackgroundJobFailureContext {
   /** The stored error summary: the error's class and an application error code, never its message. */
   readonly error: string;
   /**
+   * The underlying error that caused this failure, when there was one — `undefined` for a
+   * synthetic failure (a lease that expired with no handler run to blame, or a stored payload that
+   * no longer parses). Unlike `error`, the substrate itself never logs, stores, or reports this
+   * value or anything derived from it: it exists only so a handler's hook can make its own bounded,
+   * structural extraction (a trailing HTTP status code, say) from an error that may carry a
+   * provider response, conversation text, or a secret in its message — the same trust a handler's
+   * own `run` already carries for the errors it throws. A hook must never log, store, or report
+   * `cause`, its message, or any text derived from it verbatim.
+   */
+  readonly cause: unknown;
+  /**
    * The transaction that writes back this attempt's outcome (a retry's reschedule, or the park).
    * Writes made through it commit with that outcome, so they happen exactly once; a hook that
    * throws rolls them back and the outcome is written again without it.

@@ -222,10 +222,10 @@ export class ConfiguredContactDeliveryResolver implements RoutedContactRecipient
 export class FetchContactWebhookHttpClient extends FetchWebhookHttpClient {}
 
 /**
- * A caught delivery failure's HTTP status, if the (already-stringified, see
- * {@link ActionDispatcher}) error text ends in one — `ResendEmailDeliveryError`
- * and the webhook client's own errors both format theirs this way. Structural,
- * not content-based: it never echoes the surrounding text, only a 3-digit code.
+ * A caught delivery failure's HTTP status, if the error's own message (see
+ * `BackgroundJobFailureContext.cause`, extracted by `actionDispatchJob.ts`'s `causeMessage`) ends
+ * in one — `ResendEmailDeliveryError` and the webhook client's own errors both format theirs this
+ * way. Structural, not content-based: it never echoes the surrounding text, only a 3-digit code.
  */
 const trailingStatusCode = (message: string): number | undefined => {
   const match = /\b([1-5]\d{2})\D*$/u.exec(message);
@@ -366,16 +366,14 @@ export class ContactSendActionHandler implements ActionHandler {
    * gap that let the outbox drain outage go unnoticed for two months); this closes
    * it without logging the visitor's email, name, or message.
    *
-   * `input.error` is the dispatcher's caught-and-stringified error text — this
-   * handler's own bounded messages today, but it flows from an injected
-   * {@link ContactNotificationMailer} / {@link ContactWebhookHttpClient}, so a
-   * host-supplied transport could echo a provider response body, a reply-to
-   * address, or a webhook URL with a token in its query string. The error
-   * reporter is an external sink, so that raw text must never reach it — only a
-   * bounded classification (a status code, when the text ends in one) does. The
-   * full text remains available for operator debugging in the outbox's
-   * `last_error` column (see {@link ActionDispatcher.onFailure}), untouched by
-   * this call.
+   * `input.error` is `actionDispatchJob.ts`'s extraction of the background-job runtime's `cause`
+   * (see `BackgroundJobFailureContext`) — this handler's own bounded messages today, but it
+   * flows from an injected {@link ContactNotificationMailer} / {@link ContactWebhookHttpClient},
+   * so a host-supplied transport could echo a provider response body, a reply-to address, or a
+   * webhook URL with a token in its query string. The error reporter is an external sink, so that
+   * raw text must never reach it — only a bounded classification (a status code, when the text
+   * ends in one) does. The outbox's own `last_error` column never holds this text either: the
+   * runtime writes only the error's class there.
    */
   async recordFailureOutcome(input: {
     payload: Record<string, unknown>;

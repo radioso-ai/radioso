@@ -225,7 +225,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
     const queued = await queuedAutoReply();
     const { conversationId, worker, heldReplyId, key } = queued;
 
-    expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await worker.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
     const [message, ...otherMessages] = await agentMessagesOf(conversationId);
     expect(otherMessages).toEqual([]);
@@ -245,7 +245,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
     expect(await approvalsOf(queued)).toEqual([]);
 
     // Dispatched once: a later drain finds nothing to send.
-    expect(await worker.dispatch()).toMatchObject({ dispatched: 0 });
+    expect(await worker.dispatch()).toMatchObject({ completed: 0 });
     expect(await providerAcceptsUnder(spool.dir, key)).toHaveLength(1);
     expect(await emailSendsOf(conversationId)).toEqual([expect.objectContaining({ status: "dispatched", attempts: 1 })]);
   });
@@ -288,13 +288,13 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
       await revoke(queued);
       paused.release();
 
-      expect(await dispatching).toMatchObject({ dispatched: 1, failed: 0 });
+      expect(await dispatching).toMatchObject({ completed: 1, deadLettered: 0 });
       expect(await sendIntentOf(database, message.id)).toMatchObject({ ...settled, request: null, providerMessageId: null });
       expect(worker.provider.sendKeys).toEqual([]);
       expect(await providerAcceptsUnder(spool.dir, key)).toEqual([]);
       // A redelivery finds the send settled unsent and sends nothing.
       await database.execute("UPDATE routine_action_requests SET status = 'pending' WHERE conversation_id = $1", [conversationId]);
-      expect(await worker.dispatch()).toMatchObject({ dispatched: 1 });
+      expect(await worker.dispatch()).toMatchObject({ completed: 1 });
       expect(worker.provider.sendKeys).toEqual([]);
     },
   );
@@ -320,7 +320,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
       expect(await lockWaiters(1)).toEqual([expect.stringMatching(new RegExp(`from "${lockedTable}"`, "u"))]);
       paused.release();
 
-      expect(await dispatching).toMatchObject({ dispatched: 1, failed: 0 });
+      expect(await dispatching).toMatchObject({ completed: 1, deadLettered: 0 });
       await revoking;
       const [message] = await agentMessagesOf(conversationId);
       expect(await sendIntentOf(database, message.id)).toMatchObject({ state: "accepted" });
@@ -336,7 +336,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
       expect.objectContaining({ id: heldReplyId, state: "superseded", superseded_reason: "takeover" }),
     ]);
 
-    expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await worker.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
     await expectNothingSent(conversationId, key);
     expect((await heldRepliesOf(conversationId)).map((held) => held.state)).toEqual(["superseded"]);
@@ -364,7 +364,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
     expect(await ownershipRowOf(conversationId)).toEqual(ownershipBefore);
 
     // Its queued `email.send` finds nothing queued to materialize.
-    expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await worker.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
     await expectNothingSent(conversationId, key);
     expect(counterValue(worker.metrics, "email_auto_dispatch_total", { result: "not_queued" })).toBe(1);
     expect(await heldRepliesOf(conversationId)).toEqual([expect.objectContaining({ id: heldReplyId, state: "pending" })]);
@@ -376,7 +376,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
       expect.objectContaining({ id: heldReplyId, state: "released", release_kind: "operator" }),
     ]);
     expect(await approvalsOf(queued)).toEqual([]);
-    expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await worker.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
     const [accept, ...otherAccepts] = await acceptsOf(conversationId);
     expect(otherAccepts).toEqual([]);
     expect(accept.message.text).toContain(ANSWER);
@@ -396,7 +396,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
     // The customer still waits for an answer: the conversation goes to a person.
     expect(await ownershipRowOf(conversationId)).toMatchObject({ state: "human_owned", reason: "operator_only_mailbox" });
 
-    expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await worker.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
     await expectNothingSent(conversationId, key);
     expect((await heldRepliesOf(conversationId)).map((held) => held.state)).toEqual(["superseded"]);
@@ -448,7 +448,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
 
     // The provider stops vouching for the domain; nothing supersedes the queued reply.
     await database.execute("UPDATE email_domains SET sending_status = 'failed' WHERE id = $1", [domain.id]);
-    expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await worker.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
     await expectNothingSent(conversationId, key);
     expect(await heldRepliesOf(conversationId)).toEqual([expect.objectContaining({
@@ -474,7 +474,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
 
     expect((await api.takeOver(teammate, conversationId)).status).toBe(200);
     const recovering = workerNode();
-    expect(await recovering.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await recovering.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
     expect(await providerAcceptsUnder(spool.dir, key)).toEqual([]);
     expect(await sendIntentOf(database, message.id)).toMatchObject({ state: "failed", failureCode: "human_owned", request: null, firstAttemptAt: null });
@@ -498,7 +498,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
       expect.objectContaining({ id: heldReplyId, state: "pending", hold_reason: "policy_changed" }),
     ]);
 
-    expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await worker.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
     await expectNothingSent(conversationId, key);
     expect(await approvalsOf(queued)).toEqual([expect.objectContaining({ id: heldReplyId, state: "pending", holdReason: "policy_changed" })]);
@@ -570,7 +570,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
     // The outbox retries the dispatch until it gives up; the reply never materialized, so nothing settles it.
     for (let attempt = 1; attempt <= 5; attempt += 1) {
       await makeRetryDue();
-      expect(await failing.dispatch()).toMatchObject(attempt < 5 ? { retried: 1 } : { failed: 1 });
+      expect(await failing.dispatch()).toMatchObject(attempt < 5 ? { retried: 1 } : { deadLettered: 1 });
     }
     expect(await emailSendsOf(abandoned.conversationId)).toEqual([expect.objectContaining({ status: "failed", attempts: 5 })]);
     expect((await heldRepliesOf(abandoned.conversationId)).map((held) => held.state)).toEqual(["queued_auto"]);
@@ -600,7 +600,7 @@ describeIntegration("email auto reply (Postgres, research B9)", () => {
     expect(await sweeper.worker.sweep({ maxJobs: 10 })).toMatchObject({ returnedAbandonedAutoSends: 0 });
     expect((await heldRepliesOf(live.conversationId)).map((held) => held.state)).toEqual(["queued_auto"]);
 
-    expect(await sweeper.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await sweeper.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
     expect((await heldRepliesOf(live.conversationId)).map((held) => held.state)).toEqual(["released"]);
     expect(await providerAcceptsUnder(spool.dir, live.key)).toHaveLength(1);
   }, 60_000);

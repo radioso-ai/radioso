@@ -18,9 +18,8 @@ import {
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
 import type { GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
-import type { ActionDrainDispatcherPort } from "../services/actions/actionDrainDispatcher.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
-import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
+import type { BackgroundJobQueue, BackgroundJobWakePort } from "../../../shared/background-jobs/index.js";
 
 type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0];
 
@@ -272,7 +271,7 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     // turn's own transaction has committed (spec 070 push-per-action, see the
     // conversation-action outbox drain fix). Absent leaves turns unchanged — the
     // interval-loop poller and the recovery sweep still drain the row.
-    private readonly actionDrainDispatcher?: ActionDrainDispatcherPort,
+    private readonly actionDrainDispatcher?: BackgroundJobWakePort,
     private readonly logger?: Pick<AppLogger, "warn">,
     // Writes the background jobs a turn hands to the worker inside the turn's transaction, and
     // wakes a worker once it commits.

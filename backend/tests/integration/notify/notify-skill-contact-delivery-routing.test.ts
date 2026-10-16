@@ -4,9 +4,10 @@ import { describe, expect, it } from "vitest";
 
 import { NotifyExecutor } from "../../../src/modules/notify/notifyExecutor.js";
 import {
-  ActionDispatcher,
   ActionHandlerRegistry,
+  type ActionHandler,
 } from "../../../src/modules/chat/services/actions/actionDispatcher.js";
+import { createActionDispatchJobHandler } from "../../../src/modules/chat/services/actions/actionDispatchJob.js";
 import {
   ConfiguredContactDeliveryResolver,
   ContactSendActionHandler as ContactSendActionHandlerBase,
@@ -19,11 +20,14 @@ import { ROUTINE_ENDING_NOTICE_ACTIONS } from "../../../src/modules/chat/service
 import { buildRoutineEndingNotifyAction } from "../../../src/modules/chat/services/routineEndingEffects.js";
 import { OperatorNotificationDispatcher } from "../../../src/modules/operatorNotifications/public.js";
 import { InMemoryAgentSkillRepository } from "../../support/inMemoryAgentSkills.js";
-import type {
-  ActionFailureOutcome,
-  ActionRequestRecord,
-  EnqueueActionRequestInput,
-} from "../../../src/db/repositories/actionRequestRepository.js";
+import {
+  BackgroundJobRuntime,
+  type BackgroundJobClaim,
+  type BackgroundJobClaimableKind,
+  type BackgroundJobCompletion,
+  type BackgroundJobSkipped,
+} from "../../../src/shared/background-jobs/index.js";
+import type { ActionRequestRecord, EnqueueActionRequestInput } from "../../../src/db/repositories/actionRequestRepository.js";
 
 const allowedRecipientPolicy = {
   prepareDelivery: async (input: { emails: readonly string[] }) => ({
@@ -44,10 +48,12 @@ class EmailWebhookOperatorNotificationSink extends EmailWebhookOperatorNotificat
 }
 
 /**
- * Minimal in-memory stand-in for `ActionRequestRepository`: just enough enqueue /
- * claim / mark semantics to drive a real producer -> outbox -> dispatcher -> handler
- * round trip without standing up Postgres. Not a general-purpose test double —
- * local to this file.
+ * Minimal in-memory stand-in for `ActionRequestRepository`: enqueues the way
+ * `NotifyExecutor`'s outbox port expects, and implements just enough of
+ * `BackgroundJobStore` to run a claimed row through the real
+ * `createActionDispatchJobHandler` adapter without standing up Postgres. Not a
+ * general-purpose test double — local to this file, and claims one row at a time
+ * with no real lease/retry bookkeeping, since neither test here retries.
  */
 class InMemoryActionOutbox {
   private readonly rows = new Map<string, ActionRequestRecord>();
@@ -69,40 +75,66 @@ class InMemoryActionOutbox {
     return { id, duplicate: false };
   }
 
-  async claimPending(): Promise<ActionRequestRecord[]> {
-    const claimed: ActionRequestRecord[] = [];
-    for (const row of this.rows.values()) {
-      if (row.status === "pending") {
-        row.status = "in_progress";
-        row.attempts += 1;
-        claimed.push(row);
-      }
+  async claimNext(input: { kinds: readonly BackgroundJobClaimableKind[] }): Promise<BackgroundJobClaim | null> {
+    const kind = input.kinds[0]?.kind;
+    const row = [...this.rows.values()].find((entry) => entry.status === "pending");
+    if (!kind || !row) {
+      return null;
     }
-    return claimed;
+    row.status = "in_progress";
+    row.attempts += 1;
+    return {
+      id: row.id,
+      kind,
+      payload: {
+        type: row.type,
+        payload: row.payload,
+        workspaceId: row.workspaceId,
+        accountId: row.accountId,
+        conversationId: row.conversationId,
+        idempotencyKey: row.idempotencyKey,
+        skillName: row.skillName,
+      },
+      attempt: row.attempts,
+      idempotencyKey: row.idempotencyKey,
+      token: String(row.attempts),
+      availableAt: new Date(),
+    };
   }
 
-  async markDispatched(id: string): Promise<boolean> {
-    const row = this.rows.get(id);
-    if (!row) return false;
-    row.status = "dispatched";
+  async renewLease(): Promise<boolean> {
     return true;
   }
 
-  async markSkipped(id: string): Promise<boolean> {
-    const row = this.rows.get(id);
-    if (!row) return false;
-    row.status = "skipped";
-    return true;
+  async complete(claim: BackgroundJobClaim, outcome?: BackgroundJobSkipped): Promise<BackgroundJobCompletion> {
+    const row = this.rows.get(claim.id);
+    if (!row) return "superseded";
+    row.status = outcome ? "skipped" : "dispatched";
+    return "deleted";
   }
 
-  async recordFailure(id: string): Promise<ActionFailureOutcome> {
-    const row = this.rows.get(id);
-    if (row) {
-      row.status = "failed";
-    }
-    return "failed";
+  async retry(claim: BackgroundJobClaim): Promise<Date | null> {
+    const row = this.rows.get(claim.id);
+    if (!row) return null;
+    row.status = "pending";
+    return new Date();
+  }
+
+  async deadLetter(claim: BackgroundJobClaim): Promise<boolean> {
+    const row = this.rows.get(claim.id);
+    if (!row) return false;
+    row.status = "failed";
+    return true;
   }
 }
+
+/** One drain through the real job-kind handler adapter against an in-memory store. */
+const dispatchPending = (outbox: InMemoryActionOutbox, registrations: { type: string; handler: ActionHandler }[]) =>
+  new BackgroundJobRuntime({
+    store: outbox,
+    handlers: [createActionDispatchJobHandler(new ActionHandlerRegistry(registrations))],
+    logger: { debug: () => undefined, warn: () => undefined, error: () => undefined },
+  }).drain({ maxJobs: 20 });
 
 const emit = { emitStatus: async () => undefined, emitCustom: async () => undefined };
 
@@ -161,12 +193,7 @@ describe("notify skill contact delivery routing (enqueue through drain)", () => 
       mailer,
       new ConfiguredContactDeliveryResolver(conversations, agents, ownerFallback, skills),
     );
-    const dispatcher = new ActionDispatcher(
-      outbox,
-      new ActionHandlerRegistry([{ type: CONTACT_SEND_ACTION_TYPE, handler }]),
-    );
-
-    await dispatcher.dispatchPending();
+    await dispatchPending(outbox, [{ type: CONTACT_SEND_ACTION_TYPE, handler }]);
 
     expect(sent.map((message) => message.to).sort()).toEqual(["sales@example.com", "support@example.com"]);
   });
@@ -220,9 +247,7 @@ describe("notify skill contact delivery routing (enqueue through drain)", () => 
       dispatcher: new OperatorNotificationDispatcher([new EmailWebhookOperatorNotificationSink(mailer, resolver)]),
       subjects: { resolve: async () => ({ agentId: "agent_1", agentName: null, routineName: null }) },
     });
-    const dispatcher = new ActionDispatcher(outbox, new ActionHandlerRegistry([{ type: ending.type, handler }]));
-
-    await dispatcher.dispatchPending();
+    await dispatchPending(outbox, [{ type: ending.type, handler }]);
 
     expect(sent.map((message) => message.to)).toEqual(["francesco@example.com"]);
   });

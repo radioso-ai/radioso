@@ -123,6 +123,15 @@ const toHandlerContext = (
  * `ActionDispatcher`'s prior behaviour. `recordFailureOutcome` otherwise rides the per-attempt hook
  * for a retry and `onDeadLetter` for the terminal failure, reproducing the single hook's two
  * outcomes `ActionDispatcher` used to report.
+ *
+ * Two edge cases this inherits from the generic runtime (see the background-jobs README):
+ * a request whose last attempt's lease expired (a crashed or stalled worker) is dead-lettered on
+ * its next claim without running again, so `recordFailureOutcome("failed")` can be recorded for
+ * an action whose handler may have already sent it — the crash that lost the lease could have
+ * happened after the real delivery, not before; and a `recordFailureOutcome` call that hits its
+ * own pool's connection timeout under mass failure is dropped (the row's retry or terminal `failed`
+ * write still commits) rather than retried, so its side effect — an alert, a cache invalidation —
+ * is silently lost that one time.
  */
 export const createActionDispatchJobHandler = (
   registry: ActionHandlerResolver,

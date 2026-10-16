@@ -77,6 +77,22 @@ outage the way the old poll-driven worker's effective window did),
 a transport that deliberately delivers nothing. `ActionHandler`
 implementations did not change.
 
+A domain store built on this substrate inherits two edge cases worth naming
+rather than discovering in an incident:
+
+- A job whose last attempt's lease expired (a crashed or stalled worker) is
+  dead-lettered on its next claim without running again — `onDeadLetter` still
+  fires. For the action outbox this means `recordFailureOutcome("failed")` can
+  be recorded for an action whose handler may have already sent it: the crash
+  that lost the lease could have happened after the real delivery, not before.
+- `onAttemptFailed`/`onDeadLetter` run inside the store's own retry or
+  dead-letter write-back, while a handler's `recordFailureOutcome` (and the
+  handler's own `handle`) typically use their own separate pool connections.
+  Under mass failure, a hook's connection can hit the pool's own timeout and
+  be dropped — the reschedule or park still commits (the hook failing rolls
+  back only the hook's own writes, never the outcome), but the hook's side
+  effect (an alert, a cache invalidation) is silently lost that one time.
+
 ## Semantics
 
 - **Duplicate keys, per kind.** Every kind declares what an enqueue does when a

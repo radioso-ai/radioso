@@ -9,6 +9,7 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import { providerDisplayName } from '@/lib/api-llm-providers'
 import type { VoiceCallReadiness } from '@/lib/api-types'
 import { voiceCallReadinessHint } from '@/lib/voice-call-readiness'
+import { AGENT_VOICE_SAVED_EVENT } from '@/lib/voice-settings-form'
 
 /** `readiness` is the backend's; absent, the page treats voice as not ready and names every piece. */
 type Loaded = { offered: boolean; readiness: VoiceCallReadiness | null; vendorName: string }
@@ -16,7 +17,9 @@ type Loaded = { offered: boolean; readiness: VoiceCallReadiness | null; vendorNa
 /**
  * The website widget's switch for voice calls: on, the embed shows Talk while the agent's voice is
  * ready. It saves on its own, so it never rides the widget's debounced settings save. It can be
- * switched on only once voice is ready, and always switched off.
+ * switched on only once voice is ready, and always switched off. Readiness is read again when the
+ * Voice card saves this agent and when the window regains focus, since the missing piece is often
+ * set up elsewhere (the vendor key lives under Settings → Providers).
  */
 export function WebsiteVoiceCallsSetting({ agentId }: { agentId: string }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null)
@@ -25,21 +28,35 @@ export function WebsiteVoiceCallsSetting({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     let active = true
-    agentsApi.getAgent(agentId).then(
-      (agent) => {
-        if (!active) return
-        setLoaded({
-          offered: agent.surfaceSettings.websiteEmbed.voiceCallsOffered,
-          readiness: agent.voiceCallReadiness ?? null,
-          vendorName: agent.voice.runtime ? providerDisplayName[agent.voice.runtime.vendor] : 'vendor',
-        })
-      },
-      (loadError: unknown) => {
-        if (active) setError(getApiErrorMessage(loadError, 'Failed to load the voice call setting.'))
-      },
-    )
+    let firstLoad = true
+    const load = () => {
+      agentsApi.getAgent(agentId).then(
+        (agent) => {
+          if (!active) return
+          const readiness = agent.voiceCallReadiness ?? null
+          const vendorName = agent.voice.runtime ? providerDisplayName[agent.voice.runtime.vendor] : 'vendor'
+          // The switch's own value is this card's after the first read; a refresh brings readiness.
+          setLoaded((current) => (current
+            ? { ...current, readiness, vendorName }
+            : { offered: agent.surfaceSettings.websiteEmbed.voiceCallsOffered, readiness, vendorName }))
+        },
+        (loadError: unknown) => {
+          if (active && firstLoad) setError(getApiErrorMessage(loadError, 'Failed to load the voice call setting.'))
+        },
+      ).finally(() => {
+        firstLoad = false
+      })
+    }
+    const refreshForAgent = (event: Event) => {
+      if ((event as CustomEvent<{ agentId?: string }>).detail?.agentId === agentId) load()
+    }
+    load()
+    window.addEventListener('focus', load)
+    window.addEventListener(AGENT_VOICE_SAVED_EVENT, refreshForAgent)
     return () => {
       active = false
+      window.removeEventListener('focus', load)
+      window.removeEventListener(AGENT_VOICE_SAVED_EVENT, refreshForAgent)
     }
   }, [agentId])
 

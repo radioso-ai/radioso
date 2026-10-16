@@ -80,3 +80,41 @@ for (const [missing, hint] of [
   await expect(page.getByRole("switch", { name: "Offer calls on the website" })).toBeDisabled();
   await expect(page.getByText(hint)).toBeVisible();
 });
+
+test("the switch reads readiness again when the window regains focus, after the missing piece was set up elsewhere", async ({ page }) => {
+  const readiness: { ready: boolean; missing: "vendor_key" | null } = { ready: false, missing: "vendor_key" };
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    agentSettingsOverrides: { voice: readyVoice },
+    voiceCallReadiness: readiness,
+  });
+  await openWebChat(page);
+  const offerCalls = page.getByRole("switch", { name: "Offer calls on the website" });
+  await expect(offerCalls).toBeDisabled();
+
+  // The operator stores the ElevenLabs key under Settings → Providers in another tab and comes back.
+  readiness.ready = true;
+  readiness.missing = null;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+  await expect(offerCalls).toBeEnabled();
+  await expect(page.getByText("Visitors see Talk beside Send and can talk to the agent.")).toBeVisible();
+});
+
+test("saving the Voice card tells the page to read the agent's voice readiness again", async ({ page }) => {
+  await page.addInitScript(() => {
+    const heard: unknown[] = [];
+    Object.assign(window, { __voiceSaved: heard });
+    window.addEventListener("radioso:agent-voice-saved", (event) => heard.push((event as CustomEvent).detail));
+  });
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=api-channel`);
+  const card = page.locator("#voice-channel");
+  await card.getByRole("switch", { name: "Voice channel" }).click();
+  await card.getByRole("button", { name: "Save voice settings" }).click();
+  await expect(card.getByText("Saved", { exact: true })).toBeVisible();
+
+  expect(await page.evaluate(() => (window as unknown as { __voiceSaved: unknown[] }).__voiceSaved)).toEqual([{ agentId: defaultAgentId }]);
+});

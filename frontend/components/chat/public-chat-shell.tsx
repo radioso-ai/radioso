@@ -657,7 +657,6 @@ function PublicChatContent({
         id: line.id,
         role: line.speaker === 'caller' ? ('user' as const) : ('assistant' as const),
         content: line.text,
-        createdAt: undefined,
         status: 'complete' as const,
         spokenLabel: copy.publicChatSpokenLabel,
         afterMessageId: line.afterMessageId,

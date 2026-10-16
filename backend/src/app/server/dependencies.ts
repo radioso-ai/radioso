@@ -5,6 +5,7 @@ import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevis
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
 import { createVoiceChannelComposition, createVoiceSessionStartComposition } from "../composition/voiceChannel.js";
+import { VoiceSessionRepository } from "../../modules/voiceChannel/public.js";
 import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
 import {
   createEmailChannelComposition,
@@ -1373,6 +1374,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
     voiceSessionStarts: createVoiceSessionStartComposition({
       agentRepository: repositories.agentRepository,
+      starts: new VoiceSessionRepository(infrastructure.database.kysely),
       credentials: workspaceProviderCredentialsService,
       // Called through its own receiver, never detached from globalThis.
       fetch: (url, init) => globalThis.fetch(url, init),

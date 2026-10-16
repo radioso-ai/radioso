@@ -1,3 +1,4 @@
+import { VOICE_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { VoiceVendor } from "../../../shared/domain/voiceVendor.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
@@ -6,9 +7,11 @@ import {
   VoiceVendorRequestError,
   type VoiceSessionStarter,
   type VoiceSessionStartPort,
+  type VoiceSessionStartRegistry,
   type VoiceSessionStartResult,
-  type VoiceVendorCredential,
+  type VoiceSessionVisitor,
   type VoiceVendorCredentialReader,
+  type VoiceVendorCredentialReading,
 } from "../domain.js";
 import { resolveVoiceTurnLocale } from "./voiceLines.js";
 
@@ -21,36 +24,54 @@ interface VoiceRuntimeProfileSource {
   } | null>;
 }
 
-type VoiceSessionStartOutcome =
-  | "started"
-  | "agent_not_found"
-  | "voice_off"
-  | "no_runtime"
+type VoiceSessionUnavailableOutcome = "agent_not_found" | "voice_off" | "no_runtime";
+
+type VoiceSessionFailedOutcome =
   | "credential_missing"
   | "credential_unreadable"
+  | "credential_read_failed"
+  | "registration_failed"
   | "vendor_failed";
+
+type VoiceSessionStartOutcome = "started" | VoiceSessionUnavailableOutcome | VoiceSessionFailedOutcome;
 
 interface VoiceSessionStartServiceDependencies {
   agents: VoiceRuntimeProfileSource;
   credentials: VoiceVendorCredentialReader;
   starters: Readonly<Record<VoiceVendor, VoiceSessionStarter>>;
+  starts: VoiceSessionStartRegistry;
   /** Mints the key the voice runtime sends back on every turn of the session. */
   newSessionKey: () => string;
+  now?: () => number;
   metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
   logger: Pick<AppLogger, "warn">;
 }
 
 const errorClassOf = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
 
+const vendorErrorFields = (error: unknown) => ({
+  errorClass: errorClassOf(error),
+  ...(error instanceof VoiceVendorRequestError ? { reason: error.reason } : {}),
+  ...(error instanceof VoiceVendorRequestError && error.vendorStatus !== undefined ? { vendorStatus: error.vendorStatus } : {}),
+});
+
+const FAILED_OUTCOME_OF_READING: Record<Exclude<VoiceVendorCredentialReading["kind"], "present">, VoiceSessionFailedOutcome> = {
+  missing: "credential_missing",
+  unreadable: "credential_unreadable",
+};
+
 /**
  * Starts a voice session for an agent on the vendor agent it is bound to, with the workspace's
- * own vendor key, and mints the Radioso session key the page hands the vendor. The key and the
- * vendor's URL stay out of logs and metrics; the URL reaches only the caller of the port.
+ * own vendor key. It mints the Radioso session key the page hands the vendor and records it with
+ * the visitor who asked, before the vendor call, so the session's first turn joins that visitor
+ * and a start that cannot be recorded spends nothing at the vendor. Every failure reads the same
+ * to the caller; the outcome label and the warn log say which it was, with ids only: never the key
+ * or the vendor's URL.
  */
 export class VoiceSessionStartService implements VoiceSessionStartPort {
   constructor(private readonly dependencies: VoiceSessionStartServiceDependencies) {}
 
-  async start(input: { workspaceId: string; agentId: string; locale?: string }): Promise<VoiceSessionStartResult> {
+  async start(input: { workspaceId: string; agentId: string; visitor: VoiceSessionVisitor; locale?: string }): Promise<VoiceSessionStartResult> {
     const { workspaceId, agentId } = input;
     const profile = await this.dependencies.agents.findVoiceProfile({ workspaceId, agentId });
     if (!profile) return this.unavailable("agent_not_found");
@@ -58,53 +79,51 @@ export class VoiceSessionStartService implements VoiceSessionStartPort {
     const runtime = profile.voice.runtime;
     if (!runtime) return this.unavailable("no_runtime");
     const { vendor } = runtime;
+    const failed = (outcome: VoiceSessionFailedOutcome, fields: Record<string, unknown> = {}): VoiceSessionStartResult => {
+      this.dependencies.logger.warn({ workspaceId, agentId, vendor, outcome, ...fields }, "Voice session start failed");
+      this.record(vendor, outcome);
+      return { kind: "failed" };
+    };
 
-    let credential: VoiceVendorCredential | null;
+    let reading: VoiceVendorCredentialReading;
     try {
-      credential = await this.dependencies.credentials.read({ workspaceId, vendor });
+      reading = await this.dependencies.credentials.read({ workspaceId, vendor });
     } catch (error) {
-      this.dependencies.logger.warn(
-        { workspaceId, agentId, vendor, errorClass: errorClassOf(error) },
-        "Voice session start could not read the vendor credential",
-      );
-      return this.ended({ kind: "credential_unreadable", vendor });
+      return failed("credential_read_failed", { errorClass: errorClassOf(error) });
     }
-    if (!credential) return this.ended({ kind: "credential_missing", vendor });
+    if (reading.kind !== "present") return failed(FAILED_OUTCOME_OF_READING[reading.kind]);
+
+    const sessionKey = this.dependencies.newSessionKey();
+    const now = (this.dependencies.now ?? Date.now)();
+    try {
+      await this.dependencies.starts.register({
+        session: { workspaceId, agentId, vendor, sessionKey },
+        visitor: input.visitor,
+        expiresAt: new Date(now + VOICE_BEHAVIOR.sessionStartTtlMs),
+      });
+    } catch (error) {
+      return failed("registration_failed", { errorClass: errorClassOf(error) });
+    }
 
     try {
-      const session = await this.dependencies.starters[vendor].startSession({ vendorAgentId: runtime.agentId, credential });
-      return this.ended({
+      const session = await this.dependencies.starters[vendor].startSession({ vendorAgentId: runtime.agentId, credential: reading.credential });
+      this.record(vendor, "started");
+      return {
         kind: "started",
         vendor,
         signedUrl: session.signedUrl,
-        sessionKey: this.dependencies.newSessionKey(),
+        sessionKey,
         locale: resolveVoiceTurnLocale({ requested: input.locale, agentDefault: profile.defaultLocale }),
         ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
-      });
+      };
     } catch (error) {
-      this.dependencies.logger.warn(
-        {
-          workspaceId,
-          agentId,
-          vendor,
-          errorClass: errorClassOf(error),
-          ...(error instanceof VoiceVendorRequestError ? { reason: error.reason } : {}),
-          ...(error instanceof VoiceVendorRequestError && error.vendorStatus !== undefined ? { vendorStatus: error.vendorStatus } : {}),
-        },
-        "Voice vendor refused the session start",
-      );
-      return this.ended({ kind: "vendor_failed", vendor });
+      return failed("vendor_failed", vendorErrorFields(error));
     }
   }
 
-  private unavailable(outcome: Extract<VoiceSessionStartOutcome, "agent_not_found" | "voice_off" | "no_runtime">): VoiceSessionStartResult {
+  private unavailable(outcome: VoiceSessionUnavailableOutcome): VoiceSessionStartResult {
     this.record("none", outcome);
     return { kind: "unavailable" };
-  }
-
-  private ended(result: Exclude<VoiceSessionStartResult, { kind: "unavailable" }>): VoiceSessionStartResult {
-    this.record(result.vendor, result.kind);
-    return result;
   }
 
   /** Labels are closed enums: the bound vendor, or `none` before one is known. */

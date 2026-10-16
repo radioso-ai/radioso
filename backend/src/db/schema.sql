@@ -4066,9 +4066,15 @@ CREATE TABLE public.voice_sessions (
     agent_id uuid NOT NULL,
     vendor text NOT NULL,
     session_key text NOT NULL,
-    conversation_id uuid NOT NULL,
+    conversation_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_public_session_id text,
+    started_visitor_key text,
+    start_expires_at timestamp with time zone,
+    CONSTRAINT voice_sessions_bound_or_started CHECK (((conversation_id IS NOT NULL) OR ((started_public_session_id IS NOT NULL) AND (start_expires_at IS NOT NULL)))),
     CONSTRAINT voice_sessions_session_key_check CHECK (((length(session_key) >= 1) AND (length(session_key) <= 256))),
+    CONSTRAINT voice_sessions_started_public_session_id_check CHECK (((started_public_session_id IS NULL) OR ((length(started_public_session_id) >= 1) AND (length(started_public_session_id) <= 256)))),
+    CONSTRAINT voice_sessions_started_visitor_key_check CHECK (((started_visitor_key IS NULL) OR ((length(started_visitor_key) >= 1) AND (length(started_visitor_key) <= 256)))),
     CONSTRAINT voice_sessions_vendor_check CHECK (((length(vendor) >= 1) AND (length(vendor) <= 64)))
 );
 

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
@@ -15,25 +17,26 @@ const vendorAnswering = (status: number, body: unknown) =>
   vi.fn<VendorFetch>(async () => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }));
 
 /**
- * A workspace whose website embed admits the test site, with a visitor session on it. The agent's
- * voice block and the workspace's vendor key are what each case varies.
+ * A workspace whose website embed admits the test site, with the agent's voice bound to an
+ * ElevenLabs agent and the workspace's ElevenLabs key stored. Each case varies one of those.
  */
-const embedWithVisitor = async (options: {
-  email: string;
-  voice?: typeof boundVoice | { enabled: boolean; bridgeLines: object; fallbackLine: object; runtime: null };
+const embedWorkspace = async (options: {
+  voice?: object;
   vendorKey?: string | null;
   vendorFetch?: VendorFetch;
   envOverrides?: Partial<Env>;
-}) => {
-  const { app } = createTestApp({ voiceVendorFetch: options.vendorFetch, envOverrides: options.envOverrides });
-  const operator = await issueTestSession(app, options.email);
+} = {}) => {
+  const created = createTestApp({ voiceVendorFetch: options.vendorFetch, envOverrides: options.envOverrides });
+  const { app } = created;
+  const operator = await issueTestSession(app, `voice-start-${randomUUID()}@example.com`);
   const dashboard = adminSessionHeaders(operator);
   const settings = await request(app)
     .put("/api/v1/settings/general")
     .set(dashboard)
-    .send({ websiteEmbedEnabled: true, websiteEmbedAllowedOrigins: [SITE] })
+    .send({ websiteEmbedEnabled: true, websiteEmbedAllowedOrigins: [SITE], anonymousChatEnabled: true })
     .expect(200);
   const launchToken = settings.body.websiteEmbedToken as string;
+  const anonymousChatToken = new URL(settings.body.anonymousChatUrl as string).pathname.split("/").at(-1)!;
   const agents = await request(app).get("/api/v1/agents").set(dashboard).expect(200);
   const agentId = (agents.body.agents as Array<{ id: string; isDefault: boolean }>).find((agent) => agent.isDefault)!.id;
   await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ voice: options.voice ?? boundVoice }).expect(200);
@@ -41,23 +44,32 @@ const embedWithVisitor = async (options: {
   if (vendorKey) {
     await request(app).put("/api/v1/settings/credentials/elevenlabs").set(dashboard).send({ apiKey: vendorKey }).expect(204);
   }
-  const visitor = await request(app)
-    .post(`/api/v1/public/chat/${launchToken}/sessions`)
-    .set("Origin", SITE)
-    .send({ channel: "website_embed" })
-    .expect(200);
-  const startVoiceSession = (body: object = {}, headers: Record<string, string> = {}) =>
-    request(app)
-      .post(`/api/v1/public/chat/${launchToken}/voice/sessions`)
-      .set({ Origin: SITE, "x-radioso-public-session": visitor.body.publicSessionToken as string, ...headers })
-      .send(body);
-  return { startVoiceSession };
+  /** A website embed visitor: its public session, and a way to start voice sessions with it. */
+  const visitor = async (body: object = {}) => {
+    const session = await request(app)
+      .post(`/api/v1/public/chat/${launchToken}/sessions`)
+      .set("Origin", SITE)
+      .send({ channel: "website_embed", ...body })
+      .expect(200);
+    const publicSessionToken = session.body.publicSessionToken as string;
+    const startVoiceSession = (startBody: object = {}, headers: Record<string, string> = {}) =>
+      request(app)
+        .post(`/api/v1/public/chat/${launchToken}/voice/sessions`)
+        .set({ Origin: SITE, "x-radioso-public-session": publicSessionToken, ...headers })
+        .send(startBody);
+    return { publicSessionToken, startVoiceSession };
+  };
+  return { ...created, operator, agentId, launchToken, anonymousChatToken, visitor };
 };
+
+const startOutcomes = (metrics: string): string[] =>
+  metrics.split("\n").filter((line) => line.startsWith("radioso_voice_session_start_total{"));
 
 describe("public voice session start contract", () => {
   it("starts a session on the agent's ElevenLabs agent with the workspace's key and hands the page what it needs, never the key", async () => {
     const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
-    const { startVoiceSession } = await embedWithVisitor({ email: "voice-start-happy@example.com", vendorFetch });
+    const { visitor } = await embedWorkspace({ vendorFetch });
+    const { startVoiceSession } = await visitor();
 
     const response = await startVoiceSession({ locale: "it" }).expect(200);
 
@@ -69,18 +81,16 @@ describe("public voice session start contract", () => {
       expiresAt: expect.any(String),
     });
     expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.headers["access-control-allow-origin"]).toBe(SITE);
     expect(JSON.stringify(response.body)).not.toContain(VENDOR_KEY);
-    expect(vendorFetch).toHaveBeenCalledTimes(1);
     const [url, init] = vendorFetch.mock.calls[0];
     expect(url).toBe("https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=agent_42");
     expect(init?.headers).toEqual({ "xi-api-key": VENDOR_KEY });
   });
 
   it("mints a new session key for every start", async () => {
-    const { startVoiceSession } = await embedWithVisitor({
-      email: "voice-start-fresh-key@example.com",
-      vendorFetch: vendorAnswering(200, { signed_url: SIGNED_URL }),
-    });
+    const { visitor } = await embedWorkspace({ vendorFetch: vendorAnswering(200, { signed_url: SIGNED_URL }) });
+    const { startVoiceSession } = await visitor();
 
     const first = await startVoiceSession().expect(200);
     const second = await startVoiceSession().expect(200);
@@ -93,7 +103,8 @@ describe("public voice session start contract", () => {
     ["the agent is bound to no vendor agent", { ...boundVoice, runtime: null }],
   ])("answers 404 and asks the vendor nothing when %s", async (_case, voice) => {
     const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
-    const { startVoiceSession } = await embedWithVisitor({ email: `voice-start-off-${voice.enabled}@example.com`, voice, vendorFetch });
+    const { visitor } = await embedWorkspace({ voice, vendorFetch });
+    const { startVoiceSession } = await visitor();
 
     const response = await startVoiceSession().expect(404);
 
@@ -101,59 +112,135 @@ describe("public voice session start contract", () => {
     expect(vendorFetch).not.toHaveBeenCalled();
   });
 
-  it("answers 409 with a stable code when the workspace holds no key for the agent's vendor", async () => {
-    const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
-    const { startVoiceSession } = await embedWithVisitor({ email: "voice-start-no-key@example.com", vendorKey: null, vendorFetch });
+  it("answers one 503 with no detail when the workspace holds no key, and when the vendor refuses", async () => {
+    const noKeyFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
+    const noKey = await embedWorkspace({ vendorKey: null, vendorFetch: noKeyFetch });
+    const refused = await embedWorkspace({ vendorFetch: vendorAnswering(401, { detail: { status: "invalid_api_key" } }) });
 
-    const response = await startVoiceSession().expect(409);
+    const missing = await (await noKey.visitor()).startVoiceSession().expect(503);
+    const vendorFailed = await (await refused.visitor()).startVoiceSession().expect(503);
 
-    expect(response.body.error).toMatchObject({ code: "voice_vendor_credential_missing", details: { vendor: "elevenlabs" } });
-    expect(vendorFetch).not.toHaveBeenCalled();
+    expect(missing.body).toEqual(vendorFailed.body);
+    expect(missing.body.error).toEqual({ code: "voice_unavailable", message: expect.any(String) });
+    expect(JSON.stringify(vendorFailed.body)).not.toContain("invalid_api_key");
+    expect(noKeyFetch).not.toHaveBeenCalled();
   });
 
-  it("answers 502 when the vendor refuses the start, without passing on what the vendor said", async () => {
-    const { startVoiceSession } = await embedWithVisitor({
-      email: "voice-start-vendor-down@example.com",
-      vendorFetch: vendorAnswering(401, { detail: { status: "invalid_api_key", message: "Invalid API key" } }),
+  it("answers 503 for a stored key the backend has no master key to read, and counts it as unreadable", async () => {
+    const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
+    const { visitor, repositories, operator, dependencies } = await embedWorkspace({
+      vendorKey: null,
+      vendorFetch,
+      envOverrides: { CONNECTOR_ENCRYPTION_KEY: undefined, METRICS_ENABLED: true, METRICS_AUTH_TOKEN: "metrics-test-token" },
+    });
+    await repositories.workspaceProviderCredentialsRepository.upsert({
+      workspaceId: operator.workspaceId,
+      provider: "elevenlabs",
+      ciphertext: "v1:stored-under-a-key-this-backend-no-longer-has",
     });
 
-    const response = await startVoiceSession().expect(502);
+    const response = await (await visitor()).startVoiceSession().expect(503);
 
-    expect(response.body.error).toMatchObject({ code: "voice_vendor_unavailable", details: { vendor: "elevenlabs" } });
-    expect(JSON.stringify(response.body)).not.toContain("invalid_api_key");
+    expect(response.body.error.code).toBe("voice_unavailable");
+    expect(vendorFetch).not.toHaveBeenCalled();
+    expect(startOutcomes(dependencies.metricsRegistry?.renderPrometheus() ?? "")).toEqual([
+      expect.stringContaining('outcome="credential_unreadable"'),
+    ]);
   });
 
   it("starts nothing without the visitor's public session, or from a site the embed does not admit", async () => {
     const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
-    const { startVoiceSession } = await embedWithVisitor({ email: "voice-start-no-session@example.com", vendorFetch });
+    const { visitor } = await embedWorkspace({ vendorFetch });
+    const { startVoiceSession } = await visitor();
 
     await startVoiceSession({}, { "x-radioso-public-session": "" }).expect(404);
     await startVoiceSession({}, { Origin: "https://not-approved.example.com" }).expect(404);
     expect(vendorFetch).not.toHaveBeenCalled();
   });
 
-  it("refuses a locale that is not a language tag", async () => {
-    const { startVoiceSession } = await embedWithVisitor({
-      email: "voice-start-bad-locale@example.com",
-      vendorFetch: vendorAnswering(200, { signed_url: SIGNED_URL }),
-    });
+  it("starts nothing for a public link session, which no origin binds", async () => {
+    const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
+    const { app, anonymousChatToken } = await embedWorkspace({ vendorFetch });
+    const session = await request(app)
+      .post(`/api/v1/public/chat/${anonymousChatToken}/sessions`)
+      .send({ channel: "anonymous_link" })
+      .expect(200);
 
-    await startVoiceSession({ locale: "{{system__locale}}" }).expect(400);
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${anonymousChatToken}/voice/sessions`)
+      .set("x-radioso-public-session", session.body.publicSessionToken as string)
+      .send({})
+      .expect(404);
+
+    expect(response.body.error.code).toBe("not_found");
+    expect(vendorFetch).not.toHaveBeenCalled();
   });
 
-  it("limits session starts per visitor on their own budget", async () => {
-    const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
-    const { startVoiceSession } = await embedWithVisitor({
-      email: "voice-start-rate-limit@example.com",
-      vendorFetch,
-      envOverrides: { PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 2 },
-    });
+  it("refuses a locale that is not a language tag", async () => {
+    const { visitor } = await embedWorkspace({ vendorFetch: vendorAnswering(200, { signed_url: SIGNED_URL }) });
 
-    await startVoiceSession().expect(200);
-    await startVoiceSession().expect(200);
-    const limited = await startVoiceSession().expect(429);
+    await (await visitor()).startVoiceSession({ locale: "{{system__locale}}" }).expect(400);
+  });
+
+  it("gives each visitor session its own small budget, which a fresh cookie does not refill", async () => {
+    const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
+    const { visitor } = await embedWorkspace({ vendorFetch, envOverrides: { PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS: 2 } });
+    const first = await visitor();
+    const second = await visitor();
+
+    await first.startVoiceSession().expect(200);
+    await first.startVoiceSession().expect(200);
+    const limited = await first.startVoiceSession().expect(429);
+    // The public session check mints a new rate-limit cookie for a caller that sends none; a
+    // forged or fresh one changes nothing, because the budget follows the signed session.
+    await first.startVoiceSession({}, { Cookie: `anon_rl_${randomUUID()}=forged.value` }).expect(429);
+    await second.startVoiceSession().expect(200);
+    await second.startVoiceSession().expect(200);
+    await second.startVoiceSession().expect(429);
 
     expect(limited.body.error.code).toBe("rate_limit_exceeded");
+    expect(vendorFetch).toHaveBeenCalledTimes(4);
+  });
+
+  it("caps the workspace's starts across visitors", async () => {
+    const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
+    const { visitor } = await embedWorkspace({ vendorFetch, envOverrides: { PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 2 } });
+
+    await (await visitor()).startVoiceSession().expect(200);
+    await (await visitor()).startVoiceSession().expect(200);
+    await (await visitor()).startVoiceSession().expect(429);
+
     expect(vendorFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("joins the call's first turn to the website visitor who started it, and a self-minted key's to none", async () => {
+    const { app, dependencies, operator, agentId, visitor } = await embedWorkspace({
+      vendorFetch: vendorAnswering(200, { signed_url: SIGNED_URL }),
+    });
+    const visitorKey = randomUUID();
+    const started = await (await visitor({ visitorKey })).startVoiceSession().expect(200);
+    const credential = await dependencies.accessGrantService.issueGrant({
+      agentId,
+      workspaceId: operator.workspaceId,
+      principalKind: "agent-api",
+      channel: "agent-api",
+      originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const chatTurns = vi.spyOn(dependencies.assistantChatService, "streamAnswer");
+    const callTurn = (sessionKey: string) =>
+      request(app)
+        .post(`/api/v1/agents/${agentId}/voice/elevenlabs/v1/chat/completions`)
+        .set("Authorization", `Bearer ${credential.token}`)
+        .send({ messages: [{ role: "user", content: "When do you open?" }], stream: false, elevenlabs_extra_body: { session_key: sessionKey } })
+        .expect(200);
+
+    await callTurn(started.body.sessionKey as string);
+    await callTurn(started.body.sessionKey as string);
+    await callTurn(randomUUID());
+
+    // The chat turn groups a new conversation by this key, exactly as the embed's own chat does.
+    expect(chatTurns.mock.calls.map(([turn]) => turn.visitorKey)).toEqual([visitorKey, undefined, undefined]);
+    expect(chatTurns.mock.calls[1]?.[0].conversationId).toEqual(expect.any(String));
   });
 });

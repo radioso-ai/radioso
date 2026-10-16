@@ -2,6 +2,7 @@ import {
   backgroundJobHandler,
   BackgroundJobRuntime,
   NonRetryableBackgroundJobError,
+  type BackgroundJobSkipped,
 } from "../../shared/background-jobs/index.js";
 import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import { isPermanentProviderFailure } from "../../shared/infra/llm/providerErrors.js";
@@ -10,11 +11,13 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import type { FacetExtractionJob, FacetExtractionJobStore, FacetExtractionPort } from "./contracts.js";
 import {
-  FACET_EXTRACTION_JOB,
+  createFacetExtractionJobKind,
   FacetExtractionBackgroundJobStore,
 } from "./infra/facetExtractionBackgroundJobStore.js";
-import { emitFacetExtractionTelemetry } from "./services/facetExtractionTelemetry.js";
 import { FacetExtractionWorkspaceDrainWorker } from "./services/facetExtractionWorkspaceDrainWorker.js";
+
+/** Both factories below only need the levels the underlying classes actually log at. */
+type FacetCompositionLogger = Pick<AppLogger, "info" | "warn" | "error" | "debug">;
 
 export { FacetExtractionWorkspaceDrainWorker } from "./services/facetExtractionWorkspaceDrainWorker.js";
 export { FacetExtractionWorkspaceDrainService } from "./services/facetExtractionWorkspaceDrainService.js";
@@ -41,10 +44,10 @@ export {
 export const createFacetExtractionWorkspaceDrainWorker = (input: {
   jobs: FacetExtractionJobStore;
   extraction?: FacetExtractionPort;
-  logger: AppLogger;
+  logger: FacetCompositionLogger;
   batchSize: number;
   jobLeaseMs: number;
-  telemetryService?: TelemetryService;
+  telemetryService?: Pick<TelemetryService, "emit">;
 }): FacetExtractionWorkspaceDrainWorker | undefined => {
   if (!input.extraction) {
     return undefined;
@@ -63,18 +66,21 @@ export const createFacetExtractionWorkspaceDrainWorker = (input: {
  * Builds the generic-job-port runtime for the per-message path, or `undefined` when no
  * extraction implementation is registered (same reasoning as the workspace drain worker above).
  *
- * The handler reuses `extraction.extract` and the same telemetry shape as the workspace drain
- * worker; only the completion/retry/dead-letter bookkeeping differs, because this path runs
- * through `FacetExtractionBackgroundJobStore` instead of calling `markCompleted` / `markFailed`
- * directly.
+ * The handler only runs `extraction.extract` and classifies the failure; every write — complete,
+ * retry, dead-letter — and its telemetry are the store adapter's job
+ * (`FacetExtractionBackgroundJobStore`), emitted only once its fenced write actually lands.
+ *
+ * `FacetExtractionPort.extract` takes no `AbortSignal`: it has no provider or database call this
+ * adapter could cancel mid-flight, so `context.signal` has nothing to pass through to today.
  */
 export const createFacetExtractionBackgroundJobRuntime = (input: {
   jobs: FacetExtractionJobStore;
   extraction?: FacetExtractionPort;
-  logger: AppLogger;
+  logger: FacetCompositionLogger;
   metrics?: MetricsRegistry | null;
   errorReporter?: ErrorReporter;
-  telemetryService?: TelemetryService;
+  telemetryService?: Pick<TelemetryService, "emit">;
+  jobLeaseMs: number;
   pollIntervalMs?: number;
   pollBatchSize?: number;
 }): BackgroundJobRuntime | undefined => {
@@ -82,48 +88,29 @@ export const createFacetExtractionBackgroundJobRuntime = (input: {
     return undefined;
   }
   const extraction = input.extraction;
-  const store = new FacetExtractionBackgroundJobStore(
-    input.jobs,
-    FACET_EXTRACTION_JOB.policy.maxAttempts,
-    input.telemetryService,
-  );
-  const handler = backgroundJobHandler(FACET_EXTRACTION_JOB, async (payload, context) => {
-    const startedAt = Date.now();
+  const job = createFacetExtractionJobKind({ leaseSeconds: input.jobLeaseMs / 1_000 });
+  const store = new FacetExtractionBackgroundJobStore(input.jobs, job.policy.maxAttempts, input.telemetryService);
+  const handler = backgroundJobHandler(job, async (payload, context): Promise<BackgroundJobSkipped | void> => {
     // The extractor only reads `id`, `messageId`, `workspaceId`, and `attemptCount` (see
     // `FacetExtractionService.extract`); the remaining `FacetExtractionJob` fields are claim and
     // status bookkeeping this adapter keeps to itself (see `claimNext`'s `token`), so they are
     // placeholders here, never read.
-    const job: FacetExtractionJob = {
+    const extractionJob: FacetExtractionJob = {
       id: context.jobId,
       messageId: payload.messageId,
       workspaceId: payload.workspaceId,
       status: "processing",
       attemptCount: context.attempt,
       claimedAt: null,
-      scheduledAt: new Date(startedAt),
+      scheduledAt: new Date(),
       lastError: null,
-      createdAt: new Date(startedAt),
-      updatedAt: new Date(startedAt),
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
     try {
-      const outcome = await extraction.extract(job);
-      if (outcome.status === "skipped") {
-        store.recordOutcome(context.jobId, { status: "skipped", reason: outcome.reason });
-        await emitFacetExtractionTelemetry(input.telemetryService, "facet.extraction.job_skipped", job, {
-          durationMs: Date.now() - startedAt,
-          outcome: "skipped",
-          reason: outcome.reason,
-        });
-        return;
-      }
-      store.recordOutcome(context.jobId, { status: "extracted" });
-      await emitFacetExtractionTelemetry(input.telemetryService, "facet.extraction.job_completed", job, {
-        durationMs: Date.now() - startedAt,
-        outcome: "completed",
-      });
+      const outcome = await extraction.extract(extractionJob);
+      return outcome.status === "skipped" ? { skipped: outcome.reason } : undefined;
     } catch (error) {
-      // Retry scheduling, the terminal dead-letter, and their telemetry are the store adapter's
-      // job (`retry` / `deadLetter`): only it knows which one the generic runtime chose.
       if (isPermanentProviderFailure(error)) {
         throw new NonRetryableBackgroundJobError("Permanent facet extraction provider failure");
       }

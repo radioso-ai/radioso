@@ -686,6 +686,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     metrics: infrastructure.metricsRegistry,
     errorReporter: infrastructure.errorReportingService,
     telemetryService: infrastructure.telemetryService,
+    jobLeaseMs: env.FACET_EXTRACTION_JOB_LEASE_MS,
     pollIntervalMs: env.FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS,
     pollBatchSize: env.FACET_EXTRACTION_WORKER_BATCH_SIZE,
   });

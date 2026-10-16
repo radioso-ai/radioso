@@ -1,13 +1,9 @@
+import type { PublicVoiceSessionResponse } from './api-types'
 import { VoiceMicrophoneUnavailableError, type VoiceRuntime, type VoiceRuntimeLine, type VoiceRuntimeSession, type VoiceVendor } from './voice-runtime'
 import type { VoiceSessionEvent } from './voice-session'
 
-/** What the page needs to open the session on the vendor; `signedUrl` is a bearer credential. */
-export interface StartedVoiceSession {
-  vendor: VoiceVendor
-  signedUrl: string
-  sessionKey: string
-  locale: string
-}
+/** What the page needs to open the session on the vendor, from the start's answer; `signedUrl` is a bearer credential. */
+export type StartedVoiceSession = Pick<PublicVoiceSessionResponse, 'vendor' | 'signedUrl' | 'sessionKey' | 'locale'>
 
 /**
  * How a session start ended, as the visitor can act on it. `refused` covers every answer that is

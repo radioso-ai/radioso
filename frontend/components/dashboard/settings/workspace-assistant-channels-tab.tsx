@@ -1069,6 +1069,7 @@ export function WorkspaceAssistantChannelsTab({
               setSaveState={setSaveState}
               setSaveError={setSaveError}
               profileHref={profileHref}
+              agentId={agentId}
             />
           ) : null}
 

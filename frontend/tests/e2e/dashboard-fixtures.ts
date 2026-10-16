@@ -496,6 +496,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
       theme: settings.channels.websiteEmbedTheme,
       copy: settings.channels.websiteEmbedCopy,
       expertOverrides: settings.channels.websiteEmbedExpertOverrides,
+      voiceCallsOffered: false,
     },
   },
   createdAt: nowIso,
@@ -1055,6 +1056,8 @@ export const installDashboardApiMocks = async (
     webhookDestinationUpdates?: WebhookDestinationMutationFixture[];
     requestLog?: string[];
     providerEncryptionConfigured?: boolean;
+    /** Providers whose key the workspace stores before the first request, e.g. `["elevenlabs"]`. */
+    storedProviderCredentials?: string[];
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
     llmModelUpdates?: Array<unknown>;
     /** Per capability, the model the plan runs instead of the preference. Defaults to none. */
@@ -1136,6 +1139,7 @@ export const installDashboardApiMocks = async (
     "openai-compatible": null,
     gemini: null,
     claude: null,
+    ...Object.fromEntries((options.storedProviderCredentials ?? []).map((provider) => [provider, { updatedAt: nowIso }])),
   };
   const providerCredentialUpdates = options.providerCredentialUpdates;
   const knownModelsByProvider = {

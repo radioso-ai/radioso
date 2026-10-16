@@ -84,13 +84,22 @@ const vendorStandIn = async (page: Page) => {
   };
 };
 
+/**
+ * The agent as the embed config reflects it: the backend serves `voice.available` only when the
+ * operator offers calls on the website and the agent's voice is ready (the contract test pins that
+ * rule); the embed reads the result.
+ */
+type AgentVoice = { voiceReady: boolean; voiceCallsOffered: boolean };
+const callsOffered: AgentVoice = { voiceReady: true, voiceCallsOffered: true };
+
 const openEmbed = async (
   page: Page,
-  options: { voiceAvailable: boolean; voiceStart?: { status: number; body: unknown } },
+  options: AgentVoice & { voiceStart?: { status: number; body: unknown } },
 ) => {
   const voiceStarts: Array<{ headers: Record<string, string>; body: unknown }> = [];
   await page.route("**/backend/api/v1/**", (route) => route.fulfill({ status: 204, body: "" }));
-  await page.route("**/api/embed/config/**", (route) => fulfillJson(route, { voice: { available: options.voiceAvailable } }));
+  await page.route("**/api/embed/config/**", (route) =>
+    fulfillJson(route, { voice: { available: options.voiceReady && options.voiceCallsOffered } }));
   await page.route("**/api/embed/session/**", (route) => fulfillJson(route, bootstrapSessionPayload()));
   await page.route("**/api/public/chat/*/voice/sessions", async (route) => {
     voiceStarts.push({ headers: route.request().headers(), body: route.request().postDataJSON() });
@@ -108,7 +117,15 @@ const openEmbed = async (
 const callStatus = (frame: ReturnType<Page["frameLocator"]>, text: string) => frame.getByRole("status").filter({ hasText: text });
 
 test("an agent without voice shows no Talk button", async ({ page }) => {
-  const { frame } = await openEmbed(page, { voiceAvailable: false });
+  const { frame } = await openEmbed(page, { voiceReady: false, voiceCallsOffered: true });
+
+  await expect(frame.getByRole("button", { name: "Send message" })).toBeVisible();
+  await expect(frame.getByRole("button", { name: "Talk" })).toHaveCount(0);
+  await expect(page.locator('iframe[src*="/embed-frame"]')).not.toHaveAttribute("allow", /microphone/);
+});
+
+test("an agent whose voice is ready shows no Talk button until the operator offers calls on the website", async ({ page }) => {
+  const { frame } = await openEmbed(page, { voiceReady: true, voiceCallsOffered: false });
 
   await expect(frame.getByRole("button", { name: "Send message" })).toBeVisible();
   await expect(frame.getByRole("button", { name: "Talk" })).toHaveCount(0);
@@ -120,7 +137,7 @@ test("a page that cannot ask for a microphone shows no Talk button", async ({ pa
   await page.addInitScript(() => {
     Object.defineProperty(window, "isSecureContext", { configurable: true, get: () => false });
   });
-  const { frame } = await openEmbed(page, { voiceAvailable: true });
+  const { frame } = await openEmbed(page, callsOffered);
 
   await expect(frame.getByRole("button", { name: "Send message" })).toBeVisible();
   await expect(frame.getByRole("button", { name: "Talk" })).toHaveCount(0);
@@ -129,7 +146,7 @@ test("a page that cannot ask for a microphone shows no Talk button", async ({ pa
 test("a visitor talks to the agent: connecting, listening, speaking, talking over a reply, then End call", async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
   const vendor = await vendorStandIn(page);
-  const { frame, voiceStarts } = await openEmbed(page, { voiceAvailable: true });
+  const { frame, voiceStarts } = await openEmbed(page, callsOffered);
   await expect(page.locator('iframe[src*="/embed-frame"]')).toHaveAttribute("allow", /microphone/);
 
   await frame.getByRole("button", { name: "Talk" }).click();
@@ -167,7 +184,7 @@ test("a visitor talks to the agent: connecting, listening, speaking, talking ove
 test("a call ends when the vendor hangs up", async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
   const vendor = await vendorStandIn(page);
-  const { frame } = await openEmbed(page, { voiceAvailable: true });
+  const { frame } = await openEmbed(page, callsOffered);
 
   await frame.getByRole("button", { name: "Talk" }).click();
   await expect.poll(() => vendor.initiations()).toHaveLength(1);
@@ -182,7 +199,7 @@ test("a call ends when the vendor hangs up", async ({ page, context }) => {
 test("closing the panel ends the call", async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
   const vendor = await vendorStandIn(page);
-  const { frame } = await openEmbed(page, { voiceAvailable: true });
+  const { frame } = await openEmbed(page, callsOffered);
 
   await frame.getByRole("button", { name: "Talk" }).click();
   await expect.poll(() => vendor.initiations()).toHaveLength(1);
@@ -196,7 +213,7 @@ test("closing the panel ends the call", async ({ page, context }) => {
 test("End call while connecting goes back to Talk with no notice, and ends the session once the vendor opens it", async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
   const vendor = await vendorStandIn(page);
-  const { frame } = await openEmbed(page, { voiceAvailable: true });
+  const { frame } = await openEmbed(page, callsOffered);
 
   await frame.getByRole("button", { name: "Talk" }).click();
   await expect.poll(() => vendor.initiations()).toHaveLength(1);
@@ -214,7 +231,7 @@ test("a session that cannot be started shows one line and keeps the Talk button"
   await context.grantPermissions(["microphone"]);
   const vendor = await vendorStandIn(page);
   const { frame } = await openEmbed(page, {
-    voiceAvailable: true,
+    ...callsOffered,
     voiceStart: { status: 503, body: { error: { code: "voice_unavailable", message: "The voice session could not be started. Try again later." } } },
   });
 
@@ -234,7 +251,7 @@ test("a refused microphone shows one line and spends no session start", async ({
       },
     });
   });
-  const { frame, voiceStarts } = await openEmbed(page, { voiceAvailable: true });
+  const { frame, voiceStarts } = await openEmbed(page, callsOffered);
 
   await frame.getByRole("button", { name: "Talk" }).click();
 
